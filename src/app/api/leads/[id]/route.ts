@@ -29,8 +29,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const isBookedNow = Boolean(
       body.stage === 'booked' ||
       body.status === 'booked' ||
+      body.stage_id === 'booked' ||
       (body.stage && String(body.stage).toLowerCase() === 'booked') ||
-      (body.stage_name && String(body.stage_name).toLowerCase().includes('book'))
+      (body.status && String(body.status).toLowerCase().includes('book')) ||
+      (body.stage_name && String(body.stage_name).toLowerCase().includes('book')) ||
+      (body.stage_id && String(body.stage_id).toLowerCase().includes('book'))
     );
 
     // Merge existing raw_payload non-destructively
@@ -106,7 +109,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       delete payload.stage_id;
     }
 
-    if (isBookedNow) resolvedStageName = 'Booked';
+    const finalIsBooked = isBookedNow || Boolean(resolvedStageName && String(resolvedStageName).toLowerCase().includes('book'));
+    if (finalIsBooked) resolvedStageName = 'Booked';
     if (resolvedStageName && !payload.status) {
       payload.status = resolvedStageName;
     }
@@ -137,7 +141,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    if (isBookedNow) {
+    if (finalIsBooked) {
       try {
         await syncBookedLeadOrFinalQuotation({
           leadId,

@@ -368,18 +368,25 @@ export async function POST(
         // 3F. Studio Storage Hub: Auto-create client storage project asset card
         (async () => {
           try {
+            const isValidUUID = (val?: string | null) =>
+              Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
+            const safeStorageWs = isValidUUID(workspaceId)
+              ? workspaceId
+              : (isValidUUID(lead.workspace_id) ? lead.workspace_id : (isValidUUID(lead.tenant_id) ? lead.tenant_id : '00000000-0000-0000-0000-000000000000'));
+
             const { data: existingAsset } = await supabaseAdmin
               .from('storage_project_assets')
               .select('id')
-              .eq('workspace_id', workspaceId)
+              .eq('workspace_id', safeStorageWs)
               .eq('lead_id', leadId)
               .maybeSingle();
 
             if (!existingAsset) {
-              await supabaseAdmin
+              const { error: insErr } = await supabaseAdmin
                 .from('storage_project_assets')
                 .insert({
-                  workspace_id: workspaceId,
+                  workspace_id: safeStorageWs,
                   lead_id: leadId,
                   client_id: workspaceClientId,
                   client_name: coupleName.trim(),
@@ -422,8 +429,14 @@ export async function POST(
                   created_at: nowIso,
                   updated_at: nowIso
                 });
+
+              if (insErr) {
+                console.warn('[Book API Storage Hub Insert Warning]:', insErr.message);
+              }
             }
-          } catch (_) {}
+          } catch (storageErr: any) {
+            console.warn('[Book API Storage Hub Exception]:', storageErr?.message);
+          }
         })()
       ]);
     }

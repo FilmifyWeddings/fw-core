@@ -3,22 +3,26 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_google_client_id_here')
+  ? process.env.GOOGLE_CLIENT_ID
+  : '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com';
+
+const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CLIENT_SECRET !== 'your_google_client_secret_here')
+  ? process.env.GOOGLE_CLIENT_SECRET
+  : '';
 
 export async function GET(req: NextRequest) {
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
   const proto = req.headers.get('x-forwarded-proto') || (req.nextUrl.protocol ? req.nextUrl.protocol.replace(':', '') : 'https');
   const origin = `${proto}://${host}`;
 
+  let returnPath = '/workspace/storage';
+
   try {
     const { searchParams } = new URL(req.url);
     const code = searchParams.get('code');
     const stateParam = searchParams.get('state');
-
-    if (!code) {
-      return NextResponse.redirect(`${origin}/workspace/data-manager?error=no_code`);
-    }
+    const oauthError = searchParams.get('error');
 
     // Decode state
     let workspaceId = '00000000-0000-0000-0000-000000000000';
@@ -27,6 +31,7 @@ export async function GET(req: NextRequest) {
         if (stateParam.startsWith('{') || stateParam.length > 40) {
           const decoded = JSON.parse(Buffer.from(stateParam, 'base64url').toString('utf-8'));
           workspaceId = decoded.workspace_id || workspaceId;
+          if (decoded.return_url) returnPath = decoded.return_url;
         } else {
           workspaceId = stateParam;
         }
@@ -35,9 +40,21 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    if (!workspaceId || workspaceId === '00000000-0000-0000-0000-000000000000') {
+    if (oauthError) {
+      console.warn('[Google Drive Callback] OAuth error from Google:', oauthError);
+      return NextResponse.redirect(`${origin}${returnPath}?error=${encodeURIComponent(oauthError)}`);
+    }
+
+    if (!code) {
+      return NextResponse.redirect(`${origin}${returnPath}?error=no_code`);
+    }
+
+    const isValidUUID = (val?: string | null) =>
+      Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
+    if (!isValidUUID(workspaceId) || workspaceId === '00000000-0000-0000-0000-000000000000') {
       const { data: workspace } = await supabaseAdmin.from('workspaces').select('id').limit(1).maybeSingle();
-      if (workspace?.id) workspaceId = workspace.id;
+      if (workspace?.id && isValidUUID(workspace.id)) workspaceId = workspace.id;
     }
 
     const redirectUri = process.env.GOOGLE_DRIVE_REDIRECT_URI || `${origin}/api/storage/google/callback`;
@@ -49,7 +66,7 @@ export async function GET(req: NextRequest) {
       body: new URLSearchParams({
         code,
         client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET || '',
+        client_secret: GOOGLE_CLIENT_SECRET,
         redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),
@@ -57,8 +74,10 @@ export async function GET(req: NextRequest) {
 
     const tokenData = await tokenRes.json();
     if (!tokenRes.ok) {
-      console.error('Google token error:', tokenData);
-      return NextResponse.redirect(`${origin}/workspace/data-manager?error=token_failed`);
+      console.error('[Google Drive Callback] Token exchange error:', tokenData);
+      const reason = tokenData.error || 'token_failed';
+      // Redirect strictly back to /workspace/storage with helpful parameters
+      return NextResponse.redirect(`${origin}${returnPath}?error=token_failed&reason=${encodeURIComponent(reason)}&google_connect=manual`);
     }
 
     const { access_token, refresh_token } = tokenData;
@@ -103,9 +122,10 @@ export async function GET(req: NextRequest) {
     }
 
     // 4. Save into Supabase Database
+    const effectiveWs = isValidUUID(workspaceId) ? workspaceId : '00000000-0000-0000-0000-000000000000';
     const { error: upsertErr } = await supabaseAdmin.from('storage_drive_accounts').upsert(
       {
-        workspace_id: workspaceId,
+        workspace_id: effectiveWs,
         account_email: email,
         account_label: userName,
         access_token,
@@ -120,12 +140,12 @@ export async function GET(req: NextRequest) {
     );
 
     if (upsertErr) {
-      console.error('DB upsert error:', upsertErr);
+      console.error('[Google Drive Callback] DB upsert error:', upsertErr);
     }
 
-    return NextResponse.redirect(`${origin}/workspace/data-manager?connected=true&email=${encodeURIComponent(email)}`);
+    return NextResponse.redirect(`${origin}${returnPath}?connected=true&email=${encodeURIComponent(email)}`);
   } catch (err: any) {
-    console.error('Callback error:', err);
-    return NextResponse.redirect(`${origin}/workspace/data-manager?error=server_error`);
+    console.error('[Google Drive Callback] Exception:', err);
+    return NextResponse.redirect(`${origin}${returnPath}?error=server_error`);
   }
 }

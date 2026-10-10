@@ -50,11 +50,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'account_email is required' }, { status: 400 });
     }
 
-    const effectiveWs = workspace_id || '00000000-0000-0000-0000-000000000000';
-    const totalBytes = (total_storage_gb || 2000) * 1024 * 1024 * 1024;
-    const usedBytes = (used_storage_gb || 0) * 1024 * 1024 * 1024;
+    const isValidUUID = (val?: string | null) =>
+      Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
-    const driveAccountPayload = {
+    const effectiveWs = isValidUUID(workspace_id) ? workspace_id : '00000000-0000-0000-0000-000000000000';
+    const totalBytes = Number(total_storage_gb || 2000) * 1024 * 1024 * 1024;
+    const usedBytes = Number(used_storage_gb || 0) * 1024 * 1024 * 1024;
+
+    const driveAccountPayload: any = {
       workspace_id: effectiveWs,
       account_email: account_email.trim(),
       account_label: account_label || 'Wedding Deliverables Drive',
@@ -64,6 +67,9 @@ export async function POST(req: NextRequest) {
       is_active: true,
       updated_at: new Date().toISOString(),
     };
+
+    if (body.access_token) driveAccountPayload.access_token = body.access_token;
+    if (body.refresh_token) driveAccountPayload.refresh_token = body.refresh_token;
 
     const { data: insertedAccount, error: dbErr } = await supabaseAdmin
       .from('storage_drive_accounts')

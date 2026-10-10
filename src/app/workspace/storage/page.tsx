@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { 
   HardDrive, Database, Search, Cloud, Plus, RefreshCw, 
   Folder, Film, Image as ImageIcon, CheckCircle2, AlertTriangle, ExternalLink, 
   Copy, Check, MapPin, User, Tag, Clock, ArrowUpRight, ShieldCheck, Sparkles, 
   Trash2, Edit3, Monitor, Layers, ChevronRight, Download, Filter, Eye, Cpu, Zap, X,
-  FolderOpen, Laptop, CheckSquare, Square, ChevronDown, Building2, Calendar
+  FolderOpen, Laptop, CheckSquare, Square, ChevronDown, Building2, Calendar, FolderPlus,
+  Users, CheckCircle
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
@@ -110,7 +112,15 @@ interface ProjectAsset {
   updated_at: string;
 }
 
+interface ManualSubEventForm {
+  name: string;
+  date: string;
+  venue: string;
+  crew: { name: string; role: string }[];
+}
+
 export default function StorageHubPage() {
+  const router = useRouter();
   const { workspaceId, userName } = useWorkspace();
   const effectiveWsId = workspaceId || '00000000-0000-0000-0000-000000000000';
 
@@ -121,6 +131,9 @@ export default function StorageHubPage() {
   const [driveAccounts, setDriveAccounts] = useState<DriveAccount[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // URL Toast feedback
+  const [urlToast, setUrlToast] = useState<{ type: 'success' | 'warning' | 'info'; message: string } | null>(null);
+
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'INGESTING' | 'COPIED_LOCAL' | 'BACKED_UP_CLOUD' | 'ARCHIVED'>('ALL');
@@ -129,6 +142,8 @@ export default function StorageHubPage() {
   const [copiedPathId, setCopiedPathId] = useState<string | null>(null);
 
   // Modals
+  const [showAddProjectModal, setShowAddProjectModal] = useState(false);
+  const [showConnectDriveModal, setShowConnectDriveModal] = useState(false);
   const [showAddCardModal, setShowAddCardModal] = useState(false);
   const [showAddDiskModal, setShowAddDiskModal] = useState(false);
   const [showGooglePickerModal, setShowGooglePickerModal] = useState(false);
@@ -145,6 +160,35 @@ export default function StorageHubPage() {
   const [newDiskType, setNewDiskType] = useState('EXTERNAL_SSD');
   const [newDiskCapacity, setNewDiskCapacity] = useState('2000');
   const [newDiskLocation, setNewDiskLocation] = useState('Desk 1');
+
+  // Manual Project Form states
+  const [manualClientName, setManualClientName] = useState('');
+  const [manualEventDate, setManualEventDate] = useState('');
+  const [manualPackageAmount, setManualPackageAmount] = useState('');
+  const [manualSelectedDiskId, setManualSelectedDiskId] = useState('');
+  const [manualSubEvents, setManualSubEvents] = useState<ManualSubEventForm[]>([
+    {
+      name: 'Main Wedding',
+      date: new Date().toISOString().split('T')[0],
+      venue: '',
+      crew: [
+        { name: 'Lead Photographer', role: 'Traditional Photography' },
+        { name: 'Candid Cinematographer', role: 'Candid Cinematography' }
+      ]
+    }
+  ]);
+  const [availableLeads, setAvailableLeads] = useState<any[]>([]);
+  const [selectedLeadIdForProject, setSelectedLeadIdForProject] = useState('');
+  const [savingProject, setSavingProject] = useState(false);
+
+  // Connect Google Drive Form states
+  const [connectDriveTab, setConnectDriveTab] = useState<'gis' | 'manual' | 'oauth'>('gis');
+  const [manualDriveEmail, setManualDriveEmail] = useState('');
+  const [manualDriveLabel, setManualDriveLabel] = useState('Primary Wedding Deliverables');
+  const [manualDriveCapacityGb, setManualDriveCapacityGb] = useState<number>(2000);
+  const [manualDriveUsedGb, setManualDriveUsedGb] = useState<number>(0);
+  const [isConnectingGis, setIsConnectingGis] = useState(false);
+  const [gisStatusText, setGisStatusText] = useState('');
 
   // Google Folder Browser states
   const [selectedGoogleAccount, setSelectedGoogleAccount] = useState<DriveAccount | null>(null);
@@ -187,10 +231,102 @@ export default function StorageHubPage() {
     loadStorageData();
   }, [loadStorageData]);
 
+  // Handle URL redirect query parameters (e.g. from Google OAuth callback)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get('connected');
+    const email = params.get('email');
+    const err = params.get('error');
+    const reason = params.get('reason');
+
+    if (connected === 'true') {
+      setUrlToast({
+        type: 'success',
+        message: `🎉 Google Drive (${email ? decodeURIComponent(email) : 'Account'}) connected successfully!`
+      });
+      window.history.replaceState({}, '', '/workspace/storage');
+      loadStorageData();
+    } else if (err) {
+      if (err === 'token_failed') {
+        setUrlToast({
+          type: 'warning',
+          message: `Google authorization note: "${reason || 'token_failed'}". You can use "⚡ 1-Click Instant Sign-In" or enter your storage capacity manually.`
+        });
+        setShowConnectDriveModal(true);
+        setConnectDriveTab('manual');
+      } else {
+        setUrlToast({
+          type: 'warning',
+          message: `Notice from Google connection: ${err}`
+        });
+      }
+      window.history.replaceState({}, '', '/workspace/storage');
+    }
+  }, [loadStorageData]);
+
+  // Load available leads when opening manual project modal
+  const handleOpenAddProjectModal = async () => {
+    setShowAddProjectModal(true);
+    setManualClientName('');
+    setManualEventDate(new Date().toISOString().split('T')[0]);
+    setManualPackageAmount('');
+    setSelectedLeadIdForProject('');
+    setManualSubEvents([
+      {
+        name: 'Main Wedding',
+        date: new Date().toISOString().split('T')[0],
+        venue: '',
+        crew: [
+          { name: 'Lead Photographer', role: 'Traditional Photography' },
+          { name: 'Candid Cinematographer', role: 'Candid Cinematography' }
+        ]
+      }
+    ]);
+
+    try {
+      const res = await fetch(`/api/leads?workspace_id=${effectiveWsId}`).then(r => r.json());
+      if (res.leads || res.data) {
+        setAvailableLeads(res.leads || res.data || []);
+      }
+    } catch (_) {}
+  };
+
+  // Populate manual project modal from selected lead
+  const handleSelectLeadToAutofill = (leadId: string) => {
+    setSelectedLeadIdForProject(leadId);
+    const matched = availableLeads.find(l => l.id === leadId);
+    if (!matched) return;
+
+    const raw = matched.raw_payload || {};
+    const name = raw.couple_name || raw.couple_names || matched.name || '';
+    setManualClientName(name);
+    setManualEventDate(matched.event_date || new Date().toISOString().split('T')[0]);
+    setManualPackageAmount(String(matched.budget || ''));
+
+    const rawEvents = raw.events || raw.sub_events;
+    if (Array.isArray(rawEvents) && rawEvents.length > 0) {
+      setManualSubEvents(rawEvents.map((ev: any) => ({
+        name: ev.name || ev.title || 'Wedding Event',
+        date: ev.date || matched.event_date || new Date().toISOString().split('T')[0],
+        venue: ev.venue || matched.location || '',
+        crew: Array.isArray(ev.crew) ? ev.crew.map((c: any) => ({
+          name: c.name || 'Crew Member',
+          role: c.role || 'Cinematography'
+        })) : [
+          { name: 'Photographer', role: 'Photography' }
+        ]
+      })));
+    }
+  };
+
   // Real-time synchronization
   useEffect(() => {
     const channel = supabase.channel(`storage-hub-${effectiveWsId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'storage_project_assets' }, () => {
+        loadStorageData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'storage_drive_accounts' }, () => {
         loadStorageData();
       })
       .subscribe();
@@ -303,22 +439,21 @@ export default function StorageHubPage() {
           ...cr,
           is_copied: nextCopiedState,
           copied_at: nextCopiedState ? nowIso : null,
-          copied_by: nextCopiedState ? (userName || 'Studio Manager') : null,
+          copied_by: nextCopiedState ? (userName || 'Studio Editor') : null,
         };
       });
       return { ...ev, crew: updatedCrew };
     });
 
-    // Check overall storage status
-    const allCopied = updatedSubEvents.every(ev => ev.crew.every(cr => cr.is_copied));
-    const overallStatus = targetProject.google_drive_backup?.is_backed_up 
-      ? 'BACKED_UP_CLOUD' 
-      : (allCopied ? 'COPIED_LOCAL' : 'INGESTING');
+    const allCopied = updatedSubEvents.every(ev => ev.crew.every(c => c.is_copied));
+    const nextStatus = allCopied 
+      ? (targetProject.google_drive_backup?.is_backed_up ? 'BACKED_UP_CLOUD' : 'COPIED_LOCAL')
+      : 'INGESTING';
 
     setProjects(prev => prev.map(p => p.id === projectId ? {
       ...p,
       sub_events: updatedSubEvents,
-      overall_storage_status: overallStatus,
+      overall_storage_status: nextStatus as any,
     } : p));
 
     await fetch('/api/storage/projects', {
@@ -327,51 +462,53 @@ export default function StorageHubPage() {
       body: JSON.stringify({
         id: projectId,
         sub_events: updatedSubEvents,
-        overall_storage_status: overallStatus,
+        overall_storage_status: nextStatus,
       }),
     });
   };
 
-  // Assign Hard Drive / SSD
+  // Assign Physical Disk
   const handleAssignDisk = async (projectId: string, diskId: string) => {
-    const disk = disks.find(d => d.id === diskId);
-    if (!disk) return;
+    const targetDisk = disks.find(d => d.id === diskId);
+    if (!targetDisk) return;
 
     const targetProject = projects.find(p => p.id === projectId);
     if (!targetProject) return;
 
-    const currentDisks = targetProject.assigned_disks || [];
-    const exists = currentDisks.some(d => d.disk_id === diskId);
-    if (exists) return;
+    const exists = targetProject.assigned_disks?.some(d => d.disk_id === diskId);
+    let updatedDisks: AssignedDiskItem[];
 
-    const newDiskEntry: AssignedDiskItem = {
-      disk_id: disk.id,
-      disk_name: disk.disk_name,
-      drive_type: disk.disk_type,
-      role: currentDisks.length === 0 ? 'PRIMARY_WORK_DRIVE' : 'BACKUP_MIRROR',
-      folder_path: `${disk.drive_letter || 'D:'}\\Weddings\\${targetProject.client_name.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
-      folder_name: targetProject.client_name.replace(/[^a-zA-Z0-9_-]/g, '_'),
-      total_size_gb: 0,
-      file_count: 0,
-      last_scanned_at: new Date().toISOString(),
-      scanned_on_machine: typeof window !== 'undefined' ? window.location.hostname : 'Studio-PC',
-    };
+    if (exists) {
+      updatedDisks = targetProject.assigned_disks.filter(d => d.disk_id !== diskId);
+    } else {
+      const newAssigned: AssignedDiskItem = {
+        disk_id: targetDisk.id,
+        disk_name: targetDisk.disk_name,
+        drive_type: targetDisk.disk_type,
+        role: 'Primary Raw Archive',
+        folder_path: `${targetDisk.disk_name}/${targetProject.client_name.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
+        folder_name: `${targetProject.client_name}_RAW`,
+        total_size_gb: 0,
+        file_count: 0,
+        last_scanned_at: new Date().toISOString(),
+        scanned_on_machine: 'Studio Workstation',
+      };
+      updatedDisks = [...(targetProject.assigned_disks || []), newAssigned];
+    }
 
-    const nextDisks = [...currentDisks, newDiskEntry];
-
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: nextDisks } : p));
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: updatedDisks } : p));
 
     await fetch('/api/storage/projects', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: projectId, assigned_disks: nextDisks }),
+      body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
     });
   };
 
-  // Native Web File System Access API: Pick Directory
-  const handlePickFolder = async (projectId: string, diskId: string) => {
+  // HTML5 Native File System Access API
+  const handlePickDirectory = async (projectId: string, diskItemIndex: number) => {
     if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
-      alert('Directory Picker API is available in Google Chrome, Microsoft Edge, and modern desktop browsers.');
+      alert('Your browser does not support the Native Directory Picker. Supported in Chrome, Edge, and Opera desktop.');
       return;
     }
 
@@ -383,118 +520,112 @@ export default function StorageHubPage() {
       if (!dirHandle) return;
 
       const folderName = dirHandle.name;
+      let totalBytes = 0;
       let fileCount = 0;
       let photoCount = 0;
       let videoCount = 0;
-      let totalBytes = 0;
 
-      // Recursive / iterative file counter (sampled up to 5000 files for high responsiveness)
-      try {
-        for await (const entry of dirHandle.values()) {
-          if (entry.kind === 'file') {
-            fileCount++;
-            const name = entry.name.toLowerCase();
-            if (name.endsWith('.arw') || name.endsWith('.cr3') || name.endsWith('.nef') || name.endsWith('.jpg') || name.endsWith('.dng')) {
-              photoCount++;
-            } else if (name.endsWith('.mp4') || name.endsWith('.mov') || name.endsWith('.mxf') || name.endsWith('.braw')) {
-              videoCount++;
-            }
-            try {
-              const file = await entry.getFile();
-              totalBytes += file.size || 0;
-            } catch (_) {}
-          }
+      const photoExts = ['.arw', '.cr3', '.cr2', '.nef', '.dng', '.jpg', '.jpeg', '.png', '.raw'];
+      const videoExts = ['.mp4', '.mov', '.mxf', '.braw', '.avi'];
+
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file') {
+          fileCount++;
+          const file = await entry.getFile();
+          totalBytes += file.size;
+          const lowerName = file.name.toLowerCase();
+          if (photoExts.some(ext => lowerName.endsWith(ext))) photoCount++;
+          if (videoExts.some(ext => lowerName.endsWith(ext))) videoCount++;
         }
-      } catch (_) {}
+      }
 
-      const totalSizeGb = Number((totalBytes / (1024 * 1024 * 1024)).toFixed(2)) || 0;
-
+      const totalSizeGb = Number((totalBytes / (1024 * 1024 * 1024)).toFixed(2));
       const targetProject = projects.find(p => p.id === projectId);
       if (!targetProject) return;
 
-      const assignedDisks = (targetProject.assigned_disks || []).map(d => {
-        if (d.disk_id !== diskId) return d;
-        return {
-          ...d,
+      const updatedDisks = [...(targetProject.assigned_disks || [])];
+      if (updatedDisks[diskItemIndex]) {
+        updatedDisks[diskItemIndex] = {
+          ...updatedDisks[diskItemIndex],
           folder_name: folderName,
-          folder_path: `${d.folder_path ? d.folder_path.split('\\')[0] || 'D:' : 'D:'}\\${folderName}`,
+          folder_path: `[Local]: /Volumes/${folderName}`,
+          total_size_gb: totalSizeGb,
           file_count: fileCount,
           photo_count: photoCount,
           video_count: videoCount,
-          total_size_gb: totalSizeGb,
           last_scanned_at: new Date().toISOString(),
-          scanned_on_machine: window.location.hostname || 'Local Workstation',
+          scanned_on_machine: window.navigator.userAgent.includes('Mac') ? 'Mac Studio' : 'Windows Rig',
         };
-      });
+      }
 
-      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: assignedDisks } : p));
+      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: updatedDisks } : p));
 
       await fetch('/api/storage/projects', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: projectId, assigned_disks: assignedDisks }),
+        body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
       });
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        console.error('Error picking directory:', err);
+        console.error('Directory Picker Error:', err);
       }
     }
   };
 
-  // Copy Path to Clipboard
-  const handleCopyPath = (path: string, key: string) => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(path);
-      setCopiedPathId(key);
-      setTimeout(() => setCopiedPathId(null), 2500);
-    }
+  // Copy local folder path
+  const handleCopyPath = (path: string, id: string) => {
+    navigator.clipboard.writeText(path);
+    setCopiedPathId(id);
+    setTimeout(() => setCopiedPathId(null), 2500);
   };
 
-  // Open Google Drive Picker Modal
-  const openGoogleDrivePicker = async (project: ProjectAsset) => {
-    setActiveProjectForGoogle(project);
-    setShowGooglePickerModal(true);
-    setSelectedFolderForLink(null);
-
-    if (driveAccounts.length > 0) {
-      const activeAcc = selectedGoogleAccount || driveAccounts[0];
-      setSelectedGoogleAccount(activeAcc);
-      fetchGoogleFolders(activeAcc.id, 'root');
-    }
-  };
-
-  // Fetch Google Drive Folders
-  const fetchGoogleFolders = async (accountId: string, parentId = 'root') => {
+  // Google Folder Navigation
+  const fetchGoogleFolders = useCallback(async (accountId: string, parentId: string = 'root') => {
     setGoogleFolderLoading(true);
     try {
       const res = await fetch(`/api/storage/google/folders?account_id=${accountId}&parent_id=${parentId}`);
       const json = await res.json();
       if (json.success) {
         setGoogleFolders(json.folders || []);
-        setGoogleCurrentFolder(json.currentFolder || { id: parentId, name: 'Folder' });
       }
     } catch (err) {
-      console.warn('Error fetching google folders:', err);
+      console.warn('Failed to fetch google folders:', err);
     } finally {
       setGoogleFolderLoading(false);
     }
+  }, []);
+
+  const handleOpenGooglePicker = (project: ProjectAsset) => {
+    setActiveProjectForGoogle(project);
+    setSelectedFolderForLink(null);
+    setGoogleBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
+    setGoogleCurrentFolder({ id: 'root', name: 'My Drive' });
+
+    if (driveAccounts.length > 0) {
+      const acc = driveAccounts[0];
+      setSelectedGoogleAccount(acc);
+      fetchGoogleFolders(acc.id, 'root');
+    }
+    setShowGooglePickerModal(true);
   };
 
-  // Navigate deeper in Google Drive
-  const handleNavigateGoogleFolder = (folder: any) => {
-    setGoogleBreadcrumbs(prev => [...prev, { id: folder.id, name: folder.name }]);
-    fetchGoogleFolders(selectedGoogleAccount!.id, folder.id);
+  const handleNavigateGoogleFolder = (folder: { id: string; name: string }) => {
+    if (!selectedGoogleAccount) return;
+    setGoogleCurrentFolder(folder);
+    setGoogleBreadcrumbs(prev => [...prev, folder]);
+    fetchGoogleFolders(selectedGoogleAccount.id, folder.id);
   };
 
-  // Navigate breadcrumb
-  const handleBreadcrumbClick = (crumb: any, index: number) => {
+  const handleBreadcrumbClick = (crumb: { id: string; name: string }, index: number) => {
+    if (!selectedGoogleAccount) return;
     setGoogleBreadcrumbs(prev => prev.slice(0, index + 1));
-    fetchGoogleFolders(selectedGoogleAccount!.id, crumb.id);
+    setGoogleCurrentFolder(crumb);
+    fetchGoogleFolders(selectedGoogleAccount.id, crumb.id);
   };
 
-  // Create New Folder in Google Drive
+  // Create Google Drive Folder
   const handleCreateDriveFolder = async () => {
-    if (!newDriveFolderName.trim() || !selectedGoogleAccount) return;
+    if (!selectedGoogleAccount || !newDriveFolderName.trim()) return;
     setCreatingDriveFolder(true);
     try {
       const res = await fetch('/api/storage/google/folders', {
@@ -603,6 +734,227 @@ export default function StorageHubPage() {
     }
   };
 
+  // Submit Manual Project Card Form
+  const handleCreateManualProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualClientName.trim()) return;
+
+    setSavingProject(true);
+    try {
+      const selectedDisk = disks.find(d => d.id === manualSelectedDiskId);
+      const assignedDisksPayload: AssignedDiskItem[] = selectedDisk ? [
+        {
+          disk_id: selectedDisk.id,
+          disk_name: selectedDisk.disk_name,
+          drive_type: selectedDisk.disk_type,
+          role: 'Primary Raw Archive',
+          folder_path: `${selectedDisk.disk_name}/${manualClientName.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
+          folder_name: `${manualClientName.trim()}_RAW`,
+          total_size_gb: 0,
+          file_count: 0,
+        }
+      ] : [];
+
+      const formattedSubEvents: SubEventItem[] = manualSubEvents.map((ev, evIdx) => ({
+        id: `ev_${evIdx + 1}_${Date.now()}`,
+        name: ev.name.trim() || `Event ${evIdx + 1}`,
+        date: ev.date || manualEventDate || new Date().toISOString().split('T')[0],
+        venue: ev.venue || '',
+        crew: ev.crew.map((c, cIdx) => ({
+          id: `cr_${evIdx + 1}_${cIdx + 1}`,
+          name: c.name.trim() || `Crew Member ${cIdx + 1}`,
+          role: c.role || 'Photography',
+          assigned_card_ids: [],
+          assigned_card_names: [],
+          is_copied: false,
+          copied_at: null,
+          copied_by: null,
+        }))
+      }));
+
+      const payload = {
+        workspace_id: effectiveWsId,
+        lead_id: selectedLeadIdForProject || `manual_${Date.now()}`,
+        client_name: manualClientName.trim(),
+        event_date: manualEventDate || new Date().toISOString().split('T')[0],
+        package_amount: Number(manualPackageAmount) || 0,
+        sub_events: formattedSubEvents,
+        assigned_disks: assignedDisksPayload,
+        google_drive_backup: {},
+        overall_storage_status: 'INGESTING',
+      };
+
+      const res = await fetch('/api/storage/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      if (json.success && json.project) {
+        setProjects(prev => [json.project, ...prev.filter(p => p.id !== json.project.id)]);
+        setShowAddProjectModal(false);
+        setUrlToast({
+          type: 'success',
+          message: `🎉 Storage Project Card created for "${manualClientName}"!`
+        });
+      } else {
+        alert(json.error || 'Failed to create storage card');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Error creating storage project');
+    } finally {
+      setSavingProject(false);
+    }
+  };
+
+  // Google Identity Services (GIS) One-Click Sign-In
+  const handleGisConnect = () => {
+    if (typeof window === 'undefined') return;
+    setIsConnectingGis(true);
+    setGisStatusText('Initializing Google Sign-In...');
+
+    const loadGsiScript = () => {
+      return new Promise<void>((resolve, reject) => {
+        if ((window as any).google?.accounts?.oauth2) return resolve();
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+        document.body.appendChild(script);
+      });
+    };
+
+    loadGsiScript().then(() => {
+      const client = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com',
+        scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly',
+        callback: async (resp: any) => {
+          if (resp.error) {
+            setIsConnectingGis(false);
+            setGisStatusText('');
+            alert('Google Sign-In cancelled or failed: ' + resp.error);
+            return;
+          }
+
+          if (resp.access_token) {
+            setGisStatusText('Detecting Google Drive Storage Quota...');
+            try {
+              let email = 'studio.drive@gmail.com';
+              let name = 'Studio Google Drive';
+              try {
+                const uRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                  headers: { Authorization: `Bearer ${resp.access_token}` },
+                });
+                if (uRes.ok) {
+                  const uData = await uRes.json();
+                  email = uData.email || email;
+                  name = uData.name || email.split('@')[0];
+                }
+              } catch (_) {}
+
+              let totalGb = 2000;
+              let usedGb = 0;
+              try {
+                const abRes = await fetch('https://www.googleapis.com/drive/v3/about?fields=storageQuota', {
+                  headers: { Authorization: `Bearer ${resp.access_token}` },
+                });
+                if (abRes.ok) {
+                  const abData = await abRes.json();
+                  const q = abData.storageQuota || {};
+                  if (q.limit) totalGb = Number((Number(q.limit) / (1024 ** 3)).toFixed(1));
+                  if (q.usage) usedGb = Number((Number(q.usage) / (1024 ** 3)).toFixed(1));
+                }
+              } catch (_) {}
+
+              const saveRes = await fetch('/api/storage/google/accounts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  workspace_id: effectiveWsId,
+                  account_email: email,
+                  account_label: name,
+                  total_storage_gb: totalGb,
+                  used_storage_gb: usedGb,
+                  access_token: resp.access_token,
+                }),
+              });
+
+              const json = await saveRes.json();
+              if (json.success && json.account) {
+                setDriveAccounts(prev => [json.account, ...prev.filter(a => a.id !== json.account.id)]);
+                setShowConnectDriveModal(false);
+                setUrlToast({
+                  type: 'success',
+                  message: `🎉 Google Drive (${email}) connected! (${usedGb} GB used of ${totalGb} GB)`
+                });
+              }
+            } catch (ex: any) {
+              alert('Failed to detect Google Drive quota: ' + ex.message);
+            } finally {
+              setIsConnectingGis(false);
+              setGisStatusText('');
+            }
+          }
+        }
+      });
+      client.requestAccessToken({ prompt: 'consent' });
+    }).catch(() => {
+      setIsConnectingGis(false);
+      setGisStatusText('');
+      window.location.href = `/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWsId)}&return_url=/workspace/storage`;
+    });
+  };
+
+  // Direct manual link of Google Account
+  const handleManualDriveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualDriveEmail.trim()) return;
+
+    try {
+      const res = await fetch('/api/storage/google/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: effectiveWsId,
+          account_email: manualDriveEmail.trim(),
+          account_label: manualDriveLabel.trim() || 'Wedding Deliverables Drive',
+          total_storage_gb: Number(manualDriveCapacityGb) || 2000,
+          used_storage_gb: Number(manualDriveUsedGb) || 0,
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success && json.account) {
+        setDriveAccounts(prev => [json.account, ...prev.filter(a => a.id !== json.account.id)]);
+        setShowConnectDriveModal(false);
+        setManualDriveEmail('');
+        setUrlToast({
+          type: 'success',
+          message: `🎉 Google Drive (${json.account.account_email}) linked successfully!`
+        });
+      } else {
+        alert(json.error || 'Failed to save drive account');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Error saving drive account');
+    }
+  };
+
+  // Disconnect Google Account
+  const handleDeleteGoogleAccount = async (id: string) => {
+    if (!confirm('Are you sure you want to disconnect this Google Drive account?')) return;
+    try {
+      const res = await fetch(`/api/storage/google/accounts?id=${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (json.success) {
+        setDriveAccounts(prev => prev.filter(a => a.id !== id));
+        setUrlToast({ type: 'info', message: 'Google Drive disconnected' });
+      }
+    } catch (_) {}
+  };
+
   // Storage Stats Calculation
   const stats = useMemo(() => {
     const totalProjects = projects.length;
@@ -633,6 +985,32 @@ export default function StorageHubPage() {
 
   return (
     <div className="min-h-screen bg-[#FDFCF9] text-slate-800 pb-24">
+      {/* ── URL NOTIFICATION BANNER / TOAST ── */}
+      {urlToast && (
+        <div className={`px-4 py-3 border-b flex items-center justify-between gap-3 text-xs font-bold transition-all ${
+          urlToast.type === 'success' 
+            ? 'bg-emerald-50 text-emerald-900 border-emerald-200' 
+            : urlToast.type === 'warning'
+            ? 'bg-amber-50 text-amber-900 border-amber-200'
+            : 'bg-blue-50 text-blue-900 border-blue-200'
+        }`}>
+          <div className="max-w-7xl mx-auto flex-1 flex items-center gap-2">
+            {urlToast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            )}
+            <span>{urlToast.message}</span>
+          </div>
+          <button
+            onClick={() => setUrlToast(null)}
+            className="p-1 text-slate-500 hover:text-slate-800 rounded-lg cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* ── TOP HEADER ── */}
       <div className="bg-white border-b border-[#EAE5DA] sticky top-0 z-30 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
@@ -658,13 +1036,24 @@ export default function StorageHubPage() {
 
             {/* Quick Actions */}
             <div className="flex items-center gap-2 flex-wrap">
-              <Link
-                href="/api/storage/google/auth"
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold shadow-xs transition"
+              {/* PRIMARY ACTION: + Add Project Card */}
+              <button
+                type="button"
+                onClick={handleOpenAddProjectModal}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-md shadow-amber-600/20 transition cursor-pointer"
+              >
+                <FolderPlus className="w-4 h-4" />
+                <span>+ Add Project Card</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowConnectDriveModal(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold shadow-xs transition cursor-pointer"
               >
                 <Cloud className="w-4 h-4 text-blue-600" />
                 <span>+ Connect Google Drive</span>
-              </Link>
+              </button>
 
               <button
                 type="button"
@@ -762,6 +1151,125 @@ export default function StorageHubPage() {
 
       {/* ── MAIN CONTENT CONTAINER ── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
+
+        {/* ── PROMINENT GOOGLE DRIVE CLOUD ACCOUNTS SECTION ── */}
+        <div className="bg-white p-5 rounded-2xl border border-[#EAE5DA] shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                <Cloud className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                  Connected Google Drive Cloud Accounts
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                    {driveAccounts.length} Active
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Live cloud storage quota tracking & direct folder links for client wedding cards
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowConnectDriveModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs cursor-pointer self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Connect Google Drive</span>
+            </button>
+          </div>
+
+          {driveAccounts.length === 0 ? (
+            <div className="p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="text-slate-500">
+                No Google Drive accounts connected yet. Link your Google account to automatically track storage and link raw backup folders to client cards.
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConnectDriveModal(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer shrink-0"
+              >
+                ⚡ Connect Google Drive Now
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {driveAccounts.map(acc => {
+                const totalGb = Number((acc.total_storage_bytes / (1024 ** 3)).toFixed(1)) || 2000;
+                const usedGb = Number((acc.used_storage_bytes / (1024 ** 3)).toFixed(1)) || 0;
+                const freeGb = Math.max(0, Number((totalGb - usedGb).toFixed(1)));
+                const percent = Math.min(100, Math.round((usedGb / (totalGb || 1)) * 100));
+
+                return (
+                  <div key={acc.id} className="p-4 rounded-xl border border-slate-200 bg-[#FAF9F6] space-y-3 relative group">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-xs font-extrabold text-slate-900 truncate flex items-center gap-1.5">
+                          <Cloud className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span>{acc.account_email}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                          {acc.account_label || 'Studio Google Drive'}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 shrink-0">
+                        Active
+                      </span>
+                    </div>
+
+                    {/* Storage Meter Bar */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] font-mono font-bold text-slate-600">
+                        <span>{usedGb >= 1000 ? `${(usedGb / 1000).toFixed(2)} TB` : `${usedGb} GB`} used</span>
+                        <span>{freeGb >= 1000 ? `${(freeGb / 1000).toFixed(2)} TB` : `${freeGb} GB`} free</span>
+                      </div>
+                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            percent > 90 ? 'bg-red-500' : percent > 75 ? 'bg-amber-500' : 'bg-blue-600'
+                          }`}
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>{percent}% allocated</span>
+                        <span>Total: {totalGb >= 1000 ? `${(totalGb / 1000).toFixed(1)} TB` : `${totalGb} GB`}</span>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/80">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedGoogleAccount(acc);
+                          setShowGooglePickerModal(true);
+                        }}
+                        className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Folder className="w-3 h-3" />
+                        <span>Browse Folders</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteGoogleAccount(acc.id)}
+                        className="text-[11px] font-bold text-red-500 hover:text-red-700 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Disconnect</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Filters and Search Bar */}
         <div className="bg-white p-3.5 rounded-2xl border border-[#EAE5DA] shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
           {/* Search */}
@@ -780,18 +1288,18 @@ export default function StorageHubPage() {
           <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-none">
             {[
               { id: 'ALL', label: 'All Projects' },
-              { id: 'INGESTING', label: '⚠️ Ingest Pending' },
+              { id: 'INGESTING', label: '⏳ Ingest Pending' },
               { id: 'COPIED_LOCAL', label: '💾 Copied to Local' },
               { id: 'BACKED_UP_CLOUD', label: '☁️ Cloud Backed Up' },
+              { id: 'ARCHIVED', label: '🗄️ Archived' },
             ].map(tab => (
               <button
                 key={tab.id}
-                type="button"
                 onClick={() => setStatusFilter(tab.id as any)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                   statusFilter === tab.id
-                    ? 'bg-amber-500 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                 }`}
               >
                 {tab.label}
@@ -800,207 +1308,199 @@ export default function StorageHubPage() {
           </div>
         </div>
 
-        {/* ── PROJECTS LIST ── */}
+        {/* ── PROJECT CARDS LIST ── */}
         {loading ? (
-          <div className="p-16 text-center">
-            <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mx-auto mb-3" />
-            <p className="text-sm font-bold text-slate-600">Loading Storage Cards & Media Catalog...</p>
+          <div className="py-24 text-center bg-white rounded-3xl border border-[#EAE5DA] space-y-3">
+            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-600" />
+            <p className="text-sm font-bold text-slate-600">Loading Studio Storage Hub & Assets...</p>
           </div>
         ) : filteredProjects.length === 0 ? (
-          <div className="bg-white rounded-3xl p-12 text-center border border-[#EAE5DA] shadow-xs space-y-3">
-            <div className="w-16 h-16 rounded-3xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
-              <HardDrive className="w-8 h-8" />
+          <div className="py-20 text-center bg-white rounded-3xl border border-[#EAE5DA] p-6 space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-700 mx-auto flex items-center justify-center font-bold">
+              <HardDrive className="w-7 h-7" />
             </div>
-            <h3 className="text-base font-black text-slate-900">No Storage Cards Found</h3>
-            <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Storage cards are automatically created whenever a quotation is finalized or booked in Leads CRM!
-            </p>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900">No Storage Project Cards Found</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                Project cards are automatically created when a lead is booked. You can also create a card manually anytime!
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenAddProjectModal}
+              className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-md shadow-amber-600/20 inline-flex items-center gap-2 cursor-pointer"
+            >
+              <FolderPlus className="w-4 h-4" />
+              <span>+ Create Client Storage Card Now</span>
+            </button>
           </div>
         ) : (
           <div className="space-y-5">
             {filteredProjects.map(project => {
-              const allCopied = project.sub_events?.every(ev => ev.crew?.every(cr => cr.is_copied));
+              const allCopied = project.sub_events?.every(ev => ev.crew?.every(c => c.is_copied));
               const hasCloudBackup = Boolean(project.google_drive_backup?.is_backed_up);
 
               return (
                 <div
                   key={project.id}
-                  className="bg-white rounded-3xl border border-[#EAE5DA] p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow space-y-5"
+                  className="bg-white rounded-3xl border border-[#EAE5DA] p-5 sm:p-6 shadow-sm hover:shadow-md transition-all space-y-5"
                 >
-                  {/* ── CARD TOP HEADER ── */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#F0EBE0] gap-3">
+                  {/* Card Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F4EFE6] pb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center font-black text-base shadow-xs shrink-0">
-                        {project.client_name.charAt(0).toUpperCase()}
+                      <div className="w-12 h-12 rounded-2xl bg-[#FAF8F3] border border-[#EAE5DA] flex items-center justify-center text-slate-800 font-black text-sm shrink-0">
+                        {project.client_name?.slice(0, 2).toUpperCase() || 'ST'}
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
                             {project.client_name}
                           </h2>
-                          {/* Overall Status Badge */}
-                          {hasCloudBackup ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/15 text-blue-700 border border-blue-500/30">
-                              <Cloud className="w-3 h-3" /> Backed Up to Cloud
-                            </span>
-                          ) : allCopied ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/15 text-emerald-800 border border-emerald-500/30">
-                              <CheckCircle2 className="w-3 h-3" /> Copied to Local Disk
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/15 text-amber-800 border border-amber-500/30 animate-pulse">
-                              <AlertTriangle className="w-3 h-3" /> Ingest Offloading Pending
-                            </span>
-                          )}
+                          <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                            hasCloudBackup 
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                              : allCopied
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            {hasCloudBackup ? '☁️ Cloud Backed Up' : allCopied ? '💾 Copied to Local' : '⏳ Ingest Pending'}
+                          </span>
                         </div>
-                        <p className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-2">
-                          <span>Event Date: <strong>{project.event_date || 'TBD'}</strong></span>
-                          <span>•</span>
-                          <span>Booking: <strong>₹{project.package_amount?.toLocaleString('en-IN') || 0}</strong></span>
-                        </p>
+                        <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-0.5">
+                          <span>📅 {project.event_date || 'Date Pending'}</span>
+                          {project.package_amount > 0 && (
+                            <span>💰 ₹{project.package_amount.toLocaleString('en-IN')}</span>
+                          )}
+                          <span>📸 {project.sub_events?.length || 0} Sub-Events</span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Header Action Button */}
-                    <div className="flex items-center gap-2">
+                    {/* Quick Link Buttons */}
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
                       <button
                         type="button"
-                        onClick={() => openGoogleDrivePicker(project)}
+                        onClick={() => handleOpenGooglePicker(project)}
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer ${
                           hasCloudBackup
                             ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
-                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:opacity-95'
+                            : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
                         }`}
                       >
-                        <Cloud className="w-3.5 h-3.5" />
-                        <span>{hasCloudBackup ? 'Cloud Backup Linked' : 'Link Google Drive'}</span>
+                        <Cloud className="w-3.5 h-3.5 text-blue-600" />
+                        <span>{hasCloudBackup ? 'Drive Linked' : '+ Link Google Drive'}</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* ── SECTION 1: EVENT-WISE CREW & MEMORY CARDS OFFLOAD MATRIX ── */}
+                  {/* ── SUB-EVENTS & CREW-WISE CARD OFFLOADING ── */}
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                        <Cpu className="w-3.5 h-3.5 text-amber-600" />
-                        Memory Cards & Crew Offloading
-                      </h3>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddCardModal(true)}
-                        className="text-[11px] font-bold text-amber-700 hover:text-amber-800 hover:underline cursor-pointer"
-                      >
-                        + Add Studio Card
-                      </button>
-                    </div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
+                      Sub-Events & Crew Media Cards
+                    </h3>
 
                     <div className="grid grid-cols-1 gap-3">
-                      {(project.sub_events || []).map(event => (
-                        <div key={event.id} className="bg-[#FAF8F4] border border-[#EAE4D8] rounded-2xl p-3.5 space-y-2.5">
-                          {/* Event Sub-header */}
-                          <div className="flex items-center justify-between border-b border-[#EAE4D8] pb-2">
+                      {project.sub_events?.map(event => (
+                        <div
+                          key={event.id}
+                          className="bg-[#FAF8F3] border border-[#EBE6DB] rounded-2xl p-4 space-y-3"
+                        >
+                          <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-2">
                             <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-amber-500" />
-                              <h4 className="text-xs font-black text-slate-800">{event.name}</h4>
-                              <span className="text-[11px] text-slate-400 font-medium">({event.date || project.event_date})</span>
+                              <Sparkles className="w-4 h-4 text-amber-600" />
+                              <span className="text-xs font-black text-slate-900">{event.name}</span>
+                              <span className="text-[11px] font-medium text-slate-500">({event.date})</span>
                             </div>
                             {event.venue && (
-                              <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
-                                <MapPin className="w-3 h-3 text-slate-400" /> {event.venue}
-                              </span>
+                              <span className="text-[11px] text-slate-500 truncate max-w-[200px]">📍 {event.venue}</span>
                             )}
                           </div>
 
-                          {/* Crew & Cards list */}
+                          {/* Crew list in event */}
                           <div className="space-y-2">
-                            {(event.crew || []).map(crew => (
+                            {event.crew?.map(member => (
                               <div
-                                key={crew.id}
-                                className="bg-white rounded-xl p-3 border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs"
+                                key={member.id}
+                                className="bg-white border border-slate-200/80 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
                               >
-                                {/* Left: Crew Name and Role */}
                                 <div className="flex items-center gap-2.5 min-w-[200px]">
-                                  <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-xs shrink-0">
+                                  <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
                                     <User className="w-4 h-4" />
                                   </div>
                                   <div>
-                                    <div className="text-xs font-black text-slate-900">{crew.name}</div>
-                                    <div className="text-[10px] text-slate-400 font-bold">{crew.role}</div>
+                                    <div className="text-xs font-black text-slate-900">{member.name}</div>
+                                    <div className="text-[10px] font-semibold text-slate-500">{member.role}</div>
                                   </div>
                                 </div>
 
-                                {/* Middle: 3D Memory Card Dropdown Selector */}
-                                <div className="flex-1 max-w-sm">
-                                  <div className="relative">
+                                {/* 3D Memory Card Assignment Dropdown */}
+                                <div className="flex items-center gap-2 flex-1 max-w-sm">
+                                  <div className="relative w-full">
                                     <select
-                                      aria-label={`Assign memory card to ${crew.name}`}
+                                      aria-label={`Assign Memory Card for ${member.name}`}
                                       value=""
                                       onChange={e => {
-                                        if (e.target.value === 'NEW_CARD') {
+                                        if (e.target.value === '__add_new__') {
                                           setShowAddCardModal(true);
                                         } else if (e.target.value) {
-                                          handleAssignMemoryCard(project.id, event.id, crew.id, e.target.value);
+                                          handleAssignMemoryCard(project.id, event.id, member.id, e.target.value);
                                         }
                                       }}
-                                      className="w-full py-1.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer appearance-none pr-8"
+                                      className="w-full px-3 py-1.5 bg-[#FEFDF8] border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-amber-600 cursor-pointer shadow-2xs appearance-none pr-8"
                                     >
                                       <option value="">
-                                        {crew.assigned_card_names?.length 
-                                          ? `Assigned: ${crew.assigned_card_names.join(', ')}` 
+                                        {member.assigned_card_names?.length > 0 
+                                          ? `+ Add Another Card (${member.assigned_card_names.length} assigned)` 
                                           : 'Select Memory Card (SD / CFexpress)...'}
-                                      </option>
-                                      <option value="NEW_CARD" className="text-amber-700 font-black">
-                                        + Register New Memory Card in Settings
                                       </option>
                                       {memoryCards.map(c => (
                                         <option key={c.id} value={c.id}>
-                                          {c.card_name} ({c.capacity_gb}GB • {c.card_type.replace('_', ' ')})
+                                          {c.card_name} ({c.card_type} • {c.capacity_gb}GB • {c.speed_class})
                                         </option>
                                       ))}
+                                      <option value="__add_new__">➕ Register New Card...</option>
                                     </select>
                                     <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                                   </div>
+                                </div>
 
-                                  {/* Assigned Card Tags */}
-                                  {crew.assigned_card_names?.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-1.5">
-                                      {crew.assigned_card_names.map((cName, idx) => (
-                                        <span
-                                          key={idx}
-                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-500/10 text-amber-900 border border-amber-500/20"
-                                        >
-                                          <Cpu className="w-2.5 h-2.5 text-amber-600" />
-                                          {cName}
-                                        </span>
-                                      ))}
-                                    </div>
+                                {/* Assigned Card Tags */}
+                                {member.assigned_card_names?.length > 0 && (
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {member.assigned_card_names.map((name, nIdx) => (
+                                      <span
+                                        key={nIdx}
+                                        className="text-[10px] font-extrabold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1"
+                                      >
+                                        <Cpu className="w-3 h-3 text-amber-600" />
+                                        <span>{name}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* 3D Emerald Green Copied Checkbox */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCopied(project.id, event.id, member.id)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                                    member.is_copied
+                                      ? 'bg-emerald-600 text-white shadow-emerald-600/20 hover:bg-emerald-700'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                  }`}
+                                >
+                                  {member.is_copied ? (
+                                    <>
+                                      <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                                      <span>Copied & Dumped</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Square className="w-4 h-4 stroke-[1.5]" />
+                                      <span>Mark Copied</span>
+                                    </>
                                   )}
-                                </div>
-
-                                {/* Right: 3D Luxury Green Copied Checkmark */}
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleCopied(project.id, event.id, crew.id)}
-                                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-xs ${
-                                      crew.is_copied
-                                        ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-emerald-500/20'
-                                        : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600 border border-slate-200'
-                                    }`}
-                                  >
-                                    {crew.is_copied ? (
-                                      <>
-                                        <Check className="w-4 h-4 stroke-[3]" />
-                                        <span>Copied & Dumped</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Square className="w-3.5 h-3.5 text-slate-400" />
-                                        <span>Mark as Copied</span>
-                                      </>
-                                    )}
-                                  </button>
-                                </div>
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -1009,167 +1509,132 @@ export default function StorageHubPage() {
                     </div>
                   </div>
 
-                  {/* ── SECTION 2: HARD DRIVES & SSDS STORAGE ── */}
-                  <div className="space-y-3 pt-2">
+                  {/* ── PHYSICAL DISK CATALOG & LOCAL FOLDER PICKER ── */}
+                  <div className="space-y-3 pt-2 border-t border-[#F4EFE6]">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                        <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
-                        Hard Drive / SSD Storage & Folders
+                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
+                        Assigned Hard Drives / SSDs & Local Rig Folders
                       </h3>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddDiskModal(true)}
-                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer"
-                      >
-                        + Add Hard Drive / SSD
-                      </button>
-                    </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {(project.assigned_disks || []).map((diskItem, dIdx) => (
-                        <div
-                          key={dIdx}
-                          className="bg-[#FAF8F4] border border-[#EAE4D8] rounded-2xl p-3.5 space-y-3 shadow-2xs"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center shrink-0">
-                                <HardDrive className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-black text-slate-900">{diskItem.disk_name}</h4>
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                                  {diskItem.role === 'PRIMARY_WORK_DRIVE' ? 'Primary Drive' : 'Backup Mirror'}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Pick Folder Button (Native API) */}
-                            <button
-                              type="button"
-                              onClick={() => handlePickFolder(project.id, diskItem.disk_id)}
-                              className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <FolderOpen className="w-3.5 h-3.5 text-amber-600" />
-                              <span>Pick Folder</span>
-                            </button>
-                          </div>
-
-                          {/* Folder Path & Stats */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-mono font-bold text-slate-700 truncate" title={diskItem.folder_path}>
-                                📁 {diskItem.folder_path || 'No folder picked yet'}
-                              </span>
-                              {diskItem.folder_path && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopyPath(diskItem.folder_path, `${project.id}_${dIdx}`)}
-                                  className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
-                                  title="Copy Path"
-                                >
-                                  {copiedPathId === `${project.id}_${dIdx}` ? (
-                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                  ) : (
-                                    <Copy className="w-3.5 h-3.5" />
-                                  )}
-                                </button>
-                              )}
-                            </div>
-
-                            {diskItem.total_size_gb > 0 && (
-                              <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500 pt-1 border-t border-slate-100">
-                                <span>Size: <strong className="text-slate-800">{diskItem.total_size_gb} GB</strong></span>
-                                <span>•</span>
-                                <span>Files: <strong className="text-slate-800">{diskItem.file_count}</strong></span>
-                                {diskItem.photo_count !== undefined && (
-                                  <>
-                                    <span>•</span>
-                                    <span>Photos: <strong>{diskItem.photo_count}</strong></span>
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-
-                      {/* Dropdown to assign drive if none or add more */}
-                      <div className="bg-[#FAF8F4]/60 border border-dashed border-[#DFD8C8] rounded-2xl p-3.5 flex flex-col justify-center gap-2">
-                        <label className="text-[11px] font-bold text-slate-500">
-                          + Assign Hard Drive / SSD:
-                        </label>
+                      {/* Dropdown to assign disk */}
+                      <div className="relative">
                         <select
-                          aria-label="Assign hard drive to project"
+                          aria-label="Assign Hard Drive or SSD"
                           value=""
                           onChange={e => {
-                            if (e.target.value === 'NEW_DISK') {
+                            if (e.target.value === '__add_new_disk__') {
                               setShowAddDiskModal(true);
                             } else if (e.target.value) {
                               handleAssignDisk(project.id, e.target.value);
                             }
                           }}
-                          className="w-full py-1.5 px-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          className="px-3 py-1.5 bg-[#FAF8F3] border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none cursor-pointer pr-8"
                         >
-                          <option value="">Select Hard Drive / SSD from inventory...</option>
-                          <option value="NEW_DISK" className="text-emerald-700 font-black">+ Register New Drive in Settings</option>
+                          <option value="">+ Assign Physical Disk...</option>
                           {disks.map(d => (
                             <option key={d.id} value={d.id}>
-                              {d.disk_name} ({d.disk_type.replace('_', ' ')} • {d.total_capacity_gb}GB • {d.physical_location})
+                              {d.disk_name} ({d.disk_type} • {d.total_capacity_gb}GB)
                             </option>
                           ))}
+                          <option value="__add_new_disk__">➕ Add New Hard Drive...</option>
                         </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                       </div>
                     </div>
+
+                    {project.assigned_disks?.length === 0 ? (
+                      <div className="p-3 rounded-xl border border-dashed border-slate-200 text-xs text-slate-400 text-center">
+                        No physical storage disk assigned yet. Select a disk from the dropdown above.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {project.assigned_disks?.map((diskItem, dIdx) => (
+                          <div
+                            key={diskItem.disk_id}
+                            className="bg-slate-50/70 border border-slate-200 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-3 min-w-[220px]">
+                              <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                <HardDrive className="w-4 h-4 text-emerald-600" />
+                              </div>
+                              <div>
+                                <div className="text-xs font-black text-slate-900">{diskItem.disk_name}</div>
+                                <div className="text-[10px] text-slate-500 font-semibold">{diskItem.drive_type}</div>
+                              </div>
+                            </div>
+
+                            {/* Folder Path and Metadata */}
+                            <div className="flex-1 min-w-0 bg-white px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs font-mono flex items-center justify-between gap-2">
+                              <div className="truncate text-slate-700">
+                                {diskItem.folder_path || 'No folder picked yet'}
+                              </div>
+                              {diskItem.folder_path && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyPath(diskItem.folder_path, `${project.id}_${dIdx}`)}
+                                  className="text-[11px] font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1 shrink-0 p-1 rounded-md hover:bg-slate-100 cursor-pointer"
+                                  title="Copy path for editing rig"
+                                >
+                                  {copiedPathId === `${project.id}_${dIdx}` ? (
+                                    <span className="text-emerald-600 flex items-center gap-0.5">
+                                      <Check className="w-3 h-3" /> Copied
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-0.5">
+                                      <Copy className="w-3 h-3" /> Copy Path
+                                    </span>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Native Directory Picker Trigger */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handlePickDirectory(project.id, dIdx)}
+                                className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                                title="Pick folder directly from local disk"
+                              >
+                                <FolderOpen className="w-3.5 h-3.5 text-amber-600" />
+                                <span>{diskItem.folder_name ? 'Change Folder' : 'Pick Folder'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  {/* ── SECTION 3: CLOUD BACKUP (GOOGLE DRIVE) ── */}
-                  <div className="pt-2 border-t border-[#F0EBE0] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                        hasCloudBackup ? 'bg-blue-500/15 text-blue-600' : 'bg-slate-100 text-slate-400'
-                      }`}>
-                        <Cloud className="w-4 h-4" />
-                      </div>
-                      <div>
-                        {hasCloudBackup ? (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-black text-slate-800">
-                              Google Drive Folder: {project.google_drive_backup?.folder_name}
-                            </span>
-                            <span className="text-[10px] text-blue-700 font-bold px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200">
-                              {project.google_drive_backup?.account_email}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs font-bold text-slate-500">
-                            Cloud Backup Pending (No Google Drive folder linked yet)
+                  {/* ── GOOGLE DRIVE BACKUP STATUS BANNER ── */}
+                  {project.google_drive_backup?.is_backed_up && (
+                    <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Cloud className="w-5 h-5 text-blue-600 shrink-0" />
+                        <div className="min-w-0">
+                          <span className="font-extrabold text-blue-950">Google Drive Backup: </span>
+                          <span className="font-semibold text-blue-800 truncate">
+                            {project.google_drive_backup.folder_name || 'Project Folder'}
                           </span>
-                        )}
+                          <span className="text-[11px] text-blue-600 ml-2">
+                            ({project.google_drive_backup.account_email})
+                          </span>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      {project.google_drive_backup?.web_view_link && (
+                      {project.google_drive_backup.web_view_link && (
                         <a
                           href={project.google_drive_backup.web_view_link}
                           target="_blank"
                           rel="noreferrer"
-                          className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                          className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 shrink-0 shadow-xs"
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
                           <span>Open in Drive</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => openGoogleDrivePicker(project)}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
-                      >
-                        {hasCloudBackup ? 'Change Folder' : 'Link Drive Folder'}
-                      </button>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -1177,19 +1642,478 @@ export default function StorageHubPage() {
         )}
       </div>
 
-      {/* ── MODAL 1: ADD MEMORY CARD ── */}
-      {showAddCardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="relative w-full max-w-md bg-white rounded-3xl p-6 border border-[#EAE5DA] shadow-2xl space-y-4">
+      {/* ── MODAL 1: CREATE MANUAL CLIENT STORAGE PROJECT CARD ── */}
+      {showAddProjectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl p-5 sm:p-6 border border-[#EAE5DA] shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Cpu className="w-5 h-5 text-amber-600" />
-                <h3 className="text-base font-black text-slate-900">Add Memory Card</h3>
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center">
+                  <FolderPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Create Client Storage Project Card
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Add project card manually or autocomplete from booked leads
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddProjectModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Autocomplete from Existing Lead */}
+            {availableLeads.length > 0 && (
+              <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-3 space-y-1.5">
+                <label className="text-[11px] font-black uppercase text-amber-900 tracking-wider block">
+                  ⚡ Optional: Select Existing Lead to Autocomplete
+                </label>
+                <select
+                  aria-label="Select existing lead to autofill"
+                  value={selectedLeadIdForProject}
+                  onChange={e => handleSelectLeadToAutofill(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
+                >
+                  <option value="">-- Choose a lead or enter details below --</option>
+                  {availableLeads.map(l => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} {l.event_date ? `(${l.event_date})` : ''} - ₹{l.budget || 0}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateManualProject} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 mb-1 block">Client / Wedding Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={manualClientName}
+                    onChange={e => setManualClientName(e.target.value)}
+                    placeholder="e.g. Pooja & Rahul Wedding"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 mb-1 block">Main Event Date</label>
+                  <input
+                    type="date"
+                    value={manualEventDate}
+                    onChange={e => setManualEventDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 mb-1 block">Package Budget (₹)</label>
+                  <input
+                    type="number"
+                    value={manualPackageAmount}
+                    onChange={e => setManualPackageAmount(e.target.value)}
+                    placeholder="e.g. 150000"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 mb-1 block">Initial Physical Disk (Optional)</label>
+                  <select
+                    aria-label="Select initial physical disk"
+                    value={manualSelectedDiskId}
+                    onChange={e => setManualSelectedDiskId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  >
+                    <option value="">-- No Disk Initially --</option>
+                    {disks.map(d => (
+                      <option key={d.id} value={d.id}>
+                        {d.disk_name} ({d.disk_type} • {d.total_capacity_gb}GB)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Sub-Events Builder */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black uppercase text-slate-500 tracking-wider">
+                    Sub-Events & Crew Assignment
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualSubEvents(prev => [
+                        ...prev,
+                        {
+                          name: `Event ${prev.length + 1}`,
+                          date: manualEventDate || new Date().toISOString().split('T')[0],
+                          venue: '',
+                          crew: [{ name: 'Photographer', role: 'Photography' }]
+                        }
+                      ]);
+                    }}
+                    className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Add Sub-Event</span>
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {manualSubEvents.map((ev, evIdx) => (
+                    <div key={evIdx} className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <input
+                          type="text"
+                          value={ev.name}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, name: val } : item));
+                          }}
+                          placeholder="Event Name (e.g. Sangeet, Wedding Ceremony)"
+                          className="flex-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900"
+                        />
+                        {manualSubEvents.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setManualSubEvents(prev => prev.filter((_, idx) => idx !== evIdx))}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Crew list */}
+                      <div className="pl-2 border-l-2 border-amber-300 space-y-1.5">
+                        <div className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
+                          <span>Crew Members:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                ...item,
+                                crew: [...item.crew, { name: `Crew ${item.crew.length + 1}`, role: 'Cinematography' }]
+                              } : item));
+                            }}
+                            className="text-[10px] font-bold text-amber-600 hover:text-amber-700 cursor-pointer"
+                          >
+                            + Add Crew
+                          </button>
+                        </div>
+
+                        {ev.crew.map((cr, crIdx) => (
+                          <div key={crIdx} className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={cr.name}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                  ...item,
+                                  crew: item.crew.map((c, i) => i === crIdx ? { ...c, name: val } : c)
+                                } : item));
+                              }}
+                              placeholder="Crew Name"
+                              className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-medium"
+                            />
+                            <input
+                              type="text"
+                              value={cr.role}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                  ...item,
+                                  crew: item.crew.map((c, i) => i === crIdx ? { ...c, role: val } : c)
+                                } : item));
+                              }}
+                              placeholder="Role"
+                              className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-medium"
+                            />
+                            {ev.crew.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                    ...item,
+                                    crew: item.crew.filter((_, i) => i !== crIdx)
+                                  } : item));
+                                }}
+                                className="p-1 text-slate-400 hover:text-red-500"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Bottom Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddProjectModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingProject || !manualClientName.trim()}
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {savingProject ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    <span>Create Storage Project Card</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 2: CONNECT GOOGLE DRIVE (GIS / DIRECT / OAUTH) ── */}
+      {showConnectDriveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl p-5 sm:p-6 border border-[#EAE5DA] shadow-2xl space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <Cloud className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Connect Google Drive Account
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Link Google storage account to manage client folders & live quota
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConnectDriveModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Connection Method Tabs */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setConnectDriveTab('gis')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
+                  connectDriveTab === 'gis'
+                    ? 'bg-white text-blue-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                ⚡ 1-Click Google Sign-In
+              </button>
+              <button
+                type="button"
+                onClick={() => setConnectDriveTab('manual')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
+                  connectDriveTab === 'manual'
+                    ? 'bg-white text-blue-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                📝 Direct Link Account
+              </button>
+              <button
+                type="button"
+                onClick={() => setConnectDriveTab('oauth')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
+                  connectDriveTab === 'oauth'
+                    ? 'bg-white text-blue-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                🔗 Web Redirect
+              </button>
+            </div>
+
+            {/* Tab 1: 1-Click GIS Google Sign-In */}
+            {connectDriveTab === 'gis' && (
+              <div className="space-y-4 py-2 text-center">
+                <div className="p-4 bg-blue-50/60 border border-blue-200/80 rounded-2xl text-xs text-slate-600 space-y-2">
+                  <p className="font-bold text-blue-950">
+                    Direct in-browser Google Authentication
+                  </p>
+                  <p className="text-[11px]">
+                    Opens the official Google account chooser in a popup. Automatically retrieves your email and live storage quota without leaving this page!
+                  </p>
+                </div>
+
+                {isConnectingGis ? (
+                  <div className="py-6 space-y-2">
+                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-600" />
+                    <p className="text-xs font-bold text-slate-600">{gisStatusText || 'Connecting to Google...'}</p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleGisConnect}
+                    className="w-full py-3 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-2.5 cursor-pointer"
+                  >
+                    <Cloud className="w-5 h-5" />
+                    <span>Sign In with Google Account</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Tab 2: Direct Link Account */}
+            {connectDriveTab === 'manual' && (
+              <form onSubmit={handleManualDriveSubmit} className="space-y-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Google Account Email *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. wedding.studio@gmail.com"
+                    value={manualDriveEmail}
+                    onChange={e => setManualDriveEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Drive Purpose / Label</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 2TB Wedding Deliverables Cloud"
+                    value={manualDriveLabel}
+                    onChange={e => setManualDriveLabel(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Total Account Capacity</label>
+                  <div className="grid grid-cols-4 gap-1.5 mb-2">
+                    {[
+                      { label: '15 GB (Free)', value: 15 },
+                      { label: '100 GB', value: 100 },
+                      { label: '2 TB (2000 GB)', value: 2000 },
+                      { label: '5 TB (5000 GB)', value: 5000 },
+                    ].map(preset => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => setManualDriveCapacityGb(preset.value)}
+                        className={`py-1.5 px-2 rounded-lg text-[10px] font-bold border transition cursor-pointer text-center ${
+                          manualDriveCapacityGb === preset.value
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      value={manualDriveCapacityGb}
+                      onChange={e => setManualDriveCapacityGb(Number(e.target.value))}
+                      className="w-full px-3.5 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900"
+                    />
+                    <span className="text-xs font-bold text-slate-500 shrink-0">GB Total</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Current Used Space (Optional)</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={manualDriveUsedGb}
+                      onChange={e => setManualDriveUsedGb(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-full px-3.5 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900"
+                    />
+                    <span className="text-xs font-bold text-slate-500 shrink-0">GB Used</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition cursor-pointer shadow-md shadow-blue-600/20"
+                  >
+                    ⚡ Link Google Drive Now
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Tab 3: OAuth Web Redirect */}
+            {connectDriveTab === 'oauth' && (
+              <div className="space-y-3 py-2 text-center">
+                <p className="text-xs text-slate-600">
+                  Redirects to Google accounts page. After sign-in, you will be redirected straight back to this Studio Storage page.
+                </p>
+                <a
+                  href={`/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWsId)}&return_url=/workspace/storage`}
+                  className="w-full py-3 px-4 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Proceed with Web Redirect</span>
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 3: ADD MEMORY CARD ── */}
+      {showAddCardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="relative w-full max-w-md bg-white rounded-3xl p-5 sm:p-6 border border-[#EAE5DA] shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center">
+                  <Cpu className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Add New Memory Card</h3>
+                  <p className="text-xs text-slate-500 font-medium">Register card into studio inventory</p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAddCardModal(false)}
-                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1197,7 +2121,7 @@ export default function StorageHubPage() {
 
             <form onSubmit={handleAddCardSubmit} className="space-y-3.5">
               <div>
-                <label className="text-xs font-bold text-slate-700 mb-1 block">Card Name / Label</label>
+                <label className="text-xs font-bold text-slate-700 mb-1 block">Card Name / Label *</label>
                 <input
                   type="text"
                   required
@@ -1234,18 +2158,18 @@ export default function StorageHubPage() {
                     <option value="128">128 GB</option>
                     <option value="256">256 GB</option>
                     <option value="512">512 GB</option>
-                    <option value="1000">1 TB</option>
+                    <option value="1000">1 TB (1000 GB)</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 mb-1 block">Speed / Class</label>
+                <label className="text-xs font-bold text-slate-700 mb-1 block">Speed Class</label>
                 <input
                   type="text"
                   value={newCardSpeed}
                   onChange={e => setNewCardSpeed(e.target.value)}
-                  placeholder="e.g. V90 300MB/s, 800MB/s"
+                  placeholder="e.g. V90 300MB/s, V60 150MB/s"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                 />
               </div>
@@ -1260,7 +2184,7 @@ export default function StorageHubPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl shadow-md cursor-pointer"
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer"
                 >
                   Save Card
                 </button>
@@ -1270,19 +2194,24 @@ export default function StorageHubPage() {
         </div>
       )}
 
-      {/* ── MODAL 2: ADD HARD DRIVE / SSD ── */}
+      {/* ── MODAL 4: ADD HARD DRIVE / SSD ── */}
       {showAddDiskModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="relative w-full max-w-md bg-white rounded-3xl p-6 border border-[#EAE5DA] shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="relative w-full max-w-md bg-white rounded-3xl p-5 sm:p-6 border border-[#EAE5DA] shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <HardDrive className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-base font-black text-slate-900">Add Hard Drive / SSD</h3>
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Add Hard Drive / SSD</h3>
+                  <p className="text-xs text-slate-500 font-medium">Register storage drive into catalog</p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAddDiskModal(false)}
-                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1290,13 +2219,13 @@ export default function StorageHubPage() {
 
             <form onSubmit={handleAddDiskSubmit} className="space-y-3.5">
               <div>
-                <label className="text-xs font-bold text-slate-700 mb-1 block">Drive Name / Label</label>
+                <label className="text-xs font-bold text-slate-700 mb-1 block">Drive Name / Label *</label>
                 <input
                   type="text"
                   required
                   value={newDiskName}
                   onChange={e => setNewDiskName(e.target.value)}
-                  placeholder="e.g. Lacie 4TB Rugged #1"
+                  placeholder="e.g. Samsung T7 2TB #1, LaCie 4TB Rugged"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 />
               </div>
@@ -1364,7 +2293,7 @@ export default function StorageHubPage() {
         </div>
       )}
 
-      {/* ── MODAL 3: INTERACTIVE GOOGLE DRIVE FOLDER PICKER ── */}
+      {/* ── MODAL 5: INTERACTIVE GOOGLE DRIVE FOLDER PICKER ── */}
       {showGooglePickerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
           <div className="relative w-full max-w-2xl bg-white rounded-3xl p-5 sm:p-6 border border-[#EAE5DA] shadow-2xl flex flex-col max-h-[85vh]">
@@ -1419,15 +2348,17 @@ export default function StorageHubPage() {
                 </div>
               )}
 
-              {/* Breadcrumbs */}
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 overflow-x-auto py-1">
+              {/* Breadcrumbs Trail */}
+              <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-1">
                 {googleBreadcrumbs.map((crumb, idx) => (
-                  <React.Fragment key={crumb.id}>
-                    {idx > 0 && <span className="text-slate-400">/</span>}
+                  <React.Fragment key={crumb.id || idx}>
+                    {idx > 0 && <span className="text-slate-300">/</span>}
                     <button
                       type="button"
                       onClick={() => handleBreadcrumbClick(crumb, idx)}
-                      className="hover:text-blue-600 hover:underline transition whitespace-nowrap cursor-pointer"
+                      className={`font-bold hover:underline cursor-pointer ${
+                        idx === googleBreadcrumbs.length - 1 ? 'text-blue-600' : 'text-slate-500'
+                      }`}
                     >
                       {crumb.name}
                     </button>
@@ -1436,16 +2367,16 @@ export default function StorageHubPage() {
               </div>
             </div>
 
-            {/* Folder List Tree */}
-            <div className="flex-1 overflow-y-auto py-3 space-y-1.5 min-h-[220px]">
+            {/* Folder List Content */}
+            <div className="flex-1 overflow-y-auto py-3 space-y-2 min-h-[220px]">
               {googleFolderLoading ? (
-                <div className="p-8 text-center">
-                  <RefreshCw className="w-6 h-6 text-blue-600 animate-spin mx-auto mb-2" />
-                  <p className="text-xs font-bold text-slate-500">Loading Google Drive Folders...</p>
+                <div className="py-16 text-center space-y-2">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600" />
+                  <p className="text-xs font-semibold text-slate-500">Loading Google Drive Folders...</p>
                 </div>
               ) : googleFolders.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 text-xs font-semibold">
-                  No subfolders found in this directory. You can create a new folder below!
+                <div className="py-16 text-center text-xs text-slate-400">
+                  No subfolders found in this directory. Create one below!
                 </div>
               ) : (
                 googleFolders.map(folder => (

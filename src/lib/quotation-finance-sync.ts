@@ -1796,7 +1796,8 @@ export async function syncBookedLeadOrFinalQuotation({
 
         // 9. Studio Storage Hub Sync: Automatically create or update client storage project asset card
         try {
-          const effectiveWs = lead.workspace_id || workspaceId;
+          const isValidUUID = (v?: string | null) => Boolean(v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v));
+          const effectiveWs = isValidUUID(lead.workspace_id) ? lead.workspace_id : (isValidUUID(workspaceId) ? workspaceId : '00000000-0000-0000-0000-000000000000');
           const { data: existingAsset } = await supabaseClient
             .from('storage_project_assets')
             .select('id, sub_events, assigned_disks, google_drive_backup')
