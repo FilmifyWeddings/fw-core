@@ -240,8 +240,8 @@ export function fallbackHeuristicExtractor(contextData: any) {
   const dateMatch = userNotes.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(?:\d{2,4})?)\b/i);
   if (dateMatch) {
     weddingDate = dateMatch[1];
-  } else if (raw.event_date || raw.wedding_date || raw.date) {
-    weddingDate = raw.event_date || raw.wedding_date || raw.date;
+  } else if (raw.event_date || raw.wedding_date || raw.date || raw.wedding_month || raw.month) {
+    weddingDate = raw.event_date || raw.wedding_date || raw.date || raw.wedding_month || raw.month;
   }
   const isDateNotFixed = !weddingDate || fullText.includes('not fix') || fullText.includes('not fixed') || fullText.includes('tbd');
   if (isDateNotFixed && !weddingDate) {
@@ -268,10 +268,19 @@ export function fallbackHeuristicExtractor(contextData: any) {
     }
   }
   if (!budget) {
-    const rawBudget = raw.budget || raw.package_budget || raw.pricing || null;
+    const rawBudget = raw.budget || raw.package_budget || raw.preferred_budget_range || raw.approximate_budget || raw.pricing || null;
     if (rawBudget) {
-      const num = parseInt(String(rawBudget).replace(/[^0-9]/g, ''));
-      if (!isNaN(num) && num > 0) budget = num;
+      const budgetStr = String(rawBudget).toLowerCase();
+      if (budgetStr.includes('lakh') || budgetStr.includes('l')) {
+        const val = parseFloat(budgetStr.replace(/[^0-9.]/g, ''));
+        if (!isNaN(val)) budget = Math.round(val * 100000);
+      } else if (budgetStr.includes('k')) {
+        const val = parseFloat(budgetStr.replace(/[^0-9.]/g, ''));
+        if (!isNaN(val)) budget = Math.round(val * 1000);
+      } else {
+        const num = parseInt(budgetStr.replace(/[^0-9]/g, ''));
+        if (!isNaN(num) && num > 0) budget = num;
+      }
     }
   }
   const finalBudget = budget || 150000;

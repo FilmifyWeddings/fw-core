@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const requestedWorkspaceId = searchParams.get('workspace_id');
     const page = parseInt(searchParams.get('page') || '0', 10);
-    const pageSize = parseInt(searchParams.get('pageSize') || '100', 10);
+    const pageSize = parseInt(searchParams.get('pageSize') || '250', 10);
+    const search = (searchParams.get('search') || '').trim();
 
     // Verify Session
     const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
@@ -35,28 +36,43 @@ export async function GET(req: NextRequest) {
 
     // Fetch leads using supabaseAdmin (bypasses RLS issues)
     let dbLeads: any[] = [];
+    let totalCount = 0;
 
     // 1. Query by workspace_id or tenant_id across all valid candidates
     const orConditions = candidates.flatMap(c => [`workspace_id.eq.${c}`, `tenant_id.eq.${c}`]).join(',');
-    const res = await supabaseAdmin
+    let query = supabaseAdmin
       .from('leads')
-      .select('*')
-      .or(orConditions)
+      .select('*', { count: 'exact' })
+      .or(orConditions);
+
+    if (search) {
+      query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
+    }
+
+    const res = await query
       .order('created_at', { ascending: false })
       .range(from, to);
 
     if (res.error) {
       console.warn('[API /leads Workspace Query Warning]:', res.error.message);
       // Fallback: single eq query
-      const fallbackRes = await supabaseAdmin
+      let fallbackQuery = supabaseAdmin
         .from('leads')
-        .select('*')
-        .eq('workspace_id', workspaceId)
+        .select('*', { count: 'exact' })
+        .eq('workspace_id', workspaceId);
+
+      if (search) {
+        fallbackQuery = fallbackQuery.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
+      }
+
+      const fallbackRes = await fallbackQuery
         .order('created_at', { ascending: false })
         .range(from, to);
       dbLeads = fallbackRes.data || [];
+      totalCount = fallbackRes.count ?? dbLeads.length;
     } else {
       dbLeads = res.data || [];
+      totalCount = res.count ?? dbLeads.length;
     }
 
     // 3. Sanitize lead data
@@ -82,7 +98,8 @@ export async function GET(req: NextRequest) {
       success: true,
       leads: sanitizedLeads,
       count: sanitizedLeads.length,
-      hasMore: sanitizedLeads.length >= pageSize,
+      totalCount: totalCount,
+      hasMore: from + sanitizedLeads.length < totalCount,
     });
   } catch (error: any) {
     console.error('[API /leads Server Error]:', error);

@@ -544,7 +544,7 @@ export function LeadInsiderDrawer({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: `${authorProfile.name} updated Lead Source to "${newSource}"`,
+        message: `${authorProfile.name} updated Lead Source from "${oldSource || 'None'}" to "${newSource}"`,
         action_type: 'source_change',
         actor_name: authorProfile.name,
         old_value: oldSource,
@@ -1798,7 +1798,7 @@ export function LeadInsiderDrawer({
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
-                                  message: `${authorProfile.name} moved stage to "${targetStageName}"`,
+                                  message: `${authorProfile.name} moved stage from "${oldStageName || 'Unknown'}" to "${targetStageName}"`,
                                   action_type: 'stage_change',
                                   actor_name: authorProfile.name,
                                   old_value: oldStageName,

@@ -424,8 +424,6 @@ export function LeadQuotationModal({
               if (l.id === lead.id) {
                 return {
                   ...l,
-                  status: unmark ? 'in_progress' : 'booked',
-                  stage: unmark ? 'in_progress' : 'booked',
                   final_quotation_id: unmark ? null : q.template_id,
                   raw_payload: {
                     ...(l.raw_payload || {}),
@@ -453,7 +451,9 @@ export function LeadQuotationModal({
         body: JSON.stringify({
           quotationId: q.template_id,
           leadId: lead.id,
-          unmark
+          unmark,
+          version: q.version,
+          actor_name: session?.user?.email?.split('@')[0] || 'Studio Admin'
         })
       });
 
@@ -526,7 +526,8 @@ export function LeadQuotationModal({
         body: JSON.stringify({
           leadId: lead.id,
           clientName: lead.name,
-          explicitTemplateId: chosenTemplateId
+          explicitTemplateId: chosenTemplateId,
+          actor_name: session?.user?.email?.split('@')[0] || 'Studio Admin'
         })
       });
 

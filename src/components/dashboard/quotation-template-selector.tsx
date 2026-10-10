@@ -31,14 +31,12 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
     return memoryTemplatesCache[wsKey];
   }
 
-  // 2. LocalStorage & SessionStorage cache
+  // 2. LocalStorage & SessionStorage cache (strictly scoped to active studio)
   if (typeof window !== 'undefined') {
     try {
-      const activeUid = workspaceId || localStorage.getItem('wg_last_active_user_id') || '';
+      const activeUid = workspaceId || localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id') || '';
       const keysToCheck = [
-        activeUid ? `studio_templates_cache_${activeUid}` : '',
-        'studio_templates_cache',
-        activeUid ? `wg_quotations_cache_${activeUid}` : ''
+        activeUid ? `studio_templates_cache_${activeUid}` : 'studio_templates_cache'
       ].filter(Boolean);
 
       for (const key of keysToCheck) {
@@ -46,8 +44,13 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Filter out any lead quotations (FW-Q-*) just in case
-            const clean = parsed.filter((t: any) => t && t.id && !t.id.startsWith('FW-Q-') && !t.id.startsWith('FW-L-'));
+            // Strictly filter out lead quotations and any items with lead_id
+            const clean = parsed.filter((t: any) => {
+              if (!t || !t.id) return false;
+              if (String(t.id).startsWith('FW-Q-') || String(t.id).startsWith('FW-L-')) return false;
+              if (t.lead_id || t.content_json?.lead_id) return false;
+              return true;
+            });
             if (clean.length > 0) {
               memoryTemplatesCache[wsKey] = clean;
               return clean;

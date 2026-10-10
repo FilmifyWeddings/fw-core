@@ -178,7 +178,7 @@ export default function LeadsPage() {
   const [page, setPage] = useState<number>(0);
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = 250;
 
   // Hydrate client mount status with 0ms scoped cache acceleration
   useEffect(() => {
@@ -517,9 +517,9 @@ export default function LeadsPage() {
 
       // Fallback to direct client query if API route was not reached
       if (!fetchedSuccessfully) {
-        const { data: dbLeads, error: leadsErr } = await supabase
+        const { data: dbLeads, count: dbCount, error: leadsErr } = await supabase
           .from('leads')
-          .select('*')
+          .select('*', { count: 'exact' })
           .eq('workspace_id', targetUserId)
           .order('created_at', { ascending: false })
           .range(from, to);
@@ -528,7 +528,7 @@ export default function LeadsPage() {
           console.error('[Leads Direct Load Error]:', leadsErr);
           if (pageNum === 0 && memCachedLeads.length === 0) setLeads([]);
         } else if (dbLeads) {
-          setHasMore(dbLeads.length >= PAGE_SIZE);
+          setHasMore(from + dbLeads.length < (dbCount ?? dbLeads.length));
           sanitizedLeads = (dbLeads as any[]).map(l => {
             const raw = l.raw_payload || {};
             return {

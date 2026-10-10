@@ -88,11 +88,18 @@ export function AiQuotationModal({
   };
 
   const handleCopySystemPrompt = () => {
+    const rawPayload = effectiveLead.raw_payload || {};
+    const extractedEventDate = rawPayload.event_date || rawPayload.wedding_date || rawPayload.date || rawPayload.wedding_month || rawPayload.month || effectiveLead.event_date || '';
+    const extractedBudget = rawPayload.budget || rawPayload.preferred_budget_range || rawPayload.approximate_budget || effectiveLead.budget || '';
+    const extractedLocation = rawPayload.location || rawPayload.city || rawPayload.venue || rawPayload.destination || effectiveLead.location || '';
+    const extractedFunctions = rawPayload.functions || rawPayload.wedding_functions || rawPayload.events || '';
+
     const masterPrompt = `You are StudioCore AI Quotation Assistant for Professional Wedding & Event Photography Studios.
 
 ==================================================
 🎯 YOUR TASK:
 Analyze the client requirements, notes, or conversation below and convert them into a 100% structured StudioCore Quotation JSON document.
+CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi, Sangeet, Wedding, etc.), real budgets, and real locations from the LEAD & CLIENT CONTEXT. DO NOT hallucinate fake data, and DO NOT output default placeholders when real client data is present.
 
 ==================================================
 📋 PAGE-BY-PAGE RULES & MAPPING:
@@ -102,7 +109,7 @@ Analyze the client requirements, notes, or conversation below and convert them i
 - groomName: Extracted groom name (e.g. "Sagar").
 - brideName: Extracted bride name (e.g. "Vruddhi").
 - eventType: Title of event (e.g. "Wedding", "Pre-Wedding", "Pre-Wedding & Wedding", "Engagement", "Reception", "Maternity", "Corporate Event").
-- locationName: Exact city/venue if mentioned. If NOT mentioned, keep it EMPTY string "" (DO NOT hallucinate or put fake cities like Mumbai!).
+- locationName: Exact city/venue if mentioned in context. If NOT mentioned, keep it EMPTY string "" (DO NOT hallucinate or put fake cities!).
 
 2. ABOUT US (aboutUs):
 - KEEP DEFAULT TEMPLATE AS IS (No changes).
@@ -119,7 +126,8 @@ Analyze the client requirements, notes, or conversation below and convert them i
 - items: Array of event objects:
   - id: Unique string "func_1", "func_2", etc.
   - name: Function title. If multiple functions occur in the same slot/day, combine them with " + " (e.g. "Haldi + Sangeet", "Ring Ceremony + Cocktail").
-  - date: Exact date string if specified (e.g. "14 Dec 2026"). If user says date not fixed or no date is given, set date: "Date Not Fixed" and dateNotFixed: true.
+  - CRITICAL EVENT EXTRACTION: Inspect LEAD & CLIENT CONTEXT. If multiple functions are mentioned (e.g. Haldi, Sangeet, Mehendi, Pre-Wedding, Wedding, Reception), create a separate function item in the array for EACH distinct function!
+  - CRITICAL DATE EXTRACTION: Extract the event date or wedding month from LEAD & CLIENT CONTEXT (e.g. if wedding month is "December", output date: "December 2026"; if "14 Dec 2026", output date: "14 Dec 2026" with dateNotFixed: false). ONLY set date: "Date Not Fixed" and dateNotFixed: true if NO date, month, or season is mentioned anywhere in the context!
   - startTime / endTime: Exact time if specified (e.g. "09:00 AM" / "02:00 PM"). If NO time specified, keep EMPTY string ""!
   - location: Venue or location if specified. If NO location specified, keep EMPTY string ""!
   - notes: Special event notes if specified. If none, keep EMPTY string ""!
@@ -148,7 +156,7 @@ Analyze the client requirements, notes, or conversation below and convert them i
 - selectedItems: Array of complimentary/free bonus items (e.g. "Complimentary Drone Coverage", "Complimentary 1 Day Pre-Wedding Teaser", "Complimentary Wooden USB Box"). If none, keep empty array [].
 
 7. PRICING DETAILS (pricingPage):
-- basePrice: Total package amount / base price (Number, e.g. 150000).
+- basePrice: Total package amount / base price (Number). CRITICAL BUDGET EXTRACTION: Inspect LEAD & CLIENT CONTEXT (e.g. 'budget', 'preferred_budget_range', 'approximate_budget', or notes). Convert it to an integer (e.g. "₹1,50,000 - ₹2,00,000" -> 150000; "2.5L" -> 250000; "90k" -> 90000). DO NOT hardcode 150000 if context has a different budget!
 - discountAmount: Discount amount if specified (Number, e.g. 10000), else 0.
 - gstPct: GST percentage if specified (Number, e.g. 18), else 0.
 - travelCharges: Travel cost if specified (Number), else 0.
@@ -163,19 +171,20 @@ Analyze the client requirements, notes, or conversation below and convert them i
       { "name": "On Event Day", "pct": "50%", "amount": 75000, "status": "Pending" },
       { "name": "On Final Delivery", "pct": "20%", "amount": 30000, "status": "Pending" }
     ]
-  - If user mentions specific ratio (e.g. 50%/50% or 30%/50%/20% or 20%/40%/40%), calculate accordingly.
+  - If user mentions specific ratio (e.g. 50%/50% or 30%/50%/20% or 20%/40%/40%), calculate accordingly based on basePrice.
   - CRITICAL STATUS RULE: Every step status MUST strictly be "Pending". NEVER output "Completed" unless the user's prompt or notes explicitly states that the advance or milestone has already been paid/received.
 
 ==================================================
 OUTPUT FORMAT:
-Respond ONLY with valid JSON matching the schema below (No Markdown formatting around JSON, just pure JSON or standard JSON block):
+Respond ONLY with valid JSON matching the schema below (No Markdown formatting around JSON, just pure JSON or standard JSON block).
+NOTE: The values in this schema are structure guides. You MUST populate them with the ACTUAL extracted data from LEAD & CLIENT CONTEXT:
 {
   "cover": {
-    "coupleName": "${lead?.name || 'Client Name'}",
-    "groomName": "${lead?.name?.split('&')[0]?.trim() || 'Groom'}",
-    "brideName": "${lead?.name?.split('&')[1]?.trim() || 'Bride'}",
+    "coupleName": "${effectiveLead?.name || 'Client Name'}",
+    "groomName": "${effectiveLead?.name?.split('&')[0]?.trim() || effectiveLead?.name?.split(' ')[0]?.trim() || 'Groom'}",
+    "brideName": "${effectiveLead?.name?.includes('&') ? effectiveLead?.name?.split('&')[1]?.trim() : ''}",
     "eventType": "Wedding",
-    "locationName": ""
+    "locationName": "${extractedLocation ? extractedLocation.replace(/"/g, '\\"') : ''}"
   },
   "shootDetails": {
     "visible": false,
@@ -189,11 +198,11 @@ Respond ONLY with valid JSON matching the schema below (No Markdown formatting a
       {
         "id": "func-1",
         "name": "Wedding",
-        "date": "Date Not Fixed",
-        "dateNotFixed": true,
+        "date": ${extractedEventDate ? JSON.stringify(extractedEventDate) : '"Date Not Fixed"'},
+        "dateNotFixed": ${extractedEventDate ? 'false' : 'true'},
         "startTime": "",
         "endTime": "",
-        "location": "",
+        "location": "${extractedLocation ? extractedLocation.replace(/"/g, '\\"') : ''}",
         "requirements": [
           { "name": "Candid Photographer", "qty": 1 },
           { "name": "Cinematographer", "qty": 1 }
@@ -238,6 +247,10 @@ LEAD & CLIENT CONTEXT:
 - Lead Name: ${effectiveLead.name || 'N/A'}
 - Phone: ${effectiveLead.phone || 'N/A'}
 - Email: ${effectiveLead.email || 'N/A'}
+- Extracted Event Date / Month: ${extractedEventDate || 'Not specified'}
+- Extracted Budget / Range: ${extractedBudget || 'Not specified'}
+- Extracted Venue / City: ${extractedLocation || 'Not specified'}
+- Extracted Functions / Requirements: ${extractedFunctions || 'Not specified'}
 - Lead Form Payload: ${JSON.stringify(effectiveLead.raw_payload || {}, null, 2)}
 - Lead Comments & Notes: ${Array.isArray(effectiveLead.comments) ? effectiveLead.comments.map((c: any) => c.text).join('\n') : 'N/A'}
 - Additional Notes: ${additionalNotes || 'N/A'}`;

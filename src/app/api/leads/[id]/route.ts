@@ -71,10 +71,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     let resolvedStageName = body.status || null;
     const wsId = existingLead?.workspace_id || body.workspace_id;
 
-    if ('stage_id' in payload && payload.stage_id) {
-      if (wsId) {
-        try {
-          const { data: wsStages } = await supabaseAdmin.from('crm_stages').select('id, name').eq('workspace_id', wsId);
+    if (wsId) {
+      try {
+        const { data: wsStages } = await supabaseAdmin.from('crm_stages').select('id, name').eq('workspace_id', wsId);
+        
+        if ('stage_id' in payload && payload.stage_id) {
           const matched = wsStages?.find(s => 
             s.id === payload.stage_id || 
             s.name.toLowerCase() === String(payload.stage_id).toLowerCase() || 
@@ -86,12 +87,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           } else if (!isValidUUID(payload.stage_id)) {
             delete payload.stage_id;
           }
-        } catch (_) {
-          if (!isValidUUID(payload.stage_id)) delete payload.stage_id;
+        } else if (body.status) {
+          // If status string was passed without stage_id, sync stage_id to matching stage UUID!
+          const matched = wsStages?.find(s => 
+            s.name.toLowerCase() === String(body.status).toLowerCase() ||
+            (String(body.status).toLowerCase().includes('new') && s.name.toLowerCase().includes('new')) ||
+            (String(body.status).toLowerCase().includes('book') && s.name.toLowerCase().includes('book'))
+          );
+          if (matched?.id && isValidUUID(matched.id)) {
+            payload.stage_id = matched.id;
+            resolvedStageName = matched.name;
+          }
         }
-      } else if (!isValidUUID(payload.stage_id)) {
-        delete payload.stage_id;
+      } catch (_) {
+        if (!isValidUUID(payload.stage_id)) delete payload.stage_id;
       }
+    } else if (!isValidUUID(payload.stage_id)) {
+      delete payload.stage_id;
     }
 
     if (isBookedNow) resolvedStageName = 'Booked';
@@ -183,7 +195,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           workspace_id: logWsId,
           lead_id: leadId,
           event_type: 'lead_activity',
-          message: `${actor} updated lead source to "${newSource}"`,
+          message: `${actor} updated lead source from "${oldSource || 'None'}" to "${newSource}"`,
           metadata: { action_type: 'source_change', actor_name: actor, old_value: oldSource || 'None', new_value: newSource }
         });
       }
@@ -217,7 +229,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           workspace_id: logWsId,
           lead_id: leadId,
           event_type: 'lead_activity',
-          message: `${actor} moved stage to "${finalStageName}"`,
+          message: `${actor} moved stage from "${oldStage}" to "${finalStageName}"`,
           metadata: { action_type: 'stage_change', actor_name: actor, old_value: oldStage, new_value: finalStageName }
         });
       }

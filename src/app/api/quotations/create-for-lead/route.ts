@@ -258,15 +258,16 @@ export async function POST(req: NextRequest) {
             logWsId = prof?.id;
           }
           if (isValidUUID(logWsId)) {
-            const qTitle = clonedDoc.designName || `Quotation V${nextVersion}`;
+            const actor = body.actor_name || profile?.workspace_name || 'Studio Admin';
+            const qTitle = clonedDoc.designName || `${leadName} - Quotation V${nextVersion}`;
             await supabaseAdmin.from('live_logs').insert({
               workspace_id: logWsId,
               lead_id: leadId,
               event_type: 'lead_activity',
-              message: `Created quotation "${qTitle}" (v${nextVersion})`,
+              message: `${actor} created Quotation V${nextVersion} ("${qTitle}")`,
               metadata: {
                 action_type: 'quotation_created',
-                actor_name: 'Studio Admin',
+                actor_name: actor,
                 quotation_id: quotationId,
                 version: nextVersion,
                 title: qTitle,

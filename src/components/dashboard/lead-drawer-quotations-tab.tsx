@@ -305,7 +305,9 @@ export function LeadDrawerQuotationsTab({
         body: JSON.stringify({
           quotationId: q.template_id,
           leadId: lead.id,
-          unmark
+          unmark,
+          version: q.version,
+          actor_name: authorProfile?.name || session?.user?.email?.split('@')[0] || 'Studio Admin'
         })
       });
 

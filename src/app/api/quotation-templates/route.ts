@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
+import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 
 /**
  * Authoritative Quotation Templates List API (GET)
@@ -118,10 +119,10 @@ export async function GET(req: NextRequest) {
 
     const results = validTemplates
       .filter(t => {
-        // Exclude lead-specific quotation instances unless it is the user's explicit default template or a system preset
-        if (!t.is_system_template && !t.is_default && t.id !== activeDefaultId && leadDocsSet.has(t.id)) {
-          return false;
-        }
+        // Exclude lead-specific quotation instances and records with lead_id
+        if (t.id.startsWith('FW-Q-') || t.id.startsWith('FW-L-')) return false;
+        if (leadDocsSet.has(t.id)) return false;
+        if (docsMap[t.id]?.lead_id) return false;
         return true;
       })
       .map(t => {
@@ -144,6 +145,18 @@ export async function GET(req: NextRequest) {
           content_json: docContent
         };
       });
+
+    // If no templates are resolved, supply the standard design template
+    if (results.length === 0) {
+      results.push({
+        id: 'FW-AIRY-DEFAULT',
+        title: 'Minimalist Airy Proposal',
+        category: 'Wedding',
+        is_default: true,
+        is_system_template: true,
+        content_json: DEFAULT_AIRY_PROPOSAL
+      });
+    }
 
     // Ensure Default template is at the top of the array
     results.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));

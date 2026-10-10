@@ -235,7 +235,13 @@ export async function POST(req: NextRequest) {
 
     // Audit logging into live_logs
     try {
-      const qTitle = finalDoc?.title || finalDoc?.template_id || quotationId;
+      const actor = body.actor_name || 'Studio Admin';
+      const versionNum = finalDoc?.lead_version || finalDoc?.version || body.version || 1;
+      const rawTitle = finalDoc?.title || finalDoc?.content_json?.designName || finalDoc?.content_json?.title || clientName || 'Quotation';
+      const cleanTitle = (rawTitle && !rawTitle.startsWith('FW-') && rawTitle !== 'Wedding - Design 1')
+        ? rawTitle
+        : `${clientName || 'Quotation'} - Quotation V${versionNum}`;
+
       let logWsId = currentLead?.workspace_id;
       if (!isValidUUID(logWsId)) {
         const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
@@ -247,12 +253,14 @@ export async function POST(req: NextRequest) {
           lead_id: leadId,
           event_type: 'lead_activity',
           message: shouldUnmark 
-            ? `Unmarked quotation "${qTitle}" as final`
-            : `Marked quotation "${qTitle}" as Final Quotation`,
+            ? `${actor} unfinalized Quotation V${versionNum} ("${cleanTitle}")`
+            : `${actor} marked Quotation V${versionNum} ("${cleanTitle}") as Final Quotation`,
           metadata: {
             action_type: shouldUnmark ? 'quote_unfinal' : 'quote_final',
-            actor_name: 'Studio Admin',
+            actor_name: actor,
             quotation_id: quotationId,
+            version: versionNum,
+            title: cleanTitle,
             logged_at: now
           }
         });

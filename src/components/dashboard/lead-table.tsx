@@ -843,41 +843,11 @@ export function LeadTable({
 
   // Helper to map lead.stage_id (even UUIDs) and lead.status to stagesState option id
   const resolveLeadStageValue = useCallback((lead: Lead) => {
-    // 1. Direct match by stage_id
-    if (lead.stage_id) {
-      const match = stagesState.find(s => s.id === lead.stage_id);
-      if (match) return match.id;
-    }
-    // 2. If lead has final quotation or is booked/closed
-    const leadQuoteSum = quotationSummaryMap[lead.id];
-    const isBooked = Boolean(
-      lead.final_quotation_id || 
-      lead.raw_payload?.final_quotation_id ||
-      (lead.raw_payload as any)?.is_booked ||
-      leadQuoteSum?.hasFinal ||
-      lead.status === 'closed' || 
-      (lead.status as string)?.toLowerCase()?.includes('booked') ||
-      (lead.status as string)?.toLowerCase()?.includes('closed') ||
-      (lead.status as string)?.toLowerCase()?.includes('won') ||
-      (lead.raw_payload?.stage === 'booked')
-    );
-    if (isBooked) {
-      const bookedStage = stagesState.find(s => 
-        s.id === 'booked' || 
-        s.name?.toLowerCase().includes('book') || 
-        s.id?.toLowerCase().includes('book') ||
-        s.name?.toLowerCase().includes('closed') ||
-        s.id?.toLowerCase().includes('closed') ||
-        s.name?.toLowerCase().includes('won')
-      );
-      if (bookedStage) return bookedStage.id;
-    }
-    // 3. Match by status string (exact and keyword matching)
-    if (lead.status) {
-      const rawStatus = String(lead.status).trim();
-      const lowerStatus = rawStatus.toLowerCase();
+    const rawStatus = String(lead.status || '').trim();
+    const lowerStatus = rawStatus.toLowerCase();
 
-      // 3a. Exact id or name match
+    // 1. Direct status matching takes precedence if status is a known active stage name
+    if (rawStatus) {
       const exactMatch = stagesState.find(s => 
         s.id === rawStatus || 
         s.id?.toLowerCase() === lowerStatus ||
@@ -885,7 +855,7 @@ export function LeadTable({
       );
       if (exactMatch) return exactMatch.id;
 
-      // 3b. Keyword matching for common standard stages
+      // 1b. Standard keywords in status
       if (lowerStatus.includes('new') || lowerStatus.includes('inquiry') || lowerStatus.includes('fresh') || lowerStatus.includes('uncontacted')) {
         const match = stagesState.find(s => {
           const sn = (s.name || '').toLowerCase();
@@ -910,29 +880,65 @@ export function LeadTable({
         if (match) return match.id;
       }
 
-      if (lowerStatus.includes('hot') || lowerStatus.includes('proposal') || lowerStatus.includes('quote')) {
+      if (lowerStatus.includes('hot')) {
         const match = stagesState.find(s => {
           const sn = (s.name || '').toLowerCase();
-          return sn.includes('hot') || sn.includes('proposal') || sn.includes('quote');
+          return sn.includes('hot');
         });
         if (match) return match.id;
       }
 
-      if (lowerStatus.includes('lost') || lowerStatus.includes('drop') || lowerStatus.includes('reject')) {
+      if (lowerStatus.includes('lost') || lowerStatus.includes('drop') || lowerStatus.includes('reject') || lowerStatus.includes('cancel')) {
         const match = stagesState.find(s => {
           const sn = (s.name || '').toLowerCase();
           return sn.includes('lost') || sn.includes('drop') || sn.includes('reject');
         });
         if (match) return match.id;
       }
-
-      // 3c. Substring includes either way
-      const subMatch = stagesState.find(s => {
-        const sn = (s.name || '').toLowerCase();
-        return sn.includes(lowerStatus) || lowerStatus.includes(sn);
-      });
-      if (subMatch) return subMatch.id;
     }
+
+    // 2. Direct match by stage_id if present
+    if (lead.stage_id) {
+      const match = stagesState.find(s => s.id === lead.stage_id);
+      if (match) return match.id;
+    }
+
+    // 3. Explicitly booked status on lead record
+    const isExplicitlyBooked = Boolean(
+      (lead.raw_payload as any)?.is_booked === true ||
+      lead.status === 'closed' || 
+      lowerStatus.includes('booked') ||
+      lowerStatus.includes('closed') ||
+      lowerStatus.includes('won') ||
+      (lead.raw_payload?.stage === 'booked')
+    );
+    if (isExplicitlyBooked) {
+      const bookedStage = stagesState.find(s => 
+        s.id === 'booked' || 
+        s.name?.toLowerCase().includes('book') || 
+        s.id?.toLowerCase().includes('book') ||
+        s.name?.toLowerCase().includes('closed') ||
+        s.id?.toLowerCase().includes('closed') ||
+        s.name?.toLowerCase().includes('won')
+      );
+      if (bookedStage) return bookedStage.id;
+    }
+
+    if (lowerStatus.includes('lost') || lowerStatus.includes('drop') || lowerStatus.includes('reject')) {
+      const match = stagesState.find(s => {
+        const sn = (s.name || '').toLowerCase();
+        return sn.includes('lost') || sn.includes('drop') || sn.includes('reject');
+      });
+      if (match) return match.id;
+    }
+
+    // 4. Substring includes either way
+    const subMatch = stagesState.find(s => {
+      const sn = (s.name || '').toLowerCase();
+      return sn.includes(lowerStatus) || lowerStatus.includes(sn);
+    });
+    if (subMatch) return subMatch.id;
+
     return lead.stage_id || lead.status || (stagesState[0]?.id || '');
   }, [stagesState, quotationSummaryMap]);
 
@@ -2239,7 +2245,7 @@ export function LeadTable({
       (lead.status?.toLowerCase() || '').includes('closed') ||
       (lead.status?.toLowerCase() || '').includes('won') ||
       Boolean((lead as any).stage?.toLowerCase?.()?.includes('book')) ||
-      Boolean(lead.final_quotation_id || (lead.raw_payload as any)?.final_quotation_id || (lead.raw_payload as any)?.is_booked || quotationSummaryMap[lead.id]?.hasFinal);
+      Boolean((lead.raw_payload as any)?.is_booked === true);
 
     let matchesSidebar = true;
     if (statusFilter === 'archived' || sidebarFilter === 'archive' || stageParam === 'archived' || stageParam === 'archive') {
@@ -2293,11 +2299,7 @@ export function LeadTable({
         matchesStage = 
           leadStage === 'hot' ||
           leadStatus.includes('hot') ||
-          leadStatus.includes('proposal') ||
-          leadStatus.includes('quote') ||
-          resolvedStageName.includes('hot') ||
-          resolvedStageName.includes('proposal') ||
-          resolvedStageName.includes('quote');
+          resolvedStageName.includes('hot');
       } else {
         // Fallback for custom stages
         const matchingStageObj = stagesState.find(s => 
@@ -3792,7 +3794,7 @@ export function LeadTable({
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify({
-                                              message: `${userEmail?.split('@')[0] || 'Studio Admin'} updated lead source to "${trimmedName}"`,
+                                              message: `${userEmail?.split('@')[0] || 'Studio Admin'} updated lead source from "${oldSource}" to "${trimmedName}"`,
                                               action_type: 'source_change',
                                               actor_name: userEmail?.split('@')[0] || 'Studio Admin',
                                               old_value: oldSource,
@@ -3813,7 +3815,7 @@ export function LeadTable({
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify({
-                                              message: `${userEmail?.split('@')[0] || 'Studio Admin'} updated lead source to "${val}"`,
+                                              message: `${userEmail?.split('@')[0] || 'Studio Admin'} updated lead source from "${oldSource}" to "${val}"`,
                                               action_type: 'source_change',
                                               actor_name: userEmail?.split('@')[0] || 'Studio Admin',
                                               old_value: oldSource,
@@ -3883,7 +3885,9 @@ export function LeadTable({
                                         if (onPreferencesChange) {
                                           onPreferencesChange({ stages: updated });
                                         }
-                                        const oldStage = lead.status || resolveLeadStageValue(lead) || 'None';
+                                        const rawOldStage = lead.status || resolveLeadStageValue(lead) || 'None';
+                                        const oldStageObj = stagesState.find(s => s.id === rawOldStage || s.name === rawOldStage);
+                                        const oldStageName = oldStageObj?.name || rawOldStage;
                                         if (onLeadUpdate) {
                                           onLeadUpdate(lead.id, {
                                             stage_id: newStageObj.id,
@@ -3894,10 +3898,10 @@ export function LeadTable({
                                           method: 'POST',
                                           headers: { 'Content-Type': 'application/json' },
                                           body: JSON.stringify({
-                                            message: `${userEmail?.split('@')[0] || 'Studio Admin'} moved stage to "${newStageObj.name}"`,
+                                            message: `${userEmail?.split('@')[0] || 'Studio Admin'} moved stage from "${oldStageName}" to "${newStageObj.name}"`,
                                             action_type: 'stage_change',
                                             actor_name: userEmail?.split('@')[0] || 'Studio Admin',
-                                            old_value: oldStage,
+                                            old_value: oldStageName,
                                             new_value: newStageObj.name
                                           })
                                         }).catch(() => {});
@@ -3937,16 +3941,18 @@ export function LeadTable({
                                           } as any);
                                         }
 
-                                        const oldStage = lead.status || resolveLeadStageValue(lead) || 'None';
-                                        if (targetStatus && targetStatus !== oldStage) {
+                                        const rawOldStage = lead.status || resolveLeadStageValue(lead) || 'None';
+                                        const oldStageObj = stagesState.find(s => s.id === rawOldStage || s.name === rawOldStage);
+                                        const oldStageName = oldStageObj?.name || rawOldStage;
+                                        if (targetStatus && targetStatus !== oldStageName) {
                                           fetch(`/api/leads/${lead.id}/activities`, {
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify({
-                                              message: `${userEmail?.split('@')[0] || 'Studio Admin'} moved stage to "${targetStatus}"`,
+                                              message: `${userEmail?.split('@')[0] || 'Studio Admin'} moved stage from "${oldStageName}" to "${targetStatus}"`,
                                               action_type: 'stage_change',
                                               actor_name: userEmail?.split('@')[0] || 'Studio Admin',
-                                              old_value: oldStage,
+                                              old_value: oldStageName,
                                               new_value: targetStatus
                                             })
                                           }).then(() => {
