@@ -236,20 +236,27 @@ export async function POST(req: NextRequest) {
     // Audit logging into live_logs
     try {
       const qTitle = finalDoc?.title || finalDoc?.template_id || quotationId;
-      await supabaseAdmin.from('live_logs').insert({
-        workspace_id: currentLead?.workspace_id,
-        lead_id: leadId,
-        event_type: 'lead_activity',
-        message: shouldUnmark 
-          ? `Unmarked quotation "${qTitle}" as final`
-          : `Marked quotation "${qTitle}" as Final Quotation`,
-        metadata: {
-          action_type: shouldUnmark ? 'quote_unfinal' : 'quote_final',
-          actor_name: 'Studio Admin',
-          quotation_id: quotationId,
-          logged_at: now
-        }
-      });
+      let logWsId = currentLead?.workspace_id;
+      if (!isValidUUID(logWsId)) {
+        const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
+        logWsId = prof?.id;
+      }
+      if (isValidUUID(logWsId)) {
+        await supabaseAdmin.from('live_logs').insert({
+          workspace_id: logWsId,
+          lead_id: leadId,
+          event_type: 'lead_activity',
+          message: shouldUnmark 
+            ? `Unmarked quotation "${qTitle}" as final`
+            : `Marked quotation "${qTitle}" as Final Quotation`,
+          metadata: {
+            action_type: shouldUnmark ? 'quote_unfinal' : 'quote_final',
+            actor_name: 'Studio Admin',
+            quotation_id: quotationId,
+            logged_at: now
+          }
+        });
+      }
     } catch (_) {}
 
     if (shouldUnmark) {

@@ -144,37 +144,10 @@ export async function exportClientCanvasToPDF(
       })
     );
 
-    onProgress?.('Capturing high-resolution continuous document...');
+    onProgress?.('Preparing Page-by-Page A4 PDF export...');
 
-    const captureTarget = iframeDoc.getElementById(elementId) || iframeDoc.body;
+    const clonedPages = Array.from(iframeDoc.querySelectorAll<HTMLElement>('.quotation-page'));
 
-    const canvas = await html2canvasPro(captureTarget, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      windowWidth: 794,
-    });
-
-    const canvasWidthPx = canvas.width;
-    const canvasHeightPx = canvas.height;
-    const pdfWidthMm = 210;
-    const pdfHeightMm = (canvasHeightPx / canvasWidthPx) * pdfWidthMm;
-
-    onProgress?.('Generating continuous single long-page PDF...');
-
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: [pdfWidthMm, pdfHeightMm],
-      compress: true
-    });
-
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidthMm, pdfHeightMm, undefined, 'FAST');
-
-    onProgress?.('Saving continuous PDF file...');
     const cleanFilename = (filename || 'Quotation.pdf')
       .replace(/–/g, '-')
       .replace(/—/g, '-')
@@ -182,6 +155,73 @@ export async function exportClientCanvasToPDF(
       .trim();
 
     const finalName = cleanFilename.toLowerCase().endsWith('.pdf') ? cleanFilename : `${cleanFilename}.pdf`;
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true
+    });
+
+    if (clonedPages.length > 0) {
+      onProgress?.(`Processing ${clonedPages.length} pages in standard A4 format...`);
+
+      for (let i = 0; i < clonedPages.length; i++) {
+        const pageEl = clonedPages[i];
+        onProgress?.(`Rendering page ${i + 1} of ${clonedPages.length}...`);
+
+        if (i > 0) {
+          pdf.addPage('a4', 'portrait');
+        }
+
+        const pageCanvas = await html2canvasPro(pageEl, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          windowWidth: 794,
+        });
+
+        const pageImg = pageCanvas.toDataURL('image/jpeg', 0.95);
+        pdf.addImage(pageImg, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      }
+    } else {
+      onProgress?.('Capturing high-resolution document in A4 pages...');
+      const captureTarget = iframeDoc.getElementById(elementId) || iframeDoc.body;
+      const canvas = await html2canvasPro(captureTarget, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: 794,
+      });
+
+      const canvasWidth = canvas.width;
+      const pageCanvasHeight = Math.round(canvasWidth * (297 / 210));
+      const totalPages = Math.max(1, Math.ceil(canvas.height / pageCanvasHeight));
+
+      for (let p = 0; p < totalPages; p++) {
+        if (p > 0) pdf.addPage('a4', 'portrait');
+        const srcY = p * pageCanvasHeight;
+        const srcH = Math.min(pageCanvasHeight, canvas.height - srcY);
+
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvasWidth;
+        pageCanvas.height = pageCanvasHeight;
+        const ctx = pageCanvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvasWidth, pageCanvasHeight);
+          ctx.drawImage(canvas, 0, srcY, canvasWidth, srcH, 0, 0, canvasWidth, srcH);
+        }
+        const pageImg = pageCanvas.toDataURL('image/jpeg', 0.95);
+        pdf.addImage(pageImg, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      }
+    }
+
+    onProgress?.('Saving Page-by-Page A4 PDF file...');
     pdf.save(finalName);
     onProgress?.('PDF Downloaded Successfully!');
   } finally {
@@ -266,15 +306,31 @@ export async function downloadServerChromiumPdf(options: ServerPdfExportOptions)
 
     onProgress?.('PDF Downloaded Successfully!');
   } catch (err: any) {
-    console.warn('[PDF Export Engine] Server rendering notice, switching to Canva-grade IFrame Sandbox Export:', err?.message);
+    console.warn('[PDF Export Engine] Server rendering notice, switching to Page-by-Page A4 Sandbox Export:', err?.message);
     const canvasEl = document.getElementById('quotation-full-canvas');
     if (canvasEl) {
-      onProgress?.('Generating PDF via IFrame Sandbox Engine...');
+      onProgress?.('Generating Page-by-Page A4 PDF via IFrame Sandbox Engine...');
       await exportClientCanvasToPDF('quotation-full-canvas', finalFilename, onProgress);
     } else {
-      onProgress?.('Opening print-ready quotation view...');
-      window.open(`/api/quotations/${targetId}/render-html?print=true`, '_blank');
-      onProgress?.('Opened quotation print view in new tab.');
+      // Direct GET download fallback without opening new print tabs
+      onProgress?.('Fetching PDF binary stream...');
+      const fallbackRes = await fetch(`/api/quotations/pdf?id=${targetId}&filename=${encodeURIComponent(finalFilename)}`);
+      if (fallbackRes.ok) {
+        const fallbackBlob = await fallbackRes.blob();
+        if (fallbackBlob.size >= 1000) {
+          const url = window.URL.createObjectURL(fallbackBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = finalFilename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+          onProgress?.('PDF Downloaded Successfully!');
+          return;
+        }
+      }
+      throw new Error(err?.message || 'Could not export quotation PDF');
     }
   }
 }

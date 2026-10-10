@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  X, Check, User, DollarSign, FileText, Lock, Users, Briefcase, Plus, Calendar, Tag, Mail, Phone,
+  X, Check, User, DollarSign, IndianRupee, Globe, FileText, Lock, Users, Briefcase, Plus, Calendar, Tag, Mail, Phone,
   FileIcon, ChevronRight, CheckSquare, AlarmClock, Trash2, Edit2, Clock, Shield, MoreVertical, MessageCircle, ArrowUpRight, Sparkles,
   CornerDownRight, CheckCircle2, MessageSquare, Reply, AlertCircle, ArrowLeft, ArrowRight, Gift,
   FolderOpen, Archive, Search, RefreshCw, Activity, UserCheck
@@ -21,7 +21,7 @@ interface LeadInsiderDrawerProps {
   onClose: () => void;
   onLeadUpdate?: (leadId: string, updatedFields: Partial<Lead>) => void;
   stages?: any[];
-  customSources?: string[];
+  customSources?: any[];
   userEmail?: string | null;
   commentsOnlyMode?: boolean;
   initialQuotations?: any[];
@@ -142,12 +142,21 @@ const getAuthorFromEmail = (email: string | null | undefined) => {
 };
 
 export const formatDisplayBudget = (rawBudget?: any): string => {
-  if (!rawBudget) return '₹1,50,000';
+  if (
+    !rawBudget || 
+    String(rawBudget).trim() === '' || 
+    String(rawBudget).trim() === '₹' || 
+    String(rawBudget).trim() === '-' ||
+    String(rawBudget).trim() === '0'
+  ) {
+    return '₹0';
+  }
   let str = String(rawBudget).trim();
   // Strip corrupted leading question marks like ??? or ????
   str = str.replace(/^\?+/, '').trim();
   // Strip inner ??? like "- ???" or "- ??? 2.5"
   str = str.replace(/-\s*\?+/, '- ₹').trim();
+  if (str === '' || str === '₹') return '₹0';
   if (str.startsWith('₹') || str.startsWith('$')) return str;
   return `₹${str}`;
 };
@@ -284,7 +293,7 @@ export function LeadInsiderDrawer({
     handleFieldChange({ raw_payload: updatedPayload });
   };
 
-  // Editable fields state (Lead Name, Email, Phone)
+  // Editable fields state (Lead Name, Email, Phone, Max Budget)
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(lead?.name || '');
   const [isEditingEmail, setIsEditingEmail] = useState(false);
@@ -292,14 +301,33 @@ export function LeadInsiderDrawer({
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [editedPhone, setEditedPhone] = useState(lead?.phone || '');
 
+  const getResolvedBudget = (l?: Lead | null): string => {
+    if (!l) return '';
+    return (
+      l.raw_payload?.budget ||
+      l.raw_payload?.expected_budget ||
+      l.raw_payload?.deal_value ||
+      l.raw_payload?.package ||
+      l.raw_payload?.max_budget ||
+      l.raw_payload?.['Max Budget'] ||
+      (l as any)?.budget ||
+      ''
+    );
+  };
+
+  const rawInitialBudget = getResolvedBudget(lead);
+  const [isEditingBudget, setIsEditingBudget] = useState(false);
+  const [editedBudget, setEditedBudget] = useState(rawInitialBudget);
+
   // Synchronize with external lead changes
   useEffect(() => {
     if (lead) {
       setEditedName(lead.name || '');
       setEditedEmail(lead.email || '');
       setEditedPhone(lead.phone || '');
+      setEditedBudget(getResolvedBudget(lead));
     }
-  }, [lead?.id, lead?.name, lead?.email, lead?.phone]);
+  }, [lead?.id, lead?.name, lead?.email, lead?.phone, lead?.raw_payload?.budget, (lead as any)?.budget]);
 
   // Activity History & Audit Trail State
   const [activities, setActivities] = useState<any[]>([]);
@@ -332,7 +360,8 @@ export function LeadInsiderDrawer({
   const handleSaveName = async () => {
     const trimmed = editedName.trim();
     if (trimmed && trimmed !== lead.name) {
-      handleFieldChange({ name: trimmed });
+      const updatedPayload = { ...(lead.raw_payload || {}), name: trimmed, full_name: trimmed };
+      handleFieldChange({ name: trimmed, raw_payload: updatedPayload });
       fetch(`/api/leads/${lead.id}/activities`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -351,7 +380,8 @@ export function LeadInsiderDrawer({
   const handleSaveEmail = async () => {
     const trimmed = editedEmail.trim();
     if (trimmed !== (lead.email || '')) {
-      handleFieldChange({ email: trimmed });
+      const updatedPayload = { ...(lead.raw_payload || {}), email: trimmed };
+      handleFieldChange({ email: trimmed, raw_payload: updatedPayload });
       fetch(`/api/leads/${lead.id}/activities`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -370,7 +400,8 @@ export function LeadInsiderDrawer({
   const handleSavePhone = async () => {
     const trimmed = editedPhone.trim();
     if (trimmed !== (lead.phone || '')) {
-      handleFieldChange({ phone: trimmed });
+      const updatedPayload = { ...(lead.raw_payload || {}), phone: trimmed, phone_number: trimmed };
+      handleFieldChange({ phone: trimmed, raw_payload: updatedPayload });
       fetch(`/api/leads/${lead.id}/activities`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -384,6 +415,83 @@ export function LeadInsiderDrawer({
       }).then(() => fetchActivities()).catch(() => {});
     }
     setIsEditingPhone(false);
+  };
+
+  const handleSaveBudget = async () => {
+    const trimmed = editedBudget.trim();
+    if (trimmed !== rawInitialBudget) {
+      const updatedPayload = { ...(lead.raw_payload || {}), budget: trimmed };
+      handleFieldChange({ budget: trimmed as any, raw_payload: updatedPayload });
+      fetch(`/api/leads/${lead.id}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `${authorProfile.name} updated Max Budget to "${trimmed || '₹0'}"`,
+          action_type: 'budget_change',
+          actor_name: authorProfile.name,
+          old_value: rawInitialBudget || 'None',
+          new_value: trimmed || '₹0'
+        })
+      }).then(() => fetchActivities()).catch(() => {});
+    }
+    setIsEditingBudget(false);
+  };
+
+  // Dynamic Lead Source Options
+  const sourceOptions = useMemo(() => {
+    const defaults = ['Facebook Ads', 'Instagram Ads', 'Google Ads', 'Website Inquiry', 'Referral', 'Walk-in / Direct'];
+    const seen = new Set<string>();
+    const list: { value: string; label: string; color?: string }[] = [];
+
+    (customSources || []).forEach((src: any) => {
+      const isObj = typeof src === 'object' && src !== null;
+      const val = isObj ? (src.name || src.value) : String(src);
+      if (val && !seen.has(val.toLowerCase())) {
+        seen.add(val.toLowerCase());
+        list.push({ value: val, label: val, color: isObj ? src.color : undefined });
+      }
+    });
+
+    defaults.forEach(def => {
+      if (!seen.has(def.toLowerCase())) {
+        seen.add(def.toLowerCase());
+        list.push({ value: def, label: def });
+      }
+    });
+
+    const currentLeadSource = lead?.source || lead?.raw_payload?.source;
+    if (currentLeadSource && !seen.has(currentLeadSource.toLowerCase())) {
+      list.unshift({ value: currentLeadSource, label: currentLeadSource });
+    }
+
+    return list;
+  }, [customSources, lead?.source, lead?.raw_payload?.source]);
+
+  const handleSourceChange = (newSource: string) => {
+    const oldSource = lead.source || lead.raw_payload?.source || 'None';
+    if (newSource === oldSource) return;
+
+    const updatedPayload = {
+      ...(lead.raw_payload || {}),
+      source: newSource
+    };
+
+    handleFieldChange({
+      source: newSource,
+      raw_payload: updatedPayload
+    });
+
+    fetch(`/api/leads/${lead.id}/activities`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: `${authorProfile.name} updated Lead Source to "${newSource}"`,
+        action_type: 'source_change',
+        actor_name: authorProfile.name,
+        old_value: oldSource,
+        new_value: newSource
+      })
+    }).then(() => fetchActivities()).catch(() => {});
   };
 
   // 24 Hour Time conversion
@@ -1130,7 +1238,7 @@ export function LeadInsiderDrawer({
       if (activityFilter === 'stage' && act.type !== 'stage_change') return false;
       if (activityFilter === 'owner' && act.type !== 'owner_change') return false;
       if (activityFilter === 'quote' && !act.type.includes('quote') && !act.type.includes('quotation')) return false;
-      if (activityFilter === 'edit' && act.type !== 'name_change' && act.type !== 'contact_change') return false;
+      if (activityFilter === 'edit' && act.type !== 'name_change' && act.type !== 'contact_change' && act.type !== 'budget_change' && act.type !== 'source_change') return false;
 
       // 2. Search query
       if (activitySearch.trim()) {
@@ -1152,9 +1260,18 @@ export function LeadInsiderDrawer({
         case 'name_change':
         case 'contact_change':
           return <Edit2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />;
-        case 'quotation_created':
+        case 'budget_change':
+          return <IndianRupee className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+        case 'source_change':
+          return <Globe className="w-4 h-4 text-sky-600 dark:text-sky-400" />;
+        case 'quote_final':
         case 'quotation_finalized':
+          return <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+        case 'quote_unfinal':
         case 'quotation_unfinalized':
+          return <FileText className="w-4 h-4 text-rose-500 dark:text-rose-400" />;
+        case 'quotation_created':
+        case 'quotation_updated':
           return <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
         case 'comment':
           return <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />;
@@ -1171,13 +1288,21 @@ export function LeadInsiderDrawer({
           return 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/50';
         case 'owner_change':
           return 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/50';
+        case 'budget_change':
+          return 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/50';
+        case 'source_change':
+          return 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800/50';
         case 'name_change':
         case 'contact_change':
           return 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/50';
-        case 'quotation_created':
+        case 'quote_final':
         case 'quotation_finalized':
-        case 'quotation_unfinalized':
+        case 'quotation_created':
+        case 'quotation_updated':
           return 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/50';
+        case 'quote_unfinal':
+        case 'quotation_unfinalized':
+          return 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/50';
         case 'comment':
           return 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/50';
         case 'lead_created':
@@ -1498,9 +1623,61 @@ export function LeadInsiderDrawer({
                           </p>
 
                           <div className="flex items-center justify-between gap-2 mt-2">
-                            <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono">
-                              {formatDisplayBudget(lead.raw_payload?.budget || (lead as any).budget)}
-                            </span>
+                            {isEditingBudget ? (
+                              <div className="flex items-center gap-1.5 flex-1 max-w-[240px]">
+                                <input
+                                  type="text"
+                                  value={editedBudget}
+                                  onChange={(e) => setEditedBudget(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSaveBudget();
+                                    if (e.key === 'Escape') {
+                                      setEditedBudget(rawInitialBudget);
+                                      setIsEditingBudget(false);
+                                    }
+                                  }}
+                                  autoFocus
+                                  className="flex-1 min-w-0 px-2 py-0.5 bg-slate-50 dark:bg-zinc-800 border border-amber-500 rounded-lg text-sm font-bold font-mono text-slate-900 dark:text-white focus:outline-hidden"
+                                  placeholder="e.g. ₹2,50,000"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleSaveBudget}
+                                  className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shrink-0"
+                                  title="Save Max Budget"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditedBudget(rawInitialBudget);
+                                    setIsEditingBudget(false);
+                                  }}
+                                  className="p-1 rounded-lg bg-slate-200 dark:bg-zinc-700 hover:bg-slate-300 text-slate-600 dark:text-zinc-300 cursor-pointer shrink-0"
+                                  title="Cancel"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 group/budget">
+                                <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono">
+                                  {formatDisplayBudget(rawInitialBudget)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditedBudget(rawInitialBudget || '');
+                                    setIsEditingBudget(true);
+                                  }}
+                                  className="opacity-60 group-hover/budget:opacity-100 p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition cursor-pointer shrink-0"
+                                  title="Edit Max Budget"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
 
                             {/* Quick Action Floating Circles (Call & WhatsApp) */}
                             <div className="flex items-center gap-2">
@@ -1549,11 +1726,26 @@ export function LeadInsiderDrawer({
                           }))}
                           onChange={(val) => {
                             const found = stages.find(s => s.id === val || s.name === val);
+                            const targetStageName = found?.name || val;
+                            const oldStageName = lead.status || lead.stage_id;
                             if (onLeadUpdate) {
                               onLeadUpdate(lead.id, {
                                 stage_id: found?.id || val,
-                                status: (found?.name || val) as any
+                                status: targetStageName as any
                               });
+                            }
+                            if (targetStageName !== oldStageName) {
+                              fetch(`/api/leads/${lead.id}/activities`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  message: `${authorProfile.name} moved stage to "${targetStageName}"`,
+                                  action_type: 'stage_change',
+                                  actor_name: authorProfile.name,
+                                  old_value: oldStageName,
+                                  new_value: targetStageName
+                                })
+                              }).then(() => fetchActivities()).catch(() => {});
                             }
                           }}
                         />
@@ -1695,6 +1887,33 @@ export function LeadInsiderDrawer({
                           </div>
                         </div>
 
+                        {/* Lead Source Row */}
+                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-8 h-8 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0 border border-sky-200/60 dark:border-sky-800/60">
+                              <Globe className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium uppercase tracking-wider">Lead Source</span>
+                              <div className="mt-0.5">
+                                <CRMDropdown
+                                  value={lead.source || lead.raw_payload?.source}
+                                  placeholder="Select source"
+                                  options={sourceOptions}
+                                  allowCustomAdd={true}
+                                  customAddTitle="Add Custom Lead Source"
+                                  onAddCustomOption={(name) => {
+                                    if (name.trim()) handleSourceChange(name.trim());
+                                  }}
+                                  onChange={(val) => {
+                                    handleSourceChange(val);
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
                         {/* Last Contact / Lead Owner Row */}
                         <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
                           <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1784,6 +2003,12 @@ export function LeadInsiderDrawer({
                                   <UserCheck className="w-4 h-4 text-blue-600" />
                                 ) : act.type === 'comment' ? (
                                   <MessageSquare className="w-4 h-4 text-indigo-600" />
+                                ) : act.type === 'budget_change' ? (
+                                  <IndianRupee className="w-4 h-4 text-emerald-600" />
+                                ) : act.type === 'source_change' ? (
+                                  <Globe className="w-4 h-4 text-sky-600" />
+                                ) : (act.type?.includes('quote') || act.type?.includes('quotation')) ? (
+                                  <FileText className="w-4 h-4 text-emerald-600" />
                                 ) : (
                                   <Sparkles className="w-4 h-4 text-amber-500" />
                                 )}

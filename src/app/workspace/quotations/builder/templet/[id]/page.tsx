@@ -17,7 +17,7 @@ import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
-import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
+import { downloadServerChromiumPdf, exportClientCanvasToPDF } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady, preloadActiveFont } from '@/lib/font-loader';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
@@ -2202,6 +2202,9 @@ function syncPaymentTermsWithPricing(pricingPage: any, currentPaymentTerms: any)
 function StudioCoreAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const tokenParam = searchParams?.get('token') || '';
+  const isCleanView = searchParams?.get('mode') === 'clean';
+  const isPublicPreview = searchParams?.get('preview') === 'public' || isCleanView || !!tokenParam;
   const params = useParams();
   const templateId = (params?.id as string) || '';
   const routeId = templateId;
@@ -2368,20 +2371,18 @@ function StudioCoreAiryBuilderContent() {
         } catch (_) {}
       }
 
-      if (pendingSaveTimeoutRef.current) {
-        clearTimeout(pendingSaveTimeoutRef.current);
+      if (!isPublicPreview) {
+        if (pendingSaveTimeoutRef.current) {
+          clearTimeout(pendingSaveTimeoutRef.current);
+        }
+        pendingSaveTimeoutRef.current = setTimeout(() => {
+          triggerRevisionSave();
+        }, 200);
       }
-      pendingSaveTimeoutRef.current = setTimeout(() => {
-        triggerRevisionSave();
-      }, 200);
 
       return nextData;
     });
-  }, [userId, params]);
-
-  const tokenParam = searchParams?.get('token') || '';
-  const isCleanView = searchParams?.get('mode') === 'clean';
-  const isPublicPreview = searchParams?.get('preview') === 'public' || isCleanView || !!tokenParam;
+  }, [userId, params, isPublicPreview]);
 
   // Modals & Actions for Public Preview
   const [showAcceptModal, setShowAcceptModal] = useState(false);
@@ -2412,13 +2413,15 @@ function StudioCoreAiryBuilderContent() {
     if (downloadingPdf) return;
     setDownloadingPdf(true);
     try {
-      // AUTO-SAVE BEFORE DOWNLOAD: Ensure latest quotation edits are 100% persisted to DB!
-      try {
-        if (flushSaveRef.current) {
-          await flushSaveRef.current();
+      // AUTO-SAVE BEFORE DOWNLOAD: Ensure latest quotation edits are 100% persisted to DB (for owner edits)!
+      if (!isPublicPreview) {
+        try {
+          if (flushSaveRef.current) {
+            await flushSaveRef.current();
+          }
+        } catch (saveErr) {
+          console.warn('[Client Download PDF Auto-Save Notice]:', saveErr);
         }
-      } catch (saveErr) {
-        console.warn('[Client Download PDF Auto-Save Notice]:', saveErr);
       }
 
       await downloadServerChromiumPdf({
@@ -2427,8 +2430,12 @@ function StudioCoreAiryBuilderContent() {
         content_json: data
       });
     } catch (e) {
-      console.error('[Client Download PDF Error]:', e);
-      window.open(`/api/quotations/${templateId || routeId}/render-html?print=true`, '_blank');
+      console.warn('[Client Download PDF notice, falling back to Page-by-Page A4 canvas exporter]:', e);
+      try {
+        await exportClientCanvasToPDF('quotation-full-canvas', `${data.designName || data.title || 'Quotation'}.pdf`);
+      } catch (canvasErr) {
+        console.error('[Client Canvas PDF fallback error]:', canvasErr);
+      }
     } finally {
       setDownloadingPdf(false);
     }
@@ -3508,7 +3515,7 @@ function StudioCoreAiryBuilderContent() {
 
   // ── 3. REVISION-SAFE SERIALIZED AUTOSAVE ENGINE ──
   const triggerRevisionSave = async () => {
-    if (!userId || !isInitialLoadedRef.current) return;
+    if (isPublicPreview || !userId || userId === 'PUBLIC_USER' || !isInitialLoadedRef.current) return;
 
     if (isSaveInFlightRef.current) {
       if (pendingSaveTimeoutRef.current) clearTimeout(pendingSaveTimeoutRef.current);
@@ -3565,7 +3572,9 @@ function StudioCoreAiryBuilderContent() {
 
       if (!saveRes.ok) {
         const errJson = await saveRes.json().catch(() => ({}));
-        throw new Error(errJson.error || `Save failed with status ${saveRes.status}`);
+        console.warn(`[Autosave] Save status ${saveRes.status}:`, errJson?.error);
+        setAutoSaveStatus('Offline / Retrying');
+        return;
       }
 
       const resJson = await saveRes.json();
@@ -7987,7 +7996,9 @@ function StudioCoreAiryBuilderContent() {
             });
             setAutoSaveStatus('Auto-saved to cloud');
             setHasUnsavedChanges(false);
-            triggerRevisionSave();
+            if (!isPublicPreview) {
+              triggerRevisionSave();
+            }
           }
         }}
       />

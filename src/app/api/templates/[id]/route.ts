@@ -5,6 +5,11 @@ import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { extractCoupleNameFromQuotation, syncBookedLeadOrFinalQuotation } from '@/lib/quotation-finance-sync';
 
+function isValidUUID(str?: string | null): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+}
+
 /**
  * Authoritative Single Template & Lead Quotation Document Route (GET, PUT, PATCH, DELETE)
  * Handles security checks, workspace isolation, system template direct editing for Super Admin, and auto-forking for users.
@@ -467,6 +472,41 @@ async function handleUpdate(
               raw_payload: rawPayload,
               quotation_id: leadRow.quotation_id || id
             }).eq('id', effectiveLeadId);
+          }
+
+          // Structured audit logging into live_logs
+          try {
+            const actor = body.actor_name || (userId ? 'Studio Admin' : 'User');
+            const versionLabel = effectiveLeadVersion ? `v${effectiveLeadVersion}` : (body.version ? `v${body.version}` : 'v1');
+
+            let logWsId = workspaceId;
+            if (!isValidUUID(logWsId)) {
+              const { data: leadForWs } = await supabaseAdmin.from('leads').select('workspace_id').eq('id', effectiveLeadId).maybeSingle();
+              logWsId = leadForWs?.workspace_id;
+            }
+            if (!isValidUUID(logWsId)) {
+              const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
+              logWsId = prof?.id;
+            }
+
+            if (isValidUUID(logWsId)) {
+              await supabaseAdmin.from('live_logs').insert({
+                workspace_id: logWsId,
+                lead_id: effectiveLeadId,
+                event_type: 'lead_activity',
+                message: `${actor} updated quotation "${newTitle}" (${versionLabel})`,
+                metadata: {
+                  action_type: 'quotation_updated',
+                  actor_name: actor,
+                  template_id: id,
+                  version: versionLabel,
+                  title: newTitle,
+                  logged_at: new Date().toISOString()
+                }
+              });
+            }
+          } catch (logErr) {
+            console.warn('[templates/[id]] live_logs insertion note:', logErr);
           }
         } catch (leadSyncErr) {
           console.warn('[API templates/[id]] Lead version sync note:', leadSyncErr);

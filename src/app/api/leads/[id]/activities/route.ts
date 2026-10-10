@@ -3,6 +3,11 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 
+function isValidUUID(str?: string | null): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: leadId } = await params;
@@ -11,20 +16,31 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, error: 'Lead ID is required' }, { status: 400 });
     }
 
-    // 1. Fetch structured live_logs for this lead
-    const { data: logs, error: logsErr } = await supabaseAdmin
-      .from('live_logs')
-      .select('id, event_type, message, metadata, created_at')
-      .or(`lead_id.eq.${leadId},metadata->>lead_id.eq.${leadId}`)
-      .order('created_at', { ascending: false })
-      .limit(100);
+    const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
-    // 2. Fetch lead info for comments, creation event, and timeline
-    const { data: lead } = await supabaseAdmin
-      .from('leads')
-      .select('id, name, source, created_at, comments, followup_timeline, status, raw_payload')
-      .eq('id', leadId)
-      .maybeSingle();
+    // 1. Fetch structured live_logs for this lead in parallel with lead info & quotation documents
+    const [logsRes, leadRes, quoteDocsRes] = await Promise.all([
+      supabaseAdmin
+        .from('live_logs')
+        .select('id, event_type, message, metadata, created_at')
+        .or(`lead_id.eq.${leadId},metadata->>lead_id.eq.${leadId}`)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabaseAdmin
+        .from('leads')
+        .select('id, name, source, created_at, comments, followup_timeline, status, raw_payload')
+        .eq('id', leadId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('quotation_documents')
+        .select('id, template_id, version, lead_version, content_json, created_at, updated_at')
+        .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`)
+        .order('created_at', { ascending: false })
+    ]);
+
+    const logs = logsRes.data;
+    const lead = leadRes.data;
+    const quoteDocs = quoteDocsRes.data;
 
     const activityList: any[] = [];
 
@@ -39,6 +55,49 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           metadata: l.metadata || {},
           created_at: l.created_at,
         });
+      });
+    }
+
+    // Add quotation documents history (synthesizes any historical versions not in live_logs)
+    if (quoteDocs && quoteDocs.length > 0) {
+      quoteDocs.forEach((qd: any) => {
+        const v = qd.lead_version || qd.content_json?.lead_version || qd.version || 1;
+        const qTitle = qd.content_json?.designName || qd.content_json?.title || `Quotation (V${v})`;
+        const isFinal = Boolean(qd.content_json?.is_final);
+
+        // Created / finalized event
+        activityList.push({
+          id: `quote_doc_${qd.id || qd.template_id}_created`,
+          type: isFinal ? 'quotation_finalized' : 'quotation_created',
+          message: isFinal 
+            ? `Quotation finalized: "${qTitle}" (v${v})` 
+            : `Quotation created: "${qTitle}" (v${v})`,
+          actor: 'Studio Team',
+          metadata: {
+            action_type: isFinal ? 'quotation_finalized' : 'quotation_created',
+            quotation_id: qd.template_id || qd.id,
+            version: v,
+            title: qTitle
+          },
+          created_at: qd.created_at || qd.updated_at || lead?.created_at,
+        });
+
+        // Updated event if modified noticeably later
+        if (qd.updated_at && qd.created_at && new Date(qd.updated_at).getTime() - new Date(qd.created_at).getTime() > 120000) {
+          activityList.push({
+            id: `quote_doc_${qd.id || qd.template_id}_updated`,
+            type: 'quotation_updated',
+            message: `Quotation updated: "${qTitle}" (v${v})`,
+            actor: 'Studio Team',
+            metadata: {
+              action_type: 'quotation_updated',
+              quotation_id: qd.template_id || qd.id,
+              version: v,
+              title: qTitle
+            },
+            created_at: qd.updated_at,
+          });
+        }
       });
     }
 
@@ -78,9 +137,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       activityList.push({
         id: `created_${lead.id}`,
         type: 'lead_created',
-        message: `Lead created from source: ${lead.source || 'Direct Inquiry'}`,
+        message: `Lead created from source: ${lead.source || lead.raw_payload?.source || 'Direct Inquiry'}`,
         actor: 'System',
-        metadata: { source: lead.source },
+        metadata: { source: lead.source || lead.raw_payload?.source },
         created_at: lead.created_at,
       });
     }
@@ -120,7 +179,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .eq('id', leadId)
       .maybeSingle();
 
-    const workspaceId = lead?.workspace_id || null;
+    let workspaceId = lead?.workspace_id || null;
+    if (!isValidUUID(workspaceId)) {
+      const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
+      workspaceId = prof?.id || null;
+    }
 
     const { data: newLog, error } = await supabaseAdmin
       .from('live_logs')

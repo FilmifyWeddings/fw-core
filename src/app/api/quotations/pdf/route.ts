@@ -397,3 +397,27 @@ export async function POST(req: NextRequest) {
     }, { status: 500 });
   }
 }
+
+// GET /api/quotations/pdf - Supports direct binary downloads
+export async function GET(req: NextRequest) {
+  const targetId = req.nextUrl.searchParams.get('id') || req.nextUrl.searchParams.get('templateId') || req.nextUrl.searchParams.get('quotationId');
+  const filename = req.nextUrl.searchParams.get('filename') || `${targetId || 'Quotation'}.pdf`;
+
+  if (!targetId) {
+    return NextResponse.json({ error: 'Quotation ID is required' }, { status: 400 });
+  }
+
+  // Construct a simulated request for the shared POST pipeline
+  const postReq = new NextRequest(req.url, {
+    method: 'POST',
+    headers: req.headers,
+    body: JSON.stringify({
+      quotationId: targetId,
+      templateId: targetId,
+      filename
+    })
+  });
+
+  return POST(postReq);
+}
+

@@ -248,6 +248,33 @@ export async function POST(req: NextRequest) {
           },
           updated_at: new Date().toISOString()
         }).eq('id', leadId);
+
+        // Insert audit log into live_logs
+        try {
+          const isValidUUID = (val?: string | null) => val && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+          let logWsId = workspaceId;
+          if (!isValidUUID(logWsId)) {
+            const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
+            logWsId = prof?.id;
+          }
+          if (isValidUUID(logWsId)) {
+            const qTitle = clonedDoc.designName || `Quotation V${nextVersion}`;
+            await supabaseAdmin.from('live_logs').insert({
+              workspace_id: logWsId,
+              lead_id: leadId,
+              event_type: 'lead_activity',
+              message: `Created quotation "${qTitle}" (v${nextVersion})`,
+              metadata: {
+                action_type: 'quotation_created',
+                actor_name: 'Studio Admin',
+                quotation_id: quotationId,
+                version: nextVersion,
+                title: qTitle,
+                logged_at: new Date().toISOString()
+              }
+            });
+          }
+        } catch (_) {}
       } catch (e) {}
     })();
 

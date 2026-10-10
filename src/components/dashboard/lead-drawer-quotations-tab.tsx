@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 
 export interface QuotationVersionItem {
   id: string;
@@ -66,6 +67,7 @@ export function LeadDrawerQuotationsTab({
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [settingFinalId, setSettingFinalId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Share link modal state
@@ -407,11 +409,43 @@ export function LeadDrawerQuotationsTab({
       ? window.location.origin
       : 'https://studiocore.in';
 
-    let shareUrl = `${origin}/workspace/quotations/builder/templet/${q.template_id}?preview=public&token=${q.template_id}`;
-    if (q.public_token) {
-      shareUrl = `${origin}/p/quotation/${q.public_token}`;
-    }
+    const token = q.public_token || q.template_id;
+    const shareUrl = `${origin}/p/quotation/${token}`;
     setShareModal({ quotationId: q.template_id, url: shareUrl });
+  };
+
+  const handleDownloadPdf = async (q: QuotationVersionItem) => {
+    if (downloadingId) return;
+    setDownloadingId(q.template_id);
+    try {
+      const fileName = `${lead.name || 'Client'}-Quotation-V${q.version}.pdf`;
+      await downloadServerChromiumPdf({
+        templateId: q.template_id,
+        quotationId: q.template_id,
+        filename: fileName
+      });
+    } catch (err) {
+      console.error('[Download PDF error]:', err);
+      // Fallback: direct browser binary download
+      try {
+        const res = await fetch(`/api/quotations/pdf?id=${q.template_id}&lead_id=${lead.id}`);
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${lead.name || 'Client'}-Quotation-V${q.version}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        }
+      } catch (fallbackErr) {
+        console.error('[Direct Download Fallback error]:', fallbackErr);
+      }
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   const formatDateTime = (dateStr?: string) => {
@@ -581,15 +615,19 @@ export function LeadDrawerQuotationsTab({
                     </button>
 
                     {/* PDF Download Button */}
-                    <a
-                      href={`/api/quotations/pdf?id=${q.template_id}&lead_id=${lead.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-750 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
-                      title="Download PDF"
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadPdf(q)}
+                      disabled={downloadingId === q.template_id}
+                      className="p-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-750 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Download Page-by-Page A4 PDF"
                     >
-                      <Download className="w-3.5 h-3.5" />
-                    </a>
+                      {downloadingId === q.template_id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5" />
+                      )}
+                    </button>
 
                     {/* Final Toggle Button */}
                     {q.is_final ? (
