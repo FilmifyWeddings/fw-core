@@ -10,7 +10,7 @@ import {
   QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard, Lock, Unlock, ShieldCheck, Key,
   Pencil, X, PackageCheck, Gift, Layers, ListPlus, SlidersHorizontal, Edit2, Edit3, MoveUp, MoveDown,
   Search, FileCheck, Calendar, MapPin, Sliders, Shield, Tag, ChevronRight, CheckSquare, Square,
-  Film
+  Film, HardDrive
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -58,10 +58,11 @@ import {
 } from '@/lib/workspace-settings';
 import CrewRolesSettings from '@/app/workspace/settings/components/CrewRolesSettings';
 import PostProductionSettingsTab from '@/app/workspace/settings/components/PostProductionSettingsTab';
+import StorageSettingsTab from '@/app/workspace/settings/components/StorageSettingsTab';
 import SmsTemplateSettings from '@/components/settings/SmsTemplateSettings';
 
 
-type SettingsTab = 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
+type SettingsTab = 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'storage' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
 type QuoteSubTab = 'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms';
 
 interface DropdownItem {
@@ -956,6 +957,7 @@ export default function SettingsPage() {
             { id: 'functions', label: ' Functions & Events', icon: Sparkles },
             { id: 'crew_roles', label: ' Crew Roles & Codes', icon: Users },
             { id: 'post_production', label: ' Post-Production & Statuses', icon: Film },
+            { id: 'storage', label: ' Storage & Media Cards', icon: HardDrive },
             { id: 'quotations', label: ' Quotations & Proposals', icon: FileText },
             { id: 'finance', label: ' Finance & Invoices', icon: Coins },
             { id: 'attendance', label: ' Attendance & Geofence', icon: Clock },
@@ -1270,6 +1272,17 @@ export default function SettingsPage() {
             {/* 1.7 POST-PRODUCTION DELIVERABLES & STATUSES SETTINGS */}
             {activeTab === 'post_production' && (
               <PostProductionSettingsTab
+                workspaceId={workspaceId}
+                onShowToast={(msg) => {
+                  setSaveToast(msg);
+                  setTimeout(() => setSaveToast(null), 3000);
+                }}
+              />
+            )}
+
+            {/* 1.8 STORAGE & MEDIA CARDS SETTINGS */}
+            {activeTab === 'storage' && (
+              <StorageSettingsTab
                 workspaceId={workspaceId}
                 onShowToast={(msg) => {
                   setSaveToast(msg);

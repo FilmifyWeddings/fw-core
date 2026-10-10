@@ -1793,6 +1793,85 @@ export async function syncBookedLeadOrFinalQuotation({
             console.warn('[syncBookedLeadOrFinalQuotation] quotations sync notice:', qErr);
           }
         }
+
+        // 9. Studio Storage Hub Sync: Automatically create or update client storage project asset card
+        try {
+          const effectiveWs = lead.workspace_id || workspaceId;
+          const { data: existingAsset } = await supabaseClient
+            .from('storage_project_assets')
+            .select('id, sub_events, assigned_disks, google_drive_backup')
+            .eq('workspace_id', effectiveWs)
+            .eq('lead_id', leadId)
+            .maybeSingle();
+
+          const rawEvents = (rawPayload && (rawPayload.events || rawPayload.sub_events)) || [];
+          const normalizedSubEvents = rawEvents.length > 0 ? rawEvents.map((ev: any, idx: number) => ({
+            id: ev.id || `ev_${idx + 1}_${leadId}`,
+            name: ev.name || ev.title || `Event ${idx + 1}`,
+            date: ev.date || lead.event_date || now.split('T')[0],
+            venue: ev.venue || lead.location || '',
+            crew: (ev.crew || ev.team_members || []).map((cr: any, cIdx: number) => ({
+              id: cr.id || `cr_${idx + 1}_${cIdx + 1}`,
+              name: cr.name || cr.member_name || `Crew ${cIdx + 1}`,
+              role: cr.role || 'Cinematography / Photography',
+              assigned_card_ids: cr.assigned_card_ids || [],
+              assigned_card_names: cr.assigned_card_names || [],
+              is_copied: Boolean(cr.is_copied),
+              copied_at: cr.copied_at || null,
+              copied_by: cr.copied_by || null,
+            }))
+          })) : [
+            {
+              id: `ev_main_${leadId}`,
+              name: lead.event_type || 'Main Event Photography',
+              date: lead.event_date || now.split('T')[0],
+              venue: lead.location || '',
+              crew: [
+                {
+                  id: `cr_1_${leadId}`,
+                  name: 'Photographer 1',
+                  role: 'Traditional Photography',
+                  assigned_card_ids: [],
+                  assigned_card_names: [],
+                  is_copied: false,
+                  copied_at: null,
+                  copied_by: null,
+                },
+                {
+                  id: `cr_2_${leadId}`,
+                  name: 'Cinematographer 1',
+                  role: 'Candid Cinematography',
+                  assigned_card_ids: [],
+                  assigned_card_names: [],
+                  is_copied: false,
+                  copied_at: null,
+                  copied_by: null,
+                }
+              ]
+            }
+          ];
+
+          const storagePayload: any = {
+            workspace_id: effectiveWs,
+            lead_id: leadId,
+            client_id: workspaceClientId,
+            client_name: coupleName.trim(),
+            event_date: lead.event_date || now.split('T')[0],
+            package_amount: Number(lead.budget || lead.package_amount || 0),
+            booking_status: 'booked',
+            sub_events: existingAsset?.sub_events?.length > 0 ? existingAsset.sub_events : normalizedSubEvents,
+            assigned_disks: existingAsset?.assigned_disks || [],
+            google_drive_backup: existingAsset?.google_drive_backup || {},
+            overall_storage_status: existingAsset?.overall_storage_status || 'INGESTING',
+            updated_at: now
+          };
+
+          await supabaseClient
+            .from('storage_project_assets')
+            .upsert(storagePayload, { onConflict: 'workspace_id,lead_id' });
+        } catch (stErr) {
+          console.warn('[syncBookedLeadOrFinalQuotation] storage_project_assets sync notice:', stErr);
+        }
       } catch (leadUpErr) {
         console.error('[syncBookedLeadOrFinalQuotation] Error updating lead payload:', leadUpErr);
       }

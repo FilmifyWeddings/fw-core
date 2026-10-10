@@ -363,6 +363,67 @@ export async function POST(
                 is_archived: false
               });
           }
+        })(),
+
+        // 3F. Studio Storage Hub: Auto-create client storage project asset card
+        (async () => {
+          try {
+            const { data: existingAsset } = await supabaseAdmin
+              .from('storage_project_assets')
+              .select('id')
+              .eq('workspace_id', workspaceId)
+              .eq('lead_id', leadId)
+              .maybeSingle();
+
+            if (!existingAsset) {
+              await supabaseAdmin
+                .from('storage_project_assets')
+                .insert({
+                  workspace_id: workspaceId,
+                  lead_id: leadId,
+                  client_id: workspaceClientId,
+                  client_name: coupleName.trim(),
+                  event_date: eventDate || nowIso.split('T')[0],
+                  package_amount: initialPackageAmount,
+                  booking_status: 'booked',
+                  sub_events: [
+                    {
+                      id: `ev_main_${leadId}`,
+                      name: eventType || 'Main Event Photography',
+                      date: eventDate || nowIso.split('T')[0],
+                      venue: mainVenue || '',
+                      crew: [
+                        {
+                          id: `cr_1_${leadId}`,
+                          name: 'Lead Photographer',
+                          role: 'Traditional Photography',
+                          assigned_card_ids: [],
+                          assigned_card_names: [],
+                          is_copied: false,
+                          copied_at: null,
+                          copied_by: null,
+                        },
+                        {
+                          id: `cr_2_${leadId}`,
+                          name: 'Candid Cinematographer',
+                          role: 'Candid Cinematography',
+                          assigned_card_ids: [],
+                          assigned_card_names: [],
+                          is_copied: false,
+                          copied_at: null,
+                          copied_by: null,
+                        }
+                      ]
+                    }
+                  ],
+                  assigned_disks: [],
+                  google_drive_backup: {},
+                  overall_storage_status: 'INGESTING',
+                  created_at: nowIso,
+                  updated_at: nowIso
+                });
+            }
+          } catch (_) {}
         })()
       ]);
     }

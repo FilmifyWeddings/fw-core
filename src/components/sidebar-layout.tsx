@@ -418,6 +418,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
     },
     {
+      id: 'storage',
+      name: 'Studio Storage',
+      path: '/workspace/storage',
+      icon: HardDrive,
+      iconBg: 'bg-[#F0FDF4] text-[#16A34A]',
+    },
+    {
       id: 'tasks',
       name: 'Tasks & Notes',
       path: '/workspace/tasks',
