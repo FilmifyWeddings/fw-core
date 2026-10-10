@@ -1083,6 +1083,7 @@ export default function MetaIntegrationPage() {
   }, [realSyncLogs, logSearchQuery, logStatusFilter]);
 
   const enabledCount = useMemo(() => leadForms.filter(f => (f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
+  const disabledCount = useMemo(() => leadForms.filter(f => !(f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
   if (initialLoading) {
     return <StudioCoreLiquidLoader label="Connecting to Meta Business Suite..." />;
   }

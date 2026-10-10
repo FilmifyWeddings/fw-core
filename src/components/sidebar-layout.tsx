@@ -73,6 +73,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         if (target === 'cool') {
           return stageParam === 'cool' || stageParam === 'warm';
         }
+        if (target === 'contacted') {
+          return stageParam === 'contacted' || stageParam === 'connected';
+        }
         return stageParam.toLowerCase() === target;
       }
     }

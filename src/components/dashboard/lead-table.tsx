@@ -853,9 +853,12 @@ export function LeadTable({
     const isBooked = Boolean(
       lead.final_quotation_id || 
       lead.raw_payload?.final_quotation_id ||
+      (lead.raw_payload as any)?.is_booked ||
       leadQuoteSum?.hasFinal ||
       lead.status === 'closed' || 
-      (lead.status as string)?.toLowerCase() === 'booked' ||
+      (lead.status as string)?.toLowerCase()?.includes('booked') ||
+      (lead.status as string)?.toLowerCase()?.includes('closed') ||
+      (lead.status as string)?.toLowerCase()?.includes('won') ||
       (lead.raw_payload?.stage === 'booked')
     );
     if (isBooked) {
@@ -864,19 +867,73 @@ export function LeadTable({
         s.name?.toLowerCase().includes('book') || 
         s.id?.toLowerCase().includes('book') ||
         s.name?.toLowerCase().includes('closed') ||
-        s.id?.toLowerCase().includes('closed')
+        s.id?.toLowerCase().includes('closed') ||
+        s.name?.toLowerCase().includes('won')
       );
       if (bookedStage) return bookedStage.id;
     }
-    // 3. Match by status string
+    // 3. Match by status string (exact and keyword matching)
     if (lead.status) {
-      const match = stagesState.find(s => 
-        s.id === lead.status || 
-        s.name?.toLowerCase() === (lead.status as string).toLowerCase()
+      const rawStatus = String(lead.status).trim();
+      const lowerStatus = rawStatus.toLowerCase();
+
+      // 3a. Exact id or name match
+      const exactMatch = stagesState.find(s => 
+        s.id === rawStatus || 
+        s.id?.toLowerCase() === lowerStatus ||
+        s.name?.toLowerCase() === lowerStatus
       );
-      if (match) return match.id;
+      if (exactMatch) return exactMatch.id;
+
+      // 3b. Keyword matching for common standard stages
+      if (lowerStatus.includes('new') || lowerStatus.includes('inquiry') || lowerStatus.includes('fresh') || lowerStatus.includes('uncontacted')) {
+        const match = stagesState.find(s => {
+          const sn = (s.name || '').toLowerCase();
+          return sn.includes('new') || sn.includes('inquiry') || sn.includes('fresh');
+        });
+        if (match) return match.id;
+      }
+
+      if (lowerStatus.includes('contact') || lowerStatus.includes('connect') || lowerStatus.includes('call')) {
+        const match = stagesState.find(s => {
+          const sn = (s.name || '').toLowerCase();
+          return sn.includes('contact') || sn.includes('connect') || sn.includes('call');
+        });
+        if (match) return match.id;
+      }
+
+      if (lowerStatus.includes('cool') || lowerStatus.includes('warm') || lowerStatus.includes('meeting')) {
+        const match = stagesState.find(s => {
+          const sn = (s.name || '').toLowerCase();
+          return sn.includes('cool') || sn.includes('warm') || sn.includes('meeting');
+        });
+        if (match) return match.id;
+      }
+
+      if (lowerStatus.includes('hot') || lowerStatus.includes('proposal') || lowerStatus.includes('quote')) {
+        const match = stagesState.find(s => {
+          const sn = (s.name || '').toLowerCase();
+          return sn.includes('hot') || sn.includes('proposal') || sn.includes('quote');
+        });
+        if (match) return match.id;
+      }
+
+      if (lowerStatus.includes('lost') || lowerStatus.includes('drop') || lowerStatus.includes('reject')) {
+        const match = stagesState.find(s => {
+          const sn = (s.name || '').toLowerCase();
+          return sn.includes('lost') || sn.includes('drop') || sn.includes('reject');
+        });
+        if (match) return match.id;
+      }
+
+      // 3c. Substring includes either way
+      const subMatch = stagesState.find(s => {
+        const sn = (s.name || '').toLowerCase();
+        return sn.includes(lowerStatus) || lowerStatus.includes(sn);
+      });
+      if (subMatch) return subMatch.id;
     }
-    return lead.stage_id || lead.status || '';
+    return lead.stage_id || lead.status || (stagesState[0]?.id || '');
   }, [stagesState, quotationSummaryMap]);
 
   // Columns & Configurations state
@@ -2152,9 +2209,37 @@ export function LeadTable({
     const matchesOwner = ownerFilter === 'all' || owner === ownerFilter;
 
     // Sidebar & Stage Filter logic
-    const isLeadLost = lead.stage_id === 'lost' || (lead.status?.toLowerCase() || '').includes('lost');
-    const isLeadArchived = lead.raw_payload?.is_archived === true || (lead as any).is_archived === true || (lead.status as string) === 'archived' || lead.stage_id === 'archived';
-    const isLeadBooked = lead.stage_id === 'booked' || (lead.status?.toLowerCase() || '').includes('booked');
+    const resolvedLeadStageId = resolveLeadStageValue(lead);
+    const resolvedStageObj = stagesState.find(s => s.id === resolvedLeadStageId);
+    const resolvedStageName = (resolvedStageObj?.name || '').toLowerCase().trim();
+
+    const isLeadLost = 
+      lead.stage_id === 'lost' || 
+      resolvedLeadStageId === 'lost' ||
+      (lead.status?.toLowerCase() || '').includes('lost') ||
+      (lead.status?.toLowerCase() || '').includes('drop') ||
+      (lead.status?.toLowerCase() || '').includes('reject') ||
+      (lead.status?.toLowerCase() || '').includes('cancel') ||
+      resolvedStageName.includes('lost') ||
+      resolvedStageName.includes('drop');
+
+    const isLeadArchived = 
+      lead.raw_payload?.is_archived === true || 
+      (lead as any).is_archived === true || 
+      (lead.status as string)?.toLowerCase() === 'archived' || 
+      lead.stage_id === 'archived';
+
+    const isLeadBooked = 
+      lead.stage_id === 'booked' || 
+      resolvedLeadStageId === 'booked' ||
+      resolvedStageName.includes('book') ||
+      resolvedStageName.includes('closed') ||
+      resolvedStageName.includes('won') ||
+      (lead.status?.toLowerCase() || '').includes('book') ||
+      (lead.status?.toLowerCase() || '').includes('closed') ||
+      (lead.status?.toLowerCase() || '').includes('won') ||
+      Boolean((lead as any).stage?.toLowerCase?.()?.includes('book')) ||
+      Boolean(lead.final_quotation_id || (lead.raw_payload as any)?.final_quotation_id || (lead.raw_payload as any)?.is_booked || quotationSummaryMap[lead.id]?.hasFinal);
 
     let matchesSidebar = true;
     if (statusFilter === 'archived' || sidebarFilter === 'archive' || stageParam === 'archived' || stageParam === 'archive') {
@@ -2169,20 +2254,69 @@ export function LeadTable({
       const leadStage = (lead.stage_id || '').toLowerCase().trim();
       const leadStatus = (lead.status || '').toLowerCase().trim();
       
-      const matchingStageObj = stagesState.find(s => 
-        s.id?.toLowerCase() === target || 
-        s.name?.toLowerCase().includes(target)
-      );
+      let matchesStage = false;
 
-      const matchesStage = 
-        leadStage === target || 
-        leadStatus.includes(target) ||
-        (target === 'cool' && (leadStage === 'warm' || leadStatus.includes('warm') || leadStatus.includes('cool'))) ||
-        (matchingStageObj && (
-          leadStage === matchingStageObj.id?.toLowerCase() || 
-          leadStatus === matchingStageObj.name?.toLowerCase() ||
-          leadStatus.includes(matchingStageObj.name?.toLowerCase() || '___none___')
-        ));
+      if (target === 'new') {
+        matchesStage = 
+          leadStage === 'new' ||
+          leadStatus.includes('new') ||
+          leadStatus.includes('inquiry') ||
+          leadStatus.includes('fresh') ||
+          leadStatus.includes('uncontacted') ||
+          resolvedStageName.includes('new') ||
+          resolvedStageName.includes('inquiry') ||
+          resolvedStageName.includes('fresh') ||
+          resolvedLeadStageId === stagesState[0]?.id;
+      } else if (target === 'contacted' || target === 'connected') {
+        matchesStage = 
+          leadStage === 'contacted' ||
+          leadStage === 'connected' ||
+          leadStatus.includes('contact') ||
+          leadStatus.includes('connect') ||
+          leadStatus.includes('call') ||
+          resolvedStageName.includes('contact') ||
+          resolvedStageName.includes('connect') ||
+          resolvedStageName.includes('call');
+      } else if (target === 'cool' || target === 'warm') {
+        matchesStage = 
+          leadStage === 'cool' ||
+          leadStage === 'warm' ||
+          leadStatus.includes('cool') ||
+          leadStatus.includes('warm') ||
+          leadStatus.includes('meeting') ||
+          leadStatus.includes('follow') ||
+          resolvedStageName.includes('cool') ||
+          resolvedStageName.includes('warm') ||
+          resolvedStageName.includes('meeting') ||
+          resolvedStageName.includes('follow');
+      } else if (target === 'hot') {
+        matchesStage = 
+          leadStage === 'hot' ||
+          leadStatus.includes('hot') ||
+          leadStatus.includes('proposal') ||
+          leadStatus.includes('quote') ||
+          resolvedStageName.includes('hot') ||
+          resolvedStageName.includes('proposal') ||
+          resolvedStageName.includes('quote');
+      } else {
+        // Fallback for custom stages
+        const matchingStageObj = stagesState.find(s => 
+          s.id?.toLowerCase() === target || 
+          s.name?.toLowerCase().includes(target)
+        );
+        matchesStage = 
+          leadStage === target || 
+          leadStatus === target ||
+          leadStatus.includes(target) ||
+          resolvedLeadStageId === target ||
+          (matchingStageObj && (
+            leadStage === matchingStageObj.id?.toLowerCase() || 
+            resolvedLeadStageId === matchingStageObj.id ||
+            leadStatus === matchingStageObj.name?.toLowerCase() ||
+            leadStatus.includes(matchingStageObj.name?.toLowerCase() || '___none___') ||
+            resolvedStageName.includes(matchingStageObj.name?.toLowerCase() || '___none___')
+          ));
+      }
 
       if (!matchesStage || isLeadArchived) {
         matchesSidebar = false;
@@ -2480,56 +2614,56 @@ export function LeadTable({
 
         <div ref={headerRef} className="px-3 sm:px-4 md:px-6 pb-2 pt-2">
           {/* Active View Indicator for Stage or Vault views */}
-          {Boolean(stageParam && stageParam !== 'all' && stageParam !== 'overview') && (
+          {Boolean(stageParam && stageParam !== 'all' && stageParam !== 'overview') ? (
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-zinc-800/80">
               <div className="flex items-center gap-2">
                 {stageParam === 'lost' ? (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-full text-xs font-black">
                     <UserX className="w-3.5 h-3.5" />
                     <span>Lost Leads Vault</span>
-                    <span className="ml-1 px-1.5 py-0.5 bg-rose-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-rose-500/20 rounded-full text-[10px] font-black">{filteredLeads.length} Leads</span>
                   </div>
                 ) : (stageParam === 'archived' || stageParam === 'archive') ? (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-full text-xs font-black">
                     <Archive className="w-3.5 h-3.5" />
                     <span>Archived Leads Vault</span>
-                    <span className="ml-1 px-1.5 py-0.5 bg-blue-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-blue-500/20 rounded-full text-[10px] font-black">{filteredLeads.length} Leads</span>
                   </div>
                 ) : stageParam === 'booked' ? (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 rounded-full text-xs font-black">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Booked Leads</span>
-                    <span className="ml-1 px-1.5 py-0.5 bg-emerald-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-emerald-500/20 rounded-full text-[10px] font-black">{filteredLeads.length} Leads</span>
                   </div>
                 ) : stageParam === 'hot' ? (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-full text-xs font-black">
                     <Flame className="w-3.5 h-3.5 text-rose-500" />
                     <span>Hot Leads</span>
-                    <span className="ml-1 px-1.5 py-0.5 bg-rose-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-rose-500/20 rounded-full text-[10px] font-black">{filteredLeads.length} Leads</span>
                   </div>
                 ) : stageParam === 'new' ? (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20 rounded-full text-xs font-black">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
                     <span>New Leads</span>
-                    <span className="ml-1 px-1.5 py-0.5 bg-indigo-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-indigo-500/20 rounded-full text-[10px] font-black">{filteredLeads.length} Leads</span>
                   </div>
-                ) : stageParam === 'contacted' ? (
+                ) : (stageParam === 'contacted' || stageParam === 'connected') ? (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20 rounded-full text-xs font-black">
                     <PhoneCall className="w-3.5 h-3.5 text-purple-500" />
-                    <span>Contacted Leads</span>
-                    <span className="ml-1 px-1.5 py-0.5 bg-purple-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                    <span>Contacted / Connected Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-purple-500/20 rounded-full text-[10px] font-black">{filteredLeads.length} Leads</span>
                   </div>
                 ) : (stageParam === 'cool' || stageParam === 'warm') ? (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/20 rounded-full text-xs font-black">
                     <Clock className="w-3.5 h-3.5 text-cyan-500" />
                     <span>Cool / Warm Leads</span>
-                    <span className="ml-1 px-1.5 py-0.5 bg-cyan-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-cyan-500/20 rounded-full text-[10px] font-black">{filteredLeads.length} Leads</span>
                   </div>
                 ) : (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 rounded-full text-xs font-black capitalize">
                     <Target className="w-3.5 h-3.5" />
                     <span>{stageParam} Leads</span>
-                    <span className="ml-1 px-1.5 py-0.5 bg-amber-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-amber-500/20 rounded-full text-[10px] font-black">{filteredLeads.length} Leads</span>
                   </div>
                 )}
               </div>
@@ -2540,6 +2674,16 @@ export function LeadTable({
                 <ArrowLeft className="w-3.5 h-3.5" />
                 Back to All Active Leads
               </Link>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-zinc-800/80">
+              <div className="flex items-center gap-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 rounded-full text-xs font-black">
+                  <Target className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>All Active Leads</span>
+                  <span className="ml-1 px-1.5 py-0.5 bg-amber-500/20 rounded-full text-[10px] font-black">{filteredLeads.length} Leads</span>
+                </div>
+              </div>
             </div>
           )}
 
