@@ -47,6 +47,22 @@ function createTransporter(port: number, secure: boolean) {
   });
 }
 
+function parseCleanFrom(rawFrom?: string): { name: string; address: string } {
+  const fallback = { name: 'StudioCore', address: 'support@studiocore.in' };
+  if (!rawFrom) return fallback;
+  const cleaned = rawFrom.replace(/\\/g, '').replace(/["']/g, '').trim();
+  const match = cleaned.match(/^(.*?)\s*<([^>]+)>$/);
+  if (match) {
+    const name = match[1].trim() || 'StudioCore';
+    const address = match[2].trim() || 'support@studiocore.in';
+    return { name, address };
+  }
+  if (cleaned.includes('@')) {
+    return { name: 'StudioCore', address: cleaned };
+  }
+  return fallback;
+}
+
 /**
  * Dispatches email using a resilient multi-provider cascade:
  * 1. Resend REST API (HTTPS Port 443 - zero blockages)
@@ -61,12 +77,14 @@ async function sendMailWithFallback(mailOptions: {
   text: string;
   html: string;
 }) {
+  const cleanFromObj = parseCleanFrom(mailOptions.from);
+  const cleanFromHeader = `${cleanFromObj.name} <${cleanFromObj.address}>`;
+
   // ── Provider 1: Resend HTTP API (Port 443) ──
   const resendApiKey = process.env.RESEND_API_KEY;
   if (resendApiKey) {
     try {
-      const rawFrom = process.env.RESEND_FROM || process.env.SMTP_FROM || 'StudioCore <support@studiocore.in>';
-      const fromAddr = rawFrom.replace(/^["']|["']$/g, '').trim();
+      const fromAddr = cleanFromHeader;
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -140,7 +158,7 @@ async function sendMailWithFallback(mailOptions: {
       });
 
       const info = await transporter.sendMail({
-        from: `"StudioCore" <${gmailUser}>`,
+        from: cleanFromObj,
         to: mailOptions.to,
         subject: mailOptions.subject,
         text: mailOptions.text,
@@ -158,7 +176,10 @@ async function sendMailWithFallback(mailOptions: {
   try {
     const isSecure = defaultPort === 465;
     const transporter = createTransporter(defaultPort, isSecure);
-    const info = await transporter.sendMail(mailOptions);
+    const info = await transporter.sendMail({
+      ...mailOptions,
+      from: cleanFromObj,
+    });
     console.log(`[Hostinger SMTP Port ${defaultPort} Success] MessageID: ${info.messageId}`);
     return { success: true, messageId: info.messageId, provider: 'hostinger' };
   } catch (err1: any) {
@@ -168,7 +189,10 @@ async function sendMailWithFallback(mailOptions: {
   try {
     const fallbackPort = defaultPort === 465 ? 587 : 465;
     const transporterFallback = createTransporter(fallbackPort, fallbackPort === 465);
-    const info = await transporterFallback.sendMail(mailOptions);
+    const info = await transporterFallback.sendMail({
+      ...mailOptions,
+      from: cleanFromObj,
+    });
     console.log(`[Hostinger SMTP Fallback Port ${fallbackPort} Success] MessageID: ${info.messageId}`);
     return { success: true, messageId: info.messageId, provider: 'hostinger' };
   } catch (err2: any) {
@@ -547,7 +571,7 @@ StudioCore Support (support@studiocore.in)
 }
 
 /**
- * Sends a high-end luxury Password Reset Email with 3D button and official StudioCore branding
+ * Sends official StudioCore Password Reset Email matching Photo 2 design exactly
  */
 export async function sendPasswordResetEmail({
   toEmail,
@@ -555,9 +579,7 @@ export async function sendPasswordResetEmail({
   resetUrl,
   expiresInMinutes = 15,
 }: SendPasswordResetEmailParams) {
-  const defaultAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
-  const logoUrl = `${defaultAppUrl.replace(/\/$/, '')}/images/auth/sc-orange-logo.png`;
-  const fromAddress = process.env.SMTP_FROM || `"StudioCore Security" <support@studiocore.in>`;
+  const fromAddress = 'StudioCore <support@studiocore.in>';
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -565,7 +587,7 @@ export async function sendPasswordResetEmail({
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset Your StudioCore Password</title>
+  <title>Reset Your Password</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -576,94 +598,75 @@ export async function sendPasswordResetEmail({
       -webkit-font-smoothing: antialiased;
     }
     .wrapper {
-      max-width: 560px;
-      margin: 30px auto;
+      max-width: 520px;
+      margin: 32px auto;
       background: #ffffff;
       border-radius: 24px;
       overflow: hidden;
-      box-shadow: 0 12px 36px rgba(243, 111, 33, 0.08);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
       border: 1px solid #EAE0D8;
     }
     .header {
       background: #18181b;
-      padding: 36px 32px;
+      padding: 34px 28px 28px 28px;
       text-align: center;
     }
     .content {
-      padding: 40px 36px;
-    }
-    .badge {
-      display: inline-block;
-      background: #FFF2E8;
-      color: #F36F21;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      padding: 6px 14px;
-      border-radius: 50px;
-      border: 1px solid #FFD9BD;
-      margin-bottom: 16px;
+      padding: 36px 36px 28px 36px;
     }
     h1 {
-      font-size: 26px;
-      font-weight: 900;
+      font-size: 24px;
+      font-weight: 800;
       color: #18181b;
-      margin: 0 0 14px 0;
+      margin: 0 0 18px 0;
       line-height: 1.25;
-      letter-spacing: -0.5px;
+      letter-spacing: -0.4px;
     }
     p {
       font-size: 14px;
-      line-height: 1.65;
-      color: #52525b;
-      margin: 0 0 18px 0;
+      line-height: 1.6;
+      color: #3f3f46;
+      margin: 0 0 16px 0;
     }
     .button-container {
       text-align: center;
-      margin: 32px 0;
+      margin: 28px 0 24px 0;
     }
-    .cta-btn-3d {
+    .cta-btn {
       display: inline-block;
       background: linear-gradient(135deg, #F36F21 0%, #FF8A3D 100%);
       color: #ffffff !important;
       text-decoration: none;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 800;
-      padding: 16px 40px;
-      border-radius: 14px;
+      padding: 15px 36px;
+      border-radius: 12px;
       letter-spacing: 0.5px;
-      box-shadow: 0 8px 24px rgba(243, 111, 33, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
-      border-bottom: 3px solid #d45610;
       text-transform: uppercase;
+      box-shadow: 0 6px 18px rgba(243, 111, 33, 0.35);
     }
     .notice-box {
-      background: #FAF6F3;
-      border: 1px solid #EAE0D8;
-      border-radius: 14px;
-      padding: 16px 20px;
-      margin: 24px 0;
+      background: #FFF8F5;
+      border: 1px solid #FFD9BD;
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin: 24px 0 8px 0;
+      text-align: center;
     }
     .notice-box p {
       margin: 0;
       color: #c2410c;
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 600;
-    }
-    .link-fallback {
-      font-size: 11px;
-      color: #a1a1aa;
-      word-break: break-all;
-      margin-top: 24px;
       line-height: 1.5;
     }
     .footer {
       background: #FAF6F3;
       border-top: 1px solid #EAE0D8;
-      padding: 24px 36px;
+      padding: 20px 32px;
       text-align: center;
       font-size: 11px;
-      color: #a1a1aa;
+      color: #71717a;
     }
     .footer a {
       color: #F36F21;
@@ -674,48 +677,48 @@ export async function sendPasswordResetEmail({
 </head>
 <body>
   <div class="wrapper">
+    <!-- Header matching Photo 2 -->
     <div class="header">
       <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
         <tr>
-          <td align="center" style="padding-bottom: 8px;">
-            <img src="${logoUrl}" alt="StudioCore Logo" width="56" height="32" style="display: block; border: 0;" />
+          <td align="center" style="padding-bottom: 10px;">
+            <div style="width: 50px; height: 50px; background: linear-gradient(135deg, #F36F21 0%, #D9530F 100%); border-radius: 15px; border: 1px solid rgba(255, 255, 255, 0.25); text-align: center; line-height: 50px; margin: 0 auto;">
+              <span style="font-size: 21px; font-weight: 900; color: #ffffff; font-family: serif; letter-spacing: 1px;">SC</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding-bottom: 3px;">
+            <span style="font-size: 23px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">Studio<span style="color: #F36F21;">Core</span></span>
           </td>
         </tr>
         <tr>
           <td align="center">
-            <span style="font-size: 24px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">Studio<span style="color: #F36F21;">Core</span></span>
-          </td>
-        </tr>
-        <tr>
-          <td align="center">
-            <span style="font-size: 11px; font-weight: 600; color: #a1a1aa; letter-spacing: 1px; text-transform: uppercase;">Focus on Art, We Manage</span>
+            <span style="font-size: 10px; font-weight: 700; color: #a1a1aa; letter-spacing: 1.5px; text-transform: uppercase;">FOCUS ON ART, WE MANAGE</span>
           </td>
         </tr>
       </table>
     </div>
+
+    <!-- Content matching Photo 2 -->
     <div class="content">
-      <div class="badge">🔒 Password Reset</div>
       <h1>Reset Your Password</h1>
-      <p>Hello <strong>${recipientName}</strong>,</p>
-      <p>We received a request to reset the password for your StudioCore account associated with <strong>${toEmail}</strong>.</p>
-      <p>Click the button below to choose a new password:</p>
+      <p>Hello,</p>
+      <p>We received a request to reset your StudioCore account password. Click the button below to choose a new password:</p>
 
       <div class="button-container">
-        <a href="${resetUrl}" target="_blank" class="cta-btn-3d">Reset Password Now →</a>
+        <a href="${resetUrl}" target="_blank" class="cta-btn">RESET MY PASSWORD →</a>
       </div>
 
       <div class="notice-box">
-        <p>⏱️ This password reset link is valid for <strong>${expiresInMinutes} minutes</strong>. If you did not make this request, your account is secure and you can ignore this email.</p>
+        <p>⏱ This password reset link is valid for 15 minutes. If you did not make this request, you can safely ignore this email.</p>
       </div>
-
-      <p class="link-fallback">
-        If the button above does not work, copy and paste this link into your browser:<br>
-        <a href="${resetUrl}" style="color: #F36F21; text-decoration: underline;">${resetUrl}</a>
-      </p>
     </div>
+
+    <!-- Footer matching Photo 2 -->
     <div class="footer">
-      <p style="margin: 0 0 6px 0;">StudioCore Security · Focus on Art, We Manage</p>
-      <p style="margin: 0;">Support: <a href="mailto:support@studiocore.in">support@studiocore.in</a></p>
+      <p style="margin: 0 0 4px 0; color: #71717a;">StudioCore Security · Focus on Art, We Manage</p>
+      <p style="margin: 0; color: #71717a;">Support: <a href="mailto:support@studiocore.in">support@studiocore.in</a></p>
     </div>
   </div>
 </body>
@@ -723,17 +726,17 @@ export async function sendPasswordResetEmail({
   `.trim();
 
   const textContent = `
-Hello ${recipientName},
+Hello,
 
-We received a request to reset your StudioCore password (${toEmail}).
+We received a request to reset your StudioCore account password.
 Click the link below to set your new password (valid for ${expiresInMinutes} minutes):
 
 ${resetUrl}
 
-If you did not request this, please ignore this email.
+If you did not request this, you can safely ignore this email.
 
-StudioCore Security
-support@studiocore.in
+StudioCore Security · Focus on Art, We Manage
+Support: support@studiocore.in
   `.trim();
 
   return sendMailWithFallback({

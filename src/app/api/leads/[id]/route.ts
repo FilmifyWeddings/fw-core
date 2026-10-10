@@ -85,6 +85,60 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    // Structured audit logging into live_logs
+    try {
+      const actor = body.actor_name || 'Studio Admin';
+      const activities: any[] = [];
+      if (body.name) {
+        activities.push({
+          workspace_id: data?.workspace_id,
+          lead_id: leadId,
+          event_type: 'lead_activity',
+          message: `${actor} updated lead name to "${body.name}"`,
+          metadata: { action_type: 'name_change', actor_name: actor, new_value: body.name }
+        });
+      }
+      if (body.email) {
+        activities.push({
+          workspace_id: data?.workspace_id,
+          lead_id: leadId,
+          event_type: 'lead_activity',
+          message: `${actor} updated email to ${body.email}`,
+          metadata: { action_type: 'contact_change', actor_name: actor, new_value: body.email }
+        });
+      }
+      if (body.phone) {
+        activities.push({
+          workspace_id: data?.workspace_id,
+          lead_id: leadId,
+          event_type: 'lead_activity',
+          message: `${actor} updated phone number to ${body.phone}`,
+          metadata: { action_type: 'contact_change', actor_name: actor, new_value: body.phone }
+        });
+      }
+      if (body.raw_payload?.lead_owner) {
+        activities.push({
+          workspace_id: data?.workspace_id,
+          lead_id: leadId,
+          event_type: 'lead_activity',
+          message: `${actor} assigned Lead Owner to "${body.raw_payload.lead_owner}"`,
+          metadata: { action_type: 'owner_change', actor_name: actor, new_value: body.raw_payload.lead_owner }
+        });
+      }
+      if (body.status || isBookedNow) {
+        activities.push({
+          workspace_id: data?.workspace_id,
+          lead_id: leadId,
+          event_type: 'lead_activity',
+          message: `${actor} moved stage to "${isBookedNow ? 'Booked' : body.status}"`,
+          metadata: { action_type: 'stage_change', actor_name: actor, new_value: isBookedNow ? 'Booked' : body.status }
+        });
+      }
+      if (activities.length > 0) {
+        supabaseAdmin.from('live_logs').insert(activities).catch(() => {});
+      }
+    } catch (_) {}
+
     return NextResponse.json({ success: true, lead: data });
   } catch (err: any) {
     console.error('[API Lead Update Exception]:', err);

@@ -681,6 +681,25 @@ export async function POST(
           }
         }
       }
+    } catch (finErr) {
+      console.warn('[leads/[id]/quotations] Finance sync warning:', finErr);
+    }
+
+    // Log quotation creation to live_logs audit trail
+    try {
+      await supabaseAdmin.from('live_logs').insert({
+        workspace_id: lead?.workspace_id || currentUserId,
+        lead_id: leadId,
+        event_type: 'lead_activity',
+        message: `Created Quotation Version ${nextLeadVersion} ("${quotationTitle}")`,
+        metadata: {
+          action_type: 'quote_created',
+          actor_name: 'Studio Admin',
+          version: nextLeadVersion,
+          template_id: newTemplateId,
+          logged_at: now
+        }
+      });
     } catch (_) {}
 
     return NextResponse.json({

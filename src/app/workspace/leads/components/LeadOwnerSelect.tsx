@@ -204,11 +204,15 @@ export default function LeadOwnerSelect({
   const currentOwner = (value || 'Unassigned').trim();
   const isUnassigned = currentOwner.toLowerCase() === 'unassigned' || !currentOwner;
 
-  // ── STRICT WHITELIST FILTER: ONLY MEMBERS WITH 'SALES PERSON' (SP) ROLE ──
+  // Prioritize Sales Persons, but keep all active workspace team members selectable
   const salesTeamMembers = useMemo(() => {
-    return (consolidatedMembers || [])
-      .filter(isMemberSalesPerson)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const list = consolidatedMembers || [];
+    return [...list].sort((a, b) => {
+      const aSales = isMemberSalesPerson(a) ? 1 : 0;
+      const bSales = isMemberSalesPerson(b) ? 1 : 0;
+      if (aSales !== bSales) return bSales - aSales;
+      return a.name.localeCompare(b.name);
+    });
   }, [consolidatedMembers]);
 
   // Selected Member Details (if assigned to a sales person)
@@ -321,7 +325,7 @@ export default function LeadOwnerSelect({
         <>
           {/* Backdrop */}
           <div 
-            className="fixed inset-0 z-[9998] cursor-default"
+            className="fixed inset-0 z-[1000001] cursor-default"
             onClick={() => setIsOpen(false)}
           />
 
@@ -336,7 +340,7 @@ export default function LeadOwnerSelect({
               top: `${coords.top}px`,
               left: `${coords.left}px`,
               width: `${coords.width}px`,
-              zIndex: 99999,
+              zIndex: 1000002,
               maxHeight: '340px',
             }}
             className="bg-[#FFFDF9] dark:bg-[#1A1816] rounded-2xl border border-amber-900/15 dark:border-stone-800 shadow-2xl overflow-hidden flex flex-col font-sans"
@@ -348,7 +352,7 @@ export default function LeadOwnerSelect({
                 <input
                   ref={searchInputRef}
                   type="text"
-                  placeholder="🔍 Search sales person..."
+                  placeholder="🔍 Search team member..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 rounded-xl text-slate-900 dark:text-stone-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-medium"

@@ -63,6 +63,31 @@ export default function ResetPasswordRootPage() {
     let isMounted = true;
 
     const validateAccess = async () => {
+      // 1. If explicit token param is present, validate it directly
+      if (tokenParam) {
+        try {
+          const res = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(tokenParam)}`);
+          const data = await res.json().catch(() => ({}));
+
+          if (isMounted) {
+            if (res.ok && data.valid && data.email) {
+              setIsTokenValid(true);
+              setToken(tokenParam);
+              setUserEmail(data.email);
+              setError(null);
+            } else {
+              setError(data.error || 'This reset link has expired or is invalid. Please request a fresh link.');
+            }
+          }
+        } catch {
+          if (isMounted) setError('Failed to validate password reset link.');
+        } finally {
+          if (isMounted) setValidating(false);
+        }
+        return;
+      }
+
+      // 2. Fallback to Supabase hash verification if no query token
       const hash = typeof window !== 'undefined' ? window.location.hash : '';
       
       if (hash.includes('error=')) {
@@ -86,28 +111,6 @@ export default function ResetPasswordRootPage() {
           setValidating(false);
           return;
         }
-      }
-
-      if (tokenParam) {
-        try {
-          const res = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(tokenParam)}`);
-          const data = await res.json().catch(() => ({}));
-
-          if (isMounted) {
-            if (res.ok && data.valid && data.email) {
-              setIsTokenValid(true);
-              setToken(tokenParam);
-              setUserEmail(data.email);
-            } else {
-              setError(data.error || 'This reset link has expired or is invalid. Please request a fresh link.');
-            }
-          }
-        } catch {
-          if (isMounted) setError('Failed to validate password reset link.');
-        } finally {
-          if (isMounted) setValidating(false);
-        }
-        return;
       }
 
       if (isMounted) {

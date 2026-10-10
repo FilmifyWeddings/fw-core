@@ -6,7 +6,7 @@ import {
   X, Check, User, DollarSign, FileText, Lock, Users, Briefcase, Plus, Calendar, Tag, Mail, Phone,
   FileIcon, ChevronRight, CheckSquare, AlarmClock, Trash2, Edit2, Clock, Shield, MoreVertical, MessageCircle, ArrowUpRight, Sparkles,
   CornerDownRight, CheckCircle2, MessageSquare, Reply, AlertCircle, ArrowLeft, ArrowRight, Gift,
-  FolderOpen, Archive
+  FolderOpen, Archive, Search, RefreshCw, Activity, UserCheck
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -163,7 +163,7 @@ export function LeadInsiderDrawer({
   initialQuotations = [],
   onQuotationChange
 }: LeadInsiderDrawerProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'comments_timeline' | 'quotes'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'comments_timeline' | 'quotes' | 'activity_log'>('overview');
   const [isMounted, setIsMounted] = useState(false);
   const [commentText, setCommentText] = useState('');
 
@@ -282,6 +282,108 @@ export function LeadInsiderDrawer({
   const handleRawPayloadChange = (key: string, val: any) => {
     const updatedPayload = { ...lead.raw_payload, [key]: val };
     handleFieldChange({ raw_payload: updatedPayload });
+  };
+
+  // Editable fields state (Lead Name, Email, Phone)
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState(lead?.name || '');
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [editedEmail, setEditedEmail] = useState(lead?.email || '');
+  const [isEditingPhone, setIsEditingPhone] = useState(false);
+  const [editedPhone, setEditedPhone] = useState(lead?.phone || '');
+
+  // Synchronize with external lead changes
+  useEffect(() => {
+    if (lead) {
+      setEditedName(lead.name || '');
+      setEditedEmail(lead.email || '');
+      setEditedPhone(lead.phone || '');
+    }
+  }, [lead?.id, lead?.name, lead?.email, lead?.phone]);
+
+  // Activity History & Audit Trail State
+  const [activities, setActivities] = useState<any[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(false);
+  const [activitySearch, setActivitySearch] = useState('');
+  const [activityFilter, setActivityFilter] = useState<'all' | 'stage' | 'owner' | 'quote' | 'edit'>('all');
+
+  const fetchActivities = async () => {
+    if (!lead?.id) return;
+    setLoadingActivities(true);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/activities`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(data.activities)) {
+        setActivities(data.activities);
+      }
+    } catch (err) {
+      console.warn('[Fetch Activities Warning]:', err);
+    } finally {
+      setLoadingActivities(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'activity_log' || activeTab === 'overview') {
+      fetchActivities();
+    }
+  }, [activeTab, lead?.id]);
+
+  const handleSaveName = async () => {
+    const trimmed = editedName.trim();
+    if (trimmed && trimmed !== lead.name) {
+      handleFieldChange({ name: trimmed });
+      fetch(`/api/leads/${lead.id}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `${authorProfile.name} updated Lead Name to "${trimmed}"`,
+          action_type: 'name_change',
+          actor_name: authorProfile.name,
+          old_value: lead.name,
+          new_value: trimmed
+        })
+      }).then(() => fetchActivities()).catch(() => {});
+    }
+    setIsEditingName(false);
+  };
+
+  const handleSaveEmail = async () => {
+    const trimmed = editedEmail.trim();
+    if (trimmed !== (lead.email || '')) {
+      handleFieldChange({ email: trimmed });
+      fetch(`/api/leads/${lead.id}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `${authorProfile.name} updated Email to "${trimmed}"`,
+          action_type: 'contact_change',
+          actor_name: authorProfile.name,
+          old_value: lead.email,
+          new_value: trimmed
+        })
+      }).then(() => fetchActivities()).catch(() => {});
+    }
+    setIsEditingEmail(false);
+  };
+
+  const handleSavePhone = async () => {
+    const trimmed = editedPhone.trim();
+    if (trimmed !== (lead.phone || '')) {
+      handleFieldChange({ phone: trimmed });
+      fetch(`/api/leads/${lead.id}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `${authorProfile.name} updated Phone to "${trimmed}"`,
+          action_type: 'contact_change',
+          actor_name: authorProfile.name,
+          old_value: lead.phone,
+          new_value: trimmed
+        })
+      }).then(() => fetchActivities()).catch(() => {});
+    }
+    setIsEditingPhone(false);
   };
 
   // 24 Hour Time conversion
@@ -1022,6 +1124,185 @@ export function LeadInsiderDrawer({
     );
   };
 
+  const renderActivityAuditLog = () => {
+    const filteredActivities = activities.filter(act => {
+      // 1. Filter chip
+      if (activityFilter === 'stage' && act.type !== 'stage_change') return false;
+      if (activityFilter === 'owner' && act.type !== 'owner_change') return false;
+      if (activityFilter === 'quote' && !act.type.includes('quote') && !act.type.includes('quotation')) return false;
+      if (activityFilter === 'edit' && act.type !== 'name_change' && act.type !== 'contact_change') return false;
+
+      // 2. Search query
+      if (activitySearch.trim()) {
+        const q = activitySearch.toLowerCase();
+        const msg = (act.message || '').toLowerCase();
+        const actor = (act.actor || '').toLowerCase();
+        const type = (act.type || '').toLowerCase();
+        return msg.includes(q) || actor.includes(q) || type.includes(q);
+      }
+      return true;
+    });
+
+    const getActivityIcon = (type: string) => {
+      switch (type) {
+        case 'stage_change':
+          return <ArrowRight className="w-4 h-4 text-purple-600 dark:text-purple-400" />;
+        case 'owner_change':
+          return <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
+        case 'name_change':
+        case 'contact_change':
+          return <Edit2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />;
+        case 'quotation_created':
+        case 'quotation_finalized':
+        case 'quotation_unfinalized':
+          return <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+        case 'comment':
+          return <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />;
+        case 'lead_created':
+          return <Sparkles className="w-4 h-4 text-amber-500" />;
+        default:
+          return <Activity className="w-4 h-4 text-slate-500 dark:text-zinc-400" />;
+      }
+    };
+
+    const getActivityBadgeBg = (type: string) => {
+      switch (type) {
+        case 'stage_change':
+          return 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/50';
+        case 'owner_change':
+          return 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/50';
+        case 'name_change':
+        case 'contact_change':
+          return 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/50';
+        case 'quotation_created':
+        case 'quotation_finalized':
+        case 'quotation_unfinalized':
+          return 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/50';
+        case 'comment':
+          return 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/50';
+        case 'lead_created':
+          return 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/50';
+        default:
+          return 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700';
+      }
+    };
+
+    return (
+      <div className="space-y-4">
+        {/* Search & Refresh Bar */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search audit trail..."
+              value={activitySearch}
+              onChange={(e) => setActivitySearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-white dark:bg-[#141312] border border-slate-200 dark:border-zinc-800 rounded-xl text-xs font-medium text-slate-800 dark:text-zinc-200 placeholder-slate-400 focus:outline-hidden focus:border-amber-500"
+            />
+            {activitySearch && (
+              <button
+                type="button"
+                onClick={() => setActivitySearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={fetchActivities}
+            disabled={loadingActivities}
+            className="p-2 bg-white dark:bg-[#141312] border border-slate-200 dark:border-zinc-800 rounded-xl text-slate-600 dark:text-zinc-300 hover:text-amber-600 dark:hover:text-amber-400 transition cursor-pointer shrink-0"
+            title="Refresh logs"
+          >
+            <RefreshCw className={`w-4 h-4 ${loadingActivities ? 'animate-spin text-amber-500' : ''}`} />
+          </button>
+        </div>
+
+        {/* Filter Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-[11px]">
+          {[
+            { id: 'all', label: `All (${activities.length})` },
+            { id: 'stage', label: 'Stage' },
+            { id: 'owner', label: 'Owner' },
+            { id: 'edit', label: 'Edits' },
+            { id: 'quote', label: 'Quotations' },
+          ].map(chip => (
+            <button
+              key={chip.id}
+              type="button"
+              onClick={() => setActivityFilter(chip.id as any)}
+              className={`px-3 py-1 rounded-lg font-bold whitespace-nowrap transition cursor-pointer ${
+                activityFilter === chip.id
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-white dark:bg-[#141312] text-slate-600 dark:text-zinc-400 border border-slate-200 dark:border-zinc-800 hover:border-amber-400'
+              }`}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Activity Timeline List */}
+        {loadingActivities && activities.length === 0 ? (
+          <div className="py-12 flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500 space-y-2">
+            <RefreshCw className="w-5 h-5 animate-spin text-amber-500" />
+            <span className="text-xs font-semibold">Loading audit trail...</span>
+          </div>
+        ) : filteredActivities.length === 0 ? (
+          <div className="py-12 text-center text-slate-400 dark:text-zinc-500 space-y-2 bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-6">
+            <Activity className="w-8 h-8 mx-auto text-slate-300 dark:text-zinc-600" />
+            <p className="text-xs font-bold">No activity found</p>
+            <p className="text-[11px]">Any changes to this lead will be logged here with timestamps and details.</p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {filteredActivities.map((act) => (
+              <div
+                key={act.id}
+                className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 shadow-xs flex items-start gap-3 hover:border-slate-300 dark:hover:border-zinc-700 transition"
+              >
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${getActivityBadgeBg(act.type)}`}>
+                  {getActivityIcon(act.type)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-black text-slate-900 dark:text-white truncate">
+                      {act.actor || 'Team Member'}
+                    </span>
+                    <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono shrink-0">
+                      {formatDateTime(act.created_at)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-700 dark:text-zinc-300 mt-0.5 leading-relaxed font-medium">
+                    {act.message}
+                  </p>
+                  {(act.metadata?.old_value || act.metadata?.new_value) && (
+                    <div className="mt-1.5 pt-1.5 border-t border-slate-100 dark:border-zinc-800/60 flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-zinc-400">
+                      {act.metadata.old_value && (
+                        <span className="line-through text-slate-400 dark:text-zinc-500 truncate max-w-[120px]">
+                          {String(act.metadata.old_value)}
+                        </span>
+                      )}
+                      {act.metadata.old_value && <span>→</span>}
+                      {act.metadata.new_value && (
+                        <span className="font-bold text-amber-600 dark:text-amber-400 truncate max-w-[150px]">
+                          {String(act.metadata.new_value)}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       {/* Backdrop */}
@@ -1096,7 +1377,8 @@ export function LeadInsiderDrawer({
             {[
               { id: 'overview', label: 'Details', icon: Briefcase },
               { id: 'comments_timeline', label: 'Comments', icon: MessageSquare },
-              { id: 'quotes', label: 'Quotations', icon: FileText }
+              { id: 'quotes', label: 'Quotations', icon: FileText },
+              { id: 'activity_log', label: 'Audit Log', icon: Activity }
             ].map(t => {
               const Icon = t.icon;
               const active = activeTab === t.id;
@@ -1154,9 +1436,61 @@ export function LeadInsiderDrawer({
 
                         {/* Name, Subtitle, Budget & Action Buttons */}
                         <div className="min-w-0 flex-1">
-                          <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white leading-tight truncate">
-                            {lead.name || 'Unspecified Lead'}
-                          </h2>
+                          {isEditingName ? (
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <input
+                                type="text"
+                                value={editedName}
+                                onChange={(e) => setEditedName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveName();
+                                  if (e.key === 'Escape') {
+                                    setEditedName(lead.name || '');
+                                    setIsEditingName(false);
+                                  }
+                                }}
+                                autoFocus
+                                className="flex-1 min-w-0 px-2 py-1 bg-slate-50 dark:bg-zinc-800 border border-amber-500 rounded-lg text-sm font-bold text-slate-900 dark:text-white focus:outline-hidden"
+                                placeholder="Enter lead name"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSaveName}
+                                className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shrink-0"
+                                title="Save Name"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditedName(lead.name || '');
+                                  setIsEditingName(false);
+                                }}
+                                className="p-1 rounded-lg bg-slate-200 dark:bg-zinc-700 hover:bg-slate-300 text-slate-600 dark:text-zinc-300 cursor-pointer shrink-0"
+                                title="Cancel"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 group/name">
+                              <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white leading-tight truncate">
+                                {lead.name || 'Unspecified Lead'}
+                              </h2>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditedName(lead.name || '');
+                                  setIsEditingName(true);
+                                }}
+                                className="opacity-60 group-hover/name:opacity-100 p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition cursor-pointer shrink-0"
+                                title="Edit Lead Name"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
                           <p className="text-xs text-slate-400 dark:text-zinc-500 font-medium truncate mt-0.5">
                             {lead.raw_payload?.groom_name && lead.raw_payload?.bride_name 
                               ? `${lead.raw_payload.groom_name} & ${lead.raw_payload.bride_name}` 
@@ -1228,31 +1562,135 @@ export function LeadInsiderDrawer({
                       {/* Contact Info Rows */}
                       <div className="space-y-2">
                         {/* Email Row */}
-                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
-                          <div className="flex items-center gap-3 min-w-0">
+                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs group/email">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 flex items-center justify-center shrink-0">
                               <Mail className="w-4 h-4" />
                             </div>
-                            <div className="min-w-0">
-                              <span className="block text-xs font-bold text-slate-900 dark:text-white truncate font-mono">
-                                {lead.email || 'No email provided'}
-                              </span>
-                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium">Email</span>
+                            <div className="min-w-0 flex-1">
+                              {isEditingEmail ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="email"
+                                    value={editedEmail}
+                                    onChange={(e) => setEditedEmail(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleSaveEmail();
+                                      if (e.key === 'Escape') {
+                                        setEditedEmail(lead.email || '');
+                                        setIsEditingEmail(false);
+                                      }
+                                    }}
+                                    autoFocus
+                                    className="w-full px-2 py-0.5 bg-slate-50 dark:bg-zinc-800 border border-amber-500 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-hidden"
+                                    placeholder="client@example.com"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleSaveEmail}
+                                    className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shrink-0"
+                                    title="Save Email"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditedEmail(lead.email || '');
+                                      setIsEditingEmail(false);
+                                    }}
+                                    className="p-1 rounded-lg bg-slate-200 dark:bg-zinc-700 hover:bg-slate-300 text-slate-600 dark:text-zinc-300 cursor-pointer shrink-0"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="block text-xs font-bold text-slate-900 dark:text-white truncate font-mono">
+                                    {lead.email || 'No email provided'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditedEmail(lead.email || '');
+                                      setIsEditingEmail(true);
+                                    }}
+                                    className="opacity-50 group-hover/email:opacity-100 p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition cursor-pointer shrink-0"
+                                    title="Edit Email"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium mt-0.5">Email</span>
                             </div>
                           </div>
                         </div>
 
                         {/* Phone Row */}
-                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
-                          <div className="flex items-center gap-3 min-w-0">
+                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs group/phone">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 flex items-center justify-center shrink-0">
                               <Phone className="w-4 h-4" />
                             </div>
-                            <div className="min-w-0">
-                              <span className="block text-xs font-bold text-slate-900 dark:text-white truncate font-mono">
-                                {lead.phone || 'No phone number'}
-                              </span>
-                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium">Phone</span>
+                            <div className="min-w-0 flex-1">
+                              {isEditingPhone ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="tel"
+                                    value={editedPhone}
+                                    onChange={(e) => setEditedPhone(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleSavePhone();
+                                      if (e.key === 'Escape') {
+                                        setEditedPhone(lead.phone || '');
+                                        setIsEditingPhone(false);
+                                      }
+                                    }}
+                                    autoFocus
+                                    className="w-full px-2 py-0.5 bg-slate-50 dark:bg-zinc-800 border border-amber-500 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-hidden"
+                                    placeholder="+91 98765 43210"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleSavePhone}
+                                    className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shrink-0"
+                                    title="Save Phone"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditedPhone(lead.phone || '');
+                                      setIsEditingPhone(false);
+                                    }}
+                                    className="p-1 rounded-lg bg-slate-200 dark:bg-zinc-700 hover:bg-slate-300 text-slate-600 dark:text-zinc-300 cursor-pointer shrink-0"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="block text-xs font-bold text-slate-900 dark:text-white truncate font-mono">
+                                    {lead.phone || 'No phone number'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditedPhone(lead.phone || '');
+                                      setIsEditingPhone(true);
+                                    }}
+                                    className="opacity-50 group-hover/phone:opacity-100 p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition cursor-pointer shrink-0"
+                                    title="Edit Phone"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium mt-0.5">Phone</span>
                             </div>
                           </div>
                         </div>
@@ -1269,7 +1707,9 @@ export function LeadInsiderDrawer({
                                 <LeadOwnerSelect
                                   value={lead.raw_payload?.lead_owner || 'Unassigned'}
                                   leadId={lead.id}
+                                  teamMembers={teamMembersState}
                                   onChange={(val) => {
+                                    const oldVal = lead.raw_payload?.lead_owner || 'Unassigned';
                                     if (onLeadUpdate) {
                                       onLeadUpdate(lead.id, {
                                         raw_payload: {
@@ -1277,6 +1717,19 @@ export function LeadInsiderDrawer({
                                           lead_owner: val,
                                         }
                                       });
+                                    }
+                                    if (val !== oldVal) {
+                                      fetch(`/api/leads/${lead.id}/activities`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          message: `${authorProfile.name} assigned Lead Owner to "${val}"`,
+                                          action_type: 'owner_change',
+                                          actor_name: authorProfile.name,
+                                          old_value: oldVal,
+                                          new_value: val
+                                        })
+                                      }).then(() => fetchActivities()).catch(() => {});
                                     }
                                   }}
                                 />
@@ -1305,35 +1758,64 @@ export function LeadInsiderDrawer({
 
                     {/* 4. RECENT ACTIVITY TIMELINE */}
                     <div className="space-y-2.5">
-                      <span className="text-xs font-bold text-slate-800 dark:text-zinc-200 px-1">Recent Activity</span>
-                      <div className="space-y-2">
-                        {/* Lead Created Activity */}
-                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
-                          <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                            <Sparkles className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <span className="block text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">
-                              Lead created from {lead.source || 'Direct Inquiry'}
-                            </span>
-                            <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
-                              {formatDateTime(lead.created_at || new Date().toISOString())}
-                            </span>
-                          </div>
-                        </div>
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">Recent Activity</span>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('activity_log')}
+                          className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>View Full History</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      </div>
 
-                        {/* Recent Comment Activity if any */}
-                        {commentsList.length > 0 && (
+                      <div className="space-y-2">
+                        {activities.length > 0 ? (
+                          activities.slice(0, 3).map((act) => (
+                            <div
+                              key={act.id}
+                              className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center gap-3 shadow-xs"
+                            >
+                              <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                {act.type === 'stage_change' ? (
+                                  <ArrowRight className="w-4 h-4 text-purple-600" />
+                                ) : act.type === 'owner_change' ? (
+                                  <UserCheck className="w-4 h-4 text-blue-600" />
+                                ) : act.type === 'comment' ? (
+                                  <MessageSquare className="w-4 h-4 text-indigo-600" />
+                                ) : (
+                                  <Sparkles className="w-4 h-4 text-amber-500" />
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <span className="block text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">
+                                  {act.message}
+                                </span>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
+                                    {formatDateTime(act.created_at)}
+                                  </span>
+                                  {act.actor && (
+                                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold truncate">
+                                      · {act.actor}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
                           <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
-                            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                              <MessageSquare className="w-4 h-4" />
+                            <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                              <Sparkles className="w-4 h-4" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <span className="block text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">
-                                Note by {commentsList[0].authorName}
+                                Lead created from {lead.source || 'Direct Inquiry'}
                               </span>
                               <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
-                                {formatDateTime(commentsList[0].createdAt)}
+                                {formatDateTime(lead.created_at || new Date().toISOString())}
                               </span>
                             </div>
                           </div>
@@ -1429,6 +1911,19 @@ export function LeadInsiderDrawer({
                       onLeadUpdate={(leadId, fields) => handleFieldChange(fields)}
                       onCloseDrawer={onClose}
                     />
+                  </motion.div>
+                )}
+
+                {/* TAB 4: AUDIT LOG & RECENT ACTIVITY HISTORY */}
+                {activeTab === 'activity_log' && (
+                  <motion.div
+                    key="activity_log"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 5 }}
+                    className="space-y-4"
+                  >
+                    {renderActivityAuditLog()}
                   </motion.div>
                 )}
               </>

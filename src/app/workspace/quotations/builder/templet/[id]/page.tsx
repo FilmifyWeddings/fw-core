@@ -2288,6 +2288,7 @@ function StudioCoreAiryBuilderContent() {
   const isDirtyRef = useRef<boolean>(false);
   const isSaveInFlightRef = useRef<boolean>(false);
   const pendingSaveTimeoutRef = useRef<any>(null);
+  const flushSaveRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   // Synchronously sync latestDataRef on every React state update
   useEffect(() => {
@@ -2410,6 +2411,15 @@ function StudioCoreAiryBuilderContent() {
     if (downloadingPdf) return;
     setDownloadingPdf(true);
     try {
+      // AUTO-SAVE BEFORE DOWNLOAD: Ensure latest quotation edits are 100% persisted to DB!
+      try {
+        if (flushSaveRef.current) {
+          await flushSaveRef.current();
+        }
+      } catch (saveErr) {
+        console.warn('[Client Download PDF Auto-Save Notice]:', saveErr);
+      }
+
       await downloadServerChromiumPdf({
         templateId: templateId || routeId,
         filename: `${data.designName || data.title || 'Quotation'}.pdf`,
@@ -3012,6 +3022,15 @@ function StudioCoreAiryBuilderContent() {
 
   // DANKA KA SYSTEM: HIGH-SPEED VECTOR A4 PDF DOWNLOAD ENGINE (PC & MOBILE)
   const handleDownloadPDFCanvas = async () => {
+    // AUTO-SAVE BEFORE CANVAS DOWNLOAD: Ensure latest quotation edits are 100% persisted to DB!
+    try {
+      if (flushSaveRef.current) {
+        await flushSaveRef.current();
+      }
+    } catch (saveErr) {
+      console.warn('[Canvas PDF Export Auto-Save Notice]:', saveErr);
+    }
+
     setIsExportingPDF(true);
     setExportProgress(15);
     setExportStatusText('Quotation downloading...');
@@ -3677,6 +3696,7 @@ function StudioCoreAiryBuilderContent() {
     }
     await triggerRevisionSave();
   };
+  flushSaveRef.current = flushSaveImmediately;
 
   const openAddImageModal = (target: string) => {
     setActiveTargetField(target);

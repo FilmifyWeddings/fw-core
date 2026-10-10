@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       expiresInMinutes: 15,
     });
 
-    const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password/${token}`;
+    const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${token}`;
     console.log(`[Forgot Password] Dispatching 1-click recovery to ${targetEmail} | Reset URL: ${resetUrl}`);
 
     // 4. Send Single Official Branded Password Reset Email with 1-click button via Multi-Provider Cascade

@@ -233,6 +233,25 @@ export async function POST(req: NextRequest) {
 
     clearLeadSummaryCache();
 
+    // Audit logging into live_logs
+    try {
+      const qTitle = finalDoc?.title || finalDoc?.template_id || quotationId;
+      await supabaseAdmin.from('live_logs').insert({
+        workspace_id: currentLead?.workspace_id,
+        lead_id: leadId,
+        event_type: 'lead_activity',
+        message: shouldUnmark 
+          ? `Unmarked quotation "${qTitle}" as final`
+          : `Marked quotation "${qTitle}" as Final Quotation`,
+        metadata: {
+          action_type: shouldUnmark ? 'quote_unfinal' : 'quote_final',
+          actor_name: 'Studio Admin',
+          quotation_id: quotationId,
+          logged_at: now
+        }
+      });
+    } catch (_) {}
+
     if (shouldUnmark) {
       return NextResponse.json({
         success: true,
