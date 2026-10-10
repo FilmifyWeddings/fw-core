@@ -155,6 +155,28 @@ export default function RootLayout({
                     }
                     return origConsoleWarn.apply(console, args);
                   };
+
+                  // 3. Proactive cookie header size management: prune redundant legacy tokens & orphaned chunks
+                  try {
+                    if (typeof document !== 'undefined' && document.cookie && document.cookie.length > 2500) {
+                      var rawCookies = document.cookie.split(';');
+                      var obsNames = ['sb-access-token', 'sb-refresh-token', 'supabase.auth.token'];
+                      for (var ci = 0; ci < rawCookies.length; ci++) {
+                        var cTrim = rawCookies[ci].trim();
+                        var eq = cTrim.indexOf('=');
+                        if (eq !== -1) {
+                          var cName = cTrim.substring(0, eq).trim();
+                          if (obsNames.indexOf(cName) !== -1) {
+                            document.cookie = cName + '=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+                          }
+                          var m = cName.match(/^(sb-[a-z0-9_-]+-auth-token)\.(\d+)$/i);
+                          if (m && parseInt(m[2], 10) >= 3) {
+                            document.cookie = cName + '=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+                          }
+                        }
+                      }
+                    }
+                  } catch (_) {}
                 } catch(e){}
               })();
             `,

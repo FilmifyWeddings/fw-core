@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import OtpModal from '@/components/auth/OtpModal';
 import GoogleRoleConfirmModal, { GoogleGLogo } from '@/components/auth/GoogleRoleConfirmModal';
+import { pruneClientCookies } from '@/lib/cookie-cleaner';
 
 // Comprehensive Country Code Data with Flag Emojis & ISO
 const COUNTRIES = [
@@ -176,8 +177,9 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Close country dropdown on outside click
+  // Close country dropdown on outside click & proactively prune bloated cookies
   useEffect(() => {
+    pruneClientCookies();
     const handleClickOutside = (e: MouseEvent) => {
       if (countryDropdownRef.current && !countryDropdownRef.current.contains(e.target as Node)) {
         setIsCountryOpen(false);

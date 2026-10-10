@@ -27,6 +27,26 @@ export async function proxy(request: NextRequest) {
       return clearResponse;
     }
 
+    // Proactively prune stale/orphaned auth token chunks & duplicate legacy cookies on every incoming request
+    const allExistingCookies = request.cookies.getAll();
+    if (allExistingCookies.length > 5) {
+      let currentRef = '';
+      try {
+        currentRef = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || '').hostname.split('.')[0];
+      } catch (_) {}
+
+      allExistingCookies.forEach((c) => {
+        // Prune cookies from other Supabase projects
+        if (c.name.startsWith('sb-') && currentRef && !c.name.startsWith(`sb-${currentRef}`)) {
+          response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
+        }
+        // Prune redundant duplicate tokens if ssr chunks exist
+        if (c.name === 'sb-access-token' || c.name === 'sb-refresh-token' || c.name === 'supabase.auth.token') {
+          response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
+        }
+      });
+    }
+
     // Social media crawler detection for link previews (WhatsApp, Facebook, Twitter, Telegram, etc.)
     const userAgent = (request.headers.get('user-agent') || '').toLowerCase();
     const isSocialCrawler =
@@ -167,21 +187,6 @@ export async function proxy(request: NextRequest) {
       }
     } catch {
       /* ignore */
-    }
-
-    // Proactively prune stale/orphaned auth token chunks if cookie count is bloated (> 6)
-    const allExistingCookies = request.cookies.getAll();
-    if (allExistingCookies.length > 6) {
-      let currentRef = '';
-      try {
-        currentRef = new URL(supabaseUrl).hostname.split('.')[0];
-      } catch (_) {}
-
-      allExistingCookies.forEach((c) => {
-        if (c.name.startsWith('sb-') && currentRef && !c.name.startsWith(`sb-${currentRef}`)) {
-          response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
-        }
-      });
     }
 
     // Fallback 1: Direct cookie token inspection with proper chunk reassembly
