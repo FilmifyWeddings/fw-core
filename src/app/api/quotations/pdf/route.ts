@@ -196,15 +196,40 @@ export async function POST(req: NextRequest) {
     // STAGE 3: Server-Side Vector HTML Generation
     console.log('[PDF Server Pipeline] STAGE 3: Server-Side Vector HTML Generation');
     let documentData = content_json;
-    if (!documentData && targetId) {
-      const { data: doc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('content_json')
-        .eq('template_id', targetId)
-        .maybeSingle();
+    const isDocumentIncomplete = !documentData ||
+      !documentData.aboutUs ||
+      !documentData.pageSequence ||
+      !documentData.functionsPage ||
+      Object.keys(documentData).length < 5;
 
-      if (doc?.content_json) {
-        documentData = doc.content_json;
+    if (isDocumentIncomplete && targetId) {
+      console.log('[PDF Server Pipeline] Document incomplete or missing from request, fetching authoritative database copy for:', targetId);
+      const isIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+      const { data: doc } = isIdUuid
+        ? await supabaseAdmin
+            .from('quotation_documents')
+            .select('content_json')
+            .or(`template_id.eq.${targetId},id.eq.${targetId}`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : await supabaseAdmin
+            .from('quotation_documents')
+            .select('content_json')
+            .eq('template_id', targetId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+      if (doc?.content_json && typeof doc.content_json === 'object') {
+        documentData = {
+          ...doc.content_json,
+          ...(documentData || {})
+        };
+        if (doc.content_json.aboutUs) documentData.aboutUs = doc.content_json.aboutUs;
+        if (doc.content_json.pageSequence) documentData.pageSequence = doc.content_json.pageSequence;
+        if (doc.content_json.primaryFont) documentData.primaryFont = doc.content_json.primaryFont;
+        if (doc.content_json.secondaryFont) documentData.secondaryFont = doc.content_json.secondaryFont;
       }
     }
 

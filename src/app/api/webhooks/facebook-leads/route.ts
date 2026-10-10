@@ -137,6 +137,7 @@ export async function POST(req: NextRequest) {
       name: string;
       email: string;
       phone: string;
+      budget: string | null;
       raw_payload: Record<string, any>;
       raw_meta_payload: Record<string, any>;
       meta_lead_id: string | null;
@@ -147,6 +148,7 @@ export async function POST(req: NextRequest) {
       name: '',
       email: '',
       phone: '',
+      budget: null,
       raw_payload: {},
       raw_meta_payload: {},
       meta_lead_id: null,
@@ -314,6 +316,8 @@ export async function POST(req: NextRequest) {
 
         // Try explicit custom mapping first
         const explicitMapping = mappingConfig[key];
+        const autoMapped = fuzzyMapField(key);
+
         if (explicitMapping) {
           if (explicitMapping === 'name')  leadData.name  = leadData.name  || val;
           if (explicitMapping === 'email') leadData.email = leadData.email || val;
@@ -321,11 +325,25 @@ export async function POST(req: NextRequest) {
           rawPayload[explicitMapping !== 'custom' ? key : key] = val;
         } else {
           // Intelligent fuzzy auto-mapping
-          const autoMapped = fuzzyMapField(key);
           if (autoMapped === 'name'  && !leadData.name)  leadData.name  = val;
           if (autoMapped === 'email' && !leadData.email) leadData.email = val;
           if (autoMapped === 'phone' && !leadData.phone) leadData.phone = val;
           rawPayload[key] = val;
+        }
+
+        // Dedicated Budget Range Extraction (Meta Lead Ads Sync)
+        const isBudgetKey =
+          explicitMapping === 'budget' ||
+          explicitMapping === 'budget_range' ||
+          explicitMapping === 'preferred_budget_range' ||
+          autoMapped === 'budget' ||
+          /budget|investment|price_range|package_range|preferred_budget/i.test(key);
+
+        if (isBudgetKey && val) {
+          if (!leadData.budget) leadData.budget = val;
+          rawPayload.budget = val;
+          rawPayload.preferred_budget_range = val;
+          rawPayload.expected_budget = val;
         }
       });
 
@@ -347,12 +365,18 @@ export async function POST(req: NextRequest) {
       leadData.name  = body.name  || '';
       leadData.email = body.email || '';
       leadData.phone = body.phone || '';
+      leadData.budget = body.budget || body.raw_payload?.budget || null;
 
       const excludeKeys = ['name', 'email', 'phone', 'workspace_id'];
       const customPayload: Record<string, any> = {};
       Object.keys(body).forEach(k => {
         if (!excludeKeys.includes(k)) customPayload[k] = body[k];
       });
+
+      if (leadData.budget) {
+        customPayload.budget = leadData.budget;
+        customPayload.preferred_budget_range = leadData.budget;
+      }
 
       leadData.raw_payload      = customPayload;
       leadData.raw_meta_payload = {};
@@ -376,6 +400,7 @@ export async function POST(req: NextRequest) {
       name:              leadData.name  || null,
       email:             leadData.email || null,
       phone:             leadData.phone,
+      budget:            leadData.budget || leadData.raw_payload?.budget || null,
       source:            'facebook',
       status:            'new' as LeadStatus,
       score:             scoringResult.score,

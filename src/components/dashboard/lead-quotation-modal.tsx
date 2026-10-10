@@ -652,7 +652,7 @@ export function LeadQuotationModal({
     setDownloadingPdf(templateId);
     setIsExportingPdf(true);
     setExportProgress(25);
-    setExportStatusText('Preparing high-resolution A4 engine...');
+    setExportStatusText('Preparing high-resolution PDF engine...');
     setErrorMsg(null);
 
     const progressTimer = setInterval(() => {
@@ -660,13 +660,35 @@ export function LeadQuotationModal({
     }, 200);
 
     try {
-      const { exportQuotationDocumentToA4Pdf } = await import('@/lib/pdf-export-engine');
-      setExportStatusText('Rendering Vector A4 Pages...');
+      const { downloadServerChromiumPdf } = await import('@/lib/pdf-export-engine');
+      setExportStatusText('Hydrating complete quotation document & typography...');
 
-      await exportQuotationDocumentToA4Pdf({
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      let fullContentJson = q.content_json;
+      if (!fullContentJson?.aboutUs || !fullContentJson?.pageSequence || !fullContentJson?.functionsPage) {
+        try {
+          const res = await fetch(`/api/templates/${templateId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+          });
+          if (res.ok) {
+            const tmplJson = await res.json();
+            if (tmplJson?.document?.content_json) {
+              fullContentJson = tmplJson.document.content_json;
+            }
+          }
+        } catch (_) {}
+      }
+
+      setExportStatusText('Rendering Vector A4 Chromium PDF...');
+
+      await downloadServerChromiumPdf({
         templateId,
+        quotationId: templateId,
         filename: `${q.title || 'Quotation'}_V${q.version}.pdf`,
-        content_json: q.content_json,
+        content_json: fullContentJson,
+        userAccessToken: token,
         onProgress: (statusMsg: string) => {
           setExportStatusText(statusMsg);
           setExportProgress(prev => Math.min(prev + 10, 95));

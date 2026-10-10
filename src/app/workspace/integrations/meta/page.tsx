@@ -46,6 +46,7 @@ import {
   Key
 } from 'lucide-react';
 import MetaAdsLeadDistributionModal from '../components/MetaAdsLeadDistributionModal';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 // ─── Type Definitions ─────────────────────────────────────────────────────────
 
@@ -382,9 +383,50 @@ function FormPreviewModal({ form, onClose, getAuthHeaders }: {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+let memCachedMetaStatus: {
+  isConnected: boolean;
+  connectedAccountName?: string;
+  connectedUserEmail?: string;
+  businessName?: string;
+  pages?: ConnectedPage[];
+  leadForms?: LeadForm[];
+  realSyncLogs?: SyncLogItem[];
+  totalLeadsSynced?: number;
+} | null = null;
+
 export default function MetaIntegrationPage() {
-  // Core Data State
-  const [isConnected, setIsConnected] = useState(false);
+  // Synchronous cache hydration for 0ms flicker-free render
+  const [initialLoading, setInitialLoading] = useState<boolean>(() => {
+    if (memCachedMetaStatus) return false;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_meta_status');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed.isConnected === 'boolean') {
+            memCachedMetaStatus = parsed;
+            return false;
+          }
+        }
+      } catch (_) {}
+    }
+    return true;
+  });
+
+  const [isConnected, setIsConnected] = useState<boolean>(() => {
+    if (memCachedMetaStatus) return Boolean(memCachedMetaStatus.isConnected);
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_meta_status');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return Boolean(parsed.isConnected);
+        }
+      } catch (_) {}
+    }
+    return false;
+  });
+
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<'forms' | 'pages' | 'logs'>('forms');
 
@@ -392,15 +434,105 @@ export default function MetaIntegrationPage() {
   const [workspaceId, setWorkspaceId] = useState('');
 
   // Account Information
-  const [connectedAccountName, setConnectedAccountName] = useState('Meta User');
-  const [connectedUserEmail, setConnectedUserEmail] = useState('');
-  const [businessName, setBusinessName] = useState('Meta Business');
+  const [connectedAccountName, setConnectedAccountName] = useState<string>(() => {
+    if (memCachedMetaStatus?.connectedAccountName) return memCachedMetaStatus.connectedAccountName;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_meta_status');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return parsed.connectedAccountName || 'Meta User';
+        }
+      } catch (_) {}
+    }
+    return 'Meta User';
+  });
+
+  const [connectedUserEmail, setConnectedUserEmail] = useState<string>(() => {
+    if (memCachedMetaStatus?.connectedUserEmail) return memCachedMetaStatus.connectedUserEmail;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_meta_status');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return parsed.connectedUserEmail || '';
+        }
+      } catch (_) {}
+    }
+    return '';
+  });
+
+  const [businessName, setBusinessName] = useState<string>(() => {
+    if (memCachedMetaStatus?.businessName) return memCachedMetaStatus.businessName;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_meta_status');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return parsed.businessName || 'Meta Business';
+        }
+      } catch (_) {}
+    }
+    return 'Meta Business';
+  });
+
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
-  const [pages, setPages] = useState<ConnectedPage[]>([]);
-  const [leadForms, setLeadForms] = useState<LeadForm[]>([]);
-  const [realSyncLogs, setRealSyncLogs] = useState<SyncLogItem[]>([]);
-  const [totalLeadsSynced, setTotalLeadsSynced] = useState(0);
+  const [pages, setPages] = useState<ConnectedPage[]>(() => {
+    if (memCachedMetaStatus?.pages) return memCachedMetaStatus.pages;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_meta_status');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return parsed.pages || [];
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
+  const [leadForms, setLeadForms] = useState<LeadForm[]>(() => {
+    if (memCachedMetaStatus?.leadForms) return memCachedMetaStatus.leadForms;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_meta_status');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return parsed.leadForms || [];
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
+  const [realSyncLogs, setRealSyncLogs] = useState<SyncLogItem[]>(() => {
+    if (memCachedMetaStatus?.realSyncLogs) return memCachedMetaStatus.realSyncLogs;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_meta_status');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return parsed.realSyncLogs || [];
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
+  const [totalLeadsSynced, setTotalLeadsSynced] = useState<number>(() => {
+    if (typeof memCachedMetaStatus?.totalLeadsSynced === 'number') return memCachedMetaStatus.totalLeadsSynced;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_meta_status');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return parsed.totalLeadsSynced || 0;
+        }
+      } catch (_) {}
+    }
+    return 0;
+  });
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -579,6 +711,23 @@ export default function MetaIntegrationPage() {
         setTotalLeadsSynced(data.counts?.total_leads || 0);
         setLastSyncTime(new Date().toISOString());
 
+        const cacheObj = {
+          isConnected: true,
+          connectedAccountName: data.connection.user_name || 'Meta User',
+          connectedUserEmail: data.connection.user_email || '',
+          businessName: data.connection.business_name || 'Meta Business',
+          pages: data.pages || [],
+          leadForms: data.forms || [],
+          realSyncLogs: data.sync_logs || [],
+          totalLeadsSynced: data.counts?.total_leads || 0,
+        };
+        memCachedMetaStatus = cacheObj;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('sc_cached_meta_status', JSON.stringify(cacheObj));
+          } catch (_) {}
+        }
+
         // Fetch available WhatsApp Contact Groups
         try {
           const { data: groupsData } = await supabase
@@ -602,6 +751,13 @@ export default function MetaIntegrationPage() {
         setPages([]);
         setLeadForms([]);
         setRealSyncLogs([]);
+        const cacheObj = { isConnected: false };
+        memCachedMetaStatus = cacheObj;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('sc_cached_meta_status', JSON.stringify(cacheObj));
+          } catch (_) {}
+        }
       }
     } catch {
       setIsConnected(false);
@@ -610,6 +766,7 @@ export default function MetaIntegrationPage() {
       setRealSyncLogs([]);
     } finally {
       setIsSyncing(false);
+      setInitialLoading(false);
     }
   }, [getAuthHeaders]);
 
@@ -926,7 +1083,9 @@ export default function MetaIntegrationPage() {
   }, [realSyncLogs, logSearchQuery, logStatusFilter]);
 
   const enabledCount = useMemo(() => leadForms.filter(f => (f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
-  const disabledCount = useMemo(() => leadForms.filter(f => !(f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
+  if (initialLoading) {
+    return <StudioCoreLiquidLoader label="Connecting to Meta Business Suite..." />;
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 p-2 sm:p-4 lg:p-8 selection:bg-[#0866FF] selection:text-white">

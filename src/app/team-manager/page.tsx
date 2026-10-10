@@ -240,8 +240,19 @@ export default function TeamManagerPage() {
   // Team & Partner Financial Engine States
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<any>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
-  const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
-  const [loading, setLoading] = useState<boolean>(() => memCachedTMProjects.length === 0);
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (memCachedTMProjects.length > 0) return false;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_tm_projects');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return false;
+        }
+      } catch (_) {}
+    }
+    return true;
+  });
   const [error, setError] = useState<string | null>(null);
 
 
@@ -489,7 +500,8 @@ export default function TeamManagerPage() {
   // DATA FETCHING & HYDRATION FROM SUPABASE (RELATIONAL SCHEMAS + WORKSPACE ISOLATION)
   // ─────────────────────────────────────────────────────────────
   const fetchAllData = async (targetUid?: string, silent: boolean = false) => {
-    if (!silent) setLoading(true);
+    const hasData = (projects.length > 0) || (memCachedTMProjects.length > 0);
+    if (!silent && !hasData) setLoading(true);
     setError(null);
     const uid = targetUid !== undefined ? targetUid : (workspaceId || currentUserId);
 
@@ -800,7 +812,7 @@ export default function TeamManagerPage() {
       const uid = session?.user?.id || '';
       setCurrentUserId(uid);
       const effectiveWsId = workspaceId || uid;
-      const isSilent = memCachedTMProjects.length > 0;
+      const isSilent = memCachedTMProjects.length > 0 || projects.length > 0;
       await fetchAllData(effectiveWsId, isSilent);
     }
     initUserAndFetch();
@@ -810,10 +822,6 @@ export default function TeamManagerPage() {
   useEffect(() => {
     const handleEventsUpdated = () => {
       const effectiveWsId = workspaceId || currentUserId;
-      memCachedTMProjects = [];
-      try {
-        localStorage.removeItem('sc_cached_tm_projects');
-      } catch (_) {}
       fetchAllData(effectiveWsId, true);
     };
 
@@ -825,10 +833,6 @@ export default function TeamManagerPage() {
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'sc_booking_sync_event' || e.key === 'sc_cached_tm_projects' || e.key === 'team_events_updated') {
         const effectiveWsId = workspaceId || currentUserId;
-        memCachedTMProjects = [];
-        try {
-          localStorage.removeItem('sc_cached_tm_projects');
-        } catch (_) {}
         fetchAllData(effectiveWsId, true);
       }
     };
@@ -1963,7 +1967,7 @@ export default function TeamManagerPage() {
     return list;
   }, [projects, searchQuery, selectedRoleFilter, unifiedFilters, teamMembers]);
 
-  if (!isMounted || (loading && projects.length === 0)) {
+  if (loading && projects.length === 0) {
     return <StudioCoreLiquidLoader label="Loading Bookings & Operations..." />;
   }
 

@@ -199,6 +199,56 @@ export function getSmartQuestionHeader(raw: string): { key: string; label: strin
   return { key: cleanKey || text, label: cleanLabel || text };
 }
 
+export function getResolvedLeadBudget(lead?: any | null): string {
+  if (!lead) return '';
+  if (lead.budget && String(lead.budget).trim() && String(lead.budget).trim() !== '0') {
+    return String(lead.budget).trim();
+  }
+  const raw = lead.raw_payload || {};
+  if (raw.budget && String(raw.budget).trim() && String(raw.budget).trim() !== '0') return String(raw.budget).trim();
+  if (raw.preferred_budget_range && String(raw.preferred_budget_range).trim()) return String(raw.preferred_budget_range).trim();
+  if (raw.expected_budget && String(raw.expected_budget).trim()) return String(raw.expected_budget).trim();
+  if (raw.deal_value && String(raw.deal_value).trim()) return String(raw.deal_value).trim();
+  if (raw.package && String(raw.package).trim()) return String(raw.package).trim();
+  if (raw.max_budget && String(raw.max_budget).trim()) return String(raw.max_budget).trim();
+  if (raw['Max Budget'] && String(raw['Max Budget']).trim()) return String(raw['Max Budget']).trim();
+
+  // Scan raw_payload keys for budget
+  for (const [k, v] of Object.entries(raw)) {
+    if (v && typeof v === 'string' && v.trim()) {
+      const kLower = k.toLowerCase();
+      if (kLower.includes('budget') || kLower.includes('investment') || kLower.includes('price_range') || kLower.includes('package_range')) {
+        return v.trim();
+      }
+    }
+  }
+
+  // Scan raw_meta_payload
+  const metaRaw = lead.raw_meta_payload || {};
+  for (const [k, v] of Object.entries(metaRaw)) {
+    if (v && typeof v === 'string' && v.trim()) {
+      const kLower = k.toLowerCase();
+      if (kLower.includes('budget') || kLower.includes('investment') || kLower.includes('price_range')) {
+        return v.trim();
+      }
+    }
+  }
+
+  // Check field_data array
+  const fd = raw.field_data || metaRaw.field_data;
+  if (Array.isArray(fd)) {
+    for (const item of fd) {
+      const name = (item?.name || item?.key || '').toLowerCase();
+      if (name.includes('budget') || name.includes('investment') || name.includes('price')) {
+        const val = Array.isArray(item?.values) ? item.values[0] : item?.value ?? item?.val;
+        if (val && String(val).trim()) return String(val).trim();
+      }
+    }
+  }
+
+  return '';
+}
+
 const sanitizeLeadStagesList = (rawStages: any[]): any[] => {
   if (!Array.isArray(rawStages)) return [];
   const filtered = rawStages.filter((st: any) => {
@@ -2219,6 +2269,8 @@ export function LeadTable({
         location: manualLocation.trim(),
         venue: manualVenue.trim(),
         budget: manualBudget.trim() || null,
+        preferred_budget_range: manualBudget.trim() || null,
+        'what_is_your_preferred_budget_range?': manualBudget.trim() || null,
       }
     };
 
@@ -3009,7 +3061,7 @@ export function LeadTable({
             };
 
             const getBudgetValue = (l: Lead) => {
-              const raw = l.raw_payload?.budget || l.raw_payload?.deal_value || l.raw_payload?.amount;
+              const raw = getResolvedLeadBudget(l);
               if (raw) {
                 let s = String(raw).trim();
                 s = s.replace(/^\?+/, '').trim();
@@ -3017,7 +3069,7 @@ export function LeadTable({
                 if (s.startsWith('₹') || s.startsWith('$')) return s;
                 return `₹${s}`;
               }
-              return '₹1,50,000';
+              return '—';
             };
 
             const initials = getLeadInitials(lead.name || '');
@@ -3841,12 +3893,14 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               }
-                              case 'budget':
+                              case 'budget': {
+                                const resolved = getResolvedLeadBudget(lead);
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-emerald-700 dark:text-emerald-400 font-bold whitespace-nowrap">
-                                    {(lead as any).budget || lead.raw_payload?.budget || lead.raw_payload?.package || lead.raw_payload?.expected_budget || '—'}
+                                    {resolved || '—'}
                                   </MotionTd>
                                 );
+                              }
                               case 'location':
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
@@ -4022,7 +4076,11 @@ export function LeadTable({
                               }
                               const smart = getSmartQuestionHeader(col.id);
 
-                              // Extract value from field_data array if present
+                              // If column represents budget, resolve via unified helper
+                              if (smart.key === 'budget' || col.id.toLowerCase().includes('budget') || col.id.toLowerCase().includes('price')) {
+                                const resolvedB = getResolvedLeadBudget(lead);
+                                if (resolvedB) return resolvedB;
+                              }
                               const extractFromFieldData = (fdArray: any[]) => {
                                 if (!Array.isArray(fdArray)) return null;
                                 const colLower = col.id.toLowerCase().replace(/[^a-z0-9]/g, '');

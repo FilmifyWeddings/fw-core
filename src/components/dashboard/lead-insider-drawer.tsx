@@ -303,16 +303,53 @@ export function LeadInsiderDrawer({
 
   const getResolvedBudget = (l?: Lead | null): string => {
     if (!l) return '';
-    return (
-      l.raw_payload?.budget ||
-      l.raw_payload?.expected_budget ||
-      l.raw_payload?.deal_value ||
-      l.raw_payload?.package ||
-      l.raw_payload?.max_budget ||
-      l.raw_payload?.['Max Budget'] ||
-      (l as any)?.budget ||
-      ''
-    );
+    // 1. Direct fields
+    if ((l as any).budget && String((l as any).budget).trim() && String((l as any).budget).trim() !== '0') {
+      return String((l as any).budget).trim();
+    }
+    const raw = l.raw_payload || {};
+    if (raw.budget && String(raw.budget).trim() && String(raw.budget).trim() !== '0') return String(raw.budget).trim();
+    if (raw.preferred_budget_range && String(raw.preferred_budget_range).trim()) return String(raw.preferred_budget_range).trim();
+    if (raw.expected_budget && String(raw.expected_budget).trim()) return String(raw.expected_budget).trim();
+    if (raw.deal_value && String(raw.deal_value).trim()) return String(raw.deal_value).trim();
+    if (raw.package && String(raw.package).trim()) return String(raw.package).trim();
+    if (raw.max_budget && String(raw.max_budget).trim()) return String(raw.max_budget).trim();
+    if (raw['Max Budget'] && String(raw['Max Budget']).trim()) return String(raw['Max Budget']).trim();
+
+    // 2. Scan raw_payload keys for any variation of budget, price, investment, package, range
+    for (const [k, v] of Object.entries(raw)) {
+      if (v && typeof v === 'string' && v.trim()) {
+        const kLower = k.toLowerCase();
+        if (kLower.includes('budget') || kLower.includes('investment') || kLower.includes('price_range') || kLower.includes('package_range')) {
+          return v.trim();
+        }
+      }
+    }
+
+    // 3. Scan raw_meta_payload
+    const metaRaw = (l as any).raw_meta_payload || {};
+    for (const [k, v] of Object.entries(metaRaw)) {
+      if (v && typeof v === 'string' && v.trim()) {
+        const kLower = k.toLowerCase();
+        if (kLower.includes('budget') || kLower.includes('investment') || kLower.includes('price_range')) {
+          return v.trim();
+        }
+      }
+    }
+
+    // 4. Check field_data array if present
+    const fd = raw.field_data || metaRaw.field_data;
+    if (Array.isArray(fd)) {
+      for (const item of fd) {
+        const name = (item?.name || item?.key || '').toLowerCase();
+        if (name.includes('budget') || name.includes('investment') || name.includes('price')) {
+          const val = Array.isArray(item?.values) ? item.values[0] : item?.value ?? item?.val;
+          if (val && String(val).trim()) return String(val).trim();
+        }
+      }
+    }
+
+    return '';
   };
 
   const rawInitialBudget = getResolvedBudget(lead);
@@ -437,7 +474,12 @@ export function LeadInsiderDrawer({
   const handleSaveBudget = async () => {
     const trimmed = editedBudget.trim();
     if (trimmed !== rawInitialBudget) {
-      const updatedPayload = { ...(lead.raw_payload || {}), budget: trimmed };
+      const updatedPayload = {
+        ...(lead.raw_payload || {}),
+        budget: trimmed,
+        preferred_budget_range: trimmed,
+        'what_is_your_preferred_budget_range?': trimmed
+      };
       handleFieldChange({ budget: trimmed as any, raw_payload: updatedPayload });
       fetch(`/api/leads/${lead.id}/activities`, {
         method: 'POST',
@@ -2111,8 +2153,11 @@ export function LeadInsiderDrawer({
                               <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Budget</label>
                               <input 
                                 type="text" 
-                                value={lead.raw_payload?.budget || ''} 
-                                onChange={(e) => handleRawPayloadChange('budget', e.target.value)}
+                                value={lead.raw_payload?.budget || getResolvedBudget(lead)} 
+                                onChange={(e) => {
+                                  handleRawPayloadChange('budget', e.target.value);
+                                  handleRawPayloadChange('preferred_budget_range', e.target.value);
+                                }}
                                 className="w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-2 rounded-xl text-xs font-semibold"
                                 placeholder="e.g. ₹2.5 Lakh"
                               />
