@@ -156,9 +156,12 @@ const parseLeadComment = (comm: any): any => {
   };
 };
 
-// Module-level in-memory cache for instant 0ms transitions
+// Module-level in-memory cache scoped by workspace for instant 0ms transitions
+let memCachedWorkspaceId: string = '';
 let memCachedLeads: Lead[] = [];
+let memCachedStagesWorkspaceId: string = '';
 let memCachedStages: any[] = DEFAULT_STAGES;
+let memCachedPreferencesWorkspaceId: string = '';
 let memCachedPreferences: any = null;
 
 export default function LeadsPage() {
@@ -177,31 +180,9 @@ export default function LeadsPage() {
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const PAGE_SIZE = 50;
 
-  // Hydrate cache on client mount to eliminate SSR/CSR hydration mismatch
+  // Hydrate client mount status (Strictly avoid loading unkeyed caches on mount to prevent cross-studio data pollution)
   useEffect(() => {
     setMounted(true);
-    if (memCachedLeads.length > 0) {
-      setLeads(memCachedLeads);
-      setLoading(false);
-    } else {
-      try {
-        const stored = localStorage.getItem('sc_cached_leads');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedLeads = parsed;
-            setLeads(parsed);
-            setLoading(false);
-          }
-        }
-      } catch (_) {}
-    }
-    if (memCachedStages && memCachedStages.length > 0) {
-      setStages(memCachedStages);
-    }
-    if (memCachedPreferences) {
-      setPreferences(memCachedPreferences);
-    }
   }, []);
 
 
@@ -456,9 +437,31 @@ export default function LeadsPage() {
       return;
     }
 
+    const scopedCacheKey = `sc_cached_leads_${targetUserId}`;
+
     if (pageNum === 0) {
-      if (memCachedLeads.length === 0) {
-        setLoading(true);
+      if (memCachedWorkspaceId === targetUserId && memCachedLeads.length > 0) {
+        setLeads(memCachedLeads);
+        setLoading(false);
+      } else {
+        try {
+          const stored = localStorage.getItem(scopedCacheKey);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const scoped = parsed.filter(l => !l.workspace_id || l.workspace_id === targetUserId);
+              if (scoped.length > 0) {
+                memCachedLeads = scoped;
+                memCachedWorkspaceId = targetUserId;
+                setLeads(scoped);
+                setLoading(false);
+              }
+            }
+          }
+        } catch (_) {}
+        if (memCachedLeads.length === 0) {
+          setLoading(true);
+        }
       }
       setPage(0);
     } else {
@@ -550,32 +553,29 @@ export default function LeadsPage() {
       }
 
       if (pageNum === 0) {
-        setLeads(prev => {
-          const serverIds = new Set(sanitizedLeads.map(l => l.id));
-          const recentLocals = prev.filter(l => !serverIds.has(l.id));
-          const merged = [...recentLocals, ...sanitizedLeads].sort((a, b) => {
-            const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-            const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-            return timeB - timeA;
-          });
-          memCachedLeads = merged;
+        setLeads(() => {
+          memCachedLeads = sanitizedLeads;
+          memCachedWorkspaceId = targetUserId;
           if (typeof window !== 'undefined') {
             try {
-              localStorage.setItem('sc_cached_leads', JSON.stringify(merged));
+              localStorage.setItem(`sc_cached_leads_${targetUserId}`, JSON.stringify(sanitizedLeads));
+              localStorage.removeItem('sc_cached_leads');
             } catch (_) {}
           }
-          return merged;
+          return sanitizedLeads;
         });
       } else {
         setLeads(prev => {
-          const existingIds = new Set(prev.map(l => l.id));
+          const currentWsLeads = prev.filter(l => !l.workspace_id || l.workspace_id === targetUserId);
+          const existingIds = new Set(currentWsLeads.map(l => l.id));
           const newLeads = sanitizedLeads.filter(l => !existingIds.has(l.id));
-          const merged = [...prev, ...newLeads].sort((a, b) => {
+          const merged = [...currentWsLeads, ...newLeads].sort((a, b) => {
             const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
             const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
             return timeB - timeA;
           });
           memCachedLeads = merged;
+          memCachedWorkspaceId = targetUserId;
           return merged;
         });
       }
@@ -624,8 +624,10 @@ export default function LeadsPage() {
         const cleanStages = sanitizeStagesList(loadedStages);
         setStages(cleanStages);
         memCachedStages = cleanStages;
+        memCachedStagesWorkspaceId = targetUserId;
         try {
-          localStorage.setItem('leads_workspace_stages', JSON.stringify(cleanStages));
+          localStorage.setItem(`leads_workspace_stages_${targetUserId}`, JSON.stringify(cleanStages));
+          localStorage.removeItem('leads_workspace_stages');
         } catch (_) {}
 
         // Load Layout Configurations safely from LocalStorage
@@ -1001,13 +1003,17 @@ export default function LeadsPage() {
     const isNowBooked = checkIsBookedStage(updatedFields.stage_id) || checkIsBookedStage(updatedFields.status as string) || checkIsBookedStage((updatedFields as any).stage);
 
     // Optimistic UI Update
+    const currentTargetWs = currentLead?.workspace_id || workspaceId || userId;
     setLeads(prev => {
       const updated = prev.map(l => l.id === leadId ? { ...l, ...updatedFields, updated_at: new Date().toISOString() } : l);
-      memCachedLeads = updated;
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
-        } catch (_) {}
+      if (currentTargetWs) {
+        memCachedLeads = updated;
+        memCachedWorkspaceId = currentTargetWs;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(`sc_cached_leads_${currentTargetWs}`, JSON.stringify(updated));
+          } catch (_) {}
+        }
       }
       return updated;
     });
@@ -1489,9 +1495,10 @@ export default function LeadsPage() {
               return timeB - timeA;
             });
             memCachedLeads = updated;
+            memCachedWorkspaceId = targetWorkspace;
             if (typeof window !== 'undefined') {
               try {
-                localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
+                localStorage.setItem(`sc_cached_leads_${targetWorkspace}`, JSON.stringify(updated));
               } catch (_) {}
             }
             return updated;

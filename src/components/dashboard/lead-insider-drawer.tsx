@@ -355,7 +355,24 @@ export function LeadInsiderDrawer({
     if (activeTab === 'activity_log' || activeTab === 'overview') {
       fetchActivities();
     }
-  }, [activeTab, lead?.id]);
+  }, [activeTab, lead?.id, lead?.status, lead?.stage_id, lead?.source]);
+
+  // Listen for activity logged events dispatched across components
+  useEffect(() => {
+    const handleActivityLogged = (e: any) => {
+      if (e.detail?.leadId === lead?.id || !e.detail?.leadId) {
+        fetchActivities();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('lead_activity_logged', handleActivityLogged);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('lead_activity_logged', handleActivityLogged);
+      }
+    };
+  }, [lead?.id]);
 
   const handleSaveName = async () => {
     const trimmed = editedName.trim();

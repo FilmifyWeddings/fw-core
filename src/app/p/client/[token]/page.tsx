@@ -442,8 +442,6 @@ export default function PublicClientPortalPage() {
       });
     } catch (err) {
       console.error('PDF Export Error:', err);
-      // Fallback: Open HTML render print
-      window.open(`/api/quotations/${templateId}/render-html?print=true`, '_blank');
     } finally {
       setDownloadingPdf(null);
       setExportProgressText('');

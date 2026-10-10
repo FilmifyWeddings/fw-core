@@ -300,15 +300,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   const handleSignOut = async () => {
     if (confirm('Are you sure you want to sign out from StudioCore?')) {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('sc_studio_name');
-        localStorage.removeItem('sc_user_name');
-        localStorage.removeItem('sc_avatar_url');
-        localStorage.removeItem('sc_logo_url');
-        localStorage.removeItem('sc_active_workspace_id');
-        localStorage.removeItem('active_workspace_id');
-        localStorage.removeItem('sc_user_email');
-      }
+      try {
+        const { clearUserWorkspaceCaches } = await import('@/lib/storage-safety');
+        clearUserWorkspaceCaches();
+      } catch (_) {}
       await supabase.auth.signOut();
       window.location.href = '/login';
     }
@@ -554,12 +549,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           1. DESKTOP & TABLET FIXED LEFT SIDEBAR
       ───────────────────────────────────────────────────────────── */}
       <aside
+        suppressHydrationWarning
         className={`fixed top-0 bottom-0 left-0 z-50 hidden lg:flex flex-col bg-white border-r border-[#EBE7DF] shadow-xs transition-all duration-300 ease-in-out ${
           collapsed ? 'w-20' : 'w-64'
         }`}
       >
         {/* Top Brand Logo Header */}
-        <div className={`h-16 border-b border-[#F0ECE4] flex items-center shrink-0 ${collapsed ? 'justify-center px-1' : 'justify-between px-4'}`}>
+        <div suppressHydrationWarning className={`h-16 border-b border-[#F0ECE4] flex items-center shrink-0 ${collapsed ? 'justify-center px-1' : 'justify-between px-4'}`}>
           {!collapsed ? (
             <>
               <Link

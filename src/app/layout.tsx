@@ -67,6 +67,35 @@ export default function RootLayout({
                     try { if (typeof window !== 'undefined' && window.sessionStorage) window.sessionStorage.setItem(k, v); } catch(_) {}
                   }
 
+                  // 0. Clean up extension-injected attributes (bis_skin_checked) before React hydration to eliminate hydration mismatch errors
+                  try {
+                    if (typeof document !== 'undefined') {
+                      var cleanBis = function() {
+                        var els = document.querySelectorAll('[bis_skin_checked]');
+                        for (var i = 0; i < els.length; i++) {
+                          els[i].removeAttribute('bis_skin_checked');
+                        }
+                      };
+                      cleanBis();
+                      if (typeof MutationObserver !== 'undefined') {
+                        var bisObserver = new MutationObserver(function(mutations) {
+                          for (var i = 0; i < mutations.length; i++) {
+                            var m = mutations[i];
+                            if (m.type === 'attributes' && m.attributeName === 'bis_skin_checked') {
+                              m.target.removeAttribute('bis_skin_checked');
+                            }
+                          }
+                        });
+                        bisObserver.observe(document.documentElement, {
+                          attributes: true,
+                          subtree: true,
+                          attributeFilter: ['bis_skin_checked']
+                        });
+                        setTimeout(function() { bisObserver.disconnect(); }, 5000);
+                      }
+                    }
+                  } catch (_) {}
+
                   // 1. Suppress runtime errors from third-party browser extensions (e.g. Urban VPN, ad-blockers)
                   window.addEventListener('error', function(e) {
                     try {

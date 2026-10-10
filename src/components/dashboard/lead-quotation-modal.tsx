@@ -651,22 +651,26 @@ export function LeadQuotationModal({
 
     setDownloadingPdf(templateId);
     setIsExportingPdf(true);
-    setExportProgress(20);
-    setExportStatusText('Fetching document snapshot...');
+    setExportProgress(25);
+    setExportStatusText('Preparing high-resolution A4 engine...');
     setErrorMsg(null);
 
     const progressTimer = setInterval(() => {
       setExportProgress(prev => (prev < 90 ? prev + 15 : prev));
-    }, 250);
+    }, 200);
 
     try {
-      const { downloadServerChromiumPdf } = await import('@/lib/pdf-export-engine');
-      setExportStatusText('Rendering Vector PDF Pages...');
+      const { exportQuotationDocumentToA4Pdf } = await import('@/lib/pdf-export-engine');
+      setExportStatusText('Rendering Vector A4 Pages...');
 
-      await downloadServerChromiumPdf({
+      await exportQuotationDocumentToA4Pdf({
         templateId,
         filename: `${q.title || 'Quotation'}_V${q.version}.pdf`,
-        content_json: q.content_json
+        content_json: q.content_json,
+        onProgress: (statusMsg: string) => {
+          setExportStatusText(statusMsg);
+          setExportProgress(prev => Math.min(prev + 10, 95));
+        }
       });
 
       setExportProgress(100);
@@ -675,7 +679,7 @@ export function LeadQuotationModal({
     } catch (err: any) {
       clearInterval(progressTimer);
       console.error('[Download PDF Error]:', err);
-      window.open(`/api/quotations/${templateId}/render-html?print=true`, '_blank');
+      setErrorMsg(`PDF export error: ${err?.message || 'Could not export file'}`);
     } finally {
       setTimeout(() => {
         setIsExportingPdf(false);

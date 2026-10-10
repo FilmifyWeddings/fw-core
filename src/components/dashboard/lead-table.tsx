@@ -3602,6 +3602,10 @@ export function LeadTable({
                                               old_value: oldSource,
                                               new_value: trimmedName
                                             })
+                                          }).then(() => {
+                                            if (typeof window !== 'undefined') {
+                                              window.dispatchEvent(new CustomEvent('lead_activity_logged', { detail: { leadId: lead.id } }));
+                                            }
                                           }).catch(() => {});
                                         }
                                       }}
@@ -3619,6 +3623,10 @@ export function LeadTable({
                                               old_value: oldSource,
                                               new_value: val
                                             })
+                                          }).then(() => {
+                                            if (typeof window !== 'undefined') {
+                                              window.dispatchEvent(new CustomEvent('lead_activity_logged', { detail: { leadId: lead.id } }));
+                                            }
                                           }).catch(() => {});
                                         }
                                       }}
@@ -3745,6 +3753,10 @@ export function LeadTable({
                                               old_value: oldStage,
                                               new_value: targetStatus
                                             })
+                                          }).then(() => {
+                                            if (typeof window !== 'undefined') {
+                                              window.dispatchEvent(new CustomEvent('lead_activity_logged', { detail: { leadId: lead.id } }));
+                                            }
                                           }).catch(() => {});
                                         }
                                       }}

@@ -118,6 +118,51 @@ export function purgeStaleStorageKeys(keepDraftId?: string): number {
 }
 
 /**
+ * Completely purges all studio-specific and user-specific caches
+ * to guarantee 100% isolation between accounts and workspaces.
+ */
+export function clearUserWorkspaceCaches(): void {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const keysToRemove: string[] = [];
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+
+      if (
+        key.startsWith('sc_cached_') ||
+        key.startsWith('leads_workspace_') ||
+        key.startsWith('sc_quotation_summary_map') ||
+        key.startsWith('lead_quotes_cache_') ||
+        key.startsWith('studio_templates_cache') ||
+        key.startsWith('wg_quotations_cache') ||
+        key.startsWith('impersonated_') ||
+        key.startsWith('wa_logs_') ||
+        key === 'sc_active_workspace_id' ||
+        key === 'active_workspace_id' ||
+        key === 'sc_user_name' ||
+        key === 'sc_avatar_url' ||
+        key === 'sc_logo_url' ||
+        key === 'sc_user_email' ||
+        key === 'leads_notified_comment_ids'
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+
+    keysToRemove.forEach((k) => {
+      try { localStorage.removeItem(k); } catch (_) {}
+    });
+
+    try { sessionStorage.clear(); } catch (_) {}
+  } catch (err) {
+    console.warn('[StorageSafety] Error clearing workspace caches:', err);
+  }
+}
+
+/**
  * Defensive LocalStorage setter that catches QuotaExceededError,
  * cleans up stale data automatically, and retries gracefully without throwing.
  */

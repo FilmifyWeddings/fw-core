@@ -232,6 +232,158 @@ export async function exportClientCanvasToPDF(
 }
 
 /**
+ * Fast Discrete Page-by-Page A4 PDF Exporter for Quotation Documents.
+ * Works ANYWHERE (inside Leads CRM modals, public view, or background)
+ * without requiring the live canvas in the DOM and NEVER opening browser print popups.
+ */
+export async function exportQuotationDocumentToA4Pdf(options: {
+  templateId?: string;
+  quotationId?: string;
+  filename?: string;
+  content_json?: any;
+  onProgress?: (message: string) => void;
+}): Promise<void> {
+  const { templateId, quotationId, filename, onProgress } = options;
+  let content_json = options.content_json;
+  const targetId = quotationId || templateId;
+
+  onProgress?.('Initializing A4 PDF engine...');
+
+  const cleanFilename = (filename || `${targetId || 'Quotation'}.pdf`)
+    .replace(/–/g, '-')
+    .replace(/—/g, '-')
+    .replace(/[^ -~]/g, '-')
+    .trim();
+  const finalFilename = cleanFilename.toLowerCase().endsWith('.pdf') ? cleanFilename : `${cleanFilename}.pdf`;
+
+  let htmlMarkup = '';
+
+  // 1. If content_json not passed, fetch it or fetch pre-rendered HTML
+  if (!content_json && targetId) {
+    onProgress?.('Fetching quotation details...');
+    try {
+      const docRes = await fetch(`/api/templates/${targetId}`);
+      if (docRes.ok) {
+        const json = await docRes.json();
+        content_json = json.template?.content_json || json.content_json || json;
+      }
+    } catch (_) {}
+  }
+
+  if (content_json) {
+    onProgress?.('Composing document layout...');
+    const { renderQuotationToHTML } = await import('@/lib/pdf-html-generator');
+    htmlMarkup = renderQuotationToHTML(content_json);
+  } else if (targetId) {
+    onProgress?.('Fetching document layout...');
+    const res = await fetch(`/api/quotations/${targetId}/render-html`);
+    if (res.ok) {
+      htmlMarkup = await res.text();
+    }
+  }
+
+  if (!htmlMarkup) {
+    throw new Error('Unable to generate quotation layout.');
+  }
+
+  onProgress?.('Preparing rendering sandbox...');
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.top = '-99999px';
+  iframe.style.left = '-99999px';
+  iframe.style.width = '794px';
+  iframe.style.height = '1123px';
+  iframe.style.border = 'none';
+  iframe.style.zIndex = '-99999';
+  iframe.style.visibility = 'hidden';
+  document.body.appendChild(iframe);
+
+  try {
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) {
+      throw new Error('Sandbox document could not be created');
+    }
+
+    iframeDoc.open();
+    iframeDoc.write(htmlMarkup);
+    iframeDoc.close();
+
+    // Ensure fonts and images are ready
+    if (iframeDoc.fonts) {
+      try {
+        await iframeDoc.fonts.ready;
+      } catch (_) {}
+    }
+
+    const images = Array.from(iframeDoc.querySelectorAll('img'));
+    if (images.length > 0) {
+      await Promise.all(
+        images.map(img => {
+          if (img.complete) return Promise.resolve();
+          return new Promise(resolve => {
+            img.onload = resolve;
+            img.onerror = resolve;
+            setTimeout(resolve, 2500);
+          });
+        })
+      );
+    }
+
+    // Query discrete A4 pages
+    let pages = Array.from(
+      iframeDoc.querySelectorAll<HTMLElement>('.pdf-page, .quotation-page, .quotation-canvas-page, section')
+    );
+
+    // If query returns empty, fallback to container or body
+    if (pages.length === 0) {
+      const container = iframeDoc.getElementById('quotation-canvas-container') || iframeDoc.body;
+      if (container) {
+        pages = [container];
+      }
+    }
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true
+    });
+
+    onProgress?.(`Rendering ${pages.length} pages in standard A4 format...`);
+
+    for (let i = 0; i < pages.length; i++) {
+      const pageEl = pages[i];
+      onProgress?.(`Rendering page ${i + 1} of ${pages.length}...`);
+
+      if (i > 0) {
+        pdf.addPage('a4', 'portrait');
+      }
+
+      const canvas = await html2canvasPro(pageEl, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: 794
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    }
+
+    onProgress?.('Saving PDF file...');
+    pdf.save(finalFilename);
+    onProgress?.('PDF Downloaded Successfully!');
+  } finally {
+    if (document.body.contains(iframe)) {
+      document.body.removeChild(iframe);
+    }
+  }
+}
+
+/**
  * 100% Server-First PDF Engine with Zero-Downtime Fallback.
  * Tries server rendering via Headless Chromium. If server API returns an error
  * or non-binary response, automatically falls back to Canva-grade IFrame Sandbox.
@@ -312,25 +464,14 @@ export async function downloadServerChromiumPdf(options: ServerPdfExportOptions)
       onProgress?.('Generating Page-by-Page A4 PDF via IFrame Sandbox Engine...');
       await exportClientCanvasToPDF('quotation-full-canvas', finalFilename, onProgress);
     } else {
-      // Direct GET download fallback without opening new print tabs
-      onProgress?.('Fetching PDF binary stream...');
-      const fallbackRes = await fetch(`/api/quotations/pdf?id=${targetId}&filename=${encodeURIComponent(finalFilename)}`);
-      if (fallbackRes.ok) {
-        const fallbackBlob = await fallbackRes.blob();
-        if (fallbackBlob.size >= 1000) {
-          const url = window.URL.createObjectURL(fallbackBlob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = finalFilename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          window.URL.revokeObjectURL(url);
-          onProgress?.('PDF Downloaded Successfully!');
-          return;
-        }
-      }
-      throw new Error(err?.message || 'Could not export quotation PDF');
+      onProgress?.('Generating Page-by-Page A4 PDF via Sandbox Engine...');
+      await exportQuotationDocumentToA4Pdf({
+        templateId,
+        quotationId,
+        filename: finalFilename,
+        content_json,
+        onProgress
+      });
     }
   }
 }

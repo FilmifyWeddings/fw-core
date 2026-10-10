@@ -264,6 +264,8 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
       document.cookie = `sc_active_workspace_id=${target.workspaceId}; path=/; max-age=31536000; SameSite=Lax`;
       
       try {
+        sessionStorage.clear();
+        localStorage.removeItem('sc_cached_leads');
         const url = new URL(window.location.href);
         const slugOrId = target.studioSlug || target.workspaceId;
         url.searchParams.set('studio', slugOrId);

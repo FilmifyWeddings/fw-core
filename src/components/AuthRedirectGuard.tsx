@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { clearUserWorkspaceCaches } from '@/lib/storage-safety';
 
 /**
  * AuthRedirectGuard & Auto-Healing Cookie Recovery
@@ -13,11 +14,12 @@ export function AuthRedirectGuard() {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Auto-healing: Clean cookies only on explicit user SIGN_OUT event
+  // Auto-healing: Clean cookies and workspace storage caches on explicit user SIGN_OUT event
   useEffect(() => {
     try {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
         if (event === 'SIGNED_OUT') {
+          clearUserWorkspaceCaches();
           if (typeof document !== 'undefined' && document.cookie) {
             document.cookie.split(';').forEach((c) => {
               const trimmed = c.trim();
