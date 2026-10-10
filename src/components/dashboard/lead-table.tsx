@@ -688,12 +688,16 @@ export function LeadTable({
     if (typeof window !== 'undefined') {
       window.addEventListener('quotation_finalized', handleQuotationFinalized);
       window.addEventListener('quotation_created', handleQuotationCreated);
+      window.addEventListener('quotation_updated', handleQuotationCreated);
+      window.addEventListener('wg_quotations_updated', handleQuotationCreated);
     }
     return () => {
       isCancelled = true;
       if (typeof window !== 'undefined') {
         window.removeEventListener('quotation_finalized', handleQuotationFinalized);
         window.removeEventListener('quotation_created', handleQuotationCreated);
+        window.removeEventListener('quotation_updated', handleQuotationCreated);
+        window.removeEventListener('wg_quotations_updated', handleQuotationCreated);
       }
     };
   }, [searchParams]);

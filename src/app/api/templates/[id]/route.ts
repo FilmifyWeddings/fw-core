@@ -289,6 +289,8 @@ async function handleUpdate(
           user_id: userId || workspaceId,
           content_json: clonedDoc,
           version: body.version || 1,
+          lead_id: body.lead_id || clonedDoc?.lead_id || null,
+          lead_version: body.lead_version || clonedDoc?.lead_version || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
@@ -336,6 +338,8 @@ async function handleUpdate(
         user_id: userId || workspaceId,
         content_json: clonedDoc,
         version: body.version || 1,
+        lead_id: body.lead_id || clonedDoc?.lead_id || null,
+        lead_version: body.lead_version || clonedDoc?.lead_version || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
@@ -383,17 +387,91 @@ async function handleUpdate(
         }, { onConflict: 'id' });
     }
 
-    // 2. Upsert quotation_documents in-place
+    // 2. Upsert quotation_documents in-place with strict lead_id & lead_version preservation
     if (document) {
+      // First, fetch existing document to safeguard lead_id and lead_version across multi-device updates
+      const { data: currentDoc } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('id, lead_id, lead_version, client_id, is_final, version, content_json')
+        .eq('template_id', id)
+        .maybeSingle();
+
+      const effectiveLeadId = body.lead_id || document?.lead_id || document?.content_json?.lead_id || currentDoc?.lead_id || null;
+      const effectiveLeadVersion = body.lead_version || document?.lead_version || document?.content_json?.lead_version || currentDoc?.lead_version || null;
+
+      if (effectiveLeadId && !document.lead_id) {
+        document.lead_id = effectiveLeadId;
+      }
+      if (effectiveLeadVersion && !document.lead_version) {
+        document.lead_version = effectiveLeadVersion;
+      }
+
+      const docUpsertPayload: any = {
+        template_id: id,
+        workspace_id: workspaceId,
+        user_id: userId,
+        content_json: document,
+        updated_at: new Date().toISOString()
+      };
+      if (effectiveLeadId) docUpsertPayload.lead_id = effectiveLeadId;
+      if (effectiveLeadVersion) docUpsertPayload.lead_version = effectiveLeadVersion;
+      if (body.version || currentDoc?.version) docUpsertPayload.version = body.version || currentDoc?.version || 1;
+
       await supabaseAdmin
         .from('quotation_documents')
-        .upsert({
+        .upsert(docUpsertPayload, { onConflict: 'template_id' });
+
+      // Save audit snapshot to quotation_versions table for complete multi-device rollback & history
+      try {
+        await supabaseAdmin.from('quotation_versions').insert({
+          document_id: currentDoc?.id || id,
           template_id: id,
-          workspace_id: workspaceId,
-          user_id: userId,
+          user_id: userId || workspaceId,
+          version: effectiveLeadVersion || body.version || 1,
           content_json: document,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'template_id' });
+          created_at: new Date().toISOString()
+        });
+      } catch (_) {}
+
+      // Non-destructively register version in lead record so all devices see both versions immediately
+      if (effectiveLeadId) {
+        try {
+          const { data: leadRow } = await supabaseAdmin
+            .from('leads')
+            .select('id, quotation_id, raw_payload')
+            .eq('id', effectiveLeadId)
+            .maybeSingle();
+
+          if (leadRow) {
+            const rawPayload = leadRow.raw_payload || {};
+            const existingVersions = Array.isArray(rawPayload.quotation_versions) ? [...rawPayload.quotation_versions] : [];
+            const existingIdx = existingVersions.findIndex((v: any) => v.template_id === id || v.id === id);
+            const vEntry = {
+              template_id: id,
+              id: id,
+              version: effectiveLeadVersion || (existingIdx >= 0 ? existingVersions[existingIdx].version : existingVersions.length + 1),
+              title: newTitle,
+              updated_at: new Date().toISOString()
+            };
+            if (existingIdx >= 0) {
+              existingVersions[existingIdx] = { ...existingVersions[existingIdx], ...vEntry };
+            } else {
+              existingVersions.push(vEntry);
+            }
+            rawPayload.quotation_versions = existingVersions;
+            if (!leadRow.quotation_id || leadRow.quotation_id === id) {
+              rawPayload.quotation_id = id;
+            }
+
+            await supabaseAdmin.from('leads').update({
+              raw_payload: rawPayload,
+              quotation_id: leadRow.quotation_id || id
+            }).eq('id', effectiveLeadId);
+          }
+        } catch (leadSyncErr) {
+          console.warn('[API templates/[id]] Lead version sync note:', leadSyncErr);
+        }
+      }
 
       // 3. Upsert quotations record
       try {
@@ -422,12 +500,6 @@ async function handleUpdate(
 
       // 4. Auto-sync with Finance, Booking Events, Post-Production if this quotation is final
       try {
-        const { data: currentDoc } = await supabaseAdmin
-          .from('quotation_documents')
-          .select('id, lead_id, client_id, is_final, content_json')
-          .eq('template_id', id)
-          .maybeSingle();
-
         const isFinal = Boolean(
           document?.is_final === true ||
           document?.content_json?.is_final === true ||
@@ -435,7 +507,7 @@ async function handleUpdate(
           currentDoc?.content_json?.is_final === true
         );
 
-        const targetLeadOrClientId = currentDoc?.lead_id || currentDoc?.client_id || (document?.meta?.lead_id) || (document?.lead_id);
+        const targetLeadOrClientId = effectiveLeadId || currentDoc?.lead_id || currentDoc?.client_id || (document?.meta?.lead_id) || (document?.lead_id);
 
         let isLeadFinal = isFinal;
         if (!isLeadFinal && targetLeadOrClientId) {

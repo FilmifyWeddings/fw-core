@@ -21,6 +21,7 @@ import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady, preloadActiveFont } from '@/lib/font-loader';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
+import { safeLocalStorageSet, safeLocalStorageGet, pruneDocumentForListCache } from '@/lib/storage-safety';
 
 function InstagramIcon({ className = "w-3.5 h-3.5", style }: { className?: string; style?: React.CSSProperties }) {
   return (
@@ -2314,14 +2315,14 @@ function StudioCoreAiryBuilderContent() {
       setHasUnsavedChanges(true);
       setAutoSaveStatus('Editing...');
 
-      // 0ms SYNCHRONOUS LOCAL CACHE & STORAGE SYNC ON EVERY KEYSTROKE
+      // 0ms SYNCHRONOUS LOCAL CACHE & STORAGE SYNC ON EVERY KEYSTROKE (SAFE & NON-BLOATING)
       if (typeof window !== 'undefined') {
         try {
           const currentId = currentTemplateIdRef.current || (params?.id ? String(params.id) : '');
           if (currentId) {
             sessionStorage.setItem(`current_quotation_doc_${currentId}`, JSON.stringify(nextData));
             sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: currentId, document: nextData }));
-            localStorage.setItem(`wg_proposal_draft_${currentId}`, JSON.stringify(nextData));
+            safeLocalStorageSet(`wg_proposal_draft_${currentId}`, JSON.stringify(nextData), currentId);
 
             const activeUid = localStorage.getItem('wg_last_active_user_id') || userId;
             if (activeUid) {
@@ -2331,14 +2332,19 @@ function StudioCoreAiryBuilderContent() {
                 const list = JSON.parse(existingCache);
                 if (Array.isArray(list)) {
                   let found = false;
+                  const prunedNext = pruneDocumentForListCache({
+                    id: currentId,
+                    quotation_number: currentId,
+                    title: nextData.designName || 'Wedding Quotation',
+                    content_json: nextData
+                  });
+
                   const updatedList = list.map((item: any) => {
                     if (item.id === currentId || item.quotation_number === currentId) {
                       found = true;
                       return {
                         ...item,
-                        title: nextData.designName || item.title,
-                        client_name: nextData.cover?.coupleName || (nextData.cover?.groomName ? `${nextData.cover.groomName} & ${nextData.cover.brideName}` : item.client_name),
-                        content_json: nextData,
+                        ...prunedNext,
                         updated_at: new Date().toISOString()
                       };
                     }
@@ -2346,19 +2352,14 @@ function StudioCoreAiryBuilderContent() {
                   });
                   if (!found) {
                     updatedList.unshift({
-                      id: currentId,
-                      quotation_number: currentId,
-                      title: nextData.designName || 'Wedding Quotation',
-                      client_name: nextData.cover?.coupleName || (nextData.cover?.groomName ? `${nextData.cover.groomName} & ${nextData.cover.brideName}` : 'Rahul & Neha'),
-                      financials: {},
-                      content_json: nextData,
+                      ...prunedNext,
                       status: 'draft',
                       is_default: false,
                       is_system_template: false,
                       updated_at: new Date().toISOString()
                     });
                   }
-                  localStorage.setItem(cacheKey, JSON.stringify(updatedList));
+                  safeLocalStorageSet(cacheKey, JSON.stringify(updatedList), currentId);
                 }
               }
             }
@@ -2372,7 +2373,7 @@ function StudioCoreAiryBuilderContent() {
       }
       pendingSaveTimeoutRef.current = setTimeout(() => {
         triggerRevisionSave();
-      }, 500);
+      }, 200);
 
       return nextData;
     });
@@ -3475,14 +3476,30 @@ function StudioCoreAiryBuilderContent() {
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && isDirtyRef.current) {
+        flushSaveImmediately();
+      }
+    };
+
+    const handleFocusOut = () => {
+      if (isDirtyRef.current) {
+        flushSaveImmediately();
+      }
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('focusout', handleFocusOut);
 
     return () => {
       supabase.removeChannel(channel);
       realtimeChannelRef.current = null;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('focusout', handleFocusOut);
       if (isDirtyRef.current) {
         flushSaveImmediately();
       }
@@ -3562,10 +3579,17 @@ function StudioCoreAiryBuilderContent() {
         const finalId = currentTemplateIdRef.current;
         cacheDocumentLocal(finalId, snapshotData, currentVersionRef.current);
 
-        // SYNC TO LOCAL STORAGES IMMEDIATELY SO GALLERY CARD IS NEVER STALE:
+        // SYNC TO LOCAL STORAGES IMMEDIATELY SO GALLERY CARD IS NEVER STALE (PRUNED & SAFE):
         try {
           sessionStorage.setItem(`current_quotation_doc_${finalId}`, JSON.stringify(snapshotData));
-          localStorage.setItem(`wg_proposal_draft_${finalId}`, JSON.stringify(snapshotData));
+          safeLocalStorageSet(`wg_proposal_draft_${finalId}`, JSON.stringify(snapshotData), finalId);
+
+          const prunedCard = pruneDocumentForListCache({
+            id: finalId,
+            quotation_number: finalId,
+            title: snapshotData.designName || 'Wedding Quotation',
+            content_json: snapshotData
+          });
 
           const activeUid = localStorage.getItem('wg_last_active_user_id') || session?.user?.id || userId;
           if (activeUid) {
@@ -3580,9 +3604,7 @@ function StudioCoreAiryBuilderContent() {
                     found = true;
                     return {
                       ...item,
-                      title: snapshotData.designName || item.title,
-                      client_name: snapshotData.cover?.coupleName || (snapshotData.cover?.groomName ? `${snapshotData.cover.groomName} & ${snapshotData.cover.brideName}` : item.client_name),
-                      content_json: snapshotData,
+                      ...prunedCard,
                       updated_at: new Date().toISOString()
                     };
                   }
@@ -3590,19 +3612,14 @@ function StudioCoreAiryBuilderContent() {
                 });
                 if (!found) {
                   updatedList.unshift({
-                    id: finalId,
-                    quotation_number: finalId,
-                    title: snapshotData.designName || 'Wedding Quotation',
-                    client_name: snapshotData.cover?.coupleName || (snapshotData.cover?.groomName ? `${snapshotData.cover.groomName} & ${snapshotData.cover.brideName}` : 'Rahul & Neha'),
-                    financials: {},
-                    content_json: snapshotData,
+                    ...prunedCard,
                     status: 'draft',
                     is_default: false,
                     is_system_template: false,
                     updated_at: new Date().toISOString()
                   });
                 }
-                localStorage.setItem(cacheKey, JSON.stringify(updatedList));
+                safeLocalStorageSet(cacheKey, JSON.stringify(updatedList), finalId);
               }
             }
           }
@@ -3625,8 +3642,7 @@ function StudioCoreAiryBuilderContent() {
                       tmplFound = true;
                       return {
                         ...t,
-                        title: snapshotData.designName || t.title,
-                        content_json: snapshotData,
+                        ...prunedCard,
                         updated_at: new Date().toISOString()
                       };
                     }
@@ -3634,17 +3650,15 @@ function StudioCoreAiryBuilderContent() {
                   });
                   if (!tmplFound) {
                     updatedTmplList.unshift({
-                      id: finalId,
-                      title: snapshotData.designName || 'Wedding Quotation',
-                      content_json: snapshotData,
+                      ...prunedCard,
                       category: 'Wedding',
                       is_default: false,
                       is_system_template: false,
                       updated_at: new Date().toISOString()
                     });
                   }
-                  localStorage.setItem(tck, JSON.stringify(updatedTmplList));
-                  sessionStorage.setItem(tck, JSON.stringify(updatedTmplList));
+                  safeLocalStorageSet(tck, JSON.stringify(updatedTmplList), finalId);
+                  try { sessionStorage.setItem(tck, JSON.stringify(updatedTmplList)); } catch (_) {}
                 }
               }
             }
@@ -3668,6 +3682,22 @@ function StudioCoreAiryBuilderContent() {
         }).catch(() => {});
       }
 
+      if (snapshotData.lead_id) {
+        try {
+          const leadCh = supabase.channel(`lead_quotes_${snapshotData.lead_id}`);
+          leadCh.send({
+            type: 'broadcast',
+            event: 'quotation_updated',
+            payload: {
+              leadId: snapshotData.lead_id,
+              templateId: finalId,
+              version: currentVersionRef.current,
+              senderId: clientTabIdRef.current
+            }
+          }).catch(() => {});
+        } catch (_) {}
+      }
+
       lastSavedRevisionRef.current = Math.max(lastSavedRevisionRef.current, targetRevision);
 
       if (localRevisionRef.current === targetRevision) {
@@ -3678,7 +3708,7 @@ function StudioCoreAiryBuilderContent() {
         if (pendingSaveTimeoutRef.current) clearTimeout(pendingSaveTimeoutRef.current);
         pendingSaveTimeoutRef.current = setTimeout(() => {
           triggerRevisionSave();
-        }, 500);
+        }, 200);
       }
     } catch (err) {
       console.warn('[Autosave Notice]:', err);

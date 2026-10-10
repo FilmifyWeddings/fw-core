@@ -25,4 +25,17 @@ This version has breaking changes — APIs, conventions, and file structure may 
      - *Step 5: Full Auditability & Observability*: Every significant mutation (stage move, assignment change, name edit, contact change, quotation approval) must be logged into `live_logs` with actor details, timestamps, and before/after values.
      - *Step 6: Build Verification*: Every modification must compile cleanly with `npm run build` without any TypeScript or build errors before delivering to the user.
 
+4. **MULTI-DEVICE CLOUD PERSISTENCE & ANTI-STORAGE-BLOAT PROTOCOL**:
+   - **Real-Time Backend Persistence (Supabase Single Source of Truth)**:
+     - LocalStorage and SessionStorage are strictly ephemeral acceleration caches (for 0ms optimistic UI rendering only).
+     - ALL user mutations (quotation edits, versions, status updates, client details) MUST persistently write to Supabase backend immediately with sub-second latency.
+     - Multi-device sessions (e.g. studio owner logged in simultaneously across phones and multiple PCs) MUST reflect changes in real time via Supabase Realtime broadcast and backend synchronization.
+   - **Zero LocalStorage Bloat & Quota Exceeded Prevention**:
+     - NEVER store full heavyweight JSON payloads (e.g. 500KB quotation documents) in global LocalStorage arrays or shared caches (`wg_quotations_cache`, `studio_templates_cache`).
+     - Always prune cached list items to lightweight presentation metadata (< 2KB per card) using `pruneDocumentForListCache`.
+     - Use `safeLocalStorageSet` with automatic quota recovery to prevent browser memory exhaustion, crashes, and page freezes.
+   - **Guaranteed Lead-Quotation Linkage Integrity**:
+     - Whenever quotation documents are saved or cloned, top-level foreign keys (`lead_id`, `lead_version`) and parent lead record version maps (`leads.raw_payload.quotation_versions`) must be explicitly safeguarded and updated non-destructively.
+
+
 

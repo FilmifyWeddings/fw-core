@@ -134,6 +134,26 @@ export function LeadDrawerQuotationsTab({
     }
 
     loadQuotations(Boolean(cached && cached.length > 0));
+
+    // Multi-device real-time sync channel: instant cloud updates from any device
+    const channel = supabase
+      .channel(`lead_drawer_quotes_${lead.id}`)
+      .on('broadcast', { event: 'quotation_updated' }, () => {
+        loadQuotations(true);
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'quotation_documents',
+        filter: `lead_id=eq.${lead.id}`
+      }, () => {
+        loadQuotations(true);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [lead?.id]);
 
   const loadQuotations = async (silent: boolean = false) => {
