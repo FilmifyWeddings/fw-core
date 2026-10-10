@@ -638,14 +638,17 @@ export function LeadTable({
 
   useEffect(() => {
     let isCancelled = false;
+    const impId = typeof window !== 'undefined' ? localStorage.getItem('impersonated_tenant_id') : null;
+    const leadWs = (initialLeads || [])[0]?.workspace_id;
+    const activeWs = typeof window !== 'undefined' ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id')) : null;
+    const resolvedWs = studioParam || impId || leadWs || activeWs;
+
     const fetchQuotationSummaries = async (force = false) => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         const uid = session?.user?.id;
-        const impId = typeof window !== 'undefined' ? localStorage.getItem('impersonated_tenant_id') : null;
-        const leadWs = (initialLeads || [])[0]?.workspace_id;
-        const targetWs = studioParam || impId || leadWs || uid;
+        const targetWs = resolvedWs || uid;
         if (!targetWs) return;
 
         const url = `/api/quotations/lead-summary?workspace_id=${targetWs}${force ? '&refresh=true' : ''}`;
@@ -737,8 +740,7 @@ export function LeadTable({
 
     // ⚡ REALTIME MULTI-DEVICE SYNCHRONIZATION (<50ms)
     // Synchronizes quotation badges (Grey -> Orange -> Green) across all PCs in real time!
-    const activeWs = typeof window !== 'undefined' ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id')) : null;
-    const effectiveWs = targetWs || activeWs;
+    const effectiveWs = resolvedWs || activeWs;
 
     let realtimeChannel: any = null;
     if (effectiveWs) {

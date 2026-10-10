@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
 
       if (signInData?.session) {
         const isHttps = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
-        const maxAge = 60 * 60 * 24 * 7; // 7 days
+        const maxAge = 60 * 60 * 24 * 365; // 365 days persistent session across all devices
 
         res.cookies.set('sb-access-token', signInData.session.access_token, {
           path: '/',

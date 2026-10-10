@@ -199,11 +199,12 @@ function LoginContent() {
 
   // Auto-redirect if already authenticated and no explicit error or logout state
   useEffect(() => {
+    let isCancelled = false;
     async function checkExistingSession() {
       try {
-        if (searchParams.get('error') || searchParams.get('logout') || searchParams.get('portal')) return;
+        if (searchParams.get('error') || searchParams.get('logout') === 'true') return;
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
+        if (!isCancelled && session?.user) {
           const defaultPath = portal === 'team' ? '/team/dashboard' : '/workspace';
           const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
           window.location.href = destination;
@@ -211,6 +212,20 @@ function LoginContent() {
       } catch (_) {}
     }
     checkExistingSession();
+
+    // In case session finishes restoring/refreshing asynchronously from disk
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isCancelled && session?.user && searchParams.get('logout') !== 'true' && !searchParams.get('error')) {
+        const defaultPath = portal === 'team' ? '/team/dashboard' : '/workspace';
+        const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
+        window.location.href = destination;
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+      authListener?.subscription?.unsubscribe();
+    };
   }, [portal, searchParams]);
 
   // Real-Time Check: Email Already Registered (in Sign Up Mode)

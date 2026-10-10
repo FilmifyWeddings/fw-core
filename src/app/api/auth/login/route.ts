@@ -90,7 +90,8 @@ export async function POST(req: NextRequest) {
     }
 
     const session = signInData.session;
-    const maxAge = rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
+    // Enforce 365 days (1 Year) persistent session across all devices (Mobile/iPhone/PC)
+    const maxAge = 60 * 60 * 24 * 365;
     const isHttps = process.env.NODE_ENV === 'production' || req.nextUrl.protocol === 'https:';
 
     const res = NextResponse.json({
@@ -111,21 +112,21 @@ export async function POST(req: NextRequest) {
       redirectUrl: '/workspace',
     });
 
-    // Set official @supabase/ssr cookies on response
+    // Set official @supabase/ssr cookies on response with 365-day persistence
     cookiesToSetList.forEach(({ name, value, options }) => {
       res.cookies.set(name, value, {
         ...options,
         sameSite: 'lax',
         secure: isHttps,
         path: '/',
-        maxAge: options?.maxAge ?? maxAge,
+        maxAge: 60 * 60 * 24 * 365,
       });
     });
 
     // Also set standard sb-access-token for legacy / direct inspection
     res.cookies.set('sb-access-token', session.access_token, {
       path: '/',
-      maxAge,
+      maxAge: 60 * 60 * 24 * 365,
       sameSite: 'lax',
       secure: isHttps,
       httpOnly: false,
@@ -133,7 +134,7 @@ export async function POST(req: NextRequest) {
 
     res.cookies.set('sb-refresh-token', session.refresh_token, {
       path: '/',
-      maxAge,
+      maxAge: 60 * 60 * 24 * 365,
       sameSite: 'lax',
       secure: isHttps,
       httpOnly: false,

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, forwardRef } from 'react';
 import { ChevronDown, ArrowRight, Menu, X } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export interface HeroNavbarProps {
   // Add props if needed
@@ -10,6 +11,19 @@ export interface HeroNavbarProps {
 export const HeroNavbar = forwardRef<HTMLElement, HeroNavbarProps>((_, ref) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          setIsAuthenticated(true);
+        }
+      } catch (_) {}
+    }
+    checkAuth();
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -84,28 +98,48 @@ export const HeroNavbar = forwardRef<HTMLElement, HeroNavbarProps>((_, ref) => {
 
         {/* Right: Actions */}
         <div className="hidden sm:flex items-center gap-5 lg:gap-7">
-          <a
-            href="/login"
-            className="text-[14px] lg:text-[15px] font-medium text-[#211B17] hover:text-[#C89435] transition-colors px-2 py-1"
-          >
-            Login
-          </a>
-          <a
-            href="/login"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-[9px] bg-[#C89435] hover:bg-[#B68225] text-white text-[14px] font-medium shadow-[0_4px_14px_rgba(200,148,53,0.3)] hover:shadow-[0_6px_20px_rgba(200,148,53,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
-          >
-            <span>Start Your Studio</span>
-            <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
-          </a>
+          {isAuthenticated ? (
+            <>
+              <a
+                href="/workspace"
+                className="text-[14px] lg:text-[15px] font-medium text-[#211B17] hover:text-[#C89435] transition-colors px-2 py-1"
+              >
+                Dashboard
+              </a>
+              <a
+                href="/workspace"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-[9px] bg-[#C89435] hover:bg-[#B68225] text-white text-[14px] font-medium shadow-[0_4px_14px_rgba(200,148,53,0.3)] hover:shadow-[0_6px_20px_rgba(200,148,53,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+              >
+                <span>Open Workspace</span>
+                <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
+              </a>
+            </>
+          ) : (
+            <>
+              <a
+                href="/login"
+                className="text-[14px] lg:text-[15px] font-medium text-[#211B17] hover:text-[#C89435] transition-colors px-2 py-1"
+              >
+                Login
+              </a>
+              <a
+                href="/login"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-[9px] bg-[#C89435] hover:bg-[#B68225] text-white text-[14px] font-medium shadow-[0_4px_14px_rgba(200,148,53,0.3)] hover:shadow-[0_6px_20px_rgba(200,148,53,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+              >
+                <span>Start Your Studio</span>
+                <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
+              </a>
+            </>
+          )}
         </div>
 
         {/* Mobile Hamburger Toggle */}
         <div className="flex md:hidden items-center gap-3">
           <a
-            href="/login"
+            href={isAuthenticated ? "/workspace" : "/login"}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[8px] bg-[#C89435] text-white text-[13px] font-medium shadow-sm"
           >
-            <span>Start</span>
+            <span>{isAuthenticated ? 'Workspace' : 'Start'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </a>
           <button
@@ -158,20 +192,41 @@ export const HeroNavbar = forwardRef<HTMLElement, HeroNavbarProps>((_, ref) => {
               Resources
             </a>
             <div className="pt-2 flex flex-col gap-3">
-              <a
-                href="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-center py-2.5 text-[15px] font-medium text-[#211B17] border border-[#E9E1D5] rounded-lg"
-              >
-                Login
-              </a>
-              <a
-                href="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-center py-2.5 text-[15px] font-medium text-white bg-[#C89435] rounded-lg shadow-md"
-              >
-                Start Your Studio →
-              </a>
+              {isAuthenticated ? (
+                <>
+                  <a
+                    href="/workspace"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="text-center py-2.5 text-[15px] font-medium text-[#211B17] border border-[#E9E1D5] rounded-lg"
+                  >
+                    Dashboard
+                  </a>
+                  <a
+                    href="/workspace"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="text-center py-2.5 text-[15px] font-medium text-white bg-[#C89435] rounded-lg shadow-md"
+                  >
+                    Open Workspace →
+                  </a>
+                </>
+              ) : (
+                <>
+                  <a
+                    href="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="text-center py-2.5 text-[15px] font-medium text-[#211B17] border border-[#E9E1D5] rounded-lg"
+                  >
+                    Login
+                  </a>
+                  <a
+                    href="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="text-center py-2.5 text-[15px] font-medium text-white bg-[#C89435] rounded-lg shadow-md"
+                  >
+                    Start Your Studio →
+                  </a>
+                </>
+              )}
             </div>
           </div>
         </div>

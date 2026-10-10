@@ -37,10 +37,17 @@ export function clearAllSupabaseAuthCookies() {
 // Standard client for client-side or scoped user actions with native @supabase/ssr cookie sync
 export const supabase = typeof window !== 'undefined'
   ? createBrowserClient(supabaseUrl, supabaseAnonKey, {
+      isSingleton: true,
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
       cookieOptions: {
         path: '/',
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',
+        maxAge: 60 * 60 * 24 * 365, // 365 days persistent session (prevents mobile/iOS session cookie wipe)
       },
     })
   : createClient(supabaseUrl, supabaseAnonKey);

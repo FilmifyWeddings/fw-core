@@ -330,8 +330,12 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         const { clearUserWorkspaceCaches } = await import('@/lib/storage-safety');
         clearUserWorkspaceCaches();
       } catch (_) {}
+      try {
+        const { clearAllSupabaseAuthCookies } = await import('@/lib/supabase');
+        clearAllSupabaseAuthCookies();
+      } catch (_) {}
       await supabase.auth.signOut();
-      window.location.href = '/login';
+      window.location.href = '/login?logout=true';
     }
   };
 

@@ -43,7 +43,12 @@ export async function GET(request: NextRequest) {
           setAll(cookiesToSet) {
             try {
               cookiesToSet.forEach(({ name, value, options }) => {
-                cookieStore.set(name, value, options);
+                cookieStore.set(name, value, {
+                  ...options,
+                  maxAge: 60 * 60 * 24 * 365, // 365 days persistent session across devices
+                  sameSite: 'lax',
+                  path: '/',
+                });
               });
             } catch (_) {}
           },
@@ -56,6 +61,23 @@ export async function GET(request: NextRequest) {
     if (!error && data?.session?.user) {
       const user = data.session.user;
       const userId = user.id;
+
+      try {
+        cookieStore.set('sb-access-token', data.session.access_token, {
+          path: '/',
+          maxAge: 60 * 60 * 24 * 365,
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+          httpOnly: false,
+        });
+        cookieStore.set('sb-refresh-token', data.session.refresh_token, {
+          path: '/',
+          maxAge: 60 * 60 * 24 * 365,
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+          httpOnly: false,
+        });
+      } catch (_) {}
 
       // Check if user is an existing studio owner or user in `profiles` or `workspaces`
       const { data: profile } = await supabaseAdmin

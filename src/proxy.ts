@@ -40,8 +40,8 @@ export async function proxy(request: NextRequest) {
         if (c.name.startsWith('sb-') && currentRef && !c.name.startsWith(`sb-${currentRef}`)) {
           response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
         }
-        // Prune redundant duplicate tokens if ssr chunks exist
-        if (c.name === 'sb-access-token' || c.name === 'sb-refresh-token' || c.name === 'supabase.auth.token') {
+        // Prune legacy v1 auth tokens only
+        if (c.name === 'supabase.auth.token') {
           response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
         }
       });
@@ -108,8 +108,8 @@ export async function proxy(request: NextRequest) {
       pathname.startsWith('/g/') ||
       pathname.includes('.');
 
-    // If visiting any public route (especially /login, /attendance, or /g/ gallery), pass through unconditionally!
-    if (isPublicRoute) {
+    // If visiting any public route (except /login which needs session resolution for auto-redirect), pass through!
+    if (isPublicRoute && pathname !== '/login') {
       return response;
     }
 
@@ -168,13 +168,14 @@ export async function proxy(request: NextRequest) {
               request,
             });
 
-            // Set cookies on response with clean options
+            // Set cookies on response with clean options and 365-day persistence
             cookiesToSet.forEach(({ name, value, options }) =>
               response.cookies.set(name, value, {
                 ...options,
                 sameSite: 'lax',
                 secure: process.env.NODE_ENV === 'production',
                 path: '/',
+                maxAge: options?.maxAge ?? 60 * 60 * 24 * 365,
               })
             );
           },
@@ -227,9 +228,13 @@ export async function proxy(request: NextRequest) {
         standaloneValues.push(combined);
       });
 
-      // Also check standard sb-access-token
+      // Also check standard sb-access-token & sb-refresh-token
       const sbAccessToken = request.cookies.get('sb-access-token')?.value;
       if (sbAccessToken) standaloneValues.push(sbAccessToken);
+
+      const candidateRefreshTokens: string[] = [];
+      const sbRefreshToken = request.cookies.get('sb-refresh-token')?.value;
+      if (sbRefreshToken) candidateRefreshTokens.push(sbRefreshToken);
 
       for (let rawVal of standaloneValues) {
         if (!rawVal) continue;
@@ -248,6 +253,9 @@ export async function proxy(request: NextRequest) {
           const parsed = JSON.parse(unescaped);
           const tok = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
           if (tok && typeof tok === 'string') candidateTokens.push(tok);
+
+          const rTok = parsed?.refresh_token || (Array.isArray(parsed) ? parsed[1] : null);
+          if (rTok && typeof rTok === 'string') candidateRefreshTokens.push(rTok);
         } catch (_) {
           if (rawVal.startsWith('ey') && rawVal.split('.').length === 3) {
             candidateTokens.push(rawVal);
@@ -278,6 +286,51 @@ export async function proxy(request: NextRequest) {
           /* ignore */
         }
       }
+
+      // Fallback 3: Proactively refresh session using refresh token if access token expired (>1 hour)
+      if (!user && candidateRefreshTokens.length > 0 && supabaseUrl && supabaseAnonKey) {
+        try {
+          const client = createClient(supabaseUrl, supabaseAnonKey);
+          for (const rTok of candidateRefreshTokens) {
+            const { data: refreshed, error: refErr } = await client.auth.refreshSession({ refresh_token: rTok });
+            if (!refErr && refreshed?.session?.user) {
+              user = refreshed.session.user;
+              response.cookies.set('sb-access-token', refreshed.session.access_token, {
+                path: '/',
+                maxAge: 60 * 60 * 24 * 365,
+                sameSite: 'lax',
+                secure: process.env.NODE_ENV === 'production',
+                httpOnly: false,
+              });
+              response.cookies.set('sb-refresh-token', refreshed.session.refresh_token, {
+                path: '/',
+                maxAge: 60 * 60 * 24 * 365,
+                sameSite: 'lax',
+                secure: process.env.NODE_ENV === 'production',
+                httpOnly: false,
+              });
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Auto-redirect authenticated users accessing /login directly away from the login form
+    if (pathname === '/login') {
+      if (user) {
+        const isExplicitLogout = request.nextUrl.searchParams.get('logout') === 'true';
+        const hasAuthError = request.nextUrl.searchParams.has('error');
+        if (!isExplicitLogout && !hasAuthError) {
+          const redirectTo = request.nextUrl.searchParams.get('redirectTo') || '/workspace';
+          const safeDestination =
+            redirectTo.startsWith('/') && !redirectTo.startsWith('//') && !redirectTo.startsWith('/login')
+              ? redirectTo
+              : '/workspace';
+          return NextResponse.redirect(new URL(safeDestination, request.url), { status: 303 });
+        }
+      }
+      return response;
     }
 
     // 2. PROTECTED ROUTE & STAGING AUTHORIZATION CHECK

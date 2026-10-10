@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
     }
 
     const session = signInData.session;
-    const maxAge = 60 * 60 * 24 * 30; // 30 days
+    const maxAge = 60 * 60 * 24 * 365; // 365 days persistent session across all devices
     const isHttps = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
 
     const res = NextResponse.json({
