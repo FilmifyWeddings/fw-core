@@ -1046,10 +1046,20 @@ export default function LeadsPage() {
         }
 
         // 2. Reliable Backend API fallback with supabaseAdmin
+        const actorName = userEmail ? userEmail.split('@')[0] : 'Studio Admin';
+        const patchPayload = {
+          ...sanitizedFields,
+          previous_status: currentLead?.status || (currentLead as any)?.stage || null,
+          previous_source: currentLead?.source || currentLead?.raw_payload?.source || null,
+          previous_budget: currentLead?.budget || currentLead?.raw_payload?.budget || null,
+          previous_stage_id: currentLead?.stage_id || null,
+          actor_name: actorName,
+        };
+
         fetch(`/api/leads/${leadId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sanitizedFields)
+          body: JSON.stringify(patchPayload)
         }).catch(err => console.error('[executeLeadUpdate API error]:', err));
 
         // AUTO-CONVERT TO CLIENT WHEN STAGE IS "BOOKED"

@@ -62,6 +62,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     delete payload.stage_name;
     delete payload.client_name;
     delete payload.actor_name;
+    delete payload.previous_status;
+    delete payload.previous_source;
+    delete payload.previous_budget;
+    delete payload.previous_stage_id;
 
     // Resolve stage name and sanitize stage_id if provided
     let resolvedStageName = body.status || null;
@@ -173,7 +177,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       
       const newSource = body.source || body.raw_payload?.source;
-      const oldSource = existingLead?.source || existingLead?.raw_payload?.source;
+      const oldSource = body.previous_source !== undefined ? body.previous_source : (existingLead?.source || existingLead?.raw_payload?.source);
       if (newSource && newSource !== oldSource) {
         activities.push({
           workspace_id: logWsId,
@@ -185,7 +189,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       const newBudget = body.budget !== undefined ? body.budget : body.raw_payload?.budget;
-      const oldBudget = existingLead?.budget !== undefined ? existingLead.budget : existingLead?.raw_payload?.budget;
+      const oldBudget = body.previous_budget !== undefined ? body.previous_budget : (existingLead?.budget !== undefined ? existingLead.budget : existingLead?.raw_payload?.budget);
       if (newBudget !== undefined && String(newBudget).trim() !== String(oldBudget || '').trim()) {
         activities.push({
           workspace_id: logWsId,
@@ -207,7 +211,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       const finalStageName = resolvedStageName || (isBookedNow ? 'Booked' : body.status);
-      const oldStage = existingLead?.status || 'Unknown';
+      const oldStage = body.previous_status !== undefined ? body.previous_status : (existingLead?.status || 'Unknown');
       if (finalStageName && finalStageName !== oldStage) {
         activities.push({
           workspace_id: logWsId,

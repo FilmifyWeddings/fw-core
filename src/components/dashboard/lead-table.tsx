@@ -23,9 +23,9 @@ import { prefetchStudioTemplates } from './quotation-template-selector';
 import LeadOwnerSelect from '@/app/workspace/leads/components/LeadOwnerSelect';
 
 const MotionDiv = motionImport.div;
-const MotionTr = motionImport.tr;
-const MotionTh = motionImport.th;
-const MotionTd = motionImport.td;
+const MotionTr = 'tr' as any;
+const MotionTh = 'th' as any;
+const MotionTd = 'td' as any;
 const MotionButton = motionImport.button;
 const MotionA = motionImport.a;
 const AnimatePresenceComponent = AnimatePresenceImport;
@@ -1228,7 +1228,7 @@ export function LeadTable({
   const [manualEventDate, setManualEventDate] = useState('');
   const [manualLocation, setManualLocation] = useState('');
   const [manualVenue, setManualVenue] = useState('');
-  const [manualBudget, setManualBudget] = useState('₹1.5 Lakh - ₹2.5 Lakh');
+  const [manualBudget, setManualBudget] = useState('');
 
   // Bulk actions menus
   const [showBulkStatusMenu, setShowBulkStatusMenu] = useState(false);
@@ -2208,6 +2208,7 @@ export function LeadTable({
       stage_id: selectedStage ? selectedStage.id : null,
       score: 'Warm 👍',
       score_reason: 'Manually created lead.',
+      budget: manualBudget.trim() || null,
       raw_payload: {
         groom_name: manualGroomName.trim(),
         bride_name: manualBrideName.trim(),
@@ -2217,7 +2218,7 @@ export function LeadTable({
         city: manualLocation.trim(),
         location: manualLocation.trim(),
         venue: manualVenue.trim(),
-        budget: manualBudget,
+        budget: manualBudget.trim() || null,
       }
     };
 
@@ -2237,7 +2238,7 @@ export function LeadTable({
     setManualEventDate('');
     setManualLocation('');
     setManualVenue('');
-    setManualBudget('₹1.5 Lakh - ₹2.5 Lakh');
+    setManualBudget('');
     setCreateModalOpen(false);
   };
 
@@ -3500,9 +3501,8 @@ export function LeadTable({
                     const activeColor = lead.custom_color;
 
                     return (
-                      <MotionTr 
+                      <tr 
                         key={lead.id}
-                        layout
                         onClick={() => {
                           setSelectedLead(lead);
                           setDrawerMode('full');
@@ -3584,14 +3584,43 @@ export function LeadTable({
                                       })}
                                       onAddCustomOption={(name, color) => {
                                         if (!name.trim()) return;
-                                        const newObj = { id: 'src_' + Date.now(), name: name.trim(), color: color || '#3b82f6' };
+                                        const trimmedName = name.trim();
+                                        const newObj = { id: 'src_' + Date.now(), name: trimmedName, color: color || '#3b82f6' };
                                         const updated = [newObj, ...customSources];
                                         setCustomSources(updated as any);
                                         localStorage.setItem('leads_workspace_sources', JSON.stringify(updated));
-                                        handleInlineLeadEdit({ source: name.trim() }, lead.id);
+                                        const oldSource = lead.source || 'None';
+                                        handleInlineLeadEdit({ source: trimmedName }, lead.id);
+                                        if (trimmedName !== oldSource) {
+                                          fetch(`/api/leads/${lead.id}/activities`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              message: `${userEmail?.split('@')[0] || 'Studio Admin'} updated lead source to "${trimmedName}"`,
+                                              action_type: 'source_change',
+                                              actor_name: userEmail?.split('@')[0] || 'Studio Admin',
+                                              old_value: oldSource,
+                                              new_value: trimmedName
+                                            })
+                                          }).catch(() => {});
+                                        }
                                       }}
                                       onChange={(val) => {
+                                        const oldSource = lead.source || 'None';
                                         handleInlineLeadEdit({ source: val }, lead.id);
+                                        if (val && val !== oldSource) {
+                                          fetch(`/api/leads/${lead.id}/activities`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              message: `${userEmail?.split('@')[0] || 'Studio Admin'} updated lead source to "${val}"`,
+                                              action_type: 'source_change',
+                                              actor_name: userEmail?.split('@')[0] || 'Studio Admin',
+                                              old_value: oldSource,
+                                              new_value: val
+                                            })
+                                          }).catch(() => {});
+                                        }
                                       }}
                                     />
                                   </MotionTd>
@@ -3650,12 +3679,24 @@ export function LeadTable({
                                         if (onPreferencesChange) {
                                           onPreferencesChange({ stages: updated });
                                         }
+                                        const oldStage = lead.status || resolveLeadStageValue(lead) || 'None';
                                         if (onLeadUpdate) {
                                           onLeadUpdate(lead.id, {
                                             stage_id: newStageObj.id,
                                             status: newStageObj.name as any
                                           });
                                         }
+                                        fetch(`/api/leads/${lead.id}/activities`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            message: `${userEmail?.split('@')[0] || 'Studio Admin'} moved stage to "${newStageObj.name}"`,
+                                            action_type: 'stage_change',
+                                            actor_name: userEmail?.split('@')[0] || 'Studio Admin',
+                                            old_value: oldStage,
+                                            new_value: newStageObj.name
+                                          })
+                                        }).catch(() => {});
                                       }}
                                        onChange={(val) => {
                                         const foundStage = stagesState.find(s => s.id === val || s.name === val);
@@ -3690,6 +3731,21 @@ export function LeadTable({
                                             status: targetStatus,
                                             ...(updatedRaw ? { raw_payload: updatedRaw } : {})
                                           } as any);
+                                        }
+
+                                        const oldStage = lead.status || resolveLeadStageValue(lead) || 'None';
+                                        if (targetStatus && targetStatus !== oldStage) {
+                                          fetch(`/api/leads/${lead.id}/activities`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              message: `${userEmail?.split('@')[0] || 'Studio Admin'} moved stage to "${targetStatus}"`,
+                                              action_type: 'stage_change',
+                                              actor_name: userEmail?.split('@')[0] || 'Studio Admin',
+                                              old_value: oldStage,
+                                              new_value: targetStatus
+                                            })
+                                          }).catch(() => {});
                                         }
                                       }}
                                     />
@@ -4321,7 +4377,7 @@ export function LeadTable({
                           </div>
                         </td>
 
-                      </MotionTr>
+                      </tr>
                     );
                   })
                 )}

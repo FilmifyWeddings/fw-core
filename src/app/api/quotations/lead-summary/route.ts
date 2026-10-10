@@ -44,18 +44,44 @@ export async function GET(req: NextRequest) {
     const candidates = Array.from(candidateSet);
     const orConditions = candidates.flatMap(c => [`workspace_id.eq.${c}`, `tenant_id.eq.${c}`]).join(',');
 
-    // Parallel fetch: quotation_documents (metadata only), quotations, and leads
+    const isValidUUID = (str?: string | null) => {
+      if (!str) return false;
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+    };
+
+    const validUuidCandidates = candidates.filter(isValidUUID);
+    const wsOrFilter = validUuidCandidates.length > 0 
+      ? validUuidCandidates.map(c => `workspace_id.eq.${c}`).join(',')
+      : null;
+
+    // Parallel fetch: quotation_documents (metadata scoped to workspace), quotations, and leads
     const [docsRes, quotesRes, leadsRes] = await Promise.all([
-      supabaseAdmin
-        .from('quotation_documents')
-        .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at'),
-      supabaseAdmin
-        .from('quotations')
-        .select('id, client_id, quotation_number, title, couple_names, client_name, status, is_final, public_token, workspace_id, created_at, updated_at'),
-      supabaseAdmin
-        .from('leads')
-        .select('id, name, full_name, status, stage_id, final_quotation_id, quotation_id, raw_payload')
-        .or(orConditions)
+      wsOrFilter
+        ? supabaseAdmin
+            .from('quotation_documents')
+            .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at')
+            .or(wsOrFilter)
+        : supabaseAdmin
+            .from('quotation_documents')
+            .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at')
+            .limit(100),
+      wsOrFilter
+        ? supabaseAdmin
+            .from('quotations')
+            .select('id, client_id, quotation_number, title, couple_names, client_name, status, is_final, public_token, workspace_id, created_at, updated_at')
+            .or(wsOrFilter)
+        : supabaseAdmin
+            .from('quotations')
+            .select('id, client_id, quotation_number, title, couple_names, client_name, status, is_final, public_token, workspace_id, created_at, updated_at')
+            .limit(100),
+      orConditions
+        ? supabaseAdmin
+            .from('leads')
+            .select('id, name, full_name, status, stage_id, final_quotation_id, quotation_id, raw_payload')
+            .or(orConditions)
+        : supabaseAdmin
+            .from('leads')
+            .select('id, name, full_name, status, stage_id, final_quotation_id, quotation_id, raw_payload')
     ]);
 
     const allDocs = docsRes.data || [];

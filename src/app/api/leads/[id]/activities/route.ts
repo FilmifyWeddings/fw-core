@@ -18,12 +18,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
-    // 1. Fetch structured live_logs for this lead in parallel with lead info & quotation documents
+    // 1. Fetch structured live_logs for this lead using fast indexed column in parallel with lead info & quotation documents
     const [logsRes, leadRes, quoteDocsRes] = await Promise.all([
       supabaseAdmin
         .from('live_logs')
         .select('id, event_type, message, metadata, created_at')
-        .or(`lead_id.eq.${leadId},metadata->>lead_id.eq.${leadId}`)
+        .eq('lead_id', leadId)
         .order('created_at', { ascending: false })
         .limit(100),
       supabaseAdmin
@@ -36,9 +36,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         .select('id, template_id, version, lead_version, content_json, created_at, updated_at')
         .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`)
         .order('created_at', { ascending: false })
+        .limit(10)
     ]);
 
-    const logs = logsRes.data;
+    let logs = logsRes.data || [];
+    // Defensive fallback: check unindexed metadata only if indexed query returned empty
+    if (logs.length === 0) {
+      const fallbackLogs = await supabaseAdmin
+        .from('live_logs')
+        .select('id, event_type, message, metadata, created_at')
+        .filter('metadata->>lead_id', 'eq', leadId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (fallbackLogs.data && fallbackLogs.data.length > 0) {
+        logs = fallbackLogs.data;
+      }
+    }
+
     const lead = leadRes.data;
     const quoteDocs = quoteDocsRes.data;
 
