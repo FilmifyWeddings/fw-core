@@ -64,6 +64,8 @@ export default function MandatoryGoogleOnboardingModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [isManualSignup, setIsManualSignup] = useState(false);
+
   // Sync initial user details when opening
   useEffect(() => {
     if (isOpen) {
@@ -71,6 +73,26 @@ export default function MandatoryGoogleOnboardingModal({
       setRole(initialRole);
       setError(null);
       setStage('details');
+
+      // Check for pre-filled phone number saved from signup
+      if (typeof window !== 'undefined') {
+        const savedPhone = localStorage.getItem('sc_onboarding_phone');
+        if (savedPhone) {
+          setIsManualSignup(true);
+          const clean = savedPhone.trim();
+          const matchedCountry = COUNTRIES.find(c => clean.startsWith(c.code));
+          if (matchedCountry) {
+            setSelectedCountry(matchedCountry);
+            const rawDigits = clean.slice(matchedCountry.code.length).replace(/\D/g, '');
+            setPhone(rawDigits.slice(-10));
+          } else {
+            const digits = clean.replace(/\D/g, '');
+            setPhone(digits.slice(-10));
+          }
+        } else {
+          setIsManualSignup(false);
+        }
+      }
     }
   }, [isOpen, userFullName, initialRole]);
 
@@ -171,6 +193,12 @@ export default function MandatoryGoogleOnboardingModal({
       fireDualConfetti();
       setTimeout(fireDualConfetti, 1000);
 
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('sc_onboarding_phone');
+        } catch (_) {}
+      }
+
       // Complete onboarding and trigger callback
       setTimeout(() => {
         onComplete({
@@ -207,9 +235,18 @@ export default function MandatoryGoogleOnboardingModal({
           {/* Header */}
           <div className="text-center space-y-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs font-bold shadow-2xs">
-              <GoogleGLogo className="w-3.5 h-3.5 bg-white rounded-full p-0.5" />
-              <span>Google Account Connected</span>
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
+              {isManualSignup ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Account Email Verified</span>
+                </>
+              ) : (
+                <>
+                  <GoogleGLogo className="w-3.5 h-3.5 bg-white rounded-full p-0.5" />
+                  <span>Google Account Connected</span>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                </>
+              )}
             </div>
 
             <h3 className="text-lg sm:text-xl font-serif font-black text-slate-900 tracking-tight pt-1">
@@ -219,7 +256,7 @@ export default function MandatoryGoogleOnboardingModal({
             <p className="text-xs text-slate-500 font-medium">
               {stage === 'celebration_success'
                 ? 'Your workspace has been created successfully.'
-                : 'Mobile number & workspace setup is required to activate your account.'}
+                : 'Workspace setup is required to activate your account.'}
             </p>
           </div>
 
@@ -233,7 +270,7 @@ export default function MandatoryGoogleOnboardingModal({
                 <span className="font-bold text-slate-800 truncate">{userEmail}</span>
               </div>
               <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shrink-0">
-                Google Verified
+                {isManualSignup ? 'Email Verified' : 'Google Verified'}
               </span>
             </div>
           )}

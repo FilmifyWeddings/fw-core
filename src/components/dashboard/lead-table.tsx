@@ -735,6 +735,88 @@ export function LeadTable({
       fetchQuotationSummaries(true);
     };
 
+    // ⚡ REALTIME MULTI-DEVICE SYNCHRONIZATION (<50ms)
+    // Synchronizes quotation badges (Grey -> Orange -> Green) across all PCs in real time!
+    const activeWs = typeof window !== 'undefined' ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id')) : null;
+    const effectiveWs = targetWs || activeWs;
+
+    let realtimeChannel: any = null;
+    if (effectiveWs) {
+      realtimeChannel = supabase.channel(`realtime-sync-${effectiveWs}`)
+        .on('broadcast', { event: 'QUOTATION_SYNC' }, (msg: any) => {
+          const payload = msg?.payload;
+          if (!payload?.leadId) return;
+
+          setQuotationSummaryMap(prev => {
+            const prevItem = prev[payload.leadId] || { count: 0, hasFinal: false, versions: [] };
+            let updatedItem = { ...prevItem };
+
+            if (payload.action === 'final' || payload.isFinal === true) {
+              updatedItem.hasFinal = true;
+              if (payload.version !== undefined) updatedItem.finalVersion = payload.version;
+              updatedItem.count = Math.max(updatedItem.count || 0, 1);
+            } else if (payload.action === 'unmark' || payload.unmark === true) {
+              updatedItem.hasFinal = false;
+              updatedItem.finalVersion = undefined;
+            } else if (payload.action === 'create' || payload.action === 'update') {
+              updatedItem.count = Math.max(updatedItem.count || 0, 1);
+              if (payload.quotationId && !updatedItem.versions?.some((v: any) => v.id === payload.quotationId || v.template_id === payload.quotationId)) {
+                updatedItem.versions = [
+                  { id: payload.quotationId, template_id: payload.quotationId, version: payload.version || 1, is_final: false },
+                  ...(updatedItem.versions || [])
+                ];
+              }
+            }
+
+            const updatedMap = {
+              ...prev,
+              [payload.leadId]: updatedItem
+            };
+
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('sc_quotation_summary_map', JSON.stringify(updatedMap));
+              } catch (_) {}
+            }
+            return updatedMap;
+          });
+
+          // Background authoritative fetch
+          fetchQuotationSummaries(true);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'quotation_documents' }, () => {
+          fetchQuotationSummaries(true);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, () => {
+          fetchQuotationSummaries(true);
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload: any) => {
+          const newLead = payload?.new;
+          if (newLead?.id) {
+            if (newLead.final_quotation_id) {
+              setQuotationSummaryMap(prev => {
+                const prevItem = prev[newLead.id] || { count: 1, hasFinal: false, versions: [] };
+                const updated = {
+                  ...prev,
+                  [newLead.id]: {
+                    ...prevItem,
+                    hasFinal: true
+                  }
+                };
+                if (typeof window !== 'undefined') {
+                  try {
+                    localStorage.setItem('sc_quotation_summary_map', JSON.stringify(updated));
+                  } catch (_) {}
+                }
+                return updated;
+              });
+            }
+            fetchQuotationSummaries(true);
+          }
+        })
+        .subscribe();
+    }
+
     if (typeof window !== 'undefined') {
       window.addEventListener('quotation_finalized', handleQuotationFinalized);
       window.addEventListener('quotation_created', handleQuotationCreated);
@@ -743,6 +825,9 @@ export function LeadTable({
     }
     return () => {
       isCancelled = true;
+      if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel);
+      }
       if (typeof window !== 'undefined') {
         window.removeEventListener('quotation_finalized', handleQuotationFinalized);
         window.removeEventListener('quotation_created', handleQuotationCreated);

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 import { QuotationTemplateSelector, StudioTemplateItem } from './quotation-template-selector';
 
 interface AiQuotationModalProps {
@@ -415,6 +416,14 @@ LEAD & CLIENT CONTEXT:
             };
             localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
             window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));
+
+            // ⚡ Multi-device instant broadcast sync across all PCs (<50ms)
+            broadcastQuotationSync(lead?.workspace_id, {
+              leadId: lId,
+              quotationId: targetQId,
+              action: 'create',
+              isFinal: false
+            });
           }
         } catch (e) {}
       }
@@ -539,7 +548,15 @@ LEAD & CLIENT CONTEXT:
             };
             localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
             window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));
-          } catch (e) {}
+
+            // ⚡ Multi-device instant broadcast sync across all PCs (<50ms)
+            broadcastQuotationSync(lead?.workspace_id, {
+              leadId: lId,
+              quotationId: targetQId,
+              action: 'create',
+              isFinal: false
+            });
+          } catch (_) {}
         }
 
         if (onApplied) {

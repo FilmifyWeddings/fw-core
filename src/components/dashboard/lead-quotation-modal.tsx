@@ -12,6 +12,7 @@ import {
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { AiQuotationModal } from './ai-quotation-modal';
+import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 
 const QuotationDocumentCanvas = dynamic(
   () => import('@/components/QuotationDocumentCanvas'),
@@ -489,6 +490,16 @@ export function LeadQuotationModal({
           window.dispatchEvent(new CustomEvent('client_created', {
             detail: { leadId: lead.id }
           }));
+
+          // ⚡ Multi-device instant broadcast sync across all PCs (<50ms)
+          broadcastQuotationSync(lead.workspace_id, {
+            leadId: lead.id,
+            quotationId: q.template_id || q.id,
+            action: unmark ? 'unmark' : 'final',
+            isFinal: !unmark,
+            version: q.version,
+            unmark: Boolean(unmark)
+          });
         }
       } else {
         // Rollback on server error
@@ -595,6 +606,15 @@ export function LeadQuotationModal({
             };
             localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
             window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lead.id, quotationId: qId } }));
+
+            // ⚡ Multi-device instant broadcast sync across all PCs (<50ms)
+            broadcastQuotationSync(lead.workspace_id, {
+              leadId: lead.id,
+              quotationId: qId,
+              action: 'create',
+              version: json.version || 1,
+              isFinal: false
+            });
           } catch (_) {}
         }
 

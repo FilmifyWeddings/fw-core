@@ -57,23 +57,35 @@ export async function GET(request: NextRequest) {
       const user = data.session.user;
       const userId = user.id;
 
-      // Check if user has an existing verified phone number in `profiles` or auth metadata
+      // Check if user is an existing studio owner or user in `profiles` or `workspaces`
       const { data: profile } = await supabaseAdmin
         .from('profiles')
-        .select('phone, phone_verified, platform_role')
+        .select('phone, phone_verified, platform_role, workspace_name, business_name')
         .eq('id', userId)
         .maybeSingle();
 
+      const { data: ws } = await supabaseAdmin
+        .from('workspaces')
+        .select('id, name')
+        .or(`id.eq.${userId},owner_id.eq.${userId}`)
+        .maybeSingle();
+
       const userMeta = user.user_metadata || {};
-      const hasVerifiedPhone = Boolean(
-        (profile?.phone && profile.phone_verified) ||
-        (userMeta.phone && userMeta.phone_verified)
+      const isExistingUser = Boolean(
+        profile?.phone ||
+        profile?.phone_verified ||
+        (profile?.workspace_name && profile.workspace_name !== 'My Studio') ||
+        (profile?.business_name && profile.business_name !== 'My Studio') ||
+        ws?.id ||
+        userMeta.phone ||
+        userMeta.phone_verified ||
+        userMeta.is_onboarded
       );
 
       const effectiveRole = profile?.platform_role || userMeta.role || role;
 
-      // ── IF PHONE IS NOT VERIFIED: Trigger Mandatory Google Onboarding Modal ──
-      if (!hasVerifiedPhone) {
+      // ── IF BRAND NEW USER: Trigger Mandatory Onboarding Modal ──
+      if (!isExistingUser) {
         const onboardingTarget = effectiveRole === 'team_member' ? '/team/dashboard' : '/workspace';
         const redirectUrl = new URL(onboardingTarget, appOrigin);
         redirectUrl.searchParams.set('google_onboarding', 'true');

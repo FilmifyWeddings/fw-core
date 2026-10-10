@@ -309,12 +309,13 @@ export default function LeadsPage() {
     };
   }, [userId]);
 
-  // Realtime subscription for leads (INSERT, UPDATE, DELETE)
+  // Realtime subscription for leads (INSERT, UPDATE, DELETE) and quotation sync
   useEffect(() => {
     if (!userId || isDemoMode) return;
 
+    const effectiveWsId = workspaceId || userId;
     const channel = supabase
-      .channel(`realtime-leads-${userId}`)
+      .channel(`realtime-leads-${effectiveWsId}`)
       .on(
         'postgres_changes',
         {
@@ -354,18 +355,50 @@ export default function LeadsPage() {
               raw_payload: l.raw_payload || {},
             } as Lead;
             setLeads(prev => prev.map(x => x.id === updatedLead.id ? { ...x, ...updatedLead } : x));
+
+            // If final_quotation_id was set or changed, trigger window event so table rows update
+            if (updatedLead.final_quotation_id) {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('quotation_finalized', {
+                  detail: { leadId: updatedLead.id, quotationId: updatedLead.final_quotation_id }
+                }));
+              }
+            } else if (updatedLead.raw_payload?.quotation_id) {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('quotation_created', {
+                  detail: { leadId: updatedLead.id, quotationId: updatedLead.raw_payload.quotation_id }
+                }));
+              }
+            }
           } else if (payload.eventType === 'DELETE') {
             const deletedId = (payload.old as any).id;
             setLeads(prev => prev.filter(x => x.id !== deletedId));
           }
         }
       )
+      .on('broadcast', { event: 'QUOTATION_SYNC' }, (msg: any) => {
+        const payload = msg?.payload;
+        if (!payload?.leadId) return;
+        if (payload.action === 'final' || payload.isFinal) {
+          setLeads(prev => prev.map(x => x.id === payload.leadId ? {
+            ...x,
+            final_quotation_id: payload.quotationId,
+            raw_payload: { ...(x.raw_payload || {}), final_quotation_id: payload.quotationId }
+          } : x));
+        } else if (payload.action === 'unmark') {
+          setLeads(prev => prev.map(x => x.id === payload.leadId ? {
+            ...x,
+            final_quotation_id: undefined,
+            raw_payload: { ...(x.raw_payload || {}), final_quotation_id: undefined }
+          } : x));
+        }
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId, isDemoMode]);
+  }, [userId, workspaceId, isDemoMode]);
 
   // Request browser Notification permissions and load already notified IDs from localStorage
   useEffect(() => {

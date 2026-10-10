@@ -207,7 +207,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   // 2. Event Type
   let eventType = 'Wedding';
-  const hasPreWed = fullText.includes('pre wedding') || fullText.includes('pre-wedding') || fullText.includes('prewedding');
+  const hasPreWed = fullText.includes('pre wedding') || fullText.includes('pre-wedding') || fullText.includes('prewedding') || fullText.includes('previewing') || fullText.includes('pre-shoot') || fullText.includes('pre shoot');
   const hasWed = fullText.includes('wedding') || fullText.includes('marriage') || fullText.includes('shaadi');
   const hasEng = fullText.includes('engagement') || fullText.includes('roka') || fullText.includes('ring ceremony');
 
@@ -515,9 +515,14 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       });
     }
 
-    // Normalize crew role names across all functions in the document
+    // Normalize crew role names and filter out pre-wedding cards from functionsPage
     if (normDoc.functionsPage?.items && Array.isArray(normDoc.functionsPage.items)) {
-      normDoc.functionsPage.items = normDoc.functionsPage.items.map((fn: any) => ({
+      const nonPreWedItems = normDoc.functionsPage.items.filter((fn: any) => {
+        const nameLower = (fn.name || '').toLowerCase();
+        return !nameLower.includes('pre-wedding') && !nameLower.includes('prewedding') && !nameLower.includes('pre wedding') && !nameLower.includes('previewing');
+      });
+      const itemsToKeep = nonPreWedItems.length > 0 ? nonPreWedItems : normDoc.functionsPage.items;
+      normDoc.functionsPage.items = itemsToKeep.map((fn: any) => ({
         ...fn,
         name: fn.name || 'Wedding',
         date: fn.date || (fn.dateNotFixed ? 'Date Not Fixed' : 'Date Not Fixed'),
@@ -536,6 +541,14 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
               { name: 'Cinematographer', qty: 1 }
             ]
       }));
+    }
+
+    // Filter out any pre-wedding deliverables from deliverablesPage
+    if (normDoc.deliverablesPage?.selectedItems && Array.isArray(normDoc.deliverablesPage.selectedItems)) {
+      normDoc.deliverablesPage.selectedItems = normDoc.deliverablesPage.selectedItems.filter((item: string) => {
+        const itemLower = String(item || '').toLowerCase();
+        return !itemLower.includes('pre-wedding') && !itemLower.includes('prewedding') && !itemLower.includes('pre wedding') && !itemLower.includes('previewing');
+      });
     }
 
     // Ensure showExclusionsNote is default ON (true)
@@ -587,20 +600,31 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   doc.cover.locationName = cover.locationName || '';
 
   // 2. Pre-Wedding Shoot Details Page
-  if (shootDetails.visible || shootDetails.daysText || shootDetails.crewText) {
+  const isPromptPreWed = allUserNotes.includes('pre-wedding') || allUserNotes.includes('prewedding') || allUserNotes.includes('pre wedding') || allUserNotes.includes('previewing');
+  if (shootDetails.visible || shootDetails.daysText || shootDetails.crewText || isPromptPreWed) {
     if (!doc.shootDetails) doc.shootDetails = {};
     doc.shootDetails.visible = true;
     doc.shootDetails.daysText = shootDetails.daysText || '1 Day Shoot';
-    if (shootDetails.crewText) doc.shootDetails.crewText = shootDetails.crewText;
+    doc.shootDetails.crewText = shootDetails.crewText || 'Candid Photography\nCinematography\nDrone Pilot';
     if (shootDetails.deliverablesText) doc.shootDetails.deliverablesText = shootDetails.deliverablesText;
     doc.shootDetails.showExclusionsNote = true;
   }
 
-  // 3. Functions Page
+  // 3. Functions Page (Strictly Main Wedding Functions - No Pre-Wedding cards)
   if (!doc.functionsPage) doc.functionsPage = {};
   const rawFuncs = functionsPage.items || aiData.functions || [];
   if (Array.isArray(rawFuncs) && rawFuncs.length > 0) {
-    doc.functionsPage.items = rawFuncs.map((fn: any, idx: number) => {
+    // Strictly filter out any Pre-Wedding cards from Functions & Coverage
+    const nonPreWedFuncs = rawFuncs.filter((fn: any) => {
+      const nameLower = (fn.name || '').toLowerCase();
+      return !nameLower.includes('pre-wedding') && !nameLower.includes('prewedding') && !nameLower.includes('pre wedding') && !nameLower.includes('previewing');
+    });
+
+    const funcsToProcess = nonPreWedFuncs.length > 0 ? nonPreWedFuncs : [
+      { name: 'Wedding Ceremony', requirements: [{ name: 'Candid Photographer', qty: 1 }, { name: 'Cinematographer', qty: 1 }] }
+    ];
+
+    doc.functionsPage.items = funcsToProcess.map((fn: any, idx: number) => {
       let requirementsList: { name: string; qty: number }[] = [];
       if (Array.isArray(fn.requirements)) {
         requirementsList = fn.requirements.map((r: any) => ({
@@ -636,11 +660,32 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     });
   }
 
-  // 4. Deliverables Page
+  // 4. Deliverables Page (Main Wedding Deliverables Only - Pre-wedding moved to shootDetails)
   if (!doc.deliverablesPage) doc.deliverablesPage = {};
   const rawDeliv = deliverablesPage.selectedItems || aiData.deliverables || [];
   if (Array.isArray(rawDeliv) && rawDeliv.length > 0) {
-    doc.deliverablesPage.selectedItems = rawDeliv;
+    const preWedDelivs: string[] = [];
+    const weddingDelivs: string[] = [];
+
+    rawDeliv.forEach((item: string) => {
+      const itemLower = String(item || '').toLowerCase();
+      if (itemLower.includes('pre-wedding') || itemLower.includes('prewedding') || itemLower.includes('pre wedding') || itemLower.includes('previewing')) {
+        preWedDelivs.push(item);
+      } else {
+        weddingDelivs.push(item);
+      }
+    });
+
+    doc.deliverablesPage.selectedItems = weddingDelivs;
+
+    if (preWedDelivs.length > 0) {
+      if (!doc.shootDetails) doc.shootDetails = { visible: true };
+      doc.shootDetails.visible = true;
+      const existingText = doc.shootDetails.deliverablesText || '';
+      const existingLines = existingText ? existingText.split('\n') : [];
+      const mergedShootDelivs = Array.from(new Set([...existingLines, ...preWedDelivs])).filter(Boolean).join('\n');
+      doc.shootDetails.deliverablesText = mergedShootDelivs;
+    }
   }
 
   // 5. Special Value Additions Page

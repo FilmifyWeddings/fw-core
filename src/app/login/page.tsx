@@ -382,6 +382,7 @@ function LoginContent() {
 
     const cleanEmail = signupEmail.trim().toLowerCase();
     const cleanPhone = signupPhone.trim();
+    const fullPhone = `${selectedCountry.code}${cleanPhone}`;
 
     try {
       const { data, error: signUpErr } = await supabase.auth.signUp({
@@ -389,9 +390,7 @@ function LoginContent() {
         password: signupPassword,
         options: {
           data: {
-            full_name: fullName.trim(),
-            workspace_name: businessName.trim(),
-            phone: `${selectedCountry.code}${cleanPhone}`,
+            phone: fullPhone,
             role: 'owner',
           },
         },
@@ -402,8 +401,7 @@ function LoginContent() {
       setOtpTargetEmail(cleanEmail);
       setOtpTargetPhone(`${selectedCountry.code} ${cleanPhone}`);
       setOtpPendingMeta({
-        fullName: fullName.trim(),
-        businessName: businessName.trim(),
+        phone: fullPhone,
         role: 'owner',
       });
       setShowOtpModal(true);
@@ -482,6 +480,16 @@ function LoginContent() {
   // Handle OTP Verification Success
   const handleOtpVerified = async () => {
     setShowOtpModal(false);
+    if (portal === 'studio' && !otpPendingMeta?.isTeamPortal) {
+      if (otpPendingMeta?.phone && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_onboarding_phone', otpPendingMeta.phone);
+        } catch (_) {}
+      }
+      const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), '/workspace?google_onboarding=true&role=owner');
+      window.location.href = destination;
+      return;
+    }
     const defaultPath = (portal === 'team' || otpPendingMeta?.isTeamPortal) ? '/team/dashboard' : '/workspace';
     const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
     window.location.href = destination;
@@ -813,12 +821,6 @@ function LoginContent() {
                   disabled={loading}
                   className="relative w-full py-2.5 sm:py-3 px-4 rounded-2xl bg-white hover:bg-amber-50/50 border-2 border-amber-400 hover:border-amber-500 text-zinc-900 font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-xs hover:shadow-md transition-all cursor-pointer group"
                 >
-                  {/* Recommended Corner Badge */}
-                  <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-500 text-white text-[9px] font-black uppercase tracking-wider shadow-xs flex items-center gap-1 border border-amber-300/40">
-                    <span>✨</span>
-                    <span>Recommended</span>
-                  </span>
-
                   <GoogleGLogo className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" />
                   <span className="truncate">
                     Continue with Google as {portal === 'studio' ? 'Studio Owner' : 'Team Partner'}
@@ -904,36 +906,6 @@ function LoginContent() {
               ) : portal === 'studio' ? (
                 /* STUDIO OWNER SIGNUP FORM */
                 <form onSubmit={handleStudioSignupSubmit} className="space-y-2.5">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Full Name</label>
-                    <div className="relative flex items-center">
-                      <User className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
-                      <input
-                        type="text"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="e.g. Sushant Nawale"
-                        required
-                        className="w-full pl-10 pr-3.5 py-2 rounded-xl bg-zinc-50 border border-[#EBE7DF] text-xs sm:text-sm focus:border-[#b45309] focus:bg-white text-zinc-900 outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Studio / Brand Name</label>
-                    <div className="relative flex items-center">
-                      <Building2 className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
-                      <input
-                        type="text"
-                        value={businessName}
-                        onChange={(e) => setBusinessName(e.target.value)}
-                        placeholder="e.g. Filmify Weddings"
-                        required
-                        className="w-full pl-10 pr-3.5 py-2 rounded-xl bg-zinc-50 border border-[#EBE7DF] text-xs sm:text-sm focus:border-[#b45309] focus:bg-white text-zinc-900 outline-none"
-                      />
-                    </div>
-                  </div>
-
                   <div>
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Email Address</label>
                     <div className="relative flex items-center">

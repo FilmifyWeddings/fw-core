@@ -168,11 +168,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 if (finalAvatar) localStorage.setItem('sc_avatar_url', finalAvatar);
               }
 
-              // Detect if user logged in via Google and needs mandatory phone OTP verification
+              // Detect if user logged in via Google and needs mandatory profile onboarding
               const isGoogle = session.user.app_metadata?.provider === 'google' ||
                                (session.user.identities && session.user.identities.some((id: any) => id.provider === 'google')) ||
                                p.authProvider === 'google';
-              if (isGoogle && (!p.phoneVerified || !p.phone)) {
+              const isExistingUser = Boolean(
+                p.phone || p.phoneVerified || (p.studioName && p.studioName !== 'My Studio') || p.isOnboarded
+              );
+              if (isGoogle && !isExistingUser) {
                 setShowGoogleOnboarding(true);
                 if (p.platformRole === 'team_member' || (typeof window !== 'undefined' && window.location.pathname.startsWith('/team'))) {
                   setGoogleOnboardingRole('team_member');

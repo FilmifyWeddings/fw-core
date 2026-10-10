@@ -185,15 +185,17 @@ PAGE-BY-PAGE RULES & MAPPING:
 
 2. ABOUT US: Keep template defaults.
 
-3. PRE-WEDDING SHOOT (shootDetails):
-- If pre-wedding is mentioned or requested:
+3. PRE-WEDDING SHOOT (shootDetails) - DEDICATED SEPARATE PAGE:
+- If pre-wedding (or "previewing" / "pre wedding") is mentioned or requested:
   - visible: true
   - daysText: e.g. "1 Day Shoot" (Default) or "2 Days Shoot"
   - crewText: "Candid Photography\\nCinematography\\nDrone Pilot"
-  - deliverablesText: Expected pre-wedding deliverables
+  - deliverablesText: Expected pre-wedding deliverables (e.g. "Full Ultra HD Super-Fine Raw Photos\\nApprox. 50 High Resolution Edited Images\\n1 Teaser Video Reel")
   - showExclusionsNote: true
+- CRITICAL PRE-WEDDING ISOLATION RULE: Pre-Wedding has its own separate dedicated page (shootDetails)! ALL pre-wedding coverage details and ALL pre-wedding deliverables MUST be placed SOLELY on this shootDetails page!
 
-4. FUNCTIONS & COVERAGE (functionsPage):
+4. FUNCTIONS & COVERAGE (functionsPage) - MAIN WEDDING FUNCTIONS ONLY:
+- STRICT NEGATIVE RULE: NEVER add "Pre-Wedding" as an item inside functionsPage.items! Pre-wedding must NEVER appear as an event card under Functions & Coverage. Functions & Coverage is ONLY for wedding events (e.g. Haldi, Mehendi, Sangeet, Wedding Ceremony, Reception).
 - items: Array of event objects:
   - id: Unique string "func_1", "func_2", etc.
   - name: Function name. Combine multi-events on same slot with " + " (e.g. "Haldi + Sangeet").
@@ -207,8 +209,9 @@ PAGE-BY-PAGE RULES & MAPPING:
     * If user mentions "semi-standard" or "semi-traditional", output exact name "Semi Standard".
     * (Custom roles also allowed).
 
-5. DELIVERABLES (deliverablesPage):
-- selectedItems: Array of deliverable strings requested by user.
+5. DELIVERABLES (deliverablesPage) - MAIN WEDDING DELIVERABLES ONLY:
+- STRICT NEGATIVE RULE: NEVER include any pre-wedding deliverables (e.g. pre-wedding photos, pre-wedding teaser, pre-wedding reels) in deliverablesPage.selectedItems! All pre-wedding deliverables belong SOLELY on shootDetails.deliverablesText.
+- selectedItems: Array of deliverable strings requested by user for the wedding functions.
 
 6. SPECIAL VALUE ADDITIONS (specialValueAdditions):
 - selectedItems: Array of complimentary bonus items. If none, empty array [].
