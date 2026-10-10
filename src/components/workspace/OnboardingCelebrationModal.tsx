@@ -193,10 +193,25 @@ export default function OnboardingCelebrationModal({
 
       if (res.ok && json.success) {
         setIsSavedSuccess(true);
-        if (typeof window !== 'undefined' && payload.studioName) {
-          localStorage.setItem('sc_studio_name', payload.studioName);
-          localStorage.setItem('fw_studio_name', payload.studioName);
+        if (typeof window !== 'undefined') {
+          if (payload.studioName) {
+            localStorage.setItem('sc_studio_name', payload.studioName);
+            localStorage.setItem('fw_studio_name', payload.studioName);
+          }
+          if (payload.fullName) {
+            localStorage.setItem('sc_user_name', payload.fullName);
+          }
+          if (payload.avatarUrl) {
+            localStorage.setItem('sc_avatar_url', payload.avatarUrl);
+          }
+          if (payload.logoUrl) {
+            localStorage.setItem('sc_logo_url', payload.logoUrl);
+          }
+          window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: payload }));
         }
+        try {
+          await supabase.auth.refreshSession();
+        } catch (_) {}
         if (onProfileUpdated) {
           onProfileUpdated(payload);
         }

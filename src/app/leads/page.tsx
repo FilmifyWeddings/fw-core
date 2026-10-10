@@ -180,9 +180,26 @@ export default function LeadsPage() {
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const PAGE_SIZE = 50;
 
-  // Hydrate client mount status (Strictly avoid loading unkeyed caches on mount to prevent cross-studio data pollution)
+  // Hydrate client mount status with 0ms scoped cache acceleration
   useEffect(() => {
     setMounted(true);
+    if (typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const wsParam = urlParams.get('studio') || urlParams.get('ws');
+        const activeUid = wsParam || localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id');
+        if (activeUid && activeUid !== 'all') {
+          const stored = localStorage.getItem(`sc_cached_leads_${activeUid}`);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setLeads(parsed);
+              setLoading(false);
+            }
+          }
+        }
+      } catch (_) {}
+    }
   }, []);
 
 

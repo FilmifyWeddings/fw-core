@@ -103,6 +103,27 @@ export default function TeamManagerPage() {
 
   useEffect(() => {
     setIsMounted(true);
+    if (typeof window !== 'undefined') {
+      try {
+        const storedP = localStorage.getItem('sc_cached_tm_projects');
+        if (storedP) {
+          const parsed = JSON.parse(storedP);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedTMProjects = parsed;
+            setProjects(parsed);
+            setLoading(false);
+          }
+        }
+        const storedM = localStorage.getItem('sc_cached_tm_members');
+        if (storedM) {
+          const parsed = JSON.parse(storedM);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedTMTeamMembers = parsed;
+            setTeamMembers(parsed);
+          }
+        }
+      } catch (_) {}
+    }
   }, []);
 
   // Studio-Scoped URL Synchronization

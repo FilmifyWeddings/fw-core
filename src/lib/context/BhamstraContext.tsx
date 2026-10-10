@@ -153,25 +153,47 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
 
       const uId = session.user.id;
       const uEmail = session.user.email || '';
-      const uName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
+      const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
+
+      let cachedName: string | null = null;
+      let cachedStudio: string | null = null;
+      let cachedAvatar: string | null = null;
+      if (typeof window !== 'undefined') {
+        cachedName = localStorage.getItem('sc_user_name');
+        cachedStudio = localStorage.getItem('sc_studio_name') || localStorage.getItem('fw_studio_name');
+        cachedAvatar = localStorage.getItem('sc_avatar_url');
+      }
+
       setUserId(uId);
       setUserEmail(uEmail || null);
-      setUserName(uName || null);
+      setUserName(cachedName || metaName || null);
 
       // 1. Fetch user's own profile safely (Safe column selection)
       let profile: any = null;
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('full_name, avatar_url')
+          .select('full_name, avatar_url, workspace_name')
           .eq('id', uId)
           .maybeSingle();
-        if (!error && data) profile = data;
+        if (!error && data) {
+          profile = data;
+          if (profile.full_name) {
+            setUserName(profile.full_name);
+            if (typeof window !== 'undefined') localStorage.setItem('sc_user_name', profile.full_name);
+          }
+          if (profile.workspace_name && typeof window !== 'undefined') {
+            localStorage.setItem('sc_studio_name', profile.workspace_name);
+          }
+          if (profile.avatar_url && typeof window !== 'undefined') {
+            localStorage.setItem('sc_avatar_url', profile.avatar_url);
+          }
+        }
       } catch (pErr) {
         console.warn('[BhamstraContext] Safe caught profile fetch error:', pErr);
       }
 
-      const ownerStudioName = session.user.user_metadata?.workspace_name || 'My Studio';
+      const ownerStudioName = cachedStudio || profile?.workspace_name || session.user.user_metadata?.workspace_name || 'My Studio';
 
       const ownerOption: WorkspaceOption = {
         workspaceId: uId,
@@ -179,7 +201,7 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
         userRole: 'OWNER',
         isOwner: true,
         permissions: DEFAULT_OWNER_PERMISSIONS,
-        avatarUrl: profile?.avatar_url || session.user.user_metadata?.avatar_url || '',
+        avatarUrl: cachedAvatar || profile?.avatar_url || session.user.user_metadata?.avatar_url || '',
         ownerEmail: uEmail,
       };
 
@@ -240,6 +262,16 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     refreshContext();
+
+    const handleProfileUpdated = () => {
+      refreshContext(true);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('sc_profile_updated', handleProfileUpdated);
+      return () => {
+        window.removeEventListener('sc_profile_updated', handleProfileUpdated);
+      };
+    }
   }, [refreshContext]);
 
   // Workspace Switcher Action

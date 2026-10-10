@@ -97,16 +97,29 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     if (!force && hasFetchedRef.current) return;
     hasFetchedRef.current = true;
 
-    // 1. Initial fast hydration from localStorage
+    // 1. Initial fast hydration from localStorage on mount (0ms instant display)
+    let hasLocalName = false;
+    let hasLocalStudio = false;
+    let hasLocalAvatar = false;
+
     if (typeof window !== 'undefined') {
-      const cachedStudioName = localStorage.getItem('sc_studio_name');
+      const cachedStudioName = localStorage.getItem('sc_studio_name') || localStorage.getItem('fw_studio_name');
       const cachedAvatar = localStorage.getItem('sc_avatar_url');
       const cachedLogo = localStorage.getItem('sc_logo_url');
       const cachedUserName = localStorage.getItem('sc_user_name');
 
-      if (cachedStudioName && cachedStudioName !== 'StudioCore Workspace') setWorkspaceName(cachedStudioName);
-      if (cachedAvatar || cachedLogo) setUserAvatarUrl(cachedAvatar || cachedLogo || '');
-      if (cachedUserName && cachedUserName !== 'Studio Owner') setUserName(cachedUserName);
+      if (cachedStudioName && cachedStudioName !== 'StudioCore Workspace' && cachedStudioName !== 'All-in-One Studio') {
+        setWorkspaceName(cachedStudioName);
+        hasLocalStudio = true;
+      }
+      if (cachedAvatar || cachedLogo) {
+        setUserAvatarUrl(cachedAvatar || cachedLogo || '');
+        hasLocalAvatar = true;
+      }
+      if (cachedUserName && cachedUserName !== 'Studio Owner' && cachedUserName !== 'User') {
+        setUserName(cachedUserName);
+        hasLocalName = true;
+      }
     }
 
     try {
@@ -115,14 +128,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         setUserEmail(session.user.email || '');
         setUserId(session.user.id);
 
-        // Fallback to user metadata immediately
+        // Fallback to user metadata ONLY if NO saved local profile exists
         const metaStudio = session.user.user_metadata?.workspace_name || session.user.user_metadata?.studio_name || '';
         const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
         const metaAvatar = session.user.user_metadata?.avatar_url || '';
 
-        if (metaStudio) setWorkspaceName(metaStudio);
-        if (metaName) setUserName(metaName);
-        if (metaAvatar) setUserAvatarUrl(metaAvatar);
+        if (!hasLocalStudio && metaStudio) setWorkspaceName(metaStudio);
+        if (!hasLocalName && metaName) setUserName(metaName);
+        if (!hasLocalAvatar && metaAvatar) setUserAvatarUrl(metaAvatar);
 
         // Fetch authoritative profile from API (bypassing client RLS safely)
         const token = session.access_token;
@@ -135,16 +148,19 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             const json = await res.json();
             if (json?.profile && json.profile.id !== 'demo_user') {
               const p = json.profile;
-              const finalStudio = p.studioName || metaStudio;
-              const finalName = p.fullName || metaName;
-              const finalAvatar = p.avatarUrl || p.logoUrl || metaAvatar;
+              const finalStudio = p.studioName || (hasLocalStudio ? localStorage.getItem('sc_studio_name') : metaStudio);
+              const finalName = p.fullName || (hasLocalName ? localStorage.getItem('sc_user_name') : metaName);
+              const finalAvatar = p.avatarUrl || p.logoUrl || (hasLocalAvatar ? localStorage.getItem('sc_avatar_url') : metaAvatar);
 
               if (finalStudio) setWorkspaceName(finalStudio);
               if (finalName) setUserName(finalName);
               if (finalAvatar) setUserAvatarUrl(finalAvatar);
 
               if (typeof window !== 'undefined') {
-                if (finalStudio) localStorage.setItem('sc_studio_name', finalStudio);
+                if (finalStudio) {
+                  localStorage.setItem('sc_studio_name', finalStudio);
+                  localStorage.setItem('fw_studio_name', finalStudio);
+                }
                 if (finalName) localStorage.setItem('sc_user_name', finalName);
                 if (finalAvatar) localStorage.setItem('sc_avatar_url', finalAvatar);
               }
@@ -275,6 +291,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     coreRoutes.forEach((route) => {
       try {
         router.prefetch(route);
+        const formatted = formatPathWithStudio(route);
+        if (formatted && formatted !== route) {
+          router.prefetch(formatted);
+        }
       } catch (_) {}
     });
 
@@ -625,6 +645,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                   prefetch={true}
                   suppressHydrationWarning
                   onMouseEnter={() => router.prefetch(formatPathWithStudio(item.path))}
+                  onPointerDown={() => router.prefetch(formatPathWithStudio(item.path))}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
                     isActive
                       ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs'
@@ -668,6 +689,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                           prefetch={true}
                           suppressHydrationWarning
                           onMouseEnter={() => router.prefetch(formatPathWithStudio(sub.path))}
+                          onPointerDown={() => router.prefetch(formatPathWithStudio(sub.path))}
                           className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
                             isSubActive
                               ? 'bg-amber-100/70 text-amber-900 font-bold'
@@ -853,6 +875,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                         prefetch={true}
                         suppressHydrationWarning
                         onMouseEnter={() => router.prefetch(formatPathWithStudio(item.path))}
+                        onPointerDown={() => router.prefetch(formatPathWithStudio(item.path))}
                         onClick={() => setMobileDrawerOpen(false)}
                         className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition ${
                           isActive

@@ -199,6 +199,9 @@ export default function StudioProfileEditModal({
           if (payload.fullName) localStorage.setItem('sc_user_name', payload.fullName);
           window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: payload }));
         }
+        try {
+          await supabase.auth.refreshSession();
+        } catch (_) {}
         await refreshContext();
         if (onProfileSaved) {
           onProfileSaved(payload);

@@ -197,8 +197,22 @@ export default function WorkspaceHubPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
+          let savedName = typeof window !== 'undefined' ? localStorage.getItem('sc_user_name') : null;
+          try {
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            if (prof?.full_name) {
+              savedName = prof.full_name;
+              if (typeof window !== 'undefined') localStorage.setItem('sc_user_name', prof.full_name);
+            }
+          } catch (_) {}
+
           const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
-          const resolvedName = metaName ? metaName.split(' ')[0] : (session.user.email?.split('@')[0] || 'User');
+          const effectiveName = savedName || metaName || (session.user.email?.split('@')[0] || 'User');
+          const resolvedName = effectiveName.split(' ')[0];
           setUserName(resolvedName);
           memCachedHubUserName = resolvedName;
 
@@ -245,6 +259,23 @@ export default function WorkspaceHubPage() {
       }
     }
     loadDashboardData();
+
+    const handleProfileUpdate = (e: any) => {
+      const detail = e.detail;
+      if (detail?.fullName) {
+        const name = detail.fullName.split(' ')[0];
+        setUserName(name);
+        memCachedHubUserName = name;
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('sc_profile_updated', handleProfileUpdate);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('sc_profile_updated', handleProfileUpdate);
+      }
+    };
   }, []);
 
   return (
