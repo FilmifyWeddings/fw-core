@@ -604,6 +604,7 @@ export function LeadTable({
 
   const searchParams = useSearchParams();
   const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';
+  const studioParam = searchParams?.get('studio') || searchParams?.get('ws') || null;
 
   const sidebarFilter: 'overview' | 'lost' | 'archive' = 
     stageParam === 'lost' ? 'lost' : 
@@ -638,10 +639,11 @@ export function LeadTable({
 
   useEffect(() => {
     let isCancelled = false;
+    const currentStudio = studioParam || searchParams?.get('studio') || searchParams?.get('ws') || null;
     const impId = typeof window !== 'undefined' ? localStorage.getItem('impersonated_tenant_id') : null;
     const leadWs = (initialLeads || [])[0]?.workspace_id;
     const activeWs = typeof window !== 'undefined' ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id')) : null;
-    const resolvedWs = studioParam || impId || leadWs || activeWs;
+    const resolvedWs = currentStudio || impId || leadWs || activeWs;
 
     const fetchQuotationSummaries = async (force = false) => {
       try {
