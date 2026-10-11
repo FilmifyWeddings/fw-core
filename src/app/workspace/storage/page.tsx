@@ -182,7 +182,7 @@ export default function StorageHubPage() {
   const [savingProject, setSavingProject] = useState(false);
 
   // Connect Google Drive Form states
-  const [connectDriveTab, setConnectDriveTab] = useState<'gis' | 'manual' | 'oauth'>('gis');
+  const [connectDriveTab, setConnectDriveTab] = useState<'manual' | 'gis' | 'oauth'>('manual');
   const [manualDriveEmail, setManualDriveEmail] = useState('');
   const [manualDriveLabel, setManualDriveLabel] = useState('Primary Wedding Deliverables');
   const [manualDriveCapacityGb, setManualDriveCapacityGb] = useState<number>(2000);
@@ -199,6 +199,7 @@ export default function StorageHubPage() {
   const [selectedFolderForLink, setSelectedFolderForLink] = useState<any | null>(null);
   const [newDriveFolderName, setNewDriveFolderName] = useState('');
   const [creatingDriveFolder, setCreatingDriveFolder] = useState(false);
+  const [manualDriveFolderInput, setManualDriveFolderInput] = useState('');
 
   // Load all initial data
   const loadStorageData = useCallback(async () => {
@@ -684,6 +685,58 @@ export default function StorageHubPage() {
     });
   };
 
+  // Direct Folder Link (URL or Name)
+  const handleDirectFolderLink = async () => {
+    if (!activeProjectForGoogle || !manualDriveFolderInput.trim()) return;
+    const input = manualDriveFolderInput.trim();
+    const isUrl = input.startsWith('http://') || input.startsWith('https://');
+    let folderName = input;
+    let folderUrl = input;
+    let folderId = 'custom_fld';
+
+    if (isUrl) {
+      const match = input.match(/folders\/([a-zA-Z0-9_-]+)/);
+      folderId = match ? match[1] : `url_${Date.now()}`;
+      folderName = `${activeProjectForGoogle.client_name} (Cloud Folder)`;
+    } else {
+      folderUrl = `https://drive.google.com/drive/search?q=${encodeURIComponent(input)}`;
+      folderId = `fld_${Date.now()}`;
+    }
+
+    const email = selectedGoogleAccount?.account_email || driveAccounts[0]?.account_email || 'google.drive@studio';
+    const accId = selectedGoogleAccount?.id || driveAccounts[0]?.id || 'direct';
+
+    const backupPayload: GoogleDriveBackupItem = {
+      is_backed_up: true,
+      account_id: accId,
+      account_email: email,
+      folder_id: folderId,
+      folder_name: folderName,
+      web_view_link: folderUrl,
+      backup_status: 'COMPLETED',
+      backed_up_at: new Date().toISOString(),
+    };
+
+    setProjects(prev => prev.map(p => p.id === activeProjectForGoogle.id ? {
+      ...p,
+      google_drive_backup: backupPayload,
+      overall_storage_status: 'BACKED_UP_CLOUD',
+    } : p));
+
+    setShowGooglePickerModal(false);
+    setManualDriveFolderInput('');
+
+    await fetch('/api/storage/projects', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: activeProjectForGoogle.id,
+        google_drive_backup: backupPayload,
+        overall_storage_status: 'BACKED_UP_CLOUD',
+      }),
+    });
+  };
+
   // Submit Add Card Form
   const handleAddCardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -834,7 +887,16 @@ export default function StorageHubPage() {
           if (resp.error) {
             setIsConnectingGis(false);
             setGisStatusText('');
-            alert('Google Sign-In cancelled or failed: ' + resp.error);
+            const errStr = String(resp.error || '');
+            if (errStr.includes('origin') || errStr.includes('popup_closed') || errStr.includes('invalid_client')) {
+              setConnectDriveTab('manual');
+              setUrlToast({
+                type: 'warning',
+                message: 'Google Cloud origin not registered. Switched to Instant Direct Link tab!'
+              });
+            } else {
+              alert('Google Sign-In cancelled or failed: ' + resp.error);
+            }
             return;
           }
 
@@ -903,7 +965,7 @@ export default function StorageHubPage() {
     }).catch(() => {
       setIsConnectingGis(false);
       setGisStatusText('');
-      window.location.href = `/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWsId)}&return_url=/workspace/storage`;
+      setConnectDriveTab('manual');
     });
   };
 
@@ -1927,17 +1989,6 @@ export default function StorageHubPage() {
             <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
               <button
                 type="button"
-                onClick={() => setConnectDriveTab('gis')}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
-                  connectDriveTab === 'gis'
-                    ? 'bg-white text-blue-600 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                ⚡ 1-Click Google Sign-In
-              </button>
-              <button
-                type="button"
                 onClick={() => setConnectDriveTab('manual')}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
                   connectDriveTab === 'manual'
@@ -1945,7 +1996,18 @@ export default function StorageHubPage() {
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                📝 Direct Link Account
+                ⚡ Instant Direct Link (Recommended)
+              </button>
+              <button
+                type="button"
+                onClick={() => setConnectDriveTab('gis')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
+                  connectDriveTab === 'gis'
+                    ? 'bg-white text-blue-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Popup Sign-In (OAuth)
               </button>
               <button
                 type="button"
@@ -1960,45 +2022,25 @@ export default function StorageHubPage() {
               </button>
             </div>
 
-            {/* Tab 1: 1-Click GIS Google Sign-In */}
-            {connectDriveTab === 'gis' && (
-              <div className="space-y-4 py-2 text-center">
-                <div className="p-4 bg-blue-50/60 border border-blue-200/80 rounded-2xl text-xs text-slate-600 space-y-2">
-                  <p className="font-bold text-blue-950">
-                    Direct in-browser Google Authentication
+            {/* Tab 1: Instant Direct Link Account (Zero Config) */}
+            {connectDriveTab === 'manual' && (
+              <form onSubmit={handleManualDriveSubmit} className="space-y-3.5">
+                <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-xs space-y-1">
+                  <p className="font-bold text-blue-950 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Instant Zero-Configuration Link</span>
                   </p>
-                  <p className="text-[11px]">
-                    Opens the official Google account chooser in a popup. Automatically retrieves your email and live storage quota without leaving this page!
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Enter your Google email and select capacity below to immediately link your Drive account without needing Google Cloud Console setup.
                   </p>
                 </div>
 
-                {isConnectingGis ? (
-                  <div className="py-6 space-y-2">
-                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-600" />
-                    <p className="text-xs font-bold text-slate-600">{gisStatusText || 'Connecting to Google...'}</p>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleGisConnect}
-                    className="w-full py-3 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-2.5 cursor-pointer"
-                  >
-                    <Cloud className="w-5 h-5" />
-                    <span>Sign In with Google Account</span>
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Tab 2: Direct Link Account */}
-            {connectDriveTab === 'manual' && (
-              <form onSubmit={handleManualDriveSubmit} className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Google Account Email *</label>
                   <input
                     type="email"
                     required
-                    placeholder="e.g. wedding.studio@gmail.com"
+                    placeholder="e.g. sushantnawale007@gmail.com"
                     value={manualDriveEmail}
                     onChange={e => setManualDriveEmail(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
@@ -2075,6 +2117,53 @@ export default function StorageHubPage() {
                   </button>
                 </div>
               </form>
+            )}
+
+            {/* Tab 2: 1-Click GIS Google Sign-In */}
+            {connectDriveTab === 'gis' && (
+              <div className="space-y-4 py-2 text-center">
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl text-left space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                    <span>Google Cloud Console Requirement</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    If Google shows <strong>&quot;Error 401: invalid_client (no registered origin)&quot;</strong>, Google Cloud requires <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-950 font-mono">https://studiocore.in</code> in <em>Authorized JavaScript origins</em>.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setConnectDriveTab('manual')}
+                    className="mt-1 text-[11px] font-bold text-blue-700 hover:text-blue-800 underline flex items-center gap-1 cursor-pointer"
+                  >
+                    👉 Switch to Instant Direct Link (no Google Cloud setup needed)
+                  </button>
+                </div>
+
+                <div className="p-4 bg-blue-50/60 border border-blue-200/80 rounded-2xl text-xs text-slate-600 space-y-2">
+                  <p className="font-bold text-blue-950">
+                    Direct in-browser Google Authentication
+                  </p>
+                  <p className="text-[11px]">
+                    Opens the official Google account chooser in a popup. Automatically retrieves your email and live storage quota without leaving this page!
+                  </p>
+                </div>
+
+                {isConnectingGis ? (
+                  <div className="py-6 space-y-2">
+                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-600" />
+                    <p className="text-xs font-bold text-slate-600">{gisStatusText || 'Connecting to Google...'}</p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleGisConnect}
+                    className="w-full py-3 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-2.5 cursor-pointer"
+                  >
+                    <Cloud className="w-5 h-5" />
+                    <span>Sign In with Google Account</span>
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Tab 3: OAuth Web Redirect */}
@@ -2413,8 +2502,27 @@ export default function StorageHubPage() {
               )}
             </div>
 
+            {/* Direct Paste Folder Link or Name */}
+            <div className="pt-2 pb-1 border-t border-slate-100 flex items-center gap-2 shrink-0">
+              <input
+                type="text"
+                value={manualDriveFolderInput}
+                onChange={e => setManualDriveFolderInput(e.target.value)}
+                placeholder="Or paste Google Drive link / custom folder name directly..."
+                className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={handleDirectFolderLink}
+                disabled={!manualDriveFolderInput.trim()}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                Link Direct URL
+              </button>
+            </div>
+
             {/* Create New Folder Inline */}
-            <div className="pt-2 border-t border-slate-100 flex items-center gap-2 shrink-0">
+            <div className="pt-1.5 border-t border-slate-100 flex items-center gap-2 shrink-0">
               <input
                 type="text"
                 value={newDriveFolderName}

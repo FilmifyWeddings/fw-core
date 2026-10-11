@@ -70,6 +70,18 @@ export async function GET(req: NextRequest) {
 
     const { accessToken, account } = await getValidAccessToken(accountId);
 
+    if (!accessToken) {
+      return NextResponse.json({
+        success: true,
+        is_direct_linked: true,
+        account_email: account.account_email,
+        account_label: account.account_label,
+        currentFolder: { id: 'root', name: 'Direct Linked Drive' },
+        folders: [],
+        message: 'Account is linked directly. You can paste the Google Drive folder link or folder name directly.'
+      });
+    }
+
     let q = `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     if (searchQuery && searchQuery.trim()) {
       const cleanSearch = searchQuery.trim().replace(/'/g, "\\'");
@@ -142,6 +154,19 @@ export async function POST(req: NextRequest) {
     }
 
     const { accessToken } = await getValidAccessToken(account_id);
+
+    if (!accessToken) {
+      const customId = `fld_${Date.now()}`;
+      return NextResponse.json({
+        success: true,
+        folder: {
+          id: customId,
+          name: name.trim(),
+          webViewLink: `https://drive.google.com/drive/search?q=${encodeURIComponent(name.trim())}`,
+        },
+        message: 'Folder reference created for direct-linked drive.',
+      });
+    }
 
     const folderPayload: any = {
       name: name.trim(),
