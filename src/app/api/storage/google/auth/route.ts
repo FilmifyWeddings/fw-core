@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const clientId = (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_google_client_id_here')
     ? process.env.GOOGLE_CLIENT_ID
-    : '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com';
+    : (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '');
 
   const redirectUri = process.env.GOOGLE_DRIVE_REDIRECT_URI || `${origin}/api/storage/google/callback`;
 

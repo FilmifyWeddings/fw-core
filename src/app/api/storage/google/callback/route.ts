@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_google_client_id_here')
   ? process.env.GOOGLE_CLIENT_ID
-  : '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com';
+  : (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '');
 
 const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CLIENT_SECRET !== 'your_google_client_secret_here')
   ? process.env.GOOGLE_CLIENT_SECRET
@@ -143,7 +143,40 @@ export async function GET(req: NextRequest) {
       console.error('[Google Drive Callback] DB upsert error:', upsertErr);
     }
 
-    return NextResponse.redirect(`${origin}${returnPath}?connected=true&email=${encodeURIComponent(email)}`);
+    const targetRedirectUrl = `${origin}${returnPath}?connected=true&email=${encodeURIComponent(email)}`;
+    const htmlResponse = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="refresh" content="2;url=${targetRedirectUrl}" />
+  <title>Google Drive Connected</title>
+</head>
+<body style="font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #faf9f6; color: #1e293b;">
+  <div style="text-align: center; padding: 28px; background: white; border-radius: 20px; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.06); max-width: 400px;">
+    <div style="font-size: 36px; margin-bottom: 12px;">🎉</div>
+    <h2 style="font-size: 18px; margin: 0 0 8px; font-weight: 800; color: #0f172a;">Connected to Google Drive!</h2>
+    <p style="font-size: 13px; color: #64748b; margin: 0 0 16px; font-weight: 600;">${email}</p>
+    <p style="font-size: 12px; color: #94a3b8; margin: 0;">Returning to Studio Storage Hub...</p>
+  </div>
+  <script>
+    if (window.opener) {
+      try {
+        window.opener.postMessage({ type: 'GOOGLE_DRIVE_CONNECTED', email: '${email}' }, '*');
+      } catch(e) {}
+      setTimeout(() => {
+        try { window.close(); } catch(e) {}
+      }, 700);
+    } else {
+      window.location.href = '${targetRedirectUrl}';
+    }
+  </script>
+</body>
+</html>`;
+
+    return new NextResponse(htmlResponse, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
   } catch (err: any) {
     console.error('[Google Drive Callback] Exception:', err);
     return NextResponse.redirect(`${origin}${returnPath}?error=server_error`);

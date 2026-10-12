@@ -182,7 +182,7 @@ export default function StorageHubPage() {
   const [savingProject, setSavingProject] = useState(false);
 
   // Connect Google Drive Form states
-  const [connectDriveTab, setConnectDriveTab] = useState<'manual' | 'gis' | 'oauth'>('manual');
+  const [connectDriveTab, setConnectDriveTab] = useState<'oauth' | 'manual' | 'gis'>('oauth');
   const [manualDriveEmail, setManualDriveEmail] = useState('');
   const [manualDriveLabel, setManualDriveLabel] = useState('Primary Wedding Deliverables');
   const [manualDriveCapacityGb, setManualDriveCapacityGb] = useState<number>(2000);
@@ -264,6 +264,23 @@ export default function StorageHubPage() {
       }
       window.history.replaceState({}, '', '/workspace/storage');
     }
+  }, [loadStorageData]);
+
+  // Listen for popup Google OAuth completion message
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleMsg = (ev: MessageEvent) => {
+      if (ev.data?.type === 'GOOGLE_DRIVE_CONNECTED') {
+        setShowConnectDriveModal(false);
+        setUrlToast({
+          type: 'success',
+          message: `🎉 Google Drive (${ev.data.email ? decodeURIComponent(ev.data.email) : 'Account'}) connected successfully!`
+        });
+        loadStorageData();
+      }
+    };
+    window.addEventListener('message', handleMsg);
+    return () => window.removeEventListener('message', handleMsg);
   }, [loadStorageData]);
 
   // Load available leads when opening manual project modal
@@ -861,6 +878,17 @@ export default function StorageHubPage() {
     }
   };
 
+  // Google OAuth Popup Window Flow
+  const handleOAuthPopup = () => {
+    if (typeof window === 'undefined') return;
+    const width = 600;
+    const height = 700;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+    const authUrl = `/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWsId)}&return_url=/workspace/storage`;
+    window.open(authUrl, 'google_oauth_popup', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`);
+  };
+
   // Google Identity Services (GIS) One-Click Sign-In
   const handleGisConnect = () => {
     if (typeof window === 'undefined') return;
@@ -880,8 +908,9 @@ export default function StorageHubPage() {
     };
 
     loadGsiScript().then(() => {
+      const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
       const client = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com',
+        client_id: googleClientId,
         scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly',
         callback: async (resp: any) => {
           if (resp.error) {
@@ -1989,6 +2018,17 @@ export default function StorageHubPage() {
             <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
               <button
                 type="button"
+                onClick={() => setConnectDriveTab('oauth')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
+                  connectDriveTab === 'oauth'
+                    ? 'bg-white text-blue-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                ⚡ Google Sign-In (OAuth)
+              </button>
+              <button
+                type="button"
                 onClick={() => setConnectDriveTab('manual')}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
                   connectDriveTab === 'manual'
@@ -1996,7 +2036,7 @@ export default function StorageHubPage() {
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                ⚡ Instant Direct Link (Recommended)
+                📝 Instant Direct Link
               </button>
               <button
                 type="button"
@@ -2007,22 +2047,58 @@ export default function StorageHubPage() {
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Popup Sign-In (OAuth)
-              </button>
-              <button
-                type="button"
-                onClick={() => setConnectDriveTab('oauth')}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
-                  connectDriveTab === 'oauth'
-                    ? 'bg-white text-blue-600 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                🔗 Web Redirect
+                In-Browser GIS
               </button>
             </div>
 
-            {/* Tab 1: Instant Direct Link Account (Zero Config) */}
+            {/* Tab 1: Official Google OAuth Sign-In */}
+            {connectDriveTab === 'oauth' && (
+              <div className="space-y-4 py-2">
+                <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-xs space-y-1.5">
+                  <p className="font-bold text-blue-950 flex items-center gap-1.5">
+                    <Cloud className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Official Google OAuth 2.0 Connection</span>
+                  </p>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Connect your studio Google Drive with secure, official Google consent. Automatically detects your account email, live storage quota (Used / Free space), and registers it to Studio Storage.
+                  </p>
+                </div>
+
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={handleOAuthPopup}
+                    className="w-full py-3.5 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm shadow-md shadow-blue-600/25 transition flex items-center justify-center gap-2.5 cursor-pointer"
+                  >
+                    <Cloud className="w-5 h-5" />
+                    <span>⚡ Sign In with Google (Popup Window)</span>
+                  </button>
+
+                  <a
+                    href={`/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWsId)}&return_url=/workspace/storage`}
+                    className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-2"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Or Proceed via Full Page Web Redirect</span>
+                  </a>
+                </div>
+
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-left space-y-1">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    <span>Active OAuth Credentials</span>
+                    <span className="text-emerald-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Ready
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 font-mono space-y-0.5">
+                    <div className="truncate"><span className="text-slate-400">OAuth Client:</span> Google Identity Services 2.0</div>
+                    <div className="truncate"><span className="text-slate-400">Redirect URI:</span> https://studiocore.in/api/storage/google/callback</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Instant Direct Link Account (Zero Config) */}
             {connectDriveTab === 'manual' && (
               <form onSubmit={handleManualDriveSubmit} className="space-y-3.5">
                 <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-xs space-y-1">
@@ -2119,7 +2195,7 @@ export default function StorageHubPage() {
               </form>
             )}
 
-            {/* Tab 2: 1-Click GIS Google Sign-In */}
+            {/* Tab 3: 1-Click GIS Google Sign-In */}
             {connectDriveTab === 'gis' && (
               <div className="space-y-4 py-2 text-center">
                 <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl text-left space-y-1.5">
@@ -2163,22 +2239,6 @@ export default function StorageHubPage() {
                     <span>Sign In with Google Account</span>
                   </button>
                 )}
-              </div>
-            )}
-
-            {/* Tab 3: OAuth Web Redirect */}
-            {connectDriveTab === 'oauth' && (
-              <div className="space-y-3 py-2 text-center">
-                <p className="text-xs text-slate-600">
-                  Redirects to Google accounts page. After sign-in, you will be redirected straight back to this Studio Storage page.
-                </p>
-                <a
-                  href={`/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWsId)}&return_url=/workspace/storage`}
-                  className="w-full py-3 px-4 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>Proceed with Web Redirect</span>
-                </a>
               </div>
             )}
           </div>
