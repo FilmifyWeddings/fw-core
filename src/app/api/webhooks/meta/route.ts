@@ -153,6 +153,23 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
           }
         } catch (_) {}
       }
+
+      // Ultimate Fallback: Assign studio's primary contact group so lead is NEVER orphaned
+      if (!contactGroupId) {
+        try {
+          const { data: primaryGroup } = await supabaseAdmin
+            .from('whatsapp_contact_groups')
+            .select('id')
+            .eq('tenant_id', workspaceId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (primaryGroup?.id) {
+            contactGroupId = primaryGroup.id;
+          }
+        } catch (_) {}
+      }
     }
 
     // 3. Deduplication Check

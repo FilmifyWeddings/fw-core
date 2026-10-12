@@ -325,6 +325,23 @@ export async function POST(req: NextRequest) {
               } catch (_) {}
             }
 
+            // Ultimate Fallback: Assign the studio's primary WhatsApp contact group so lead is NEVER orphaned
+            if (!contactGroupId) {
+              try {
+                const { data: primaryGroup } = await supabaseAdmin
+                  .from('whatsapp_contact_groups')
+                  .select('id')
+                  .eq('tenant_id', targetWorkspaceId)
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+
+                if (primaryGroup?.id) {
+                  contactGroupId = primaryGroup.id;
+                }
+              } catch (_) {}
+            }
+
             if (contactGroupId && !formSetting) {
               await supabaseAdmin.from('fb_form_mappings').upsert({
                 workspace_id: targetWorkspaceId,

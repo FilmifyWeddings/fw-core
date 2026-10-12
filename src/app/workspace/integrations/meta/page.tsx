@@ -550,12 +550,45 @@ export default function MetaIntegrationPage() {
   const [selectedFormForPreview, setSelectedFormForPreview] = useState<LeadForm | null>(null);
   const [pageToggleLoading, setPageToggleLoading] = useState<Map<string, boolean>>(new Map());
 
-  // Per-form sync & toggle loading state
   const [toggleLoading, setToggleLoading] = useState<Map<string, boolean>>(new Map());
   const [mappingLoading, setMappingLoading] = useState<Map<string, boolean>>(new Map());
-  const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
+  const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_wa_groups');
+        if (stored) return JSON.parse(stored);
+      } catch (_) {}
+    }
+    return [];
+  });
   const [syncStates, setSyncStates] = useState<Map<string, FormSyncState>>(new Map());
   const abortRefs = useRef<Map<string, AbortController>>(new Map());
+
+  // Fetch WhatsApp contact groups immediately in parallel without waiting for Meta Graph API
+  useEffect(() => {
+    let cancelled = false;
+    async function loadContactGroups() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const wsId = session?.user?.id || '';
+        const headers = await getAuthHeaders();
+        const gRes = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${wsId}`, { headers });
+        const gJson = await gRes.json();
+        if (!cancelled && gJson.success && Array.isArray(gJson.results) && gJson.results.length > 0) {
+          setWhatsappGroups(gJson.results);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('sc_cached_wa_groups', JSON.stringify(gJson.results));
+            } catch (_) {}
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load contact groups:', err);
+      }
+    }
+    loadContactGroups();
+    return () => { cancelled = true; };
+  }, [getAuthHeaders]);
 
   // Lead Auto-Distribution States
   const [selectedFormForDistribution, setSelectedFormForDistribution] = useState<LeadForm | null>(null);

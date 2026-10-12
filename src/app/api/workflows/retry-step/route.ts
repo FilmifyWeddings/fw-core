@@ -4,7 +4,8 @@ import { forceWakeQueue } from '@/lib/baileys-serverless';
 
 export async function POST(req: NextRequest) {
   try {
-    const { leadId, workflowId, stepIndex, stepIndexes, workspaceId, workflowLogId } = await req.json();
+    const body = await req.json();
+    const { leadId, workflowId, stepIndex, stepIndexes, workspaceId, workflowLogId, delayValue, delayUnit } = body;
     let tenantId = workspaceId || req.nextUrl.searchParams.get('workspace_id') || req.nextUrl.searchParams.get('tenant_id');
 
     if (!tenantId || tenantId.trim() === '' || tenantId === 'null' || tenantId === 'undefined') {
@@ -108,12 +109,21 @@ export async function POST(req: NextRequest) {
       const targetLog = targetLogs[i];
       retriedStepIndices.push(targetLog.step_index);
 
-      // Safe anti-ban delay: immediate for 1st step, staggered with jitter for subsequent steps
+      // Safe anti-ban delay: immediate for 1st step, staggered with custom gap/jitter for subsequent steps
       let scheduledTimeIso: string;
       if (i === 0) {
         scheduledTimeIso = new Date(baseTime.getTime() + 1000).toISOString();
       } else {
-        const antiBanDelayMs = (10 + Math.floor(Math.random() * 6)) * 1000; // 10-15s
+        let antiBanDelayMs = (10 + Math.floor(Math.random() * 6)) * 1000; // default 10-15s
+        if (delayValue !== undefined && delayUnit) {
+          const multipliers: Record<string, number> = {
+            seconds: 1000,
+            minutes: 60 * 1000,
+            hours: 3600 * 1000,
+            days: 86400 * 1000,
+          };
+          antiBanDelayMs = Math.max(1000, Number(delayValue) * (multipliers[delayUnit] || 1000));
+        }
         baseTime = new Date(baseTime.getTime() + antiBanDelayMs);
         scheduledTimeIso = baseTime.toISOString();
       }

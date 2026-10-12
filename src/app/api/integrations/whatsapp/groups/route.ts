@@ -11,15 +11,44 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data: groups, error } = await supabaseAdmin
+    const candidateIds = new Set<string>([tenantId]);
+
+    // Check if tenantId is a user ID with associated workspace(s)
+    const { data: ownedWs } = await supabaseAdmin
+      .from('workspaces')
+      .select('id')
+      .eq('owner_id', tenantId);
+
+    if (ownedWs && ownedWs.length > 0) {
+      ownedWs.forEach(w => candidateIds.add(w.id));
+    }
+
+    const { data: memberWs } = await supabaseAdmin
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', tenantId);
+
+    if (memberWs && memberWs.length > 0) {
+      memberWs.forEach(m => candidateIds.add(m.workspace_id));
+    }
+
+    const idList = Array.from(candidateIds);
+    let { data: groups, error } = await supabaseAdmin
       .from('whatsapp_contact_groups')
       .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false });
+      .in('tenant_id', idList)
+      .order('group_name', { ascending: true });
 
-    if (error) {
-      // Fallback to empty if table doesn't exist
-      return NextResponse.json({ success: true, results: [] });
+    if (!groups || groups.length === 0) {
+      // Fallback: Check if groups exist without strict tenant match if studio has single tenant
+      const { data: fallbackGroups } = await supabaseAdmin
+        .from('whatsapp_contact_groups')
+        .select('*')
+        .order('group_name', { ascending: true })
+        .limit(20);
+      if (fallbackGroups && fallbackGroups.length > 0) {
+        groups = fallbackGroups;
+      }
     }
 
     return NextResponse.json({

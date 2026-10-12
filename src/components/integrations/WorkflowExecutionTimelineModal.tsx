@@ -26,6 +26,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
 
 // Global in-memory cache for instant opening (0ms)
 const workflowTelemetryCache = new Map<string, { executions: ExecutionRow[]; timestamp: number }>();
@@ -72,6 +73,8 @@ interface WorkflowExecutionTimelineModalProps {
   isOpen: boolean;
   onClose: () => void;
   workflow: any | null;
+  workflowId?: string | null;
+  initialLeadId?: string | null;
   onEditWorkflow?: (wf: any) => void;
 }
 
@@ -103,13 +106,70 @@ export function WorkflowExecutionTimelineModal({
   isOpen,
   onClose,
   workflow,
+  workflowId,
+  initialLeadId,
   onEditWorkflow,
 }: WorkflowExecutionTimelineModalProps) {
   const { userId, workspaceId } = useBhamstra();
   const tenantId = (workspaceId && workspaceId !== 'all') ? workspaceId : (userId || '');
 
+  const [fetchedWorkflow, setFetchedWorkflow] = useState<any | null>(null);
+
+  // If workflow not provided directly, fetch by workflowId or initialLeadId
+  useEffect(() => {
+    if (!isOpen) {
+      setFetchedWorkflow(null);
+      return;
+    }
+    if (!workflow && workflowId) {
+      supabase
+        .from('whatsapp_custom_workflows')
+        .select('*')
+        .eq('id', workflowId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setFetchedWorkflow(data);
+        });
+    } else if (!workflow && !workflowId && initialLeadId) {
+      (async () => {
+        try {
+          const { data: lead } = await supabase
+            .from('leads')
+            .select('whatsapp_group_id, workspace_id')
+            .eq('id', initialLeadId)
+            .maybeSingle();
+
+          if (lead?.whatsapp_group_id) {
+            const { data: wfs } = await supabase
+              .from('whatsapp_custom_workflows')
+              .select('*')
+              .eq('target_group_id', lead.whatsapp_group_id);
+            if (wfs && wfs.length > 0) {
+              setFetchedWorkflow(wfs[0]);
+              return;
+            }
+          }
+
+          const ws = lead?.workspace_id || tenantId;
+          if (ws) {
+            const { data: wfs } = await supabase
+              .from('whatsapp_custom_workflows')
+              .select('*')
+              .or(`workspace_id.eq.${ws},tenant_id.eq.${ws}`)
+              .limit(1);
+            if (wfs && wfs.length > 0) {
+              setFetchedWorkflow(wfs[0]);
+            }
+          }
+        } catch (_) {}
+      })();
+    }
+  }, [isOpen, workflow, workflowId, initialLeadId, tenantId]);
+
+  const activeWorkflow = workflow || fetchedWorkflow;
+
   const [executions, setExecutions] = useState<ExecutionRow[]>([]);
-  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(initialLeadId || null);
   const [loading, setLoading] = useState(true);
   const [searchLeadQuery, setSearchLeadQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(30);
@@ -118,29 +178,84 @@ export function WorkflowExecutionTimelineModal({
   const [retryingFailed, setRetryingFailed] = useState(false);
   const [resumingWorkflow, setResumingWorkflow] = useState(false);
 
+  // Resend Full Workflow Modal
+  const [resendModalOpen, setResendModalOpen] = useState(false);
+  const [resendDelayValue, setResendDelayValue] = useState<number>(10);
+  const [resendDelayUnit, setResendDelayUnit] = useState<'seconds' | 'minutes' | 'hours' | 'days'>('seconds');
+
   // Failed steps selection modal
   const [failedStepsModalOpen, setFailedStepsModalOpen] = useState(false);
   const [selectedFailedIndices, setSelectedFailedIndices] = useState<number[]>([]);
+  const [retryDelayValue, setRetryDelayValue] = useState<number>(10);
+  const [retryDelayUnit, setRetryDelayUnit] = useState<'seconds' | 'minutes' | 'hours' | 'days'>('seconds');
 
   // Delete / Clear Contact History Modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [clearingLogs, setClearingLogs] = useState(false);
 
   const fetchTelemetry = useCallback(async (skipLoadingState = false) => {
-    if (!workflow?.id) return;
+    if (!activeWorkflow?.id) return;
     if (!skipLoadingState) setLoading(true);
     try {
-      const activeTenant = tenantId || workflow.tenant_id || workflow.workspace_id;
-      const res = await fetch(`/api/integrations/whatsapp/workflows/execution?tenant_id=${activeTenant}&workflow_id=${workflow.id}`);
+      const activeTenant = tenantId || activeWorkflow.tenant_id || activeWorkflow.workspace_id;
+      const res = await fetch(`/api/integrations/whatsapp/workflows/execution?tenant_id=${activeTenant}&workflow_id=${activeWorkflow.id}`);
       const data = await res.json();
       if (data.success && data.executions) {
-        workflowTelemetryCache.set(workflow.id, {
-          executions: data.executions,
+        let execsList: ExecutionRow[] = data.executions || [];
+
+        // If initialLeadId was passed, ensure the row exists even if no logs are present yet
+        if (initialLeadId) {
+          const exists = execsList.some(e => e.leadId === initialLeadId);
+          if (!exists) {
+            const { data: leadData } = await supabase
+              .from('leads')
+              .select('id, name, phone, created_at')
+              .eq('id', initialLeadId)
+              .maybeSingle();
+
+            if (leadData) {
+              const syntheticRow: ExecutionRow = {
+                leadId: leadData.id,
+                workflowId: activeWorkflow.id,
+                workflowName: activeWorkflow.workflow_name,
+                name: leadData.name || 'Lead',
+                phone: leadData.phone || '',
+                status: 'not_started',
+                totalSteps: activeWorkflow.workflow_steps?.length || 0,
+                completedSteps: 0,
+                leftSteps: activeWorkflow.workflow_steps?.length || 0,
+                failedSteps: 0,
+                pendingSteps: 0,
+                runsCount: 0,
+                updatedAt: '—',
+                groupJoinTime: new Date(leadData.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+                stepsLogs: (activeWorkflow.workflow_steps || []).map((s: any, idx: number) => ({
+                  id: null,
+                  step_index: idx,
+                  template_name: s.template_name,
+                  status: 'unsent',
+                  error_message: null,
+                  sent_at: '—',
+                  sent_at_formatted: `Delay: ${s.delay_value} ${s.delay_unit}`,
+                  updated_at: null,
+                  updated_at_formatted: '—',
+                }))
+              };
+              execsList = [syntheticRow, ...execsList];
+            }
+          }
+        }
+
+        workflowTelemetryCache.set(activeWorkflow.id, {
+          executions: execsList,
           timestamp: Date.now()
         });
-        setExecutions(data.executions);
-        if (!selectedLeadId && data.executions.length > 0) {
-          setSelectedLeadId(data.executions[0].leadId);
+        setExecutions(execsList);
+
+        if (initialLeadId) {
+          setSelectedLeadId(initialLeadId);
+        } else if (!selectedLeadId && execsList.length > 0) {
+          setSelectedLeadId(execsList[0].leadId);
         }
       }
     } catch (err) {
@@ -148,14 +263,15 @@ export function WorkflowExecutionTimelineModal({
     } finally {
       setLoading(false);
     }
-  }, [workflow?.id, tenantId, selectedLeadId]);
+  }, [activeWorkflow?.id, tenantId, selectedLeadId, initialLeadId]);
 
   useEffect(() => {
-    if (isOpen && workflow?.id) {
-      const cached = workflowTelemetryCache.get(workflow.id);
+    if (isOpen && activeWorkflow?.id) {
+      const cached = workflowTelemetryCache.get(activeWorkflow.id);
       if (cached && cached.executions.length > 0) {
         setExecutions(cached.executions);
-        if (!selectedLeadId) setSelectedLeadId(cached.executions[0].leadId);
+        if (initialLeadId) setSelectedLeadId(initialLeadId);
+        else if (!selectedLeadId) setSelectedLeadId(cached.executions[0].leadId);
         setLoading(false);
         // Background refresh without blank flicker
         fetchTelemetry(true);
@@ -163,13 +279,13 @@ export function WorkflowExecutionTimelineModal({
         fetchTelemetry(false);
       }
     }
-  }, [isOpen, workflow?.id]);
+  }, [isOpen, activeWorkflow?.id, initialLeadId]);
 
   useEffect(() => {
     setVisibleCount(30);
   }, [searchLeadQuery]);
 
-  if (!isOpen || !workflow) return null;
+  if (!isOpen || !activeWorkflow) return null;
 
   const currentExecution = executions.find(e => e.leadId === selectedLeadId) || executions[0] || null;
 
@@ -196,11 +312,11 @@ export function WorkflowExecutionTimelineModal({
     if (!currentExecution || !workflow) return;
     setClearingLogs(true);
     try {
-      const activeTenant = tenantId || workflow.tenant_id || workflow.workspace_id;
+      const activeTenant = tenantId || activeWorkflow.tenant_id || activeWorkflow.workspace_id;
       const res = await fetch(`/api/integrations/whatsapp/workflows/delete-contact?tenant_id=${activeTenant}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: currentExecution.leadId, workflowId: workflow.id }),
+        body: JSON.stringify({ leadId: currentExecution.leadId, workflowId: activeWorkflow.id }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -217,16 +333,16 @@ export function WorkflowExecutionTimelineModal({
 
   // Action: Single Step Manual Retry / Dispatch
   const handleRetrySingleStep = async (stepLog: StepLog) => {
-    if (!currentExecution) return;
+    if (!currentExecution || !activeWorkflow) return;
     setRetryingStepId(stepLog.id || String(stepLog.step_index));
     try {
-      const activeTenant = tenantId || workflow.tenant_id || workflow.workspace_id;
+      const activeTenant = tenantId || activeWorkflow.tenant_id || activeWorkflow.workspace_id;
       const res = await fetch('/api/workflows/retry-step', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: currentExecution.leadId,
-          workflowId: workflow.id,
+          workflowId: activeWorkflow.id,
           stepIndex: stepLog.step_index,
           workflowLogId: stepLog.id,
           workspaceId: activeTenant,
@@ -245,25 +361,32 @@ export function WorkflowExecutionTimelineModal({
     }
   };
 
-  // Action: Resend Full Workflow
-  const handleResendFull = async () => {
+  // Action: Resend Full Workflow (Opens Interval Gap Modal)
+  const handleResendFull = () => {
     if (!currentExecution) return;
-    if (!window.confirm(`Resend full "${workflow.workflow_name}" sequence to ${currentExecution.name}? All steps will be paced safely with anti-ban delay.`)) return;
+    setResendModalOpen(true);
+  };
+
+  const handleConfirmResendFull = async () => {
+    if (!currentExecution || !activeWorkflow) return;
     setRetryingFull(true);
     try {
-      const activeTenant = tenantId || workflow.tenant_id || workflow.workspace_id;
+      const activeTenant = tenantId || activeWorkflow.tenant_id || activeWorkflow.workspace_id;
       const res = await fetch('/api/workflows/resend-full', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: currentExecution.leadId,
-          workflowId: workflow.id,
+          workflowId: activeWorkflow.id,
           workspaceId: activeTenant,
+          delayValue: resendDelayValue,
+          delayUnit: resendDelayUnit,
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to restart workflow');
-      alert('✅ Full workflow sequence re-queued with Anti-Ban pacing!');
+      alert(`✅ Full sequence re-queued with ${resendDelayValue} ${resendDelayUnit} pacing!`);
+      setResendModalOpen(false);
       fetchTelemetry();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
@@ -288,18 +411,20 @@ export function WorkflowExecutionTimelineModal({
 
   // Action: Confirm Retry Selected Steps
   const handleConfirmRetrySelected = async () => {
-    if (!currentExecution || selectedFailedIndices.length === 0) return;
+    if (!currentExecution || selectedFailedIndices.length === 0 || !activeWorkflow) return;
     setRetryingFailed(true);
     try {
-      const activeTenant = tenantId || workflow.tenant_id || workflow.workspace_id;
+      const activeTenant = tenantId || activeWorkflow.tenant_id || activeWorkflow.workspace_id;
       const res = await fetch('/api/workflows/retry-step', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: currentExecution.leadId,
-          workflowId: workflow.id,
+          workflowId: activeWorkflow.id,
           stepIndexes: selectedFailedIndices,
           workspaceId: activeTenant,
+          delayValue: retryDelayValue,
+          delayUnit: retryDelayUnit,
         }),
       });
       const data = await res.json();
@@ -316,16 +441,16 @@ export function WorkflowExecutionTimelineModal({
 
   // Action: Stop Workflow
   const handleStopWorkflow = async () => {
-    if (!currentExecution) return;
+    if (!currentExecution || !activeWorkflow) return;
     if (!window.confirm(`Stop all upcoming scheduled steps for ${currentExecution.name}?`)) return;
     try {
-      const activeTenant = tenantId || workflow.tenant_id || workflow.workspace_id;
+      const activeTenant = tenantId || activeWorkflow.tenant_id || activeWorkflow.workspace_id;
       const res = await fetch('/api/workflows/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: currentExecution.leadId,
-          workflowId: workflow.id,
+          workflowId: activeWorkflow.id,
           workspaceId: activeTenant,
         }),
       });
@@ -340,16 +465,16 @@ export function WorkflowExecutionTimelineModal({
 
   // Action: Resume Workflow
   const handleResumeWorkflow = async () => {
-    if (!currentExecution) return;
+    if (!currentExecution || !activeWorkflow) return;
     setResumingWorkflow(true);
     try {
-      const activeTenant = tenantId || workflow.tenant_id || workflow.workspace_id;
+      const activeTenant = tenantId || activeWorkflow.tenant_id || activeWorkflow.workspace_id;
       const res = await fetch('/api/workflows/resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: currentExecution.leadId,
-          workflowId: workflow.id,
+          workflowId: activeWorkflow.id,
           workspaceId: activeTenant,
         }),
       });
@@ -370,7 +495,7 @@ export function WorkflowExecutionTimelineModal({
   );
 
   return (
-    <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
       <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl overflow-hidden font-sans">
         
         {/* Top Header */}
@@ -382,9 +507,9 @@ export function WorkflowExecutionTimelineModal({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-lg font-black text-zinc-900 dark:text-white truncate">
-                  {workflow.workflow_name}
+                  {activeWorkflow.workflow_name}
                 </h2>
-                <StatusBadge status={workflow.status || 'Active'} />
+                <StatusBadge status={activeWorkflow.status || 'Active'} />
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-bold font-mono">
                   {executions.length} Total Executions
                 </span>
@@ -401,7 +526,7 @@ export function WorkflowExecutionTimelineModal({
                 type="button"
                 onClick={() => {
                   onClose();
-                  onEditWorkflow(workflow);
+                  onEditWorkflow(activeWorkflow);
                 }}
                 className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/10 border border-blue-600/30 hover:bg-blue-600/20 text-blue-600 dark:text-blue-400 font-bold text-xs rounded-xl transition-all cursor-pointer"
                 title="Open node flow editor"
@@ -412,7 +537,7 @@ export function WorkflowExecutionTimelineModal({
             )}
 
             <Link
-              href={`/dashboard/integrations/whatsapp-web/workflows/analytics?workflowId=${workflow.id}`}
+              href={`/dashboard/integrations/whatsapp-web/workflows/analytics?workflowId=${activeWorkflow.id}`}
               className="hidden sm:flex items-center gap-1 px-3 py-1.5 bg-zinc-200 dark:bg-zinc-850 hover:bg-zinc-300 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs rounded-xl transition-all"
             >
               <span>Full View</span>
@@ -748,7 +873,7 @@ export function WorkflowExecutionTimelineModal({
         {/* Modal Footer */}
         <div className="p-3 sm:p-4 border-t border-zinc-200 dark:border-zinc-800/80 bg-zinc-50 dark:bg-zinc-900/50 flex items-center justify-between shrink-0">
           <span className="text-[10px] text-zinc-400 font-mono">
-            Workflow: {workflow.workflow_name} · Gateway Engine
+            Workflow: {activeWorkflow.workflow_name} · Gateway Engine
           </span>
           <button
             type="button"
@@ -763,7 +888,7 @@ export function WorkflowExecutionTimelineModal({
 
       {/* Failed Steps Selection Dialog */}
       {failedStepsModalOpen && currentExecution && (
-        <div className="fixed inset-0 z-[100001] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000001] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-3">
               <div>
@@ -829,6 +954,34 @@ export function WorkflowExecutionTimelineModal({
                 })}
             </div>
 
+            {/* Gap interval for retried steps */}
+            {selectedFailedIndices.length > 1 && (
+              <div className="p-3 bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-1.5">
+                <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
+                  ⏱️ Step Interval Gap (हर स्टेप के बीच का अंतर):
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    value={retryDelayValue}
+                    onChange={(e) => setRetryDelayValue(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="px-2.5 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs font-bold"
+                  />
+                  <select
+                    value={retryDelayUnit}
+                    onChange={(e) => setRetryDelayUnit(e.target.value as any)}
+                    className="px-2.5 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs font-bold cursor-pointer"
+                  >
+                    <option value="seconds">Seconds (सेकंड)</option>
+                    <option value="minutes">Minutes (मिनट)</option>
+                    <option value="hours">Hours (घंटे)</option>
+                    <option value="days">Days (दिन)</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between pt-2 border-t border-zinc-200 dark:border-zinc-800">
               <button
                 type="button"
@@ -870,10 +1023,108 @@ export function WorkflowExecutionTimelineModal({
         </div>
       )}
 
+      {/* ── Resend Full Workflow Sequence Modal ── */}
+      <AnimatePresence>
+        {resendModalOpen && currentExecution && (
+          <div className="fixed inset-0 z-[1000002] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative overflow-hidden"
+            >
+              <div className="flex items-start justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shrink-0">
+                    <RotateCcw className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-zinc-900 dark:text-zinc-100">
+                      Resend Full Workflow
+                    </h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      Restart sequence for <span className="font-bold text-zinc-800 dark:text-zinc-200">{currentExecution.name}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setResendModalOpen(false)}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Interval Gap Pacing Options */}
+              <div className="bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 space-y-3">
+                <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 block">
+                  ⏱️ Step Interval Gap (अंतर)
+                </label>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  हर एक स्टेप के बीच में कितना अंतर होना चाहिए वह चुनें:
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Time Gap</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={9999}
+                      value={resendDelayValue}
+                      onChange={(e) => setResendDelayValue(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-bold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Unit (इकाई)</span>
+                    <select
+                      value={resendDelayUnit}
+                      onChange={(e) => setResendDelayUnit(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-bold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 cursor-pointer"
+                    >
+                      <option value="seconds">Seconds (सेकंड)</option>
+                      <option value="minutes">Minutes (मिनट)</option>
+                      <option value="hours">Hours (घंटे)</option>
+                      <option value="days">Days (दिन)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-950/30 p-2.5 rounded-xl border border-blue-200 dark:border-blue-900/50">
+                  ⚡ All {currentExecution.totalSteps} steps will be sent spaced by <strong>{resendDelayValue} {resendDelayUnit}</strong> organically.
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setResendModalOpen(false)}
+                  disabled={retryingFull}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmResendFull}
+                  disabled={retryingFull}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-md disabled:opacity-50"
+                >
+                  {retryingFull ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  Confirm & Resend
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ── Confirm Clear Contact Execution History Modal ── */}
       <AnimatePresence>
         {showDeleteModal && currentExecution && (
-          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+          <div className="fixed inset-0 z-[1000003] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}

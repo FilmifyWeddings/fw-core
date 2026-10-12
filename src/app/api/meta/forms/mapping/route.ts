@@ -76,6 +76,21 @@ export async function POST(req: NextRequest) {
       error = res.error;
     }
 
+    // Auto-Sync: Also propagate to sibling forms with the same name so clones/copies inherit the group
+    const targetFormName = formRecord?.form_name || existingMapping?.form_name;
+    if (targetFormName && contact_group_id) {
+      try {
+        await supabaseAdmin
+          .from('fb_form_mappings')
+          .update({
+            contact_group_id: contact_group_id,
+            updated_at: now,
+          })
+          .eq('workspace_id', workspaceId)
+          .eq('form_name', targetFormName);
+      } catch (_) {}
+    }
+
     if (error) {
       console.error('[Forms Mapping API] Error updating contact_group_id:', error.message, error.code);
 

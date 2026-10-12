@@ -5,7 +5,8 @@ import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
 
 export async function POST(req: NextRequest) {
   try {
-    const { leadId, workflowId, workspaceId } = await req.json();
+    const body = await req.json();
+    const { leadId, workflowId, workspaceId, delayValue, delayUnit } = body;
 
     if (!leadId || !workflowId || (!workspaceId && !req.nextUrl.searchParams.get('workspace_id'))) {
       return NextResponse.json({ error: 'Missing required parameters: leadId, workflowId, workspaceId' }, { status: 400 });
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
       .eq('workspace_id', tenantId)
       .in('status', ['failed', 'pending', 'processing', 'done']);
 
-    // 5. Calculate cumulative scheduling starting from NOW with intelligent Anti-Ban pacing, multi-day jitter & DND guard
+    // 5. Calculate cumulative scheduling starting from NOW with intelligent Anti-Ban pacing
     const workflowSteps: any[] = (workflow.workflow_steps || []).slice().sort(
       (a: any, b: any) => a.sort_index - b.sort_index
     );
@@ -69,12 +70,15 @@ export async function POST(req: NextRequest) {
     
     for (let i = 0; i < workflowSteps.length; i++) {
       const step = workflowSteps[i];
+      const stepVal = delayValue !== undefined ? Number(delayValue) : step.delay_value;
+      const stepUnit = delayUnit || step.delay_unit || 'minutes';
+
       driftTime = calculateSmartAntiBanSchedule(
         driftTime,
-        step.delay_value,
-        step.delay_unit,
+        stepVal,
+        stepUnit,
         i,
-        true // Enforce DND guard (no late night messages)
+        false // DND disabled per user instruction
       );
       stepScheduleMap.set(step.sort_index, driftTime.toISOString());
     }

@@ -53,71 +53,111 @@ async function processLeadStatuses(leadIds: string[], workspaceId?: string) {
 
     const allLogs = logs || [];
 
-    // 3. Fetch workflows to know step counts
+    // 3. Fetch workflows to know step counts and definitions
     const groupIds = Array.from(new Set((leads || []).map(l => l.whatsapp_group_id).filter(Boolean)));
-    let workflowsMap = new Map<string, any>();
-    if (groupIds.length > 0) {
-      const { data: wfs } = await supabaseAdmin
-        .from('whatsapp_custom_workflows')
-        .select('id, target_group_id, workflow_steps, status')
-        .in('target_group_id', groupIds);
+    const groupWorkflowsMap = new Map<string, any[]>();
+    let allStudioWorkflows: any[] = [];
 
-      (wfs || []).forEach(w => {
-        if (w.target_group_id) workflowsMap.set(w.target_group_id, w);
-      });
+    let wfQuery = supabaseAdmin
+      .from('whatsapp_custom_workflows')
+      .select('id, workflow_name, target_group_id, workflow_steps, status, tenant_id');
+
+    if (groupIds.length > 0) {
+      wfQuery = wfQuery.in('target_group_id', groupIds);
+    } else if (workspaceId && workspaceId !== 'all') {
+      wfQuery = wfQuery.eq('tenant_id', workspaceId);
     }
+
+    const { data: wfs } = await wfQuery;
+    allStudioWorkflows = wfs || [];
+
+    allStudioWorkflows.forEach(w => {
+      if (w.target_group_id) {
+        const list = groupWorkflowsMap.get(w.target_group_id) || [];
+        list.push(w);
+        groupWorkflowsMap.set(w.target_group_id, list);
+      }
+    });
 
     const statuses: Record<string, any> = {};
 
     for (const leadId of leadIds) {
       const lead = leadsMap.get(leadId);
       const leadLogs = allLogs.filter(l => l.lead_id === leadId);
-      const workflow = lead?.whatsapp_group_id ? workflowsMap.get(lead.whatsapp_group_id) : null;
-      const totalWorkflowSteps = workflow?.workflow_steps?.length || 0;
+      const wfsForGroup = lead?.whatsapp_group_id ? (groupWorkflowsMap.get(lead.whatsapp_group_id) || []) : [];
 
-      // --- Welcome Status Calculation ---
-      // Welcome is step_index === 0, or any template containing 'welcome' / 'wm', or lead.wa_welcome_sent
-      const welcomeLogs = leadLogs.filter(l => 
-        l.step_index === 0 || 
-        (l.template_name && (l.template_name.toLowerCase().includes('welcome') || l.template_name.toLowerCase().startsWith('wm')))
-      );
+      // Find dedicated Welcome & Follow-up workflows
+      const welcomeWf = wfsForGroup.find(w => 
+        (w.workflow_name || '').toLowerCase().includes('welcome') || 
+        (w.workflow_name || '').toLowerCase().startsWith('wm')
+      ) || (wfsForGroup.length > 0 ? wfsForGroup[0] : null) || allStudioWorkflows.find(w => (w.workflow_name || '').toLowerCase().includes('welcome')) || null;
+
+      const followupWf = wfsForGroup.find(w => 
+        (w.workflow_name || '').toLowerCase().includes('follow') || 
+        (w.workflow_name || '').toLowerCase().startsWith('fu')
+      ) || (wfsForGroup.length > 1 ? wfsForGroup.find(w => w.id !== welcomeWf?.id) : null) || allStudioWorkflows.find(w => (w.workflow_name || '').toLowerCase().includes('follow')) || null;
+
+      // --- Welcome Logs & Status ---
+      let welcomeLogs = leadLogs.filter(l => {
+        if (welcomeWf && l.workflow_id === welcomeWf.id) return true;
+        if (!welcomeWf) {
+          return l.step_index === 0 || (l.template_name && (l.template_name.toLowerCase().includes('welcome') || l.template_name.toLowerCase().startsWith('wm')));
+        }
+        return false;
+      });
+
+      const hasFailedWelcome = welcomeLogs.some(l => l.status === 'failed');
+      const hasSentWelcome = welcomeLogs.some(l => ['sent', 'delivered', 'read', 'completed'].includes(l.status)) || Boolean((lead as any)?.wa_welcome_sent);
+      const hasPendingWelcome = welcomeLogs.some(l => l.status === 'pending');
 
       let welcomeStatus: 'sent' | 'failed' | 'pending' | 'none' = 'none';
       let welcomeLastSent: string | null = null;
-      const hasFailedWelcome = welcomeLogs.some(l => l.status === 'failed');
-      const hasSentWelcome = welcomeLogs.some(l => ['sent', 'delivered', 'read'].includes(l.status)) || Boolean((lead as any)?.wa_welcome_sent);
-      const hasPendingWelcome = welcomeLogs.some(l => l.status === 'pending');
 
       if (hasFailedWelcome) {
         welcomeStatus = 'failed';
-      } else if (hasSentWelcome) {
+      } else if (hasSentWelcome && !hasPendingWelcome) {
         welcomeStatus = 'sent';
-        const sentLog = welcomeLogs.find(l => ['sent', 'delivered', 'read'].includes(l.status));
+        const sentLog = welcomeLogs.find(l => ['sent', 'delivered', 'read', 'completed'].includes(l.status));
         welcomeLastSent = sentLog?.sent_at || null;
       } else if (hasPendingWelcome) {
         welcomeStatus = 'pending';
+      } else if (hasSentWelcome) {
+        welcomeStatus = 'sent';
       } else {
         welcomeStatus = 'none';
       }
 
-      // --- Follow-up Status Calculation ---
-      // Follow-up are steps with step_index > 0 or all steps beyond initial welcome
-      const followupLogs = leadLogs.filter(l => l.step_index > 0 || (totalWorkflowSteps > 1 && l.step_index !== 0));
-      const completedFollowups = followupLogs.filter(l => ['sent', 'delivered', 'read'].includes(l.status)).length;
+      // --- Follow-up Logs & Status ---
+      let followupLogs = leadLogs.filter(l => {
+        if (followupWf && l.workflow_id === followupWf.id) return true;
+        if (!followupWf && welcomeWf && l.workflow_id === welcomeWf.id) {
+          return l.step_index > 0;
+        }
+        if (!followupWf && !welcomeWf) {
+          return l.step_index > 0 || (l.template_name && !l.template_name.toLowerCase().includes('welcome'));
+        }
+        return false;
+      });
+
+      const completedFollowups = followupLogs.filter(l => ['sent', 'delivered', 'read', 'completed'].includes(l.status)).length;
       const failedFollowups = followupLogs.filter(l => l.status === 'failed').length;
       const pendingFollowups = followupLogs.filter(l => l.status === 'pending').length;
 
       let followupStatus: 'completed' | 'running' | 'failed' | 'not_started' = 'not_started';
-      const expectedFollowupSteps = Math.max(0, totalWorkflowSteps - 1);
+      const expectedFollowupSteps = followupWf 
+        ? (followupWf.workflow_steps?.length || 0)
+        : Math.max(0, (welcomeWf?.workflow_steps?.length || 0) - 1);
 
+      // STRICT USER RULE: If ANY follow-up step is pending, it MUST SHOW ORANGE!
+      // Only when ALL follow-ups are completed (0 pending, 0 failed, completed > 0) does it show GREEN!
       if (failedFollowups > 0) {
-        followupStatus = 'failed';
-      } else if (completedFollowups > 0 && expectedFollowupSteps > 0 && completedFollowups >= expectedFollowupSteps) {
-        followupStatus = 'completed';
-      } else if (completedFollowups > 0 || pendingFollowups > 0) {
-        followupStatus = 'running';
+        followupStatus = 'failed'; // RED
+      } else if (pendingFollowups > 0) {
+        followupStatus = 'running'; // ORANGE (Scheduled / In Progress)
+      } else if (completedFollowups > 0 && pendingFollowups === 0) {
+        followupStatus = 'completed'; // GREEN (All finished)
       } else {
-        followupStatus = 'not_started';
+        followupStatus = 'not_started'; // GRAY
       }
 
       statuses[leadId] = {
@@ -125,6 +165,8 @@ async function processLeadStatuses(leadIds: string[], workspaceId?: string) {
           status: welcomeStatus,
           stepsCount: welcomeLogs.length,
           lastSentAt: welcomeLastSent,
+          workflow_id: welcomeWf?.id || null,
+          workflow: welcomeWf || null,
         },
         followup: {
           status: followupStatus,
@@ -132,6 +174,8 @@ async function processLeadStatuses(leadIds: string[], workspaceId?: string) {
           completedSteps: completedFollowups,
           pendingSteps: pendingFollowups,
           failedSteps: failedFollowups,
+          workflow_id: followupWf?.id || (wfsForGroup.length > 0 ? wfsForGroup[0].id : null),
+          workflow: followupWf || (wfsForGroup.length > 0 ? wfsForGroup[0] : null),
         }
       };
     }
