@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
       .maybeSingle();
 
     const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+    let qrString: string | null = null;
     let workerChecked = false;
     let workerConnected = false;
     let workerPhone: string | null = null;
@@ -198,31 +199,57 @@ export async function POST(req: NextRequest) {
     const userId = user.id;
     const targetWsId = req.nextUrl.searchParams.get('workspace_id') || req.nextUrl.searchParams.get('workspaceId') || userId;
 
-    // Reset session in DB cleanly
+    // 1. Check if session is already connected in DB
+    const { data: curSession } = await supabaseAdmin
+      .from('baileys_sessions')
+      .select('conn_state, status, phone_number')
+      .or(`user_id.eq.${targetWsId},workspace_id.eq.${targetWsId}`)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const isAlreadyConnected = (curSession?.conn_state === 'open' || curSession?.status === 'open' || curSession?.status === 'CONNECTED') && !!curSession?.phone_number;
+
+    const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+
+    if (isAlreadyConnected) {
+      // Session is already active — DO NOT wipe or reset! Best-effort restore ping only without force
+      fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(targetWsId)}`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(1500),
+      }).catch(() => {});
+
+      return NextResponse.json({
+        success: true,
+        isConnected: true,
+        phone_number: curSession.phone_number,
+        message: 'Session is already connected and active.',
+      }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+      });
+    }
+
+    // 2. Only if truly disconnected, mark conn_state=connecting (NEVER wipe phone_number or credentials!)
     await supabaseAdmin
       .from('baileys_sessions')
       .update({
         conn_state: 'connecting',
         status: 'disconnected',
-        phone_number: null,
         qr_string: null,
         qr_expires_at: null,
-        creds_json: null,
-        keys_json: null,
         updated_at: new Date().toISOString(),
       })
       .or(`user_id.eq.${targetWsId},workspace_id.eq.${targetWsId}`);
 
-    // Trigger fresh QR in worker
-    const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
-    fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(targetWsId)}&force=true`, {
+    // Trigger QR initialization in worker WITHOUT force=true (preserves existing credentials)
+    fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(targetWsId)}`, {
       method: 'POST',
       signal: AbortSignal.timeout(1500),
     }).catch(() => {});
 
     return NextResponse.json({
       success: true,
-      message: 'Session reset. Connect via SSE at /api/integrations/baileys/qr-init',
+      message: 'Pairing initialized cleanly. Connect via SSE at /api/integrations/baileys/qr-init',
     }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
     });

@@ -641,7 +641,7 @@ async function startDirectServerlessQr(
       connectTimeoutMs: 60_000,
       defaultQueryTimeoutMs: 60_000,
       markOnlineOnConnect: true,
-      browser: Browsers.ubuntu('Chrome'),
+      browser: ['Studio Core', 'Chrome', '1.0.0'] as [string, string, string],
       syncFullHistory: false,
     });
 

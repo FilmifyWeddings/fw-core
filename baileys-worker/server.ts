@@ -37,7 +37,7 @@ import * as http from 'http';
 import { fileURLToPath } from 'url';
 import { useSupabaseAuthState } from './supabase-auth-state.js';
 import type { SignalKeyStore } from './supabase-auth-state.js';
-import { purgeSessionDir, getSessionDir, hasDiskSession } from './src/auth-adapter.js';
+import { purgeSessionDir, getSessionDir, hasDiskSession, getSessionsBasePath } from './src/auth-adapter.js';
 
 // Polyfill WebSocket globally for Supabase Realtime in Node.js < 22
 globalThis.WebSocket = ws as any;
@@ -1429,16 +1429,23 @@ function startConnectingTimeout(wsId: string): void {
   const timer = setTimeout(async () => {
     const { data: cur } = await supabase
       .from('baileys_sessions')
-      .select('conn_state, creds_json')
+      .select('conn_state, creds_json, phone_number')
       .eq('workspace_id', wsId)
       .maybeSingle();
 
-    if (hasDiskSession(wsId) || cur?.conn_state === 'open' || (cur?.creds_json && cur.creds_json !== 'null')) {
+    if (hasDiskSession(wsId) || cur?.conn_state === 'open' || (cur?.creds_json && cur.creds_json !== 'null') || cur?.phone_number) {
       logger.info({ workspaceId: wsId }, '⏰ Watchdog: session already open, disk credentials exist, or creds saved — skipping force-reset.');
       return;
     }
-    logger.warn({ workspaceId: wsId }, '⏰ Connection stuck in "connecting" for 120s — force-resetting socket for fresh QR...');
-    await initiateForceReset(wsId);
+    logger.warn({ workspaceId: wsId }, '⏰ QR pairing inactive for 120s — safely clearing unauthenticated in-memory socket (preserving disk credentials).');
+    const sess = activeSessions.get(wsId);
+    if (sess && !sess.sock?.user?.id) {
+      try {
+        (sess.sock.ev as any).removeAllListeners();
+        sess.sock.end(undefined);
+      } catch {}
+      activeSessions.delete(wsId);
+    }
   }, 120_000);
 
   const sess = activeSessions.get(wsId);
@@ -1604,7 +1611,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
     defaultQueryTimeoutMs: 60_000,
     retryRequestDelayMs: 2500,
     markOnlineOnConnect: true,
-    browser: Browsers.ubuntu('Chrome'),
+    browser: ['Studio Core', 'Chrome', '1.0.0'] as [string, string, string],
     syncFullHistory: false,
   });
 
@@ -2169,12 +2176,12 @@ function startHealthServer(): http.Server {
           return;
         }
 
-        // 5. If forceFresh or no authenticated session exists, start fresh socket for QR pairing
-        if (forceFresh || !hasDiskSession(qsWorkspace)) {
-          logger.info({ workspace_id: qsWorkspace }, '🚀 Starting clean Baileys socket for fresh QR pairing...');
+        // 5. If forceFresh explicitly requested, perform hard reset. Otherwise preserve credentials and start pairing socket.
+        if (forceFresh) {
+          logger.info({ workspace_id: qsWorkspace }, '🚀 Starting clean Baileys socket for fresh QR pairing (hard reset requested)...');
           await initiateForceReset(qsWorkspace);
         } else {
-          logger.info({ workspace_id: qsWorkspace }, '🚀 Starting Baileys socket for QR pairing...');
+          logger.info({ workspace_id: qsWorkspace }, '🚀 Starting Baileys socket for QR pairing (preserving credentials)...');
           startBaileysSocket(false, qsWorkspace).catch(err => {
             logger.error({ err, workspaceId: qsWorkspace }, 'Failed to start socket on /init-qr');
           });
@@ -3020,7 +3027,9 @@ async function main(): Promise<void> {
   const { data: activeSessionsDb } = await supabase
     .from('baileys_sessions')
     .select('workspace_id, user_id, conn_state, phone_number')
-    .or('conn_state.eq.open,phone_number.neq.null');
+    .or('conn_state.eq.open,phone_number.not.is.null');
+
+  const restoredWorkspaces = new Set<string>();
 
   if (activeSessionsDb && activeSessionsDb.length > 0) {
     logger.info({ count: activeSessionsDb.length }, '🔁 Checking workspace sessions to restore from disk...');
@@ -3029,6 +3038,7 @@ async function main(): Promise<void> {
       if (!targetWs) continue;
       if (hasDiskSession(targetWs)) {
         logger.info({ workspaceId: targetWs }, 'Restoring local workspace session from disk...');
+        restoredWorkspaces.add(targetWs);
         startBaileysSocket(false, targetWs).catch(err => {
           logger.error({ err, workspaceId: targetWs }, 'Failed to restore workspace session at startup');
         });
@@ -3036,7 +3046,28 @@ async function main(): Promise<void> {
         logger.info({ workspaceId: targetWs }, 'Skipping startup restore: no local disk session found (prevents unprompted QR generation)');
       }
     }
-  } else if (WORKSPACE_ID && hasDiskSession(WORKSPACE_ID)) {
+  }
+
+  // Multi-Tenant Auto-Discovery: Scan sessions folder on disk for any authenticated credentials
+  try {
+    const basePath = getSessionsBasePath();
+    if (fs.existsSync(basePath)) {
+      const dirs = fs.readdirSync(basePath);
+      for (const d of dirs) {
+        if (!restoredWorkspaces.has(d) && hasDiskSession(d)) {
+          logger.info({ workspaceId: d }, 'Restoring discovered disk session at startup...');
+          restoredWorkspaces.add(d);
+          startBaileysSocket(false, d).catch(err => {
+            logger.error({ err, workspaceId: d }, 'Failed to restore discovered disk session');
+          });
+        }
+      }
+    }
+  } catch (scanErr: any) {
+    logger.warn({ err: scanErr?.message }, 'Session directory auto-scan skipped');
+  }
+
+  if (WORKSPACE_ID && hasDiskSession(WORKSPACE_ID) && !restoredWorkspaces.has(WORKSPACE_ID)) {
     logger.info({ workspaceId: WORKSPACE_ID }, 'Starting default workspace socket...');
     startBaileysSocket(false, WORKSPACE_ID).catch(() => {});
   }

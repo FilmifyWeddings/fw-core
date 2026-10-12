@@ -261,13 +261,10 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
               setPhoneNumber(null);
               updateQr(d.qr_string);
             } else if (isMounted) {
-              setConnState('connecting');
-              setPhoneNumber(null);
-              // Proactively initialize fresh QR code on backend
-              fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(workspaceId)}`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-              }).catch(() => {});
+              setConnState(d.conn_state === 'connecting' ? 'connecting' : 'disconnected');
+              if (d.phone_number) {
+                setPhoneNumber(d.phone_number);
+              }
             }
           }
         }
@@ -341,12 +338,13 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   }, [initSSE, startPolling, stopPolling, workspaceId, updateQr]);
 
   const handleDisconnect = async () => {
+    if (!window.confirm('Are you sure you want to disconnect WhatsApp? You will need to scan the QR code again to reconnect.')) return;
     isConnectedRef.current = false;
     if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
     stopPolling();
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
-      await fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(workspaceId)}`, {
+      await fetch(`/api/integrations/baileys/force-reset?workspace_id=${encodeURIComponent(workspaceId)}`, {
         method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
       });
     }
