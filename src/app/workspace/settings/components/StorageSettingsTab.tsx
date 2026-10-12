@@ -423,7 +423,7 @@ export default function StorageSettingsTab({
             </div>
           </div>
           <Link
-            href="/api/storage/google/auth"
+            href={`/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWs)}&return_url=/workspace/settings`}
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
           >
             <Plus className="w-3.5 h-3.5" />

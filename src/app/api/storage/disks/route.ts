@@ -3,21 +3,24 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
+const isValidUUID = (val?: string | null) =>
+  Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get('workspace_id');
 
-    let query = supabaseAdmin
-      .from('storage_physical_disks')
-      .select('*')
-      .order('disk_name', { ascending: true });
-
-    if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
-      query = query.or(`workspace_id.eq.${workspaceId},workspace_id.eq.00000000-0000-0000-0000-000000000000`);
+    if (!isValidUUID(workspaceId) || workspaceId === '00000000-0000-0000-0000-000000000000') {
+      return NextResponse.json({ success: true, disks: [] });
     }
 
-    const { data, error } = await query;
+    const { data, error } = await supabaseAdmin
+      .from('storage_physical_disks')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .order('disk_name', { ascending: true });
+
     if (error) {
       console.warn('[StorageDisks API] DB select error:', error.message);
       return NextResponse.json({ success: true, disks: [] });
@@ -51,12 +54,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'disk_name is required' }, { status: 400 });
     }
 
-    const effectiveWs = workspace_id || '00000000-0000-0000-0000-000000000000';
+    if (!isValidUUID(workspace_id) || workspace_id === '00000000-0000-0000-0000-000000000000') {
+      return NextResponse.json({ success: false, error: 'Valid workspace_id is required' }, { status: 400 });
+    }
+
     const totalGb = Number(total_capacity_gb) || 2000;
     const freeGb = free_capacity_gb !== undefined ? Number(free_capacity_gb) : Math.round(totalGb * 0.75);
 
     const diskPayload: any = {
-      workspace_id: effectiveWs,
+      workspace_id,
       disk_name: disk_name.trim(),
       disk_serial: disk_serial || '',
       disk_label: disk_label || disk_name.trim(),

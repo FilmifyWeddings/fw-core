@@ -1,16 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGoogleDriveCredentials } from '@/lib/google-credentials';
 
+import { supabaseAdmin } from '@/lib/supabase';
+
 export const dynamic = 'force-dynamic';
+
+const isValidUUID = (val?: string | null) =>
+  Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get('workspace_id') || '00000000-0000-0000-0000-000000000000';
+  const rawWsId = searchParams.get('workspace_id');
   const returnUrl = searchParams.get('return_url') || '/workspace/storage';
 
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
   const proto = req.headers.get('x-forwarded-proto') || (req.nextUrl.protocol ? req.nextUrl.protocol.replace(':', '') : 'https');
   const origin = `${proto}://${host}`;
+
+  let workspaceId = isValidUUID(rawWsId) && rawWsId !== '00000000-0000-0000-0000-000000000000' ? rawWsId : null;
+
+  if (!workspaceId) {
+    const token = req.cookies.get('sb-access-token')?.value;
+    if (token) {
+      try {
+        const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+        if (user?.id) {
+          const { data: ws } = await supabaseAdmin
+            .from('workspaces')
+            .select('id')
+            .eq('owner_id', user.id)
+            .limit(1)
+            .maybeSingle();
+          if (ws?.id) workspaceId = ws.id;
+        }
+      } catch (_) {}
+    }
+  }
+
+  if (!workspaceId) {
+    return NextResponse.redirect(`${origin}${returnUrl}?error=workspace_required`);
+  }
 
   const { clientId } = getGoogleDriveCredentials();
 
@@ -36,7 +65,7 @@ export async function GET(req: NextRequest) {
     redirectUri
   )}&response_type=code&scope=${encodeURIComponent(
     scopes
-  )}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
+  )}&access_type=offline&prompt=select_account%20consent&state=${encodeURIComponent(state)}`;
 
   return NextResponse.redirect(authUrl);
 }

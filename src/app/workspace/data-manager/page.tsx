@@ -383,7 +383,7 @@ export default function DataManagerPage() {
 
   // Direct Google Drive OAuth navigation
   const handleConnectGoogleDrive = () => {
-    window.location.href = '/api/storage/google/auth';
+    window.location.href = `/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWsId)}&return_url=/workspace/data-manager`;
   };
 
   // Copy helper

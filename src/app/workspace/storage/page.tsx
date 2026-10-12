@@ -194,6 +194,8 @@ export default function StorageHubPage() {
   // Google Folder Browser states
   const [selectedGoogleAccount, setSelectedGoogleAccount] = useState<DriveAccount | null>(null);
   const [googleFolders, setGoogleFolders] = useState<any[]>([]);
+  const [googleFiles, setGoogleFiles] = useState<any[]>([]);
+  const [browserContentTab, setBrowserContentTab] = useState<'folders' | 'media'>('folders');
   const [googleCurrentFolder, setGoogleCurrentFolder] = useState<any>({ id: 'root', name: 'My Drive' });
   const [googleBreadcrumbs, setGoogleBreadcrumbs] = useState<any[]>([{ id: 'root', name: 'My Drive' }]);
   const [googleFolderLoading, setGoogleFolderLoading] = useState(false);
@@ -202,8 +204,18 @@ export default function StorageHubPage() {
   const [creatingDriveFolder, setCreatingDriveFolder] = useState(false);
   const [manualDriveFolderInput, setManualDriveFolderInput] = useState('');
 
+  const isValidWs = Boolean(
+    effectiveWsId &&
+    effectiveWsId !== '00000000-0000-0000-0000-000000000000' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveWsId)
+  );
+
   // Load all initial data
   const loadStorageData = useCallback(async () => {
+    if (!isValidWs) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [projRes, cardsRes, disksRes, drivesRes] = await Promise.all([
@@ -217,21 +229,25 @@ export default function StorageHubPage() {
       if (cardsRes.success) setMemoryCards(cardsRes.cards || []);
       if (disksRes.success) setDisks(disksRes.disks || []);
       if (drivesRes.success) {
-        setDriveAccounts(drivesRes.accounts || []);
-        if (drivesRes.accounts?.length > 0 && !selectedGoogleAccount) {
-          setSelectedGoogleAccount(drivesRes.accounts[0]);
-        }
+        const accs = drivesRes.accounts || [];
+        setDriveAccounts(accs);
+        setSelectedGoogleAccount(prev => {
+          if (prev && accs.some((a: any) => a.id === prev.id)) return prev;
+          return accs.length > 0 ? accs[0] : null;
+        });
       }
     } catch (err) {
       console.warn('[StorageHub] Error fetching storage data:', err);
     } finally {
       setLoading(false);
     }
-  }, [effectiveWsId, selectedGoogleAccount]);
+  }, [effectiveWsId, isValidWs]);
 
   useEffect(() => {
-    loadStorageData();
-  }, [loadStorageData]);
+    if (isValidWs) {
+      loadStorageData();
+    }
+  }, [isValidWs, loadStorageData]);
 
   // Handle URL redirect query parameters (e.g. from Google OAuth callback)
   useEffect(() => {
@@ -602,26 +618,28 @@ export default function StorageHubPage() {
   const fetchGoogleFolders = useCallback(async (accountId: string, parentId: string = 'root') => {
     setGoogleFolderLoading(true);
     try {
-      const res = await fetch(`/api/storage/google/folders?account_id=${accountId}&parent_id=${parentId}`);
+      const res = await fetch(`/api/storage/google/folders?account_id=${accountId}&parent_id=${parentId}&workspace_id=${effectiveWsId}`);
       const json = await res.json();
       if (json.success) {
         setGoogleFolders(json.folders || []);
+        setGoogleFiles(json.files || []);
       }
     } catch (err) {
       console.warn('Failed to fetch google folders:', err);
     } finally {
       setGoogleFolderLoading(false);
     }
-  }, []);
+  }, [effectiveWsId]);
 
   const handleOpenGooglePicker = (project: ProjectAsset) => {
     setActiveProjectForGoogle(project);
     setSelectedFolderForLink(null);
     setGoogleBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
     setGoogleCurrentFolder({ id: 'root', name: 'My Drive' });
+    setBrowserContentTab('folders');
 
-    if (driveAccounts.length > 0) {
-      const acc = driveAccounts[0];
+    const acc = selectedGoogleAccount || (driveAccounts.length > 0 ? driveAccounts[0] : null);
+    if (acc) {
       setSelectedGoogleAccount(acc);
       fetchGoogleFolders(acc.id, 'root');
     }
@@ -882,6 +900,10 @@ export default function StorageHubPage() {
   // Google OAuth Popup Window Flow
   const handleOAuthPopup = () => {
     if (typeof window === 'undefined') return;
+    if (!isValidWs) {
+      alert('Studio workspace is loading. Please wait a moment and try again.');
+      return;
+    }
     const width = 600;
     const height = 700;
     const left = window.screen.width / 2 - width / 2;
@@ -893,6 +915,10 @@ export default function StorageHubPage() {
   // Google Identity Services (GIS) One-Click Sign-In
   const handleGisConnect = () => {
     if (typeof window === 'undefined') return;
+    if (!isValidWs) {
+      alert('Studio workspace is loading. Please wait a moment and try again.');
+      return;
+    }
     setIsConnectingGis(true);
     setGisStatusText('Initializing Google Sign-In...');
 
@@ -913,6 +939,7 @@ export default function StorageHubPage() {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: googleClientId,
         scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly',
+        prompt: 'select_account',
         callback: async (resp: any) => {
           if (resp.error) {
             setIsConnectingGis(false);
@@ -1038,7 +1065,7 @@ export default function StorageHubPage() {
   const handleDeleteGoogleAccount = async (id: string) => {
     if (!confirm('Are you sure you want to disconnect this Google Drive account?')) return;
     try {
-      const res = await fetch(`/api/storage/google/accounts?id=${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/storage/google/accounts?id=${id}&workspace_id=${effectiveWsId}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
         setDriveAccounts(prev => prev.filter(a => a.id !== id));
@@ -2517,49 +2544,141 @@ export default function StorageHubPage() {
               </div>
             </div>
 
-            {/* Folder List Content */}
+            {/* View Mode Tabs: Subfolders vs Files & Media */}
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={() => setBrowserContentTab('folders')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  browserContentTab === 'folders'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <Folder className="w-3.5 h-3.5" />
+                <span>Subfolders ({googleFolders.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBrowserContentTab('media')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  browserContentTab === 'media'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <Film className="w-3.5 h-3.5" />
+                <span>Files & Media ({googleFiles.length})</span>
+              </button>
+            </div>
+
+            {/* Folder / Media List Content */}
             <div className="flex-1 overflow-y-auto py-3 space-y-2 min-h-[220px]">
               {googleFolderLoading ? (
                 <div className="py-16 text-center space-y-2">
                   <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600" />
-                  <p className="text-xs font-semibold text-slate-500">Loading Google Drive Folders...</p>
+                  <p className="text-xs font-semibold text-slate-500">Loading Google Drive Contents...</p>
                 </div>
-              ) : googleFolders.length === 0 ? (
-                <div className="py-16 text-center text-xs text-slate-400">
-                  No subfolders found in this directory. Create one below!
-                </div>
-              ) : (
-                googleFolders.map(folder => (
-                  <div
-                    key={folder.id}
-                    className={`p-3 rounded-xl border transition flex items-center justify-between gap-3 cursor-pointer ${
-                      selectedFolderForLink?.id === folder.id
-                        ? 'bg-blue-50/80 border-blue-500 text-blue-950 shadow-2xs'
-                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                    }`}
-                    onClick={() => setSelectedFolderForLink(folder)}
-                    onDoubleClick={() => handleNavigateGoogleFolder(folder)}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Folder className="w-4 h-4 text-amber-500 shrink-0" />
-                      <span className="text-xs font-bold truncate">{folder.name}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation();
-                          handleNavigateGoogleFolder(folder);
-                        }}
-                        className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-600 flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>Open</span>
-                        <ChevronRight className="w-3 h-3" />
-                      </button>
-                    </div>
+              ) : browserContentTab === 'folders' ? (
+                googleFolders.length === 0 ? (
+                  <div className="py-16 text-center text-xs text-slate-400">
+                    No subfolders found in this directory. Create one below!
                   </div>
-                ))
+                ) : (
+                  googleFolders.map(folder => (
+                    <div
+                      key={folder.id}
+                      className={`p-3 rounded-xl border transition flex items-center justify-between gap-3 cursor-pointer ${
+                        selectedFolderForLink?.id === folder.id
+                          ? 'bg-blue-50/80 border-blue-500 text-blue-950 shadow-2xs'
+                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                      }`}
+                      onClick={() => setSelectedFolderForLink(folder)}
+                      onDoubleClick={() => handleNavigateGoogleFolder(folder)}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span className="text-xs font-bold truncate">{folder.name}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleNavigateGoogleFolder(folder);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-600 flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Open</span>
+                          <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )
+              ) : (
+                googleFiles.length === 0 ? (
+                  <div className="py-16 text-center text-xs text-slate-400">
+                    No files or media found in this directory.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {googleFiles.map(file => {
+                      const sizeMb = file.sizeBytes > 0
+                        ? file.sizeBytes >= 1024 * 1024 * 1024
+                          ? `${(file.sizeBytes / (1024 ** 3)).toFixed(1)} GB`
+                          : file.sizeBytes >= 1024 * 1024
+                            ? `${(file.sizeBytes / (1024 ** 2)).toFixed(1)} MB`
+                            : `${Math.round(file.sizeBytes / 1024)} KB`
+                        : '';
+
+                      return (
+                        <div
+                          key={file.id}
+                          className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            {file.thumbnailLink ? (
+                              <img
+                                src={file.thumbnailLink}
+                                alt={file.name}
+                                className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0"
+                              />
+                            ) : file.isVideo ? (
+                              <div className="w-9 h-9 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                                <Film className="w-4 h-4" />
+                              </div>
+                            ) : (
+                              <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                                <ImageIcon className="w-4 h-4" />
+                              </div>
+                            )}
+
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-800 truncate">
+                                {file.name}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                                {file.mimeType?.split('/')[1]?.toUpperCase() || 'FILE'} {sizeMb ? `• ${sizeMb}` : ''}
+                              </div>
+                            </div>
+                          </div>
+
+                          <a
+                            href={file.webViewLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-blue-600 font-bold text-[11px] flex items-center gap-1 shrink-0 transition"
+                          >
+                            <span>Preview</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
               )}
             </div>
 

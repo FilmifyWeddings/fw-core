@@ -46,9 +46,29 @@ export async function GET(req: NextRequest) {
     const isValidUUID = (val?: string | null) =>
       Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
-    if (!isValidUUID(workspaceId) || workspaceId === '00000000-0000-0000-0000-000000000000') {
-      const { data: workspace } = await supabaseAdmin.from('workspaces').select('id').limit(1).maybeSingle();
-      if (workspace?.id && isValidUUID(workspace.id)) workspaceId = workspace.id;
+    let effectiveWs: string | null = isValidUUID(workspaceId) && workspaceId !== '00000000-0000-0000-0000-000000000000' ? workspaceId : null;
+
+    if (!effectiveWs) {
+      const token = req.cookies.get('sb-access-token')?.value;
+      if (token) {
+        try {
+          const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+          if (user?.id) {
+            const { data: ws } = await supabaseAdmin
+              .from('workspaces')
+              .select('id')
+              .eq('owner_id', user.id)
+              .limit(1)
+              .maybeSingle();
+            if (ws?.id) effectiveWs = ws.id;
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!effectiveWs) {
+      console.warn('[Google Drive Callback] Missing valid workspace_id in callback state');
+      return NextResponse.redirect(`${origin}${returnPath}?error=workspace_missing`);
     }
 
     const redirectUri = process.env.GOOGLE_DRIVE_REDIRECT_URI || `${origin}/api/storage/google/callback`;
@@ -116,20 +136,23 @@ export async function GET(req: NextRequest) {
     }
 
     // 4. Save into Supabase Database
-    const effectiveWs = isValidUUID(workspaceId) ? workspaceId : '00000000-0000-0000-0000-000000000000';
+    const drivePayload: any = {
+      workspace_id: effectiveWs,
+      account_email: email,
+      account_label: userName,
+      access_token,
+      total_storage_bytes: totalBytes,
+      used_storage_bytes: usedBytes,
+      last_synced_at: new Date().toISOString(),
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    };
+    if (refresh_token) {
+      drivePayload.refresh_token = refresh_token;
+    }
+
     const { error: upsertErr } = await supabaseAdmin.from('storage_drive_accounts').upsert(
-      {
-        workspace_id: effectiveWs,
-        account_email: email,
-        account_label: userName,
-        access_token,
-        refresh_token: refresh_token || undefined,
-        total_storage_bytes: totalBytes,
-        used_storage_bytes: usedBytes,
-        last_synced_at: new Date().toISOString(),
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      },
+      drivePayload,
       { onConflict: 'workspace_id,account_email' }
     );
 

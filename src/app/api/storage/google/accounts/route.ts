@@ -3,34 +3,26 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
+const isValidUUID = (val?: string | null) =>
+  Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get('workspace_id');
 
-    let query = supabaseAdmin
+    if (!isValidUUID(workspaceId) || workspaceId === '00000000-0000-0000-0000-000000000000') {
+      return NextResponse.json({ success: true, accounts: [] });
+    }
+
+    const { data, error } = await supabaseAdmin
       .from('storage_drive_accounts')
       .select('*')
+      .eq('workspace_id', workspaceId)
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
-    if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
-      query = query.or(`workspace_id.eq.${workspaceId},workspace_id.eq.00000000-0000-0000-0000-000000000000`);
-    }
-
-    let { data, error } = await query;
-    if (!data || data.length === 0) {
-      const fallback = await supabaseAdmin
-        .from('storage_drive_accounts')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-      if (fallback.data && fallback.data.length > 0) {
-        data = fallback.data;
-      }
-    }
-
-    if (error && (!data || data.length === 0)) {
+    if (error) {
       console.warn('[GoogleAccounts API] DB error:', error.message);
       return NextResponse.json({ success: true, accounts: [] });
     }
@@ -50,15 +42,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'account_email is required' }, { status: 400 });
     }
 
-    const isValidUUID = (val?: string | null) =>
-      Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+    if (!isValidUUID(workspace_id) || workspace_id === '00000000-0000-0000-0000-000000000000') {
+      return NextResponse.json({ success: false, error: 'A valid workspace_id is required' }, { status: 400 });
+    }
 
-    const effectiveWs = isValidUUID(workspace_id) ? workspace_id : '00000000-0000-0000-0000-000000000000';
     const totalBytes = Number(total_storage_gb || 2000) * 1024 * 1024 * 1024;
     const usedBytes = Number(used_storage_gb || 0) * 1024 * 1024 * 1024;
 
     const driveAccountPayload: any = {
-      workspace_id: effectiveWs,
+      workspace_id,
       account_email: account_email.trim(),
       account_label: account_label || 'Wedding Deliverables Drive',
       total_storage_bytes: totalBytes,
@@ -89,12 +81,19 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const accountId = searchParams.get('id');
+    const workspaceId = searchParams.get('workspace_id');
 
     if (!accountId) {
       return NextResponse.json({ success: false, error: 'Account ID required' }, { status: 400 });
     }
 
-    await supabaseAdmin.from('storage_drive_accounts').delete().eq('id', accountId);
+    let delQuery = supabaseAdmin.from('storage_drive_accounts').delete().eq('id', accountId);
+    if (isValidUUID(workspaceId) && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+      delQuery = delQuery.eq('workspace_id', workspaceId);
+    }
+    const { error: delErr } = await delQuery;
+    if (delErr) throw delErr;
+
     await supabaseAdmin.from('storage_indexed_items').delete().eq('drive_account_id', accountId);
 
     return NextResponse.json({ success: true });

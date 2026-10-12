@@ -4,17 +4,22 @@ import { getGoogleDriveCredentials } from '@/lib/google-credentials';
 
 export const dynamic = 'force-dynamic';
 
-async function getValidAccessToken(accountId: string) {
+async function getValidAccessToken(accountId: string, workspaceId?: string | null) {
   const { clientId: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET } = getGoogleDriveCredentials();
 
-  const { data: account, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('storage_drive_accounts')
     .select('*')
-    .eq('id', accountId)
-    .single();
+    .eq('id', accountId);
+
+  if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+    query = query.eq('workspace_id', workspaceId);
+  }
+
+  const { data: account, error } = await query.maybeSingle();
 
   if (error || !account) {
-    throw new Error('Google Drive account not found');
+    throw new Error('Google Drive account not found or access denied');
   }
 
   let accessToken = account.access_token;
@@ -63,12 +68,13 @@ export async function GET(req: NextRequest) {
     const accountId = searchParams.get('account_id');
     const parentId = searchParams.get('parent_id') || 'root';
     const searchQuery = searchParams.get('search');
+    const workspaceId = searchParams.get('workspace_id');
 
     if (!accountId) {
       return NextResponse.json({ success: false, error: 'account_id is required' }, { status: 400 });
     }
 
-    const { accessToken, account } = await getValidAccessToken(accountId);
+    const { accessToken, account } = await getValidAccessToken(accountId, workspaceId);
 
     if (!accessToken) {
       return NextResponse.json({
@@ -78,19 +84,20 @@ export async function GET(req: NextRequest) {
         account_label: account.account_label,
         currentFolder: { id: 'root', name: 'Direct Linked Drive' },
         folders: [],
+        files: [],
         message: 'Account is linked directly. You can paste the Google Drive folder link or folder name directly.'
       });
     }
 
-    let q = `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    let q = `'${parentId}' in parents and trashed = false`;
     if (searchQuery && searchQuery.trim()) {
       const cleanSearch = searchQuery.trim().replace(/'/g, "\\'");
-      q = `mimeType = 'application/vnd.google-apps.folder' and name contains '${cleanSearch}' and trashed = false`;
+      q = `name contains '${cleanSearch}' and trashed = false`;
     }
 
     const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
       q
-    )}&fields=files(id,name,webViewLink,createdTime,modifiedTime,quotaBytesUsed)&orderBy=name&pageSize=100`;
+    )}&fields=files(id,name,mimeType,webViewLink,thumbnailLink,iconLink,size,createdTime,modifiedTime,quotaBytesUsed)&orderBy=folder,name&pageSize=100`;
 
     const driveRes = await fetch(driveUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -100,19 +107,38 @@ export async function GET(req: NextRequest) {
       const errJson = await driveRes.json().catch(() => ({}));
       return NextResponse.json({
         success: false,
-        error: errJson.error?.message || 'Failed to list Google Drive folders',
+        error: errJson.error?.message || 'Failed to list Google Drive contents',
       }, { status: driveRes.status });
     }
 
     const driveData = await driveRes.json();
-    const folders = (driveData.files || []).map((f: any) => ({
-      id: f.id,
-      name: f.name,
-      webViewLink: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`,
-      createdTime: f.createdTime,
-      modifiedTime: f.modifiedTime,
-      sizeBytes: Number(f.quotaBytesUsed) || 0,
-    }));
+    const allItems = driveData.files || [];
+
+    const folders = allItems
+      .filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder')
+      .map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        webViewLink: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`,
+        createdTime: f.createdTime,
+        modifiedTime: f.modifiedTime,
+        sizeBytes: Number(f.quotaBytesUsed || f.size) || 0,
+      }));
+
+    const files = allItems
+      .filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder')
+      .map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        mimeType: f.mimeType,
+        thumbnailLink: f.thumbnailLink || null,
+        webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
+        sizeBytes: Number(f.size) || 0,
+        createdTime: f.createdTime,
+        isImage: Boolean(f.mimeType?.startsWith('image/')),
+        isVideo: Boolean(f.mimeType?.startsWith('video/')),
+        isAudio: Boolean(f.mimeType?.startsWith('audio/')),
+      }));
 
     // If not root, fetch current parent folder metadata
     let currentFolder = { id: parentId, name: parentId === 'root' ? 'My Drive' : 'Folder' };
@@ -138,6 +164,7 @@ export async function GET(req: NextRequest) {
       account_label: account.account_label,
       currentFolder,
       folders,
+      files,
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });

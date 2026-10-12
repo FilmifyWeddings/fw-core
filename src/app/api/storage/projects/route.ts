@@ -12,14 +12,15 @@ export async function GET(req: NextRequest) {
     const workspaceId = searchParams.get('workspace_id');
     const status = searchParams.get('status');
 
+    if (!isValidUUID(workspaceId) || workspaceId === '00000000-0000-0000-0000-000000000000') {
+      return NextResponse.json({ success: true, projects: [] });
+    }
+
     let query = supabaseAdmin
       .from('storage_project_assets')
       .select('*')
+      .eq('workspace_id', workspaceId)
       .order('updated_at', { ascending: false });
-
-    if (isValidUUID(workspaceId) && workspaceId !== '00000000-0000-0000-0000-000000000000') {
-      query = query.or(`workspace_id.eq.${workspaceId},workspace_id.eq.00000000-0000-0000-0000-000000000000`);
-    }
 
     if (status && status !== 'ALL') {
       query = query.eq('overall_storage_status', status);
@@ -31,37 +32,27 @@ export async function GET(req: NextRequest) {
       projects = [];
     }
 
-    // Auto-hydration check: Scan booked leads and ensure every booked lead has a storage project asset card
+    // Auto-hydration check: Scan booked leads for this workspace
     try {
       const existingLeadIds = new Set((projects || []).map(p => String(p.lead_id)));
 
       // 1. Query leads by status or booked keywords
-      let leadsQuery = supabaseAdmin
+      const { data: bookedLeadsByStatus } = await supabaseAdmin
         .from('leads')
         .select('id, name, event_date, event_type, workspace_id, client_id, budget, status, raw_payload')
+        .or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`)
         .or('status.eq.booked,status.eq.closed,status.eq.converted,status.ilike.%book%,status.ilike.%close%')
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (isValidUUID(workspaceId) && workspaceId !== '00000000-0000-0000-0000-000000000000') {
-        leadsQuery = leadsQuery.or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`);
-      }
-
-      const { data: bookedLeadsByStatus } = await leadsQuery;
-
       // 2. Query leads that have client_id set (converted/booked leads)
-      let clientsLeadsQuery = supabaseAdmin
+      const { data: bookedLeadsByClient } = await supabaseAdmin
         .from('leads')
         .select('id, name, event_date, event_type, workspace_id, client_id, budget, status, raw_payload')
+        .or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`)
         .not('client_id', 'is', null)
         .order('created_at', { ascending: false })
         .limit(100);
-
-      if (isValidUUID(workspaceId) && workspaceId !== '00000000-0000-0000-0000-000000000000') {
-        clientsLeadsQuery = clientsLeadsQuery.or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`);
-      }
-
-      const { data: bookedLeadsByClient } = await clientsLeadsQuery;
 
       // Merge and deduplicate booked leads
       const allBookedLeadsMap = new Map<string, any>();
@@ -197,11 +188,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'client_name is required' }, { status: 400 });
     }
 
-    const effectiveWs = isValidUUID(workspace_id) ? workspace_id : '00000000-0000-0000-0000-000000000000';
+    if (!isValidUUID(workspace_id) || workspace_id === '00000000-0000-0000-0000-000000000000') {
+      return NextResponse.json({ success: false, error: 'Valid workspace_id is required' }, { status: 400 });
+    }
+
     const cleanLeadId = lead_id || `manual_${Date.now()}`;
 
     const projectPayload: any = {
-      workspace_id: effectiveWs,
+      workspace_id,
       lead_id: cleanLeadId,
       client_id: client_id || null,
       client_name: client_name.trim(),
