@@ -31,17 +31,41 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Google Account not connected or credentials expired.' }, { status: 400 });
     }
 
+    let token = creds.access_token;
+
     // Call Google People API to list contact groups
-    const res = await fetch('https://people.googleapis.com/v1/contactGroups?pageSize=100', {
+    let res = await fetch('https://people.googleapis.com/v1/contactGroups?pageSize=100', {
       headers: {
-        Authorization: `Bearer ${creds.access_token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
     });
 
+    // If 401, force-refresh token and retry once
+    if (res.status === 401) {
+      console.log('[Google Contacts Labels] Token expired (401), attempting force refresh...');
+      const refreshed = await getGoogleCreds(supabaseAdmin, user.id, 'google_contacts', true);
+      if (refreshed?.access_token) {
+        token = refreshed.access_token;
+        res = await fetch('https://people.googleapis.com/v1/contactGroups?pageSize=100', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+      }
+    }
+
     if (!res.ok) {
       const errText = await res.text();
       console.error('[Google Contacts Labels] List API error:', errText);
+      if (errText.includes('SERVICE_DISABLED') || errText.includes('People API has not been used')) {
+        return NextResponse.json({
+          error: 'Google People API is currently disabled in your Google Cloud Console. Please enable it by visiting: https://console.developers.google.com/apis/api/people.googleapis.com/overview?project=666330539586',
+          enableUrl: 'https://console.developers.google.com/apis/api/people.googleapis.com/overview?project=666330539586',
+          isServiceDisabled: true,
+        }, { status: 403 });
+      }
       return NextResponse.json({ error: `Google API error: ${errText}` }, { status: res.status });
     }
 
@@ -78,11 +102,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Google Account not connected or credentials expired.' }, { status: 400 });
     }
 
+    let token = creds.access_token;
+
     // Call Google People API to create contact group
-    const res = await fetch('https://people.googleapis.com/v1/contactGroups', {
+    let res = await fetch('https://people.googleapis.com/v1/contactGroups', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${creds.access_token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -92,9 +118,36 @@ export async function POST(req: NextRequest) {
       }),
     });
 
+    if (res.status === 401) {
+      console.log('[Google Contacts Labels] Token expired on create (401), attempting force refresh...');
+      const refreshed = await getGoogleCreds(supabaseAdmin, user.id, 'google_contacts', true);
+      if (refreshed?.access_token) {
+        token = refreshed.access_token;
+        res = await fetch('https://people.googleapis.com/v1/contactGroups', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contactGroup: {
+              name: name.trim(),
+            },
+          }),
+        });
+      }
+    }
+
     if (!res.ok) {
       const errText = await res.text();
       console.error('[Google Contacts Labels] Create API error:', errText);
+      if (errText.includes('SERVICE_DISABLED') || errText.includes('People API has not been used')) {
+        return NextResponse.json({
+          error: 'Google People API is currently disabled in your Google Cloud Console. Please enable it by visiting: https://console.developers.google.com/apis/api/people.googleapis.com/overview?project=666330539586',
+          enableUrl: 'https://console.developers.google.com/apis/api/people.googleapis.com/overview?project=666330539586',
+          isServiceDisabled: true,
+        }, { status: 403 });
+      }
       return NextResponse.json({ error: `Google API error: ${errText}` }, { status: res.status });
     }
 

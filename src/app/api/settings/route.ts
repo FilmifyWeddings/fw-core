@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS = {
     { id: 's3', name: 'Google Ads', color: '#C5221F' },
     { id: 's4', name: 'Website', color: '#137333' },
     { id: 's5', name: 'Referral', color: '#F4511E' },
-    { id: 's6', name: 'WhatsApp Direct', color: '#137333' },
+    { id: 's6', name: 'WhatsApp Welcome Message', color: '#137333' },
   ],
   lead_stages: [
     { id: 'new', name: 'Inquiry / New', color: '#3b82f6' },

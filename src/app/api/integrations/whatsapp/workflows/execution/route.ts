@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const tenantId = searchParams.get('tenant_id') || searchParams.get('workspace_id');
   const workflowId = searchParams.get('workflow_id') || 'all';
+  const leadId = searchParams.get('lead_id');
 
   if (!tenantId) {
     return NextResponse.json({ error: 'Missing tenant_id parameter' }, { status: 400 });
@@ -82,7 +83,9 @@ export async function GET(req: NextRequest) {
       .select('id, name, email, phone, source, status, score, raw_payload, whatsapp_group_id, created_at, updated_at')
       .eq('workspace_id', tenantId);
 
-    if (!isAll && targetGroupIds.length > 0) {
+    if (leadId) {
+      leadsQuery = leadsQuery.eq('id', leadId);
+    } else if (!isAll && targetGroupIds.length > 0) {
       leadsQuery = leadsQuery.in('whatsapp_group_id', targetGroupIds);
     }
 
@@ -95,6 +98,9 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('tenant_id', tenantId);
 
+    if (leadId) {
+      logsQuery = logsQuery.eq('lead_id', leadId);
+    }
     if (!isAll) {
       logsQuery = logsQuery.eq('workflow_id', workflowId);
     }

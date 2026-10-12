@@ -263,6 +263,80 @@ export async function POST(req: NextRequest) {
               contactGroupId = formSetting.contact_group_id || null;
             }
 
+            resolvedFormName = formEnabled?.form_name || formSetting?.form_name || null;
+
+            // Auto-Discovery: If form is unknown, fetch name from Graph API and register it
+            if (!formEnabled && !formSetting && pageAccessToken) {
+              try {
+                const gFormRes = await fetch(`https://graph.facebook.com/v20.0/${form_id}?fields=id,name,status&access_token=${pageAccessToken}`);
+                if (gFormRes.ok) {
+                  const gFormData = await gFormRes.json();
+                  if (gFormData?.name) {
+                    resolvedFormName = gFormData.name;
+                    await supabaseAdmin.from('fb_lead_forms').upsert({
+                      workspace_id: targetWorkspaceId,
+                      page_id: page_id,
+                      form_id: form_id,
+                      form_name: gFormData.name,
+                      status: gFormData.status || 'ACTIVE',
+                      is_enabled: true,
+                      updated_at: new Date().toISOString(),
+                    }, { onConflict: 'form_id' }).catch(() => {});
+                  }
+                }
+              } catch (gErr: any) {
+                console.warn('[Meta Webhook Auto-Discover Form Error]:', gErr?.message);
+              }
+            }
+
+            // Contact Group Fallback: If no group assigned, inherit from sibling form or active mapped group
+            if (!contactGroupId && resolvedFormName) {
+              try {
+                const { data: siblingForm } = await supabaseAdmin
+                  .from('fb_form_mappings')
+                  .select('contact_group_id')
+                  .eq('workspace_id', targetWorkspaceId)
+                  .ilike('form_name', `%${resolvedFormName.trim()}%`)
+                  .not('contact_group_id', 'is', null)
+                  .limit(1)
+                  .maybeSingle();
+
+                if (siblingForm?.contact_group_id) {
+                  contactGroupId = siblingForm.contact_group_id;
+                }
+              } catch (_) {}
+            }
+
+            if (!contactGroupId) {
+              try {
+                const { data: defaultMapping } = await supabaseAdmin
+                  .from('fb_form_mappings')
+                  .select('contact_group_id')
+                  .eq('workspace_id', targetWorkspaceId)
+                  .eq('is_active', true)
+                  .not('contact_group_id', 'is', null)
+                  .order('updated_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+
+                if (defaultMapping?.contact_group_id) {
+                  contactGroupId = defaultMapping.contact_group_id;
+                }
+              } catch (_) {}
+            }
+
+            if (contactGroupId && !formSetting) {
+              await supabaseAdmin.from('fb_form_mappings').upsert({
+                workspace_id: targetWorkspaceId,
+                form_id: form_id,
+                page_id: page_id,
+                form_name: resolvedFormName || form_id,
+                is_active: true,
+                contact_group_id: contactGroupId,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'workspace_id,form_id' }).catch(() => {});
+            }
+
             try {
               const autoOwner = await getNextDistributedLeadOwner(targetWorkspaceId, form_id);
               if (autoOwner) {
@@ -272,8 +346,6 @@ export async function POST(req: NextRequest) {
             } catch (distErr: any) {
               console.error('[Meta-Leads Webhook Distribution Error]:', distErr?.message);
             }
-
-            resolvedFormName = formEnabled?.form_name || formSetting?.form_name || null;
 
             const isFormExplicitlyEnabled =
               formEnabled?.is_enabled === true || formSetting?.is_active === true;

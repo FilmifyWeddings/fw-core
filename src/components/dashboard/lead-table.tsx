@@ -21,6 +21,8 @@ import { CRMDropdown, getDynamicBadgeStyle } from './crm-dropdown';
 import { LeadQuotationModal } from './lead-quotation-modal';
 import { prefetchStudioTemplates } from './quotation-template-selector';
 import LeadOwnerSelect from '@/app/workspace/leads/components/LeadOwnerSelect';
+import { LeadWelcomeSequenceModal } from './LeadWelcomeSequenceModal';
+import { LeadExecutionTimelineModal } from './LeadExecutionTimelineModal';
 
 const MotionDiv = motionImport.div;
 const MotionTr = 'tr' as any;
@@ -579,6 +581,8 @@ export function LeadTable({
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [drawerMode, setDrawerMode] = useState<'full' | 'comments'>('full');
   const [timelineLead, setTimelineLead] = useState<Lead | null>(null);
+  const [welcomeLead, setWelcomeLead] = useState<Lead | null>(null);
+  const [waStatuses, setWaStatuses] = useState<Record<string, { welcome: any; followup: any }>>({});
   const [quotationModalLead, setQuotationModalLead] = useState<Lead | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
@@ -840,6 +844,41 @@ export function LeadTable({
       }
     };
   }, [searchParams]);
+
+  // ⚡ Live WhatsApp Workflow Status Synchronization (Welcome + Follow-up)
+  const fetchWaStatuses = useCallback(async (leadList: Lead[]) => {
+    if (!leadList || leadList.length === 0) return;
+    const leadIds = leadList.map(l => l.id).filter(Boolean);
+    if (leadIds.length === 0) return;
+    try {
+      const activeWs = leadList[0]?.workspace_id || '';
+      const res = await fetch('/api/workflows/lead-whatsapp-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_ids: leadIds, workspace_id: activeWs }),
+      });
+      const data = await res.json();
+      if (data.success && data.statuses) {
+        setWaStatuses(prev => ({ ...prev, ...data.statuses }));
+      }
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => {
+    if (!leads || leads.length === 0) return;
+    fetchWaStatuses(leads);
+
+    const ch = supabase
+      .channel('lead-table-wa-logs-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_workflow_logs' }, () => {
+        fetchWaStatuses(leads);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [leads, fetchWaStatuses]);
 
   const handleQuotationChange = React.useCallback((leadId: string, updatedVersions: any[]) => {
     const versions = [...updatedVersions];
@@ -3468,21 +3507,62 @@ export function LeadTable({
                       {getBudgetValue(lead)}
                     </span>
 
-                    {/* WhatsApp Quick Action */}
-                    {quickActionsConfig.whatsapp !== false && (
-                      <button
-                        type="button"
-                        onClick={() => handleWhatsappWelcomeDispatch(lead)}
-                        className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
-                          (lead as any).wa_welcome_sent 
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' 
-                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700'
-                        }`}
-                        title="Send WhatsApp Welcome"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    {/* WhatsApp Welcome Message Quick Action */}
+                    {quickActionsConfig.whatsapp !== false && (() => {
+                      const waStat = waStatuses[lead.id]?.welcome;
+                      const isFailed = waStat?.status === 'failed';
+                      const isSent = waStat?.status === 'sent' || Boolean((lead as any).wa_welcome_sent);
+
+                      const colorClass = isFailed
+                        ? 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800'
+                        : isSent
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700';
+
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setWelcomeLead(lead)}
+                          className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${colorClass}`}
+                          title="WhatsApp Welcome Message"
+                        >
+                          <div className="relative flex items-center justify-center">
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <Send className="w-2 h-2 absolute -bottom-0.5 -right-0.5" />
+                          </div>
+                        </button>
+                      );
+                    })()}
+
+                    {/* WA Follow-up Quick Action */}
+                    {quickActionsConfig.followup !== false && (() => {
+                      const fStat = waStatuses[lead.id]?.followup;
+                      const isFailed = fStat?.status === 'failed';
+                      const isCompleted = fStat?.status === 'completed';
+                      const isRunning = fStat?.status === 'running';
+
+                      const colorClass = isFailed
+                        ? 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800'
+                        : isCompleted
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                          : isRunning
+                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
+                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700';
+
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setTimelineLead(lead)}
+                          className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${colorClass}`}
+                          title="WA Follow-up Timeline"
+                        >
+                          <div className="relative flex items-center justify-center">
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <Clock className="w-2 h-2 absolute -bottom-0.5 -right-0.5" />
+                          </div>
+                        </button>
+                      );
+                    })()}
 
                     {/* Call Quick Action */}
                     {quickActionsConfig.call !== false && (
@@ -4531,21 +4611,39 @@ export function LeadTable({
                               );
                             })()}
 
-                            {/* WA Welcome Msg Quick Action */}
-                            {quickActionsConfig.whatsapp !== false && (
-                              <PremiumTooltip content={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent" : "Send WA Welcome Msg"}>
-                                <button
-                                  onClick={() => handleWhatsappWelcomeDispatch(lead)}
-                                  className={`p-1.5 rounded-lg border transition-all ${
-                                    (lead as any).wa_welcome_sent 
-                                      ? 'bg-emerald-100 dark:bg-emerald-950 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' 
-                                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-emerald-600'
-                                  }`}
-                                >
-                                  <Send className="w-3.5 h-3.5" />
-                                </button>
-                              </PremiumTooltip>
-                            )}
+                            {/* WhatsApp Welcome Message Quick Action */}
+                            {quickActionsConfig.whatsapp !== false && (() => {
+                              const waStat = waStatuses[lead.id]?.welcome;
+                              const isFailed = waStat?.status === 'failed';
+                              const isSent = waStat?.status === 'sent' || Boolean((lead as any).wa_welcome_sent);
+
+                              const statusColorClass = isFailed
+                                ? 'bg-red-100 hover:bg-red-200 dark:bg-red-950/80 text-red-600 dark:text-red-400 border-red-300 dark:border-red-800 ring-1 ring-red-400/40 shadow-2xs'
+                                : isSent
+                                  ? 'bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 ring-1 ring-emerald-400/40 shadow-2xs'
+                                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 border-slate-200 dark:border-zinc-700';
+
+                              const tooltipText = isFailed
+                                ? 'WhatsApp Welcome Message: Failed (Click to view/retry sequence)'
+                                : isSent
+                                  ? 'WhatsApp Welcome Message: Sent ✓ (Click to view sequence)'
+                                  : 'WhatsApp Welcome Message: Not sent (Click to view sequence)';
+
+                              return (
+                                <PremiumTooltip content={tooltipText}>
+                                  <button
+                                    onClick={() => setWelcomeLead(lead)}
+                                    className={`p-1.5 rounded-lg border transition-all cursor-pointer ${statusColorClass}`}
+                                    title={tooltipText}
+                                  >
+                                    <div className="relative flex items-center justify-center">
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                      <Send className="w-2 h-2 absolute -bottom-0.5 -right-0.5" />
+                                    </div>
+                                  </button>
+                                </PremiumTooltip>
+                              );
+                            })()}
 
                             {/* Google Contact Sync Quick Action */}
                             {quickActionsConfig.google_contact !== false && (
@@ -4591,17 +4689,44 @@ export function LeadTable({
                               </PremiumTooltip>
                             )}
 
-                            {/* Followups Timeline Quick Action */}
-                            {quickActionsConfig.followup !== false && (
-                              <PremiumTooltip content="Open Followup Timeline">
-                                <button
-                                  onClick={() => setTimelineLead(lead)}
-                                  className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-amber-600 transition-all"
-                                >
-                                  <Clock className="w-3.5 h-3.5" />
-                                </button>
-                              </PremiumTooltip>
-                            )}
+                            {/* WA Follow-up Quick Action */}
+                            {quickActionsConfig.followup !== false && (() => {
+                              const fStat = waStatuses[lead.id]?.followup;
+                              const isFailed = fStat?.status === 'failed';
+                              const isCompleted = fStat?.status === 'completed';
+                              const isRunning = fStat?.status === 'running';
+
+                              const statusColorClass = isFailed
+                                ? 'bg-red-100 hover:bg-red-200 dark:bg-red-950/80 text-red-600 dark:text-red-400 border-red-300 dark:border-red-800 ring-1 ring-red-400/40 shadow-2xs'
+                                : isCompleted
+                                  ? 'bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 ring-1 ring-emerald-400/40 shadow-2xs'
+                                  : isRunning
+                                    ? 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-800 ring-1 ring-amber-400/40 shadow-2xs'
+                                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 border-slate-200 dark:border-zinc-700';
+
+                              const tooltipText = isFailed
+                                ? 'WA Follow-up: Failed Steps (Click for Timeline)'
+                                : isCompleted
+                                  ? 'WA Follow-up: All Completed ✓ (Click for Timeline)'
+                                  : isRunning
+                                    ? 'WA Follow-up: In Progress (Click for Timeline)'
+                                    : 'WA Follow-up: Not started (Click for Timeline)';
+
+                              return (
+                                <PremiumTooltip content={tooltipText}>
+                                  <button
+                                    onClick={() => setTimelineLead(lead)}
+                                    className={`p-1.5 rounded-lg border transition-all cursor-pointer ${statusColorClass}`}
+                                    title={tooltipText}
+                                  >
+                                    <div className="relative flex items-center justify-center">
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                      <Clock className="w-2 h-2 absolute -bottom-0.5 -right-0.5" />
+                                    </div>
+                                  </button>
+                                </PremiumTooltip>
+                              );
+                            })()}
 
                             <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-800 mx-1 shrink-0" />
 
@@ -5151,84 +5276,39 @@ export function LeadTable({
         )}
       </AnimatePresenceComponent>
 
-      {/* Follow-up scheduler modal timeline */}
-      <AnimatePresenceComponent>
-        {timelineLead && (
-          <>
-            <MotionDiv 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setTimelineLead(null)}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs"
-            />
-            <MotionDiv
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="fixed inset-0 m-auto z-50 w-full max-w-md h-fit max-h-[80vh] bg-zinc-950 border border-zinc-850 p-6 rounded-2xl shadow-2xl overflow-y-auto space-y-5 text-white"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
-                <div>
-                  <h3 className="text-base font-extrabold">Automation Sequence Timeline</h3>
-                  <span className="text-[10px] text-zinc-500 block">Lead Name: {timelineLead.name || timelineLead.phone}</span>
-                </div>
-                <button onClick={() => setTimelineLead(null)} className="p-1 hover:bg-zinc-900 rounded-lg text-zinc-500 hover:text-white">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+      {/* WhatsApp Welcome Message Modal */}
+      <LeadWelcomeSequenceModal
+        isOpen={Boolean(welcomeLead)}
+        onClose={() => setWelcomeLead(null)}
+        lead={welcomeLead}
+        workspaceId={welcomeLead?.workspace_id || leads[0]?.workspace_id}
+        onStatusUpdated={(leadId, st) => {
+          setWaStatuses(prev => ({
+            ...prev,
+            [leadId]: {
+              ...prev[leadId],
+              welcome: { ...(prev[leadId]?.welcome || {}), status: st as any }
+            }
+          }));
+        }}
+      />
 
-              {/* Simulated timeline tracks */}
-              <div className="space-y-4 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-[2px] before:bg-zinc-900">
-                
-                {/* Step 1 */}
-                <div className="flex items-start gap-4 relative">
-                  <div className="w-6.5 h-6.5 rounded-full bg-emerald-500 text-black flex items-center justify-center text-[10px] font-bold z-10 shrink-0"><Check className="w-3.5 h-3.5" /></div>
-                  <div className="bg-zinc-900/40 border border-zinc-900 p-3 rounded-xl flex-1 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">WA Welcome Message</span>
-                      <span className="text-[9px] text-emerald-400 font-extrabold uppercase bg-emerald-500/10 px-1.5 rounded">Sent</span>
-                    </div>
-                    <p className="text-[10px] text-zinc-500">Delivered within 5 minutes of Meta ingestion.</p>
-                  </div>
-                </div>
-
-                {/* Step 2 */}
-                <div className="flex items-start gap-4 relative">
-                  <div className="w-6.5 h-6.5 rounded-full bg-orange-500 text-black flex items-center justify-center text-[10px] font-bold z-10 shrink-0">2</div>
-                  <div className="bg-zinc-900/40 border border-zinc-900 p-3 rounded-xl flex-1 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">Quotation & Portfolio</span>
-                      <span className="text-[9px] text-orange-400 font-extrabold uppercase bg-orange-500/10 px-1.5 rounded">Scheduled</span>
-                    </div>
-                    <p className="text-[10px] text-zinc-500">Scheduled on Day 2 at 10:00 AM IST.</p>
-                  </div>
-                </div>
-
-                {/* Step 3 */}
-                <div className="flex items-start gap-4 relative">
-                  <div className="w-6.5 h-6.5 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center text-[10px] font-bold z-10 shrink-0">3</div>
-                  <div className="bg-zinc-900/40 border border-zinc-900 p-3 rounded-xl flex-1 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-zinc-400">Discount Catalog Call-to-Action</span>
-                      <span className="text-[9px] text-zinc-650 font-extrabold uppercase bg-zinc-950 px-1.5 rounded">Queued</span>
-                    </div>
-                    <p className="text-[10px] text-zinc-650">Queued on Day 5 at 11:30 AM IST.</p>
-                  </div>
-                </div>
-
-              </div>
-              
-              <button 
-                onClick={() => setTimelineLead(null)}
-                className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 rounded-xl text-xs font-bold text-zinc-300"
-              >
-                Close Timeline
-              </button>
-            </MotionDiv>
-          </>
-        )}
-      </AnimatePresenceComponent>
+      {/* WhatsApp Follow-up Execution Timeline Modal */}
+      <LeadExecutionTimelineModal
+        isOpen={Boolean(timelineLead)}
+        onClose={() => setTimelineLead(null)}
+        lead={timelineLead}
+        workspaceId={timelineLead?.workspace_id || leads[0]?.workspace_id}
+        onStatusUpdated={(leadId, st) => {
+          setWaStatuses(prev => ({
+            ...prev,
+            [leadId]: {
+              ...prev[leadId],
+              followup: { ...(prev[leadId]?.followup || {}), status: st as any }
+            }
+          }));
+        }}
+      />
 
       {/* Premium LeadInsiderDrawer workspace sheet */}
       <AnimatePresenceComponent>

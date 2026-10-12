@@ -1,5 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
+import { getGoogleDriveCredentials } from './google-credentials';
+
 interface GoogleCreds {
   access_token: string;
   refresh_token?: string;
@@ -15,7 +17,8 @@ interface GoogleCreds {
 export async function getGoogleCreds(
   supabaseAdmin: SupabaseClient,
   workspaceId: string,
-  providerName: 'google_contacts' | 'google_sheets' | 'google_calendar' | string = 'google_contacts'
+  providerName: 'google_contacts' | 'google_sheets' | 'google_calendar' | string = 'google_contacts',
+  forceRefresh = false
 ): Promise<GoogleCreds | null> {
   // Query specific provider first, fallback to legacy 'google'
   const { data: credsList, error } = await supabaseAdmin
@@ -37,14 +40,16 @@ export async function getGoogleCreds(
   }
 
   // Check if token is valid by performing a lightweight call, or if we need to refresh it.
-  const isValid = await testToken(creds.access_token);
-  if (isValid) {
-    return { 
-      access_token: creds.access_token, 
-      refresh_token: creds.refresh_token || undefined,
-      id: creds.id,
-      provider: creds.provider
-    };
+  if (!forceRefresh) {
+    const isValid = await testToken(creds.access_token);
+    if (isValid) {
+      return { 
+        access_token: creds.access_token, 
+        refresh_token: creds.refresh_token || undefined,
+        id: creds.id,
+        provider: creds.provider
+      };
+    }
   }
 
   // Token is expired, try to refresh if we have a refresh token
@@ -55,12 +60,13 @@ export async function getGoogleCreds(
 
   console.log(`[google-auth] Access token expired for ${creds.provider}, attempting refresh...`);
   try {
+    const { clientId, clientSecret } = getGoogleDriveCredentials();
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID || '',
-        client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+        client_id: clientId,
+        client_secret: clientSecret,
         refresh_token: creds.refresh_token,
         grant_type: 'refresh_token',
       }),
@@ -105,9 +111,7 @@ export async function getGoogleCreds(
 
 async function testToken(accessToken: string): Promise<boolean> {
   try {
-    const res = await fetch('https://www.googleapis.com/oauth2/v3/tokeninfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`);
     return res.ok;
   } catch {
     return false;

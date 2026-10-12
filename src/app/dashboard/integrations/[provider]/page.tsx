@@ -937,8 +937,30 @@ function ProviderConfigCore() {
 
                 {sheetsError && (
                   <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs leading-normal">
-                    <strong className="block font-bold">Error:</strong>
-                    <p className="opacity-90">{sheetsError}</p>
+                    <strong className="block font-bold text-rose-900">Action Required:</strong>
+                    {sheetsError.includes('People API') || sheetsError.includes('SERVICE_DISABLED') ? (
+                      <div className="space-y-2 mt-1">
+                        <p className="font-semibold text-rose-900">
+                          Google People API is not yet enabled in your Google Cloud Project (666330539586).
+                        </p>
+                        <p className="text-[11px] text-rose-700">
+                          To allow StudioCore to create and sync Google Contact groups, click below to enable the People API in your Google Cloud Console:
+                        </p>
+                        <div className="pt-1">
+                          <a
+                            href="https://console.developers.google.com/apis/api/people.googleapis.com/overview?project=666330539586"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                          >
+                            <span>Enable People API in Google Cloud</span>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="opacity-90 mt-1">{sheetsError}</p>
+                    )}
                   </div>
                 )}
 

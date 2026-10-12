@@ -228,9 +228,67 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('workspace_id', workspaceId);
 
-    // Live Forms Discovery & DB Auto-Recovery
+    // Live Forms Discovery & Auto-Healing from Graph API
+    if (pagesData && pagesData.length > 0) {
+      const now = new Date().toISOString();
+
+      // Query Graph API live for each page to discover any new or updated forms
+      for (const page of pagesData) {
+        const pageToken = page.page_access_token || conn?.access_token;
+        if (!pageToken) continue;
+
+        try {
+          // Query leadgen_forms
+          const fRes = await fetch(
+            `https://graph.facebook.com/v20.0/${page.page_id}/leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${pageToken}`
+          );
+          const fJson = await fRes.json().catch(() => ({}));
+          const pageForms = Array.isArray(fJson.data) ? fJson.data : [];
+
+          for (const f of pageForms) {
+            if (!f.id) continue;
+            const formId = f.id;
+            const formName = f.name || 'Instant Lead Form';
+            const status = f.status || 'ACTIVE';
+            const leadsCount = f.leads_count || 0;
+
+            const { data: existingForm } = await supabaseAdmin
+              .from('fb_lead_forms')
+              .select('is_enabled')
+              .eq('workspace_id', workspaceId)
+              .eq('form_id', formId)
+              .maybeSingle();
+
+            await supabaseAdmin
+              .from('fb_lead_forms')
+              .upsert({
+                workspace_id: workspaceId,
+                page_id: page.page_id,
+                form_id: formId,
+                form_name: formName,
+                status,
+                leads_count: leadsCount,
+                is_enabled: existingForm?.is_enabled ?? true,
+                updated_at: now,
+              }, { onConflict: 'form_id' });
+          }
+        } catch (err: any) {
+          console.error(`[STATUS API Live Forms Error for Page ${page.page_id}]:`, err.message);
+        }
+      }
+
+      // Re-fetch rawFormsData after discovery
+      const { data: refreshedForms } = await supabaseAdmin
+        .from('fb_lead_forms')
+        .select('*')
+        .eq('workspace_id', workspaceId);
+
+      if (refreshedForms && refreshedForms.length > 0) {
+        rawFormsData = refreshedForms;
+      }
+    }
+
     if ((!rawFormsData || rawFormsData.length === 0) && pagesData && pagesData.length > 0) {
-      console.log(`[STATUS API AUDIT] 0 forms in fb_lead_forms for ${workspaceId}. Live discovering forms from pages...`);
       const discoveredForms: any[] = [];
       const now = new Date().toISOString();
 
@@ -247,7 +305,6 @@ export async function GET(req: NextRequest) {
         const { data: existingFormsInDb } = await query;
         let matchedForms: any[] = Array.isArray(existingFormsInDb) ? existingFormsInDb : [];
 
-        // Fallback: If 0 forms matched by page_id, query all forms in DB and match by page_name or leads
         if (matchedForms.length === 0 && pageNames.length > 0) {
           const { data: allDbForms } = await supabaseAdmin.from('fb_lead_forms').select('*');
           if (Array.isArray(allDbForms)) {
@@ -286,55 +343,6 @@ export async function GET(req: NextRequest) {
           }
         }
       } catch (_) {}
-
-      // Auto-Recovery Step B: Query Graph API live for each page
-      for (const page of pagesData) {
-        const pageToken = page.page_access_token || conn?.access_token;
-        if (!pageToken) continue;
-
-        try {
-          // Query leadgen_forms & promotable_leadgen_forms
-          const fRes = await fetch(
-            `https://graph.facebook.com/v20.0/${page.page_id}/leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${pageToken}`
-          );
-          const fJson = await fRes.json().catch(() => ({}));
-          const pageForms = Array.isArray(fJson.data) ? fJson.data : [];
-
-          for (const f of pageForms) {
-            if (!f.id) continue;
-            const formId = f.id;
-            const formName = f.name || 'Instant Lead Form';
-            const status = f.status || 'ACTIVE';
-            const leadsCount = f.leads_count || 0;
-
-            const { data: existingForm } = await supabaseAdmin
-              .from('fb_lead_forms')
-              .select('is_enabled')
-              .eq('workspace_id', workspaceId)
-              .eq('form_id', formId)
-              .maybeSingle();
-
-            const { data: savedForm } = await supabaseAdmin
-              .from('fb_lead_forms')
-              .upsert({
-                workspace_id: workspaceId,
-                page_id: page.page_id,
-                form_id: formId,
-                form_name: formName,
-                status,
-                leads_count: leadsCount,
-                is_enabled: existingForm?.is_enabled ?? false,
-                updated_at: now,
-              }, { onConflict: 'form_id' })
-              .select('*')
-              .maybeSingle();
-
-            if (savedForm) discoveredForms.push(savedForm);
-          }
-        } catch (err: any) {
-          console.error(`[STATUS API Live Forms Error for Page ${page.page_id}]:`, err.message);
-        }
-      }
 
       if (discoveredForms.length === 0 && pagesData.length > 0) {
         // Fallback Step C: Create active default form entry for connected page

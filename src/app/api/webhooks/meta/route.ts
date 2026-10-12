@@ -117,6 +117,42 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
       else if (mapping?.form_name) formName = (mapping as any).form_name;
 
       if (mapping?.contact_group_id) contactGroupId = mapping.contact_group_id;
+
+      // Group fallback if unmapped
+      if (!contactGroupId && formName) {
+        try {
+          const { data: siblingForm } = await supabaseAdmin
+            .from('fb_form_mappings')
+            .select('contact_group_id')
+            .eq('workspace_id', workspaceId)
+            .ilike('form_name', `%${formName.trim()}%`)
+            .not('contact_group_id', 'is', null)
+            .limit(1)
+            .maybeSingle();
+
+          if (siblingForm?.contact_group_id) {
+            contactGroupId = siblingForm.contact_group_id;
+          }
+        } catch (_) {}
+      }
+
+      if (!contactGroupId) {
+        try {
+          const { data: defaultMapping } = await supabaseAdmin
+            .from('fb_form_mappings')
+            .select('contact_group_id')
+            .eq('workspace_id', workspaceId)
+            .eq('is_active', true)
+            .not('contact_group_id', 'is', null)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (defaultMapping?.contact_group_id) {
+            contactGroupId = defaultMapping.contact_group_id;
+          }
+        } catch (_) {}
+      }
     }
 
     // 3. Deduplication Check

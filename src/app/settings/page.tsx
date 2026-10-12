@@ -223,7 +223,7 @@ export default function SettingsPage() {
     { id: 's3', name: 'Google Ads', color: '#f43f5e' },
     { id: 's4', name: 'Website', color: '#10b981' },
     { id: 's5', name: 'Referral', color: '#f59e0b' },
-    { id: 's6', name: 'WhatsApp Direct', color: '#84cc16' },
+    { id: 's6', name: 'WhatsApp Welcome Message', color: '#84cc16' },
   ]);
 
   const [leadStages, setLeadStages] = useState<DropdownItem[]>([
@@ -1020,8 +1020,8 @@ export default function SettingsPage() {
                       { key: 'comments', label: 'Comments & Reminders', icon: MessageSquare, desc: 'Open discussion timeline drawer', isDefault: true },
                       { key: 'google_contact', label: 'Google Contact Sync', icon: UserCheck, desc: 'Sync lead to Google Contacts', isDefault: false },
                       { key: 'wgl_alert', label: 'WGL Alert Dispatch', icon: AlertCircle, desc: 'Dispatch WGL team notification', isDefault: false },
-                      { key: 'whatsapp', label: 'WhatsApp Direct', icon: Send, desc: 'Send WhatsApp welcome message', isDefault: false },
-                      { key: 'followup', label: 'Followup Calendar', icon: Clock, desc: 'Schedule followups & tasks', isDefault: false },
+                      { key: 'whatsapp', label: 'WhatsApp Welcome Message', icon: Send, desc: 'Send WhatsApp welcome message', isDefault: false },
+                      { key: 'followup', label: 'WhatsApp Follow-up Message', icon: Clock, desc: 'Schedule followups & tasks', isDefault: false },
                     ].map(item => (
                       <label
                         key={item.key}

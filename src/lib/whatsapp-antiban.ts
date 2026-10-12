@@ -70,33 +70,7 @@ export function calculateSmartAntiBanSchedule(
 
   let scheduled = new Date(baseDate.getTime() + delayMs);
 
-  // Business Hours / DND Guard (Indian Standard Time UTC+5:30)
-  // If the delay is in hours or days, guard against dispatching between 9:00 PM and 9:30 AM IST
-  if (enforceDND && (unit === 'days' || unit === 'hours')) {
-    const istOffsetMs = 5.5 * 60 * 60 * 1000; // +05:30
-    const istDate = new Date(scheduled.getTime() + istOffsetMs);
-    const istHours = istDate.getUTCHours();
-    const istMinutes = istDate.getUTCMinutes();
-
-    // Night Window: 21:00 (9:00 PM) to 09:30 (9:30 AM)
-    const isNight = istHours >= 21 || istHours < 9 || (istHours === 9 && istMinutes < 30);
-    if (isNight) {
-      // Shift to the next morning between 10:15 AM and 11:45 AM IST with randomized minute & second
-      const randomMorningHour = 10 + (Math.random() > 0.4 ? 1 : 0); // 10 or 11
-      const randomMorningMinute = 15 + Math.floor(Math.random() * 35); // 15 to 50
-      const randomSeconds = Math.floor(Math.random() * 59);
-
-      if (istHours >= 21) {
-        // Night after 9 PM -> move to next calendar day morning
-        istDate.setUTCDate(istDate.getUTCDate() + 1);
-      }
-      istDate.setUTCHours(randomMorningHour, randomMorningMinute, randomSeconds, 0);
-
-      // Convert back to UTC ISO
-      scheduled = new Date(istDate.getTime() - istOffsetMs);
-    }
-  }
-
+  // Return scheduled time preserving the exact time interval + humanized organic jitter (No night shift)
   return scheduled;
 }
 
