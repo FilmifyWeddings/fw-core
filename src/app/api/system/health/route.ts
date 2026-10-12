@@ -5,23 +5,62 @@ import { isQueuePollerInitialized } from '@/lib/baileys-serverless';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const t0 = Date.now();
   const authHeader = req.headers.get('authorization');
   const token = authHeader?.replace('Bearer ', '');
+  const adminKey = req.headers.get('x-admin-key') || req.nextUrl.searchParams.get('admin_key') || req.nextUrl.searchParams.get('key');
 
-  // Auth optional — allow unauthenticated health checks from PM2/nginx
+  const validAdminKeys = [
+    process.env.ADMIN_HEALTH_SECRET,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.CRON_SECRET,
+    process.env.BAILEYS_WEBHOOK_SECRET,
+  ].filter(Boolean);
+
+  let isAuthorizedAdmin = Boolean(adminKey && validAdminKeys.includes(adminKey));
   let userId: string | null = null;
-  if (token) {
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabaseClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    const { data: { user } } = await supabaseClient.auth.getUser(token);
-    if (user) userId = user.id;
+
+  if (!isAuthorizedAdmin && token) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabaseClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+      const { data: { user } } = await supabaseClient.auth.getUser(token);
+      if (user) {
+        userId = user.id;
+        // Verify if user is studio owner or superadmin
+        const { data: ownerWs } = await supabaseAdmin
+          .from('workspaces')
+          .select('id')
+          .eq('owner_id', user.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (ownerWs) {
+          isAuthorizedAdmin = true;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ── PUBLIC SANITIZED PING: If not authorized admin, return safe high-level status ONLY ──
+  // Under NO circumstances may public unauthenticated requests view other studios' emails or sessions!
+  if (!isAuthorizedAdmin) {
+    const elapsed = Date.now() - t0;
+    return NextResponse.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      responseTimeMs: elapsed,
+      service: 'StudioCore Cloud Gateway',
+    }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
+    });
   }
 
   const checks: Record<string, any> = {};
-  const t0 = Date.now();
 
   // 1. Database
   try {

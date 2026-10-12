@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from('storage_drive_accounts')
-      .select('*')
+      .select('id, workspace_id, account_email, account_label, total_storage_bytes, used_storage_bytes, last_synced_at, is_active, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .eq('is_active', true)
       .order('created_at', { ascending: false });

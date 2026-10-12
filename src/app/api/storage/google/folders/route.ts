@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
 
     const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
       q
-    )}&fields=files(id,name,mimeType,webViewLink,thumbnailLink,iconLink,size,createdTime,modifiedTime,quotaBytesUsed)&orderBy=folder,name&pageSize=100`;
+    )}&fields=files(id,name,mimeType,webViewLink,thumbnailLink,iconLink,size,createdTime,modifiedTime,quotaBytesUsed)&orderBy=folder,name&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true`;
 
     const driveRes = await fetch(driveUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
