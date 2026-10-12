@@ -40,10 +40,11 @@ export function calculateSmartAntiBanSchedule(
   const unit = (delayUnit || 'minutes').toLowerCase();
   const val = Math.max(0, Number(delayValue) || 0);
 
-  // Multi-step anti-ban pacing: 1 to 10 minutes random jitter ("aage peeche")
+  // Multi-step anti-ban pacing: ±4 to 9 minutes random humanized jitter ("aage peeche")
   const jitterSign = Math.random() < 0.5 ? -1 : 1;
-  const randomJitterMins = Math.floor(Math.random() * 10) + 1; // 1 to 10 minutes
-  const jitterMs = jitterSign * randomJitterMins * 60 * 1000;
+  const randomJitterMins = Math.floor(Math.random() * 6) + 4; // 4 to 9 minutes
+  const randomSeconds = Math.floor(Math.random() * 60);
+  const jitterMs = (jitterSign * randomJitterMins * 60 * 1000) + (jitterSign * randomSeconds * 1000);
 
   if (unit === 'seconds') {
     // If delay is zero or immediate, first step is 2-4s, subsequent steps 12-20s

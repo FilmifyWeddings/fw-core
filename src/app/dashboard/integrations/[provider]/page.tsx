@@ -180,8 +180,10 @@ function ProviderConfigCore() {
         `width=${width},height=${height},top=${top},left=${left}`
       );
 
+      let checkInterval: any = null;
       const handler = async (event: MessageEvent) => {
         if (event.data && event.data.type === 'GOOGLE_AUTH_CALLBACK') {
+          if (checkInterval) clearInterval(checkInterval);
           window.removeEventListener('message', handler);
           if (event.data.success) {
             console.log(`[Google OAuth] Connected successfully for ${dbProv}.`);
@@ -194,6 +196,30 @@ function ProviderConfigCore() {
         }
       };
       window.addEventListener('message', handler);
+
+      // Fallback: in case postMessage was dropped or window was closed manually
+      checkInterval = setInterval(async () => {
+        if (popup && popup.closed) {
+          clearInterval(checkInterval);
+          window.removeEventListener('message', handler);
+          try {
+            const { data } = await supabase
+              .from('integration_credentials')
+              .select('status, config')
+              .eq('user_id', session.user.id)
+              .eq('provider', dbProv)
+              .maybeSingle();
+
+            if (data?.status === 'connected') {
+              console.log(`[Google OAuth Polling] Detected successful connection for ${dbProv}.`);
+              setStatus('connected');
+              window.location.reload();
+            }
+          } catch (e) {
+            console.error('Error polling credentials status:', e);
+          }
+        }
+      }, 1500);
     } catch (err) {
       console.error(err);
     }

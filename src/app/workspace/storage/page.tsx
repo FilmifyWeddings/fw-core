@@ -199,6 +199,9 @@ export default function StorageHubPage() {
   const [googleCurrentFolder, setGoogleCurrentFolder] = useState<any>({ id: 'root', name: 'My Drive' });
   const [googleBreadcrumbs, setGoogleBreadcrumbs] = useState<any[]>([{ id: 'root', name: 'My Drive' }]);
   const [googleFolderLoading, setGoogleFolderLoading] = useState(false);
+  const [googleNextPageToken, setGoogleNextPageToken] = useState<string | null>(null);
+  const [googleLoadingMore, setGoogleLoadingMore] = useState(false);
+  const [previewMediaFile, setPreviewMediaFile] = useState<any | null>(null);
   const [selectedFolderForLink, setSelectedFolderForLink] = useState<any | null>(null);
   const [newDriveFolderName, setNewDriveFolderName] = useState('');
   const [creatingDriveFolder, setCreatingDriveFolder] = useState(false);
@@ -614,20 +617,34 @@ export default function StorageHubPage() {
     setTimeout(() => setCopiedPathId(null), 2500);
   };
 
-  // Google Folder Navigation
-  const fetchGoogleFolders = useCallback(async (accountId: string, parentId: string = 'root') => {
-    setGoogleFolderLoading(true);
+  // Google Folder Navigation with Multi-Page Pagination (>200 items)
+  const fetchGoogleFolders = useCallback(async (accountId: string, parentId: string = 'root', pageToken?: string, append: boolean = false) => {
+    if (append) {
+      setGoogleLoadingMore(true);
+    } else {
+      setGoogleFolderLoading(true);
+      setGoogleNextPageToken(null);
+    }
     try {
-      const res = await fetch(`/api/storage/google/folders?account_id=${accountId}&parent_id=${parentId}&workspace_id=${effectiveWsId}`);
+      let url = `/api/storage/google/folders?account_id=${accountId}&parent_id=${parentId}&workspace_id=${effectiveWsId}`;
+      if (pageToken) url += `&page_token=${encodeURIComponent(pageToken)}`;
+      const res = await fetch(url);
       const json = await res.json();
       if (json.success) {
-        setGoogleFolders(json.folders || []);
-        setGoogleFiles(json.files || []);
+        if (append) {
+          setGoogleFolders(prev => [...prev, ...(json.folders || [])]);
+          setGoogleFiles(prev => [...prev, ...(json.files || [])]);
+        } else {
+          setGoogleFolders(json.folders || []);
+          setGoogleFiles(json.files || []);
+        }
+        setGoogleNextPageToken(json.nextPageToken || null);
       }
     } catch (err) {
       console.warn('Failed to fetch google folders:', err);
     } finally {
       setGoogleFolderLoading(false);
+      setGoogleLoadingMore(false);
     }
   }, [effectiveWsId]);
 
@@ -2703,19 +2720,63 @@ export default function StorageHubPage() {
                                 </div>
                               </div>
 
-                              <a
-                                href={file.webViewLink}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-blue-600 font-bold text-[11px] flex items-center gap-1 shrink-0 transition"
-                              >
-                                <span>Preview</span>
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewMediaFile(file)}
+                                  className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer"
+                                  title="In-app lightbox preview"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  <span>Preview</span>
+                                </button>
+                                <a
+                                  href={file.webViewLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition"
+                                  title="Open externally in Google Drive"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              </div>
                             </div>
                           );
                         })}
                       </div>
+
+                      {/* Load More Pagination for Google Drive Items (> 200 items) */}
+                      {googleNextPageToken && (
+                        <div className="pt-3 pb-2 text-center">
+                          <button
+                            type="button"
+                            disabled={googleLoadingMore}
+                            onClick={() => {
+                              if (selectedGoogleAccount && googleCurrentFolder) {
+                                fetchGoogleFolders(
+                                  selectedGoogleAccount.id,
+                                  googleCurrentFolder.id,
+                                  googleNextPageToken,
+                                  true
+                                );
+                              }
+                            }}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                          >
+                            {googleLoadingMore ? (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                                <span>Loading more items...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Layers className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Load More ({googleFiles.length + googleFolders.length} loaded)</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2794,6 +2855,63 @@ export default function StorageHubPage() {
                   Confirm & Link Folder
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Google Drive Media In-App Lightbox Modal Preview */}
+      {previewMediaFile && (
+        <div className="fixed inset-0 z-[1000000] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-5xl h-[88vh] bg-slate-900 border border-slate-700/60 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
+            {/* Lightbox Header */}
+            <div className="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-4 shrink-0">
+              <div className="min-w-0 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+                  {previewMediaFile.isVideo ? <Film className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-white truncate max-w-md sm:max-w-xl">
+                    {previewMediaFile.name}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    {previewMediaFile.mimeType || 'Media File'} • {previewMediaFile.sizeBytes > 0 ? (previewMediaFile.sizeBytes > 1024*1024*1024 ? `${(previewMediaFile.sizeBytes / (1024*1024*1024)).toFixed(2)} GB` : `${(previewMediaFile.sizeBytes / (1024*1024)).toFixed(1)} MB`) : 'Direct Cloud Preview'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {previewMediaFile.webViewLink && (
+                  <a
+                    href={previewMediaFile.webViewLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
+                    title="Open directly in Google Drive"
+                  >
+                    <span>Open in Drive</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewMediaFile(null)}
+                  className="p-1.5 bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 rounded-lg transition cursor-pointer"
+                  title="Close preview (Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Lightbox Body (Interactive Media Viewer) */}
+            <div className="flex-1 w-full bg-black/70 relative flex items-center justify-center p-2 overflow-hidden">
+              <iframe
+                src={previewMediaFile.previewUrl || `https://drive.google.com/file/d/${previewMediaFile.id}/preview`}
+                className="w-full h-full border-none rounded-b-xl bg-transparent"
+                allow="autoplay; encrypted-media"
+                title={previewMediaFile.name}
+              />
             </div>
           </div>
         </div>

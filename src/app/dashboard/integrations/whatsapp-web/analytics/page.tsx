@@ -369,6 +369,11 @@ export default function WhatsAppAnalyticsConsolePage() {
     }
 
     filteredData.forEach(item => {
+      // Strictly ignore pending, queued, or scheduled messages from the dispatched trends graph
+      const isSuccess = ['sent', 'delivered', 'read', 'completed', 'done'].includes(item.status);
+      const isFailed = item.status === 'failed';
+      if (!isSuccess && !isFailed) return;
+
       const d = new Date(item.sent_at || item.created_at);
       if (isNaN(d.getTime())) return;
 
@@ -384,9 +389,9 @@ export default function WhatsAppAnalyticsConsolePage() {
       }
 
       map[key].total++;
-      if (item.status === 'failed') {
+      if (isFailed) {
         map[key].failed++;
-      } else {
+      } else if (isSuccess) {
         map[key].success++;
       }
     });

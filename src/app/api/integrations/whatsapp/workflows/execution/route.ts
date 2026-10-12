@@ -212,6 +212,9 @@ export async function GET(req: NextRequest) {
               stepStatus = 'stopped';
             }
             sentAtIso = matchedLog.sent_at;
+            if (matchedLog.sent_at && !isNaN(new Date(matchedLog.sent_at).getTime())) {
+              runningSentAtDate = new Date(matchedLog.sent_at);
+            }
             sentAtFormatted = stepStatus === 'pending'
               ? `Scheduled to send on: ${formatIST(matchedLog.sent_at)}`
               : `Sent at: ${formatIST(matchedLog.sent_at)}`;

@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
     const parentId = searchParams.get('parent_id') || 'root';
     const searchQuery = searchParams.get('search');
     const workspaceId = searchParams.get('workspace_id');
+    const pageToken = searchParams.get('page_token') || searchParams.get('pageToken');
 
     if (!accountId) {
       return NextResponse.json({ success: false, error: 'account_id is required' }, { status: 400 });
@@ -85,6 +86,7 @@ export async function GET(req: NextRequest) {
         currentFolder: { id: 'root', name: 'Direct Linked Drive' },
         folders: [],
         files: [],
+        nextPageToken: null,
         message: 'Account is linked directly. You can paste the Google Drive folder link or folder name directly.'
       });
     }
@@ -95,9 +97,13 @@ export async function GET(req: NextRequest) {
       q = `name contains '${cleanSearch}' and trashed = false`;
     }
 
-    const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+    let driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
       q
-    )}&fields=files(id,name,mimeType,webViewLink,thumbnailLink,iconLink,size,createdTime,modifiedTime,quotaBytesUsed)&orderBy=folder,name&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+    )}&fields=nextPageToken,files(id,name,mimeType,webViewLink,thumbnailLink,iconLink,size,createdTime,modifiedTime,quotaBytesUsed)&orderBy=folder,name&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+    if (pageToken && pageToken.trim()) {
+      driveUrl += `&pageToken=${encodeURIComponent(pageToken.trim())}`;
+    }
 
     const driveRes = await fetch(driveUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -113,6 +119,7 @@ export async function GET(req: NextRequest) {
 
     const driveData = await driveRes.json();
     const allItems = driveData.files || [];
+    const nextPageToken = driveData.nextPageToken || null;
 
     const folders = allItems
       .filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder')
@@ -133,6 +140,7 @@ export async function GET(req: NextRequest) {
         mimeType: f.mimeType,
         thumbnailLink: f.thumbnailLink || null,
         webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
+        previewUrl: `https://drive.google.com/file/d/${f.id}/preview`,
         sizeBytes: Number(f.size) || 0,
         createdTime: f.createdTime,
         isImage: Boolean(f.mimeType?.startsWith('image/')),
@@ -142,7 +150,7 @@ export async function GET(req: NextRequest) {
 
     // If not root, fetch current parent folder metadata
     let currentFolder = { id: parentId, name: parentId === 'root' ? 'My Drive' : 'Folder' };
-    if (parentId !== 'root') {
+    if (parentId !== 'root' && !pageToken) {
       try {
         const parentMetaRes = await fetch(
           `https://www.googleapis.com/drive/v3/files/${parentId}?fields=id,name,webViewLink`,
@@ -165,6 +173,7 @@ export async function GET(req: NextRequest) {
       currentFolder,
       folders,
       files,
+      nextPageToken,
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
