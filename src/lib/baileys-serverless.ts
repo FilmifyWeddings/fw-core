@@ -590,6 +590,7 @@ async function startDirectServerlessQr(
           .from('baileys_sessions')
           .upsert({
             workspace_id: workspaceId,
+            user_id: workspaceId,
             creds_json: credsJson,
             keys_json: keysJson,
             updated_at: new Date().toISOString(),

@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
         keys_json: null,
         error_info: 'Force reset — fresh session initialized',
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
+      }, { onConflict: 'workspace_id' });
 
     // 2. Best-effort notification to external worker if running
     const WORKER_PORT = process.env.WORKER_PORT ?? '3002';

@@ -89,6 +89,8 @@ export async function GET(req: NextRequest) {
         if ((health.socket_authenticated || health.socket_conn_state === 'open') && health.phone_number) {
           workerConnected = true;
           workerPhone = health.phone_number;
+        } else if (health.qr_string || health.qr) {
+          qrString = health.qr_string || health.qr;
         }
       }
     } catch {
@@ -98,7 +100,9 @@ export async function GET(req: NextRequest) {
     let isConnected = false;
     let phoneNumber: string | null = null;
     let lastConnected: string | null = null;
-    let qrString: string | null = (data?.qr_string as string) ?? null;
+    if (!qrString) {
+      qrString = (data?.qr_string as string) ?? null;
+    }
 
     if (workerChecked && workerConnected && workerPhone) {
       isConnected = true;

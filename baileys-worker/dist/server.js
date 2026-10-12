@@ -224,7 +224,7 @@ async function updateSessionState(state, extras = {}, targetWorkspaceId) {
         conn_state: state,
         ...extras,
         updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
+    }, { onConflict: 'workspace_id' });
 }
 function formatActionLinksText(rawButtons) {
     if (!rawButtons || rawButtons.length === 0)
@@ -1341,7 +1341,7 @@ async function syncOpenSessionToDb(wsId, sock, authState) {
             qr_expires_at: null,
             last_connected: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id' });
+        }, { onConflict: 'workspace_id' });
         if (dbErr) {
             console.error('[WA Sync DB Error]:', dbErr);
         }
@@ -1449,8 +1449,11 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                     else {
                         clearConnectingTimeout(wsId);
                         startConnectingTimeout(wsId);
+                        // Always cache current QR in memory for instant zero-latency retrieval
+                        currentSess.currentQr = qr;
+                        currentSess.qrExpiresAt = Date.now() + 60_000;
                         const now = Date.now();
-                        if (now - currentSess.lastQrTime > 10_000) {
+                        if (now - currentSess.lastQrTime > 5_000) {
                             currentSess.lastQrTime = now;
                             logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
                             console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
@@ -1465,11 +1468,13 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                                 status: 'disconnected',
                                 phone_number: null,
                                 updated_at: new Date().toISOString(),
-                            }, { onConflict: 'user_id' }), `upsert-qr-${wsId}`);
+                            }, { onConflict: 'workspace_id' }), `upsert-qr-${wsId}`);
                         }
                     }
                 }
                 if (connection === 'open' || (localSock.user?.id && connection !== 'close')) {
+                    currentSess.currentQr = null;
+                    currentSess.qrExpiresAt = undefined;
                     clearConnectingTimeout(wsId);
                     // Guarantee local disk save
                     try {
@@ -1812,7 +1817,7 @@ function startHealthServer() {
                 }
                 const { data } = await supabase
                     .from('baileys_sessions')
-                    .select('conn_state, phone_number, last_connected')
+                    .select('conn_state, phone_number, qr_string, last_connected')
                     .or(`workspace_id.eq.${targetWs},user_id.eq.${targetWs}`)
                     .order('updated_at', { ascending: false })
                     .limit(1)
@@ -1840,7 +1845,23 @@ function startHealthServer() {
                     socket_conn_state: isEffectiveConnected ? 'open' : socketConnState,
                     socket_authenticated: isEffectiveConnected,
                     phone_number: effectivePhone,
+                    qr: sess?.currentQr || data?.qr_string || null,
+                    qr_string: sess?.currentQr || data?.qr_string || null,
                     session: data,
+                }));
+                return;
+            }
+            if (req.method === 'GET' && parsedUrl.pathname === '/qr') {
+                const targetWs = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+                const sess = activeSessions.get(targetWs);
+                const qr = sess?.currentQr || null;
+                res.writeHead(200);
+                res.end(JSON.stringify({
+                    success: true,
+                    workspace_id: targetWs,
+                    qr: qr,
+                    qr_string: qr,
+                    conn_state: sess?.sock?.user?.id ? 'open' : (qr ? 'connecting' : 'disconnected'),
                 }));
                 return;
             }
@@ -1910,17 +1931,18 @@ function startHealthServer() {
                     return;
                 }
                 // 4. Debounce if valid QR already exists
-                const validMemoryQr = !!(sess?.lastQrTime && (now - sess.lastQrTime < 20_000));
-                const validDbQr = dbSess?.qr_string && dbSess?.updated_at && (now - new Date(dbSess.updated_at).getTime() < 20_000);
+                const validMemoryQr = !!(sess?.currentQr && sess?.qrExpiresAt && (sess.qrExpiresAt > now));
+                const validDbQr = !!(dbSess?.qr_string && dbSess?.updated_at && (now - new Date(dbSess.updated_at).getTime() < 30_000));
                 if (!forceFresh && (validMemoryQr || validDbQr)) {
-                    logger.info({ workspace_id: qsWorkspace }, '⏳ Active QR pairing in progress with valid QR — Skipping re-trigger on /init-qr.');
+                    const existingQr = sess?.currentQr || dbSess?.qr_string;
+                    logger.info({ workspace_id: qsWorkspace }, '⏳ Active QR pairing in progress with valid QR — Returning current QR on /init-qr.');
                     res.writeHead(200);
-                    res.end(JSON.stringify({ success: true, message: `Active QR pairing in progress.` }));
+                    res.end(JSON.stringify({ success: true, qr: existingQr, qr_string: existingQr, message: `Active QR pairing in progress.` }));
                     return;
                 }
-                // 5. If forceFresh was explicitly passed, initiate force reset. Otherwise, start socket cleanly!
-                if (forceFresh) {
-                    logger.info({ workspace_id: qsWorkspace }, '🔴 Hard force-fresh requested — purging session and starting clean socket...');
+                // 5. If forceFresh or no authenticated session exists, start fresh socket for QR pairing
+                if (forceFresh || !hasDiskSession(qsWorkspace)) {
+                    logger.info({ workspace_id: qsWorkspace }, '🚀 Starting clean Baileys socket for fresh QR pairing...');
                     await initiateForceReset(qsWorkspace);
                 }
                 else {

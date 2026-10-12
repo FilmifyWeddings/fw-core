@@ -83,8 +83,19 @@ export function hasDiskSession(workspaceId) {
     ];
     for (const base of candidates) {
         const credsFile = path.join(base, workspaceId, 'creds.json');
-        if (fs.existsSync(credsFile))
-            return true;
+        if (fs.existsSync(credsFile)) {
+            try {
+                const raw = fs.readFileSync(credsFile, 'utf8');
+                const parsed = JSON.parse(raw);
+                // Valid paired session MUST have me.id (or me.jid)!
+                const hasMe = !!(parsed?.me?.id || parsed?.me?.jid || parsed?.creds?.me?.id);
+                if (hasMe)
+                    return true;
+            }
+            catch {
+                // Corrupt or empty JSON
+            }
+        }
     }
     return false;
 }

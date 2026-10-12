@@ -261,8 +261,13 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
               setPhoneNumber(null);
               updateQr(d.qr_string);
             } else if (isMounted) {
-              setConnState('disconnected');
+              setConnState('connecting');
               setPhoneNumber(null);
+              // Proactively initialize fresh QR code on backend
+              fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(workspaceId)}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).catch(() => {});
             }
           }
         }
