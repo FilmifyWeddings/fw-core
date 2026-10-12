@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getGoogleDriveCredentials } from '@/lib/google-credentials';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_google_client_id_here')
-    ? process.env.GOOGLE_CLIENT_ID
-    : (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '');
-
-  const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CLIENT_SECRET !== 'your_google_client_secret_here')
-    ? process.env.GOOGLE_CLIENT_SECRET
-    : '';
+  const { clientId: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET } = getGoogleDriveCredentials();
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
   const proto = req.headers.get('x-forwarded-proto') || (req.nextUrl.protocol ? req.nextUrl.protocol.replace(':', '') : 'https');
   const origin = `${proto}://${host}`;

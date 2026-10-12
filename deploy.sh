@@ -7,35 +7,36 @@ echo "Fetching latest changes..."
 git fetch origin main
 git reset --hard origin/main
 
-echo "Synchronizing Google OAuth credentials in .env.local..."
-if [ -f /var/www/fw-core/.env.local ]; then
-  NEW_CID=$(echo "666330539586-z68fqefyxozn83apyqxyq34h4tyh2dbw.nccf.tbbtyrhfrepbagrag.pbz" | tr 'A-Za-z' 'N-ZA-Mn-za-m')
-  NEW_SEC=$(echo "TBPFCK-p3Iw3Ju6RODENuSrroTlBke1hnIy" | tr 'A-Za-z' 'N-ZA-Mn-za-m')
+echo "Synchronizing Google OAuth credentials in all env files..."
+NEW_CID=$(echo "666330539586-z68fqefyxozn83apyqxyq34h4tyh2dbw.nccf.tbbtyrhfrepbagrag.pbz" | tr 'A-Za-z' 'N-ZA-Mn-za-m')
+NEW_SEC=$(echo "TBPFCK-p3Iw3Ju6RODENuSrroTlBke1hnIy" | tr 'A-Za-z' 'N-ZA-Mn-za-m')
 
-  for KEY in GOOGLE_CLIENT_ID NEXT_PUBLIC_GOOGLE_CLIENT_ID; do
-    if grep -q "^${KEY}=" /var/www/fw-core/.env.local; then
-      sed -i "s|^${KEY}=.*|${KEY}=${NEW_CID}|g" /var/www/fw-core/.env.local
+for ENV_FILE in /var/www/fw-core/.env.local /var/www/fw-core/.env /var/www/fw-core/.env.production; do
+  if [ -f "$ENV_FILE" ]; then
+    for KEY in GOOGLE_CLIENT_ID NEXT_PUBLIC_GOOGLE_CLIENT_ID; do
+      if grep -q "^${KEY}=" "$ENV_FILE"; then
+        sed -i "s|^${KEY}=.*|${KEY}=${NEW_CID}|g" "$ENV_FILE"
+      else
+        echo "${KEY}=${NEW_CID}" >> "$ENV_FILE"
+      fi
+    done
+
+    if grep -q "^GOOGLE_CLIENT_SECRET=" "$ENV_FILE"; then
+      sed -i "s|^GOOGLE_CLIENT_SECRET=.*|GOOGLE_CLIENT_SECRET=${NEW_SEC}|g" "$ENV_FILE"
     else
-      echo "${KEY}=${NEW_CID}" >> /var/www/fw-core/.env.local
+      echo "GOOGLE_CLIENT_SECRET=${NEW_SEC}" >> "$ENV_FILE"
     fi
-  done
 
-  if grep -q "^GOOGLE_CLIENT_SECRET=" /var/www/fw-core/.env.local; then
-    sed -i "s|^GOOGLE_CLIENT_SECRET=.*|GOOGLE_CLIENT_SECRET=${NEW_SEC}|g" /var/www/fw-core/.env.local
-  else
-    echo "GOOGLE_CLIENT_SECRET=${NEW_SEC}" >> /var/www/fw-core/.env.local
+    for URI_KEY in GOOGLE_REDIRECT_URI GOOGLE_DRIVE_REDIRECT_URI; do
+      if grep -q "^${URI_KEY}=" "$ENV_FILE"; then
+        sed -i "s|^${URI_KEY}=.*|${URI_KEY}=https://studiocore.in/api/storage/google/callback|g" "$ENV_FILE"
+      else
+        echo "${URI_KEY}=https://studiocore.in/api/storage/google/callback" >> "$ENV_FILE"
+      fi
+    done
+    echo "Google credentials synced in $ENV_FILE"
   fi
-
-  for URI_KEY in GOOGLE_REDIRECT_URI GOOGLE_DRIVE_REDIRECT_URI; do
-    if grep -q "^${URI_KEY}=" /var/www/fw-core/.env.local; then
-      sed -i "s|^${URI_KEY}=.*|${URI_KEY}=https://studiocore.in/api/storage/google/callback|g" /var/www/fw-core/.env.local
-    else
-      echo "${URI_KEY}=https://studiocore.in/api/storage/google/callback" >> /var/www/fw-core/.env.local
-    fi
-  done
-  echo "Google credentials successfully synced to .env.local"
-fi
-
+done
 
 echo "Installing dependencies..."
 npm install --no-audit
@@ -52,7 +53,7 @@ npx tsc
 
 echo "Restarting PM2 apps via ecosystem.config.js..."
 cd /var/www/fw-core || exit 1
-pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" 2>/dev/null || pm2 restart ecosystem.config.js --only "baileys-worker,fw-core" 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
+pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 restart ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
 pm2 save
 
 echo "Configuring Nginx large_client_header_buffers to permanently eliminate 400 Bad Request..."

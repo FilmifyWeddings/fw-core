@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getGoogleDriveCredentials } from '@/lib/google-credentials';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,9 +12,7 @@ export async function GET(req: NextRequest) {
   const proto = req.headers.get('x-forwarded-proto') || (req.nextUrl.protocol ? req.nextUrl.protocol.replace(':', '') : 'https');
   const origin = `${proto}://${host}`;
 
-  const clientId = (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_google_client_id_here')
-    ? process.env.GOOGLE_CLIENT_ID
-    : (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '');
+  const { clientId } = getGoogleDriveCredentials();
 
   const redirectUri = process.env.GOOGLE_DRIVE_REDIRECT_URI || `${origin}/api/storage/google/callback`;
 

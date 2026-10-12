@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
+import { getActiveGoogleClientId } from '@/lib/google-credentials';
 
 interface MemoryCard {
   id: string;
@@ -908,7 +909,7 @@ export default function StorageHubPage() {
     };
 
     loadGsiScript().then(() => {
-      const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+      const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || getActiveGoogleClientId();
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: googleClientId,
         scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly',
