@@ -140,6 +140,53 @@ export async function GET(req: NextRequest) {
     checks.workflowLogs = { status: 'error', error: e.message };
   }
 
+  // 9. Google Drive connected accounts per studio
+  try {
+    const { data: driveAccounts, error: driveErr } = await supabaseAdmin
+      .from('storage_drive_accounts')
+      .select('id, workspace_id, account_email, account_label, total_storage_bytes, used_storage_bytes, is_active, created_at, updated_at')
+      .order('created_at', { ascending: false });
+
+    if (driveErr) {
+      checks.googleDriveAccounts = { status: 'error', error: driveErr.message };
+    } else {
+      const { data: workspacesList } = await supabaseAdmin
+        .from('workspaces')
+        .select('id, name');
+
+      const wsNameMap: Record<string, string> = {};
+      (workspacesList || []).forEach(w => { wsNameMap[w.id] = w.name; });
+
+      const accountsByStudio: Record<string, { studioName: string; count: number; accounts: any[] }> = {};
+      (driveAccounts || []).forEach(acc => {
+        const wsId = acc.workspace_id;
+        const sName = wsNameMap[wsId] || 'Unknown Studio';
+        if (!accountsByStudio[wsId]) {
+          accountsByStudio[wsId] = { studioName: sName, count: 0, accounts: [] };
+        }
+        accountsByStudio[wsId].count += 1;
+        accountsByStudio[wsId].accounts.push({
+          id: acc.id,
+          email: acc.account_email,
+          label: acc.account_label,
+          totalGb: Number((Number(acc.total_storage_bytes || 0) / (1024 ** 3)).toFixed(1)),
+          usedGb: Number((Number(acc.used_storage_bytes || 0) / (1024 ** 3)).toFixed(1)),
+          isActive: acc.is_active,
+          createdAt: acc.created_at,
+        });
+      });
+
+      checks.googleDriveAccounts = {
+        status: 'ok',
+        totalConnectedAccounts: (driveAccounts || []).length,
+        totalStudiosWithDrive: Object.keys(accountsByStudio).length,
+        studios: accountsByStudio,
+      };
+    }
+  } catch (e: any) {
+    checks.googleDriveAccounts = { status: 'error', error: e.message };
+  }
+
   const elapsed = Date.now() - t0;
 
   return NextResponse.json({
