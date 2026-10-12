@@ -82,6 +82,26 @@ export async function verifyMetaAuth(
 
       if (userProfile?.workspace_id) {
         resolvedWorkspaceId = userProfile.workspace_id;
+      } else {
+        const { data: memberEntry } = await supabaseAdmin
+          .from('workspace_members')
+          .select('workspace_id')
+          .eq('user_id', authenticatedUserId)
+          .limit(1)
+          .maybeSingle();
+        if (memberEntry?.workspace_id) {
+          resolvedWorkspaceId = memberEntry.workspace_id;
+        } else {
+          const { data: ownedEntry } = await supabaseAdmin
+            .from('workspaces')
+            .select('id')
+            .eq('owner_id', authenticatedUserId)
+            .limit(1)
+            .maybeSingle();
+          if (ownedEntry?.id) {
+            resolvedWorkspaceId = ownedEntry.id;
+          }
+        }
       }
 
       const isAdminRole = userProfile?.role === 'admin' || userProfile?.role === 'superadmin';
@@ -93,7 +113,24 @@ export async function verifyMetaAuth(
         clientSuppliedWorkspaceId !== authenticatedUserId &&
         clientSuppliedWorkspaceId !== userProfile?.workspace_id
       ) {
-        if (!isAdminRole) {
+        // Check if user is legitimately a member or owner of the requested workspace
+        const { data: memberCheck } = await supabaseAdmin
+          .from('workspace_members')
+          .select('id')
+          .eq('workspace_id', clientSuppliedWorkspaceId)
+          .eq('user_id', authenticatedUserId)
+          .maybeSingle();
+
+        const { data: ownerCheck } = await supabaseAdmin
+          .from('workspaces')
+          .select('id')
+          .eq('id', clientSuppliedWorkspaceId)
+          .eq('owner_id', authenticatedUserId)
+          .maybeSingle();
+
+        if (memberCheck || ownerCheck || isAdminRole) {
+          resolvedWorkspaceId = clientSuppliedWorkspaceId;
+        } else {
           console.warn(`[SECURITY 403] Non-admin user ${authenticatedUserId} attempted cross-workspace access to ${clientSuppliedWorkspaceId}. Access Denied.`);
           return {
             authorized: false,
@@ -105,7 +142,6 @@ export async function verifyMetaAuth(
             ),
           };
         }
-        resolvedWorkspaceId = clientSuppliedWorkspaceId;
       }
     } catch (profileErr) {
       console.warn('[Profile Workspace Lookup Warning]:', profileErr);

@@ -380,6 +380,12 @@ export async function GET(req: NextRequest) {
       .eq('workspace_id', workspaceId);
 
     const mappingMap = new Map((mappingsData || []).map((m: any) => [m.form_id, m]));
+    const formNameToGroupId = new Map<string, string>();
+    (mappingsData || []).forEach((m: any) => {
+      if (m.form_name && m.contact_group_id) {
+        formNameToGroupId.set(m.form_name.toLowerCase().trim(), m.contact_group_id);
+      }
+    });
     const formsByFormId = new Map((rawFormsData || []).map((f: any) => [f.form_id, f]));
 
     // Merge any forms from fb_form_mappings for THIS workspace
@@ -441,6 +447,20 @@ export async function GET(req: NextRequest) {
 
       const isFormEnabled = (f.is_enabled === true) || (mObj?.is_active === true);
 
+      let resolvedContactGroupId = mObj?.contact_group_id || null;
+      if (!resolvedContactGroupId && f.form_name) {
+        const cleanName = f.form_name.toLowerCase().trim();
+        resolvedContactGroupId = formNameToGroupId.get(cleanName) || null;
+        if (!resolvedContactGroupId) {
+          for (const [nameKey, grpId] of formNameToGroupId.entries()) {
+            if (cleanName.includes(nameKey) || nameKey.includes(cleanName)) {
+              resolvedContactGroupId = grpId;
+              break;
+            }
+          }
+        }
+      }
+
       return {
         form_id: f.form_id,
         page_id: f.page_id,
@@ -458,7 +478,7 @@ export async function GET(req: NextRequest) {
         is_active: true,
         is_enabled: isFormEnabled,
         is_sync_enabled: isFormEnabled,
-        contact_group_id: mObj?.contact_group_id || null,
+        contact_group_id: resolvedContactGroupId,
         distribution_config: formDist,
         last_lead_received: formLastLeadTime || lastLeadTime,
         created_time: f.created_time || f.created_at || new Date().toISOString(),

@@ -6,46 +6,50 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const tenantId = searchParams.get('tenant_id') || searchParams.get('workspace_id');
 
-  if (!tenantId) {
-    return NextResponse.json({ error: 'Missing tenant_id parameter' }, { status: 400 });
-  }
-
   try {
-    const candidateIds = new Set<string>([tenantId]);
+    const candidateIds = new Set<string>();
+    if (tenantId) {
+      candidateIds.add(tenantId);
 
-    // Check if tenantId is a user ID with associated workspace(s)
-    const { data: ownedWs } = await supabaseAdmin
-      .from('workspaces')
-      .select('id')
-      .eq('owner_id', tenantId);
+      // Check if tenantId is a user ID with associated workspace(s)
+      const { data: ownedWs } = await supabaseAdmin
+        .from('workspaces')
+        .select('id')
+        .eq('owner_id', tenantId);
 
-    if (ownedWs && ownedWs.length > 0) {
-      ownedWs.forEach(w => candidateIds.add(w.id));
+      if (ownedWs && ownedWs.length > 0) {
+        ownedWs.forEach(w => candidateIds.add(w.id));
+      }
+
+      const { data: memberWs } = await supabaseAdmin
+        .from('workspace_members')
+        .select('workspace_id')
+        .eq('user_id', tenantId);
+
+      if (memberWs && memberWs.length > 0) {
+        memberWs.forEach(m => candidateIds.add(m.workspace_id));
+      }
     }
 
-    const { data: memberWs } = await supabaseAdmin
-      .from('workspace_members')
-      .select('workspace_id')
-      .eq('user_id', tenantId);
+    const idList = Array.from(candidateIds).filter(Boolean);
+    let groups: any[] | null = null;
 
-    if (memberWs && memberWs.length > 0) {
-      memberWs.forEach(m => candidateIds.add(m.workspace_id));
+    if (idList.length > 0) {
+      const { data } = await supabaseAdmin
+        .from('whatsapp_contact_groups')
+        .select('*')
+        .in('tenant_id', idList)
+        .order('group_name', { ascending: true });
+      groups = data;
     }
-
-    const idList = Array.from(candidateIds);
-    let { data: groups, error } = await supabaseAdmin
-      .from('whatsapp_contact_groups')
-      .select('*')
-      .in('tenant_id', idList)
-      .order('group_name', { ascending: true });
 
     if (!groups || groups.length === 0) {
-      // Fallback: Check if groups exist without strict tenant match if studio has single tenant
+      // Fallback: Check all studio contact groups
       const { data: fallbackGroups } = await supabaseAdmin
         .from('whatsapp_contact_groups')
         .select('*')
         .order('group_name', { ascending: true })
-        .limit(20);
+        .limit(50);
       if (fallbackGroups && fallbackGroups.length > 0) {
         groups = fallbackGroups;
       }

@@ -338,6 +338,17 @@ export async function POST(req: NextRequest) {
 
                 if (primaryGroup?.id) {
                   contactGroupId = primaryGroup.id;
+                } else {
+                  // Fallback to any active studio contact group in database
+                  const { data: studioGroup } = await supabaseAdmin
+                    .from('whatsapp_contact_groups')
+                    .select('id')
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                  if (studioGroup?.id) {
+                    contactGroupId = studioGroup.id;
+                  }
                 }
               } catch (_) {}
             }

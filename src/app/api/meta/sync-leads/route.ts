@@ -129,7 +129,92 @@ export async function POST(req: NextRequest) {
       .eq('form_id', formId)
       .maybeSingle();
 
-    const contactGroupId = formMapping?.contact_group_id || null;
+    let contactGroupId = formMapping?.contact_group_id || null;
+
+    // Contact Group Fallback 1: Inherit from sibling form with similar name
+    if (!contactGroupId && formName) {
+      try {
+        const { data: siblingForm } = await supabaseAdmin
+          .from('fb_form_mappings')
+          .select('contact_group_id')
+          .eq('workspace_id', workspaceId)
+          .ilike('form_name', `%${formName.trim()}%`)
+          .not('contact_group_id', 'is', null)
+          .limit(1)
+          .maybeSingle();
+
+        if (siblingForm?.contact_group_id) {
+          contactGroupId = siblingForm.contact_group_id;
+        }
+      } catch (_) {}
+    }
+
+    // Contact Group Fallback 2: Inherit from any active mapped form in workspace
+    if (!contactGroupId) {
+      try {
+        const { data: defaultMapping } = await supabaseAdmin
+          .from('fb_form_mappings')
+          .select('contact_group_id')
+          .eq('workspace_id', workspaceId)
+          .eq('is_active', true)
+          .not('contact_group_id', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (defaultMapping?.contact_group_id) {
+          contactGroupId = defaultMapping.contact_group_id;
+        }
+      } catch (_) {}
+    }
+
+    // Contact Group Fallback 3: Studio's primary WhatsApp contact group
+    if (!contactGroupId) {
+      try {
+        const { data: primaryGroup } = await supabaseAdmin
+          .from('whatsapp_contact_groups')
+          .select('id')
+          .eq('tenant_id', workspaceId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (primaryGroup?.id) {
+          contactGroupId = primaryGroup.id;
+        }
+      } catch (_) {}
+    }
+
+    // Contact Group Fallback 4: Fallback to any active studio contact group in database
+    if (!contactGroupId) {
+      try {
+        const { data: studioGroup } = await supabaseAdmin
+          .from('whatsapp_contact_groups')
+          .select('id')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (studioGroup?.id) {
+          contactGroupId = studioGroup.id;
+        }
+      } catch (_) {}
+    }
+
+    // Auto-persist resolved mapping to fb_form_mappings so future leads inherit immediately
+    if (contactGroupId && !formMapping) {
+      try {
+        await supabaseAdmin.from('fb_form_mappings').upsert({
+          workspace_id: workspaceId,
+          form_id: formId,
+          page_id: pageId,
+          form_name: formName || formId,
+          is_active: true,
+          contact_group_id: contactGroupId,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id,form_id' });
+      } catch (_) {}
+    }
 
     // ── 4. Immediate Incremental Chunk Saving ──────────────────────────────────
     let totalSaved = 0;

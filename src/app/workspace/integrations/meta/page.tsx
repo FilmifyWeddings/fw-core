@@ -431,7 +431,12 @@ export default function MetaIntegrationPage() {
   const [activeTab, setActiveTab] = useState<'forms' | 'pages' | 'logs'>('forms');
 
   // Workspace ID
-  const [workspaceId, setWorkspaceId] = useState('');
+  const [workspaceId, setWorkspaceId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('active_workspace_id') || localStorage.getItem('wg_last_active_user_id') || '';
+    }
+    return '';
+  });
 
   // Account Information
   const [connectedAccountName, setConnectedAccountName] = useState<string>(() => {
@@ -564,13 +569,30 @@ export default function MetaIntegrationPage() {
   const [syncStates, setSyncStates] = useState<Map<string, FormSyncState>>(new Map());
   const abortRefs = useRef<Map<string, AbortController>>(new Map());
 
-  // Fetch WhatsApp contact groups immediately in parallel without waiting for Meta Graph API
+  // Auth Header helper (defined before hooks using it to prevent Temporal Dead Zone ReferenceError)
+  const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token ?? (typeof window !== 'undefined' ? localStorage.getItem('sb-token') : null);
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
+  }, []);
+
+  const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 5000);
+  }, []);
+
+  // Fetch WhatsApp contact groups immediately in parallel on mount (0ms latency, independent of Meta Graph API)
   useEffect(() => {
     let cancelled = false;
     async function loadContactGroups() {
       try {
+        const storedWs = typeof window !== 'undefined'
+          ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('active_workspace_id') || localStorage.getItem('wg_last_active_user_id') || '')
+          : '';
         const { data: { session } } = await supabase.auth.getSession();
-        const wsId = session?.user?.id || '';
+        const wsId = storedWs || session?.user?.id || 'f9359a12-3f2e-430c-9cec-2ec9841ec83e';
         const headers = await getAuthHeaders();
         const gRes = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${wsId}`, { headers });
         const gJson = await gRes.json();
@@ -606,20 +628,6 @@ export default function MetaIntegrationPage() {
   // 1-Click OAuth & Bulk Historical Sync States
   const [isConnecting, setIsConnecting] = useState(false);
   const [isBulkSyncing, setIsBulkSyncing] = useState(false);
-
-  // Auth Header helper
-  const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token ?? (typeof window !== 'undefined' ? localStorage.getItem('sb-token') : null);
-    const h: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) h['Authorization'] = `Bearer ${token}`;
-    return h;
-  }, []);
-
-  const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 5000);
-  }, []);
 
   // Check URL Search Params on Mount (OAuth Callback Return)
   useEffect(() => {
@@ -761,22 +769,20 @@ export default function MetaIntegrationPage() {
           } catch (_) {}
         }
 
-        // Fetch available WhatsApp Contact Groups
+        // Fetch available WhatsApp Contact Groups (Fast server API)
         try {
-          const { data: groupsData } = await supabase
-            .from('whatsapp_contact_groups')
-            .select('id, group_name, group_description');
-          if (groupsData && groupsData.length > 0) {
-            setWhatsappGroups(groupsData);
-          } else {
-            const gRes = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${wsId}`, { headers });
-            const gJson = await gRes.json();
-            if (gJson.success && Array.isArray(gJson.results) && gJson.results.length > 0) {
-              setWhatsappGroups(gJson.results);
-            } else {
-              const fallback = typeof window !== 'undefined' ? localStorage.getItem(`wa_contact_groups_${wsId}`) : null;
-              if (fallback) setWhatsappGroups(JSON.parse(fallback));
+          const gRes = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${wsId}`, { headers });
+          const gJson = await gRes.json();
+          if (gJson.success && Array.isArray(gJson.results) && gJson.results.length > 0) {
+            setWhatsappGroups(gJson.results);
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('sc_cached_wa_groups', JSON.stringify(gJson.results));
+              } catch (_) {}
             }
+          } else {
+            const fallback = typeof window !== 'undefined' ? localStorage.getItem(`wa_contact_groups_${wsId}`) : null;
+            if (fallback) setWhatsappGroups(JSON.parse(fallback));
           }
         } catch (_) {}
       } else {
@@ -996,8 +1002,11 @@ export default function MetaIntegrationPage() {
     setLeadForms(prev => prev.map(f => f.form_id === formId ? { ...f, contact_group_id: groupId } : f));
 
     try {
+      const storedWs = typeof window !== 'undefined'
+        ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('active_workspace_id') || localStorage.getItem('wg_last_active_user_id') || '')
+        : '';
       const { data: { session } } = await supabase.auth.getSession();
-      const wsId = session?.user?.id || '';
+      const wsId = storedWs || workspaceId || session?.user?.id || 'f9359a12-3f2e-430c-9cec-2ec9841ec83e';
       const headers = await getAuthHeaders();
       const res = await fetch('/api/meta/forms/mapping', {
         method: 'POST',
@@ -1016,7 +1025,7 @@ export default function MetaIntegrationPage() {
     } finally {
       setMappingLoading(prev => { const m = new Map(prev); m.delete(formId); return m; });
     }
-  }, [getAuthHeaders, showToast, whatsappGroups]);
+  }, [getAuthHeaders, showToast, whatsappGroups, workspaceId]);
 
   // Persistent Toggle Page Active/Disabled (PERSISTS IN SUPABASE DB)
   const handleTogglePage = useCallback(async (pageId: string, currentState: boolean) => {
