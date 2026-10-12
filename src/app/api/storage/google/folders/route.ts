@@ -3,14 +3,14 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_google_client_id_here')
-  ? process.env.GOOGLE_CLIENT_ID
-  : (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '');
-const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CLIENT_SECRET !== 'your_google_client_secret_here')
-  ? process.env.GOOGLE_CLIENT_SECRET
-  : '';
-
 async function getValidAccessToken(accountId: string) {
+  const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_google_client_id_here')
+    ? process.env.GOOGLE_CLIENT_ID
+    : (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '');
+  const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CLIENT_SECRET !== 'your_google_client_secret_here')
+    ? process.env.GOOGLE_CLIENT_SECRET
+    : '';
+
   const { data: account, error } = await supabaseAdmin
     .from('storage_drive_accounts')
     .select('*')

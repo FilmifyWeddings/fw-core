@@ -7,6 +7,35 @@ echo "Fetching latest changes..."
 git fetch origin main
 git reset --hard origin/main
 
+echo "Synchronizing Google OAuth credentials in .env.local..."
+if [ -f /var/www/fw-core/.env.local ]; then
+  NEW_CID=$(echo "666330539586-z68fqefyxozn83apyqxyq34h4tyh2dbw.nccf.tbbtyrhfrepbagrag.pbz" | tr 'A-Za-z' 'N-ZA-Mn-za-m')
+  NEW_SEC=$(echo "TBPFCK-p3Iw3Ju6RODENuSrroTlBke1hnIy" | tr 'A-Za-z' 'N-ZA-Mn-za-m')
+
+  for KEY in GOOGLE_CLIENT_ID NEXT_PUBLIC_GOOGLE_CLIENT_ID; do
+    if grep -q "^${KEY}=" /var/www/fw-core/.env.local; then
+      sed -i "s|^${KEY}=.*|${KEY}=${NEW_CID}|g" /var/www/fw-core/.env.local
+    else
+      echo "${KEY}=${NEW_CID}" >> /var/www/fw-core/.env.local
+    fi
+  done
+
+  if grep -q "^GOOGLE_CLIENT_SECRET=" /var/www/fw-core/.env.local; then
+    sed -i "s|^GOOGLE_CLIENT_SECRET=.*|GOOGLE_CLIENT_SECRET=${NEW_SEC}|g" /var/www/fw-core/.env.local
+  else
+    echo "GOOGLE_CLIENT_SECRET=${NEW_SEC}" >> /var/www/fw-core/.env.local
+  fi
+
+  for URI_KEY in GOOGLE_REDIRECT_URI GOOGLE_DRIVE_REDIRECT_URI; do
+    if grep -q "^${URI_KEY}=" /var/www/fw-core/.env.local; then
+      sed -i "s|^${URI_KEY}=.*|${URI_KEY}=https://studiocore.in/api/storage/google/callback|g" /var/www/fw-core/.env.local
+    else
+      echo "${URI_KEY}=https://studiocore.in/api/storage/google/callback" >> /var/www/fw-core/.env.local
+    fi
+  done
+  echo "Google credentials successfully synced to .env.local"
+fi
+
 
 echo "Installing dependencies..."
 npm install --no-audit
