@@ -48,6 +48,13 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  IF NEW.raw_payload IS NOT NULL AND (
+    (NEW.raw_payload->>'skip_auto_trigger')::BOOLEAN = true OR
+    (NEW.raw_payload->>'duplicate_tag')::BOOLEAN = true
+  ) THEN
+    RETURN NEW;
+  END IF;
+
   clean_phone := regexp_replace(NEW.phone, '[^0-9]', '', 'g');
   IF clean_phone = '' THEN RETURN NEW; END IF;
 
@@ -106,14 +113,14 @@ BEGIN
       ORDER BY sort_index ASC
     LOOP
       IF r_step.delay_unit = 'seconds' AND r_step.delay_value > 0 THEN
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' seconds')::INTERVAL;
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' seconds')::INTERVAL + ((floor(random() * 5) + 2) || ' seconds')::INTERVAL;
       ELSIF r_step.delay_unit = 'minutes' AND r_step.delay_value > 0 THEN
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL + (((case when random() < 0.5 then 1 else -1 end) * (floor(random() * 10) + 1)) || ' minutes')::INTERVAL;
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL + (((case when random() < 0.5 then 1 else -1 end) * (floor(random() * 31) + 20)) || ' seconds')::INTERVAL;
       ELSIF r_step.delay_unit = 'hours' AND r_step.delay_value > 0 THEN
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL + (((case when random() < 0.5 then 1 else -1 end) * (floor(random() * 10) + 1)) || ' minutes')::INTERVAL;
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL + (((case when random() < 0.5 then 1 else -1 end) * (floor(random() * 4) + 7)) || ' minutes')::INTERVAL + (((case when random() < 0.5 then 1 else -1 end) * floor(random() * 60)) || ' seconds')::INTERVAL;
       ELSIF r_step.delay_unit = 'days' AND r_step.delay_value > 0 THEN
-        -- Multi-day followups: apply +/- 1 to 10m organic jitter to avoid exact-minute robotic bans
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL + (((case when random() < 0.5 then 1 else -1 end) * (floor(random() * 10) + 1)) || ' minutes')::INTERVAL;
+        -- Multi-day followups: apply +/- 7 to 10m organic jitter + seconds to avoid robotic same-minute bans
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL + (((case when random() < 0.5 then 1 else -1 end) * (floor(random() * 4) + 7)) || ' minutes')::INTERVAL + (((case when random() < 0.5 then 1 else -1 end) * floor(random() * 60)) || ' seconds')::INTERVAL;
       END IF;
 
       v_log_id := gen_random_uuid();

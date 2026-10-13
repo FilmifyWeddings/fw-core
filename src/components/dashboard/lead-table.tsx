@@ -24,6 +24,7 @@ import LeadOwnerSelect from '@/app/workspace/leads/components/LeadOwnerSelect';
 import { LeadWelcomeSequenceModal } from './LeadWelcomeSequenceModal';
 import { LeadExecutionTimelineModal } from './LeadExecutionTimelineModal';
 import { WorkflowExecutionTimelineModal } from '@/components/integrations/WorkflowExecutionTimelineModal';
+import { BulkGroupEnrollModal } from './BulkGroupEnrollModal';
 
 const MotionDiv = motionImport.div;
 const MotionTr = 'tr' as any;
@@ -606,6 +607,7 @@ export function LeadTable({
   const [quotationModalLead, setQuotationModalLead] = useState<Lead | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [bulkGroupModalOpen, setBulkGroupModalOpen] = useState(false);
 
   // Double-direction synced scrollbar refs & state
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -1149,8 +1151,29 @@ export function LeadTable({
     return lead.stage_id || lead.status || (stagesState[0]?.id || '');
   }, [stagesState, quotationSummaryMap]);
 
-  // Columns & Configurations state
-  const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
+  // Columns & Configurations state (lazily loaded from localStorage to prevent resetting on remount)
+  const [columns, setColumns] = useState<ColumnConfig[]>(() => {
+    if (typeof window === 'undefined') return INITIAL_COLUMNS;
+    try {
+      const local = localStorage.getItem('leads_table_column_preferences') || 
+                    localStorage.getItem('leads_table_preferences');
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return INITIAL_COLUMNS.map(col => {
+            if (typeof parsed[col.id] === 'boolean') {
+              return { ...col, visible: parsed[col.id] };
+            }
+            if (typeof parsed[col.id]?.visible === 'boolean') {
+              return { ...col, visible: parsed[col.id].visible };
+            }
+            return col;
+          });
+        }
+      }
+    } catch (_) {}
+    return INITIAL_COLUMNS;
+  });
 
   const getFilteredColumns = (cols: ColumnConfig[]) => {
     return cols.filter(col => {
@@ -2010,11 +2033,8 @@ export function LeadTable({
           if (typeof parsedPrefs[col.id] === 'boolean') {
             return { ...col, visible: parsedPrefs[col.id] };
           }
-          if (parsedPrefs && typeof parsedPrefs === 'object' && Object.keys(parsedPrefs).length > 0) {
-            // If saved preferences exist and this optional column was not checked, default to false
-            if (!['contact', 'source', 'status', 'date'].includes(col.id)) {
-              return { ...col, visible: false };
-            }
+          if (typeof parsedPrefs[col.id]?.visible === 'boolean') {
+            return { ...col, visible: parsedPrefs[col.id].visible };
           }
           return col;
         });
@@ -2081,6 +2101,7 @@ export function LeadTable({
     }, {} as Record<string, any>);
 
     localStorage.setItem('leads_table_column_preferences', JSON.stringify(prefObj));
+    localStorage.setItem('leads_table_preferences', JSON.stringify(prefObj));
     localStorage.setItem('leads_table_column_order', JSON.stringify(updatedCols.map(c => c.id)));
     if (onPreferencesChange) {
       onPreferencesChange(prefObj);
@@ -3452,9 +3473,16 @@ export function LeadTable({
 
                     {/* Name & Contact Info (Mobile + Email right below Name, NO Form Name) */}
                     <div className="min-w-0 flex-1">
-                      <h4 className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight truncate">
-                        {lead.name || 'Unspecified Lead'}
-                      </h4>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h4 className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight truncate">
+                          {lead.name || 'Unspecified Lead'}
+                        </h4>
+                        {lead.raw_payload?.duplicate_tag && (
+                          <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                            Duplicate
+                          </span>
+                        )}
+                      </div>
 
                       {/* Mobile Phone & Email directly under Name */}
                       <div className="flex flex-col gap-0.5 mt-1 text-[11px] font-mono">
@@ -3987,12 +4015,19 @@ export function LeadTable({
                             : 'bg-[#F6F5F2] dark:bg-[#141211] group-hover/row:bg-[#EDEBE7] dark:group-hover/row:bg-[#1C1A18]'
                         }`}>
                           <div className="min-w-0 overflow-hidden">
-                            <span 
-                              style={{ color: activeColor || 'inherit' }}
-                              className="font-black text-slate-900 dark:text-white group-hover/row:text-orange-500 transition-colors truncate block text-sm max-w-[200px]"
-                            >
-                              {lead.name || 'Unspecified Lead'}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span 
+                                style={{ color: activeColor || 'inherit' }}
+                                className="font-black text-slate-900 dark:text-white group-hover/row:text-orange-500 transition-colors truncate block text-sm max-w-[200px]"
+                              >
+                                {lead.name || 'Unspecified Lead'}
+                              </span>
+                              {lead.raw_payload?.duplicate_tag && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 shrink-0">
+                                  Duplicate
+                                </span>
+                              )}
+                            </div>
                             {/* Granular Subtext visibility rendering */}
                             {renderContactSubtext(lead)}
                           </div>
@@ -5005,44 +5040,13 @@ export function LeadTable({
               </div>
 
               {/* Bulk Group Update */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowBulkGroupMenu(!showBulkGroupMenu)}
-                  className="px-3 py-1.5 bg-[#FAF8F5]/80 hover:bg-[#FAF8F5]/95 dark:bg-[#1C1A18]/80 dark:hover:bg-[#23201D] border border-[#E8E5DF] dark:border-[#2C2926] rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 text-slate-700 dark:text-zinc-350"
-                >
-                  <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  WA Group
-                  <ChevronDown className="w-3 h-3 text-zinc-400 dark:text-zinc-500" />
-                </button>
-                
-                {showBulkGroupMenu && (
-                  <div className="absolute bottom-11 right-0 w-48 bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 max-h-48 overflow-y-auto">
-                    <button
-                      disabled={isBulkProcessing}
-                      onClick={() => handleBulkAssignGroup(null)}
-                      className="w-full text-left p-1.5 hover:bg-[#FAF8F5] dark:hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-slate-500 dark:text-zinc-450 transition-colors"
-                    >
-                      Unassigned / None
-                    </button>
-                    {contactGroups.length === 0 ? (
-                      <div className="p-2 text-[10px] text-zinc-400 dark:text-zinc-650 italic text-center">
-                        No contact groups configured.
-                      </div>
-                    ) : (
-                      contactGroups.map(grp => (
-                        <button
-                          key={grp.id}
-                          disabled={isBulkProcessing}
-                          onClick={() => handleBulkAssignGroup(grp.id)}
-                          className="w-full text-left p-1.5 hover:bg-[#FAF8F5] dark:hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-slate-600 dark:text-zinc-400 transition-colors truncate"
-                        >
-                          {grp.group_name}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+              <button
+                onClick={() => setBulkGroupModalOpen(true)}
+                className="px-3 py-1.5 bg-[#FAF8F5]/80 hover:bg-[#FAF8F5]/95 dark:bg-[#1C1A18]/80 dark:hover:bg-[#23201D] border border-[#E8E5DF] dark:border-[#2C2926] rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 text-slate-700 dark:text-zinc-350 cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                WA Group
+              </button>
 
               {/* Bulk Export */}
               <button
@@ -5399,6 +5403,22 @@ export function LeadTable({
           initialLeadId={activeTimelineModal.leadId}
         />
       )}
+
+      {/* Bulk WhatsApp Group & Workflow Enrollment Modal */}
+      <BulkGroupEnrollModal
+        isOpen={bulkGroupModalOpen}
+        onClose={() => setBulkGroupModalOpen(false)}
+        selectedLeadIds={selectedLeadIds}
+        leads={leads}
+        contactGroups={contactGroups}
+        workspaceId={leads[0]?.workspace_id || '00000000-0000-0000-0000-000000000000'}
+        onComplete={() => {
+          setSelectedLeadIds([]);
+          if (leads.length > 0) {
+            fetchWaStatuses(leads);
+          }
+        }}
+      />
 
       {/* Premium LeadInsiderDrawer workspace sheet */}
       <AnimatePresenceComponent>

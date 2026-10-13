@@ -58,13 +58,13 @@ export function calculateSmartAntiBanSchedule(
     rand3 = Math.abs((Math.sin(hash + 3) * 10000) % 1);
   }
 
-  // Multi-step anti-ban pacing: ±4 to 10 minutes random humanized jitter ("aage peeche")
+  // Multi-step anti-ban pacing: ±7 to 10 minutes for days/hours, ±20 to 50 seconds for minutes
   const jitterSign = rand1 < 0.5 ? -1 : 1;
-  const randomJitterMins = Math.floor(rand2 * 7) + 4; // 4 to 10 minutes (4, 5, 6, 7, 8, 9, 10)
+  const randomJitterMins = Math.floor(rand2 * 4) + 7; // 7, 8, 9, or 10 minutes
   const randomSeconds = Math.floor(rand3 * 60);
   const jitterMs = jitterSign * ((randomJitterMins * 60 * 1000) + (randomSeconds * 1000));
 
-  if (val === 0) {
+  if (val === 0 && unit !== 'days' && unit !== 'hours' && unit !== 'minutes') {
     // If delay is zero or immediate, first step is 2-4s, subsequent steps 12-20s
     delayMs = stepIndex === 0
       ? (2000 + Math.floor(rand2 * 2000))
@@ -73,21 +73,19 @@ export function calculateSmartAntiBanSchedule(
     delayMs = Math.max(2000, val * 1000 + Math.floor(rand2 * 3000));
   } else if (unit === 'minutes') {
     const baseMs = val * 60 * 1000;
-    if (val >= 15) {
-      delayMs = Math.max(60 * 1000, baseMs + jitterMs);
-    } else {
-      const shortJitterSecs = (Math.floor(rand2 * 60) + 30) * (rand1 < 0.5 ? -1 : 1);
-      delayMs = Math.max(30 * 1000, baseMs + (shortJitterSecs * 1000));
-    }
+    // Minute intervals: ±20 to 50 seconds humanized variance
+    const shortJitterSecs = Math.floor(rand2 * 31) + 20; // 20 to 50 seconds
+    const shortJitterMs = (rand1 < 0.5 ? -1 : 1) * (shortJitterSecs * 1000);
+    delayMs = baseMs + shortJitterMs;
   } else if (unit === 'hours') {
-    // Base hours delay + random ±4 to 10 minute organic jitter (e.g. 2 hrs ± 4..10 mins)
+    // Base hours delay + random ±7 to 10 minute organic jitter (e.g. 2 hrs ± 7..10 mins)
     const baseMs = val * 60 * 60 * 1000;
-    delayMs = Math.max(10 * 60 * 1000, baseMs + jitterMs);
+    delayMs = baseMs + jitterMs;
   } else if (unit === 'days') {
-    // Multi-Day Followup: Base days delay + random ±4 to 10 minute organic jitter
-    // Prevents clockwork dispatch at the exact same minute everyday
+    // Multi-Day Followup: Base days delay + random ±7 to 10 minute organic jitter (e.g. 1 day ± 7..10 mins)
+    // Prevents robotic exact-minute detection (e.g. 6:36 PM -> 6:43 PM / 6:29 PM)
     const baseMs = val * 24 * 60 * 60 * 1000;
-    delayMs = Math.max(60 * 60 * 1000, baseMs + jitterMs);
+    delayMs = baseMs + jitterMs;
   }
 
   let scheduled = new Date(baseDate.getTime() + delayMs);

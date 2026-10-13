@@ -269,7 +269,7 @@ export function LeadExecutionTimelineModal({
 
   const handleOpenRetryFailed = () => {
     if (!execution) return;
-    const failedSteps = execution.stepsLogs.filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message));
+    const failedSteps = (execution.stepsLogs || []).filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message));
     if (failedSteps.length === 0) {
       alert('No failed or stuck steps found to retry.');
       return;
@@ -425,7 +425,7 @@ export function LeadExecutionTimelineModal({
                 <span className="text-zinc-300 dark:text-zinc-700">·</span>
                 <span className="flex items-center gap-1.5 font-mono">
                   <Phone className="w-3.5 h-3.5 text-zinc-400" />
-                  {lead.phone}
+                  {lead.phone ? '+' + String(lead.phone).replace(/[^0-9]/g, '') : '—'}
                 </span>
                 {execution?.groupJoinTime && (
                   <>
@@ -541,7 +541,7 @@ export function LeadExecutionTimelineModal({
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {execution.stepsLogs.map((stepLog, idx) => (
+                      {(execution.stepsLogs || []).map((stepLog, idx) => (
                         <StepNode
                           key={stepLog.id || stepLog.step_index}
                           stepIndex={idx}

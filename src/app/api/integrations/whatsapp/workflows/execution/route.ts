@@ -190,28 +190,36 @@ export async function GET(req: NextRequest) {
         }
         const groupJoinTimeFormatted = formatIST(groupJoinDate);
 
-        let runningSentAtDate = new Date(groupJoinDate.getTime());
+        let cumulativeBaseMs = 0;
 
         const stepsLogs = (workflow.workflow_steps || []).map((step: any) => {
           const matchedLog = leadLogs.find(l => l.step_index === step.sort_index);
           let stepStatus = 'unsent';
           let errorMsg = null;
 
-          // Deterministic seed for previewing unsent steps without fluctuating on every render
+          const stepVal = Math.max(0, Number(step.delay_value) || 0);
+          const stepUnit = (step.delay_unit || 'minutes').toLowerCase();
+          let stepBaseMs = 0;
+          if (stepUnit === 'seconds') stepBaseMs = stepVal * 1000;
+          else if (stepUnit === 'minutes') stepBaseMs = stepVal * 60 * 1000;
+          else if (stepUnit === 'hours') stepBaseMs = stepVal * 60 * 60 * 1000;
+          else if (stepUnit === 'days') stepBaseMs = stepVal * 24 * 60 * 60 * 1000;
+
+          cumulativeBaseMs += stepBaseMs;
+          const stepBaseDate = new Date(groupJoinDate.getTime() + cumulativeBaseMs);
+
+          // Deterministic seed for previewing and calculating anti-ban jitter
           const stepSeed = `${lead.id}_${step.sort_index}`;
+          const calculatedDate = calculateSmartAntiBanSchedule(
+            stepBaseDate,
+            0,
+            stepUnit,
+            step.sort_index,
+            false,
+            stepSeed
+          );
 
-          if (step.delay_value > 0 || step.sort_index > 0) {
-            runningSentAtDate = calculateSmartAntiBanSchedule(
-              runningSentAtDate,
-              step.delay_value || 0,
-              step.delay_unit || 'minutes',
-              step.sort_index,
-              false,
-              stepSeed
-            );
-          }
-
-          let sentAtIso = runningSentAtDate.toISOString();
+          let sentAtIso = calculatedDate.toISOString();
           let updatedAtFormatted = '—';
 
           if (matchedLog) {
@@ -220,9 +228,27 @@ export async function GET(req: NextRequest) {
             if (matchedLog.error_message === 'STOPPED') {
               stepStatus = 'stopped';
             }
-            if (matchedLog.sent_at && !isNaN(new Date(matchedLog.sent_at).getTime())) {
-              sentAtIso = matchedLog.sent_at;
-              runningSentAtDate = new Date(matchedLog.sent_at);
+            if (['sent', 'delivered', 'read'].includes(matchedLog.status)) {
+              if (matchedLog.sent_at) sentAtIso = matchedLog.sent_at;
+            } else if (matchedLog.status === 'failed') {
+              if (matchedLog.sent_at) sentAtIso = matchedLog.sent_at;
+            } else if (matchedLog.status === 'pending') {
+              sentAtIso = calculatedDate.toISOString();
+              if (matchedLog.id && matchedLog.sent_at !== sentAtIso) {
+                // Asynchronously sync DB with organic anti-ban jitter schedule
+                supabaseAdmin
+                  .from('whatsapp_workflow_logs')
+                  .update({ sent_at: sentAtIso })
+                  .eq('id', matchedLog.id)
+                  .then();
+                supabaseAdmin
+                  .from('baileys_action_queue')
+                  .update({ next_retry_at: sentAtIso })
+                  .eq('workspace_id', tenantId)
+                  .eq('status', 'pending')
+                  .filter('payload->>workflowLogId', 'eq', matchedLog.id)
+                  .then();
+              }
             }
             if (matchedLog.updated_at && !isNaN(new Date(matchedLog.updated_at).getTime())) {
               updatedAtFormatted = formatIST(matchedLog.updated_at);

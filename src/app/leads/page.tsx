@@ -682,10 +682,12 @@ export default function LeadsPage() {
 
         // Load Layout Configurations safely from LocalStorage
         try {
-          const localPrefs = localStorage.getItem(`leads_table_preferences_${targetUserId}`) || localStorage.getItem('leads_table_preferences');
+          const localPrefs = localStorage.getItem(`leads_table_preferences_${targetUserId}`) || 
+                             localStorage.getItem('leads_table_preferences') || 
+                             localStorage.getItem('leads_table_column_preferences');
           if (localPrefs) {
             const parsed = JSON.parse(localPrefs);
-            if (Array.isArray(parsed) && parsed.length > 0) {
+            if (parsed && typeof parsed === 'object') {
               setPreferences(parsed);
             }
           }

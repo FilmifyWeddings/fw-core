@@ -115,13 +115,21 @@ export function WorkflowExecutionTimelineModal({
 
   const [fetchedWorkflow, setFetchedWorkflow] = useState<any | null>(null);
 
+  const [workflowLoading, setWorkflowLoading] = useState(false);
+
   // If workflow not provided directly, fetch by workflowId or initialLeadId
   useEffect(() => {
     if (!isOpen) {
       setFetchedWorkflow(null);
+      setWorkflowLoading(false);
       return;
     }
-    if (!workflow && workflowId) {
+    if (workflow) {
+      setWorkflowLoading(false);
+      return;
+    }
+    if (workflowId) {
+      setWorkflowLoading(true);
       supabase
         .from('whatsapp_custom_workflows')
         .select('*')
@@ -129,8 +137,11 @@ export function WorkflowExecutionTimelineModal({
         .maybeSingle()
         .then(({ data }) => {
           if (data) setFetchedWorkflow(data);
-        });
-    } else if (!workflow && !workflowId && initialLeadId) {
+          setWorkflowLoading(false);
+        })
+        .catch(() => setWorkflowLoading(false));
+    } else if (initialLeadId) {
+      setWorkflowLoading(true);
       (async () => {
         try {
           const { data: lead } = await supabase
@@ -146,6 +157,7 @@ export function WorkflowExecutionTimelineModal({
               .eq('target_group_id', lead.whatsapp_group_id);
             if (wfs && wfs.length > 0) {
               setFetchedWorkflow(wfs[0]);
+              setWorkflowLoading(false);
               return;
             }
           }
@@ -155,13 +167,16 @@ export function WorkflowExecutionTimelineModal({
             const { data: wfs } = await supabase
               .from('whatsapp_custom_workflows')
               .select('*')
-              .or(`workspace_id.eq.${ws},tenant_id.eq.${ws}`)
+              .eq('tenant_id', ws)
               .limit(1);
             if (wfs && wfs.length > 0) {
               setFetchedWorkflow(wfs[0]);
             }
           }
         } catch (_) {}
+        finally {
+          setWorkflowLoading(false);
+        }
       })();
     }
   }, [isOpen, workflow, workflowId, initialLeadId, tenantId]);
@@ -302,9 +317,37 @@ export function WorkflowExecutionTimelineModal({
   if (!activeWorkflow) {
     return (
       <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
-        <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 flex flex-col items-center gap-3 text-center max-w-sm shadow-2xl">
-          <Loader2 className="w-8 h-8 animate-spin text-[#25D366]" />
-          <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Loading Workflow Details...</p>
+        <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 flex flex-col items-center gap-4 text-center max-w-sm shadow-2xl relative">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          {workflowLoading ? (
+            <>
+              <Loader2 className="w-8 h-8 animate-spin text-[#25D366]" />
+              <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Loading Workflow Details...</p>
+            </>
+          ) : (
+            <>
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">No Workflow Assigned</h3>
+                <p className="text-xs text-zinc-500 mt-1">
+                  This contact has no automated WhatsApp workflow linked yet. Assign a WhatsApp group with an active workflow to view the execution timeline.
+                </p>
+              </div>
+              <button
+                onClick={onClose}
+                className="mt-2 px-5 py-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold text-xs hover:opacity-90 transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -612,17 +655,17 @@ export function WorkflowExecutionTimelineModal({
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-xs text-zinc-900 dark:text-zinc-100 truncate block">
-                              {exec.name}
+                              {exec.name || 'Unknown'}
                             </span>
                             <StatusBadge status={exec.status} />
                           </div>
                           <span className="font-mono text-[10px] text-zinc-500 block truncate mt-0.5">
-                            +{exec.phone.replace(/[^0-9]/g, '')}
+                            +{String(exec.phone || '').replace(/[^0-9]/g, '')}
                           </span>
                           <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-1 font-mono">
-                            <span className="text-emerald-500 font-bold">{exec.completedSteps} done</span>
-                            {exec.failedSteps > 0 && <span className="text-red-500 font-bold">· {exec.failedSteps} failed</span>}
-                            {exec.pendingSteps > 0 && <span className="text-amber-500 font-bold">· {exec.pendingSteps} pending</span>}
+                            <span className="text-emerald-500 font-bold">{exec.completedSteps || 0} done</span>
+                            {(exec.failedSteps || 0) > 0 && <span className="text-red-500 font-bold">· {exec.failedSteps} failed</span>}
+                            {(exec.pendingSteps || 0) > 0 && <span className="text-amber-500 font-bold">· {exec.pendingSteps} pending</span>}
                           </div>
                         </div>
                         <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isSelected ? 'text-amber-500 translate-x-0.5' : 'text-zinc-300 dark:text-zinc-700'}`} />
@@ -657,24 +700,24 @@ export function WorkflowExecutionTimelineModal({
                   <div>
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center font-black text-amber-500 text-sm">
-                        {currentExecution.name.charAt(0).toUpperCase()}
+                        {(currentExecution.name || 'C').charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-extrabold text-base text-zinc-900 dark:text-zinc-100">
-                            {currentExecution.name}
+                            {currentExecution.name || 'Unknown Contact'}
                           </h3>
                           <StatusBadge status={currentExecution.status} />
                         </div>
                         <div className="flex items-center gap-3 text-xs text-zinc-500 mt-0.5">
                           <span className="font-mono flex items-center gap-1">
                             <Phone className="w-3.5 h-3.5 text-zinc-400" />
-                            +{currentExecution.phone.replace(/[^0-9]/g, '')}
+                            +{String(currentExecution.phone || '').replace(/[^0-9]/g, '')}
                           </span>
                           <span>·</span>
                           <span className="flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                            Joined: <span className="font-mono text-zinc-600 dark:text-zinc-300">{currentExecution.groupJoinTime}</span>
+                            Joined: <span className="font-mono text-zinc-600 dark:text-zinc-300">{currentExecution.groupJoinTime || '—'}</span>
                           </span>
                         </div>
                       </div>
@@ -696,11 +739,11 @@ export function WorkflowExecutionTimelineModal({
                     <button
                       type="button"
                       onClick={handleOpenFailedModal}
-                      disabled={retryingFailed || currentExecution.stepsLogs.filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message)).length === 0}
+                      disabled={retryingFailed || (currentExecution?.stepsLogs || []).filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message)).length === 0}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-40 cursor-pointer"
                     >
                       {retryingFailed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-                      <span>Retry Failed ({currentExecution.stepsLogs.filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message)).length})</span>
+                      <span>Retry Failed ({(currentExecution?.stepsLogs || []).filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message)).length})</span>
                     </button>
 
                     {isExecutionStopped ? (
@@ -758,7 +801,7 @@ export function WorkflowExecutionTimelineModal({
                     Execution Sequence Nodes
                   </h4>
 
-                  {currentExecution.stepsLogs.map((stepLog, idx) => {
+                  {(currentExecution.stepsLogs || []).map((stepLog, idx) => {
                     const nodeStatus = stepLog.status;
                     const scheduledAt = stepLog.sent_at_formatted;
                     const completedAt = (stepLog.updated_at_formatted && stepLog.updated_at_formatted !== '—')
