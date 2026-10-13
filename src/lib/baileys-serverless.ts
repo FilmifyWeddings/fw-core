@@ -1301,47 +1301,73 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
       const workspaceIds = Array.from(new Set(pendingItems.map((item: any) => item.workspace_id)));
 
       for (const workspaceId of workspaceIds) {
-        // Check if we can process: either a local socket exists OR the worker has an open session
+        // Check if we can process:
+        // 1. Local in-memory socket exists
         let canProcess = globalSockets.has(workspaceId);
 
+        // 2. Query Worker daemon at WORKER_PORT (127.0.0.1:3002)
+        if (!canProcess) {
+          try {
+            const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+            const healthRes = await fetch(
+              `http://127.0.0.1:${WORKER_PORT}/health?workspace_id=${encodeURIComponent(workspaceId)}`,
+              { signal: AbortSignal.timeout(1500) }
+            );
+            if (healthRes.ok) {
+              const health = await healthRes.json();
+              if (health.socket_authenticated || health.socket_conn_state === 'open' || health.phone_number) {
+                canProcess = true;
+              }
+            }
+          } catch {
+            // Worker check timed out or unreachable
+          }
+        }
+
+        // 3. Query DB session (supports disk-based worker sessions where creds_json is null but conn_state is open with phone_number)
         if (!canProcess) {
           const { data: session } = await supabaseAdmin
             .from('baileys_sessions')
-            .select('conn_state, creds_json')
-            .eq('workspace_id', workspaceId)
+            .select('conn_state, status, phone_number, creds_json')
+            .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
 
-          if (session?.conn_state === 'open' && session?.creds_json) {
-            // Worker has an active session — no need to create a duplicate local socket,
-            // sendMessageServerless will route through the worker at WORKER_PORT.
-            canProcess = true;
-          } else {
-            // ── DEAD-LOCK AUTO-FAIL: No local socket AND no worker session.
-            // Any past-deadline pending tasks cannot be delivered. Immediately mark them
-            // as failed so they don't perpetually deadlock in PENDING state.
-            const { data: overdueItems } = await supabaseAdmin
-              .from('baileys_action_queue')
-              .select('id, attempt_count')
-              .eq('workspace_id', workspaceId)
-              .eq('status', 'pending')
-              .lte('next_retry_at', now);
+          const hasValidPhone = !!(session?.phone_number && String(session.phone_number).trim().length > 5);
+          const isDbOpen = (session?.conn_state === 'open' || session?.status === 'open' || session?.status === 'CONNECTED') && (hasValidPhone || !!session?.creds_json);
 
-            if (overdueItems && overdueItems.length > 0) {
-              console.warn(`[poller] No active session for workspace ${workspaceId}. Auto-failing ${overdueItems.length} overdue pending task(s).`);
-              for (const item of overdueItems) {
-                await supabaseAdmin
-                  .from('baileys_action_queue')
-                  .update({
-                    status: 'failed',
-                    error_message: `[AUTO-FAIL] No active WhatsApp session. Scheduled dispatch deadline passed at ${now}. Scan QR code on integrations page to re-establish connection, then use Retry Failed Steps.`,
-                    next_retry_at: null
-                  })
-                  .eq('id', item.id)
-                  .eq('status', 'pending');
-              }
-            }
-            continue;
+          if (isDbOpen) {
+            canProcess = true;
           }
+        }
+
+        if (!canProcess) {
+          // Grace period: only auto-fail if overdue by more than 15 minutes without any connection,
+          // giving transient socket reconnections a safe window instead of killing them instantly!
+          const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+          const { data: overdueItems } = await supabaseAdmin
+            .from('baileys_action_queue')
+            .select('id, attempt_count')
+            .eq('workspace_id', workspaceId)
+            .eq('status', 'pending')
+            .lte('next_retry_at', fifteenMinsAgo);
+
+          if (overdueItems && overdueItems.length > 0) {
+            console.warn(`[poller] No active session for workspace ${workspaceId}. Auto-failing ${overdueItems.length} overdue pending task(s).`);
+            for (const item of overdueItems) {
+              await supabaseAdmin
+                .from('baileys_action_queue')
+                .update({
+                  status: 'failed',
+                  error_message: `[AUTO-FAIL] No active WhatsApp session detected for over 15 minutes. Scan QR code on integrations page to re-establish connection, then use Retry Failed Steps.`,
+                  next_retry_at: null
+                })
+                .eq('id', item.id)
+                .eq('status', 'pending');
+            }
+          }
+          continue;
         }
 
         if (!canProcess) continue;
