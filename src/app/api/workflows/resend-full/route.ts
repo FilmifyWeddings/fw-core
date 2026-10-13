@@ -73,13 +73,18 @@ export async function POST(req: NextRequest) {
       const stepVal = delayValue !== undefined ? Number(delayValue) : step.delay_value;
       const stepUnit = delayUnit || step.delay_unit || 'minutes';
 
-      driftTime = calculateSmartAntiBanSchedule(
-        driftTime,
-        stepVal,
-        stepUnit,
-        i,
-        false // DND disabled per user instruction
-      );
+      if (i === 0) {
+        // Step 0: Immediate organic pacing (2-4 seconds)
+        driftTime = calculateSmartAntiBanSchedule(driftTime, stepVal > 0 && delayValue === undefined ? stepVal : 0, stepUnit, 0, false);
+      } else {
+        driftTime = calculateSmartAntiBanSchedule(
+          driftTime,
+          stepVal,
+          stepUnit,
+          i,
+          false // DND disabled per user instruction
+        );
+      }
       stepScheduleMap.set(step.sort_index, driftTime.toISOString());
     }
 

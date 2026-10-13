@@ -829,7 +829,7 @@ export function WorkflowExecutionTimelineModal({
                                   <div className="flex items-center gap-1 text-red-500">
                                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                                     <span className="font-semibold text-zinc-500">Failed at:</span>
-                                    <span className="font-mono font-bold">{completedAt !== '—' ? completedAt : scheduledAt}</span>
+                                    <span className="font-mono font-bold">{completedAt !== '—' ? completedAt : '—'}</span>
                                   </div>
                                 )}
 
@@ -837,7 +837,7 @@ export function WorkflowExecutionTimelineModal({
                                   <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                                     <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                                     <span className="font-semibold text-zinc-500">Completed:</span>
-                                    <span className="font-mono font-bold">{completedAt !== '—' ? completedAt : scheduledAt}</span>
+                                    <span className="font-mono font-bold">{completedAt !== '—' ? completedAt : '—'}</span>
                                   </div>
                                 )}
 
@@ -845,7 +845,7 @@ export function WorkflowExecutionTimelineModal({
                                   <div className="flex items-center gap-1 text-rose-500">
                                     <Ban className="w-3.5 h-3.5 shrink-0" />
                                     <span className="font-semibold text-zinc-500">Stopped:</span>
-                                    <span className="font-mono">{completedAt !== '—' ? completedAt : scheduledAt}</span>
+                                    <span className="font-mono">{completedAt !== '—' ? completedAt : '—'}</span>
                                   </div>
                                 )}
                               </div>

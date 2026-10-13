@@ -197,18 +197,21 @@ export async function GET(req: NextRequest) {
           let stepStatus = 'unsent';
           let errorMsg = null;
 
-          if (step.delay_value > 0) {
+          // Deterministic seed for previewing unsent steps without fluctuating on every render
+          const stepSeed = `${lead.id}_${step.sort_index}`;
+
+          if (step.delay_value > 0 || step.sort_index > 0) {
             runningSentAtDate = calculateSmartAntiBanSchedule(
               runningSentAtDate,
-              step.delay_value,
-              step.delay_unit,
+              step.delay_value || 0,
+              step.delay_unit || 'minutes',
               step.sort_index,
-              true
+              false,
+              stepSeed
             );
           }
 
           let sentAtIso = runningSentAtDate.toISOString();
-          let sentAtFormatted = `Scheduled to send on: ${formatIST(runningSentAtDate)}`;
           let updatedAtFormatted = '—';
 
           if (matchedLog) {
@@ -217,15 +220,22 @@ export async function GET(req: NextRequest) {
             if (matchedLog.error_message === 'STOPPED') {
               stepStatus = 'stopped';
             }
-            sentAtIso = matchedLog.sent_at;
             if (matchedLog.sent_at && !isNaN(new Date(matchedLog.sent_at).getTime())) {
+              sentAtIso = matchedLog.sent_at;
               runningSentAtDate = new Date(matchedLog.sent_at);
             }
-            sentAtFormatted = stepStatus === 'pending'
-              ? `Scheduled to send on: ${formatIST(matchedLog.sent_at)}`
-              : `Sent at: ${formatIST(matchedLog.sent_at)}`;
-            if (matchedLog.updated_at) updatedAtFormatted = formatIST(matchedLog.updated_at);
+            if (matchedLog.updated_at && !isNaN(new Date(matchedLog.updated_at).getTime())) {
+              updatedAtFormatted = formatIST(matchedLog.updated_at);
+            }
           }
+
+          // Format clean labels:
+          // Pending or unsent: "Scheduled to send on: DD/MM/YYYY, hh:mm AM/PM"
+          // Failed, completed, sent, stopped: "Scheduled for: DD/MM/YYYY, hh:mm AM/PM" (when it was supposed to send)
+          const scheduledTimeFormatted = formatIST(sentAtIso);
+          const sentAtFormatted = ['pending', 'unsent'].includes(stepStatus)
+            ? `Scheduled to send on: ${scheduledTimeFormatted}`
+            : `Scheduled for: ${scheduledTimeFormatted}`;
 
           const tpl = templatesMap[step.template_id];
           const rawBody = tpl?.body || '';

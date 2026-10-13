@@ -155,14 +155,14 @@ function StepNode({
                 <div className="flex items-center gap-1 text-[10px] text-zinc-500">
                   <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
                   <span className="font-semibold text-zinc-400">Failed at:</span>
-                  <span className="font-mono text-red-400 font-bold">{completedAt !== '—' ? completedAt : scheduledAt}</span>
+                  <span className="font-mono text-red-400 font-bold">{completedAt !== '—' ? completedAt : '—'}</span>
                 </div>
               )}
               {['completed', 'sent', 'delivered', 'read'].includes(nodeStatus) && (
                 <div className="flex items-center gap-1 text-[10px] text-zinc-500">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                   <span className="font-semibold text-zinc-400">Completed:</span>
-                  <span className="font-mono text-emerald-400 font-bold">{completedAt !== '—' ? completedAt : scheduledAt}</span>
+                  <span className="font-mono text-emerald-400 font-bold">{completedAt !== '—' ? completedAt : '—'}</span>
                 </div>
               )}
             </div>

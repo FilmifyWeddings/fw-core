@@ -132,13 +132,13 @@ export async function POST(req: NextRequest) {
       // Get the sequentially-computed scheduled time for this step
       const newScheduledAt = stepScheduleMap.get(log.step_index) || new Date().toISOString();
 
-      // Update step log to pending with fresh sequential timestamp
+      // Update step log to pending, preserving original scheduled sent_at
       const { error: updErr } = await supabaseAdmin
         .from('whatsapp_workflow_logs')
         .update({
           status: 'pending',
           error_message: null,
-          sent_at: newScheduledAt, // Progressive sequential time
+          sent_at: log.sent_at || newScheduledAt, // Preserve target scheduled time
           updated_at: new Date().toISOString()
         })
         .eq('id', log.id);

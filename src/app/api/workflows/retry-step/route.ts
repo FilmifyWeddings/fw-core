@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { forceWakeQueue } from '@/lib/baileys-serverless';
+import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
 
 export async function POST(req: NextRequest) {
   try {
@@ -109,32 +110,30 @@ export async function POST(req: NextRequest) {
       const targetLog = targetLogs[i];
       retriedStepIndices.push(targetLog.step_index);
 
-      // Safe anti-ban delay: immediate for 1st step, staggered with custom gap/jitter for subsequent steps
+      // Safe anti-ban delay: immediate for 1st step, staggered with calculateSmartAntiBanSchedule for subsequent steps
       let scheduledTimeIso: string;
       if (i === 0) {
         scheduledTimeIso = new Date(baseTime.getTime() + 1000).toISOString();
       } else {
-        let antiBanDelayMs = (10 + Math.floor(Math.random() * 6)) * 1000; // default 10-15s
-        if (delayValue !== undefined && delayUnit) {
-          const multipliers: Record<string, number> = {
-            seconds: 1000,
-            minutes: 60 * 1000,
-            hours: 3600 * 1000,
-            days: 86400 * 1000,
-          };
-          antiBanDelayMs = Math.max(1000, Number(delayValue) * (multipliers[delayUnit] || 1000));
-        }
-        baseTime = new Date(baseTime.getTime() + antiBanDelayMs);
+        baseTime = calculateSmartAntiBanSchedule(
+          baseTime,
+          delayValue !== undefined ? Number(delayValue) : 10,
+          delayUnit || 'seconds',
+          i,
+          false
+        );
         scheduledTimeIso = baseTime.toISOString();
       }
 
       // Update ONLY this target step log to pending
+      // Preserve targetLog.sent_at (the original time when it was supposed to send)
+      const preservedScheduledAt = targetLog.sent_at || scheduledTimeIso;
       const { error: logUpdateErr } = await supabaseAdmin
         .from('whatsapp_workflow_logs')
         .update({
           status: 'pending',
           error_message: null,
-          sent_at: scheduledTimeIso,
+          sent_at: preservedScheduledAt,
           updated_at: new Date().toISOString()
         })
         .eq('id', targetLog.id);

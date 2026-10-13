@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { forceWakeQueue } from '@/lib/baileys-serverless';
+import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
 
 function formatIST(dateInput: Date | string | number | null | undefined): string {
   if (!dateInput) return '—';
@@ -322,21 +323,22 @@ export async function POST(req: NextRequest) {
         ];
       }
 
-      // Multiplier in ms
-      const gapMs = unit === 'days'
-        ? gapVal * 86400 * 1000
-        : unit === 'minutes'
-          ? gapVal * 60 * 1000
-          : gapVal * 1000;
-
-      const baseTime = Date.now();
+      let cumulativeTime = new Date();
       let queuedCount = 0;
 
       for (let i = 0; i < stepsToDispatch.length; i++) {
         const step = stepsToDispatch[i];
         const stepIdx = step.sort_index ?? i;
         const tplName = step.template_name || step.templateName || `Step ${i + 1}`;
-        const scheduledTime = new Date(baseTime + (i * gapMs)).toISOString();
+
+        if (i === 0) {
+          // First step immediate dispatch (2-4 seconds organic pacing)
+          cumulativeTime = calculateSmartAntiBanSchedule(cumulativeTime, 0, 'seconds', 0, false);
+        } else {
+          // Subsequent steps: interval delay + humanized ±4 to 10 minutes anti-ban jitter
+          cumulativeTime = calculateSmartAntiBanSchedule(cumulativeTime, gapVal, unit, i, false);
+        }
+        const scheduledTime = cumulativeTime.toISOString();
 
         await supabaseAdmin
           .from('baileys_action_queue')
