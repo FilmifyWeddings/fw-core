@@ -285,8 +285,6 @@ export function WorkflowExecutionTimelineModal({
     setVisibleCount(30);
   }, [searchLeadQuery]);
 
-  if (!isOpen || !activeWorkflow) return null;
-
   const currentExecution = executions.find(e => e.leadId === selectedLeadId) || executions[0] || null;
 
   const filteredExecutions = useMemo(() => {
@@ -298,6 +296,19 @@ export function WorkflowExecutionTimelineModal({
   const displayedExecutions = useMemo(() => {
     return filteredExecutions.slice(0, visibleCount);
   }, [filteredExecutions, visibleCount]);
+
+  if (!isOpen) return null;
+
+  if (!activeWorkflow) {
+    return (
+      <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
+        <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 flex flex-col items-center gap-3 text-center max-w-sm shadow-2xl">
+          <Loader2 className="w-8 h-8 animate-spin text-[#25D366]" />
+          <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Loading Workflow Details...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleScrollSidebar = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;

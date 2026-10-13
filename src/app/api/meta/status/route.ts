@@ -447,18 +447,10 @@ export async function GET(req: NextRequest) {
 
       const isFormEnabled = (f.is_enabled === true) || (mObj?.is_active === true);
 
-      let resolvedContactGroupId = mObj?.contact_group_id || null;
-      if (!resolvedContactGroupId && f.form_name) {
+      let resolvedContactGroupId = mObj ? (mObj.contact_group_id || null) : null;
+      if (!mObj && !resolvedContactGroupId && f.form_name) {
         const cleanName = f.form_name.toLowerCase().trim();
         resolvedContactGroupId = formNameToGroupId.get(cleanName) || null;
-        if (!resolvedContactGroupId) {
-          for (const [nameKey, grpId] of formNameToGroupId.entries()) {
-            if (cleanName.includes(nameKey) || nameKey.includes(cleanName)) {
-              resolvedContactGroupId = grpId;
-              break;
-            }
-          }
-        }
       }
 
       return {

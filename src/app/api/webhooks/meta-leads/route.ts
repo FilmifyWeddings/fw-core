@@ -260,37 +260,10 @@ export async function POST(req: NextRequest) {
               .maybeSingle();
 
             if (formSetting) {
+              // Respect user manual selection 100%: if user set group, use it; if user set No Group (null), leave as null
               contactGroupId = formSetting.contact_group_id || null;
-            }
-
-            resolvedFormName = formEnabled?.form_name || formSetting?.form_name || null;
-
-            // Auto-Discovery: If form is unknown, fetch name from Graph API and register it
-            if (!formEnabled && !formSetting && pageAccessToken) {
-              try {
-                const gFormRes = await fetch(`https://graph.facebook.com/v20.0/${form_id}?fields=id,name,status&access_token=${pageAccessToken}`);
-                if (gFormRes.ok) {
-                  const gFormData = await gFormRes.json();
-                  if (gFormData?.name) {
-                    resolvedFormName = gFormData.name;
-                    await supabaseAdmin.from('fb_lead_forms').upsert({
-                      workspace_id: targetWorkspaceId,
-                      page_id: page_id,
-                      form_id: form_id,
-                      form_name: gFormData.name,
-                      status: gFormData.status || 'ACTIVE',
-                      is_enabled: true,
-                      updated_at: new Date().toISOString(),
-                    }, { onConflict: 'form_id' }).catch(() => {});
-                  }
-                }
-              } catch (gErr: any) {
-                console.warn('[Meta Webhook Auto-Discover Form Error]:', gErr?.message);
-              }
-            }
-
-            // Contact Group Fallback: If no group assigned, inherit from sibling form or active mapped group
-            if (!contactGroupId && resolvedFormName) {
+            } else if (resolvedFormName) {
+              // Sibling Form auto-inherit ONLY for unconfigured forms with same name
               try {
                 const { data: siblingForm } = await supabaseAdmin
                   .from('fb_form_mappings')
@@ -303,52 +276,6 @@ export async function POST(req: NextRequest) {
 
                 if (siblingForm?.contact_group_id) {
                   contactGroupId = siblingForm.contact_group_id;
-                }
-              } catch (_) {}
-            }
-
-            if (!contactGroupId) {
-              try {
-                const { data: defaultMapping } = await supabaseAdmin
-                  .from('fb_form_mappings')
-                  .select('contact_group_id')
-                  .eq('workspace_id', targetWorkspaceId)
-                  .eq('is_active', true)
-                  .not('contact_group_id', 'is', null)
-                  .order('updated_at', { ascending: false })
-                  .limit(1)
-                  .maybeSingle();
-
-                if (defaultMapping?.contact_group_id) {
-                  contactGroupId = defaultMapping.contact_group_id;
-                }
-              } catch (_) {}
-            }
-
-            // Ultimate Fallback: Assign the studio's primary WhatsApp contact group so lead is NEVER orphaned
-            if (!contactGroupId) {
-              try {
-                const { data: primaryGroup } = await supabaseAdmin
-                  .from('whatsapp_contact_groups')
-                  .select('id')
-                  .eq('tenant_id', targetWorkspaceId)
-                  .order('created_at', { ascending: false })
-                  .limit(1)
-                  .maybeSingle();
-
-                if (primaryGroup?.id) {
-                  contactGroupId = primaryGroup.id;
-                } else {
-                  // Fallback to any active studio contact group in database
-                  const { data: studioGroup } = await supabaseAdmin
-                    .from('whatsapp_contact_groups')
-                    .select('id')
-                    .order('created_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
-                  if (studioGroup?.id) {
-                    contactGroupId = studioGroup.id;
-                  }
                 }
               } catch (_) {}
             }

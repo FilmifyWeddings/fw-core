@@ -5372,31 +5372,33 @@ export function LeadTable({
       </AnimatePresenceComponent>
 
       {/* WhatsApp Workflow Execution Timeline Modal (Unified 100% Identical Modal for Welcome & Follow-up) */}
-      <WorkflowExecutionTimelineModal
-        isOpen={activeTimelineModal.isOpen}
-        onClose={() => {
-          const finishedLeadId = activeTimelineModal.leadId;
-          setActiveTimelineModal(prev => ({ ...prev, isOpen: false }));
-          if (finishedLeadId) {
-            const activeWs = leads.find(l => l.id === finishedLeadId)?.workspace_id || leads[0]?.workspace_id || '';
-            fetch('/api/workflows/lead-whatsapp-status', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ lead_ids: [finishedLeadId], workspace_id: activeWs }),
-            })
-              .then(r => r.json())
-              .then(data => {
-                if (data.success && data.statuses) {
-                  setWaStatuses(prev => ({ ...prev, ...data.statuses }));
-                }
+      {activeTimelineModal.isOpen && (
+        <WorkflowExecutionTimelineModal
+          isOpen={activeTimelineModal.isOpen}
+          onClose={() => {
+            const finishedLeadId = activeTimelineModal.leadId;
+            setActiveTimelineModal(prev => ({ ...prev, isOpen: false }));
+            if (finishedLeadId) {
+              const activeWs = leads.find(l => l.id === finishedLeadId)?.workspace_id || leads[0]?.workspace_id || '';
+              fetch('/api/workflows/lead-whatsapp-status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lead_ids: [finishedLeadId], workspace_id: activeWs }),
               })
-              .catch(() => {});
-          }
-        }}
-        workflow={activeTimelineModal.workflow}
-        workflowId={activeTimelineModal.workflowId}
-        initialLeadId={activeTimelineModal.leadId}
-      />
+                .then(r => r.json())
+                .then(data => {
+                  if (data.success && data.statuses) {
+                    setWaStatuses(prev => ({ ...prev, ...data.statuses }));
+                  }
+                })
+                .catch(() => {});
+            }
+          }}
+          workflow={activeTimelineModal.workflow}
+          workflowId={activeTimelineModal.workflowId}
+          initialLeadId={activeTimelineModal.leadId}
+        />
+      )}
 
       {/* Premium LeadInsiderDrawer workspace sheet */}
       <AnimatePresenceComponent>
