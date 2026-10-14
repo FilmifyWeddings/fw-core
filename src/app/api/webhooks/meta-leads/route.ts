@@ -259,6 +259,8 @@ export async function POST(req: NextRequest) {
               .eq('form_id', form_id)
               .maybeSingle();
 
+            resolvedFormName = formEnabled?.form_name || formSetting?.form_name || null;
+
             if (formSetting) {
               // Respect user manual selection 100%: if user set group, use it; if user set No Group (null), leave as null
               contactGroupId = formSetting.contact_group_id || null;

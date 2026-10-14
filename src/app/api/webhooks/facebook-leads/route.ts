@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
 
       // ── 1c. Fetch lead values from Meta Graph API ────────
       const metaRes = await fetch(
-        `https://graph.facebook.com/v20.0/${leadgenId}?fields=id,created_time,form_id,field_data&access_token=${pageAccessToken}`
+        `https://graph.facebook.com/v20.0/${leadgenId}?fields=id,created_time,form_id,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name&access_token=${pageAccessToken}`
       );
 
       if (!metaRes.ok) {
@@ -349,6 +349,10 @@ export async function POST(req: NextRequest) {
 
       rawPayload.form_name = formName || (resolvedFormId ? `Form ${resolvedFormId}` : 'Meta Lead Form');
       rawPayload.form_id   = resolvedFormId;
+      rawPayload.page_id   = pageId || '';
+      rawPayload.ad_name   = metaLead.ad_name || '';
+      rawPayload.adset_name = metaLead.adset_name || '';
+      rawPayload.campaign_name = metaLead.campaign_name || '';
       if ((leadData as any).assigned_lead_owner) {
         rawPayload.lead_owner = (leadData as any).assigned_lead_owner;
       }
@@ -401,7 +405,7 @@ export async function POST(req: NextRequest) {
       email:             leadData.email || null,
       phone:             leadData.phone,
       budget:            leadData.budget || leadData.raw_payload?.budget || null,
-      source:            'facebook',
+      source:            'Meta Ads',
       status:            'new' as LeadStatus,
       score:             scoringResult.score,
       score_reason:      scoringResult.reason,

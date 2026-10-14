@@ -12,6 +12,7 @@ import { autoSyncAllMetaForms } from '@/lib/meta-auto-sync';
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const requestedWorkspaceId = searchParams.get('workspace_id');
+  const forceRefresh = searchParams.get('refresh') === 'true';
 
   const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
   if (!authResult.authorized && authResult.errorResponse) {
@@ -133,8 +134,8 @@ export async function GET(req: NextRequest) {
 
     const existingPageIds = new Set((pagesData || []).map((p: any) => p.page_id));
 
-    // Live Page Discovery via Graph API /me/accounts & /me/businesses
-    if (conn?.access_token) {
+    // Live Page Discovery via Graph API /me/accounts & /me/businesses (Only if no pages or refresh requested)
+    if (conn?.access_token && (forceRefresh || !pagesData || pagesData.length === 0)) {
       try {
         const pagesRes = await fetch(
           `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token,picture{url}&access_token=${conn.access_token}`
@@ -228,17 +229,17 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('workspace_id', workspaceId);
 
-    // Live Forms Discovery & Auto-Healing from Graph API
-    if (pagesData && pagesData.length > 0) {
+    // Live Forms Discovery & Auto-Healing from Graph API (Only if DB forms are empty or refresh requested)
+    if (pagesData && pagesData.length > 0 && (forceRefresh || !rawFormsData || rawFormsData.length === 0)) {
       const now = new Date().toISOString();
+      const formsToUpsert: any[] = [];
+      const existingEnabledMap = new Map((rawFormsData || []).map((f: any) => [f.form_id, f.is_enabled]));
 
-      // Query Graph API live for each page to discover any new or updated forms
       for (const page of pagesData) {
         const pageToken = page.page_access_token || conn?.access_token;
         if (!pageToken) continue;
 
         try {
-          // Query leadgen_forms
           const fRes = await fetch(
             `https://graph.facebook.com/v20.0/${page.page_id}/leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${pageToken}`
           );
@@ -247,44 +248,32 @@ export async function GET(req: NextRequest) {
 
           for (const f of pageForms) {
             if (!f.id) continue;
-            const formId = f.id;
-            const formName = f.name || 'Instant Lead Form';
-            const status = f.status || 'ACTIVE';
-            const leadsCount = f.leads_count || 0;
-
-            const { data: existingForm } = await supabaseAdmin
-              .from('fb_lead_forms')
-              .select('is_enabled')
-              .eq('workspace_id', workspaceId)
-              .eq('form_id', formId)
-              .maybeSingle();
-
-            await supabaseAdmin
-              .from('fb_lead_forms')
-              .upsert({
-                workspace_id: workspaceId,
-                page_id: page.page_id,
-                form_id: formId,
-                form_name: formName,
-                status,
-                leads_count: leadsCount,
-                is_enabled: existingForm?.is_enabled ?? true,
-                updated_at: now,
-              }, { onConflict: 'form_id' });
+            formsToUpsert.push({
+              workspace_id: workspaceId,
+              page_id: page.page_id,
+              form_id: f.id,
+              form_name: f.name || 'Instant Lead Form',
+              status: f.status || 'ACTIVE',
+              leads_count: f.leads_count || 0,
+              is_enabled: existingEnabledMap.get(f.id) ?? true,
+              updated_at: now,
+            });
           }
         } catch (err: any) {
           console.error(`[STATUS API Live Forms Error for Page ${page.page_id}]:`, err.message);
         }
       }
 
-      // Re-fetch rawFormsData after discovery
-      const { data: refreshedForms } = await supabaseAdmin
-        .from('fb_lead_forms')
-        .select('*')
-        .eq('workspace_id', workspaceId);
+      if (formsToUpsert.length > 0) {
+        await supabaseAdmin.from('fb_lead_forms').upsert(formsToUpsert, { onConflict: 'form_id' });
+        const { data: refreshedForms } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('*')
+          .eq('workspace_id', workspaceId);
 
-      if (refreshedForms && refreshedForms.length > 0) {
-        rawFormsData = refreshedForms;
+        if (refreshedForms && refreshedForms.length > 0) {
+          rawFormsData = refreshedForms;
+        }
       }
     }
 

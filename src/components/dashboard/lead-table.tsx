@@ -3616,25 +3616,28 @@ export function LeadTable({
 
                     {/* WhatsApp Welcome Message Quick Action */}
                     {quickActionsConfig.whatsapp !== false && (() => {
-                      const waStat = waStatuses[lead.id]?.welcome;
+                      const hasGroup = Boolean(lead.whatsapp_group_id);
+                      const waStat = hasGroup ? waStatuses[lead.id]?.welcome : null;
                       const isFailed = waStat?.status === 'failed';
                       const isPending = waStat?.status === 'pending';
-                      const isSent = waStat?.status === 'sent' || Boolean((lead as any).wa_welcome_sent);
+                      const isSent = waStat?.status === 'sent';
 
-                      const colorClass = isFailed
-                        ? 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800'
-                        : isPending
-                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
-                          : isSent
-                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700';
+                      const colorClass = !hasGroup
+                        ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700'
+                        : isFailed
+                          ? 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800'
+                          : isPending
+                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
+                            : isSent
+                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                              : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700';
 
                       return (
                         <button
                           type="button"
                           onClick={() => handleOpenWelcomeTimeline(lead)}
                           className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${colorClass}`}
-                          title="WhatsApp Welcome Message"
+                          title={!hasGroup ? "WhatsApp Welcome Message: Unassigned" : "WhatsApp Welcome Message"}
                         >
                           <div className="relative flex items-center justify-center w-4 h-4">
                             <Send className="w-3.5 h-3.5" />
@@ -3648,25 +3651,28 @@ export function LeadTable({
 
                     {/* WA Follow-up Quick Action */}
                     {quickActionsConfig.followup !== false && (() => {
-                      const fStat = waStatuses[lead.id]?.followup;
+                      const hasGroup = Boolean(lead.whatsapp_group_id);
+                      const fStat = hasGroup ? waStatuses[lead.id]?.followup : null;
                       const isFailed = fStat?.status === 'failed' || (fStat?.failedSteps && fStat.failedSteps > 0);
                       const isRunning = fStat?.status === 'running' || (fStat?.pendingSteps && fStat.pendingSteps > 0);
                       const isCompleted = fStat?.status === 'completed' && !isRunning && !isFailed;
 
-                      const colorClass = isFailed
-                        ? 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800'
-                        : isRunning
-                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
-                          : isCompleted
-                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700';
+                      const colorClass = !hasGroup
+                        ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700'
+                        : isFailed
+                          ? 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800'
+                          : isRunning
+                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
+                            : isCompleted
+                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                              : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700';
 
                       return (
                         <button
                           type="button"
                           onClick={() => handleOpenFollowupTimeline(lead)}
                           className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${colorClass}`}
-                          title="WA Follow-up Timeline"
+                          title={!hasGroup ? "WA Follow-up: Unassigned" : "WA Follow-up Timeline"}
                         >
                           <div className="relative flex items-center justify-center w-4 h-4">
                             <Clock className="w-3.5 h-3.5" />
@@ -4391,7 +4397,11 @@ export function LeadTable({
                                         { value: '', label: 'Unassigned', color: '#64748b' },
                                         ...contactGroups.map(g => ({ value: g.id, label: `💬 ${g.group_name}`, color: '#0866ff' }))
                                       ]}
-                                      onChange={(val) => handleInlineLeadEdit({ whatsapp_group_id: val || null }, lead.id)}
+                                      onChange={(val) => {
+                                        const newGrp = val || null;
+                                        handleInlineLeadEdit({ whatsapp_group_id: newGrp }, lead.id);
+                                        fetchWaStatuses([{ ...lead, whatsapp_group_id: newGrp }]);
+                                      }}
                                     />
                                   </MotionTd>
                                 );
@@ -4734,26 +4744,31 @@ export function LeadTable({
 
                             {/* WhatsApp Welcome Message Quick Action */}
                             {quickActionsConfig.whatsapp !== false && (() => {
-                              const waStat = waStatuses[lead.id]?.welcome;
+                              const hasGroup = Boolean(lead.whatsapp_group_id);
+                              const waStat = hasGroup ? waStatuses[lead.id]?.welcome : null;
                               const isFailed = waStat?.status === 'failed';
                               const isPending = waStat?.status === 'pending';
-                              const isSent = waStat?.status === 'sent' || Boolean((lead as any).wa_welcome_sent);
+                              const isSent = waStat?.status === 'sent';
 
-                              const statusColorClass = isFailed
-                                ? 'bg-red-100 hover:bg-red-200 dark:bg-red-950/80 text-red-600 dark:text-red-400 border-red-300 dark:border-red-800 ring-1 ring-red-400/40 shadow-2xs'
-                                : isPending
-                                  ? 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-800 ring-1 ring-amber-400/40 shadow-2xs'
-                                  : isSent
-                                    ? 'bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 ring-1 ring-emerald-400/40 shadow-2xs'
-                                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 border-slate-200 dark:border-zinc-700';
+                              const statusColorClass = !hasGroup
+                                ? 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 border-slate-200 dark:border-zinc-700'
+                                : isFailed
+                                  ? 'bg-red-100 hover:bg-red-200 dark:bg-red-950/80 text-red-600 dark:text-red-400 border-red-300 dark:border-red-800 ring-1 ring-red-400/40 shadow-2xs'
+                                  : isPending
+                                    ? 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-800 ring-1 ring-amber-400/40 shadow-2xs'
+                                    : isSent
+                                      ? 'bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 ring-1 ring-emerald-400/40 shadow-2xs'
+                                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 border-slate-200 dark:border-zinc-700';
 
-                              const tooltipText = isFailed
-                                ? 'WhatsApp Welcome Message: Failed (Click for Timeline)'
-                                : isPending
-                                  ? 'WhatsApp Welcome Message: Scheduled / Pending (Click for Timeline)'
-                                  : isSent
-                                    ? 'WhatsApp Welcome Message: Sent ✓ (Click for Timeline)'
-                                    : 'WhatsApp Welcome Message: Not sent (Click for Timeline)';
+                              const tooltipText = !hasGroup
+                                ? 'WhatsApp Welcome Message: Unassigned (No contact group)'
+                                : isFailed
+                                  ? 'WhatsApp Welcome Message: Failed (Click for Timeline)'
+                                  : isPending
+                                    ? 'WhatsApp Welcome Message: Scheduled / Pending (Click for Timeline)'
+                                    : isSent
+                                      ? 'WhatsApp Welcome Message: Sent ✓ (Click for Timeline)'
+                                      : 'WhatsApp Welcome Message: Not sent (Click for Timeline)';
 
                               return (
                                 <PremiumTooltip content={tooltipText}>
@@ -4819,26 +4834,31 @@ export function LeadTable({
 
                             {/* WA Follow-up Quick Action */}
                             {quickActionsConfig.followup !== false && (() => {
-                              const fStat = waStatuses[lead.id]?.followup;
+                              const hasGroup = Boolean(lead.whatsapp_group_id);
+                              const fStat = hasGroup ? waStatuses[lead.id]?.followup : null;
                               const isFailed = fStat?.status === 'failed' || (fStat?.failedSteps && fStat.failedSteps > 0);
                               const isRunning = fStat?.status === 'running' || (fStat?.pendingSteps && fStat.pendingSteps > 0);
                               const isCompleted = fStat?.status === 'completed' && !isRunning && !isFailed;
 
-                              const statusColorClass = isFailed
-                                ? 'bg-red-100 hover:bg-red-200 dark:bg-red-950/80 text-red-600 dark:text-red-400 border-red-300 dark:border-red-800 ring-1 ring-red-400/40 shadow-2xs'
-                                : isRunning
-                                  ? 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-800 ring-1 ring-amber-400/40 shadow-2xs'
-                                  : isCompleted
-                                    ? 'bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 ring-1 ring-emerald-400/40 shadow-2xs'
-                                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 border-slate-200 dark:border-zinc-700';
+                              const statusColorClass = !hasGroup
+                                ? 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 border-slate-200 dark:border-zinc-700'
+                                : isFailed
+                                  ? 'bg-red-100 hover:bg-red-200 dark:bg-red-950/80 text-red-600 dark:text-red-400 border-red-300 dark:border-red-800 ring-1 ring-red-400/40 shadow-2xs'
+                                  : isRunning
+                                    ? 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-800 ring-1 ring-amber-400/40 shadow-2xs'
+                                    : isCompleted
+                                      ? 'bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 ring-1 ring-emerald-400/40 shadow-2xs'
+                                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 border-slate-200 dark:border-zinc-700';
 
-                              const tooltipText = isFailed
-                                ? 'WA Follow-up: Failed Steps (Click for Timeline)'
-                                : isRunning
-                                  ? `WA Follow-up: In Progress (${fStat?.pendingSteps ?? '—'} pending) (Click for Timeline)`
-                                  : isCompleted
-                                    ? 'WA Follow-up: All Completed ✓ (Click for Timeline)'
-                                    : 'WA Follow-up: Not started (Click for Timeline)';
+                              const tooltipText = !hasGroup
+                                ? 'WA Follow-up: Unassigned (No contact group)'
+                                : isFailed
+                                  ? 'WA Follow-up: Failed Steps (Click for Timeline)'
+                                  : isRunning
+                                    ? `WA Follow-up: In Progress (${fStat?.pendingSteps ?? '—'} pending) (Click for Timeline)`
+                                    : isCompleted
+                                      ? 'WA Follow-up: All Completed ✓ (Click for Timeline)'
+                                      : 'WA Follow-up: Not started (Click for Timeline)';
 
                               return (
                                 <PremiumTooltip content={tooltipText}>

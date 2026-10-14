@@ -83,19 +83,43 @@ async function processLeadStatuses(leadIds: string[], workspaceId?: string) {
 
     for (const leadId of leadIds) {
       const lead = leadsMap.get(leadId);
-      const leadLogs = allLogs.filter(l => l.lead_id === leadId);
-      const wfsForGroup = lead?.whatsapp_group_id ? (groupWorkflowsMap.get(lead.whatsapp_group_id) || []) : [];
 
-      // Find dedicated Welcome & Follow-up workflows
+      // STRICT USER RULE: If lead has NO WhatsApp group assigned, Welcome and Follow-up MUST BE GRAY!
+      if (!lead?.whatsapp_group_id) {
+        statuses[leadId] = {
+          welcome: {
+            status: 'none',
+            stepsCount: 0,
+            lastSentAt: null,
+            workflow_id: null,
+            workflow: null,
+          },
+          followup: {
+            status: 'not_started',
+            totalSteps: 0,
+            completedSteps: 0,
+            pendingSteps: 0,
+            failedSteps: 0,
+            workflow_id: null,
+            workflow: null,
+          }
+        };
+        continue;
+      }
+
+      const leadLogs = allLogs.filter(l => l.lead_id === leadId);
+      const wfsForGroup = groupWorkflowsMap.get(lead.whatsapp_group_id) || [];
+
+      // Find dedicated Welcome & Follow-up workflows strictly configured for this group
       const welcomeWf = wfsForGroup.find(w => 
         (w.workflow_name || '').toLowerCase().includes('welcome') || 
         (w.workflow_name || '').toLowerCase().startsWith('wm')
-      ) || (wfsForGroup.length > 0 ? wfsForGroup[0] : null) || allStudioWorkflows.find(w => (w.workflow_name || '').toLowerCase().includes('welcome')) || null;
+      ) || (wfsForGroup.length > 0 ? wfsForGroup[0] : null);
 
       const followupWf = wfsForGroup.find(w => 
         (w.workflow_name || '').toLowerCase().includes('follow') || 
         (w.workflow_name || '').toLowerCase().startsWith('fu')
-      ) || (wfsForGroup.length > 1 ? wfsForGroup.find(w => w.id !== welcomeWf?.id) : null) || allStudioWorkflows.find(w => (w.workflow_name || '').toLowerCase().includes('follow')) || null;
+      ) || (wfsForGroup.length > 1 ? wfsForGroup.find(w => w.id !== welcomeWf?.id) : null);
 
       // --- Welcome Logs & Status ---
       let welcomeLogs = leadLogs.filter(l => {
@@ -107,7 +131,7 @@ async function processLeadStatuses(leadIds: string[], workspaceId?: string) {
       });
 
       const hasFailedWelcome = welcomeLogs.some(l => l.status === 'failed');
-      const hasSentWelcome = welcomeLogs.some(l => ['sent', 'delivered', 'read', 'completed'].includes(l.status)) || Boolean((lead as any)?.wa_welcome_sent);
+      const hasSentWelcome = welcomeLogs.some(l => ['sent', 'delivered', 'read', 'completed'].includes(l.status));
       const hasPendingWelcome = welcomeLogs.some(l => l.status === 'pending');
 
       let welcomeStatus: 'sent' | 'failed' | 'pending' | 'none' = 'none';
@@ -175,7 +199,7 @@ async function processLeadStatuses(leadIds: string[], workspaceId?: string) {
           pendingSteps: pendingFollowups,
           failedSteps: failedFollowups,
           workflow_id: followupWf?.id || (wfsForGroup.length > 0 ? wfsForGroup[0].id : null),
-          workflow: followupWf || (wfsForGroup.length > 0 ? wfsForGroup[0] : null),
+          workflow: followupWf || (wfsForGroup.length > 0 ? wfsForGroup[0].id : null),
         }
       };
     }

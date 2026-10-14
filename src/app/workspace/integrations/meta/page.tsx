@@ -732,13 +732,13 @@ export default function MetaIntegrationPage() {
   };
 
   // Fetch Status Data
-  const fetchMetaSyncData = useCallback(async () => {
+  const fetchMetaSyncData = useCallback(async (forceRefresh = false) => {
     setIsSyncing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const wsId = session?.user?.id || '';
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/meta/status?workspace_id=${wsId}&nocache=${Date.now()}`, { headers });
+      const res = await fetch(`/api/meta/status?workspace_id=${wsId}&refresh=${forceRefresh}&nocache=${Date.now()}`, { headers });
       if (!res.ok) throw new Error(`Status ${res.status}`);
       const data = await res.json();
       if (data.success && data.connection?.is_connected) {
@@ -1106,8 +1106,8 @@ export default function MetaIntegrationPage() {
           const aStr = a.created_time || a.created_at;
           const bStr = b.created_time || b.created_at;
           const aTime = aStr ? new Date(aStr).getTime() : 0;
-          const bTime = bStr ? new Date(bStr).getTime() : 0;
-          return bTime - aTime;
+          if (bTime !== aTime) return bTime - aTime;
+          return String(a.form_id).localeCompare(String(b.form_id));
         }
         return aActive ? -1 : 1;
       });
@@ -1188,7 +1188,7 @@ export default function MetaIntegrationPage() {
                 </button>
 
                 <button
-                  onClick={fetchMetaSyncData}
+                  onClick={() => fetchMetaSyncData(true)}
                   disabled={isSyncing}
                   className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                 >

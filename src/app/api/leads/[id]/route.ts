@@ -141,6 +141,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
+    // If WhatsApp group was unassigned (set to null), purge any pending queue items and logs
+    if (payload.whatsapp_group_id === null && existingLead?.whatsapp_group_id) {
+      try {
+        const { data: pLogs } = await supabaseAdmin
+          .from('whatsapp_workflow_logs')
+          .select('id')
+          .eq('lead_id', leadId)
+          .eq('status', 'pending');
+        const pLogIds = (pLogs || []).map(l => l.id);
+        if (pLogIds.length > 0) {
+          await supabaseAdmin
+            .from('baileys_action_queue')
+            .delete()
+            .filter('payload->>workflowLogId', 'in', `(${pLogIds.join(',')})`);
+          await supabaseAdmin
+            .from('whatsapp_workflow_logs')
+            .delete()
+            .in('id', pLogIds);
+        }
+      } catch (purgeErr) {
+        console.error('[API Lead Update Group Purge Error]:', purgeErr);
+      }
+    }
+
     if (finalIsBooked) {
       try {
         await syncBookedLeadOrFinalQuotation({
