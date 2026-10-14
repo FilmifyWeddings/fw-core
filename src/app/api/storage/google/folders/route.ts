@@ -273,9 +273,33 @@ export async function GET(req: NextRequest) {
       } catch (_) {}
     }
 
-    // 3. Compute Real Total Counts and Total Size Upfront
+    // 3. Compute Real Stats For Each Subfolder Automatically in Parallel
+    const enrichedFolders = await Promise.all(
+      folders.map(async (folder: any) => {
+        try {
+          const stats = await getFolderRealStats(accessToken, folder.id, `${accountId}_${folder.id}`);
+          return {
+            ...folder,
+            filesCount: stats.totalFiles,
+            foldersCount: stats.totalFolders,
+            sizeBytes: stats.totalSizeBytes,
+            formattedSize: stats.totalSizeFormatted,
+          };
+        } catch (_) {
+          return {
+            ...folder,
+            filesCount: 0,
+            foldersCount: 0,
+            sizeBytes: 0,
+            formattedSize: '0 MB',
+          };
+        }
+      })
+    );
+
+    // 4. Compute Real Total Counts and Total Size Upfront for current directory
     let totalFilesCount = files.length;
-    let totalFoldersCount = folders.length;
+    let totalFoldersCount = enrichedFolders.length;
     let totalSizeBytes = files.reduce((acc, f) => acc + (f.sizeBytes || 0), 0);
     let totalSizeFormatted = formatBytes(totalSizeBytes);
 
@@ -295,7 +319,7 @@ export async function GET(req: NextRequest) {
       account_email: account.account_email,
       account_label: account.account_label,
       currentFolder,
-      folders,
+      folders: enrichedFolders,
       files,
       nextPageToken,
       total_files_count: totalFilesCount,

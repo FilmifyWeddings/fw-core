@@ -3,17 +3,44 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   HardDrive, Database, Search, Cloud, Plus, RefreshCw, 
   Folder, Film, Image as ImageIcon, CheckCircle2, AlertTriangle, ExternalLink, 
   Copy, Check, MapPin, User, Tag, Clock, ArrowUpRight, ShieldCheck, Sparkles, 
   Trash2, Edit3, Monitor, Layers, ChevronRight, Download, Filter, Eye, Cpu, Zap, X,
   FolderOpen, Laptop, CheckSquare, Square, ChevronDown, Building2, Calendar, FolderPlus,
-  Users, CheckCircle
+  Users, CheckCircle, ArrowUpDown, Grid, List, FileText, Video, Music
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
 import { getActiveGoogleClientId } from '@/lib/google-credentials';
+
+interface GoogleFolder {
+  id: string;
+  name: string;
+  webViewLink?: string;
+  createdTime?: string;
+  modifiedTime?: string;
+  sizeBytes?: number;
+  filesCount?: number;
+  foldersCount?: number;
+  formattedSize?: string;
+}
+
+interface GoogleFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  thumbnailLink?: string | null;
+  webViewLink?: string;
+  previewUrl?: string;
+  sizeBytes: number;
+  createdTime?: string;
+  isImage?: boolean;
+  isVideo?: boolean;
+  isAudio?: boolean;
+}
 
 interface MemoryCard {
   id: string;
@@ -165,11 +192,10 @@ export default function StorageHubPage() {
   // Manual Project Form states
   const [manualClientName, setManualClientName] = useState('');
   const [manualEventDate, setManualEventDate] = useState('');
-  const [manualPackageAmount, setManualPackageAmount] = useState('');
-  const [manualSelectedDiskId, setManualSelectedDiskId] = useState('');
+  const [manualSelectedDiskIds, setManualSelectedDiskIds] = useState<string[]>([]);
   const [manualSubEvents, setManualSubEvents] = useState<ManualSubEventForm[]>([
     {
-      name: 'Main Wedding',
+      name: 'Wedding Ceremony',
       date: new Date().toISOString().split('T')[0],
       venue: '',
       crew: [
@@ -182,6 +208,10 @@ export default function StorageHubPage() {
   const [selectedLeadIdForProject, setSelectedLeadIdForProject] = useState('');
   const [savingProject, setSavingProject] = useState(false);
 
+  // UI Display states
+  const [showAllDriveAccounts, setShowAllDriveAccounts] = useState(false);
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Record<string, boolean>>({});
+
   // Connect Google Drive Form states
   const [connectDriveTab, setConnectDriveTab] = useState<'oauth' | 'manual' | 'gis'>('oauth');
   const [manualDriveEmail, setManualDriveEmail] = useState('');
@@ -191,21 +221,26 @@ export default function StorageHubPage() {
   const [isConnectingGis, setIsConnectingGis] = useState(false);
   const [gisStatusText, setGisStatusText] = useState('');
 
-  // Google Folder Browser states
+  // Google Folder Browser / Explorer states (Exact match with Google Drive Integration)
   const [selectedGoogleAccount, setSelectedGoogleAccount] = useState<DriveAccount | null>(null);
-  const [googleFolders, setGoogleFolders] = useState<any[]>([]);
-  const [googleFiles, setGoogleFiles] = useState<any[]>([]);
-  const [browserContentTab, setBrowserContentTab] = useState<'all' | 'folders' | 'media'>('all');
+  const [googleFolders, setGoogleFolders] = useState<GoogleFolder[]>([]);
+  const [googleFiles, setGoogleFiles] = useState<GoogleFile[]>([]);
   const [googleCurrentFolder, setGoogleCurrentFolder] = useState<any>({ id: 'root', name: 'My Drive' });
   const [googleBreadcrumbs, setGoogleBreadcrumbs] = useState<any[]>([{ id: 'root', name: 'My Drive' }]);
   const [googleFolderLoading, setGoogleFolderLoading] = useState(false);
   const [googleNextPageToken, setGoogleNextPageToken] = useState<string | null>(null);
   const [googleLoadingMore, setGoogleLoadingMore] = useState(false);
-  const [previewMediaFile, setPreviewMediaFile] = useState<any | null>(null);
   const [selectedFolderForLink, setSelectedFolderForLink] = useState<any | null>(null);
-  const [newDriveFolderName, setNewDriveFolderName] = useState('');
-  const [creatingDriveFolder, setCreatingDriveFolder] = useState(false);
-  const [manualDriveFolderInput, setManualDriveFolderInput] = useState('');
+
+  const [explorerSearch, setExplorerSearch] = useState('');
+  const [explorerSortField, setExplorerSortField] = useState<'name' | 'date' | 'size'>('name');
+  const [explorerSortOrder, setExplorerSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [explorerViewMode, setExplorerViewMode] = useState<'grid' | 'list'>('grid');
+  const [explorerTotalFiles, setExplorerTotalFiles] = useState<number | null>(null);
+  const [explorerTotalFolders, setExplorerTotalFolders] = useState<number | null>(null);
+  const [explorerTotalSize, setExplorerTotalSize] = useState<string>('0 MB');
+  const [explorerIsGlobalSearch, setExplorerIsGlobalSearch] = useState(false);
+  const [explorerPreviewFile, setExplorerPreviewFile] = useState<GoogleFile | null>(null);
 
   const isValidWs = Boolean(
     effectiveWsId &&
@@ -303,16 +338,16 @@ export default function StorageHubPage() {
     return () => window.removeEventListener('message', handleMsg);
   }, [loadStorageData]);
 
-  // Load available leads when opening manual project modal
+  // Load available leads when opening manual project modal (Strictly Booked Clients Only)
   const handleOpenAddProjectModal = async () => {
     setShowAddProjectModal(true);
     setManualClientName('');
     setManualEventDate(new Date().toISOString().split('T')[0]);
-    setManualPackageAmount('');
     setSelectedLeadIdForProject('');
+    setManualSelectedDiskIds([]);
     setManualSubEvents([
       {
-        name: 'Main Wedding',
+        name: 'Wedding Ceremony',
         date: new Date().toISOString().split('T')[0],
         venue: '',
         crew: [
@@ -324,13 +359,26 @@ export default function StorageHubPage() {
 
     try {
       const res = await fetch(`/api/leads?workspace_id=${effectiveWsId}`).then(r => r.json());
-      if (res.leads || res.data) {
-        setAvailableLeads(res.leads || res.data || []);
-      }
+      const rawLeads = res.leads || res.data || [];
+      const bookedOnly = rawLeads.filter((l: any) => {
+        const s = String(l.status || l.stage || '').toLowerCase();
+        const rawStatus = String(l.raw_payload?.status || '').toLowerCase();
+        return (
+          s === 'booked' ||
+          s === 'closed' ||
+          s === 'converted' ||
+          s.includes('book') ||
+          s.includes('close') ||
+          s.includes('won') ||
+          Boolean(l.client_id) ||
+          rawStatus === 'booked'
+        );
+      });
+      setAvailableLeads(bookedOnly);
     } catch (_) {}
   };
 
-  // Populate manual project modal from selected lead
+  // Populate manual project modal from selected booked client
   const handleSelectLeadToAutofill = (leadId: string) => {
     setSelectedLeadIdForProject(leadId);
     const matched = availableLeads.find(l => l.id === leadId);
@@ -340,20 +388,22 @@ export default function StorageHubPage() {
     const name = raw.couple_name || raw.couple_names || matched.name || '';
     setManualClientName(name);
     setManualEventDate(matched.event_date || new Date().toISOString().split('T')[0]);
-    setManualPackageAmount(String(matched.budget || ''));
 
     const rawEvents = raw.events || raw.sub_events;
     if (Array.isArray(rawEvents) && rawEvents.length > 0) {
       setManualSubEvents(rawEvents.map((ev: any) => ({
-        name: ev.name || ev.title || 'Wedding Event',
+        name: ev.name || ev.title || 'Wedding Ceremony',
         date: ev.date || matched.event_date || new Date().toISOString().split('T')[0],
         venue: ev.venue || matched.location || '',
-        crew: Array.isArray(ev.crew) ? ev.crew.map((c: any) => ({
-          name: c.name || 'Crew Member',
-          role: c.role || 'Cinematography'
-        })) : [
-          { name: 'Photographer', role: 'Photography' }
-        ]
+        crew: Array.isArray(ev.crew || ev.team_members) && (ev.crew || ev.team_members).length > 0
+          ? (ev.crew || ev.team_members).map((c: any) => ({
+              name: c.name || c.member_name || 'Crew Member',
+              role: c.role || 'Traditional Photography'
+            }))
+          : [
+              { name: 'Lead Photographer', role: 'Traditional Photography' },
+              { name: 'Candid Cinematographer', role: 'Candid Cinematography' }
+            ]
       })));
     }
   };
@@ -617,104 +667,184 @@ export default function StorageHubPage() {
     setTimeout(() => setCopiedPathId(null), 2500);
   };
 
-  // Google Folder Navigation with Multi-Page Pagination (>200 items)
-  const fetchGoogleFolders = useCallback(async (accountId: string, parentId: string = 'root', pageToken?: string, append: boolean = false) => {
-    if (append) {
-      setGoogleLoadingMore(true);
-    } else {
-      setGoogleFolderLoading(true);
-      setGoogleNextPageToken(null);
-    }
+  // ── FULL GOOGLE DRIVE EXPLORER METHODS (Exact match with Google Drive Integration) ──
+
+  // Format Bytes helper
+  const formatBytes = (bytes?: number) => {
+    if (!bytes || isNaN(bytes) || bytes === 0) return '0 GB';
+    const gb = bytes / (1024 * 1024 * 1024);
+    if (gb < 1) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    if (gb >= 1000) return (gb / 1024).toFixed(1) + ' TB';
+    return gb.toFixed(1) + ' GB';
+  };
+
+  // Fetch Folder Contents inside Explorer Modal (100-item paging, real stats upfront & deep search)
+  const loadExplorerFolder = useCallback(async (
+    accountId: string,
+    parentId: string = 'root',
+    pageToken?: string,
+    fetchAll: boolean = false,
+    searchQuery?: string
+  ) => {
     try {
-      let url = `/api/storage/google/folders?account_id=${accountId}&parent_id=${parentId}&workspace_id=${effectiveWsId}`;
-      if (pageToken) url += `&page_token=${encodeURIComponent(pageToken)}`;
+      if (pageToken) {
+        setGoogleLoadingMore(true);
+      } else {
+        setGoogleFolderLoading(true);
+      }
+      let url = `/api/storage/google/folders?account_id=${encodeURIComponent(accountId)}&parent_id=${encodeURIComponent(parentId)}&workspace_id=${encodeURIComponent(effectiveWsId)}`;
+      if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+      if (fetchAll) {
+        url += `&fetch_all=true`;
+      } else {
+        url += `&page_size=100`;
+      }
+      if (searchQuery && searchQuery.trim()) {
+        url += `&search=${encodeURIComponent(searchQuery.trim())}`;
+      }
+
       const res = await fetch(url);
-      const json = await res.json();
-      if (json.success) {
-        if (append) {
-          setGoogleFolders(prev => [...prev, ...(json.folders || [])]);
-          setGoogleFiles(prev => [...prev, ...(json.files || [])]);
-        } else {
-          setGoogleFolders(json.folders || []);
-          setGoogleFiles(json.files || []);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (pageToken) {
+            setGoogleFolders(prev => [...prev, ...(data.folders || [])]);
+            setGoogleFiles(prev => [...prev, ...(data.files || [])]);
+          } else {
+            setGoogleFolders(data.folders || []);
+            setGoogleFiles(data.files || []);
+            setExplorerTotalFiles(typeof data.total_files_count === 'number' ? data.total_files_count : (data.files || []).length);
+            setExplorerTotalFolders(typeof data.total_folders_count === 'number' ? data.total_folders_count : (data.folders || []).length);
+            setExplorerTotalSize(data.total_size_formatted || '0 MB');
+            setExplorerIsGlobalSearch(Boolean(data.is_search_result));
+          }
+          setGoogleNextPageToken(data.nextPageToken || null);
+          if (data.currentFolder?.name) {
+            setGoogleCurrentFolder(data.currentFolder);
+          }
         }
-        setGoogleNextPageToken(json.nextPageToken || null);
       }
     } catch (err) {
-      console.warn('Failed to fetch google folders:', err);
+      console.warn('Failed to load explorer folder:', err);
     } finally {
       setGoogleFolderLoading(false);
       setGoogleLoadingMore(false);
     }
   }, [effectiveWsId]);
 
-  const handleOpenGooglePicker = (project: ProjectAsset) => {
-    setActiveProjectForGoogle(project);
-    setSelectedFolderForLink(null);
+  // Deep Google Drive Search with 400ms debounce
+  useEffect(() => {
+    if (!showGooglePickerModal || !selectedGoogleAccount) return;
+
+    const timer = setTimeout(() => {
+      const q = explorerSearch.trim();
+      if (q.length >= 2) {
+        loadExplorerFolder(selectedGoogleAccount.id, googleCurrentFolder.id, undefined, false, q);
+      } else if (q.length === 0 && explorerIsGlobalSearch) {
+        setExplorerIsGlobalSearch(false);
+        loadExplorerFolder(selectedGoogleAccount.id, googleCurrentFolder.id);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [explorerSearch, showGooglePickerModal, selectedGoogleAccount, googleCurrentFolder.id, explorerIsGlobalSearch, loadExplorerFolder]);
+
+  // Open Explorer for a specific connected account
+  const handleOpenExplorerForAccount = (account: DriveAccount) => {
+    setSelectedGoogleAccount(account);
+    setActiveProjectForGoogle(null);
     setGoogleBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
     setGoogleCurrentFolder({ id: 'root', name: 'My Drive' });
-    setBrowserContentTab('all');
+    setExplorerSearch('');
+    setExplorerIsGlobalSearch(false);
+    setExplorerTotalFiles(null);
+    setExplorerTotalFolders(null);
+    setExplorerTotalSize('0 MB');
+    setGoogleNextPageToken(null);
+    setShowGooglePickerModal(true);
+    loadExplorerFolder(account.id, 'root');
+  };
 
+  // Open Explorer from a Project Card to Link Google Drive
+  const handleOpenGooglePicker = (project: ProjectAsset) => {
+    setActiveProjectForGoogle(project);
     const acc = selectedGoogleAccount || (driveAccounts.length > 0 ? driveAccounts[0] : null);
     if (acc) {
       setSelectedGoogleAccount(acc);
-      fetchGoogleFolders(acc.id, 'root');
-    }
-    setShowGooglePickerModal(true);
-  };
-
-  const handleNavigateGoogleFolder = (folder: { id: string; name: string }) => {
-    if (!selectedGoogleAccount) return;
-    setGoogleCurrentFolder(folder);
-    setGoogleBreadcrumbs(prev => [...prev, folder]);
-    fetchGoogleFolders(selectedGoogleAccount.id, folder.id);
-  };
-
-  const handleBreadcrumbClick = (crumb: { id: string; name: string }, index: number) => {
-    if (!selectedGoogleAccount) return;
-    setGoogleBreadcrumbs(prev => prev.slice(0, index + 1));
-    setGoogleCurrentFolder(crumb);
-    fetchGoogleFolders(selectedGoogleAccount.id, crumb.id);
-  };
-
-  // Create Google Drive Folder
-  const handleCreateDriveFolder = async () => {
-    if (!selectedGoogleAccount || !newDriveFolderName.trim()) return;
-    setCreatingDriveFolder(true);
-    try {
-      const res = await fetch('/api/storage/google/folders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_id: selectedGoogleAccount.id,
-          name: newDriveFolderName.trim(),
-          parent_id: googleCurrentFolder.id,
-        }),
+      setGoogleBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
+      setGoogleCurrentFolder({ id: 'root', name: 'My Drive' });
+      setExplorerSearch('');
+      setExplorerIsGlobalSearch(false);
+      setExplorerTotalFiles(null);
+      setExplorerTotalFolders(null);
+      setExplorerTotalSize('0 MB');
+      setGoogleNextPageToken(null);
+      setShowGooglePickerModal(true);
+      loadExplorerFolder(acc.id, 'root');
+    } else {
+      setShowConnectDriveModal(true);
+      setUrlToast({
+        type: 'warning',
+        message: 'Please connect a Google Drive account first to link backup folders!'
       });
-      const json = await res.json();
-      if (json.success && json.folder) {
-        setGoogleFolders(prev => [json.folder, ...prev]);
-        setSelectedFolderForLink(json.folder);
-        setNewDriveFolderName('');
-      }
-    } catch (err) {
-      console.warn('Create drive folder failed:', err);
-    } finally {
-      setCreatingDriveFolder(false);
     }
   };
 
-  // Link selected Google Drive folder to Project
-  const handleConfirmGoogleDriveLink = async () => {
-    if (!activeProjectForGoogle || !selectedFolderForLink || !selectedGoogleAccount) return;
+  // Navigate deeper into subfolder
+  const handleExplorerNavigateFolder = (folder: GoogleFolder) => {
+    setGoogleBreadcrumbs(prev => [...prev, { id: folder.id, name: folder.name }]);
+    setGoogleCurrentFolder({ id: folder.id, name: folder.name });
+    setExplorerSearch('');
+    setExplorerIsGlobalSearch(false);
+    setExplorerTotalFiles(null);
+    setExplorerTotalFolders(null);
+    setExplorerTotalSize('0 MB');
+    if (selectedGoogleAccount) {
+      loadExplorerFolder(selectedGoogleAccount.id, folder.id);
+    }
+  };
+
+  // Navigate via breadcrumb click
+  const handleExplorerBreadcrumbClick = (idx: number) => {
+    const target = googleBreadcrumbs[idx];
+    const newBreadcrumbs = googleBreadcrumbs.slice(0, idx + 1);
+    setGoogleBreadcrumbs(newBreadcrumbs);
+    setGoogleCurrentFolder(target);
+    setExplorerSearch('');
+    setExplorerIsGlobalSearch(false);
+    setExplorerTotalFiles(null);
+    setExplorerTotalFolders(null);
+    setExplorerTotalSize('0 MB');
+    if (selectedGoogleAccount) {
+      loadExplorerFolder(selectedGoogleAccount.id, target.id);
+    }
+  };
+
+  // Load next 100 files
+  const handleExplorerLoadMore = () => {
+    if (selectedGoogleAccount && googleNextPageToken && !googleLoadingMore) {
+      loadExplorerFolder(selectedGoogleAccount.id, googleCurrentFolder.id, googleNextPageToken, false, explorerSearch.trim());
+    }
+  };
+
+  // Load all files
+  const handleExplorerLoadAll = () => {
+    if (selectedGoogleAccount && !googleLoadingMore) {
+      loadExplorerFolder(selectedGoogleAccount.id, googleCurrentFolder.id, undefined, true, explorerSearch.trim());
+    }
+  };
+
+  // Link selected Google Drive folder to Active Project
+  const handleLinkFolderToProject = async (folder: GoogleFolder | { id: string; name: string; webViewLink?: string }) => {
+    if (!activeProjectForGoogle || !selectedGoogleAccount) return;
 
     const backupPayload: GoogleDriveBackupItem = {
       is_backed_up: true,
       account_id: selectedGoogleAccount.id,
       account_email: selectedGoogleAccount.account_email,
-      folder_id: selectedFolderForLink.id,
-      folder_name: selectedFolderForLink.name,
-      web_view_link: selectedFolderForLink.webViewLink,
+      folder_id: folder.id,
+      folder_name: folder.name,
+      web_view_link: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`,
       backup_status: 'COMPLETED',
       backed_up_at: new Date().toISOString(),
     };
@@ -726,69 +856,55 @@ export default function StorageHubPage() {
     } : p));
 
     setShowGooglePickerModal(false);
-
-    await fetch('/api/storage/projects', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: activeProjectForGoogle.id,
-        google_drive_backup: backupPayload,
-        overall_storage_status: 'BACKED_UP_CLOUD',
-      }),
+    setUrlToast({
+      type: 'success',
+      message: `🎉 Google Drive folder "${folder.name}" linked to ${activeProjectForGoogle.client_name}!`
     });
-  };
 
-  // Direct Folder Link (URL or Name)
-  const handleDirectFolderLink = async () => {
-    if (!activeProjectForGoogle || !manualDriveFolderInput.trim()) return;
-    const input = manualDriveFolderInput.trim();
-    const isUrl = input.startsWith('http://') || input.startsWith('https://');
-    let folderName = input;
-    let folderUrl = input;
-    let folderId = 'custom_fld';
-
-    if (isUrl) {
-      const match = input.match(/folders\/([a-zA-Z0-9_-]+)/);
-      folderId = match ? match[1] : `url_${Date.now()}`;
-      folderName = `${activeProjectForGoogle.client_name} (Cloud Folder)`;
-    } else {
-      folderUrl = `https://drive.google.com/drive/search?q=${encodeURIComponent(input)}`;
-      folderId = `fld_${Date.now()}`;
+    try {
+      await fetch('/api/storage/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: activeProjectForGoogle.id,
+          google_drive_backup: backupPayload,
+          overall_storage_status: 'BACKED_UP_CLOUD',
+        }),
+      });
+    } catch (err) {
+      console.warn('Failed to persist google drive backup:', err);
     }
-
-    const email = selectedGoogleAccount?.account_email || driveAccounts[0]?.account_email || 'google.drive@studio';
-    const accId = selectedGoogleAccount?.id || driveAccounts[0]?.id || 'direct';
-
-    const backupPayload: GoogleDriveBackupItem = {
-      is_backed_up: true,
-      account_id: accId,
-      account_email: email,
-      folder_id: folderId,
-      folder_name: folderName,
-      web_view_link: folderUrl,
-      backup_status: 'COMPLETED',
-      backed_up_at: new Date().toISOString(),
-    };
-
-    setProjects(prev => prev.map(p => p.id === activeProjectForGoogle.id ? {
-      ...p,
-      google_drive_backup: backupPayload,
-      overall_storage_status: 'BACKED_UP_CLOUD',
-    } : p));
-
-    setShowGooglePickerModal(false);
-    setManualDriveFolderInput('');
-
-    await fetch('/api/storage/projects', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: activeProjectForGoogle.id,
-        google_drive_backup: backupPayload,
-        overall_storage_status: 'BACKED_UP_CLOUD',
-      }),
-    });
   };
+
+  // Filter and sort items in Explorer
+  const sortedExplorerFolders = useMemo(() => {
+    const list = [...googleFolders];
+    return list.sort((a, b) => {
+      if (explorerSortField === 'name') {
+        return explorerSortOrder === 'asc'
+          ? (a.name || '').localeCompare(b.name || '')
+          : (b.name || '').localeCompare(a.name || '');
+      }
+      return 0;
+    });
+  }, [googleFolders, explorerSortField, explorerSortOrder]);
+
+  const sortedExplorerFiles = useMemo(() => {
+    const list = [...googleFiles];
+    return list.sort((a, b) => {
+      if (explorerSortField === 'name') {
+        return explorerSortOrder === 'asc'
+          ? (a.name || '').localeCompare(b.name || '')
+          : (b.name || '').localeCompare(a.name || '');
+      }
+      if (explorerSortField === 'size') {
+        const szA = a.sizeBytes || 0;
+        const szB = b.sizeBytes || 0;
+        return explorerSortOrder === 'asc' ? szA - szB : szB - szA;
+      }
+      return 0;
+    });
+  }, [googleFiles, explorerSortField, explorerSortOrder]);
 
   // Submit Add Card Form
   const handleAddCardSubmit = async (e: React.FormEvent) => {
@@ -847,19 +963,17 @@ export default function StorageHubPage() {
 
     setSavingProject(true);
     try {
-      const selectedDisk = disks.find(d => d.id === manualSelectedDiskId);
-      const assignedDisksPayload: AssignedDiskItem[] = selectedDisk ? [
-        {
-          disk_id: selectedDisk.id,
-          disk_name: selectedDisk.disk_name,
-          drive_type: selectedDisk.disk_type,
-          role: 'Primary Raw Archive',
-          folder_path: `${selectedDisk.disk_name}/${manualClientName.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
-          folder_name: `${manualClientName.trim()}_RAW`,
-          total_size_gb: 0,
-          file_count: 0,
-        }
-      ] : [];
+      const selectedDisks = disks.filter(d => manualSelectedDiskIds.includes(d.id));
+      const assignedDisksPayload: AssignedDiskItem[] = selectedDisks.map(selectedDisk => ({
+        disk_id: selectedDisk.id,
+        disk_name: selectedDisk.disk_name,
+        drive_type: selectedDisk.disk_type,
+        role: 'Primary Raw Archive',
+        folder_path: `${selectedDisk.disk_name}/${manualClientName.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
+        folder_name: `${manualClientName.trim()}_RAW`,
+        total_size_gb: 0,
+        file_count: 0,
+      }));
 
       const formattedSubEvents: SubEventItem[] = manualSubEvents.map((ev, evIdx) => ({
         id: `ev_${evIdx + 1}_${Date.now()}`,
@@ -869,7 +983,7 @@ export default function StorageHubPage() {
         crew: ev.crew.map((c, cIdx) => ({
           id: `cr_${evIdx + 1}_${cIdx + 1}`,
           name: c.name.trim() || `Crew Member ${cIdx + 1}`,
-          role: c.role || 'Photography',
+          role: c.role || 'Traditional Photography',
           assigned_card_ids: [],
           assigned_card_names: [],
           is_copied: false,
@@ -878,12 +992,13 @@ export default function StorageHubPage() {
         }))
       }));
 
+      const matchedLead = availableLeads.find(l => l.id === selectedLeadIdForProject);
       const payload = {
         workspace_id: effectiveWsId,
         lead_id: selectedLeadIdForProject || `manual_${Date.now()}`,
         client_name: manualClientName.trim(),
         event_date: manualEventDate || new Date().toISOString().split('T')[0],
-        package_amount: Number(manualPackageAmount) || 0,
+        package_amount: Number(matchedLead?.budget) || 0,
         sub_events: formattedSubEvents,
         assigned_disks: assignedDisksPayload,
         google_drive_backup: {},
@@ -1130,7 +1245,7 @@ export default function StorageHubPage() {
             ? 'bg-amber-50 text-amber-900 border-amber-200'
             : 'bg-blue-50 text-blue-900 border-blue-200'
         }`}>
-          <div className="max-w-7xl mx-auto flex-1 flex items-center gap-2">
+          <div className="w-full max-w-[1600px] mx-auto flex-1 flex items-center gap-2">
             {urlToast.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             ) : (
@@ -1149,7 +1264,7 @@ export default function StorageHubPage() {
 
       {/* ── TOP HEADER ── */}
       <div className="bg-white border-b border-[#EAE5DA] sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+        <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-5">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2.5">
@@ -1157,11 +1272,8 @@ export default function StorageHubPage() {
                   <HardDrive className="w-5 h-5" />
                 </div>
                 <div>
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                    Studio Storage & Media Hub
-                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-800 border border-amber-500/20">
-                      Tier-1 Enterprise
-                    </span>
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                    Storage & Media Hub
                   </h1>
                   <p className="text-xs text-slate-500 font-medium">
                     Memory Card Offloading • Hard Drive Inventory • Folder Picker • Multi-Account Google Drive
@@ -1182,13 +1294,23 @@ export default function StorageHubPage() {
                 <span>+ Add Project Card</span>
               </button>
 
+              {/* Official Google-Style Connect Google Drive Button */}
               <button
                 type="button"
                 onClick={() => setShowConnectDriveModal(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold shadow-xs transition cursor-pointer"
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-250 text-slate-700 text-xs font-semibold shadow-xs transition hover:shadow-sm cursor-pointer"
               >
-                <Cloud className="w-4 h-4 text-blue-600" />
-                <span>+ Connect Google Drive</span>
+                <div className="w-4 h-4 shrink-0">
+                  <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                    <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                    <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                    <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                    <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                    <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                    <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                  </svg>
+                </div>
+                <span>Connect Google Drive</span>
               </button>
 
               <button
@@ -1285,14 +1407,14 @@ export default function StorageHubPage() {
         </div>
       </div>
 
-      {/* ── MAIN CONTENT CONTAINER ── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
+      {/* ── MAIN CONTENT CONTAINER (Edge-to-Edge 1600px) ── */}
+      <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 pt-6 space-y-6">
 
-        {/* ── PROMINENT GOOGLE DRIVE CLOUD ACCOUNTS SECTION ── */}
-        <div className="bg-white p-5 rounded-2xl border border-[#EAE5DA] shadow-xs space-y-4">
+        {/* ── SLEEK GOOGLE DRIVE CLOUD ACCOUNTS SECTION ── */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs space-y-3.5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
                 <Cloud className="w-4 h-4" />
               </div>
               <div>
@@ -1308,13 +1430,23 @@ export default function StorageHubPage() {
               </div>
             </div>
 
+            {/* Google Drive Connect Button */}
             <button
               type="button"
               onClick={() => setShowConnectDriveModal(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs cursor-pointer self-start sm:self-auto"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-250 text-slate-700 text-xs font-semibold shadow-xs transition hover:shadow-sm cursor-pointer self-start sm:self-auto"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Connect Google Drive</span>
+              <div className="w-4 h-4 shrink-0">
+                <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                  <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                  <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                  <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                  <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                  <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                  <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                </svg>
+              </div>
+              <span>Connect Google Drive</span>
             </button>
           </div>
 
@@ -1332,21 +1464,23 @@ export default function StorageHubPage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {driveAccounts.map(acc => {
+            <div className="space-y-2">
+              {(showAllDriveAccounts ? driveAccounts : driveAccounts.slice(0, 3)).map((acc, accIdx) => {
                 const totalGb = Number((acc.total_storage_bytes / (1024 ** 3)).toFixed(1)) || 2000;
                 const usedGb = Number((acc.used_storage_bytes / (1024 ** 3)).toFixed(1)) || 0;
-                const freeGb = Math.max(0, Number((totalGb - usedGb).toFixed(1)));
                 const percent = Math.min(100, Math.round((usedGb / (totalGb || 1)) * 100));
 
                 return (
-                  <div 
-                    key={acc.id} 
-                    className="bg-white rounded-3xl border border-zinc-200/90 p-5 shadow-lg shadow-zinc-200/40 flex flex-col justify-between space-y-5 hover:border-blue-400 transition-all group"
+                  <div
+                    key={acc.id}
+                    className="p-3 sm:px-4 rounded-2xl bg-white border border-slate-200/90 hover:border-blue-300 hover:shadow-xs transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 group"
                   >
-                    {/* Header */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-zinc-50 border border-zinc-250/80 shadow-xs flex items-center justify-center p-2 shrink-0">
+                    {/* Left: Sequence badge, Google Drive SVG, Email & Label */}
+                    <div className="flex items-center gap-3 min-w-[280px]">
+                      <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 font-mono text-[11px] font-black flex items-center justify-center shrink-0">
+                        #{accIdx + 1}
+                      </span>
+                      <div className="w-8 h-8 rounded-xl bg-blue-50/70 border border-blue-100 flex items-center justify-center p-1.5 shrink-0">
                         <svg viewBox="0 0 87.3 78" className="w-full h-full">
                           <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
                           <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
@@ -1356,46 +1490,25 @@ export default function StorageHubPage() {
                           <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
                         </svg>
                       </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <span>Active</span>
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteGoogleAccount(acc.id)}
-                          className="p-1.5 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                          title="Disconnect account"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900 truncate" title={acc.account_email}>
+                          {acc.account_email}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-medium truncate">
+                          {acc.account_label || 'Wedding Deliverables Drive'}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Email info */}
-                    <div className="min-w-0">
-                      <div className="text-xs font-black text-zinc-900 truncate" title={acc.account_email}>
-                        {acc.account_email}
-                      </div>
-                      <div className="text-[11px] text-zinc-400 font-medium truncate mt-0.5">
-                        {acc.account_label || 'Wedding Deliverables Drive'}
-                      </div>
-                    </div>
-
-                    {/* Storage Meter Bar */}
-                    <div className="space-y-2 p-3 bg-zinc-50 rounded-2xl border border-zinc-150">
-                      <div className="flex items-center justify-between text-xs font-mono font-bold">
-                        <span className="text-zinc-700">
-                          {usedGb >= 1000 ? `${(usedGb / 1000).toFixed(2)} TB` : `${usedGb} GB`} used
+                    {/* Center: Storage progress bar & values */}
+                    <div className="flex-1 max-w-md w-full px-2">
+                      <div className="flex items-center justify-between text-[11px] font-mono font-semibold mb-1">
+                        <span className="text-slate-700">
+                          {usedGb >= 1000 ? `${(usedGb / 1000).toFixed(2)} TB` : `${usedGb} GB`} / {totalGb >= 1000 ? `${(totalGb / 1000).toFixed(1)} TB` : `${totalGb} GB`}
                         </span>
-                        <span className="text-emerald-600">
-                          {freeGb >= 1000 ? `${(freeGb / 1000).toFixed(2)} TB` : `${freeGb} GB`} free
-                        </span>
+                        <span className="text-slate-500 text-[10px]">{percent}% used</span>
                       </div>
-
-                      <div className="h-2 w-full bg-zinc-200 rounded-full overflow-hidden">
+                      <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${
                             percent > 90 ? 'bg-rose-500' : percent > 75 ? 'bg-amber-500' : 'bg-blue-600'
@@ -1403,30 +1516,43 @@ export default function StorageHubPage() {
                           style={{ width: `${percent}%` }}
                         />
                       </div>
-
-                      <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
-                        <span>{percent}% allocated</span>
-                        <span>Total: {totalGb >= 1000 ? `${(totalGb / 1000).toFixed(1)} TB` : `${totalGb} GB`}</span>
-                      </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center justify-between pt-1">
+                    {/* Right: Browse Folders button + Disconnect button */}
+                    <div className="flex items-center gap-2 shrink-0">
                       <button
                         type="button"
-                        onClick={() => {
-                          setSelectedGoogleAccount(acc);
-                          setShowGooglePickerModal(true);
-                        }}
-                        className="w-full py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        onClick={() => handleOpenExplorerForAccount(acc)}
+                        className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200/60 shadow-2xs"
                       >
-                        <Folder className="w-3.5 h-3.5" />
+                        <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
                         <span>Browse Folders</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteGoogleAccount(acc.id)}
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        title="Disconnect account"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
                 );
               })}
+
+              {driveAccounts.length > 3 && (
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllDriveAccounts(prev => !prev)}
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <span>{showAllDriveAccounts ? 'Show Less ▲' : `Show More (${driveAccounts.length - 3} more accounts) ▼`}</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1498,13 +1624,15 @@ export default function StorageHubPage() {
         ) : (
           <div className="space-y-5">
             {filteredProjects.map(project => {
-              const allCopied = project.sub_events?.every(ev => ev.crew?.every(c => c.is_copied));
+              const allCopied = project.sub_events?.length > 0 && project.sub_events.every(ev => ev.crew?.every(c => c.is_copied));
               const hasCloudBackup = Boolean(project.google_drive_backup?.is_backed_up);
+              const isExpanded = expandedProjectIds[project.id] !== false; // expanded by default
+              const primaryDisk = project.assigned_disks?.[0];
 
               return (
                 <div
                   key={project.id}
-                  className="bg-white rounded-3xl border border-[#EAE5DA] p-5 sm:p-6 shadow-sm hover:shadow-md transition-all space-y-5"
+                  className="bg-white rounded-3xl border border-[#EAE5DA] p-5 sm:p-6 shadow-xs hover:shadow-md transition-all space-y-5"
                 >
                   {/* Card Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F4EFE6] pb-4">
@@ -1529,271 +1657,326 @@ export default function StorageHubPage() {
                         </div>
                         <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-0.5">
                           <span>📅 {project.event_date || 'Date Pending'}</span>
-                          {project.package_amount > 0 && (
-                            <span>💰 ₹{project.package_amount.toLocaleString('en-IN')}</span>
-                          )}
                           <span>📸 {project.sub_events?.length || 0} Sub-Events</span>
+                          <span>💾 {project.assigned_disks?.length || 0} Disks Assigned</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Quick Link Buttons */}
+                    {/* Right: Expand/Collapse & Quick Actions */}
                     <div className="flex items-center gap-2 self-start sm:self-auto">
                       <button
                         type="button"
-                        onClick={() => handleOpenGooglePicker(project)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer ${
-                          hasCloudBackup
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
-                            : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
-                        }`}
+                        onClick={() => setExpandedProjectIds(prev => ({
+                          ...prev,
+                          [project.id]: prev[project.id] === false ? true : false,
+                        }))}
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                       >
-                        <Cloud className="w-3.5 h-3.5 text-blue-600" />
-                        <span>{hasCloudBackup ? 'Drive Linked' : '+ Link Google Drive'}</span>
+                        <span>{isExpanded ? 'Show Less ▲' : 'Show Details ▼'}</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* ── SUB-EVENTS & CREW-WISE CARD OFFLOADING ── */}
-                  <div className="space-y-3">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                      Sub-Events & Crew Media Cards
-                    </h3>
-
-                    <div className="grid grid-cols-1 gap-3">
-                      {project.sub_events?.map(event => (
-                        <div
-                          key={event.id}
-                          className="bg-[#FAF8F3] border border-[#EBE6DB] rounded-2xl p-4 space-y-3"
-                        >
-                          <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-2">
-                            <div className="flex items-center gap-2">
-                              <Sparkles className="w-4 h-4 text-amber-600" />
-                              <span className="text-xs font-black text-slate-900">{event.name}</span>
-                              <span className="text-[11px] font-medium text-slate-500">({event.date})</span>
-                            </div>
-                            {event.venue && (
-                              <span className="text-[11px] text-slate-500 truncate max-w-[200px]">📍 {event.venue}</span>
-                            )}
+                  {/* ── TOP ROOT LEVEL: DUAL SIDE-BY-SIDE STORAGE BOXES (LOCAL RIG & GOOGLE DRIVE) ── */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {/* 1. Local Machine / SSD Root Storage Box */}
+                    <div className="p-4 rounded-2xl bg-[#FAF8F3] border border-[#EBE6DB] flex flex-col justify-between gap-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shrink-0">
+                            <HardDrive className="w-4 h-4" />
                           </div>
-
-                          {/* Crew list in event */}
-                          <div className="space-y-2">
-                            {event.crew?.map(member => (
-                              <div
-                                key={member.id}
-                                className="bg-white border border-slate-200/80 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
-                              >
-                                <div className="flex items-center gap-2.5 min-w-[200px]">
-                                  <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
-                                    <User className="w-4 h-4" />
-                                  </div>
-                                  <div>
-                                    <div className="text-xs font-black text-slate-900">{member.name}</div>
-                                    <div className="text-[10px] font-semibold text-slate-500">{member.role}</div>
-                                  </div>
-                                </div>
-
-                                {/* 3D Memory Card Assignment Dropdown */}
-                                <div className="flex items-center gap-2 flex-1 max-w-sm">
-                                  <div className="relative w-full">
-                                    <select
-                                      aria-label={`Assign Memory Card for ${member.name}`}
-                                      value=""
-                                      onChange={e => {
-                                        if (e.target.value === '__add_new__') {
-                                          setShowAddCardModal(true);
-                                        } else if (e.target.value) {
-                                          handleAssignMemoryCard(project.id, event.id, member.id, e.target.value);
-                                        }
-                                      }}
-                                      className="w-full px-3 py-1.5 bg-[#FEFDF8] border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-amber-600 cursor-pointer shadow-2xs appearance-none pr-8"
-                                    >
-                                      <option value="">
-                                        {member.assigned_card_names?.length > 0 
-                                          ? `+ Add Another Card (${member.assigned_card_names.length} assigned)` 
-                                          : 'Select Memory Card (SD / CFexpress)...'}
-                                      </option>
-                                      {memoryCards.map(c => (
-                                        <option key={c.id} value={c.id}>
-                                          {c.card_name} ({c.card_type} • {c.capacity_gb}GB • {c.speed_class})
-                                        </option>
-                                      ))}
-                                      <option value="__add_new__">➕ Register New Card...</option>
-                                    </select>
-                                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                  </div>
-                                </div>
-
-                                {/* Assigned Card Tags */}
-                                {member.assigned_card_names?.length > 0 && (
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    {member.assigned_card_names.map((name, nIdx) => (
-                                      <span
-                                        key={nIdx}
-                                        className="text-[10px] font-extrabold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1"
-                                      >
-                                        <Cpu className="w-3 h-3 text-amber-600" />
-                                        <span>{name}</span>
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {/* 3D Emerald Green Copied Checkbox */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleCopied(project.id, event.id, member.id)}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                                    member.is_copied
-                                      ? 'bg-emerald-600 text-white shadow-emerald-600/20 hover:bg-emerald-700'
-                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
-                                  }`}
-                                >
-                                  {member.is_copied ? (
-                                    <>
-                                      <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                                      <span>Copied & Dumped</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Square className="w-4 h-4 stroke-[1.5]" />
-                                      <span>Mark Copied</span>
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                            ))}
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-black text-slate-900 truncate">
+                              Local Machine / SSD Storage Path
+                            </h4>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {primaryDisk?.disk_name ? `${primaryDisk.disk_name} (${primaryDisk.drive_type})` : 'Physical hard drive / editing rig storage'}
+                            </p>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
 
-                  {/* ── PHYSICAL DISK CATALOG & LOCAL FOLDER PICKER ── */}
-                  <div className="space-y-3 pt-2 border-t border-[#F4EFE6]">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                        Assigned Hard Drives / SSDs & Local Rig Folders
-                      </h3>
-
-                      {/* Dropdown to assign disk */}
-                      <div className="relative">
-                        <select
-                          aria-label="Assign Hard Drive or SSD"
-                          value=""
-                          onChange={e => {
-                            if (e.target.value === '__add_new_disk__') {
-                              setShowAddDiskModal(true);
-                            } else if (e.target.value) {
-                              handleAssignDisk(project.id, e.target.value);
-                            }
-                          }}
-                          className="px-3 py-1.5 bg-[#FAF8F3] border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none cursor-pointer pr-8"
+                        {/* Native Directory Picker Button */}
+                        <button
+                          type="button"
+                          onClick={() => handlePickDirectory(project.id, 0)}
+                          className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition"
+                          title="Pick root folder from physical drive"
                         >
-                          <option value="">+ Assign Physical Disk...</option>
-                          {disks.map(d => (
-                            <option key={d.id} value={d.id}>
-                              {d.disk_name} ({d.disk_type} • {d.total_capacity_gb}GB)
-                            </option>
-                          ))}
-                          <option value="__add_new_disk__">➕ Add New Hard Drive...</option>
-                        </select>
-                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <FolderOpen className="w-3.5 h-3.5 text-amber-600" />
+                          <span>{primaryDisk?.folder_name ? 'Change Folder' : 'Pick Local Folder'}</span>
+                        </button>
                       </div>
-                    </div>
 
-                    {project.assigned_disks?.length === 0 ? (
-                      <div className="p-3 rounded-xl border border-dashed border-slate-200 text-xs text-slate-400 text-center">
-                        No physical storage disk assigned yet. Select a disk from the dropdown above.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {project.assigned_disks?.map((diskItem, dIdx) => (
-                          <div
-                            key={diskItem.disk_id}
-                            className="bg-slate-50/70 border border-slate-200 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      {/* Path & Copy Button */}
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200/90 flex items-center justify-between gap-2 text-xs font-mono">
+                        <span className="truncate text-slate-700 select-all" title={primaryDisk?.folder_path || ''}>
+                          {primaryDisk?.folder_path || 'No local directory selected yet'}
+                        </span>
+                        {primaryDisk?.folder_path && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyPath(primaryDisk.folder_path, `${project.id}_root`)}
+                            className="p-1 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer shrink-0 text-[11px] font-sans font-bold flex items-center gap-1"
                           >
-                            <div className="flex items-center gap-3 min-w-[220px]">
-                              <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
-                                <HardDrive className="w-4 h-4 text-emerald-600" />
-                              </div>
-                              <div>
-                                <div className="text-xs font-black text-slate-900">{diskItem.disk_name}</div>
-                                <div className="text-[10px] text-slate-500 font-semibold">{diskItem.drive_type}</div>
-                              </div>
-                            </div>
-
-                            {/* Folder Path and Metadata */}
-                            <div className="flex-1 min-w-0 bg-white px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs font-mono flex items-center justify-between gap-2">
-                              <div className="truncate text-slate-700">
-                                {diskItem.folder_path || 'No folder picked yet'}
-                              </div>
-                              {diskItem.folder_path && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopyPath(diskItem.folder_path, `${project.id}_${dIdx}`)}
-                                  className="text-[11px] font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1 shrink-0 p-1 rounded-md hover:bg-slate-100 cursor-pointer"
-                                  title="Copy path for editing rig"
-                                >
-                                  {copiedPathId === `${project.id}_${dIdx}` ? (
-                                    <span className="text-emerald-600 flex items-center gap-0.5">
-                                      <Check className="w-3 h-3" /> Copied
-                                    </span>
-                                  ) : (
-                                    <span className="flex items-center gap-0.5">
-                                      <Copy className="w-3 h-3" /> Copy Path
-                                    </span>
-                                  )}
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Native Directory Picker Trigger */}
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handlePickDirectory(project.id, dIdx)}
-                                className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                                title="Pick folder directly from local disk"
-                              >
-                                <FolderOpen className="w-3.5 h-3.5 text-amber-600" />
-                                <span>{diskItem.folder_name ? 'Change Folder' : 'Pick Folder'}</span>
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                            {copiedPathId === `${project.id}_root` ? (
+                              <span className="text-emerald-600 flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Copied
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1">
+                                <Copy className="w-3 h-3" /> Copy Path
+                              </span>
+                            )}
+                          </button>
+                        )}
                       </div>
-                    )}
+
+                      {/* Local footprint info */}
+                      {primaryDisk && (primaryDisk.file_count > 0 || primaryDisk.total_size_gb > 0) && (
+                        <div className="flex items-center gap-3 text-[10px] font-semibold text-slate-500">
+                          <span>📦 Size: {primaryDisk.total_size_gb} GB</span>
+                          <span>•</span>
+                          <span>📄 Files: {primaryDisk.file_count}</span>
+                          {primaryDisk.photo_count !== undefined && (
+                            <>
+                              <span>•</span>
+                              <span>📸 Photos: {primaryDisk.photo_count}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2. Google Drive Cloud Backup Box */}
+                    <div className="p-4 rounded-2xl bg-[#F6F9FE] border border-blue-150 flex flex-col justify-between gap-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-white border border-blue-200 flex items-center justify-center p-1.5 shrink-0 shadow-2xs">
+                            <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                              <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                              <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                              <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                              <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                              <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                              <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                            </svg>
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-black text-slate-900 truncate">
+                              Google Drive Cloud Backup
+                            </h4>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {hasCloudBackup ? (project.google_drive_backup?.account_email || 'Linked Google Drive') : 'Cloud archive & deliverable storage'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Link / Change Google Drive Folder Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenGooglePicker(project)}
+                          className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition"
+                        >
+                          <Cloud className="w-3.5 h-3.5" />
+                          <span>{hasCloudBackup ? 'Change Folder' : '+ Link Google Drive'}</span>
+                        </button>
+                      </div>
+
+                      {/* Drive Folder Display & External Link */}
+                      <div className="bg-white p-2.5 rounded-xl border border-blue-200/80 flex items-center justify-between gap-2 text-xs">
+                        {hasCloudBackup ? (
+                          <>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                              <span className="font-bold text-blue-950 truncate">
+                                {project.google_drive_backup?.folder_name || 'Project Root Folder'}
+                              </span>
+                            </div>
+                            {project.google_drive_backup?.web_view_link && (
+                              <a
+                                href={project.google_drive_backup.web_view_link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center gap-1 shrink-0"
+                              >
+                                <span>Open in Drive</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-slate-400 font-medium">
+                            No Google Drive folder linked yet. Click &apos;+ Link Google Drive&apos; to browse.
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
-                  {/* ── GOOGLE DRIVE BACKUP STATUS BANNER ── */}
-                  {project.google_drive_backup?.is_backed_up && (
-                    <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Cloud className="w-5 h-5 text-blue-600 shrink-0" />
-                        <div className="min-w-0">
-                          <span className="font-extrabold text-blue-950">Google Drive Backup: </span>
-                          <span className="font-semibold text-blue-800 truncate">
-                            {project.google_drive_backup.folder_name || 'Project Folder'}
-                          </span>
-                          <span className="text-[11px] text-blue-600 ml-2">
-                            ({project.google_drive_backup.account_email})
-                          </span>
-                        </div>
+                  {/* ── SUB-EVENTS & CREW-WISE CARD OFFLOADING (COLLAPSIBLE) ── */}
+                  {isExpanded && (
+                    <div className="space-y-3.5 pt-2 border-t border-[#F4EFE6]">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">
+                          Sub-Events & Crew Media Cards ({project.sub_events?.length || 0})
+                        </h3>
                       </div>
 
-                      {project.google_drive_backup.web_view_link && (
-                        <a
-                          href={project.google_drive_backup.web_view_link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 shrink-0 shadow-xs"
-                        >
-                          <span>Open in Drive</span>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      )}
+                      <div className="grid grid-cols-1 gap-3.5">
+                        {project.sub_events?.map(event => {
+                          const eventAllCopied = event.crew?.every(c => c.is_copied);
+                          const copiedCrewCount = event.crew?.filter(c => c.is_copied).length || 0;
+                          const totalCrewCount = event.crew?.length || 0;
+
+                          return (
+                            <div
+                              key={event.id}
+                              className="bg-[#FAF8F3] border border-[#EBE6DB] rounded-2xl p-4 space-y-3"
+                            >
+                              {/* Sub-event Top Bar */}
+                              <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-2.5">
+                                <div className="flex items-center gap-2">
+                                  <Sparkles className="w-4 h-4 text-amber-600" />
+                                  <span className="text-xs font-black text-slate-900">{event.name}</span>
+                                  <span className="text-[11px] font-semibold text-slate-500">({event.date})</span>
+                                  {event.venue && (
+                                    <span className="text-[11px] text-slate-500 truncate max-w-[200px]">📍 {event.venue}</span>
+                                  )}
+                                </div>
+
+                                <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                                  eventAllCopied
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                    : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                }`}>
+                                  {copiedCrewCount}/{totalCrewCount} Crew Copied
+                                </span>
+                              </div>
+
+                              {/* Crew List in Event */}
+                              <div className="space-y-2.5">
+                                {event.crew?.map(member => (
+                                  <div
+                                    key={member.id}
+                                    className="bg-white border border-slate-200/80 rounded-2xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs"
+                                  >
+                                    {/* Left: Crew Name & Role */}
+                                    <div className="flex items-center gap-2.5 min-w-[220px]">
+                                      <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                        <User className="w-4 h-4" />
+                                      </div>
+                                      <div>
+                                        <div className="text-xs font-black text-slate-900">{member.name}</div>
+                                        <div className="text-[10px] font-semibold text-slate-500">{member.role}</div>
+                                      </div>
+                                    </div>
+
+                                    {/* Center: 3D Memory Card Selector (SD / CFexpress) */}
+                                    <div className="flex-1 max-w-md w-full space-y-1">
+                                      <div className="relative">
+                                        <select
+                                          aria-label={`Assign Memory Card for ${member.name}`}
+                                          value=""
+                                          onChange={e => {
+                                            if (e.target.value === '__add_new__') {
+                                              setShowAddCardModal(true);
+                                            } else if (e.target.value) {
+                                              handleAssignMemoryCard(project.id, event.id, member.id, e.target.value);
+                                            }
+                                          }}
+                                          className="w-full px-3 py-1.5 bg-[#FEFDF8] border border-amber-250 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-amber-600 cursor-pointer shadow-2xs appearance-none pr-8"
+                                        >
+                                          <option value="">
+                                            {member.assigned_card_names?.length > 0 
+                                              ? `+ Add Another Card (${member.assigned_card_names.length} assigned)` 
+                                              : 'Select Memory Card (SD / CFexpress)...'}
+                                          </option>
+                                          {memoryCards.map(c => (
+                                            <option key={c.id} value={c.id}>
+                                              {c.card_name} ({c.card_type} • {c.capacity_gb}GB • {c.speed_class})
+                                            </option>
+                                          ))}
+                                          <option value="__add_new__">➕ Register New Card...</option>
+                                        </select>
+                                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                      </div>
+
+                                      {/* Assigned Card Tags */}
+                                      {member.assigned_card_names?.length > 0 && (
+                                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                          {member.assigned_card_names.map((name, nIdx) => (
+                                            <span
+                                              key={nIdx}
+                                              className="text-[10px] font-extrabold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1"
+                                            >
+                                              <Cpu className="w-3 h-3 text-amber-600" />
+                                              <span>{name}</span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Right: 3D Emerald Green "Mark as Copied" Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleCopied(project.id, event.id, member.id)}
+                                      className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs ${
+                                        member.is_copied
+                                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-emerald-600/30 hover:brightness-105 border border-emerald-500'
+                                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                                      }`}
+                                    >
+                                      {member.is_copied ? (
+                                        <>
+                                          <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                                          <span>✓ Copied & Dumped</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Square className="w-4 h-4 stroke-[1.5]" />
+                                          <span>Mark as Copied</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Sub-event Storage Footprint Bar (Disks + Cloud) */}
+                              <div className="pt-2 border-t border-[#EAE5DA] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-slate-500">Storage Disks:</span>
+                                  {project.assigned_disks?.length === 0 ? (
+                                    <span className="text-slate-400 font-medium">None assigned</span>
+                                  ) : (
+                                    project.assigned_disks?.map(d => (
+                                      <span key={d.disk_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                                        <HardDrive className="w-3 h-3 text-emerald-600" />
+                                        <span>{d.disk_name}</span>
+                                      </span>
+                                    ))
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-slate-500">Google Drive:</span>
+                                  {hasCloudBackup ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700">
+                                      <Cloud className="w-3 h-3 text-blue-600" />
+                                      <span>Backed Up</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px]">Pending Sync</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1830,26 +2013,29 @@ export default function StorageHubPage() {
                 <X className="w-4 h-4" />
               </button>
             </div>
-
-            {/* Quick Autocomplete from Existing Lead */}
+            {/* Quick Autocomplete from Booked Client */}
             {availableLeads.length > 0 && (
-              <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-3 space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-amber-900 tracking-wider block">
-                  ⚡ Optional: Select Existing Lead to Autocomplete
+              <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-3.5 space-y-1.5">
+                <label className="text-[11px] font-black uppercase text-amber-900 tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Choose Booked Client (Auto-fills Event & Crew)</span>
                 </label>
-                <select
-                  aria-label="Select existing lead to autofill"
-                  value={selectedLeadIdForProject}
-                  onChange={e => handleSelectLeadToAutofill(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
-                >
-                  <option value="">-- Choose a lead or enter details below --</option>
-                  {availableLeads.map(l => (
-                    <option key={l.id} value={l.id}>
-                      {l.name} {l.event_date ? `(${l.event_date})` : ''} - ₹{l.budget || 0}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    aria-label="Select booked client to autofill"
+                    value={selectedLeadIdForProject}
+                    onChange={e => handleSelectLeadToAutofill(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 appearance-none pr-8 cursor-pointer shadow-2xs"
+                  >
+                    <option value="">-- Choose a booked client or enter details below --</option>
+                    {availableLeads.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.name} {l.event_date ? `(${l.event_date})` : ''} • Booked Client
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
               </div>
             )}
 
@@ -1878,37 +2064,55 @@ export default function StorageHubPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">Package Budget (₹)</label>
-                  <input
-                    type="number"
-                    value={manualPackageAmount}
-                    onChange={e => setManualPackageAmount(e.target.value)}
-                    placeholder="e.g. 150000"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">Initial Physical Disk (Optional)</label>
-                  <select
-                    aria-label="Select initial physical disk"
-                    value={manualSelectedDiskId}
-                    onChange={e => setManualSelectedDiskId(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                  >
-                    <option value="">-- No Disk Initially --</option>
-                    {disks.map(d => (
-                      <option key={d.id} value={d.id}>
-                        {d.disk_name} ({d.disk_type} • {d.total_capacity_gb}GB)
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* 3D Multi-Select Physical Disks / SSDs */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Assign Physical Hard Disks / SSDs ({manualSelectedDiskIds.length} Selected)
+                </label>
+                {disks.length === 0 ? (
+                  <div className="p-3 rounded-xl border border-dashed border-slate-200 text-xs text-slate-400">
+                    No physical disks registered yet. You can register hard drives using &quot;+ Add Hard Drive / SSD&quot;.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-slate-50/70 border border-slate-200 rounded-2xl">
+                    {disks.map(d => {
+                      const isSelected = manualSelectedDiskIds.includes(d.id);
+                      return (
+                        <div
+                          key={d.id}
+                          onClick={() => {
+                            setManualSelectedDiskIds(prev =>
+                              prev.includes(d.id) ? prev.filter(id => id !== d.id) : [...prev, d.id]
+                            );
+                          }}
+                          className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-2xs font-bold'
+                              : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <HardDrive className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-emerald-600' : 'text-slate-400'}`} />
+                            <div className="min-w-0">
+                              <div className="text-xs truncate">{d.disk_name}</div>
+                              <div className="text-[10px] text-slate-400 font-normal">{d.disk_type} • {d.total_capacity_gb}GB</div>
+                            </div>
+                          </div>
+                          <div className="shrink-0">
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-emerald-600 fill-emerald-100" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-300" />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
-              {/* Sub-Events Builder */}
+              {/* Sub-Events & Crew Assignment Builder (Bookings & Events UI) */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-black uppercase text-slate-500 tracking-wider">
@@ -1920,10 +2124,10 @@ export default function StorageHubPage() {
                       setManualSubEvents(prev => [
                         ...prev,
                         {
-                          name: `Event ${prev.length + 1}`,
+                          name: 'Wedding Ceremony',
                           date: manualEventDate || new Date().toISOString().split('T')[0],
                           venue: '',
-                          crew: [{ name: 'Photographer', role: 'Photography' }]
+                          crew: [{ name: 'Lead Photographer', role: 'Traditional Photography' }]
                         }
                       ]);
                     }}
@@ -1936,44 +2140,90 @@ export default function StorageHubPage() {
 
                 <div className="space-y-3">
                   {manualSubEvents.map((ev, evIdx) => (
-                    <div key={evIdx} className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <input
-                          type="text"
-                          value={ev.name}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, name: val } : item));
-                          }}
-                          placeholder="Event Name (e.g. Sangeet, Wedding Ceremony)"
-                          className="flex-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900"
-                        />
-                        {manualSubEvents.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setManualSubEvents(prev => prev.filter((_, idx) => idx !== evIdx))}
-                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
+                    <div key={evIdx} className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                      {/* Sub-event Name & Event Type Selector */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 mb-0.5 block">Event Type</label>
+                          <select
+                            value={ev.name}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, name: val } : item));
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                            <option value="Wedding Ceremony">Wedding Ceremony</option>
+                            <option value="Reception">Reception</option>
+                            <option value="Sangeet">Sangeet</option>
+                            <option value="Haldi">Haldi</option>
+                            <option value="Mehendi">Mehendi</option>
+                            <option value="Engagement">Engagement</option>
+                            <option value="Pre-Wedding">Pre-Wedding</option>
+                            <option value="Ring Ceremony">Ring Ceremony</option>
+                            <option value="Cocktail Party">Cocktail Party</option>
+                            <option value="Baraat">Baraat</option>
+                            <option value="Custom Event">Custom Event...</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 mb-0.5 block">Sub-Event Date</label>
+                          <input
+                            type="date"
+                            value={ev.date}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, date: val } : item));
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900"
+                          />
+                        </div>
+
+                        <div className="flex items-end gap-1.5">
+                          <div className="flex-1">
+                            <label className="text-[10px] font-bold text-slate-500 mb-0.5 block">Venue / Location</label>
+                            <input
+                              type="text"
+                              value={ev.venue}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, venue: val } : item));
+                              }}
+                              placeholder="e.g. Grand Ballroom"
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900"
+                            />
+                          </div>
+
+                          {manualSubEvents.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setManualSubEvents(prev => prev.filter((_, idx) => idx !== evIdx))}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer shrink-0"
+                              title="Remove sub-event"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Crew list */}
-                      <div className="pl-2 border-l-2 border-amber-300 space-y-1.5">
+                      {/* Crew List with Role Multiples (Bookings & Events style) */}
+                      <div className="pl-3 border-l-2 border-amber-300 space-y-2">
                         <div className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
-                          <span>Crew Members:</span>
+                          <span>Assigned Crew Members:</span>
                           <button
                             type="button"
                             onClick={() => {
                               setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
                                 ...item,
-                                crew: [...item.crew, { name: `Crew ${item.crew.length + 1}`, role: 'Cinematography' }]
+                                crew: [...item.crew, { name: `Crew Member ${item.crew.length + 1}`, role: 'Candid Cinematography' }]
                               } : item));
                             }}
-                            className="text-[10px] font-bold text-amber-600 hover:text-amber-700 cursor-pointer"
+                            className="text-[10px] font-bold text-amber-600 hover:text-amber-700 cursor-pointer flex items-center gap-1"
                           >
-                            + Add Crew
+                            <Plus className="w-3 h-3" />
+                            <span>Add Crew Role</span>
                           </button>
                         </div>
 
@@ -1989,11 +2239,10 @@ export default function StorageHubPage() {
                                   crew: item.crew.map((c, i) => i === crIdx ? { ...c, name: val } : c)
                                 } : item));
                               }}
-                              placeholder="Crew Name"
-                              className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-medium"
+                              placeholder="Crew Member Name"
+                              className="flex-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium"
                             />
-                            <input
-                              type="text"
+                            <select
                               value={cr.role}
                               onChange={e => {
                                 const val = e.target.value;
@@ -2002,9 +2251,19 @@ export default function StorageHubPage() {
                                   crew: item.crew.map((c, i) => i === crIdx ? { ...c, role: val } : c)
                                 } : item));
                               }}
-                              placeholder="Role"
-                              className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-medium"
-                            />
+                              className="w-44 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                            >
+                              <option value="Traditional Photography">Traditional Photography</option>
+                              <option value="Candid Photography">Candid Photography</option>
+                              <option value="Traditional Video">Traditional Video</option>
+                              <option value="Cinematic Video">Cinematic Video</option>
+                              <option value="Drone Pilot">Drone Pilot</option>
+                              <option value="Helicam / Crane">Helicam / Crane</option>
+                              <option value="Same Day Editor">Same Day Editor</option>
+                              <option value="Album Designer">Album Designer</option>
+                              <option value="Assistant / Lights">Assistant / Lights</option>
+                            </select>
+
                             {ev.crew.length > 1 && (
                               <button
                                 type="button"
@@ -2014,9 +2273,9 @@ export default function StorageHubPage() {
                                     crew: item.crew.filter((_, i) => i !== crIdx)
                                   } : item));
                                 }}
-                                className="p-1 text-slate-400 hover:text-red-500"
+                                className="p-1 text-slate-400 hover:text-red-500 rounded-md cursor-pointer"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             )}
                           </div>
@@ -2512,435 +2771,552 @@ export default function StorageHubPage() {
         </div>
       )}
 
-      {/* ── MODAL 5: INTERACTIVE GOOGLE DRIVE FOLDER PICKER ── */}
-      {showGooglePickerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="relative w-full max-w-2xl bg-white rounded-3xl p-5 sm:p-6 border border-[#EAE5DA] shadow-2xl flex flex-col max-h-[85vh]">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-blue-500/15 text-blue-600 flex items-center justify-center">
-                  <Cloud className="w-5 h-5" />
+      {/* ── MODAL 5: EXACT GOOGLE DRIVE EXPLORER MODAL (100% Match with Integrations Hub) ── */}
+      <AnimatePresence>
+        {showGooglePickerModal && selectedGoogleAccount && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="w-full max-w-4xl bg-white dark:bg-[#12161F] rounded-3xl border border-zinc-200/80 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 border-b border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-800 flex items-center justify-center p-2 shrink-0">
+                    <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                      <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                      <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                      <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                      <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                      <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                      <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-sm text-zinc-950 dark:text-white truncate">
+                        Google Drive Explorer
+                      </h3>
+                      {explorerIsGlobalSearch && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
+                          🔍 Deep Search (All Drive)
+                        </span>
+                      )}
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10px] font-bold">
+                        📦 Size: {explorerTotalSize || '0 MB'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono truncate flex items-center gap-1.5 flex-wrap mt-0.5">
+                      {driveAccounts.length > 1 ? (
+                        <div className="flex items-center gap-1">
+                          <span className="font-bold text-zinc-700 dark:text-zinc-300">Account:</span>
+                          <select
+                            aria-label="Select Google Drive Account"
+                            value={selectedGoogleAccount.id}
+                            onChange={e => {
+                              const acc = driveAccounts.find(a => a.id === e.target.value);
+                              if (acc) {
+                                setSelectedGoogleAccount(acc);
+                                setGoogleBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
+                                setGoogleCurrentFolder({ id: 'root', name: 'My Drive' });
+                                setExplorerSearch('');
+                                setExplorerIsGlobalSearch(false);
+                                loadExplorerFolder(acc.id, 'root');
+                              }
+                            }}
+                            className="px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-250 dark:border-zinc-700 rounded-md text-[11px] font-bold text-zinc-900 dark:text-white focus:outline-none"
+                          >
+                            {driveAccounts.map(a => (
+                              <option key={a.id} value={a.id}>
+                                {a.account_email} {a.account_label ? `(${a.account_label})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <span>{selectedGoogleAccount.account_email}</span>
+                      )}
+                      <span>•</span>
+                      <span className="font-bold text-zinc-800 dark:text-zinc-200">
+                        {explorerTotalFiles !== null ? explorerTotalFiles.toLocaleString() : sortedExplorerFiles.length} files
+                      </span>
+                      <span>•</span>
+                      <span className="font-bold text-zinc-800 dark:text-zinc-200">
+                        {explorerTotalFolders !== null ? explorerTotalFolders.toLocaleString() : sortedExplorerFolders.length} folders
+                      </span>
+                      {sortedExplorerFiles.length < (explorerTotalFiles || 0) && (
+                        <span className="text-blue-600 dark:text-blue-400">
+                          (Showing {sortedExplorerFiles.length} of {(explorerTotalFiles || 0).toLocaleString()})
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">
-                    Google Drive Folder Picker
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Select a folder for: <strong>{activeProjectForGoogle?.client_name}</strong>
-                  </p>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowGooglePickerModal(false)}
+                    className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowGooglePickerModal(false)}
-                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {/* Account Selector & Breadcrumbs */}
-            <div className="pt-3 pb-2 space-y-2 shrink-0 border-b border-slate-100">
-              {driveAccounts.length > 1 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-600">Account:</span>
-                  <select
-                    aria-label="Select Google Drive Account"
-                    value={selectedGoogleAccount?.id || ''}
-                    onChange={e => {
-                      const acc = driveAccounts.find(a => a.id === e.target.value);
-                      if (acc) {
-                        setSelectedGoogleAccount(acc);
-                        setGoogleBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
-                        fetchGoogleFolders(acc.id, 'root');
-                      }
-                    }}
-                    className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+              {/* Project Link Banner (When opened from a Project Card) */}
+              {activeProjectForGoogle && (
+                <div className="p-3 mx-4 sm:mx-6 mt-3 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-200/80 dark:border-blue-800/80 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+                      <Cloud className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-zinc-900 dark:text-white truncate">
+                        Linking Destination for: <span className="text-blue-600 dark:text-blue-400">{activeProjectForGoogle.client_name}</span>
+                      </p>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Current Directory: <span className="font-bold text-zinc-800 dark:text-zinc-200">{googleCurrentFolder.name}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleLinkFolderToProject(googleCurrentFolder)}
+                    className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
                   >
-                    {driveAccounts.map(a => (
-                      <option key={a.id} value={a.id}>
-                        {a.account_email} ({a.account_label || 'Drive'})
-                      </option>
-                    ))}
-                  </select>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Link Current Folder</span>
+                  </button>
                 </div>
               )}
 
-              {/* Breadcrumbs Trail */}
-              <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-1">
-                {googleBreadcrumbs.map((crumb, idx) => (
-                  <React.Fragment key={crumb.id || idx}>
-                    {idx > 0 && <span className="text-slate-300">/</span>}
+              {/* Breadcrumb Path & Controls Bar */}
+              <div className="p-3 sm:px-5 bg-zinc-50/70 dark:bg-zinc-900/60 border-b border-zinc-100 dark:border-zinc-800/80 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                {/* Breadcrumbs */}
+                <div className="flex items-center gap-1.5 text-xs overflow-x-auto scrollbar-none py-1">
+                  {googleBreadcrumbs.map((crumb, idx) => (
+                    <React.Fragment key={crumb.id || idx}>
+                      <button
+                        onClick={() => handleExplorerBreadcrumbClick(idx)}
+                        className={`hover:text-blue-600 transition-colors cursor-pointer font-medium whitespace-nowrap ${
+                          idx === googleBreadcrumbs.length - 1
+                            ? 'font-bold text-zinc-900 dark:text-white'
+                            : 'text-zinc-500'
+                        }`}
+                      >
+                        {crumb.name}
+                      </button>
+                      {idx < googleBreadcrumbs.length - 1 && (
+                        <ChevronRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+
+                {/* Filter, Sort & View Mode Controls */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Search inside folder / Deep drive search */}
+                  <div className="relative w-44 sm:w-56">
+                    <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Deep search files/folders..."
+                      value={explorerSearch}
+                      onChange={e => setExplorerSearch(e.target.value)}
+                      className="w-full pl-7 pr-7 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-250 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-blue-500 shadow-xs"
+                    />
+                    {explorerSearch && (
+                      <button
+                        onClick={() => {
+                          setExplorerSearch('');
+                          if (explorerIsGlobalSearch) {
+                            setExplorerIsGlobalSearch(false);
+                            if (selectedGoogleAccount) loadExplorerFolder(selectedGoogleAccount.id, googleCurrentFolder.id);
+                          }
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Sort by dropdown */}
+                  <div className="flex items-center bg-white dark:bg-zinc-800 border border-zinc-250 dark:border-zinc-700 rounded-xl p-0.5">
                     <button
-                      type="button"
-                      onClick={() => handleBreadcrumbClick(crumb, idx)}
-                      className={`font-bold hover:underline cursor-pointer ${
-                        idx === googleBreadcrumbs.length - 1 ? 'text-blue-600' : 'text-slate-500'
-                      }`}
+                      onClick={() => {
+                        setExplorerSortField(prev => (prev === 'name' ? 'date' : prev === 'date' ? 'size' : 'name'));
+                      }}
+                      className="px-2 py-1 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-blue-600 flex items-center gap-1 cursor-pointer capitalize"
+                      title="Toggle sort field"
                     >
-                      {crumb.name}
+                      <ArrowUpDown className="w-3 h-3" />
+                      <span>{explorerSortField}</span>
                     </button>
-                  </React.Fragment>
-                ))}
+                    <button
+                      onClick={() => setExplorerSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+                      className="px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white font-mono cursor-pointer"
+                      title="Toggle order"
+                    >
+                      {explorerSortOrder === 'asc' ? '↑' : '↓'}
+                    </button>
+                  </div>
+
+                  {/* View Mode Toggle */}
+                  <div className="flex items-center bg-white dark:bg-zinc-800 border border-zinc-250 dark:border-zinc-700 rounded-xl p-0.5">
+                    <button
+                      onClick={() => setExplorerViewMode('grid')}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        explorerViewMode === 'grid' ? 'bg-zinc-100 dark:bg-zinc-700 text-blue-600' : 'text-zinc-400'
+                      }`}
+                      title="Grid view"
+                    >
+                      <Grid className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setExplorerViewMode('list')}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        explorerViewMode === 'list' ? 'bg-zinc-100 dark:bg-zinc-700 text-blue-600' : 'text-zinc-400'
+                      }`}
+                      title="List view"
+                    >
+                      <List className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* View Mode Tabs: All vs Subfolders vs Files & Media */}
-            <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 shrink-0">
-              <button
-                type="button"
-                onClick={() => setBrowserContentTab('all')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                  browserContentTab === 'all'
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>All ({googleFolders.length + googleFiles.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setBrowserContentTab('folders')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                  browserContentTab === 'folders'
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                }`}
-              >
-                <Folder className="w-3.5 h-3.5" />
-                <span>Folders ({googleFolders.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setBrowserContentTab('media')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                  browserContentTab === 'media'
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                }`}
-              >
-                <Film className="w-3.5 h-3.5" />
-                <span>Files & Media ({googleFiles.length})</span>
-              </button>
-            </div>
-
-            {/* Folder / Media List Content */}
-            <div className="flex-1 overflow-y-auto py-3 space-y-3 min-h-[240px]">
-              {googleFolderLoading ? (
-                <div className="py-16 text-center space-y-2">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600" />
-                  <p className="text-xs font-semibold text-slate-500">Loading Google Drive Contents...</p>
-                </div>
-              ) : (googleFolders.length === 0 && googleFiles.length === 0) ? (
-                <div className="py-16 text-center space-y-1.5 text-slate-400">
-                  <FolderOpen className="w-8 h-8 mx-auto text-slate-300" />
-                  <p className="text-xs font-bold text-slate-500">This folder is empty</p>
-                  <p className="text-[11px] text-slate-400">No subfolders or media files found in this location.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Subfolders Section */}
-                  {(browserContentTab === 'all' || browserContentTab === 'folders') && googleFolders.length > 0 && (
-                    <div className="space-y-1.5">
-                      {browserContentTab === 'all' && (
-                        <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 px-0.5">
-                          <Folder className="w-3.5 h-3.5 text-amber-500" />
-                          <span>Subfolders ({googleFolders.length})</span>
+              {/* Items Area */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-[350px]">
+                {googleFolderLoading ? (
+                  <div className="py-20 text-center space-y-3">
+                    <RefreshCw className="w-7 h-7 animate-spin mx-auto text-blue-500" />
+                    <p className="text-xs text-zinc-500 font-medium">Fetching folder contents & real count...</p>
+                  </div>
+                ) : (sortedExplorerFolders.length === 0 && sortedExplorerFiles.length === 0) ? (
+                  <div className="py-20 text-center space-y-2">
+                    <Folder className="w-12 h-12 text-zinc-300 dark:text-zinc-700 mx-auto" />
+                    <h4 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                      {explorerIsGlobalSearch ? 'No search results found' : 'This folder is empty'}
+                    </h4>
+                    <p className="text-xs text-zinc-400">
+                      {explorerIsGlobalSearch
+                        ? 'Try searching with a different file or folder name.'
+                        : 'No subfolders or media files found in this location.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* ── Subfolders Section ── */}
+                    {sortedExplorerFolders.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                          <span>Folders ({explorerTotalFolders !== null ? explorerTotalFolders.toLocaleString() : sortedExplorerFolders.length})</span>
                         </div>
-                      )}
-                      <div className="space-y-1.5">
-                        {googleFolders.map(folder => (
-                          <div
-                            key={folder.id}
-                            className={`p-3 rounded-xl border transition flex items-center justify-between gap-3 cursor-pointer ${
-                              selectedFolderForLink?.id === folder.id
-                                ? 'bg-blue-50/80 border-blue-500 text-blue-950 shadow-2xs'
-                                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                            }`}
-                            onClick={() => setSelectedFolderForLink(folder)}
-                            onDoubleClick={() => handleNavigateGoogleFolder(folder)}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <Folder className="w-4 h-4 text-amber-500 shrink-0" />
-                              <span className="text-xs font-bold truncate">{folder.name}</span>
-                            </div>
 
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                type="button"
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  handleNavigateGoogleFolder(folder);
-                                }}
-                                className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-600 flex items-center gap-1 cursor-pointer"
+                        {explorerViewMode === 'grid' ? (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {sortedExplorerFolders.map(folder => (
+                              <div
+                                key={folder.id}
+                                onClick={() => handleExplorerNavigateFolder(folder)}
+                                className="p-3.5 rounded-2xl bg-zinc-50/80 dark:bg-zinc-800/60 hover:bg-blue-50/70 dark:hover:bg-blue-950/30 border border-zinc-200/70 dark:border-zinc-750 hover:border-blue-300 dark:hover:border-blue-700 cursor-pointer transition-all flex flex-col justify-between gap-2.5 group"
                               >
-                                <span>Open</span>
-                                <ChevronRight className="w-3 h-3" />
-                              </button>
-                            </div>
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+                                      <Folder className="w-5 h-5 fill-amber-500" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-xs font-bold text-zinc-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400" title={folder.name}>
+                                        {folder.name}
+                                      </p>
+                                      <span className="text-[10px] text-zinc-400 font-mono">Folder</span>
+                                    </div>
+                                  </div>
+                                  {activeProjectForGoogle && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleLinkFolderToProject(folder);
+                                      }}
+                                      className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 font-bold text-[11px] border border-blue-200 hover:border-blue-600 transition-colors cursor-pointer shrink-0"
+                                      title={`Link ${folder.name} to project`}
+                                    >
+                                      + Link
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* Upfront Real Folder Stats (Folders, Files, Size) */}
+                                <div className="flex items-center justify-between pt-1.5 border-t border-zinc-200/50 dark:border-zinc-700/50 text-[10.5px] font-mono">
+                                  <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                                    <span title="Subfolders" className="flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+                                      <Folder className="w-3 h-3 fill-amber-500/20" /> {folder.foldersCount ?? 0}
+                                    </span>
+                                    <span>•</span>
+                                    <span title="Files" className="flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400">
+                                      <FileText className="w-3 h-3" /> {folder.filesCount ?? 0}
+                                    </span>
+                                  </div>
+                                  <span className="font-bold text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
+                                    {folder.formattedSize || '0 MB'}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        ) : (
+                          <div className="divide-y divide-zinc-100 dark:divide-zinc-800 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl overflow-hidden">
+                            {sortedExplorerFolders.map(folder => (
+                              <div
+                                key={folder.id}
+                                onClick={() => handleExplorerNavigateFolder(folder)}
+                                className="py-2.5 px-4 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 flex items-center justify-between cursor-pointer transition-colors"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <Folder className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" />
+                                  <span className="text-xs font-semibold text-zinc-900 dark:text-white truncate">
+                                    {folder.name}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-3 shrink-0 text-xs font-mono">
+                                  <span title="Subfolders" className="flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+                                    <Folder className="w-3.5 h-3.5 fill-amber-500/20" /> {folder.foldersCount ?? 0} folders
+                                  </span>
+                                  <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                                  <span title="Files" className="flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400">
+                                    <FileText className="w-3.5 h-3.5" /> {folder.filesCount ?? 0} files
+                                  </span>
+                                  <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                                  <span className="font-bold text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
+                                    📦 {folder.formattedSize || '0 MB'}
+                                  </span>
+                                  {activeProjectForGoogle && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleLinkFolderToProject(folder);
+                                      }}
+                                      className="ml-2 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                                    >
+                                      Link
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Empty Folders Notice (if in folders-only mode) */}
-                  {browserContentTab === 'folders' && googleFolders.length === 0 && (
-                    <div className="py-12 text-center text-xs text-slate-400">
-                      No subfolders in this directory.
-                    </div>
-                  )}
-
-                  {/* Files & Media Section */}
-                  {(browserContentTab === 'all' || browserContentTab === 'media') && googleFiles.length > 0 && (
-                    <div className="space-y-1.5">
-                      {browserContentTab === 'all' && (
-                        <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 px-0.5 pt-2">
-                          <Film className="w-3.5 h-3.5 text-purple-500" />
-                          <span>Files & Media ({googleFiles.length})</span>
+                    {/* ── Files & Media Section ── */}
+                    {sortedExplorerFiles.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                          <span>
+                            Files & Media ({explorerTotalFiles !== null ? explorerTotalFiles.toLocaleString() : sortedExplorerFiles.length})
+                          </span>
+                          {sortedExplorerFiles.length < (explorerTotalFiles || 0) && (
+                            <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 normal-case">
+                              Showing {sortedExplorerFiles.length} of {(explorerTotalFiles || 0).toLocaleString()} files
+                            </span>
+                          )}
                         </div>
-                      )}
-                      <div className="space-y-1.5">
-                        {googleFiles.map(file => {
-                          const sizeMb = file.sizeBytes > 0
-                            ? file.sizeBytes >= 1024 * 1024 * 1024
-                              ? `${(file.sizeBytes / (1024 ** 3)).toFixed(1)} GB`
-                              : file.sizeBytes >= 1024 * 1024
-                                ? `${(file.sizeBytes / (1024 ** 2)).toFixed(1)} MB`
-                                : `${Math.round(file.sizeBytes / 1024)} KB`
-                            : '';
 
-                          return (
-                            <div
-                              key={file.id}
-                              className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition flex items-center justify-between gap-3"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                {file.thumbnailLink ? (
-                                  <img
-                                    src={file.thumbnailLink}
-                                    alt={file.name}
-                                    className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0"
-                                    onError={e => { (e.target as HTMLElement).style.display = 'none'; }}
-                                  />
-                                ) : file.isVideo ? (
-                                  <div className="w-9 h-9 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-                                    <Film className="w-4 h-4" />
-                                  </div>
-                                ) : (
-                                  <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                                    <ImageIcon className="w-4 h-4" />
-                                  </div>
-                                )}
+                        {explorerViewMode === 'grid' ? (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {sortedExplorerFiles.map(file => (
+                              <div
+                                key={file.id}
+                                onClick={() => setExplorerPreviewFile(file)}
+                                className="p-3 rounded-2xl bg-zinc-50/80 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200/70 dark:border-zinc-750 cursor-pointer transition-all flex flex-col justify-between space-y-2 group"
+                              >
+                                <div className="w-full h-28 rounded-xl bg-zinc-200/70 dark:bg-zinc-700/60 overflow-hidden flex items-center justify-center relative">
+                                  {file.thumbnailLink ? (
+                                    <img
+                                      src={file.thumbnailLink}
+                                      alt={file.name}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                      loading="lazy"
+                                    />
+                                  ) : file.isImage ? (
+                                    <ImageIcon className="w-8 h-8 text-blue-500" />
+                                  ) : file.isVideo ? (
+                                    <Video className="w-8 h-8 text-rose-500" />
+                                  ) : file.isAudio ? (
+                                    <Music className="w-8 h-8 text-emerald-500" />
+                                  ) : (
+                                    <FileText className="w-8 h-8 text-zinc-400" />
+                                  )}
 
-                                <div className="min-w-0">
-                                  <div className="text-xs font-bold text-slate-800 truncate">
+                                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <Eye className="w-5 h-5 text-white" />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <p className="text-xs font-semibold text-zinc-900 dark:text-white truncate" title={file.name}>
                                     {file.name}
-                                  </div>
-                                  <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                                    {file.mimeType?.split('/')[1]?.toUpperCase() || 'FILE'} {sizeMb ? `• ${sizeMb}` : ''}
+                                  </p>
+                                  <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono mt-0.5">
+                                    <span>{formatBytes(file.sizeBytes)}</span>
                                   </div>
                                 </div>
                               </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewMediaFile(file)}
-                                  className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer"
-                                  title="In-app lightbox preview"
-                                >
-                                  <Eye className="w-3 h-3" />
-                                  <span>Preview</span>
-                                </button>
-                                <a
-                                  href={file.webViewLink}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition"
-                                  title="Open externally in Google Drive"
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                </a>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-zinc-100 dark:divide-zinc-800 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl overflow-hidden">
+                            {sortedExplorerFiles.map(file => (
+                              <div
+                                key={file.id}
+                                onClick={() => setExplorerPreviewFile(file)}
+                                className="py-2.5 px-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 flex items-center justify-between cursor-pointer transition-colors"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {file.isImage ? (
+                                    <ImageIcon className="w-4 h-4 text-blue-500 shrink-0" />
+                                  ) : file.isVideo ? (
+                                    <Video className="w-4 h-4 text-rose-500 shrink-0" />
+                                  ) : file.isAudio ? (
+                                    <Music className="w-4 h-4 text-emerald-500 shrink-0" />
+                                  ) : (
+                                    <FileText className="w-4 h-4 text-zinc-400 shrink-0" />
+                                  )}
+                                  <span className="text-xs font-semibold text-zinc-900 dark:text-white truncate" title={file.name}>
+                                    {file.name}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-zinc-400 font-mono shrink-0">
+                                  {formatBytes(file.sizeBytes)}
+                                </span>
                               </div>
-                            </div>
-                          );
-                        })}
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Pagination / Load More Controls (100-item batches) */}
+                        {googleNextPageToken && (
+                          <div className="pt-6 pb-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                            <button
+                              type="button"
+                              onClick={handleExplorerLoadMore}
+                              disabled={googleLoadingMore}
+                              className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                            >
+                              {googleLoadingMore ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Plus className="w-3.5 h-3.5" />
+                              )}
+                              <span>Load Next 100 Items</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleExplorerLoadAll}
+                              disabled={googleLoadingMore}
+                              className="px-5 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-750 text-zinc-800 dark:text-zinc-200 font-semibold text-xs border border-zinc-200 dark:border-zinc-700 flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                            >
+                              <span>⚡ Fetch All Remaining ({sortedExplorerFiles.length} of {explorerTotalFiles || sortedExplorerFiles.length} loaded)</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
-
-                      {/* Load More Pagination for Google Drive Items (> 200 items) */}
-                      {googleNextPageToken && (
-                        <div className="pt-3 pb-2 text-center">
-                          <button
-                            type="button"
-                            disabled={googleLoadingMore}
-                            onClick={() => {
-                              if (selectedGoogleAccount && googleCurrentFolder) {
-                                fetchGoogleFolders(
-                                  selectedGoogleAccount.id,
-                                  googleCurrentFolder.id,
-                                  googleNextPageToken,
-                                  true
-                                );
-                              }
-                            }}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                          >
-                            {googleLoadingMore ? (
-                              <>
-                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                                <span>Loading more items...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Layers className="w-3.5 h-3.5 text-slate-500" />
-                                <span>Load More ({googleFiles.length + googleFolders.length} loaded)</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Empty Media Notice (if in media-only mode) */}
-                  {browserContentTab === 'media' && googleFiles.length === 0 && (
-                    <div className="py-12 text-center text-xs text-slate-400">
-                      No files or media found in this directory.
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Direct Paste Folder Link or Name */}
-            <div className="pt-2 pb-1 border-t border-slate-100 flex items-center gap-2 shrink-0">
-              <input
-                type="text"
-                value={manualDriveFolderInput}
-                onChange={e => setManualDriveFolderInput(e.target.value)}
-                placeholder="Or paste Google Drive link / custom folder name directly..."
-                className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <button
-                type="button"
-                onClick={handleDirectFolderLink}
-                disabled={!manualDriveFolderInput.trim()}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-50 shrink-0"
-              >
-                Link Direct URL
-              </button>
-            </div>
-
-            {/* Create New Folder Inline */}
-            <div className="pt-1.5 border-t border-slate-100 flex items-center gap-2 shrink-0">
-              <input
-                type="text"
-                value={newDriveFolderName}
-                onChange={e => setNewDriveFolderName(e.target.value)}
-                placeholder="New folder name..."
-                className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <button
-                type="button"
-                onClick={handleCreateDriveFolder}
-                disabled={creatingDriveFolder || !newDriveFolderName.trim()}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-50"
-              >
-                {creatingDriveFolder ? 'Creating...' : '+ Create Folder'}
-              </button>
-            </div>
-
-            {/* Modal Bottom Actions */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between shrink-0">
-              <div className="text-xs text-slate-500 font-medium truncate max-w-[250px]">
-                {selectedFolderForLink ? (
-                  <span>Selected: <strong>{selectedFolderForLink.name}</strong></span>
-                ) : (
-                  <span>Click any folder above to select</span>
+                    )}
+                  </div>
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowGooglePickerModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmGoogleDriveLink}
-                  disabled={!selectedFolderForLink}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer disabled:opacity-50"
-                >
-                  Confirm & Link Folder
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Google Drive Media In-App Lightbox Modal Preview */}
-      {previewMediaFile && (
-        <div className="fixed inset-0 z-[1000000] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-5xl h-[88vh] bg-slate-900 border border-slate-700/60 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
-            {/* Lightbox Header */}
-            <div className="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-4 shrink-0">
-              <div className="min-w-0 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
-                  {previewMediaFile.isVideo ? <Film className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-3 bg-zinc-50/50 dark:bg-zinc-900/50">
+                <div className="text-xs text-zinc-500 font-medium truncate max-w-sm">
+                  Current Folder: <strong className="text-zinc-800 dark:text-zinc-200">{googleCurrentFolder.name}</strong>
                 </div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-white truncate max-w-md sm:max-w-xl">
-                    {previewMediaFile.name}
-                  </h3>
-                  <p className="text-[11px] text-slate-400 font-medium">
-                    {previewMediaFile.mimeType || 'Media File'} • {previewMediaFile.sizeBytes > 0 ? (previewMediaFile.sizeBytes > 1024*1024*1024 ? `${(previewMediaFile.sizeBytes / (1024*1024*1024)).toFixed(2)} GB` : `${(previewMediaFile.sizeBytes / (1024*1024)).toFixed(1)} MB`) : 'Direct Cloud Preview'}
-                  </p>
-                </div>
-              </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                {previewMediaFile.webViewLink && (
-                  <a
-                    href={previewMediaFile.webViewLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
-                    title="Open directly in Google Drive"
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowGooglePickerModal(false)}
+                    className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-xl cursor-pointer transition"
                   >
-                    <span>Open in Drive</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPreviewMediaFile(null)}
-                  className="p-1.5 bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 rounded-lg transition cursor-pointer"
-                  title="Close preview (Esc)"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                    Close
+                  </button>
+                  {activeProjectForGoogle && (
+                    <button
+                      type="button"
+                      onClick={() => handleLinkFolderToProject(googleCurrentFolder)}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Link Current Folder</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {/* Lightbox Body (Interactive Media Viewer) */}
-            <div className="flex-1 w-full bg-black/70 relative flex items-center justify-center p-2 overflow-hidden">
-              <iframe
-                src={previewMediaFile.previewUrl || `https://drive.google.com/file/d/${previewMediaFile.id}/preview`}
-                className="w-full h-full border-none rounded-b-xl bg-transparent"
-                allow="autoplay; encrypted-media"
-                title={previewMediaFile.name}
-              />
-            </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
+
+      {/* ── FILE PREVIEW MODAL ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {explorerPreviewFile && (
+          <div className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-3xl bg-zinc-900 text-white rounded-3xl border border-zinc-800 overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+                <div className="min-w-0 pr-3">
+                  <h4 className="text-sm font-bold truncate">{explorerPreviewFile.name}</h4>
+                  <p className="text-[11px] text-zinc-400 font-mono">{formatBytes(explorerPreviewFile.sizeBytes)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {explorerPreviewFile.webViewLink && (
+                    <a
+                      href={explorerPreviewFile.webViewLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Open in Drive</span>
+                    </a>
+                  )}
+                  <button
+                    onClick={() => setExplorerPreviewFile(null)}
+                    className="p-1.5 rounded-xl text-zinc-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body: Direct Native Google Drive Previewer */}
+              <div className="flex-1 overflow-hidden p-2 sm:p-4 flex items-center justify-center min-h-[440px] bg-black/90">
+                <iframe
+                  src={`https://drive.google.com/file/d/${explorerPreviewFile.id}/preview`}
+                  className="w-full h-[72vh] rounded-2xl border-0 bg-zinc-950 shadow-inner"
+                  allow="autoplay; fullscreen"
+                  title={explorerPreviewFile.name}
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

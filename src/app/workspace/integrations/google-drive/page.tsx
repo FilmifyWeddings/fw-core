@@ -33,6 +33,9 @@ interface GoogleFolder {
   createdTime?: string;
   modifiedTime?: string;
   sizeBytes?: number;
+  filesCount?: number;
+  foldersCount?: number;
+  formattedSize?: string;
 }
 
 interface GoogleFile {
@@ -776,108 +779,72 @@ function GoogleDriveIntegrationCore() {
 
                         {viewMode === 'grid' ? (
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                            {sortedFolders.map(folder => {
-                              const sizeInfo = folderSizesMap[folder.id];
-                              const isChecking = checkingFolderId === folder.id;
-
-                              return (
-                                <div
-                                  key={folder.id}
-                                  onClick={() => handleNavigateFolder(folder)}
-                                  className="p-3.5 rounded-2xl bg-zinc-50/80 dark:bg-zinc-800/60 hover:bg-blue-50/70 dark:hover:bg-blue-950/30 border border-zinc-200/70 dark:border-zinc-750 hover:border-blue-300 dark:hover:border-blue-700 cursor-pointer transition-all flex flex-col justify-between gap-2.5 group"
-                                >
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
-                                      <Folder className="w-5 h-5 fill-amber-500" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-xs font-bold text-zinc-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400" title={folder.name}>
-                                        {folder.name}
-                                      </p>
-                                      <span className="text-[10px] text-zinc-400 font-mono">Folder</span>
-                                    </div>
+                            {sortedFolders.map(folder => (
+                              <div
+                                key={folder.id}
+                                onClick={() => handleNavigateFolder(folder)}
+                                className="p-3.5 rounded-2xl bg-zinc-50/80 dark:bg-zinc-800/60 hover:bg-blue-50/70 dark:hover:bg-blue-950/30 border border-zinc-200/70 dark:border-zinc-750 hover:border-blue-300 dark:hover:border-blue-700 cursor-pointer transition-all flex flex-col justify-between gap-2.5 group"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+                                    <Folder className="w-5 h-5 fill-amber-500" />
                                   </div>
-
-                                  {/* Folder Real Size Pill / Inspection Button */}
-                                  <div className="flex items-center justify-between pt-1 border-t border-zinc-200/50 dark:border-zinc-700/50">
-                                    {sizeInfo && !sizeInfo.loading ? (
-                                      <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 font-mono">
-                                        📦 {sizeInfo.sizeFormatted} ({sizeInfo.filesCount} files)
-                                      </span>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleCheckFolderSize(e, folder.id)}
-                                        disabled={isChecking}
-                                        className="text-[10px] font-semibold text-zinc-500 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 cursor-pointer transition-colors"
-                                      >
-                                        {isChecking ? (
-                                          <>
-                                            <RefreshCw className="w-3 h-3 animate-spin text-blue-500" />
-                                            <span>Calculating...</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <HardDrive className="w-3 h-3" />
-                                            <span>Check Size</span>
-                                          </>
-                                        )}
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="divide-y divide-zinc-100 dark:divide-zinc-800 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl overflow-hidden">
-                            {sortedFolders.map(folder => {
-                              const sizeInfo = folderSizesMap[folder.id];
-                              const isChecking = checkingFolderId === folder.id;
-
-                              return (
-                                <div
-                                  key={folder.id}
-                                  onClick={() => handleNavigateFolder(folder)}
-                                  className="py-2.5 px-4 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 flex items-center justify-between cursor-pointer transition-colors"
-                                >
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <Folder className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" />
-                                    <span className="text-xs font-semibold text-zinc-900 dark:text-white truncate">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold text-zinc-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400" title={folder.name}>
                                       {folder.name}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center gap-3 shrink-0">
-                                    {sizeInfo && !sizeInfo.loading ? (
-                                      <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 font-mono">
-                                        📦 {sizeInfo.sizeFormatted} ({sizeInfo.filesCount} files)
-                                      </span>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleCheckFolderSize(e, folder.id)}
-                                        disabled={isChecking}
-                                        className="text-[10px] font-semibold text-zinc-500 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 cursor-pointer transition-colors"
-                                      >
-                                        {isChecking ? (
-                                          <>
-                                            <RefreshCw className="w-3 h-3 animate-spin text-blue-500" />
-                                            <span>Calculating...</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <HardDrive className="w-3 h-3" />
-                                            <span>Check Size</span>
-                                          </>
-                                        )}
-                                      </button>
-                                    )}
+                                    </p>
                                     <span className="text-[10px] text-zinc-400 font-mono">Folder</span>
                                   </div>
                                 </div>
-                              );
-                            })}
+
+                                {/* Upfront Real Folder Stats (Folders, Files, Size) */}
+                                <div className="flex items-center justify-between pt-1.5 border-t border-zinc-200/50 dark:border-zinc-700/50 text-[10.5px] font-mono">
+                                  <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                                    <span title="Subfolders" className="flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+                                      <Folder className="w-3 h-3 fill-amber-500/20" /> {folder.foldersCount ?? 0}
+                                    </span>
+                                    <span>•</span>
+                                    <span title="Files" className="flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400">
+                                      <FileText className="w-3 h-3" /> {folder.filesCount ?? 0}
+                                    </span>
+                                  </div>
+                                  <span className="font-bold text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
+                                    {folder.formattedSize || '0 MB'}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-zinc-100 dark:divide-zinc-800 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl overflow-hidden">
+                            {sortedFolders.map(folder => (
+                              <div
+                                key={folder.id}
+                                onClick={() => handleNavigateFolder(folder)}
+                                className="py-2.5 px-4 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 flex items-center justify-between cursor-pointer transition-colors"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <Folder className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" />
+                                  <span className="text-xs font-semibold text-zinc-900 dark:text-white truncate">
+                                    {folder.name}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-3 shrink-0 text-xs font-mono">
+                                  <span title="Subfolders" className="flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+                                    <Folder className="w-3.5 h-3.5 fill-amber-500/20" /> {folder.foldersCount ?? 0} folders
+                                  </span>
+                                  <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                                  <span title="Files" className="flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400">
+                                    <FileText className="w-3.5 h-3.5" /> {folder.filesCount ?? 0} files
+                                  </span>
+                                  <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                                  <span className="font-bold text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
+                                    📦 {folder.formattedSize || '0 MB'}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
