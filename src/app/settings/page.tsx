@@ -89,9 +89,78 @@ let memCachedEventTypes: WorkspaceEventType[] = [];
 let memCachedCrewRoles: WorkspaceCrewRole[] = [];
 let memCachedHasLoadedSettings = false;
 
+const SETTINGS_NAV_ITEMS: {
+  id: SettingsTab;
+  title: string;
+  subtitle: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  {
+    id: 'leads',
+    title: 'Profile & Leads',
+    subtitle: 'Lead sources, pipeline stages, and action column controls.',
+    icon: Target,
+  },
+  {
+    id: 'functions',
+    title: 'Functions & Events',
+    subtitle: 'Event types, default times, and sub-event templates.',
+    icon: Sparkles,
+  },
+  {
+    id: 'crew_roles',
+    title: 'Crew Roles & Codes',
+    subtitle: 'Shooter roles, short codes, and gear designations.',
+    icon: Users,
+  },
+  {
+    id: 'post_production',
+    title: 'Post-Production',
+    subtitle: 'Pipeline workflows, edit stages, and client delivery presets.',
+    icon: Film,
+  },
+  {
+    id: 'storage',
+    title: 'Storage & Assets',
+    subtitle: 'Drives, cameras, lenses, memory cards, and gear catalog.',
+    icon: HardDrive,
+  },
+  {
+    id: 'quotations',
+    title: 'Quotations & Proposals',
+    subtitle: 'Deliverables, addons, payment milestones, and terms.',
+    icon: FileText,
+  },
+  {
+    id: 'finance',
+    title: 'Finance & Invoices',
+    subtitle: 'Bank details, UPI QR, tax percentages, and accounts.',
+    icon: Coins,
+  },
+  {
+    id: 'attendance',
+    title: 'Attendance & Geofence',
+    subtitle: 'Office geofence radius, lat/lng, and check-in rules.',
+    icon: Clock,
+  },
+  {
+    id: 'integrations',
+    title: 'Integrations & Webhooks',
+    subtitle: 'Meta Ads, WhatsApp Web, Google Drive, and API hooks.',
+    icon: Globe,
+  },
+  {
+    id: 'team',
+    title: 'Team & Security',
+    subtitle: 'Admin workspace permissions and team user access.',
+    icon: ShieldCheck,
+  },
+];
+
 export default function SettingsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<SettingsTab>('leads');
+  const [navSearch, setNavSearch] = useState('');
   const [loading, setLoading] = useState(() => !memCachedHasLoadedSettings);
   const [saving, setSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
@@ -898,8 +967,16 @@ export default function SettingsPage() {
     </div>
   );
 
+  const activeNav = SETTINGS_NAV_ITEMS.find(item => item.id === activeTab) || SETTINGS_NAV_ITEMS[0];
+  const filteredNavItems = SETTINGS_NAV_ITEMS.filter(item => 
+    item.title.toLowerCase().includes(navSearch.toLowerCase()) ||
+    item.subtitle.toLowerCase().includes(navSearch.toLowerCase())
+  );
+
   return (
-    <div className="min-h-screen bg-[#FEFDF8]/80 text-amber-950 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 md:py-8 font-sans">
+    <div className="min-h-screen bg-[#FDFBF7] dark:bg-[#090C11] text-zinc-900 dark:text-zinc-100 relative selection:bg-amber-100 selection:text-amber-950 font-sans pb-16">
+      {/* Warm golden luxury ambient blur in top right */}
+      <div className="absolute top-0 right-0 w-[550px] h-[450px] bg-gradient-to-bl from-amber-200/30 via-orange-100/15 to-transparent pointer-events-none blur-3xl -z-0" />
       
       {/* Toast Notification */}
       {saveToast && (
@@ -909,86 +986,125 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Header Bar */}
-      <div className="w-full space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-200/90 pb-5">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.back()}
-              className="p-2.5 rounded-xl bg-white hover:bg-amber-50 border border-amber-200/90 text-zinc-600 hover:text-amber-950 transition-all shadow-xs"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black tracking-widest text-[#0F9D58] uppercase bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                  <Table className="w-3 h-3" /> GOOGLE SHEETS DYNAMIC SYNC
-                </span>
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-amber-950 mt-1 flex items-center gap-2">
-                Master Page-Wise Settings Dashboard
-              </h1>
-            </div>
-          </div>
-
-          <button
-            onClick={handleSaveSettings}
-            disabled={saving}
-            className="px-6 py-2.5 rounded-xl bg-[#0F9D58] hover:bg-[#0B8043] text-white font-bold text-sm transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-          >
-            {saving ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                <span>Saving to Supabase...</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span>Save All Changes</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Page-Wise Settings Tabs Header */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-amber-200/90 scrollbar-none">
-          {[
-            { id: 'leads', label: ' Leads & Pipeline', icon: Target },
-            { id: 'functions', label: ' Functions & Events', icon: Sparkles },
-            { id: 'crew_roles', label: ' Crew Roles & Codes', icon: Users },
-            { id: 'post_production', label: ' Post-Production & Statuses', icon: Film },
-            { id: 'storage', label: ' Storage & Media Cards', icon: HardDrive },
-            { id: 'quotations', label: ' Quotations & Proposals', icon: FileText },
-            { id: 'finance', label: ' Finance & Invoices', icon: Coins },
-            { id: 'attendance', label: ' Attendance & Geofence', icon: Clock },
-            { id: 'integrations', label: ' Meta & Integrations', icon: Globe },
-            { id: 'team', label: ' Team & Owners', icon: ShieldCheck },
-          ].map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+        
+        {/* Top Header Row: ACCOUNT & Studio settings on Left, Search & Save on Right */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as SettingsTab)}
-                className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer ${
-                  isActive 
-                    ? 'bg-[#0F9D58] text-white shadow-xs border border-[#0B8043]' 
-                    : 'bg-white hover:bg-amber-50 text-zinc-700 border border-amber-200/90'
-                }`}
+                onClick={() => router.back()}
+                className="p-1 -ml-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+                title="Go Back"
               >
-                <span>{tab.label}</span>
+                <ArrowLeft className="w-4 h-4" />
               </button>
-            );
-          })}
+              <span className="text-[11px] font-bold tracking-widest text-zinc-400 dark:text-zinc-500 uppercase">
+                ACCOUNT
+              </span>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50 mt-1">
+              Studio settings
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-3 self-end sm:self-auto">
+            {/* Search Input matching screenshot */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={navSearch}
+                onChange={(e) => setNavSearch(e.target.value)}
+                placeholder="Search..."
+                className="w-40 sm:w-56 pl-8 pr-3 py-1.5 bg-white/90 dark:bg-zinc-800/80 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-700 rounded-full text-xs text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400/20 shadow-2xs transition-all"
+              />
+              {navSearch && (
+                <button
+                  onClick={() => setNavSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Save All Changes Button */}
+            <button
+              onClick={handleSaveSettings}
+              disabled={saving}
+              className="px-5 py-2 rounded-full bg-zinc-900 hover:bg-black dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white text-white font-bold text-xs transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+            >
+              {saving ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save All Changes</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        {/* Content Panel */}
-        {loading && !memCachedHasLoadedSettings ? (
-          <div className="py-20 text-center text-zinc-500 space-y-3 bg-white rounded-2xl border border-amber-200/90 shadow-xs">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#0F9D58]" />
-            <p className="text-sm font-semibold">Loading user settings from Supabase Database...</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
+        {/* 2-Column Section */}
+        <div className="flex flex-col lg:flex-row items-start gap-8 pt-2">
+          {/* Left Column: Vertical Nav Cards */}
+          <aside className="w-full lg:w-72 xl:w-80 shrink-0">
+            <div className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 scrollbar-none">
+              {filteredNavItems.map((item) => {
+                const isActive = activeTab === item.id;
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full text-left px-3.5 py-3 rounded-2xl transition-all cursor-pointer flex items-start gap-3.5 ${
+                      isActive
+                        ? 'bg-[#EBF0F5] dark:bg-zinc-800 text-zinc-950 dark:text-zinc-100 shadow-2xs border border-zinc-200/90 dark:border-zinc-700/80 font-bold'
+                        : 'hover:bg-white/70 dark:hover:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border border-transparent font-medium'
+                    }`}
+                  >
+                    <div className={`mt-0.5 shrink-0 ${isActive ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold truncate leading-tight">
+                        {item.title}
+                      </div>
+                      <div className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug mt-0.5">
+                        {item.subtitle}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+
+          {/* Right Column: Active Tab Content */}
+          <main className="flex-1 min-w-0 w-full space-y-4">
+            {/* Active Tab Heading & Subtitle */}
+            <div className="space-y-0.5">
+              <h2 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+                {activeNav.title}
+              </h2>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                {activeNav.subtitle}
+              </p>
+            </div>
+
+            {/* Content Panel */}
+            {loading && !memCachedHasLoadedSettings ? (
+              <div className="py-20 text-center text-zinc-500 space-y-3 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#0F9D58]" />
+                <p className="text-sm font-semibold">Loading user settings from Supabase Database...</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
 
             {/* 1. LEADS PAGE SETTINGS */}
             {activeTab === 'leads' && (
@@ -3068,8 +3184,10 @@ export default function SettingsPage() {
               </div>
             )}
 
-          </div>
-        )}
+              </div>
+            )}
+          </main>
+        </div>
 
       </div>
     </div>

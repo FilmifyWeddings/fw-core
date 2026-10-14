@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Search, Check, ArrowRight, ArrowLeft, Plus, ExternalLink,
-  ShieldCheck, Sparkles, RefreshCw
+  Search, Check, ArrowRight, ArrowLeft, ExternalLink,
+  ShieldCheck, Sparkles, RefreshCw, Clock
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
@@ -20,10 +20,10 @@ interface IntegrationItem {
   category: 'marketing' | 'communication' | 'productivity' | 'storage';
   description: string;
   logo: React.ReactNode;
-  status: 'connected' | 'disconnected';
+  status: 'connected' | 'disconnected' | 'coming_soon';
   path: string;
   metaBadge?: string;
-  actionType?: 'link' | 'modal' | 'toggle';
+  isComingSoon?: boolean;
 }
 
 function IntegrationsCore() {
@@ -39,7 +39,7 @@ function IntegrationsCore() {
   const [whatsappConnected, setWhatsappConnected] = useState(true);
   const [whatsappBetaConnected, setWhatsappBetaConnected] = useState(false);
   const [metaConnected, setMetaConnected] = useState(true);
-  const [websiteConnected, setWebsiteConnected] = useState(true);
+  const [websiteConnected, setWebsiteConnected] = useState(false);
   const [contactsConnected, setGoogleContactsConnected] = useState(false);
   const [calendarConnected, setGoogleCalendarConnected] = useState(false);
   const [sheetsConnected, setGoogleSheetsConnected] = useState(false);
@@ -48,7 +48,6 @@ function IntegrationsCore() {
   const [driveAccountsCount, setDriveAccountsCount] = useState(0);
 
   const [betaModalOpen, setBetaModalOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
 
   // Sync state with database & Google Storage accounts API
   useEffect(() => {
@@ -58,7 +57,7 @@ function IntegrationsCore() {
         const activeUser = session?.user?.id || effectiveWs;
         if (!activeUser) return;
 
-        // 1. Check Google Drive Connected Accounts
+        // 1. Check Google Drive Connected Accounts from storage_drive_accounts
         if (effectiveWs) {
           try {
             const driveRes = await fetch(`/api/storage/google/accounts?workspace_id=${encodeURIComponent(effectiveWs)}`);
@@ -88,7 +87,7 @@ function IntegrationsCore() {
           setWhatsappBetaConnected(true);
         }
 
-        // 3. Check integration_credentials
+        // 3. Check integration_credentials for other tools
         const { data: creds } = await supabase
           .from('integration_credentials')
           .select('*')
@@ -123,26 +122,20 @@ function IntegrationsCore() {
     fetchAllStatuses();
   }, [effectiveWs]);
 
+  // Exact Order Requested by User:
+  // 1. WhatsApp Web
+  // 2. Meta Ads Manager
+  // 3. Google Drive
+  // 4. Google Sheets
+  // 5. Google Contacts
+  // 6. Google Calendar
+  // 7. Gmail SMTP Server (Coming Soon)
+  // 8. Personal Website Webhook (Coming Soon)
+  // 9. Instagram (Coming Soon)
+  // 10. Google Meet (Coming Soon)
+  // 11. Zoom (Coming Soon)
+  // 12. Canva (Coming Soon)
   const integrationsList: IntegrationItem[] = useMemo(() => [
-    {
-      id: 'google-drive',
-      name: 'Google Drive',
-      category: 'storage',
-      description: 'Seamlessly connect and sync event photos, videos, and client deliverables.',
-      logo: (
-        <svg viewBox="0 0 87.3 78" className="w-6 h-6">
-          <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-          <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
-          <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
-          <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
-          <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
-          <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
-        </svg>
-      ),
-      status: googleDriveConnected ? 'connected' : 'disconnected',
-      path: '/workspace/storage',
-      metaBadge: driveAccountsCount > 0 ? `${driveAccountsCount} account${driveAccountsCount > 1 ? 's' : ''} connected` : undefined,
-    },
     {
       id: 'whatsapp-web',
       name: 'WhatsApp Web',
@@ -168,6 +161,25 @@ function IntegrationsCore() {
       metaBadge: metaConnected ? 'Realtime Webhook Live' : undefined,
     },
     {
+      id: 'google-drive',
+      name: 'Google Drive',
+      category: 'storage',
+      description: 'Seamlessly connect and sync event photos, videos, and client deliverables.',
+      logo: (
+        <svg viewBox="0 0 87.3 78" className="w-6 h-6">
+          <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+          <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+          <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+          <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+          <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+          <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+        </svg>
+      ),
+      status: googleDriveConnected ? 'connected' : 'disconnected',
+      path: '/workspace/integrations/google-drive',
+      metaBadge: driveAccountsCount > 0 ? `${driveAccountsCount} account${driveAccountsCount > 1 ? 's' : ''} connected` : undefined,
+    },
+    {
       id: 'google-sheets',
       name: 'Google Sheets',
       category: 'productivity',
@@ -177,17 +189,6 @@ function IntegrationsCore() {
       ),
       status: sheetsConnected ? 'connected' : 'disconnected',
       path: '/dashboard/integrations/google-sheets',
-    },
-    {
-      id: 'personal-website',
-      name: 'Personal Website Webhook',
-      category: 'marketing',
-      description: 'Capture incoming inquiries from WordPress, Elementor, and custom website forms.',
-      logo: (
-        <img src="/images/integrations/wordpress.png" alt="Website Webhook" className="w-6 h-6 object-contain" />
-      ),
-      status: websiteConnected ? 'connected' : 'disconnected',
-      path: '/dashboard/integrations/personal-website',
     },
     {
       id: 'google-contacts',
@@ -219,8 +220,106 @@ function IntegrationsCore() {
       logo: (
         <img src="/images/integrations/gmail.png" alt="Gmail" className="w-6 h-6 object-contain" />
       ),
-      status: smtpConnected ? 'connected' : 'disconnected',
-      path: '/dashboard/integrations/gmail-smtp',
+      status: 'coming_soon',
+      path: '#',
+      isComingSoon: true,
+      metaBadge: 'Coming Soon',
+    },
+    {
+      id: 'personal-website',
+      name: 'Personal Website Webhook',
+      category: 'marketing',
+      description: 'Capture incoming inquiries from WordPress, Elementor, and custom website forms.',
+      logo: (
+        <img src="/images/integrations/wordpress.png" alt="Website Webhook" className="w-6 h-6 object-contain" />
+      ),
+      status: 'coming_soon',
+      path: '#',
+      isComingSoon: true,
+      metaBadge: 'Coming Soon',
+    },
+    {
+      id: 'instagram-leads',
+      name: 'Instagram Direct & Leads',
+      category: 'marketing',
+      description: 'Sync story replies, direct messages, and Instagram ad form inquiries.',
+      logo: (
+        <svg viewBox="0 0 24 24" className="w-6 h-6">
+          <defs>
+            <radialGradient id="ig-grad" r="150%" cx="30%" cy="107%">
+              <stop offset="0" stopColor="#fdf497" />
+              <stop offset="5%" stopColor="#fdf497" />
+              <stop offset="45%" stopColor="#fd5949" />
+              <stop offset="60%" stopColor="#d6249f" />
+              <stop offset="90%" stopColor="#285AEB" />
+            </radialGradient>
+          </defs>
+          <rect width="24" height="24" rx="6" fill="url(#ig-grad)" />
+          <circle cx="12" cy="12" r="4.2" stroke="white" strokeWidth="1.8" fill="none" />
+          <circle cx="17.2" cy="6.8" r="1.1" fill="white" />
+          <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" stroke="white" strokeWidth="1.8" fill="none" />
+        </svg>
+      ),
+      status: 'coming_soon',
+      path: '#',
+      isComingSoon: true,
+      metaBadge: 'Coming Soon',
+    },
+    {
+      id: 'google-meet',
+      name: 'Google Meet',
+      category: 'communication',
+      description: 'Generate video consultation links automatically upon quote or booking approval.',
+      logo: (
+        <svg viewBox="0 0 24 24" className="w-6 h-6">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#00832d" opacity="0.1" />
+          <path d="M14 8H6c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h8c.55 0 1-.45 1-1V9c0-.55-.45-1-1-1z" fill="#00832d" />
+          <path d="M15 10.5l4-3v9l-4-3v-3z" fill="#00ac47" />
+          <circle cx="9" cy="12" r="1.5" fill="#ffffff" />
+        </svg>
+      ),
+      status: 'coming_soon',
+      path: '#',
+      isComingSoon: true,
+      metaBadge: 'Coming Soon',
+    },
+    {
+      id: 'zoom-meetings',
+      name: 'Zoom Meetings',
+      category: 'communication',
+      description: 'Schedule discovery calls and client wedding consultations with 1-click calendar sync.',
+      logo: (
+        <svg viewBox="0 0 24 24" className="w-6 h-6">
+          <rect width="24" height="24" rx="6" fill="#2D8CFF" />
+          <path d="M5.5 8.5C5.5 7.67 6.17 7 7 7h7c.83 0 1.5.67 1.5 1.5v7c0 .83-.67 1.5-1.5 1.5H7c-.83 0-1.5-.67-1.5-1.5v-7zm11.5 2.15l3-2.15v7l-3-2.15v-2.7z" fill="white" />
+        </svg>
+      ),
+      status: 'coming_soon',
+      path: '#',
+      isComingSoon: true,
+      metaBadge: 'Coming Soon',
+    },
+    {
+      id: 'canva',
+      name: 'Canva Design Hub',
+      category: 'productivity',
+      description: 'Export moodboards, quotation covers, and client story layouts directly to Canva.',
+      logo: (
+        <svg viewBox="0 0 24 24" className="w-6 h-6">
+          <defs>
+            <linearGradient id="canva-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#00c4cc" />
+              <stop offset="100%" stopColor="#7d2ae8" />
+            </linearGradient>
+          </defs>
+          <circle cx="12" cy="12" r="11" fill="url(#canva-grad)" />
+          <text x="12" y="15.5" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold" fontStyle="italic">C</text>
+        </svg>
+      ),
+      status: 'coming_soon',
+      path: '#',
+      isComingSoon: true,
+      metaBadge: 'Coming Soon',
     },
   ], [googleDriveConnected, driveAccountsCount, whatsappConnected, metaConnected, sheetsConnected, websiteConnected, contactsConnected, calendarConnected, smtpConnected]);
 
@@ -236,13 +335,13 @@ function IntegrationsCore() {
   }, [integrationsList, searchQuery, selectedCategory]);
 
   return (
-    <div className="min-h-screen bg-[#F6F8FA] dark:bg-[#090C10] text-zinc-900 dark:text-zinc-100 p-3 sm:p-6 lg:p-8 flex items-center justify-center font-sans antialiased">
+    <div className="min-h-screen bg-[#F6F8FA] dark:bg-[#090C10] text-zinc-900 dark:text-zinc-100 p-2 sm:p-5 lg:p-7 flex items-center justify-center font-sans antialiased">
       
       {/* Outer Modern Card Container */}
-      <div className="w-full max-w-6xl bg-white dark:bg-[#12161F] rounded-3xl border border-zinc-200/80 dark:border-zinc-800 shadow-2xl shadow-zinc-300/40 dark:shadow-none overflow-hidden flex flex-col lg:flex-row min-h-[740px]">
+      <div className="w-full max-w-6xl bg-white dark:bg-[#12161F] rounded-3xl border border-zinc-200/80 dark:border-zinc-800 shadow-2xl shadow-zinc-300/40 dark:shadow-none overflow-hidden flex flex-col lg:flex-row min-h-[720px]">
         
         {/* ── Left Hero Panel (Untitled UI Style) ────────────────────────── */}
-        <div className="lg:w-[38%] bg-[#F9FAFC] dark:bg-[#0E121A] p-7 sm:p-9 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-zinc-200/80 dark:border-zinc-800/80 relative overflow-hidden">
+        <div className="lg:w-[36%] bg-[#F9FAFC] dark:bg-[#0E121A] p-6 sm:p-8 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-zinc-200/80 dark:border-zinc-800/80 relative overflow-hidden">
           
           {/* Top Brand Logo */}
           <div className="flex items-center gap-2.5 z-10">
@@ -265,7 +364,7 @@ function IntegrationsCore() {
           </div>
 
           {/* Floating App Icon Collage */}
-          <div className="my-8 relative select-none pointer-events-none">
+          <div className="my-6 relative select-none pointer-events-none">
             {/* Top & Bottom Gradient Fades */}
             <div className="absolute -top-4 inset-x-0 h-10 bg-gradient-to-b from-[#F9FAFC] dark:from-[#0E121A] to-transparent z-10" />
             <div className="absolute -bottom-4 inset-x-0 h-10 bg-gradient-to-t from-[#F9FAFC] dark:from-[#0E121A] to-transparent z-10" />
@@ -361,61 +460,38 @@ function IntegrationsCore() {
             </div>
           </div>
 
-          {/* Bottom Heading & Step Indicator */}
-          <div className="space-y-4 z-10">
-            <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                Step 2
-              </span>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-zinc-950 dark:text-white tracking-tight mt-1">
-                Add integrations
-              </h2>
-              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-2 leading-relaxed">
-                Supercharge your workflow and connect the tools you use every day to your account.
-              </p>
-            </div>
-
-            {/* Step Progress Dash Indicators */}
-            <div className="flex items-center gap-2 pt-2">
-              <div className="h-1.5 w-12 rounded-full bg-zinc-900 dark:bg-white" />
-              <div className="h-1.5 w-12 rounded-full bg-zinc-900 dark:bg-white" />
-              <div className="h-1.5 w-12 rounded-full bg-zinc-300 dark:bg-zinc-700" />
-              <div className="h-1.5 w-12 rounded-full bg-zinc-300 dark:bg-zinc-700" />
-            </div>
+          {/* Bottom Heading (Step 2 and dash bars removed per user instruction) */}
+          <div className="space-y-2 z-10">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-zinc-950 dark:text-white tracking-tight">
+              Add integrations
+            </h2>
+            <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Supercharge your workflow and connect the tools you use every day to your account.
+            </p>
           </div>
 
         </div>
 
         {/* ── Right Integrations & Connected Apps Panel ─────────────────── */}
-        <div className="lg:w-[62%] p-6 sm:p-8 flex flex-col justify-between bg-white dark:bg-[#12161F]">
+        <div className="lg:w-[64%] p-5 sm:p-7 flex flex-col justify-between bg-white dark:bg-[#12161F]">
           
-          <div className="space-y-6">
+          <div className="space-y-5">
             
-            {/* Header: Title & "+ Custom integration" Button */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">
-                  Integrations and connected apps
-                </h1>
-                <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                  Supercharge your workflow and connect the tool you use every day.
-                </p>
-              </div>
-
-              <Link
-                href="/dashboard/integrations/personal-website"
-                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-zinc-250 dark:border-zinc-700 bg-white dark:bg-zinc-850 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 shadow-sm transition-all shrink-0 w-fit"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Custom integration</span>
-              </Link>
+            {/* Header: Title Only ("+ Custom integration" removed per user instruction) */}
+            <div className="pb-1">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">
+                Integrations and connected apps
+              </h1>
+              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                Supercharge your workflow and connect the tool you use every day.
+              </p>
             </div>
 
-            {/* Filter Pills & Search Bar Row */}
+            {/* Filter Pills & Search Bar Row (Clean No-Scroll Wrap Layout) */}
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
               
-              {/* Category Filter Pills */}
-              <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-850/80 rounded-xl overflow-x-auto border border-zinc-200/60 dark:border-zinc-800 scrollbar-none">
+              {/* Category Filter Pills - Flex Wrap so NO horizontal scrollbar is required */}
+              <div className="flex flex-wrap items-center gap-1.5 p-1 bg-zinc-100/80 dark:bg-zinc-850/80 rounded-2xl border border-zinc-200/70 dark:border-zinc-800">
                 {[
                   { id: 'all', label: 'All integrations' },
                   { id: 'marketing', label: 'Marketing & Leads' },
@@ -426,9 +502,9 @@ function IntegrationsCore() {
                   <button
                     key={tab.id}
                     onClick={() => setSelectedCategory(tab.id as IntegrationCategory)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all focus:outline-none ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all focus:outline-none cursor-pointer ${
                       selectedCategory === tab.id
-                        ? 'bg-white dark:bg-zinc-750 text-zinc-950 dark:text-white shadow-sm'
+                        ? 'bg-white dark:bg-zinc-750 text-zinc-950 dark:text-white shadow-xs'
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
                     }`}
                   >
@@ -438,21 +514,21 @@ function IntegrationsCore() {
               </div>
 
               {/* Search Bar */}
-              <div className="relative w-full md:w-56 shrink-0">
+              <div className="relative w-full md:w-52 shrink-0">
                 <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search"
+                  placeholder="Search apps..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-zinc-850 border border-zinc-250 dark:border-zinc-750 rounded-xl text-xs text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 shadow-sm transition-all"
+                  className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-zinc-850 border border-zinc-250 dark:border-zinc-750 rounded-xl text-xs text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 shadow-xs transition-all"
                 />
               </div>
 
             </div>
 
-            {/* Integrations Table / List */}
-            <div className="divide-y divide-zinc-100 dark:divide-zinc-850/70 border-t border-b border-zinc-100 dark:divide-zinc-850/70">
+            {/* Integrations Table / Smooth Scrolling List */}
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-850/70 border-t border-b border-zinc-100 dark:border-zinc-850/70 max-h-[580px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800">
               {filteredIntegrations.length === 0 ? (
                 <div className="py-12 text-center text-zinc-400 text-xs font-mono">
                   No integrations found matching your filter criteria.
@@ -460,11 +536,12 @@ function IntegrationsCore() {
               ) : (
                 filteredIntegrations.map((item) => {
                   const isConnected = item.status === 'connected';
+                  const isComingSoon = item.status === 'coming_soon' || item.isComingSoon;
 
                   return (
                     <div
                       key={item.id}
-                      className="py-4 px-2 hover:bg-zinc-50/70 dark:hover:bg-zinc-850/40 rounded-xl transition-all flex items-center justify-between gap-4 group"
+                      className="py-3.5 px-2 hover:bg-zinc-50/70 dark:hover:bg-zinc-850/40 rounded-xl transition-all flex items-center justify-between gap-4 group"
                     >
                       {/* Left Side: Logo & Info */}
                       <div className="flex items-center gap-3.5 min-w-0">
@@ -477,7 +554,11 @@ function IntegrationsCore() {
                               {item.name}
                             </span>
                             {item.metaBadge && (
-                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-bold border ${
+                                isComingSoon 
+                                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
+                                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                              }`}>
                                 {item.metaBadge}
                               </span>
                             )}
@@ -488,19 +569,26 @@ function IntegrationsCore() {
                         </div>
                       </div>
 
-                      {/* Right Side: Learn More & Action Button */}
-                      <div className="flex items-center gap-4 shrink-0">
-                        <Link
-                          href={item.path}
-                          className="text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors hidden sm:block"
-                        >
-                          Learn more
-                        </Link>
-
-                        {isConnected ? (
+                      {/* Right Side: Action Button */}
+                      <div className="flex items-center gap-3 shrink-0">
+                        {!isComingSoon && (
                           <Link
                             href={item.path}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-950 hover:bg-zinc-850 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 shadow-sm transition-all"
+                            className="text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors hidden sm:block"
+                          >
+                            Learn more
+                          </Link>
+                        )}
+
+                        {isComingSoon ? (
+                          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700/60 cursor-not-allowed">
+                            <Clock className="w-3 h-3" />
+                            <span>Coming soon</span>
+                          </span>
+                        ) : isConnected ? (
+                          <Link
+                            href={item.path}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-zinc-950 hover:bg-zinc-850 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 shadow-xs transition-all"
                           >
                             <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                             <span>Connected</span>
@@ -508,7 +596,7 @@ function IntegrationsCore() {
                         ) : (
                           <Link
                             href={item.path}
-                            className="inline-flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-900 dark:text-white border border-zinc-250 dark:border-zinc-700 shadow-xs transition-all"
+                            className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-900 dark:text-white border border-zinc-250 dark:border-zinc-700 shadow-xs transition-all"
                           >
                             <span>Connect</span>
                           </Link>
@@ -523,23 +611,11 @@ function IntegrationsCore() {
 
           </div>
 
-          {/* Bottom Navigation Buttons (Step Navigation) */}
-          <div className="pt-6 mt-6 border-t border-zinc-100 dark:border-zinc-850 flex items-center justify-between">
-            <button
-              onClick={() => router.back()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 border border-zinc-250 dark:border-zinc-750 hover:bg-zinc-50 dark:hover:bg-zinc-800 shadow-xs transition-all"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Previous step</span>
-            </button>
-
-            <Link
-              href="/workspace/crm"
-              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold bg-zinc-950 hover:bg-zinc-850 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 shadow-sm transition-all"
-            >
-              <span>Next step</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+          {/* Bottom Step Buttons completely removed per user request */}
+          <div className="pt-2 text-right">
+            <span className="text-[11px] text-zinc-400 font-mono">
+              Studio Core Cloud Gateways
+            </span>
           </div>
 
         </div>
