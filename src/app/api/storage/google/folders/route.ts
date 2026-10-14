@@ -97,29 +97,43 @@ export async function GET(req: NextRequest) {
       q = `name contains '${cleanSearch}' and trashed = false`;
     }
 
-    let driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
-      q
-    )}&fields=nextPageToken,files(id,name,mimeType,webViewLink,thumbnailLink,iconLink,size,createdTime,modifiedTime,quotaBytesUsed)&orderBy=folder,name&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+    const fetchAll = searchParams.get('fetch_all') === 'true';
 
-    if (pageToken && pageToken.trim()) {
-      driveUrl += `&pageToken=${encodeURIComponent(pageToken.trim())}`;
-    }
+    let allItems: any[] = [];
+    let currentToken: string | null = pageToken && pageToken.trim() ? pageToken.trim() : null;
+    let nextPageToken: string | null = null;
+    let loopCount = 0;
 
-    const driveRes = await fetch(driveUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    do {
+      let driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        q
+      )}&fields=nextPageToken,files(id,name,mimeType,webViewLink,thumbnailLink,iconLink,size,createdTime,modifiedTime,quotaBytesUsed)&orderBy=folder,name&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`;
 
-    if (!driveRes.ok) {
-      const errJson = await driveRes.json().catch(() => ({}));
-      return NextResponse.json({
-        success: false,
-        error: errJson.error?.message || 'Failed to list Google Drive contents',
-      }, { status: driveRes.status });
-    }
+      if (currentToken) {
+        driveUrl += `&pageToken=${encodeURIComponent(currentToken)}`;
+      }
 
-    const driveData = await driveRes.json();
-    const allItems = driveData.files || [];
-    const nextPageToken = driveData.nextPageToken || null;
+      const driveRes = await fetch(driveUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!driveRes.ok) {
+        const errJson = await driveRes.json().catch(() => ({}));
+        return NextResponse.json({
+          success: false,
+          error: errJson.error?.message || 'Failed to list Google Drive contents',
+        }, { status: driveRes.status });
+      }
+
+      const driveData = await driveRes.json();
+      const pageFiles = driveData.files || [];
+      allItems = allItems.concat(pageFiles);
+      nextPageToken = driveData.nextPageToken || null;
+      currentToken = nextPageToken;
+      loopCount++;
+
+      // If fetchAll is requested, keep looping up to 10 pages (10,000 items)
+    } while (fetchAll && currentToken && loopCount < 10);
 
     const folders = allItems
       .filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder')
@@ -138,7 +152,7 @@ export async function GET(req: NextRequest) {
         id: f.id,
         name: f.name,
         mimeType: f.mimeType,
-        thumbnailLink: f.thumbnailLink || null,
+        thumbnailLink: f.thumbnailLink ? f.thumbnailLink.replace(/=s\d+/, '=s400') : `https://drive.google.com/thumbnail?id=${f.id}&sz=w400`,
         webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
         previewUrl: `https://drive.google.com/file/d/${f.id}/preview`,
         sizeBytes: Number(f.size) || 0,

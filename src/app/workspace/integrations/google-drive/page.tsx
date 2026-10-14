@@ -74,6 +74,8 @@ function GoogleDriveIntegrationCore() {
   const [folders, setFolders] = useState<GoogleFolder[]>([]);
   const [files, setFiles] = useState<GoogleFile[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [folderSearch, setFolderSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -148,17 +150,30 @@ function GoogleDriveIntegrationCore() {
     }
   };
 
-  // Fetch Folder Contents inside Modal
-  const loadFolderContents = useCallback(async (accountId: string, parentId: string) => {
+  // Fetch Folder Contents inside Modal (Supports pagination & fetchAll for 1,000+ files)
+  const loadFolderContents = useCallback(async (accountId: string, parentId: string, pageToken?: string, fetchAll: boolean = false) => {
     try {
-      setLoadingItems(true);
-      const url = `/api/storage/google/folders?account_id=${encodeURIComponent(accountId)}&parent_id=${encodeURIComponent(parentId)}&workspace_id=${encodeURIComponent(effectiveWs)}`;
+      if (pageToken) {
+        setLoadingMore(true);
+      } else {
+        setLoadingItems(true);
+      }
+      let url = `/api/storage/google/folders?account_id=${encodeURIComponent(accountId)}&parent_id=${encodeURIComponent(parentId)}&workspace_id=${encodeURIComponent(effectiveWs)}`;
+      if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+      if (fetchAll) url += `&fetch_all=true`;
+
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
-          setFolders(data.folders || []);
-          setFiles(data.files || []);
+          if (pageToken) {
+            setFolders(prev => [...prev, ...(data.folders || [])]);
+            setFiles(prev => [...prev, ...(data.files || [])]);
+          } else {
+            setFolders(data.folders || []);
+            setFiles(data.files || []);
+          }
+          setNextPageToken(data.nextPageToken || null);
           if (data.currentFolder?.name) {
             setCurrentFolderName(data.currentFolder.name);
           }
@@ -168,6 +183,7 @@ function GoogleDriveIntegrationCore() {
       console.warn('Failed to load folder:', err);
     } finally {
       setLoadingItems(false);
+      setLoadingMore(false);
     }
   }, [effectiveWs]);
 
@@ -178,8 +194,21 @@ function GoogleDriveIntegrationCore() {
     setCurrentFolderId('root');
     setCurrentFolderName('My Drive');
     setFolderSearch('');
+    setNextPageToken(null);
     setBrowserOpen(true);
     loadFolderContents(account.id, 'root');
+  };
+
+  const handleLoadMore = () => {
+    if (activeAccount && nextPageToken && !loadingMore) {
+      loadFolderContents(activeAccount.id, currentFolderId, nextPageToken, false);
+    }
+  };
+
+  const handleLoadAll = () => {
+    if (activeAccount && !loadingMore) {
+      loadFolderContents(activeAccount.id, currentFolderId, undefined, true);
+    }
   };
 
   // Navigate deeper into folder
@@ -476,7 +505,7 @@ function GoogleDriveIntegrationCore() {
                       Google Drive Explorer
                     </h3>
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono truncate">
-                      {activeAccount.account_email} • {totalItemCount} items loaded
+                      {activeAccount.account_email} • {sortedFiles.length} files, {sortedFolders.length} folders {nextPageToken ? '• (More items in folder)' : '• (All loaded)'}
                     </p>
                   </div>
                 </div>
@@ -718,6 +747,32 @@ function GoogleDriveIntegrationCore() {
                             ))}
                           </div>
                         )}
+
+                        {/* Pagination / Load More Controls for Folders with 1,000+ files */}
+                        {nextPageToken && (
+                          <div className="pt-6 pb-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                            <button
+                              onClick={handleLoadMore}
+                              disabled={loadingMore}
+                              className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                            >
+                              {loadingMore ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Plus className="w-3.5 h-3.5" />
+                              )}
+                              <span>Load Next 1,000 Items</span>
+                            </button>
+
+                            <button
+                              onClick={handleLoadAll}
+                              disabled={loadingMore}
+                              className="px-5 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-750 text-zinc-800 dark:text-zinc-200 font-semibold text-xs border border-zinc-200 dark:border-zinc-700 flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                            >
+                              <span>⚡ Fetch All Remaining ({sortedFiles.length}+ loaded)</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -767,40 +822,13 @@ function GoogleDriveIntegrationCore() {
                 </div>
               </div>
 
-              {/* Body */}
-              <div className="flex-1 overflow-auto p-4 flex items-center justify-center min-h-[350px] bg-black/40">
-                {previewFile.isImage ? (
-                  <img
-                    src={previewFile.previewUrl || previewFile.thumbnailLink || previewFile.webViewLink}
-                    alt={previewFile.name}
-                    className="max-h-[70vh] max-w-full object-contain rounded-xl"
-                  />
-                ) : previewFile.isVideo ? (
-                  <iframe
-                    src={previewFile.previewUrl}
-                    className="w-full h-[60vh] rounded-xl border-0"
-                    allow="autoplay"
-                  />
-                ) : (
-                  <div className="text-center space-y-4">
-                    <FileText className="w-16 h-16 text-zinc-500 mx-auto" />
-                    <div>
-                      <p className="text-sm font-bold">{previewFile.name}</p>
-                      <p className="text-xs text-zinc-400 mt-1">Preview not available directly in browser.</p>
-                    </div>
-                    {previewFile.webViewLink && (
-                      <a
-                        href={previewFile.webViewLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-semibold"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        <span>View file on Google Drive</span>
-                      </a>
-                    )}
-                  </div>
-                )}
+              {/* Body: Direct Native Google Drive Previewer */}
+              <div className="flex-1 overflow-hidden p-2 sm:p-4 flex items-center justify-center min-h-[440px] bg-black/90">
+                <iframe
+                  src={`https://drive.google.com/file/d/${previewFile.id}/preview`}
+                  className="w-full h-[72vh] rounded-2xl border-0 bg-zinc-950 shadow-inner"
+                  allow="autoplay; fullscreen"
+                />
               </div>
             </motion.div>
           </div>

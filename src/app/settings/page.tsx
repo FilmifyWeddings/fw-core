@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Loader2,
@@ -10,9 +10,10 @@ import {
   QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard, Lock, Unlock, ShieldCheck, Key,
   Pencil, X, PackageCheck, Gift, Layers, ListPlus, SlidersHorizontal, Edit2, Edit3, MoveUp, MoveDown,
   Search, FileCheck, Calendar, MapPin, Sliders, Shield, Tag, ChevronRight, CheckSquare, Square,
-  Film, HardDrive
+  Film, HardDrive, User, PhoneCall, Camera
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { compressImageToDataUrl } from '@/lib/image-compression';
 import { 
   WorkspaceEventType, 
   WorkspaceCrewRole, 
@@ -58,11 +59,35 @@ import {
 } from '@/lib/workspace-settings';
 import CrewRolesSettings from '@/app/workspace/settings/components/CrewRolesSettings';
 import PostProductionSettingsTab from '@/app/workspace/settings/components/PostProductionSettingsTab';
-import StorageSettingsTab from '@/app/workspace/settings/components/StorageSettingsTab';
-import SmsTemplateSettings from '@/components/settings/SmsTemplateSettings';
 
+function InstagramIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
+    </svg>
+  );
+}
 
-type SettingsTab = 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'storage' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
+function YoutubeIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"/>
+      <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/>
+    </svg>
+  );
+}
+
+function FacebookIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+    </svg>
+  );
+}
+
+type SettingsTab = 'profile' | 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'finance';
 type QuoteSubTab = 'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms';
 
 interface DropdownItem {
@@ -96,8 +121,14 @@ const SETTINGS_NAV_ITEMS: {
   icon: React.ComponentType<{ className?: string }>;
 }[] = [
   {
+    id: 'profile',
+    title: 'Profile',
+    subtitle: 'Studio identity, logo, owner avatar, contact, and social presence.',
+    icon: User,
+  },
+  {
     id: 'leads',
-    title: 'Profile & Leads',
+    title: 'Leads & CRM',
     subtitle: 'Lead sources, pipeline stages, and action column controls.',
     icon: Target,
   },
@@ -120,12 +151,6 @@ const SETTINGS_NAV_ITEMS: {
     icon: Film,
   },
   {
-    id: 'storage',
-    title: 'Storage & Assets',
-    subtitle: 'Drives, cameras, lenses, memory cards, and gear catalog.',
-    icon: HardDrive,
-  },
-  {
     id: 'quotations',
     title: 'Quotations & Proposals',
     subtitle: 'Deliverables, addons, payment milestones, and terms.',
@@ -137,35 +162,117 @@ const SETTINGS_NAV_ITEMS: {
     subtitle: 'Bank details, UPI QR, tax percentages, and accounts.',
     icon: Coins,
   },
-  {
-    id: 'attendance',
-    title: 'Attendance & Geofence',
-    subtitle: 'Office geofence radius, lat/lng, and check-in rules.',
-    icon: Clock,
-  },
-  {
-    id: 'integrations',
-    title: 'Integrations & Webhooks',
-    subtitle: 'Meta Ads, WhatsApp Web, Google Drive, and API hooks.',
-    icon: Globe,
-  },
-  {
-    id: 'team',
-    title: 'Team & Security',
-    subtitle: 'Admin workspace permissions and team user access.',
-    icon: ShieldCheck,
-  },
 ];
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('leads');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [navSearch, setNavSearch] = useState('');
   const [loading, setLoading] = useState(() => !memCachedHasLoadedSettings);
   const [saving, setSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState('');
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
+
+  // Profile Settings States
+  const [profileFullName, setProfileFullName] = useState('');
+  const [profileStudioName, setProfileStudioName] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+  const [profileAddress, setProfileAddress] = useState('');
+  const [profileInstagram, setProfileInstagram] = useState('');
+  const [profileYoutube, setProfileYoutube] = useState('');
+  const [profileFacebook, setProfileFacebook] = useState('');
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState('');
+  const [profileLogoUrl, setProfileLogoUrl] = useState('');
+  const [isCompressingAvatar, setIsCompressingAvatar] = useState(false);
+  const [isCompressingLogo, setIsCompressingLogo] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        setIsCompressingAvatar(true);
+        const compressed = await compressImageToDataUrl(file, 450, 0.85);
+        setProfileAvatarUrl(compressed);
+      } catch (err) {
+        console.error('Avatar error:', err);
+      } finally {
+        setIsCompressingAvatar(false);
+      }
+    }
+  };
+
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        setIsCompressingLogo(true);
+        const compressed = await compressImageToDataUrl(file, 450, 0.88);
+        setProfileLogoUrl(compressed);
+      } catch (err) {
+        console.error('Logo error:', err);
+      } finally {
+        setIsCompressingLogo(false);
+      }
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const targetUserId = session?.user?.id || workspaceId;
+
+      const payload = {
+        userId: targetUserId,
+        fullName: profileFullName.trim(),
+        studioName: profileStudioName.trim() || 'My Studio',
+        phone: profilePhone.trim(),
+        address: profileAddress.trim(),
+        instagram: profileInstagram.trim(),
+        youtube: profileYoutube.trim(),
+        facebook: profileFacebook.trim(),
+        avatarUrl: profileAvatarUrl,
+        logoUrl: profileLogoUrl,
+      };
+
+      const res = await fetch('/api/user/profile-setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        if (typeof window !== 'undefined') {
+          if (payload.studioName) {
+            localStorage.setItem('sc_studio_name', payload.studioName);
+            localStorage.setItem('fw_studio_name', payload.studioName);
+          }
+          if (payload.avatarUrl) localStorage.setItem('sc_avatar_url', payload.avatarUrl);
+          if (payload.logoUrl) localStorage.setItem('sc_logo_url', payload.logoUrl);
+          if (payload.fullName) localStorage.setItem('sc_user_name', payload.fullName);
+          window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: payload }));
+        }
+        setSaveToast('Profile details saved & synced live across studio!');
+        setTimeout(() => setSaveToast(null), 3500);
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        alert('Failed to save profile: ' + (errJson.error || 'Unknown server error'));
+      }
+    } catch (err: any) {
+      alert('Error saving profile: ' + err.message);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   // Functions & Crew Roles States
   const [eventTypes, setEventTypes] = useState<WorkspaceEventType[]>(() => memCachedEventTypes.length > 0 ? memCachedEventTypes : DEFAULT_EVENT_TYPES);
@@ -469,6 +576,30 @@ export default function SettingsPage() {
       setWorkspaceId(wId);
 
       const headers = await getAuthHeaders();
+
+      // Fetch studio & account profile details
+      try {
+        const profRes = await fetch('/api/user/profile-setup', { headers });
+        if (profRes.ok) {
+          const pData = await profRes.json();
+          if (pData?.profile) {
+            const p = pData.profile;
+            setProfileFullName(p.fullName || '');
+            setProfileStudioName(p.studioName || '');
+            setProfilePhone(p.phone || '');
+            setProfileEmail(p.email || '');
+            setProfileAddress(p.address || '');
+            setProfileInstagram(p.instagram || '');
+            setProfileYoutube(p.youtube || '');
+            setProfileFacebook(p.facebook || '');
+            setProfileAvatarUrl(p.avatarUrl || '');
+            setProfileLogoUrl(p.logoUrl || '');
+          }
+        }
+      } catch (profErr) {
+        console.warn('Profile load error:', profErr);
+      }
+
       const res = await fetch(`/api/settings?workspace_id=${wId}`, { headers });
 
       // Fetch full workspace quotation settings
@@ -759,6 +890,42 @@ export default function SettingsPage() {
           });
         } catch (qErr) {
           console.warn('Quotation settings save note:', qErr);
+        }
+
+        // Persist studio & account profile
+        try {
+          const profPayload = {
+            userId: wId,
+            fullName: profileFullName.trim(),
+            studioName: profileStudioName.trim() || 'My Studio',
+            phone: profilePhone.trim(),
+            address: profileAddress.trim(),
+            instagram: profileInstagram.trim(),
+            youtube: profileYoutube.trim(),
+            facebook: profileFacebook.trim(),
+            avatarUrl: profileAvatarUrl,
+            logoUrl: profileLogoUrl,
+          };
+          await fetch('/api/user/profile-setup', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
+            },
+            body: JSON.stringify(profPayload),
+          });
+          if (typeof window !== 'undefined') {
+            if (profPayload.studioName) {
+              localStorage.setItem('sc_studio_name', profPayload.studioName);
+              localStorage.setItem('fw_studio_name', profPayload.studioName);
+            }
+            if (profPayload.avatarUrl) localStorage.setItem('sc_avatar_url', profPayload.avatarUrl);
+            if (profPayload.logoUrl) localStorage.setItem('sc_logo_url', profPayload.logoUrl);
+            if (profPayload.fullName) localStorage.setItem('sc_user_name', profPayload.fullName);
+            window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: profPayload }));
+          }
+        } catch (profErr) {
+          console.warn('Profile sync error:', profErr);
         }
 
         setSaveToast('Settings saved & synchronized live across all pages! ');
@@ -1053,7 +1220,7 @@ export default function SettingsPage() {
         {/* 2-Column Section */}
         <div className="flex flex-col lg:flex-row items-start gap-8 pt-2">
           {/* Left Column: Vertical Nav Cards */}
-          <aside className="w-full lg:w-72 xl:w-80 shrink-0">
+          <aside className="w-full lg:w-72 xl:w-80 shrink-0 lg:sticky lg:top-6 self-start max-h-[calc(100vh-3rem)] overflow-y-auto scrollbar-none">
             <div className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 scrollbar-none">
               {filteredNavItems.map((item) => {
                 const isActive = activeTab === item.id;
@@ -1106,88 +1273,521 @@ export default function SettingsPage() {
             ) : (
               <div className="space-y-6">
 
-            {/* 1. LEADS PAGE SETTINGS */}
-            {activeTab === 'leads' && (
-              <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-6">
-                <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#0F9D58] flex items-center justify-center font-bold">
-                    <Target className="w-5 h-5" />
+            {/* 0. STUDIO & ACCOUNT PROFILE TAB */}
+            {activeTab === 'profile' && (
+              <div className="bg-[#FEFDF9] dark:bg-stone-900/60 border border-[#EAE5DA] dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xs space-y-8">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#EAE5DA] dark:border-zinc-800 pb-5">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60 flex items-center justify-center font-bold shadow-xs">
+                      <User className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">Studio Profile & Branding</h2>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                        Manage your official studio identity, owner photo, contact details, and social links.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-extrabold text-amber-950">Leads Page Settings (`/leads`)</h2>
-                    <p className="text-xs font-medium text-zinc-500">Manage Lead Sources, Pipeline Stages, and Action Buttons</p>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveProfile}
+                    disabled={profileSaving}
+                    className="self-start sm:self-auto px-5 py-2.5 rounded-2xl bg-zinc-900 hover:bg-black dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white text-white font-bold text-xs transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {profileSaving ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving Profile...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save Profile</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Hidden File Inputs */}
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  className="hidden"
+                />
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoChange}
+                  className="hidden"
+                />
+
+                {/* Visual Identity Row: Logo & Owner Avatar */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Studio Logo Card */}
+                  <div className="p-5 rounded-2xl bg-white dark:bg-zinc-800/60 border border-[#EAE5DA] dark:border-zinc-700/80 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
+                        Official Studio Logo
+                      </span>
+                      {profileLogoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setProfileLogoUrl('')}
+                          className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 rounded-2xl bg-[#F7F5F0] dark:bg-zinc-800 border-2 border-dashed border-[#EAE5DA] dark:border-zinc-700 flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative group">
+                        {isCompressingLogo ? (
+                          <RefreshCw className="w-6 h-6 animate-spin text-amber-600" />
+                        ) : profileLogoUrl ? (
+                          <img src={profileLogoUrl} alt="Studio Logo" className="w-full h-full object-contain p-2" />
+                        ) : (
+                          <Building2 className="w-8 h-8 text-zinc-300 dark:text-zinc-600" />
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => logoInputRef.current?.click()}
+                          disabled={isCompressingLogo}
+                          className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-600 border border-[#EAE5DA] dark:border-zinc-600 text-xs font-bold text-zinc-800 dark:text-zinc-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>{profileLogoUrl ? 'Change Logo' : 'Upload Logo'}</span>
+                        </button>
+                        <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-tight">
+                          Recommended 400×400px (PNG / JPG). Synchronized to PDF quotations and tax invoices.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Owner Personal Avatar Card */}
+                  <div className="p-5 rounded-2xl bg-white dark:bg-zinc-800/60 border border-[#EAE5DA] dark:border-zinc-700/80 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
+                        Personal / Owner Photo
+                      </span>
+                      {profileAvatarUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setProfileAvatarUrl('')}
+                          className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 rounded-full bg-[#F7F5F0] dark:bg-zinc-800 border-2 border-[#EAE5DA] dark:border-zinc-700 flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative group">
+                        {isCompressingAvatar ? (
+                          <RefreshCw className="w-6 h-6 animate-spin text-amber-600" />
+                        ) : profileAvatarUrl ? (
+                          <img src={profileAvatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-8 h-8 text-zinc-300 dark:text-zinc-600" />
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => avatarInputRef.current?.click()}
+                          disabled={isCompressingAvatar}
+                          className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-600 border border-[#EAE5DA] dark:border-zinc-600 text-xs font-bold text-zinc-800 dark:text-zinc-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <Camera className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>{profileAvatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
+                        </button>
+                        <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-tight">
+                          Personal portrait for crew management, WhatsApp signatures, and notifications.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Lead Action Buttons Checkboxes */}
-                <div className="space-y-3">
+                {/* Primary Information Fields */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-extrabold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    Studio & Contact Details
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Studio Name */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>Studio Brand Name</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={profileStudioName}
+                        onChange={e => setProfileStudioName(e.target.value)}
+                        placeholder="e.g. Filmify Weddings"
+                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+
+                    {/* Owner Name */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>Owner / Manager Full Name</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={profileFullName}
+                        onChange={e => setProfileFullName(e.target.value)}
+                        placeholder="e.g. Sushant Nawale"
+                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+
+                    {/* Phone Number */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <Phone className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>Studio Phone / WhatsApp</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={profilePhone}
+                        onChange={e => setProfilePhone(e.target.value)}
+                        placeholder="e.g. +91 98765 43210"
+                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+
+                    {/* Email (Readonly) */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-zinc-400" />
+                        <span>Account Email (Verified)</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={profileEmail}
+                        readOnly
+                        disabled
+                        placeholder="user@studio.com"
+                        className="w-full px-4 py-2.5 bg-zinc-100/80 dark:bg-zinc-800/40 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-sm font-medium text-zinc-500 dark:text-zinc-400 cursor-not-allowed shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Studio Address */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>Studio Physical Address</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={profileAddress}
+                      onChange={e => setProfileAddress(e.target.value)}
+                      placeholder="e.g. Suite 402, Signature Plaza, Mumbai, Maharashtra 400001"
+                      className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-sm font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all resize-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Social Media Presence */}
+                <div className="space-y-4 pt-2">
+                  <h3 className="text-xs font-extrabold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    Social Media & Portfolio Links
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {/* Instagram */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <InstagramIcon className="w-3.5 h-3.5 text-[#E4405F]" />
+                        <span>Instagram Handle / URL</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={profileInstagram}
+                        onChange={e => setProfileInstagram(e.target.value)}
+                        placeholder="@filmifyweddings"
+                        className="w-full px-4 py-2 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+
+                    {/* YouTube */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <YoutubeIcon className="w-3.5 h-3.5 text-[#FF0000]" />
+                        <span>YouTube Channel</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={profileYoutube}
+                        onChange={e => setProfileYoutube(e.target.value)}
+                        placeholder="youtube.com/@filmify"
+                        className="w-full px-4 py-2 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+
+                    {/* Facebook */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <FacebookIcon className="w-3.5 h-3.5 text-[#1877F2]" />
+                        <span>Facebook Page</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={profileFacebook}
+                        onChange={e => setProfileFacebook(e.target.value)}
+                        placeholder="facebook.com/filmify"
+                        className="w-full px-4 py-2 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom Save Bar */}
+                <div className="pt-4 border-t border-[#EAE5DA] dark:border-zinc-800 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveProfile}
+                    disabled={profileSaving}
+                    className="px-6 py-2.5 rounded-2xl bg-zinc-900 hover:bg-black dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white text-white font-bold text-xs transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {profileSaving ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving Changes...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save Profile Changes</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 1. LEADS & CRM SETTINGS */}
+            {activeTab === 'leads' && (
+              <div className="bg-[#FEFDF9] dark:bg-stone-900/60 border border-[#EAE5DA] dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xs space-y-8">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#EAE5DA] dark:border-zinc-800 pb-5">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-[#0F9D58] border border-emerald-200/80 dark:border-emerald-800/60 flex items-center justify-center font-bold shadow-xs">
+                      <Target className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">Leads & CRM Settings</h2>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                        Configure Lead Action column controls, lead sources, and Kanban pipeline stages.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Lead Action Buttons Cards with Big CRM Icons */}
+                <div className="space-y-4">
                   <div>
-                    <label className="text-xs font-extrabold text-zinc-700 uppercase tracking-wider block">
+                    <label className="text-xs font-extrabold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider block">
                       Manage Lead Action Column Buttons (Visible on `/leads` Page)
                     </label>
-                    <p className="text-xs text-zinc-500 mt-0.5">Select which action buttons appear in the Action column (New users get Quotation, Call, Mail & Comments by default)</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      Choose which quick-action buttons are visible in the CRM Action column for fast client outreach.
+                    </p>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 pt-1">
                     {[
-                      { key: 'quotation', label: 'Quotation / Proposal', icon: FileText, desc: 'Generate & send PDF quotes', isDefault: true },
-                      { key: 'call', label: 'Device Dialer Call', icon: Phone, desc: 'Click-to-call lead phone number', isDefault: true },
-                      { key: 'mail', label: 'Email Lead', icon: Mail, desc: 'Send email to lead', isDefault: true },
-                      { key: 'comments', label: 'Comments & Reminders', icon: MessageSquare, desc: 'Open discussion timeline drawer', isDefault: true },
-                      { key: 'google_contact', label: 'Google Contact Sync', icon: UserCheck, desc: 'Sync lead to Google Contacts', isDefault: false },
-                      { key: 'whatsapp', label: 'WhatsApp Welcome Message', icon: Send, desc: 'Send WhatsApp welcome message', isDefault: false },
-                      { key: 'followup', label: 'WhatsApp Follow-up Message', icon: Clock, desc: 'Schedule followups & tasks', isDefault: false },
-                    ].map(item => (
-                      <label
-                        key={item.key}
-                        className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                          quickActions[item.key] 
-                            ? 'bg-emerald-50/60 border-emerald-300 text-amber-950 shadow-2xs' 
-                            : 'bg-white border-amber-200/90 text-zinc-500 hover:bg-[#FEFDF8]'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={!!quickActions[item.key]}
-                          onChange={e => setQuickActions({ ...quickActions, [item.key]: e.target.checked })}
-                          className="mt-0.5 w-4 h-4 rounded text-[#0F9D58] focus:ring-[#0F9D58] border-slate-300 cursor-pointer"
-                        />
-                        <div>
-                          <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                            <item.icon className="w-3.5 h-3.5 text-[#0F9D58]" />
-                            {item.label}
-                            {item.isDefault && (
-                              <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-[#0F9D58] px-1.5 py-0.2 rounded-md">Default</span>
-                            )}
-                          </span>
-                          <p className="text-[11px] text-zinc-500 mt-0.5">{item.desc}</p>
+                      { 
+                        key: 'quotation', 
+                        label: 'Quotation / Proposal', 
+                        icon: FileText, 
+                        desc: 'Generate, send PDF quotes & view versions', 
+                        isDefault: true,
+                        badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
+                        iconBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300'
+                      },
+                      { 
+                        key: 'call', 
+                        label: 'Device Dialer Call', 
+                        icon: PhoneCall, 
+                        desc: '1-click direct device dialer for phone numbers', 
+                        isDefault: true,
+                        badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
+                        iconBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300'
+                      },
+                      { 
+                        key: 'mail', 
+                        label: 'Direct Email Lead', 
+                        icon: Mail, 
+                        desc: 'Send fast pre-addressed email to client', 
+                        isDefault: true,
+                        badgeColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+                        iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300'
+                      },
+                      { 
+                        key: 'comments', 
+                        label: 'Comments & Reminders', 
+                        icon: MessageSquare, 
+                        desc: 'Open discussion drawer & follow-up log', 
+                        isDefault: true,
+                        badgeColor: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+                        iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300'
+                      },
+                      { 
+                        key: 'google_contact', 
+                        label: 'Google Contacts Sync', 
+                        icon: UserCheck, 
+                        desc: 'Sync client profile & number to Google Contacts', 
+                        isDefault: false,
+                        badgeColor: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800',
+                        iconBg: 'bg-sky-100 text-sky-700 dark:bg-sky-900/60 dark:text-sky-300'
+                      },
+                      { 
+                        key: 'whatsapp', 
+                        label: 'WhatsApp Welcome', 
+                        icon: Send, 
+                        desc: 'Send WhatsApp welcome template & timeline', 
+                        isDefault: false,
+                        badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
+                        iconBg: 'bg-[#25D366]/20 text-[#128C7E] dark:bg-[#25D366]/30 dark:text-[#25D366]'
+                      },
+                      { 
+                        key: 'followup', 
+                        label: 'WhatsApp Follow-up', 
+                        icon: Clock, 
+                        desc: 'Automated multi-step followups & reminders', 
+                        isDefault: false,
+                        badgeColor: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800',
+                        iconBg: 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300'
+                      },
+                    ].map(item => {
+                      const isChecked = !!quickActions[item.key];
+                      const IconComp = item.icon;
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => setQuickActions({ ...quickActions, [item.key]: !isChecked })}
+                          className={`p-4 rounded-2xl border transition-all cursor-pointer relative group flex flex-col justify-between select-none ${
+                            isChecked
+                              ? 'bg-white dark:bg-zinc-800 border-emerald-400 dark:border-emerald-600 shadow-xs ring-1 ring-emerald-400/30'
+                              : 'bg-white/60 dark:bg-zinc-800/40 border-[#EAE5DA] dark:border-zinc-700/80 hover:bg-white dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className={`w-11 h-11 rounded-2xl ${item.iconBg} flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform`}>
+                              <IconComp className="w-5 h-5" />
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              {item.isDefault && (
+                                <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                                  Default
+                                </span>
+                              )}
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={e => {
+                                  e.stopPropagation();
+                                  setQuickActions({ ...quickActions, [item.key]: e.target.checked });
+                                }}
+                                className="w-4 h-4 rounded text-[#0F9D58] focus:ring-[#0F9D58] border-zinc-300 dark:border-zinc-600 cursor-pointer"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-3 min-w-0">
+                            <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                              {item.label}
+                            </h4>
+                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-2 leading-relaxed">
+                              {item.desc}
+                            </p>
+                          </div>
+
+                          <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-zinc-700/60 flex items-center justify-between text-[10px]">
+                            <span className={isChecked ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-zinc-400'}>
+                              {isChecked ? '● Visible on Leads' : '○ Hidden'}
+                            </span>
+                            <span className="text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 font-medium">
+                              Toggle
+                            </span>
+                          </div>
                         </div>
-                      </label>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Lead Sources Google Sheets Style Dropdown Builder */}
-                <div className="pt-4 border-t border-amber-100 space-y-2">
-                  <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1">
-                    Manage Lead Sources (Dropdown Options in Leads Page)
-                  </label>
+                {/* Lead Sources Dropdown Options Card */}
+                <div className="p-5 sm:p-6 bg-white dark:bg-zinc-800/60 rounded-2xl border border-[#EAE5DA] dark:border-zinc-700/80 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700/60 pb-3">
+                    <div>
+                      <h3 className="text-xs font-extrabold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
+                        Manage Lead Sources (Dropdown Options in Leads Page)
+                      </h3>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Custom channels for lead attribution, analytics, and marketing tracking.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-xs font-bold rounded-full border border-amber-200/60 dark:border-amber-800/60">
+                      {leadSources.length} Sources
+                    </span>
+                  </div>
                   {renderGoogleOptionList(leadSources, setLeadSources, 'source', 'Add another item')}
                 </div>
 
-                {/* Lead Stages Google Sheets Style Dropdown Builder */}
-                <div className="pt-4 border-t border-amber-100 space-y-2">
-                  <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1">
-                    Manage Pipeline Stages (Kanban Columns in Leads Page)
-                  </label>
+                {/* Pipeline Stages Dropdown Options Card */}
+                <div className="p-5 sm:p-6 bg-white dark:bg-zinc-800/60 rounded-2xl border border-[#EAE5DA] dark:border-zinc-700/80 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700/60 pb-3">
+                    <div>
+                      <h3 className="text-xs font-extrabold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
+                        Manage Pipeline Stages (Kanban Columns in Leads Page)
+                      </h3>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Reorder or add pipeline lifecycle stages. Stage &quot;Booked&quot; syncs automatically with Bookings & Team Manager.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold rounded-full border border-emerald-200/60 dark:border-emerald-800/60">
+                      {leadStages.length} Stages
+                    </span>
+                  </div>
                   {renderGoogleOptionList(leadStages, setLeadStages, 'stage', 'Add another item')}
                 </div>
 
-                {/* Lead Budget Ranges Google Sheets Style Dropdown Builder */}
-                <div className="pt-4 border-t border-amber-100 space-y-2">
-                  <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1">
-                    Lead Budget Filter Options
-                  </label>
+                {/* Lead Budget Filter Options Card */}
+                <div className="p-5 sm:p-6 bg-white dark:bg-zinc-800/60 rounded-2xl border border-[#EAE5DA] dark:border-zinc-700/80 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700/60 pb-3">
+                    <div>
+                      <h3 className="text-xs font-extrabold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
+                        Lead Budget Filter Options
+                      </h3>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Filter brackets used to qualify client wedding budgets on the CRM board.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 text-xs font-bold rounded-full border border-blue-200/60 dark:border-blue-800/60">
+                      {budgetRanges.length} Brackets
+                    </span>
+                  </div>
                   {renderGoogleOptionList(budgetRanges, setBudgetRanges, 'budget', 'Add another item')}
                 </div>
               </div>
@@ -1395,16 +1995,6 @@ export default function SettingsPage() {
               />
             )}
 
-            {/* 1.8 STORAGE & MEDIA CARDS SETTINGS */}
-            {activeTab === 'storage' && (
-              <StorageSettingsTab
-                workspaceId={workspaceId}
-                onShowToast={(msg) => {
-                  setSaveToast(msg);
-                  setTimeout(() => setSaveToast(null), 3000);
-                }}
-              />
-            )}
 
             {/* 2. QUOTATIONS PAGE SETTINGS */}
             {activeTab === 'quotations' && (
@@ -3049,140 +3639,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 4. ATTENDANCE & GEOFENCE SETTINGS */}
-            {activeTab === 'attendance' && (
-              <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-6">
-                <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
-                  <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                    <Clock className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-extrabold text-amber-950">Attendance & Geofence Settings (`/workspace/attendance`)</h2>
-                    <p className="text-xs font-medium text-zinc-500">Configure Geofence radius, Shift start time, and break limits</p>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Geofence Radius */}
-                  <div>
-                    <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
-                      Geofence Radius (Meters)
-                    </label>
-                    <input
-                      type="number"
-                      value={geofenceRadius}
-                      onChange={e => setGeofenceRadius(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-white border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-[#0F9D58]"
-                    />
-                  </div>
-
-                  {/* Shift Start */}
-                  <div>
-                    <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
-                      Default Shift Start Time
-                    </label>
-                    <input
-                      type="time"
-                      value={shiftStart}
-                      onChange={e => setShiftStart(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-[#0F9D58]"
-                    />
-                  </div>
-
-                  {/* Grace Period */}
-                  <div>
-                    <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
-                      Grace Period (Minutes)
-                    </label>
-                    <input
-                      type="number"
-                      value={graceMinutes}
-                      onChange={e => setGraceMinutes(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-white border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-[#0F9D58]"
-                    />
-                  </div>
-
-                  {/* Break Limit */}
-                  <div>
-                    <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
-                      Break Limit (Minutes)
-                    </label>
-                    <input
-                      type="number"
-                      value={breakLimitMinutes}
-                      onChange={e => setBreakLimitMinutes(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-white border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-[#0F9D58]"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 5. META & INTEGRATIONS SETTINGS */}
-            {activeTab === 'integrations' && (
-              <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-6">
-                <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0866FF] flex items-center justify-center font-bold">
-                    <Globe className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-extrabold text-amber-950">Meta & Integrations Settings (`/workspace/integrations/meta`)</h2>
-                    <p className="text-xs font-medium text-zinc-500">Configure Meta auto-sync interval and default WhatsApp triggers</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between p-4 bg-[#FEFDF8] border border-amber-200/90 rounded-xl">
-                  <div>
-                    <h4 className="text-sm font-bold text-amber-950">Real-Time Meta Lead Webhook Sync</h4>
-                    <p className="text-xs text-zinc-500 mt-0.5">Automatically ingest Facebook Instant Leads into CRM instantly</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setMetaAutoSync(!metaAutoSync)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      metaAutoSync ? 'bg-[#0F9D58] text-white' : 'bg-slate-200 text-zinc-600'
-                    }`}
-                  >
-                    {metaAutoSync ? 'Active' : 'Disabled'}
-                  </button>
-                </div>
-
-                {/* SMS OTP Template & Normal Message Settings */}
-                <SmsTemplateSettings />
-              </div>
-            )}
-
-            {/* 6. TEAM & OWNERS SETTINGS */}
-            {activeTab === 'team' && (
-              <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-6">
-                <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                    <Users className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-extrabold text-amber-950">Team & Access Control Settings (`/workspace/team`)</h2>
-                    <p className="text-xs font-medium text-zinc-500">Manage team members, roles, and access rules</p>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-4 bg-[#FEFDF8] border border-amber-200/90 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#0F9D58] flex items-center justify-center font-bold text-sm">
-                        WS
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-amber-950">Workspace User Account</h4>
-                        <p className="text-xs text-zinc-500">Active Supabase Workspace ID: {workspaceId.slice(0, 8)}...</p>
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 rounded-full bg-emerald-50 text-[#0F9D58] border border-emerald-200 text-xs font-bold">
-                      Super Admin
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
 
               </div>
             )}

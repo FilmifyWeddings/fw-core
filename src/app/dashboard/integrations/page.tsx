@@ -271,12 +271,7 @@ function IntegrationsCore() {
       category: 'communication',
       description: 'Generate video consultation links automatically upon quote or booking approval.',
       logo: (
-        <svg viewBox="0 0 24 24" className="w-6 h-6">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#00832d" opacity="0.1" />
-          <path d="M14 8H6c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h8c.55 0 1-.45 1-1V9c0-.55-.45-1-1-1z" fill="#00832d" />
-          <path d="M15 10.5l4-3v9l-4-3v-3z" fill="#00ac47" />
-          <circle cx="9" cy="12" r="1.5" fill="#ffffff" />
-        </svg>
+        <img src="/integrations/google-meet.png" alt="Google Meet" className="w-6 h-6 object-contain" />
       ),
       status: 'coming_soon',
       path: '#',
@@ -305,16 +300,7 @@ function IntegrationsCore() {
       category: 'productivity',
       description: 'Export moodboards, quotation covers, and client story layouts directly to Canva.',
       logo: (
-        <svg viewBox="0 0 24 24" className="w-6 h-6">
-          <defs>
-            <linearGradient id="canva-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#00c4cc" />
-              <stop offset="100%" stopColor="#7d2ae8" />
-            </linearGradient>
-          </defs>
-          <circle cx="12" cy="12" r="11" fill="url(#canva-grad)" />
-          <text x="12" y="15.5" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold" fontStyle="italic">C</text>
-        </svg>
+        <img src="/integrations/canva.png" alt="Canva" className="w-6 h-6 object-contain" />
       ),
       status: 'coming_soon',
       path: '#',
@@ -341,7 +327,7 @@ function IntegrationsCore() {
       <div className="w-full max-w-6xl bg-white dark:bg-[#12161F] rounded-3xl border border-zinc-200/80 dark:border-zinc-800 shadow-2xl shadow-zinc-300/40 dark:shadow-none overflow-hidden flex flex-col lg:flex-row min-h-[720px]">
         
         {/* ── Left Hero Panel (Untitled UI Style) ────────────────────────── */}
-        <div className="lg:w-[36%] bg-[#F9FAFC] dark:bg-[#0E121A] p-6 sm:p-8 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-zinc-200/80 dark:border-zinc-800/80 relative overflow-hidden">
+        <div className="lg:w-[32%] bg-[#F9FAFC] dark:bg-[#0E121A] p-6 sm:p-8 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-zinc-200/80 dark:border-zinc-800/80 relative overflow-hidden">
           
           {/* Top Brand Logo */}
           <div className="flex items-center gap-2.5 z-10">
@@ -363,7 +349,7 @@ function IntegrationsCore() {
             </span>
           </div>
 
-          {/* Floating App Icon Collage */}
+          {/* Floating App Icon Collage - Includes Drive, Gmail, WhatsApp, Instagram, Meet, Zoom, Canva */}
           <div className="my-6 relative select-none pointer-events-none">
             {/* Top & Bottom Gradient Fades */}
             <div className="absolute -top-4 inset-x-0 h-10 bg-gradient-to-b from-[#F9FAFC] dark:from-[#0E121A] to-transparent z-10" />
@@ -388,8 +374,22 @@ function IntegrationsCore() {
                 <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
                   <img src="/images/integrations/whatsapp.png" alt="WhatsApp" className="w-full h-full object-contain" />
                 </div>
-                <div className="w-12 h-12 rounded-2xl bg-[#00897B] border border-emerald-600/30 shadow-md flex items-center justify-center text-white font-black text-sm">
-                  W
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2">
+                  <svg viewBox="0 0 24 24" className="w-full h-full">
+                    <defs>
+                      <radialGradient id="ig-hero-grad" cx="20%" cy="105%" r="130%">
+                        <stop offset="0" stopColor="#fdf497" />
+                        <stop offset="5%" stopColor="#fdf497" />
+                        <stop offset="45%" stopColor="#fd5949" />
+                        <stop offset="60%" stopColor="#d6249f" />
+                        <stop offset="90%" stopColor="#285AEB" />
+                      </radialGradient>
+                    </defs>
+                    <rect width="24" height="24" rx="6" fill="url(#ig-hero-grad)" />
+                    <circle cx="12" cy="12" r="4.2" stroke="white" strokeWidth="1.8" fill="none" />
+                    <circle cx="17.2" cy="6.8" r="1.1" fill="white" />
+                    <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" stroke="white" strokeWidth="1.8" fill="none" />
+                  </svg>
                 </div>
                 <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
                   <img src="/images/integrations/google-calendar.png" alt="Calendar" className="w-full h-full object-contain" />
@@ -401,10 +401,8 @@ function IntegrationsCore() {
 
               {/* Row 2 */}
               <div className="flex items-center gap-3 ml-2">
-                <div className="w-12 h-12 rounded-2xl bg-[#0061FF] shadow-md flex items-center justify-center p-2 text-white">
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-                    <path d="M6 3.5l6 3.9-6 3.9-6-3.9 6-3.9zm12 0l6 3.9-6 3.9-6-3.9 6-3.9zm-12 9.9l6 3.9-6 3.9-6-3.9 6-3.9zm12 0l6 3.9-6 3.9-6-3.9 6-3.9zm-6 4.7l6-3.9 6 3.9-6 3.9-6-3.9z"/>
-                  </svg>
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
+                  <img src="/integrations/google-meet.png" alt="Google Meet" className="w-full h-full object-contain" />
                 </div>
                 <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
                   <img src="/images/integrations/google-contacts.png" alt="Contacts" className="w-full h-full object-contain" />
@@ -415,8 +413,10 @@ function IntegrationsCore() {
                 <div className="w-12 h-12 rounded-2xl bg-[#000000] dark:bg-white text-white dark:text-black shadow-md flex items-center justify-center font-bold text-sm">
                   N
                 </div>
-                <div className="w-12 h-12 rounded-2xl bg-[#5865F2] shadow-md flex items-center justify-center text-white font-bold text-sm">
-                  💬
+                <div className="w-12 h-12 rounded-2xl bg-[#2D8CFF] shadow-md flex items-center justify-center p-2.5 text-white">
+                  <svg viewBox="0 0 24 24" fill="white" className="w-full h-full">
+                    <path d="M5.5 8.5C5.5 7.67 6.17 7 7 7h7c.83 0 1.5.67 1.5 1.5v7c0 .83-.67 1.5-1.5 1.5H7c-.83 0-1.5-.67-1.5-1.5v-7zm11.5 2.15l3-2.15v7l-3-2.15v-2.7z" />
+                  </svg>
                 </div>
               </div>
 
@@ -425,8 +425,8 @@ function IntegrationsCore() {
                 <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
                   <img src="/images/integrations/meta.png" alt="Meta" className="w-full h-full object-contain" />
                 </div>
-                <div className="w-12 h-12 rounded-2xl bg-[#FFE01B] shadow-md flex items-center justify-center p-2">
-                  <span className="font-black text-black text-xs">MC</span>
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2">
+                  <img src="/integrations/canva.png" alt="Canva" className="w-full h-full object-contain rounded-xl" />
                 </div>
                 <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
                   <img src="/images/integrations/wordpress.png" alt="WordPress" className="w-full h-full object-contain" />
@@ -444,8 +444,8 @@ function IntegrationsCore() {
                 <div className="w-12 h-12 rounded-2xl bg-[#4A154B] shadow-md flex items-center justify-center text-white font-bold text-sm">
                   #
                 </div>
-                <div className="w-12 h-12 rounded-2xl bg-[#03363D] shadow-md flex items-center justify-center text-emerald-400 font-bold text-sm">
-                  Z
+                <div className="w-12 h-12 rounded-2xl bg-[#2D8CFF] shadow-md flex items-center justify-center text-white font-bold text-sm">
+                  Zoom
                 </div>
                 <div className="w-12 h-12 rounded-2xl bg-[#625DF5] shadow-md flex items-center justify-center text-white font-bold text-xs">
                   Loom
@@ -460,7 +460,7 @@ function IntegrationsCore() {
             </div>
           </div>
 
-          {/* Bottom Heading (Step 2 and dash bars removed per user instruction) */}
+          {/* Bottom Heading */}
           <div className="space-y-2 z-10">
             <h2 className="text-2xl sm:text-3xl font-extrabold text-zinc-950 dark:text-white tracking-tight">
               Add integrations
@@ -473,11 +473,11 @@ function IntegrationsCore() {
         </div>
 
         {/* ── Right Integrations & Connected Apps Panel ─────────────────── */}
-        <div className="lg:w-[64%] p-5 sm:p-7 flex flex-col justify-between bg-white dark:bg-[#12161F]">
+        <div className="lg:w-[68%] p-5 sm:p-7 flex flex-col justify-between bg-white dark:bg-[#12161F]">
           
           <div className="space-y-5">
             
-            {/* Header: Title Only ("+ Custom integration" removed per user instruction) */}
+            {/* Header: Title */}
             <div className="pb-1">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">
                 Integrations and connected apps
@@ -487,11 +487,11 @@ function IntegrationsCore() {
               </p>
             </div>
 
-            {/* Filter Pills & Search Bar Row (Clean No-Scroll Wrap Layout) */}
-            <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+            {/* Filter Pills & Search Bar Row - 1 SINGLE LINE with NO scrollbar */}
+            <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
               
-              {/* Category Filter Pills - Flex Wrap so NO horizontal scrollbar is required */}
-              <div className="flex flex-wrap items-center gap-1.5 p-1 bg-zinc-100/80 dark:bg-zinc-850/80 rounded-2xl border border-zinc-200/70 dark:border-zinc-800">
+              {/* Category Filter Pills - Strict single line without scroll */}
+              <div className="flex items-center gap-1 p-1 bg-zinc-100/90 dark:bg-zinc-850/90 rounded-2xl border border-zinc-200/70 dark:border-zinc-800 shrink-0">
                 {[
                   { id: 'all', label: 'All integrations' },
                   { id: 'marketing', label: 'Marketing & Leads' },
@@ -502,7 +502,7 @@ function IntegrationsCore() {
                   <button
                     key={tab.id}
                     onClick={() => setSelectedCategory(tab.id as IntegrationCategory)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all focus:outline-none cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-all focus:outline-none cursor-pointer shrink-0 ${
                       selectedCategory === tab.id
                         ? 'bg-white dark:bg-zinc-750 text-zinc-950 dark:text-white shadow-xs'
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
@@ -514,17 +514,16 @@ function IntegrationsCore() {
               </div>
 
               {/* Search Bar */}
-              <div className="relative w-full md:w-52 shrink-0">
+              <div className="relative w-full sm:w-44 shrink-0">
                 <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search apps..."
                   value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-zinc-850 border border-zinc-250 dark:border-zinc-750 rounded-xl text-xs text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 shadow-xs transition-all"
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search apps..."
+                  className="w-full pl-8 pr-3 py-1.5 bg-zinc-50 dark:bg-zinc-850/80 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400/20 shadow-2xs transition-all"
                 />
               </div>
-
             </div>
 
             {/* Integrations Table / Smooth Scrolling List */}

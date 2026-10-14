@@ -1332,7 +1332,7 @@ export default function StorageHubPage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {driveAccounts.map(acc => {
                 const totalGb = Number((acc.total_storage_bytes / (1024 ** 3)).toFixed(1)) || 2000;
                 const usedGb = Number((acc.used_storage_bytes / (1024 ** 3)).toFixed(1)) || 0;
@@ -1340,63 +1340,88 @@ export default function StorageHubPage() {
                 const percent = Math.min(100, Math.round((usedGb / (totalGb || 1)) * 100));
 
                 return (
-                  <div key={acc.id} className="p-4 rounded-xl border border-slate-200 bg-[#FAF9F6] space-y-3 relative group">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-xs font-extrabold text-slate-900 truncate flex items-center gap-1.5">
-                          <Cloud className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                          <span>{acc.account_email}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                          {acc.account_label || 'Studio Google Drive'}
-                        </div>
+                  <div 
+                    key={acc.id} 
+                    className="bg-white rounded-3xl border border-zinc-200/90 p-5 shadow-lg shadow-zinc-200/40 flex flex-col justify-between space-y-5 hover:border-blue-400 transition-all group"
+                  >
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-zinc-50 border border-zinc-250/80 shadow-xs flex items-center justify-center p-2 shrink-0">
+                        <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                          <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                          <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                          <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                          <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                          <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                          <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                        </svg>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 shrink-0">
-                        Active
-                      </span>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>Active</span>
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGoogleAccount(acc.id)}
+                          className="p-1.5 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Disconnect account"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Email info */}
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-zinc-900 truncate" title={acc.account_email}>
+                        {acc.account_email}
+                      </div>
+                      <div className="text-[11px] text-zinc-400 font-medium truncate mt-0.5">
+                        {acc.account_label || 'Wedding Deliverables Drive'}
+                      </div>
                     </div>
 
                     {/* Storage Meter Bar */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[11px] font-mono font-bold text-slate-600">
-                        <span>{usedGb >= 1000 ? `${(usedGb / 1000).toFixed(2)} TB` : `${usedGb} GB`} used</span>
-                        <span>{freeGb >= 1000 ? `${(freeGb / 1000).toFixed(2)} TB` : `${freeGb} GB`} free</span>
+                    <div className="space-y-2 p-3 bg-zinc-50 rounded-2xl border border-zinc-150">
+                      <div className="flex items-center justify-between text-xs font-mono font-bold">
+                        <span className="text-zinc-700">
+                          {usedGb >= 1000 ? `${(usedGb / 1000).toFixed(2)} TB` : `${usedGb} GB`} used
+                        </span>
+                        <span className="text-emerald-600">
+                          {freeGb >= 1000 ? `${(freeGb / 1000).toFixed(2)} TB` : `${freeGb} GB`} free
+                        </span>
                       </div>
-                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+
+                      <div className="h-2 w-full bg-zinc-200 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${
-                            percent > 90 ? 'bg-red-500' : percent > 75 ? 'bg-amber-500' : 'bg-blue-600'
+                            percent > 90 ? 'bg-rose-500' : percent > 75 ? 'bg-amber-500' : 'bg-blue-600'
                           }`}
                           style={{ width: `${percent}%` }}
                         />
                       </div>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+
+                      <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
                         <span>{percent}% allocated</span>
                         <span>Total: {totalGb >= 1000 ? `${(totalGb / 1000).toFixed(1)} TB` : `${totalGb} GB`}</span>
                       </div>
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/80">
+                    <div className="flex items-center justify-between pt-1">
                       <button
                         type="button"
                         onClick={() => {
                           setSelectedGoogleAccount(acc);
                           setShowGooglePickerModal(true);
                         }}
-                        className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                        className="w-full py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                       >
-                        <Folder className="w-3 h-3" />
+                        <Folder className="w-3.5 h-3.5" />
                         <span>Browse Folders</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteGoogleAccount(acc.id)}
-                        className="text-[11px] font-bold text-red-500 hover:text-red-700 flex items-center gap-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        <span>Disconnect</span>
                       </button>
                     </div>
                   </div>
