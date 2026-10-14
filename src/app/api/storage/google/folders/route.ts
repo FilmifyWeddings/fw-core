@@ -62,6 +62,78 @@ async function getValidAccessToken(accountId: string, workspaceId?: string | nul
   return { accessToken, account };
 }
 
+function formatBytes(bytes?: number): string {
+  if (!bytes || isNaN(bytes) || bytes === 0) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1000) return `${mb.toFixed(1)} MB`;
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb < 1000) return `${gb.toFixed(2)} GB`;
+  const tb = gb / 1024;
+  return `${tb.toFixed(2)} TB`;
+}
+
+// In-memory cache for folder real count and sizes to prevent redundant Google Drive sweeps
+const folderStatsCache = new Map<string, {
+  totalFiles: number;
+  totalFolders: number;
+  totalSizeBytes: number;
+  totalSizeFormatted: string;
+  timestamp: number;
+}>();
+
+async function getFolderRealStats(accessToken: string, parentId: string, cacheKey: string) {
+  const cached = folderStatsCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 120_000) {
+    return cached;
+  }
+
+  let totalFiles = 0;
+  let totalFolders = 0;
+  let totalSizeBytes = 0;
+  let countToken: string | null = null;
+  let pages = 0;
+
+  const countQ = `'${parentId}' in parents and trashed = false`;
+
+  try {
+    do {
+      let url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        countQ
+      )}&fields=nextPageToken,files(mimeType,size)&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+      if (countToken) url += `&pageToken=${encodeURIComponent(countToken)}`;
+
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!res.ok) break;
+
+      const data = await res.json();
+      const items = data.files || [];
+      for (const item of items) {
+        if (item.mimeType === 'application/vnd.google-apps.folder') {
+          totalFolders++;
+        } else {
+          totalFiles++;
+          totalSizeBytes += Number(item.size) || 0;
+        }
+      }
+      countToken = data.nextPageToken || null;
+      pages++;
+    } while (countToken && pages < 30); // scan up to 30,000 files
+  } catch (err) {
+    console.warn('[GoogleFolders API] Stats calculation warning:', err);
+  }
+
+  const stats = {
+    totalFiles,
+    totalFolders,
+    totalSizeBytes,
+    totalSizeFormatted: formatBytes(totalSizeBytes),
+    timestamp: Date.now(),
+  };
+
+  folderStatsCache.set(cacheKey, stats);
+  return stats;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -70,6 +142,8 @@ export async function GET(req: NextRequest) {
     const searchQuery = searchParams.get('search');
     const workspaceId = searchParams.get('workspace_id');
     const pageToken = searchParams.get('page_token') || searchParams.get('pageToken');
+    const checkFolderSize = searchParams.get('check_folder_size') === 'true';
+    const targetFolderId = searchParams.get('folder_id') || parentId;
 
     if (!accountId) {
       return NextResponse.json({ success: false, error: 'account_id is required' }, { status: 400 });
@@ -91,13 +165,30 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // 1. Dedicated Folder Real Size & Counts Inspection
+    if (checkFolderSize) {
+      const stats = await getFolderRealStats(accessToken, targetFolderId, `${accountId}_${targetFolderId}`);
+      return NextResponse.json({
+        success: true,
+        folder_id: targetFolderId,
+        total_files: stats.totalFiles,
+        total_folders: stats.totalFolders,
+        total_size_bytes: stats.totalSizeBytes,
+        total_size_formatted: stats.totalSizeFormatted,
+      });
+    }
+
+    // 2. Global Deep Search Query OR Directory Listing Query
+    const isGlobalSearch = Boolean(searchQuery && searchQuery.trim());
     let q = `'${parentId}' in parents and trashed = false`;
-    if (searchQuery && searchQuery.trim()) {
-      const cleanSearch = searchQuery.trim().replace(/'/g, "\\'");
+    if (isGlobalSearch) {
+      const cleanSearch = searchQuery!.trim().replace(/'/g, "\\'");
+      // Global search across entire Google Drive (subfolders, files, anywhere in drive)
       q = `name contains '${cleanSearch}' and trashed = false`;
     }
 
     const fetchAll = searchParams.get('fetch_all') === 'true';
+    const requestedPageSize = Number(searchParams.get('page_size')) || (fetchAll ? 1000 : 100);
 
     let allItems: any[] = [];
     let currentToken: string | null = pageToken && pageToken.trim() ? pageToken.trim() : null;
@@ -107,7 +198,7 @@ export async function GET(req: NextRequest) {
     do {
       let driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
         q
-      )}&fields=nextPageToken,files(id,name,mimeType,webViewLink,thumbnailLink,iconLink,size,createdTime,modifiedTime,quotaBytesUsed)&orderBy=folder,name&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+      )}&fields=nextPageToken,files(id,name,mimeType,webViewLink,thumbnailLink,iconLink,size,createdTime,modifiedTime,quotaBytesUsed,parents)&orderBy=folder,name&pageSize=${requestedPageSize}&supportsAllDrives=true&includeItemsFromAllDrives=true`;
 
       if (currentToken) {
         driveUrl += `&pageToken=${encodeURIComponent(currentToken)}`;
@@ -132,7 +223,7 @@ export async function GET(req: NextRequest) {
       currentToken = nextPageToken;
       loopCount++;
 
-      // If fetchAll is requested, keep looping up to 10 pages (10,000 items)
+      // If fetchAll is requested, keep looping up to 10 pages
     } while (fetchAll && currentToken && loopCount < 10);
 
     const folders = allItems
@@ -144,6 +235,7 @@ export async function GET(req: NextRequest) {
         createdTime: f.createdTime,
         modifiedTime: f.modifiedTime,
         sizeBytes: Number(f.quotaBytesUsed || f.size) || 0,
+        parentId: f.parents?.[0] || null,
       }));
 
     const files = allItems
@@ -157,6 +249,7 @@ export async function GET(req: NextRequest) {
         previewUrl: `https://drive.google.com/file/d/${f.id}/preview`,
         sizeBytes: Number(f.size) || 0,
         createdTime: f.createdTime,
+        parentId: f.parents?.[0] || null,
         isImage: Boolean(f.mimeType?.startsWith('image/')),
         isVideo: Boolean(f.mimeType?.startsWith('video/')),
         isAudio: Boolean(f.mimeType?.startsWith('audio/')),
@@ -164,7 +257,7 @@ export async function GET(req: NextRequest) {
 
     // If not root, fetch current parent folder metadata
     let currentFolder = { id: parentId, name: parentId === 'root' ? 'My Drive' : 'Folder' };
-    if (parentId !== 'root' && !pageToken) {
+    if (parentId !== 'root' && !pageToken && !isGlobalSearch) {
       try {
         const parentMetaRes = await fetch(
           `https://www.googleapis.com/drive/v3/files/${parentId}?fields=id,name,webViewLink`,
@@ -180,6 +273,23 @@ export async function GET(req: NextRequest) {
       } catch (_) {}
     }
 
+    // 3. Compute Real Total Counts and Total Size Upfront
+    let totalFilesCount = files.length;
+    let totalFoldersCount = folders.length;
+    let totalSizeBytes = files.reduce((acc, f) => acc + (f.sizeBytes || 0), 0);
+    let totalSizeFormatted = formatBytes(totalSizeBytes);
+
+    if (!isGlobalSearch) {
+      // If there are more than 100 items (nextPageToken exists), calculate full stats for folder
+      if (nextPageToken || pageToken) {
+        const stats = await getFolderRealStats(accessToken, parentId, `${accountId}_${parentId}`);
+        totalFilesCount = stats.totalFiles;
+        totalFoldersCount = stats.totalFolders;
+        totalSizeBytes = stats.totalSizeBytes;
+        totalSizeFormatted = stats.totalSizeFormatted;
+      }
+    }
+
     return NextResponse.json({
       success: true,
       account_email: account.account_email,
@@ -188,6 +298,12 @@ export async function GET(req: NextRequest) {
       folders,
       files,
       nextPageToken,
+      total_files_count: totalFilesCount,
+      total_folders_count: totalFoldersCount,
+      total_size_bytes: totalSizeBytes,
+      total_size_formatted: totalSizeFormatted,
+      is_search_result: isGlobalSearch,
+      search_query: isGlobalSearch ? searchQuery!.trim() : undefined,
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });

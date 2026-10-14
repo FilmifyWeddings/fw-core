@@ -225,304 +225,317 @@ export default function StudioProfileEditModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 md:p-6 overflow-y-auto">
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm"
-        />
+      <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-5 md:p-6 overflow-y-auto bg-black/60 backdrop-blur-sm">
+        {/* Backdrop click handler */}
+        <div className="fixed inset-0" onClick={onClose} />
 
-        {/* Modal Container in Warm Yellow & Off-White Luxury Theme */}
+        {/* Modal Container in Light Creamy Luxury Aesthetic */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.94, y: 20 }}
+          initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.94, y: 20 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="relative w-full max-w-[620px] bg-[#FDFBF7] rounded-3xl shadow-2xl border border-amber-200/80 overflow-hidden z-10 my-auto flex flex-col max-h-[92vh]"
+          exit={{ opacity: 0, scale: 0.95, y: 15 }}
+          transition={{ duration: 0.2 }}
+          className="relative w-full max-w-2xl bg-[#FEFDF9] dark:bg-[#12161F] rounded-3xl shadow-2xl border border-[#EAE5DA] dark:border-zinc-800 overflow-hidden z-10 my-auto flex flex-col max-h-[90vh]"
         >
-          {/* Header Banner */}
-          <div className="relative bg-gradient-to-r from-amber-400 via-amber-500 to-[#F36F21] px-6 py-5 text-white flex items-center justify-between shrink-0 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 text-white shadow-inner">
-                <Building2 className="w-6 h-6 stroke-[2.2]" />
+          {/* Header */}
+          <div className="px-6 py-5 border-b border-[#EAE5DA] dark:border-zinc-800 flex items-center justify-between shrink-0 bg-[#FEFDF9] dark:bg-[#12161F]">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60 flex items-center justify-center font-bold shadow-xs">
+                <User className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-xl font-black tracking-tight text-white leading-tight">
-                  Studio & Account Profile
+                <h2 className="text-lg font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">
+                  Studio Profile & Branding
                 </h2>
-                <p className="text-xs text-amber-100 font-medium">
-                  Manage branding, contact details, and social links
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  Manage your official studio identity, owner photo, contact details, and social links.
                 </p>
               </div>
             </div>
 
             <button
               onClick={onClose}
-              className="p-2 rounded-full text-white/80 hover:text-white hover:bg-white/20 transition-all cursor-pointer"
+              className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
+          {/* Hidden File Inputs */}
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarChange}
+            className="hidden"
+          />
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleLogoChange}
+            className="hidden"
+          />
+
           {/* Form Content */}
-          <div className="p-5 sm:p-7 overflow-y-auto flex-1 space-y-5 bg-[#FDFBF7]">
+          <div className="p-6 sm:p-7 overflow-y-auto flex-1 space-y-6 bg-[#FEFDF9] dark:bg-[#12161F]">
             {loading ? (
-              <div className="py-16 flex flex-col items-center justify-center gap-3 text-amber-700">
-                <Loader2 className="w-8 h-8 animate-spin text-[#F36F21]" />
+              <div className="py-16 flex flex-col items-center justify-center gap-3 text-zinc-500">
+                <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
                 <span className="text-xs font-bold">Loading Studio Profile...</span>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-6">
                 
                 {errorMessage && (
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+                  <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold">
                     {errorMessage}
                   </div>
                 )}
 
-                {/* ── 1. DUAL BRAND ASSETS: AVATAR & STUDIO LOGO ── */}
-                <div className="grid grid-cols-2 gap-3.5 p-4 rounded-2xl bg-white border border-amber-200/80 shadow-2xs">
-                  
-                  {/* Avatar Upload */}
-                  <div className="flex flex-col items-center text-center">
-                    <span className="text-xs font-black text-zinc-800 mb-2">Profile Photo (Avatar)</span>
-                    <input
-                      ref={avatarInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleAvatarChange}
-                      className="hidden"
-                    />
-                    <div
-                      onClick={() => avatarInputRef.current?.click()}
-                      className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full border-2 border-dashed border-amber-300 hover:border-[#F36F21] bg-amber-50/50 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all group shadow-inner"
-                    >
-                      {isCompressingAvatar ? (
-                        <Loader2 className="w-6 h-6 text-[#F36F21] animate-spin" />
-                      ) : avatarUrl ? (
-                        <>
+                {/* ── 1. DUAL BRAND ASSETS: LOGO & AVATAR ── */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Studio Logo Card */}
+                  <div className="p-5 rounded-2xl bg-white dark:bg-zinc-800/60 border border-[#EAE5DA] dark:border-zinc-700/80 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
+                        Official Studio Logo
+                      </span>
+                      {logoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setLogoUrl('')}
+                          className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 rounded-2xl bg-[#F7F5F0] dark:bg-zinc-800 border-2 border-dashed border-[#EAE5DA] dark:border-zinc-700 flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative group">
+                        {isCompressingLogo ? (
+                          <Loader2 className="w-6 h-6 animate-spin text-amber-600" />
+                        ) : logoUrl ? (
+                          <img src={logoUrl} alt="Studio Logo" className="w-full h-full object-contain p-2" />
+                        ) : (
+                          <Building2 className="w-8 h-8 text-zinc-300 dark:text-zinc-600" />
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => logoInputRef.current?.click()}
+                          disabled={isCompressingLogo}
+                          className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-600 border border-[#EAE5DA] dark:border-zinc-600 text-xs font-bold text-zinc-800 dark:text-zinc-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>{logoUrl ? 'Change Logo' : 'Upload Logo'}</span>
+                        </button>
+                        <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-tight">
+                          Recommended 400×400px (PNG / JPG). Synchronized to PDF quotations and invoices.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Personal / Owner Photo Card */}
+                  <div className="p-5 rounded-2xl bg-white dark:bg-zinc-800/60 border border-[#EAE5DA] dark:border-zinc-700/80 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
+                        Personal / Owner Photo
+                      </span>
+                      {avatarUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setAvatarUrl('')}
+                          className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 rounded-full bg-[#F7F5F0] dark:bg-zinc-800 border-2 border-[#EAE5DA] dark:border-zinc-700 flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative group">
+                        {isCompressingAvatar ? (
+                          <Loader2 className="w-6 h-6 animate-spin text-amber-600" />
+                        ) : avatarUrl ? (
                           <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
-                            <Camera className="w-5 h-5" />
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <Camera className="w-6 h-6 text-amber-500 group-hover:text-[#F36F21] transition-colors" />
-                          <span className="text-[10px] font-extrabold text-amber-700 mt-1">Upload</span>
-                        </>
-                      )}
-                    </div>
-                    {avatarUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setAvatarUrl('')}
-                        className="mt-1.5 text-[10px] font-bold text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-3 h-3" /> Remove
-                      </button>
-                    )}
-                  </div>
+                        ) : (
+                          <User className="w-8 h-8 text-zinc-300 dark:text-zinc-600" />
+                        )}
+                      </div>
 
-                  {/* Studio Logo Upload */}
-                  <div className="flex flex-col items-center text-center">
-                    <span className="text-xs font-black text-zinc-800 mb-2">Studio Brand Logo</span>
-                    <input
-                      ref={logoInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoChange}
-                      className="hidden"
-                    />
-                    <div
-                      onClick={() => logoInputRef.current?.click()}
-                      className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border-2 border-dashed border-amber-300 hover:border-[#F36F21] bg-amber-50/50 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all group shadow-inner"
-                    >
-                      {isCompressingLogo ? (
-                        <Loader2 className="w-6 h-6 text-[#F36F21] animate-spin" />
-                      ) : logoUrl ? (
-                        <>
-                          <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1.5" />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
-                            <Upload className="w-5 h-5" />
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-6 h-6 text-amber-500 group-hover:text-[#F36F21] transition-colors" />
-                          <span className="text-[10px] font-extrabold text-amber-700 mt-1">Brand Logo</span>
-                        </>
-                      )}
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => avatarInputRef.current?.click()}
+                          disabled={isCompressingAvatar}
+                          className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-600 border border-[#EAE5DA] dark:border-zinc-600 text-xs font-bold text-zinc-800 dark:text-zinc-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <Camera className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>{avatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
+                        </button>
+                        <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-tight">
+                          Personal portrait for crew management, WhatsApp signatures, and notifications.
+                        </p>
+                      </div>
                     </div>
-                    {logoUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setLogoUrl('')}
-                        className="mt-1.5 text-[10px] font-bold text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-3 h-3" /> Remove
-                      </button>
-                    )}
                   </div>
-
                 </div>
 
-                {/* ── 2. BASIC STUDIO INFO ── */}
-                <div className="space-y-3 p-4 rounded-2xl bg-white border border-amber-200/80 shadow-2xs">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-[#F36F21]" />
-                    <span>Personal & Studio Identity</span>
-                  </h4>
+                {/* ── 2. STUDIO & CONTACT DETAILS ── */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-zinc-800/60 border border-[#EAE5DA] dark:border-zinc-700/80 shadow-2xs space-y-4">
+                  <h3 className="text-xs font-extrabold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Studio & Contact Details</span>
+                  </h3>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Full Name */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-zinc-700 mb-1">Owner / Full Name</label>
-                      <div className="relative flex items-center">
-                        <div className="absolute left-3 pointer-events-none text-zinc-400">
-                          <User className="w-3.5 h-3.5" />
-                        </div>
-                        <input
-                          type="text"
-                          value={fullName}
-                          onChange={(e) => setFullName(e.target.value)}
-                          placeholder="Your Full Name"
-                          className="w-full pl-9 pr-3 h-9 rounded-xl bg-amber-50/30 border border-amber-200 text-zinc-900 text-xs font-semibold focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
-                        />
-                      </div>
-                    </div>
-
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Studio Name */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-zinc-700 mb-1">Studio / Business Name *</label>
-                      <div className="relative flex items-center">
-                        <div className="absolute left-3 pointer-events-none text-zinc-400">
-                          <Building2 className="w-3.5 h-3.5" />
-                        </div>
-                        <input
-                          type="text"
-                          value={studioName}
-                          onChange={(e) => setStudioName(e.target.value)}
-                          placeholder="Studio / Brand Name"
-                          required
-                          className="w-full pl-9 pr-3 h-9 rounded-xl bg-amber-50/30 border border-amber-200 text-zinc-900 text-xs font-semibold focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Mobile Number */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-zinc-700 mb-1">Mobile / WhatsApp Number</label>
-                      <div className="relative flex items-center">
-                        <div className="absolute left-3 pointer-events-none text-zinc-400">
-                          <Phone className="w-3.5 h-3.5" />
-                        </div>
-                        <input
-                          type="text"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                          placeholder="+91 9876543210"
-                          className="w-full pl-9 pr-3 h-9 rounded-xl bg-amber-50/30 border border-amber-200 text-zinc-900 text-xs font-semibold focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Email ID (Read-only) */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-zinc-700 mb-1">Account Email (Verified)</label>
-                      <div className="relative flex items-center">
-                        <div className="absolute left-3 pointer-events-none text-zinc-400">
-                          <Mail className="w-3.5 h-3.5" />
-                        </div>
-                        <input
-                          type="email"
-                          value={email}
-                          disabled
-                          className="w-full pl-9 pr-3 h-9 rounded-xl bg-zinc-100 border border-zinc-200 text-zinc-500 text-xs font-medium cursor-not-allowed"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Studio Address / Location */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-zinc-700 mb-1">Studio Address / Location</label>
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3 pointer-events-none text-zinc-400">
-                        <MapPin className="w-3.5 h-3.5" />
-                      </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>Studio Brand Name *</span>
+                      </label>
                       <input
                         type="text"
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
-                        placeholder="e.g. Studio 402, Bandra West, Mumbai, Maharashtra"
-                        className="w-full pl-9 pr-3 h-9 rounded-xl bg-amber-50/30 border border-amber-200 text-zinc-900 text-xs font-semibold focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                        value={studioName}
+                        onChange={(e) => setStudioName(e.target.value)}
+                        placeholder="e.g. Filmify Weddings"
+                        required
+                        className="w-full px-4 py-2.5 bg-[#FDFBF7] dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+
+                    {/* Owner Name */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>Owner / Manager Full Name</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="e.g. Sushant Nawale"
+                        className="w-full px-4 py-2.5 bg-[#FDFBF7] dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+
+                    {/* Phone Number */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <Phone className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>Studio Phone / WhatsApp</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="e.g. +91 98765 43210"
+                        className="w-full px-4 py-2.5 bg-[#FDFBF7] dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+
+                    {/* Email (Readonly) */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-zinc-400" />
+                        <span>Account Email (Verified)</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={email}
+                        readOnly
+                        disabled
+                        placeholder="user@studio.com"
+                        className="w-full px-4 py-2.5 bg-zinc-100/80 dark:bg-zinc-800/40 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs sm:text-sm font-medium text-zinc-500 dark:text-zinc-400 cursor-not-allowed shadow-2xs"
                       />
                     </div>
                   </div>
+
+                  {/* Studio Address */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>Studio Physical Address</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      placeholder="e.g. Suite 402, Signature Plaza, Mumbai, Maharashtra 400001"
+                      className="w-full px-4 py-2.5 bg-[#FDFBF7] dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs sm:text-sm font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all resize-none"
+                    />
+                  </div>
                 </div>
 
-                {/* ── 3. SOCIAL MEDIA & LINKS ── */}
-                <div className="space-y-3 p-4 rounded-2xl bg-white border border-amber-200/80 shadow-2xs">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
-                    <ExternalLink className="w-3.5 h-3.5 text-[#F36F21]" />
+                {/* ── 3. SOCIAL MEDIA PRESENCE ── */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-zinc-800/60 border border-[#EAE5DA] dark:border-zinc-700/80 shadow-2xs space-y-4">
+                  <h3 className="text-xs font-extrabold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <ExternalLink className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                     <span>Social Media & Portfolio Links</span>
-                  </h4>
+                  </h3>
 
-                  <div className="space-y-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                     {/* Instagram */}
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3 pointer-events-none text-pink-500">
-                        <InstagramIcon className="w-4 h-4" />
-                      </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <InstagramIcon className="w-3.5 h-3.5 text-[#E4405F]" />
+                        <span>Instagram Handle</span>
+                      </label>
                       <input
                         type="text"
                         value={instagram}
                         onChange={(e) => setInstagram(e.target.value)}
-                        placeholder="Instagram Handle (e.g. @theweddingshots or URL)"
-                        className="w-full pl-9 pr-3 h-9 rounded-xl bg-amber-50/30 border border-amber-200 text-zinc-900 text-xs font-semibold focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                        placeholder="@filmifyweddings"
+                        className="w-full px-3.5 py-2 bg-[#FDFBF7] dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
                       />
                     </div>
 
                     {/* YouTube */}
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3 pointer-events-none text-red-500">
-                        <YoutubeIcon className="w-4 h-4" />
-                      </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <YoutubeIcon className="w-3.5 h-3.5 text-[#FF0000]" />
+                        <span>YouTube Channel</span>
+                      </label>
                       <input
                         type="text"
                         value={youtube}
                         onChange={(e) => setYoutube(e.target.value)}
-                        placeholder="YouTube Channel Link (e.g. youtube.com/@yourstudio)"
-                        className="w-full pl-9 pr-3 h-9 rounded-xl bg-amber-50/30 border border-amber-200 text-zinc-900 text-xs font-semibold focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                        placeholder="youtube.com/@studio"
+                        className="w-full px-3.5 py-2 bg-[#FDFBF7] dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
                       />
                     </div>
 
                     {/* Facebook */}
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3 pointer-events-none text-blue-600">
-                        <FacebookIcon className="w-4 h-4" />
-                      </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <FacebookIcon className="w-3.5 h-3.5 text-[#1877F2]" />
+                        <span>Facebook Page</span>
+                      </label>
                       <input
                         type="text"
                         value={facebook}
                         onChange={(e) => setFacebook(e.target.value)}
-                        placeholder="Facebook Page URL (e.g. facebook.com/yourstudio)"
-                        className="w-full pl-9 pr-3 h-9 rounded-xl bg-amber-50/30 border border-amber-200 text-zinc-900 text-xs font-semibold focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                        placeholder="facebook.com/studio"
+                        className="w-full px-3.5 py-2 bg-[#FDFBF7] dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* ── 4. SUBMIT / SAVE BUTTON ── */}
-                <div className="pt-1 flex items-center justify-end gap-2.5">
+                <div className="pt-2 flex items-center justify-end gap-3 border-t border-[#EAE5DA] dark:border-zinc-800">
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-zinc-600 hover:text-zinc-900 hover:bg-amber-100/60 transition-colors cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -530,22 +543,22 @@ export default function StudioProfileEditModal({
                   <button
                     type="submit"
                     disabled={saving || savedSuccess}
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#F36F21] to-[#FF8A3D] hover:from-[#e06118] hover:to-[#f07b2f] text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-[#F36F21]/20 transition-all cursor-pointer disabled:opacity-60 active:scale-98"
+                    className="px-6 py-2.5 rounded-2xl bg-zinc-900 hover:bg-black dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white text-white font-bold text-xs transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     {saving ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Updating Profile...</span>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving Profile...</span>
                       </>
                     ) : savedSuccess ? (
                       <>
-                        <Check className="w-4 h-4 stroke-[3]" />
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
                         <span>Profile Saved!</span>
                       </>
                     ) : (
                       <>
                         <span>Save Profile Changes</span>
-                        <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                        <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
                       </>
                     )}
                   </button>

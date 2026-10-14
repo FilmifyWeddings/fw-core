@@ -241,6 +241,18 @@ export default function SettingsPage() {
         logoUrl: profileLogoUrl,
       };
 
+      // 0ms Optimistic Local Update
+      if (typeof window !== 'undefined') {
+        if (payload.studioName) {
+          localStorage.setItem('sc_studio_name', payload.studioName);
+          localStorage.setItem('fw_studio_name', payload.studioName);
+        }
+        if (payload.avatarUrl) localStorage.setItem('sc_avatar_url', payload.avatarUrl);
+        if (payload.logoUrl) localStorage.setItem('sc_logo_url', payload.logoUrl);
+        if (payload.fullName) localStorage.setItem('sc_user_name', payload.fullName);
+        window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: payload }));
+      }
+
       const res = await fetch('/api/user/profile-setup', {
         method: 'POST',
         headers: {
@@ -251,16 +263,6 @@ export default function SettingsPage() {
       });
 
       if (res.ok) {
-        if (typeof window !== 'undefined') {
-          if (payload.studioName) {
-            localStorage.setItem('sc_studio_name', payload.studioName);
-            localStorage.setItem('fw_studio_name', payload.studioName);
-          }
-          if (payload.avatarUrl) localStorage.setItem('sc_avatar_url', payload.avatarUrl);
-          if (payload.logoUrl) localStorage.setItem('sc_logo_url', payload.logoUrl);
-          if (payload.fullName) localStorage.setItem('sc_user_name', payload.fullName);
-          window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: payload }));
-        }
         setSaveToast('Profile details saved & synced live across studio!');
         setTimeout(() => setSaveToast(null), 3500);
       } else {
@@ -839,99 +841,93 @@ export default function SettingsPage() {
         meta_auto_sync_enabled: metaAutoSync,
       };
 
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          workspace_id: wId,
-          settings: payloadSettings,
+      // 0ms Optimistic Local Updates & Event Dispatch
+      syncToLocalStorage(wId, payloadSettings);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('settings_updated'));
+      }
+
+      const profPayload = {
+        userId: wId,
+        fullName: profileFullName.trim(),
+        studioName: profileStudioName.trim() || 'My Studio',
+        phone: profilePhone.trim(),
+        address: profileAddress.trim(),
+        instagram: profileInstagram.trim(),
+        youtube: profileYoutube.trim(),
+        facebook: profileFacebook.trim(),
+        avatarUrl: profileAvatarUrl,
+        logoUrl: profileLogoUrl,
+      };
+
+      if (typeof window !== 'undefined') {
+        if (profPayload.studioName) {
+          localStorage.setItem('sc_studio_name', profPayload.studioName);
+          localStorage.setItem('fw_studio_name', profPayload.studioName);
+        }
+        if (profPayload.avatarUrl) localStorage.setItem('sc_avatar_url', profPayload.avatarUrl);
+        if (profPayload.logoUrl) localStorage.setItem('sc_logo_url', profPayload.logoUrl);
+        if (profPayload.fullName) localStorage.setItem('sc_user_name', profPayload.fullName);
+        window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: profPayload }));
+      }
+
+      try {
+        localStorage.setItem('sc_finance_pin_required', financePinLocked ? 'true' : 'false');
+        if (financePinLocked) {
+          sessionStorage.removeItem(`finance_unlocked_${wId}`);
+        }
+      } catch (_) {}
+
+      // Parallel Concurrent Execution of Network Mutations (Sub-Second Save)
+      const [settingsRes, financeRes, quoteRes, profileRes] = await Promise.allSettled([
+        fetch('/api/settings', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            workspace_id: wId,
+            settings: payloadSettings,
+          }),
         }),
-      });
 
-      if (res.ok) {
-        syncToLocalStorage(wId, payloadSettings);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new Event('settings_updated'));
-        }
-        // Save Finance Vault Security Settings
-        try {
-          await supabase
-            .from('finance_security_settings')
-            .upsert([{
-              workspace_id: wId,
-              user_id: wId,
-              is_locked: financePinLocked,
-              pin_hash: financePinCode || '123456',
-              admin_email: financeAdminEmail || '',
-              master_password_hash: financeMasterPassword || '',
-              session_timeout_minutes: Number(financeTimeoutMins) || 60,
-              updated_at: new Date().toISOString()
-            }], { onConflict: 'workspace_id' });
+        supabase
+          .from('finance_security_settings')
+          .upsert([{
+            workspace_id: wId,
+            user_id: wId,
+            is_locked: financePinLocked,
+            pin_hash: financePinCode || '123456',
+            admin_email: financeAdminEmail || '',
+            master_password_hash: financeMasterPassword || '',
+            session_timeout_minutes: Number(financeTimeoutMins) || 60,
+            updated_at: new Date().toISOString()
+          }], { onConflict: 'workspace_id' }),
 
-          try {
-            localStorage.setItem('sc_finance_pin_required', financePinLocked ? 'true' : 'false');
-            if (financePinLocked) {
-              sessionStorage.removeItem(`finance_unlocked_${wId}`);
-            }
-          } catch (_) {}
-        } catch (secSaveErr) {
-          console.warn('Finance vault save note:', secSaveErr);
-        }
+        saveAllWorkspaceQuotationSettings(wId, {
+          ...quotationSettings,
+          pdfTheme,
+          quoteTerms,
+          contractClauses,
+          quoteExpiryDays,
+          currency
+        }),
 
-        // Persist quotation settings
-        try {
-          await saveAllWorkspaceQuotationSettings(wId, {
-            ...quotationSettings,
-            pdfTheme,
-            quoteTerms,
-            contractClauses,
-            quoteExpiryDays,
-            currency
-          });
-        } catch (qErr) {
-          console.warn('Quotation settings save note:', qErr);
-        }
+        fetch('/api/user/profile-setup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
+          },
+          body: JSON.stringify(profPayload),
+        }),
+      ]);
 
-        // Persist studio & account profile
-        try {
-          const profPayload = {
-            userId: wId,
-            fullName: profileFullName.trim(),
-            studioName: profileStudioName.trim() || 'My Studio',
-            phone: profilePhone.trim(),
-            address: profileAddress.trim(),
-            instagram: profileInstagram.trim(),
-            youtube: profileYoutube.trim(),
-            facebook: profileFacebook.trim(),
-            avatarUrl: profileAvatarUrl,
-            logoUrl: profileLogoUrl,
-          };
-          await fetch('/api/user/profile-setup', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
-            },
-            body: JSON.stringify(profPayload),
-          });
-          if (typeof window !== 'undefined') {
-            if (profPayload.studioName) {
-              localStorage.setItem('sc_studio_name', profPayload.studioName);
-              localStorage.setItem('fw_studio_name', profPayload.studioName);
-            }
-            if (profPayload.avatarUrl) localStorage.setItem('sc_avatar_url', profPayload.avatarUrl);
-            if (profPayload.logoUrl) localStorage.setItem('sc_logo_url', profPayload.logoUrl);
-            if (profPayload.fullName) localStorage.setItem('sc_user_name', profPayload.fullName);
-            window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: profPayload }));
-          }
-        } catch (profErr) {
-          console.warn('Profile sync error:', profErr);
-        }
+      const isSettingsOk = settingsRes.status === 'fulfilled' && (settingsRes.value as Response)?.ok;
 
-        setSaveToast('Settings saved & synchronized live across all pages! ');
+      if (isSettingsOk) {
+        setSaveToast('Settings saved & synchronized live across all pages!');
         setTimeout(() => setSaveToast(null), 3500);
       } else {
-        const errJson = await res.json().catch(() => ({}));
+        const errJson = settingsRes.status === 'fulfilled' ? await (settingsRes.value as Response).json().catch(() => ({})) : {};
         alert('Save Failed: ' + (errJson.error || 'Unknown server error'));
       }
     } catch (err: any) {
