@@ -451,7 +451,23 @@ export async function sendMessageServerless(
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         directError = errBody.error || `Worker returned HTTP ${res.status}`;
-        console.warn(`[send] ⚠️ Local worker rejected or not connected: ${directError}. Falling back to queue...`);
+        console.warn(`[send] ⚠️ Local worker rejected or not connected: ${directError}.`);
+        if (directError && directError.includes('Phone number is not registered on WhatsApp')) {
+          if (payload.workflowLogId) {
+            try {
+              await supabaseAdmin
+                .from('whatsapp_workflow_logs')
+                .update({
+                  status: 'failed',
+                  error_message: directError,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', payload.workflowLogId);
+            } catch (_) {}
+          }
+          return { success: false, error: directError };
+        }
+        console.warn(`[send] ⚠️ Falling back to queue for delivery...`);
         shouldQueue = true;
       } else {
         const resData = await res.json();
@@ -1450,6 +1466,21 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
                 })
                 .eq('id', actionId);
 
+              const wfLogId = payload.workflowLogId;
+              if (wfLogId) {
+                try {
+                  await supabaseAdmin
+                    .from('whatsapp_workflow_logs')
+                    .update({
+                      status: 'sent',
+                      sent_at: new Date().toISOString(),
+                      error_message: null,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', wfLogId);
+                } catch (_) {}
+              }
+
               await supabaseAdmin.from('live_logs').insert({
                 workspace_id: workspaceId,
                 event_type: 'queue_action_done',
@@ -1459,6 +1490,22 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
             } catch (err: any) {
               const errMsg = err.message || String(err);
               const newAttemptCount = action.attempt_count + 1;
+              const isNonWhatsApp = errMsg.includes('Phone number is not registered on WhatsApp');
+              const isTerminal = isNonWhatsApp || newAttemptCount >= 5;
+
+              const wfLogId = payload.workflowLogId;
+              if (wfLogId && (isTerminal || isNonWhatsApp)) {
+                try {
+                  await supabaseAdmin
+                    .from('whatsapp_workflow_logs')
+                    .update({
+                      status: 'failed',
+                      error_message: errMsg,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', wfLogId);
+                } catch (_) {}
+              }
 
               // Log: Execution failed
               await supabaseAdmin.from('live_logs').insert({
@@ -1468,12 +1515,12 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
                 metadata: { action_id: actionId, action_type: actionType, error: errMsg, attempt: newAttemptCount }
               });
 
-              if (newAttemptCount >= 5) {
+              if (isTerminal) {
                 await supabaseAdmin
                   .from('baileys_action_queue')
                   .update({
                     status: 'failed',
-                    error_message: `[Attempt ${newAttemptCount}/5] PERMANENTLY FAILED: ${errMsg}`,
+                    error_message: isNonWhatsApp ? errMsg : `[Attempt ${newAttemptCount}/5] PERMANENTLY FAILED: ${errMsg}`,
                     next_retry_at: null
                   })
                   .eq('id', actionId);
@@ -1481,7 +1528,9 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
                 await supabaseAdmin.from('live_logs').insert({
                   workspace_id: workspaceId,
                   event_type: 'queue_action_failed',
-                  message: `🚫 ${stepDesc} — Permanently failed after ${newAttemptCount} attempts. Manual retry required.`,
+                  message: isNonWhatsApp 
+                    ? `🚫 ${stepDesc} — Number is not registered on WhatsApp. No retries.`
+                    : `🚫 ${stepDesc} — Permanently failed after ${newAttemptCount} attempts. Manual retry required.`,
                   metadata: { action_id: actionId, error: errMsg, total_attempts: newAttemptCount }
                 });
               } else {
@@ -1647,6 +1696,21 @@ export async function forceWakeQueue(supabaseAdmin: SupabaseClient, workspaceId:
               })
               .eq('id', action.id);
 
+            const fwWfLogId = action.payload?.workflowLogId;
+            if (fwWfLogId) {
+              try {
+                await supabaseAdmin
+                  .from('whatsapp_workflow_logs')
+                  .update({
+                    status: 'sent',
+                    sent_at: new Date().toISOString(),
+                    error_message: null,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', fwWfLogId);
+              } catch (_) {}
+            }
+
             await supabaseAdmin.from('live_logs').insert({
               workspace_id: workspaceId,
               event_type: 'queue_action_done',
@@ -1656,13 +1720,29 @@ export async function forceWakeQueue(supabaseAdmin: SupabaseClient, workspaceId:
           } catch (err: any) {
             const errMsg = err.message || String(err);
             const newAttemptCount = action.attempt_count + 1;
+            const isNonWhatsApp = errMsg.includes('Phone number is not registered on WhatsApp');
+            const isTerminal = isNonWhatsApp || newAttemptCount >= 5;
 
-            if (newAttemptCount >= 5) {
+            const fwWfLogId = action.payload?.workflowLogId;
+            if (fwWfLogId && (isTerminal || isNonWhatsApp)) {
+              try {
+                await supabaseAdmin
+                  .from('whatsapp_workflow_logs')
+                  .update({
+                    status: 'failed',
+                    error_message: errMsg,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', fwWfLogId);
+              } catch (_) {}
+            }
+
+            if (isTerminal) {
               await supabaseAdmin
                 .from('baileys_action_queue')
                 .update({
                   status: 'failed',
-                  error_message: `[Attempt ${newAttemptCount}/5] PERMANENTLY FAILED: ${errMsg}`,
+                  error_message: isNonWhatsApp ? errMsg : `[Attempt ${newAttemptCount}/5] PERMANENTLY FAILED: ${errMsg}`,
                   next_retry_at: null
                 })
                 .eq('id', action.id);
@@ -1670,7 +1750,9 @@ export async function forceWakeQueue(supabaseAdmin: SupabaseClient, workspaceId:
               await supabaseAdmin.from('live_logs').insert({
                 workspace_id: workspaceId,
                 event_type: 'queue_action_failed',
-                message: `⚠️ Action ${action.action_type} [${action.id}] permanently failed after 5 attempts. (Force-Woken)`,
+                message: isNonWhatsApp
+                  ? `⚠️ Action ${action.action_type} [${action.id}] failed — number not on WhatsApp. (Force-Woken)`
+                  : `⚠️ Action ${action.action_type} [${action.id}] permanently failed after 5 attempts. (Force-Woken)`,
                 metadata: { action_id: action.id, error: errMsg }
               });
             } else {

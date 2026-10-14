@@ -241,6 +241,22 @@ export async function processQueueAction(
         .eq('id', id);
     }
 
+    if (wfLogId) {
+      try {
+        await supabaseAdmin
+          .from('whatsapp_workflow_logs')
+          .update({
+            status: 'sent',
+            sent_at: new Date().toISOString(),
+            error_message: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', wfLogId);
+      } catch (logErr) {
+        console.warn(`[QueueProcessor] Failed to update workflow log sent status:`, logErr);
+      }
+    }
+
     // Log success to live_logs
     await supabaseAdmin.from('live_logs').insert({
       workspace_id,
@@ -269,6 +285,21 @@ export async function processQueueAction(
         next_retry_at: null,
       })
       .eq('id', id);
+
+    if (wfLogId) {
+      try {
+        await supabaseAdmin
+          .from('whatsapp_workflow_logs')
+          .update({
+            status: 'failed',
+            error_message: errMsg,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', wfLogId);
+      } catch (logErr) {
+        console.warn(`[QueueProcessor] Failed to update workflow log failed status:`, logErr);
+      }
+    }
 
     // Log failure to live_logs
     await supabaseAdmin.from('live_logs').insert({

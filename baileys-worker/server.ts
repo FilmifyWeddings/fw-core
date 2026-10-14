@@ -1166,6 +1166,37 @@ async function executeAction(action: {
   let waMessageId: string | null = null;
 
   try {
+    // ── Pre-flight onWhatsApp validation for individual numbers ─────────────
+    const targetTo = (action.payload as any)?.to || (action.payload as any)?.jid;
+    if (targetTo && typeof targetTo === 'string' && !targetTo.endsWith('@g.us')) {
+      const cleanDigits = targetTo.split('@')[0].replace(/[^0-9]/g, '');
+      if (cleanDigits) {
+        try {
+          const waResults = await targetSock.onWhatsApp(cleanDigits);
+          if (!waResults || waResults.length === 0 || !waResults[0]?.exists) {
+            const notOnWaErr = 'Phone number is not registered on WhatsApp';
+            logger.warn({ targetTo, cleanDigits }, `⚠️ ${notOnWaErr}`);
+            if (checkLogId) {
+              await supabase
+                .from('whatsapp_workflow_logs')
+                .update({
+                  status: 'failed',
+                  error_message: notOnWaErr,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', checkLogId);
+            }
+            throw new Error(notOnWaErr);
+          }
+        } catch (checkErr: any) {
+          if (checkErr.message === 'Phone number is not registered on WhatsApp') {
+            throw checkErr;
+          }
+          logger.warn({ err: checkErr.message, targetTo }, 'onWhatsApp verification soft-error (will proceed with send)');
+        }
+      }
+    }
+
     // ── Dispatch: throws on failure so the processor marks it 'failed' ──────────
     switch (action.action_type) {
       case 'send_text': {
@@ -1292,6 +1323,23 @@ async function executeAction(action: {
     }
   } catch (err: any) {
     const errStr = String(err?.message || err);
+
+    // Sync workflow log failure if applicable
+    if (checkLogId) {
+      try {
+        await supabase
+          .from('whatsapp_workflow_logs')
+          .update({
+            status: 'failed',
+            error_message: errStr,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', checkLogId);
+      } catch (logErr) {
+        logger.warn({ logErr, checkLogId }, 'Failed to update workflow log error status');
+      }
+    }
+
     const isDisconnectError = 
       errStr.includes('401') || errStr.includes('403') || errStr.includes('428') || 
       errStr.includes('515') || errStr.toLowerCase().includes('logged out') || 
@@ -1335,6 +1383,23 @@ async function executeAction(action: {
       logger.error({ actionId: action.id, err: doneErr.message }, '⚠️  Message sent but done-write failed. Processor will handle.');
     } else {
       logger.info({ actionId: action.id, type: action.action_type, waMessageId }, '✅ Action executed and status=done written immediately');
+    }
+
+    // Sync workflow log to sent
+    if (checkLogId) {
+      try {
+        await supabase
+          .from('whatsapp_workflow_logs')
+          .update({
+            status: 'sent',
+            sent_at: new Date().toISOString(),
+            error_message: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', checkLogId);
+      } catch (logErr) {
+        logger.warn({ logErr, checkLogId }, 'Failed to update workflow log sent status');
+      }
     }
   } catch (dbWriteErr: unknown) {
     // DB write failed but message was already sent — log and continue.
@@ -2260,6 +2325,30 @@ function startHealthServer(): http.Server {
 
         let waMessageId: string | null = null;
         const jid = to;
+
+        // ── Pre-flight onWhatsApp validation for individual numbers ─────────────
+        if (typeof jid === 'string' && !jid.endsWith('@g.us')) {
+          const cleanDigits = jid.split('@')[0].replace(/[^0-9]/g, '');
+          if (cleanDigits) {
+            try {
+              const waResults = await targetSock.onWhatsApp(cleanDigits);
+              if (!waResults || waResults.length === 0 || !waResults[0]?.exists) {
+                const notOnWaErr = 'Phone number is not registered on WhatsApp';
+                logger.warn({ jid, cleanDigits }, `⚠️ ${notOnWaErr}`);
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: notOnWaErr }));
+                return;
+              }
+            } catch (checkErr: any) {
+              if (checkErr.message === 'Phone number is not registered on WhatsApp') {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: checkErr.message }));
+                return;
+              }
+              logger.warn({ err: checkErr.message, jid }, 'onWhatsApp verification soft-error (will proceed with send)');
+            }
+          }
+        }
 
         switch (type) {
           case 'text':

@@ -1,37 +1,41 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Search, SlidersHorizontal, ChevronRight, Check, Sparkles, ShieldCheck,
-  Sun, Moon
+  Search, Check, ArrowRight, ArrowLeft, Plus, ExternalLink,
+  ShieldCheck, Sparkles, RefreshCw
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
 import { WhatsAppBetaConnectModal } from '@/components/integrations/whatsapp-beta-connect-modal';
 
-interface IntegrationCard {
+type IntegrationCategory = 'all' | 'marketing' | 'communication' | 'productivity' | 'storage';
+
+interface IntegrationItem {
   id: string;
   name: string;
-  category: 'marketing' | 'workflow' | 'workspace';
+  category: 'marketing' | 'communication' | 'productivity' | 'storage';
   description: string;
-  logoName: string;
+  logo: React.ReactNode;
   status: 'connected' | 'disconnected';
   path: string;
-  metaText: string;
+  metaBadge?: string;
+  actionType?: 'link' | 'modal' | 'toggle';
 }
 
 function IntegrationsCore() {
   const router = useRouter();
-  const { workspaceName, userEmail } = useBhamstra();
+  const { workspaceId, userId } = useBhamstra();
+  const effectiveWs = (workspaceId && workspaceId !== 'all') ? workspaceId : (userId || '');
 
-  // Search & Filter state
+  // Search & Category Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'connected' | 'disconnected'>('all');
-  
-  // Local integration statuses
+  const [selectedCategory, setSelectedCategory] = useState<IntegrationCategory>('all');
+
+  // Integration Connection States
   const [whatsappConnected, setWhatsappConnected] = useState(true);
   const [whatsappBetaConnected, setWhatsappBetaConnected] = useState(false);
   const [metaConnected, setMetaConnected] = useState(true);
@@ -40,32 +44,55 @@ function IntegrationsCore() {
   const [calendarConnected, setGoogleCalendarConnected] = useState(false);
   const [sheetsConnected, setGoogleSheetsConnected] = useState(false);
   const [smtpConnected, setSmtpConnected] = useState(false);
-  const [betaModalOpen, setBetaModalOpen] = useState(false);
-  const [currentWsId, setCurrentWsId] = useState('');
+  const [googleDriveConnected, setGoogleDriveConnected] = useState(false);
+  const [driveAccountsCount, setDriveAccountsCount] = useState(0);
 
-  // Sync state with database (Law 1 Multi-Tenancy)
+  const [betaModalOpen, setBetaModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Sync state with database & Google Storage accounts API
   useEffect(() => {
-    const fetchCreds = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      setCurrentWsId(session.user.id);
-      
+    const fetchAllStatuses = async () => {
       try {
-        // 1. Check Evolution Instances
+        const { data: { session } } = await supabase.auth.getSession();
+        const activeUser = session?.user?.id || effectiveWs;
+        if (!activeUser) return;
+
+        // 1. Check Google Drive Connected Accounts
+        if (effectiveWs) {
+          try {
+            const driveRes = await fetch(`/api/storage/google/accounts?workspace_id=${encodeURIComponent(effectiveWs)}`);
+            if (driveRes.ok) {
+              const driveData = await driveRes.json();
+              if (driveData.success && Array.isArray(driveData.accounts) && driveData.accounts.length > 0) {
+                setGoogleDriveConnected(true);
+                setDriveAccountsCount(driveData.accounts.length);
+              } else {
+                setGoogleDriveConnected(false);
+                setDriveAccountsCount(0);
+              }
+            }
+          } catch (driveErr) {
+            console.warn('Drive accounts fetch error:', driveErr);
+          }
+        }
+
+        // 2. Check Evolution Instances for WhatsApp Beta
         const { data: evoInst } = await supabase
           .from('evolution_instances')
           .select('connection_status')
-          .eq('workspace_id', session.user.id)
+          .eq('workspace_id', activeUser)
           .maybeSingle();
 
         if (evoInst?.connection_status === 'CONNECTED') {
           setWhatsappBetaConnected(true);
         }
 
+        // 3. Check integration_credentials
         const { data: creds } = await supabase
           .from('integration_credentials')
           .select('*')
-          .eq('user_id', session.user.id);
+          .eq('user_id', activeUser);
 
         if (creds) {
           creds.forEach(c => {
@@ -77,7 +104,6 @@ function IntegrationsCore() {
             if (c.provider === 'google_contacts') setGoogleContactsConnected(c.status === 'connected');
             if (c.provider === 'google_sheets') setGoogleSheetsConnected(c.status === 'connected');
             if (c.provider === 'google_calendar') setGoogleCalendarConnected(c.status === 'connected');
-            // Legacy fallback if single 'google' credential exists
             if (c.provider === 'google') {
               const cfg = (c.config as any) || {};
               if (cfg.contacts_enabled !== undefined) {
@@ -90,306 +116,442 @@ function IntegrationsCore() {
           });
         }
       } catch (err) {
-        console.log('Credentials sync skipped.');
+        console.warn('Integrations status sync skipped:', err);
       }
     };
-    fetchCreds();
-  }, []);
 
-  const handleToggleStatus = async (id: string, currentStatus: boolean) => {
-    const nextStatus = !currentStatus;
-    if (id === 'whatsapp-web') setWhatsappConnected(nextStatus);
-    if (id === 'whatsapp-web-beta') setWhatsappBetaConnected(nextStatus);
-    if (id === 'meta-ads') setMetaConnected(nextStatus);
-    if (id === 'personal-website') setWebsiteConnected(nextStatus);
-    if (id === 'google-contacts') setGoogleContactsConnected(nextStatus);
-    if (id === 'google-calendar') setGoogleCalendarConnected(nextStatus);
-    if (id === 'google-sheets') setGoogleSheetsConnected(nextStatus);
-    if (id === 'gmail-smtp') setSmtpConnected(nextStatus);
+    fetchAllStatuses();
+  }, [effectiveWs]);
 
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      
-      const targetDbProvider = id === 'personal-website' ? 'custom_website' : 
-                               id === 'whatsapp-web' ? 'whatsapp' : 
-                               id === 'whatsapp-web-beta' ? 'evolution_whatsapp' :
-                               id === 'meta-ads' ? 'meta' : 
-                               id === 'google-contacts' ? 'google_contacts' :
-                               id === 'google-sheets' ? 'google_sheets' :
-                               id === 'google-calendar' ? 'google_calendar' :
-                               id === 'gmail-smtp' ? 'smtp' : 'google';
-
-      await supabase
-        .from('integration_credentials')
-        .upsert({
-          user_id: session.user.id,
-          provider: targetDbProvider,
-          status: nextStatus ? 'connected' : 'disconnected',
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id, provider' });
-    } catch (err) {
-      console.log('Skipped database save.');
-    }
-  };
-
-  const integrations: IntegrationCard[] = [
+  const integrationsList: IntegrationItem[] = useMemo(() => [
+    {
+      id: 'google-drive',
+      name: 'Google Drive',
+      category: 'storage',
+      description: 'Seamlessly connect and sync event photos, videos, and client deliverables.',
+      logo: (
+        <svg viewBox="0 0 87.3 78" className="w-6 h-6">
+          <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+          <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+          <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+          <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+          <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+          <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+        </svg>
+      ),
+      status: googleDriveConnected ? 'connected' : 'disconnected',
+      path: '/workspace/storage',
+      metaBadge: driveAccountsCount > 0 ? `${driveAccountsCount} account${driveAccountsCount > 1 ? 's' : ''} connected` : undefined,
+    },
     {
       id: 'whatsapp-web',
       name: 'WhatsApp Web',
-      category: 'marketing',
-      description: 'Trigger notifications and reply via our serverless socket gateway.',
-      logoName: 'whatsapp.png',
+      category: 'communication',
+      description: 'Trigger automated workflow drips, booking alerts, and templates via serverless socket.',
+      logo: (
+        <img src="/images/integrations/whatsapp.png" alt="WhatsApp" className="w-6 h-6 object-contain" />
+      ),
       status: whatsappConnected ? 'connected' : 'disconnected',
       path: '/dashboard/integrations/whatsapp-web',
-      metaText: 'WhatsApp Socket Gateway API'
+      metaBadge: whatsappConnected ? 'Socket Gateway Active' : undefined,
     },
     {
       id: 'meta-ads',
       name: 'Meta Ads Manager',
       category: 'marketing',
-      description: 'Ingest leads automatically from Facebook & Instagram lead campaigns.',
-      logoName: 'meta.png',
+      description: 'Ingest leads automatically in real-time from Facebook & Instagram lead campaigns.',
+      logo: (
+        <img src="/images/integrations/meta.png" alt="Meta" className="w-6 h-6 object-contain" />
+      ),
       status: metaConnected ? 'connected' : 'disconnected',
       path: '/workspace/integrations/meta',
-      metaText: 'Facebook/Instagram Forms Sync'
+      metaBadge: metaConnected ? 'Realtime Webhook Live' : undefined,
     },
     {
       id: 'google-sheets',
       name: 'Google Sheets',
-      category: 'workspace',
-      description: 'Fetch and append rows, map columns, and sync spreadsheet databases.',
-      logoName: 'google-sheets.png',
+      category: 'productivity',
+      description: 'Append rows, map custom columns, and sync spreadsheet databases with 2-way sync.',
+      logo: (
+        <img src="/images/integrations/google-sheets.png" alt="Google Sheets" className="w-6 h-6 object-contain" />
+      ),
       status: sheetsConnected ? 'connected' : 'disconnected',
       path: '/dashboard/integrations/google-sheets',
-      metaText: 'Spreadsheet Cloud Integration'
     },
     {
       id: 'personal-website',
       name: 'Personal Website Webhook',
       category: 'marketing',
-      description: 'Map incoming payloads from WordPress and Elementor forms.',
-      logoName: 'wordpress.png',
+      description: 'Capture incoming inquiries from WordPress, Elementor, and custom website forms.',
+      logo: (
+        <img src="/images/integrations/wordpress.png" alt="Website Webhook" className="w-6 h-6 object-contain" />
+      ),
       status: websiteConnected ? 'connected' : 'disconnected',
       path: '/dashboard/integrations/personal-website',
-      metaText: 'WordPress API Key Ingress'
     },
     {
       id: 'google-contacts',
       name: 'Google Contacts',
-      category: 'workspace',
-      description: 'Export and sync verified client profiles to your Google Phonebook.',
-      logoName: 'google-contacts.png',
+      category: 'productivity',
+      description: 'Export and sync verified client profiles automatically to your Google Phonebook.',
+      logo: (
+        <img src="/images/integrations/google-contacts.png" alt="Google Contacts" className="w-6 h-6 object-contain" />
+      ),
       status: contactsConnected ? 'connected' : 'disconnected',
       path: '/dashboard/integrations/google-contacts',
-      metaText: 'Contacts Auto-Sync Engine'
     },
     {
       id: 'google-calendar',
       name: 'Google Calendar',
-      category: 'workspace',
-      description: 'Automatically block dates and sync event timelines to Calendar.',
-      logoName: 'google-calendar.png',
+      category: 'productivity',
+      description: 'Automatically block shoot dates and sync sub-event timelines to your calendar.',
+      logo: (
+        <img src="/images/integrations/google-calendar.png" alt="Google Calendar" className="w-6 h-6 object-contain" />
+      ),
       status: calendarConnected ? 'connected' : 'disconnected',
       path: '/dashboard/integrations/google-calendar',
-      metaText: 'Calendar Shoot Date Blocker'
     },
     {
       id: 'gmail-smtp',
       name: 'Gmail SMTP Server',
-      category: 'workflow',
-      description: 'Configure custom email SMTP servers to send client updates.',
-      logoName: 'gmail.png',
+      category: 'communication',
+      description: 'Configure custom email SMTP servers to dispatch official quotes and client updates.',
+      logo: (
+        <img src="/images/integrations/gmail.png" alt="Gmail" className="w-6 h-6 object-contain" />
+      ),
       status: smtpConnected ? 'connected' : 'disconnected',
       path: '/dashboard/integrations/gmail-smtp',
-      metaText: 'SMTP Outgoing Dispatch'
-    }
-  ];
+    },
+  ], [googleDriveConnected, driveAccountsCount, whatsappConnected, metaConnected, sheetsConnected, websiteConnected, contactsConnected, calendarConnected, smtpConnected]);
 
-  // Filters logic
-  const filteredIntegrations = integrations.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          item.description.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (activeTab === 'connected') return matchesSearch && item.status === 'connected';
-    if (activeTab === 'disconnected') return matchesSearch && item.status === 'disconnected';
-    return matchesSearch;
-  });
+  // Filter integrations based on category & search query
+  const filteredIntegrations = useMemo(() => {
+    return integrationsList.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            item.description.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      if (selectedCategory === 'all') return matchesSearch;
+      return matchesSearch && item.category === selectedCategory;
+    });
+  }, [integrationsList, searchQuery, selectedCategory]);
 
   return (
-    <div className="min-h-screen bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100 selection:bg-emerald-500/10 transition-colors duration-200">
+    <div className="min-h-screen bg-[#F6F8FA] dark:bg-[#090C10] text-zinc-900 dark:text-zinc-100 p-3 sm:p-6 lg:p-8 flex items-center justify-center font-sans antialiased">
       
-      {/* Background glow overlay */}
-      <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
-
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 space-y-8 relative z-10">
+      {/* Outer Modern Card Container */}
+      <div className="w-full max-w-6xl bg-white dark:bg-[#12161F] rounded-3xl border border-zinc-200/80 dark:border-zinc-800 shadow-2xl shadow-zinc-300/40 dark:shadow-none overflow-hidden flex flex-col lg:flex-row min-h-[740px]">
         
-        {/* Header Section */}
-        <div className="space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold font-mono tracking-wide">
-            <Sparkles className="w-3.5 h-3.5" /> 1-CLICK CLOUD SYNC HUB
+        {/* ── Left Hero Panel (Untitled UI Style) ────────────────────────── */}
+        <div className="lg:w-[38%] bg-[#F9FAFC] dark:bg-[#0E121A] p-7 sm:p-9 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-zinc-200/80 dark:border-zinc-800/80 relative overflow-hidden">
+          
+          {/* Top Brand Logo */}
+          <div className="flex items-center gap-2.5 z-10">
+            {/* Sunburst Asterisk Brand Mark */}
+            <div className="w-7 h-7 flex items-center justify-center text-zinc-900 dark:text-white">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-6 h-6">
+                <line x1="12" y1="2" x2="12" y2="6"></line>
+                <line x1="12" y1="18" x2="12" y2="22"></line>
+                <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                <line x1="2" y1="12" x2="6" y2="12"></line>
+                <line x1="18" y1="12" x2="22" y2="12"></line>
+                <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+              </svg>
+            </div>
+            <span className="font-bold text-lg tracking-tight text-zinc-950 dark:text-white">
+              Studio Core
+            </span>
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl text-zinc-900 dark:text-white">
-            Integrations Center
-          </h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-2xl leading-relaxed">
-            Link Meta lead campaigns, WhatsApp gateways, website webhooks, and Google Workspace utilities to automate studio operations.
-          </p>
+
+          {/* Floating App Icon Collage */}
+          <div className="my-8 relative select-none pointer-events-none">
+            {/* Top & Bottom Gradient Fades */}
+            <div className="absolute -top-4 inset-x-0 h-10 bg-gradient-to-b from-[#F9FAFC] dark:from-[#0E121A] to-transparent z-10" />
+            <div className="absolute -bottom-4 inset-x-0 h-10 bg-gradient-to-t from-[#F9FAFC] dark:from-[#0E121A] to-transparent z-10" />
+
+            <div className="space-y-3 opacity-95">
+              {/* Row 1 */}
+              <div className="flex items-center gap-3 -ml-4">
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
+                  <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                    <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                    <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                    <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                    <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                    <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                    <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                  </svg>
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
+                  <img src="/images/integrations/gmail.png" alt="Gmail" className="w-full h-full object-contain" />
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
+                  <img src="/images/integrations/whatsapp.png" alt="WhatsApp" className="w-full h-full object-contain" />
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#00897B] border border-emerald-600/30 shadow-md flex items-center justify-center text-white font-black text-sm">
+                  W
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
+                  <img src="/images/integrations/google-calendar.png" alt="Calendar" className="w-full h-full object-contain" />
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 shadow-md flex items-center justify-center text-orange-500 font-bold text-xs">
+                  ⚡
+                </div>
+              </div>
+
+              {/* Row 2 */}
+              <div className="flex items-center gap-3 ml-2">
+                <div className="w-12 h-12 rounded-2xl bg-[#0061FF] shadow-md flex items-center justify-center p-2 text-white">
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                    <path d="M6 3.5l6 3.9-6 3.9-6-3.9 6-3.9zm12 0l6 3.9-6 3.9-6-3.9 6-3.9zm-12 9.9l6 3.9-6 3.9-6-3.9 6-3.9zm12 0l6 3.9-6 3.9-6-3.9 6-3.9zm-6 4.7l6-3.9 6 3.9-6 3.9-6-3.9z"/>
+                  </svg>
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
+                  <img src="/images/integrations/google-contacts.png" alt="Contacts" className="w-full h-full object-contain" />
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
+                  <img src="/images/integrations/google-sheets.png" alt="Sheets" className="w-full h-full object-contain" />
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#000000] dark:bg-white text-white dark:text-black shadow-md flex items-center justify-center font-bold text-sm">
+                  N
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#5865F2] shadow-md flex items-center justify-center text-white font-bold text-sm">
+                  💬
+                </div>
+              </div>
+
+              {/* Row 3 */}
+              <div className="flex items-center gap-3 -ml-2">
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
+                  <img src="/images/integrations/meta.png" alt="Meta" className="w-full h-full object-contain" />
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#FFE01B] shadow-md flex items-center justify-center p-2">
+                  <span className="font-black text-black text-xs">MC</span>
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/80 shadow-md flex items-center justify-center p-2.5">
+                  <img src="/images/integrations/wordpress.png" alt="WordPress" className="w-full h-full object-contain" />
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#5E6AD2] shadow-md flex items-center justify-center text-white font-bold text-xs">
+                  Linear
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#E24329] shadow-md flex items-center justify-center text-white font-bold text-xs">
+                  🦊
+                </div>
+              </div>
+
+              {/* Row 4 */}
+              <div className="flex items-center gap-3 ml-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#4A154B] shadow-md flex items-center justify-center text-white font-bold text-sm">
+                  #
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#03363D] shadow-md flex items-center justify-center text-emerald-400 font-bold text-sm">
+                  Z
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#625DF5] shadow-md flex items-center justify-center text-white font-bold text-xs">
+                  Loom
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#F06A6A] shadow-md flex items-center justify-center text-white font-bold text-xs">
+                  Asana
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#FF4F00] shadow-md flex items-center justify-center text-white font-bold text-xs">
+                  *
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Heading & Step Indicator */}
+          <div className="space-y-4 z-10">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Step 2
+              </span>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-zinc-950 dark:text-white tracking-tight mt-1">
+                Add integrations
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-2 leading-relaxed">
+                Supercharge your workflow and connect the tools you use every day to your account.
+              </p>
+            </div>
+
+            {/* Step Progress Dash Indicators */}
+            <div className="flex items-center gap-2 pt-2">
+              <div className="h-1.5 w-12 rounded-full bg-zinc-900 dark:bg-white" />
+              <div className="h-1.5 w-12 rounded-full bg-zinc-900 dark:bg-white" />
+              <div className="h-1.5 w-12 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+              <div className="h-1.5 w-12 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+            </div>
+          </div>
+
         </div>
 
-        {/* Filter & Search Controls Bar */}
-        <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center p-3 rounded-2xl bg-zinc-150/50 dark:bg-zinc-900/30 border border-zinc-200 dark:border-zinc-800/80 backdrop-blur-md">
-          {/* Filtering tabs */}
-          <div className="flex gap-1.5 bg-zinc-200/50 dark:bg-zinc-900/60 p-1 rounded-xl border border-zinc-300/40 dark:border-zinc-800/40">
-            {(['all', 'connected', 'disconnected'] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 rounded-lg text-xs font-bold capitalize transition-all focus:outline-none ${
-                  activeTab === tab 
-                    ? 'bg-white dark:bg-zinc-850 text-zinc-950 dark:text-white shadow-sm' 
-                    : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
-                }`}
+        {/* ── Right Integrations & Connected Apps Panel ─────────────────── */}
+        <div className="lg:w-[62%] p-6 sm:p-8 flex flex-col justify-between bg-white dark:bg-[#12161F]">
+          
+          <div className="space-y-6">
+            
+            {/* Header: Title & "+ Custom integration" Button */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">
+                  Integrations and connected apps
+                </h1>
+                <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                  Supercharge your workflow and connect the tool you use every day.
+                </p>
+              </div>
+
+              <Link
+                href="/dashboard/integrations/personal-website"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-zinc-250 dark:border-zinc-700 bg-white dark:bg-zinc-850 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 shadow-sm transition-all shrink-0 w-fit"
               >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          {/* Search Input bar */}
-          <div className="flex items-center gap-3 flex-1 md:max-w-sm">
-            <div className="relative w-full">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search integrations..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-xs bg-white dark:bg-zinc-900 border border-zinc-250 dark:border-zinc-800/80 rounded-xl text-zinc-800 dark:text-zinc-200 placeholder-zinc-450 focus:outline-none focus:border-emerald-500/40 focus:ring-1 focus:ring-emerald-500/10 transition-all"
-              />
+                <Plus className="w-3.5 h-3.5" />
+                <span>Custom integration</span>
+              </Link>
             </div>
-            <div className="p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl cursor-pointer text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-all shrink-0">
-              <SlidersHorizontal className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
 
-        {/* Mapped integration Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <AnimatePresence>
-            {filteredIntegrations.map((item) => {
-              const isConnected = item.status === 'connected';
+            {/* Filter Pills & Search Bar Row */}
+            <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
               
-              return (
-                <motion.div
-                  key={item.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.2 }}
-                  className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-950/40 backdrop-blur-md flex flex-col justify-between min-h-[220px] shadow-sm hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700/80 transition-all group relative overflow-hidden"
-                >
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-start">
-                      {/* Logo PNG */}
-                      <div className="w-12 h-12 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/50 flex items-center justify-center shrink-0 shadow-sm p-2">
-                        <img 
-                          src={`/images/integrations/${item.logoName}`} 
-                          alt={item.name} 
-                          className="w-full h-full object-contain"
-                        />
-                      </div>
-                      
-                      {/* Status indicator */}
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-850">
-                        <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                        <span className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 capitalize">
-                          {item.status}
-                        </span>
-                      </div>
-                    </div>
+              {/* Category Filter Pills */}
+              <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-850/80 rounded-xl overflow-x-auto border border-zinc-200/60 dark:border-zinc-800 scrollbar-none">
+                {[
+                  { id: 'all', label: 'All integrations' },
+                  { id: 'marketing', label: 'Marketing & Leads' },
+                  { id: 'communication', label: 'Communication' },
+                  { id: 'productivity', label: 'Productivity' },
+                  { id: 'storage', label: 'Storage & Cloud' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setSelectedCategory(tab.id as IntegrationCategory)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all focus:outline-none ${
+                      selectedCategory === tab.id
+                        ? 'bg-white dark:bg-zinc-750 text-zinc-950 dark:text-white shadow-sm'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-                    <div>
-                      <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                        {item.name}
-                      </h3>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1.5 leading-relaxed">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
+              {/* Search Bar */}
+              <div className="relative w-full md:w-56 shrink-0">
+                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-zinc-850 border border-zinc-250 dark:border-zinc-750 rounded-xl text-xs text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 shadow-sm transition-all"
+                />
+              </div>
 
-                  {/* Actions Footer */}
-                  <div className="flex items-center justify-between pt-4 border-t border-zinc-100 dark:border-zinc-900/60 mt-4">
-                    <span className="text-[9px] text-zinc-400 dark:text-zinc-550 font-mono tracking-tight truncate max-w-[120px]">
-                      {item.metaText}
-                    </span>
+            </div>
 
-                    <div className="flex items-center gap-2.5">
-                      {/* Custom Toggle Switch */}
-                      <button
-                        onClick={() => handleToggleStatus(item.id, isConnected)}
-                        className={`w-8 h-4.5 rounded-full p-0.5 transition-colors focus:outline-none shrink-0 ${
-                          isConnected ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-800'
-                        }`}
-                      >
-                        <div className={`w-3.5 h-3.5 rounded-full bg-white dark:bg-zinc-950 transition-transform ${
-                          isConnected ? 'translate-x-3' : 'translate-x-0'
-                        }`} />
-                      </button>
+            {/* Integrations Table / List */}
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-850/70 border-t border-b border-zinc-100 dark:divide-zinc-850/70">
+              {filteredIntegrations.length === 0 ? (
+                <div className="py-12 text-center text-zinc-400 text-xs font-mono">
+                  No integrations found matching your filter criteria.
+                </div>
+              ) : (
+                filteredIntegrations.map((item) => {
+                  const isConnected = item.status === 'connected';
 
-                      {/* Configure Button link */}
-                      {item.id === 'whatsapp-web-beta' ? (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setBetaModalOpen(true)}
-                            className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold rounded-xl transition-all"
-                          >
-                            QR
-                          </button>
-                          <Link
-                            href={item.path}
-                            className="px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-850 border border-zinc-850 hover:border-zinc-700 text-white text-[10px] font-bold rounded-xl transition-all flex items-center gap-0.5"
-                          >
-                            Config <ChevronRight className="w-3.5 h-3.5" />
-                          </Link>
+                  return (
+                    <div
+                      key={item.id}
+                      className="py-4 px-2 hover:bg-zinc-50/70 dark:hover:bg-zinc-850/40 rounded-xl transition-all flex items-center justify-between gap-4 group"
+                    >
+                      {/* Left Side: Logo & Info */}
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200/70 dark:border-zinc-700/60 shadow-xs flex items-center justify-center shrink-0">
+                          {item.logo}
                         </div>
-                      ) : (
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-zinc-950 dark:text-white truncate">
+                              {item.name}
+                            </span>
+                            {item.metaBadge && (
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                                {item.metaBadge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                            {item.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right Side: Learn More & Action Button */}
+                      <div className="flex items-center gap-4 shrink-0">
                         <Link
                           href={item.path}
-                          className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-850 border border-zinc-850 hover:border-zinc-700 text-white text-[10px] font-bold rounded-xl transition-all flex items-center gap-0.5"
+                          className="text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors hidden sm:block"
                         >
-                          Configure <ChevronRight className="w-3.5 h-3.5" />
+                          Learn more
                         </Link>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
 
-        {/* Security / System Rules Info */}
-        <div className="p-4.5 rounded-2xl bg-zinc-100 dark:bg-zinc-900/30 border border-zinc-200 dark:border-zinc-800 flex items-start gap-3">
-          <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <h5 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Secure RLS Isolation Verified</h5>
-            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
-              All integrated tokens and API credentials stored in your database profiles are fully locked via PostgreSQL Row Level Security checks. Third-party integrations are isolated strictly by workspace bounds.
-            </p>
+                        {isConnected ? (
+                          <Link
+                            href={item.path}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-950 hover:bg-zinc-850 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 shadow-sm transition-all"
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                            <span>Connected</span>
+                          </Link>
+                        ) : (
+                          <Link
+                            href={item.path}
+                            className="inline-flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-900 dark:text-white border border-zinc-250 dark:border-zinc-700 shadow-xs transition-all"
+                          >
+                            <span>Connect</span>
+                          </Link>
+                        )}
+                      </div>
+
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
           </div>
+
+          {/* Bottom Navigation Buttons (Step Navigation) */}
+          <div className="pt-6 mt-6 border-t border-zinc-100 dark:border-zinc-850 flex items-center justify-between">
+            <button
+              onClick={() => router.back()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 border border-zinc-250 dark:border-zinc-750 hover:bg-zinc-50 dark:hover:bg-zinc-800 shadow-xs transition-all"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Previous step</span>
+            </button>
+
+            <Link
+              href="/workspace/crm"
+              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold bg-zinc-950 hover:bg-zinc-850 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 shadow-sm transition-all"
+            >
+              <span>Next step</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
         </div>
 
       </div>
 
-      {/* WhatsApp Beta Connect Modal */}
-      {currentWsId && (
+      {/* WhatsApp Beta Connect Modal preserved */}
+      {effectiveWs && (
         <WhatsAppBetaConnectModal
           isOpen={betaModalOpen}
           onClose={() => setBetaModalOpen(false)}
-          workspaceId={currentWsId}
+          workspaceId={effectiveWs}
           onConnectionChange={(status) => setWhatsappBetaConnected(status === 'CONNECTED')}
         />
       )}

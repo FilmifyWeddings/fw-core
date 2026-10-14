@@ -66,12 +66,15 @@ export function AssignLeadGroupModal({
 
     async function fetchGroupWorkflows() {
       try {
+        const effectiveWs = workspaceId || lead?.workspace_id || '';
         const res = await fetch(
-          `/api/integrations/whatsapp/workflows?groupId=${selectedGroupId}&tenantId=${workspaceId}`
+          `/api/integrations/whatsapp/workflows?tenant_id=${effectiveWs}`
         );
         const data = await res.json();
-        if (isMounted && res.ok && data.workflows) {
-          const wfs = (data.workflows || []).filter((w: any) => w.status === 'Active');
+        if (isMounted && res.ok && data.success && Array.isArray(data.results)) {
+          const wfs = data.results.filter(
+            (w: any) => w.target_group_id === selectedGroupId && w.status === 'Active'
+          );
           setActiveWorkflows(wfs);
 
           // If opened via specific action (e.g. welcome or followup), prefer that workflow
@@ -87,6 +90,11 @@ export function AssignLeadGroupModal({
             setCheckedWorkflowIds(followWf ? [followWf.id] : wfs.map((w: any) => w.id));
           } else {
             setCheckedWorkflowIds(wfs.map((w: any) => w.id));
+          }
+        } else {
+          if (isMounted) {
+            setActiveWorkflows([]);
+            setCheckedWorkflowIds([]);
           }
         }
       } catch (err: any) {

@@ -75,8 +75,21 @@ export default function WhatsAppAnalyticsConsolePage() {
     try {
       setRefreshing(true);
 
+      const res = await fetch(`/api/integrations/whatsapp/analytics?workspace_id=${encodeURIComponent(activeTenant)}&user_id=${encodeURIComponent(userId || '')}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setWorkflowLogs(data.workflowLogs || []);
+          setQueueLogs(data.queueLogs || []);
+          setAutoLogs(data.autoLogs || []);
+          setTemplatesMap(data.templatesMap || {});
+          setWorkflowsMap(data.workflowsMap || {});
+          return;
+        }
+      }
+
+      // Fallback direct query if API had an issue
       const [wfRes, queueRes, autoRes, tplRes, customWfRes] = await Promise.all([
-        // 1. Workflow step execution logs
         supabase
           .from('whatsapp_workflow_logs')
           .select('*')
@@ -84,7 +97,6 @@ export default function WhatsAppAnalyticsConsolePage() {
           .order('sent_at', { ascending: false })
           .limit(1000),
 
-        // 2. Action queue (Template sends, Group broadcasts, Queued triggers)
         supabase
           .from('baileys_action_queue')
           .select('*')
@@ -92,7 +104,6 @@ export default function WhatsAppAnalyticsConsolePage() {
           .order('created_at', { ascending: false })
           .limit(1000),
 
-        // 3. Automation logs (Booking alerts, quotation shares, welcome drips)
         supabase
           .from('whatsapp_automation_logs')
           .select('*')
@@ -100,13 +111,11 @@ export default function WhatsAppAnalyticsConsolePage() {
           .order('created_at', { ascending: false })
           .limit(500),
 
-        // 4. Template directory for name lookups
         supabase
           .from('tenant_whatsapp_templates')
           .select('id, template_name')
           .or(`tenant_id.eq.${activeTenant},tenant_id.eq.${userId}`),
 
-        // 5. Custom workflows for workflow name lookups
         supabase
           .from('whatsapp_custom_workflows')
           .select('id, workflow_name')
@@ -143,7 +152,7 @@ export default function WhatsAppAnalyticsConsolePage() {
 
   useEffect(() => {
     fetchData();
-  }, [userId]);
+  }, [userId, workspaceId]);
 
   // Handle Preset Changes
   const handlePresetSelect = (p: DatePreset) => {
@@ -197,6 +206,10 @@ export default function WhatsAppAnalyticsConsolePage() {
       const isGroup = phone.includes('@g.us') || String(w.phone_number || '').endsWith('@g.us');
       const wfName = w.workflow_id ? (workflowsMap[w.workflow_id] || 'Automation Flow') : 'Workflow Step';
       const tplName = w.template_name || (w.template_id ? templatesMap[w.template_id] : '') || ('Step #' + ((w.step_index ?? 0) + 1));
+      const leadName = w.lead_name || w.recipient_name;
+      const recipientDisplay = isGroup 
+        ? 'WhatsApp Group' 
+        : (leadName && leadName !== phone ? leadName : (phone ? ('+' + phone) : 'Lead Contact'));
 
       list.push({
         id: w.id,
@@ -204,7 +217,7 @@ export default function WhatsAppAnalyticsConsolePage() {
         source_type: 'Workflow Drip',
         template_name: tplName,
         workflow_name: wfName,
-        recipient: isGroup ? 'WhatsApp Group' : (phone ? ('+' + phone) : 'Lead Contact'),
+        recipient: recipientDisplay,
         phone_number: phone,
         is_group: isGroup,
         status: (w.status || 'sent').toLowerCase() as any,
@@ -240,13 +253,17 @@ export default function WhatsAppAnalyticsConsolePage() {
 
       const rawStatus = (q.status || 'pending').toLowerCase();
       const status = rawStatus === 'done' || rawStatus === 'completed' ? 'sent' : (rawStatus === 'failed' ? 'failed' : 'pending');
+      const leadName = q.lead_name || q.recipient_name || payload.leadName || payload.lead_name || payload.variables?.Name;
+      const recipientDisplay = isGroup 
+        ? 'WhatsApp Group' 
+        : (leadName && leadName !== phone ? leadName : (phone ? ('+' + phone) : 'Direct Contact'));
 
       list.push({
         id: q.id,
         source,
         source_type: isGroup ? 'Group Broadcast' : (source === 'Workflow' ? 'Workflow Action' : 'Single Send Template'),
         template_name: tplName,
-        recipient: isGroup ? 'WhatsApp Group' : (phone ? ('+' + phone) : 'Direct Contact'),
+        recipient: recipientDisplay,
         phone_number: phone,
         is_group: isGroup,
         status: status as any,
@@ -263,13 +280,15 @@ export default function WhatsAppAnalyticsConsolePage() {
 
       const phone = String(a.phone || a.recipient_phone || '').replace(/[^0-9]/g, '');
       const tplName = a.template_name || ((a.automation_type || 'Booking') + ' Alert');
+      const leadName = a.lead_name || a.recipient_name;
+      const recipientDisplay = leadName && leadName !== phone ? leadName : (phone ? ('+' + phone) : 'Client');
 
       list.push({
         id: a.id,
         source: 'Template',
         source_type: 'Template Trigger',
         template_name: tplName,
-        recipient: phone ? ('+' + phone) : 'Client',
+        recipient: recipientDisplay,
         phone_number: phone,
         is_group: false,
         status: (a.status || 'sent').toLowerCase() as any,
@@ -1111,8 +1130,8 @@ export default function WhatsAppAnalyticsConsolePage() {
                             </span>
                           )}
                           {log.error_message && (
-                            <p className="text-[10px] text-rose-500 font-mono mt-0.5 truncate max-w-xs" title={log.error_message}>
-                              Error: {log.error_message}
+                            <p className="text-[10px] text-rose-500 font-medium mt-0.5 max-w-xs break-words" title={log.error_message}>
+                              ⚠️ {log.error_message}
                             </p>
                           )}
                         </div>
@@ -1139,10 +1158,17 @@ export default function WhatsAppAnalyticsConsolePage() {
                             <span>Delivered / Sent</span>
                           </span>
                         ) : isFailed ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-200 dark:border-rose-500/20" title={log.error_message || 'Dispatch failed'}>
-                            <AlertTriangle className="w-3 h-3" />
-                            <span>Failed</span>
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-200 dark:border-rose-500/20 w-fit" title={log.error_message || 'Dispatch failed'}>
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>Failed</span>
+                            </span>
+                            {log.error_message && (
+                              <span className="text-[9px] text-rose-500 font-medium max-w-[150px] line-clamp-1" title={log.error_message}>
+                                {log.error_message}
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-500/20">
                             <Clock className="w-3 h-3" />

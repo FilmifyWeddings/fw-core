@@ -122,12 +122,14 @@ function WhatsAppGroupsHubCore() {
         .eq('workspace_id', tenantId);
 
       // 3. Fetch workflows to know which workflows belong to groups
-      const { data: fetchedWfs } = await supabase
-        .from('whatsapp_custom_workflows')
-        .select('id, workflow_name, target_group_id, status')
-        .eq('workspace_id', tenantId);
+      try {
+        const wfRes = await fetch(`/api/integrations/whatsapp/workflows?tenant_id=${tenantId}`);
+        const wfJson = await wfRes.json();
+        setWorkflows(wfJson.success ? (wfJson.results || []) : []);
+      } catch (_) {
+        setWorkflows([]);
+      }
 
-      setWorkflows(fetchedWfs || []);
       setLeads(fetchedLeads || []);
       setGroups(fetchedGroups);
       
