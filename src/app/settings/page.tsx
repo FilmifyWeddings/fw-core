@@ -1019,7 +1019,6 @@ export default function SettingsPage() {
                       { key: 'mail', label: 'Email Lead', icon: Mail, desc: 'Send email to lead', isDefault: true },
                       { key: 'comments', label: 'Comments & Reminders', icon: MessageSquare, desc: 'Open discussion timeline drawer', isDefault: true },
                       { key: 'google_contact', label: 'Google Contact Sync', icon: UserCheck, desc: 'Sync lead to Google Contacts', isDefault: false },
-                      { key: 'wgl_alert', label: 'WGL Alert Dispatch', icon: AlertCircle, desc: 'Dispatch WGL team notification', isDefault: false },
                       { key: 'whatsapp', label: 'WhatsApp Welcome Message', icon: Send, desc: 'Send WhatsApp welcome message', isDefault: false },
                       { key: 'followup', label: 'WhatsApp Follow-up Message', icon: Clock, desc: 'Schedule followups & tasks', isDefault: false },
                     ].map(item => (

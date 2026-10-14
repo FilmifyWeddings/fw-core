@@ -94,6 +94,12 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
     coords: { top: number; right: number };
   } | null>(null);
   const [selectedWorkflowForTimeline, setSelectedWorkflowForTimeline] = useState<Workflow | null>(null);
+  const [quotaStats, setQuotaStats] = useState<{ total: number; monthlySent: number; todaySent: number; remaining: number }>({
+    total: 5000,
+    monthlySent: 0,
+    todaySent: 0,
+    remaining: 5000,
+  });
 
   useEffect(() => {
     setMounted(true);
@@ -212,6 +218,10 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         }));
         setWorkflows(list);
         localStorage.setItem(`wa_workflows_${workspaceId}`, JSON.stringify(list));
+        if (workflowData.quota) {
+          setQuotaStats(workflowData.quota);
+          localStorage.setItem(`wa_quota_${workspaceId}`, JSON.stringify(workflowData.quota));
+        }
       }
 
       fetchSyncedGroups();
@@ -604,11 +614,12 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
     currentPage * rowsPerPage
   );
 
-  // Analytics Metrics
-  const TOTAL_EXECUTION_QUOTA = 5000;
+  // Analytics Metrics (Studio Owner Live Quota)
+  const TOTAL_EXECUTION_QUOTA = quotaStats.total || 5000;
   const metricCount = workflows.length;
-  const metricUsed = workflows.reduce((sum, w) => sum + (w.execution_count || 0), 0);
-  const metricRemaining = Math.max(0, TOTAL_EXECUTION_QUOTA - metricUsed);
+  const metricMonthlySent = quotaStats.monthlySent;
+  const metricTodaySent = quotaStats.todaySent;
+  const metricRemaining = quotaStats.remaining;
   const metricActive = workflows.filter(w => w.status === 'Active').length;
   const metricInactive = workflows.filter(w => w.status === 'Inactive').length;
 
@@ -632,27 +643,29 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
               </div>
             </div>
 
-            {/* EXEC USED */}
+            {/* MESSAGES SENT THIS MONTH */}
             <div className="flex items-center gap-3.5 border-r border-zinc-100 dark:border-zinc-800/60 pr-4 last:border-0 last:pr-0">
               <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
                 <RotateCcw className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Exec Used</span>
-                <span className="text-lg font-black text-zinc-900 dark:text-white mt-0.5 block leading-none">{metricUsed}</span>
+                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Sent (This Month)</span>
+                <span className="text-lg font-black text-zinc-900 dark:text-white mt-0.5 block leading-none">{metricMonthlySent}</span>
+                <span className="text-[10px] text-zinc-400 font-mono mt-0.5 block">Today: {metricTodaySent}</span>
               </div>
             </div>
 
-            {/* EXEC REMAINING / QUOTA */}
+            {/* QUOTA LEFT / 5,000 */}
             <div className="flex items-center gap-3.5 border-r border-zinc-100 dark:border-zinc-800/60 pr-4 last:border-0 last:pr-0">
               <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
                 <Database className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Exec Left / Quota</span>
-                <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block leading-none" title={`${metricRemaining.toLocaleString()} remaining out of 5,000 monthly quota`}>
+                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Quota Left (Monthly)</span>
+                <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block leading-none" title={`${metricRemaining.toLocaleString()} remaining out of 5,000 monthly quota (${metricMonthlySent} sent this month)`}>
                   {metricRemaining.toLocaleString()}
                 </span>
+                <span className="text-[10px] text-zinc-400 font-mono mt-0.5 block">of 5,000</span>
               </div>
             </div>
 

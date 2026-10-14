@@ -248,6 +248,12 @@ function WorkflowAnalyticsInner() {
   const [selectedExecution, setSelectedExecution] = useState<ExecutionRow | null>(null);
   const [isModalOpen, setIsModalOpen]       = useState(false);
   const [retryingFailed, setRetryingFailed] = useState(false);
+  const [quota, setQuota] = useState<{ total: number; monthlySent: number; todaySent: number; remaining: number }>({
+    total: 5000,
+    monthlySent: 0,
+    todaySent: 0,
+    remaining: 5000,
+  });
   const [selectedFailedStepIndices, setSelectedFailedStepIndices] = useState<number[]>([]);
   const [failedStepsModalOpen, setFailedStepsModalOpen] = useState(false);
   const [resumingWorkflow, setResumingWorkflow] = useState(false);
@@ -287,6 +293,7 @@ function WorkflowAnalyticsInner() {
       const data = await resp.json();
       if (data.success) {
         setExecutions(data.executions || []);
+        if (data.quota) setQuota(data.quota);
         
         // Also update selected execution details if open
         if (selectedExecution) {
@@ -658,7 +665,20 @@ function WorkflowAnalyticsInner() {
       </div>
 
       {/* ── Metric Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
+        {/* Monthly Quota */}
+        <div className="relative group bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-5 overflow-hidden hover:border-emerald-500/20 transition-all col-span-2 lg:col-span-1">
+          <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/5 rounded-full blur-2xl group-hover:bg-emerald-500/10 transition-all" />
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-black text-zinc-500 dark:text-zinc-450 uppercase tracking-widest">Monthly Quota</span>
+            <MessageSquare className="w-4 h-4 text-emerald-500/40" />
+          </div>
+          <div className="text-3xl font-black text-emerald-400">{quota.remaining.toLocaleString()}</div>
+          <div className="text-[9px] text-zinc-500 dark:text-zinc-600 mt-1.5 font-mono">
+            {quota.monthlySent} sent this month · {quota.todaySent} today
+          </div>
+        </div>
+
         {/* Contacts */}
         <div className="relative group bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-5 overflow-hidden hover:border-blue-500/20 transition-all">
           <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all" />

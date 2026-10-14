@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       workspaceId = user.id;
     }
 
-    const { leadId, workspaceId: bodyWorkspaceId } = await req.json();
+    const { leadId, workspaceId: bodyWorkspaceId, labelId } = await req.json();
     
     if (!workspaceId && bodyWorkspaceId) {
       workspaceId = bodyWorkspaceId;
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Perform isolated sync to user's Google Contacts
-    const result = await syncLeadToGoogleContacts(targetWorkspaceId, lead);
+    const result = await syncLeadToGoogleContacts(targetWorkspaceId, lead, labelId);
 
     if (result.success) {
       return NextResponse.json({ 

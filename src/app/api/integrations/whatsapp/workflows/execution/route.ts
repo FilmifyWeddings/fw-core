@@ -307,10 +307,40 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const now = new Date();
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+
+    const [monthlyCountRes, todayCountRes] = await Promise.all([
+      supabaseAdmin
+        .from('whatsapp_workflow_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .in('status', ['sent', 'delivered', 'read'])
+        .gte('sent_at', startOfMonth),
+      supabaseAdmin
+        .from('whatsapp_workflow_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .in('status', ['sent', 'delivered', 'read'])
+        .gte('sent_at', startOfToday),
+    ]);
+
+    const TOTAL_MONTHLY_QUOTA = 5000;
+    const monthlySent = monthlyCountRes.count ?? 0;
+    const todaySent = todayCountRes.count ?? 0;
+    const remainingQuota = Math.max(0, TOTAL_MONTHLY_QUOTA - monthlySent);
+
     return NextResponse.json({
       success: true,
       workflow: isAll ? { id: 'all', workflow_name: 'All Workflows' } : workflowsList[0],
-      executions
+      executions,
+      quota: {
+        total: TOTAL_MONTHLY_QUOTA,
+        monthlySent,
+        todaySent,
+        remaining: remainingQuota,
+      }
     });
   } catch (err: any) {
     console.error('Fetch workflow execution telemetry error:', err);

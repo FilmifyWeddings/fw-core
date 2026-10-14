@@ -1091,10 +1091,11 @@ export default function MetaIntegrationPage() {
 
   // Filtered & Priority-Sorted Forms (Active Toggled Forms Always on Top)
   const filteredForms = useMemo(() => {
-    return leadForms
+    return (leadForms || [])
       .filter(f => {
-        const n = (f.form_name || f.name || '').toLowerCase();
-        const matchSearch = n.includes(searchQuery.toLowerCase()) || f.form_id.includes(searchQuery);
+        const n = String(f.form_name || f.name || '').toLowerCase();
+        const fId = String(f.form_id || '');
+        const matchSearch = n.includes(searchQuery.toLowerCase()) || fId.includes(searchQuery);
         const matchStatus = statusFilter === 'ALL' || (f.status || 'ACTIVE').toUpperCase() === statusFilter;
         const matchPage = pageFilter === 'ALL' || f.page_id === pageFilter;
         return matchSearch && matchStatus && matchPage;
@@ -1106,8 +1107,9 @@ export default function MetaIntegrationPage() {
           const aStr = a.created_time || a.created_at;
           const bStr = b.created_time || b.created_at;
           const aTime = aStr ? new Date(aStr).getTime() : 0;
+          const bTime = bStr ? new Date(bStr).getTime() : 0;
           if (bTime !== aTime) return bTime - aTime;
-          return String(a.form_id).localeCompare(String(b.form_id));
+          return String(a.form_id || '').localeCompare(String(b.form_id || ''));
         }
         return aActive ? -1 : 1;
       });
@@ -1115,17 +1117,17 @@ export default function MetaIntegrationPage() {
 
   // Filtered Logs
   const filteredLogs = useMemo(() => {
-    return realSyncLogs.filter(l => {
-      const matchSearch = (l.lead_name || '').toLowerCase().includes(logSearchQuery.toLowerCase()) ||
-                          (l.lead_phone || '').includes(logSearchQuery) ||
-                          (l.form_name || '').toLowerCase().includes(logSearchQuery.toLowerCase());
+    return (realSyncLogs || []).filter(l => {
+      const matchSearch = String(l.lead_name || '').toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+                          String(l.lead_phone || '').includes(logSearchQuery) ||
+                          String(l.form_name || '').toLowerCase().includes(logSearchQuery.toLowerCase());
       const matchStatus = logStatusFilter === 'ALL' || l.status === logStatusFilter;
       return matchSearch && matchStatus;
     });
   }, [realSyncLogs, logSearchQuery, logStatusFilter]);
 
-  const enabledCount = useMemo(() => leadForms.filter(f => (f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
-  const disabledCount = useMemo(() => leadForms.filter(f => !(f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
+  const enabledCount = useMemo(() => (leadForms || []).filter(f => (f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
+  const disabledCount = useMemo(() => (leadForms || []).filter(f => !(f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
   if (initialLoading) {
     return <StudioCoreLiquidLoader label="Connecting to Meta Business Suite..." />;
   }

@@ -102,44 +102,86 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // 4. Update duplicate leads with duplicate_tag: true (assign group, but DO NOT dispatch workflows)
-    if (duplicateLeadIds.length > 0) {
-      for (const dupId of duplicateLeadIds) {
-        const lead = leads.find(l => l.id === dupId);
-        const existingRaw = lead?.raw_payload || {};
+    // 4. Temporarily pause all active workflows for this group so Postgres trigger does NOT auto-enroll unselected workflows
+    const { data: allGroupWorkflows } = await supabaseAdmin
+      .from('whatsapp_custom_workflows')
+      .select('id, status')
+      .eq('target_group_id', groupId)
+      .eq('tenant_id', workspaceId)
+      .eq('status', 'Active');
+
+    const activeWorkflowIdsToPause = (allGroupWorkflows || []).map(w => w.id);
+
+    if (activeWorkflowIdsToPause.length > 0) {
+      await supabaseAdmin
+        .from('whatsapp_custom_workflows')
+        .update({ status: '__BULK_TEMP_PAUSED__' })
+        .in('id', activeWorkflowIdsToPause);
+    }
+
+    try {
+      // 5. Update duplicate leads with duplicate_tag: true (assign group, but DO NOT dispatch workflows)
+      if (duplicateLeadIds.length > 0) {
+        for (const dupId of duplicateLeadIds) {
+          const lead = leads.find(l => l.id === dupId);
+          const existingRaw = lead?.raw_payload || {};
+          await supabaseAdmin
+            .from('leads')
+            .update({
+              whatsapp_group_id: groupId,
+              raw_payload: {
+                ...existingRaw,
+                duplicate_tag: true,
+                duplicate_detected_at: new Date().toISOString(),
+                skip_auto_trigger: true,
+                enrolled_workflow_ids: []
+              },
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', dupId);
+        }
+      }
+
+      // 6. Update unique leads with skip_auto_trigger: true and enrolled_workflow_ids
+      if (uniqueLeads.length > 0) {
+        for (const uLead of uniqueLeads) {
+          const existingRaw = uLead.raw_payload || {};
+          await supabaseAdmin
+            .from('leads')
+            .update({
+              whatsapp_group_id: groupId,
+              raw_payload: {
+                ...existingRaw,
+                duplicate_tag: false,
+                skip_auto_trigger: true,
+                enrolled_workflow_ids: workflowIds
+              },
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', uLead.id);
+        }
+      }
+    } finally {
+      // 7. Guaranteed restoration of workflow status back to 'Active'
+      if (activeWorkflowIdsToPause.length > 0) {
         await supabaseAdmin
-          .from('leads')
-          .update({
-            whatsapp_group_id: groupId,
-            raw_payload: {
-              ...existingRaw,
-              duplicate_tag: true,
-              duplicate_detected_at: new Date().toISOString(),
-              skip_auto_trigger: true
-            },
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', dupId);
+          .from('whatsapp_custom_workflows')
+          .update({ status: 'Active' })
+          .in('id', activeWorkflowIdsToPause);
       }
     }
 
-    // 5. Update unique leads with skip_auto_trigger: true (so our endpoint controls the staggered enrollment)
-    if (uniqueLeads.length > 0) {
-      for (const uLead of uniqueLeads) {
-        const existingRaw = uLead.raw_payload || {};
+    // 8. Prune any stale pending workflow logs for unselected workflows of this group
+    const unselectedWorkflowIds = activeWorkflowIdsToPause.filter(id => !workflowIds.includes(id));
+    if (unselectedWorkflowIds.length > 0) {
+      try {
         await supabaseAdmin
-          .from('leads')
-          .update({
-            whatsapp_group_id: groupId,
-            raw_payload: {
-              ...existingRaw,
-              duplicate_tag: false,
-              skip_auto_trigger: true
-            },
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', uLead.id);
-      }
+          .from('whatsapp_workflow_logs')
+          .delete()
+          .in('lead_id', leadIds)
+          .in('workflow_id', unselectedWorkflowIds)
+          .eq('status', 'pending');
+      } catch (_) {}
     }
 
     // 6. If workflowIds are provided and there are unique leads, enroll them with pacing

@@ -32,7 +32,8 @@ export interface GoogleContactSyncResult {
  */
 export async function syncLeadToGoogleContacts(
   workspaceId: string,
-  lead: Lead | any
+  lead: Lead | any,
+  overrideLabelId?: string | null
 ): Promise<GoogleContactSyncResult> {
   if (!workspaceId || !lead) {
     return { success: false, message: 'Missing workspace or lead context' };
@@ -64,7 +65,7 @@ export async function syncLeadToGoogleContacts(
       return { success: false, message: 'Google Contacts sync disabled in settings.' };
     }
 
-    const labelId = config.contacts_label_id || null;
+    const labelId = overrideLabelId || config.contacts_label_id || null;
     const prefix = config.contacts_prefix || '';
     const suffix = config.contacts_suffix || '';
 

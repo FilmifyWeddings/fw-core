@@ -208,12 +208,17 @@ export function WorkflowExecutionTimelineModal({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [clearingLogs, setClearingLogs] = useState(false);
 
+  const isSingleLeadMode = Boolean(initialLeadId);
+
   const fetchTelemetry = useCallback(async (skipLoadingState = false) => {
     if (!activeWorkflow?.id) return;
     if (!skipLoadingState) setLoading(true);
     try {
       const activeTenant = tenantId || activeWorkflow.tenant_id || activeWorkflow.workspace_id;
-      const res = await fetch(`/api/integrations/whatsapp/workflows/execution?tenant_id=${activeTenant}&workflow_id=${activeWorkflow.id}`);
+      const url = initialLeadId
+        ? `/api/integrations/whatsapp/workflows/execution?tenant_id=${activeTenant}&workflow_id=${activeWorkflow.id}&lead_id=${initialLeadId}`
+        : `/api/integrations/whatsapp/workflows/execution?tenant_id=${activeTenant}&workflow_id=${activeWorkflow.id}`;
+      const res = await fetch(url);
       const data = await res.json();
       if (data.success && data.executions) {
         let execsList: ExecutionRow[] = data.executions || [];
@@ -550,7 +555,7 @@ export function WorkflowExecutionTimelineModal({
 
   return (
     <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
-      <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl overflow-hidden font-sans">
+      <div className={`bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full ${isSingleLeadMode ? 'max-w-4xl' : 'max-w-6xl'} h-[90vh] flex flex-col shadow-2xl overflow-hidden font-sans`}>
         
         {/* Top Header */}
         <div className="p-4 sm:p-5 border-b border-zinc-200 dark:border-zinc-800/80 bg-zinc-50 dark:bg-zinc-900/50 flex items-center justify-between gap-3 shrink-0">
@@ -564,9 +569,15 @@ export function WorkflowExecutionTimelineModal({
                   {activeWorkflow.workflow_name}
                 </h2>
                 <StatusBadge status={activeWorkflow.status || 'Active'} />
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-bold font-mono">
-                  {executions.length} Total Executions
-                </span>
+                {isSingleLeadMode ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-bold font-mono">
+                    Single Lead View
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-bold font-mono">
+                    {executions.length} Total Executions
+                  </span>
+                )}
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
                 Execution Timeline & Delivery Telemetry · WhatsApp Gateway Automation
@@ -609,10 +620,11 @@ export function WorkflowExecutionTimelineModal({
           </div>
         </div>
 
-        {/* Modal Main Area: 2-Column Split (Contacts list + Execution Detail) */}
+        {/* Modal Main Area: Single Lead Mode (full width) or 2-Column Split (Contacts list + Execution Detail) */}
         <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
           
-          {/* Left Sidebar: Contacts list */}
+          {/* Left Sidebar: Contacts list (Only rendered when NOT in single lead mode) */}
+          {!isSingleLeadMode && (
           <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 flex flex-col shrink-0">
             <div className="p-3 border-b border-zinc-200 dark:border-zinc-800/60">
               <div className="relative">
@@ -681,6 +693,7 @@ export function WorkflowExecutionTimelineModal({
               )}
             </div>
           </div>
+          )}
 
           {/* Right Area: Selected Contact Execution Timeline */}
           <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-zinc-950 overflow-y-auto p-4 sm:p-6 space-y-5">

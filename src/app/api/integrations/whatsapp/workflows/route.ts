@@ -11,7 +11,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [workflowsRes, logsRes] = await Promise.all([
+    const now = new Date();
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+
+    const [workflowsRes, logsRes, monthlyCountRes, todayCountRes] = await Promise.all([
       supabaseAdmin
         .from('whatsapp_custom_workflows')
         .select('*')
@@ -20,7 +24,19 @@ export async function GET(req: NextRequest) {
       supabaseAdmin
         .from('whatsapp_workflow_logs')
         .select('workflow_id, lead_id')
+        .eq('tenant_id', tenantId),
+      supabaseAdmin
+        .from('whatsapp_workflow_logs')
+        .select('*', { count: 'exact', head: true })
         .eq('tenant_id', tenantId)
+        .in('status', ['sent', 'delivered', 'read'])
+        .gte('sent_at', startOfMonth),
+      supabaseAdmin
+        .from('whatsapp_workflow_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .in('status', ['sent', 'delivered', 'read'])
+        .gte('sent_at', startOfToday),
     ]);
 
     const { data: workflows, error } = workflowsRes;
@@ -28,7 +44,7 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       // Fallback to empty if table doesn't exist yet
-      return NextResponse.json({ success: true, results: [] });
+      return NextResponse.json({ success: true, results: [], quota: { total: 5000, monthlySent: 0, todaySent: 0, remaining: 5000 } });
     }
 
     const countsMap: Record<string, Set<string>> = {};
@@ -46,9 +62,20 @@ export async function GET(req: NextRequest) {
       execution_count: countsMap[wf.id] ? countsMap[wf.id].size : 0
     }));
 
+    const TOTAL_MONTHLY_QUOTA = 5000;
+    const monthlySent = monthlyCountRes.count ?? 0;
+    const todaySent = todayCountRes.count ?? 0;
+    const remainingQuota = Math.max(0, TOTAL_MONTHLY_QUOTA - monthlySent);
+
     return NextResponse.json({
       success: true,
-      results
+      results,
+      quota: {
+        total: TOTAL_MONTHLY_QUOTA,
+        monthlySent,
+        todaySent,
+        remaining: remainingQuota,
+      }
     });
   } catch (err: any) {
     console.error('Fetch custom workflows error:', err);
