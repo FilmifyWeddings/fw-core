@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 import MetaAdsLeadDistributionModal from '../components/MetaAdsLeadDistributionModal';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
+import { FormLeadsModal } from '@/components/integrations/FormLeadsModal';
 
 // ─── Type Definitions ─────────────────────────────────────────────────────────
 
@@ -553,6 +554,7 @@ export default function MetaIntegrationPage() {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const [selectedFormForPreview, setSelectedFormForPreview] = useState<LeadForm | null>(null);
+  const [selectedFormForLeads, setSelectedFormForLeads] = useState<LeadForm | null>(null);
   const [pageToggleLoading, setPageToggleLoading] = useState<Map<string, boolean>>(new Map());
 
   const [toggleLoading, setToggleLoading] = useState<Map<string, boolean>>(new Map());
@@ -1431,12 +1433,16 @@ export default function MetaIntegrationPage() {
                           </td>
 
                           <td className="py-3.5 px-4 text-center">
-                            <div className="flex flex-col items-center">
-                              <span className="font-black text-[#0866FF] text-sm">
+                            <button
+                              onClick={() => setSelectedFormForLeads(form)}
+                              className="flex flex-col items-center group cursor-pointer hover:opacity-80 transition-opacity mx-auto"
+                              title="Click to view all leads for this form"
+                            >
+                              <span className="font-black text-[#0866FF] text-sm group-hover:underline">
                                 {realLeadsCount} Leads
                               </span>
                               <span className="text-[10px] text-slate-400 font-medium">Total Fetched</span>
-                            </div>
+                            </button>
                           </td>
 
                           <td className="py-3.5 px-4 text-center">
@@ -1483,9 +1489,16 @@ export default function MetaIntegrationPage() {
                           <td className="py-3.5 px-4 text-right space-x-2">
                             <button
                               onClick={() => setSelectedFormForPreview(form)}
-                              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all inline-flex items-center gap-1"
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all inline-flex items-center gap-1 cursor-pointer"
                             >
                               <Eye className="w-3.5 h-3.5 text-[#0866FF]" /> View Questions
+                            </button>
+
+                            <button
+                              onClick={() => setSelectedFormForLeads(form)}
+                              className="px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0866FF] border border-blue-200/60 text-xs font-bold transition-all inline-flex items-center gap-1 cursor-pointer shadow-xs"
+                            >
+                              <Users className="w-3.5 h-3.5 text-[#0866FF]" /> Show Leads
                             </button>
 
                             <SyncCell
@@ -1540,7 +1553,7 @@ export default function MetaIntegrationPage() {
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
-                      <span className="text-slate-600">Total Fetched: <strong className="text-[#0866FF] font-black">{realLeadsCount} Leads</strong></span>
+                      <span className="text-slate-600">Total Fetched: <button onClick={() => setSelectedFormForLeads(form)} className="text-[#0866FF] font-black underline cursor-pointer">{realLeadsCount} Leads</button></span>
                       <span className="text-slate-500 font-medium">Last Synced: <strong>{formatRelTime(form.last_lead_received || (form as any).last_synced_at)}</strong></span>
                     </div>
 
@@ -1589,14 +1602,20 @@ export default function MetaIntegrationPage() {
                       })()}
                     </div>
 
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="grid grid-cols-3 gap-1.5 pt-1">
                       <button
                         onClick={() => setSelectedFormForPreview(form)}
-                        className="w-1/2 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition-all"
+                        className="py-2 px-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer"
                       >
-                        <Eye className="w-3.5 h-3.5 text-[#0866FF]" /> Questions
+                        <Eye className="w-3 h-3 text-[#0866FF]" /> Questions
                       </button>
-                      <div className="w-1/2">
+                      <button
+                        onClick={() => setSelectedFormForLeads(form)}
+                        className="py-2 px-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0866FF] border border-blue-200/60 text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                      >
+                        <Users className="w-3 h-3 text-[#0866FF]" /> Leads
+                      </button>
+                      <div className="w-full">
                         <SyncCell
                           formId={form.form_id}
                           pageId={form.page_id}
@@ -1840,6 +1859,18 @@ export default function MetaIntegrationPage() {
         <FormPreviewModal
           form={selectedFormForPreview}
           onClose={() => setSelectedFormForPreview(null)}
+          getAuthHeaders={getAuthHeaders}
+        />
+      )}
+
+      {/* FORM SYNCED LEADS MODAL */}
+      {selectedFormForLeads && (
+        <FormLeadsModal
+          formId={selectedFormForLeads.form_id}
+          formName={selectedFormForLeads.form_name || selectedFormForLeads.name || 'Meta Lead Form'}
+          pageName={selectedFormForLeads.page_name || pages.find(p => p.page_id === selectedFormForLeads.page_id)?.page_name}
+          workspaceId={workspaceId}
+          onClose={() => setSelectedFormForLeads(null)}
           getAuthHeaders={getAuthHeaders}
         />
       )}

@@ -154,7 +154,8 @@ export async function POST(req: NextRequest) {
                 ...existingRaw,
                 duplicate_tag: false,
                 skip_auto_trigger: true,
-                enrolled_workflow_ids: workflowIds
+                enrolled_workflow_ids: workflowIds,
+                enrolled_at: new Date().toISOString()
               },
               updated_at: new Date().toISOString()
             })

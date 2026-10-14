@@ -158,9 +158,19 @@ export async function GET(req: NextRequest) {
 
     for (const workflow of workflowsList) {
       const totalStepsCount = workflow.workflow_steps?.length || 0;
-      const wfLeads = workflow.target_group_id
+      // Isolate leads strictly to workflows they were enrolled in
+      const wfLeads = (workflow.target_group_id
         ? leads.filter(l => l.whatsapp_group_id === workflow.target_group_id)
-        : leads;
+        : leads
+      ).filter(l => {
+        const hasLogs = allLogs.some(log => log.workflow_id === workflow.id && log.lead_id === l.id);
+        if (hasLogs) return true;
+        const enrolledIds = l.raw_payload?.enrolled_workflow_ids;
+        if (Array.isArray(enrolledIds)) {
+          return enrolledIds.includes(workflow.id);
+        }
+        return true; // legacy fallback if enrolled_workflow_ids is not present
+      });
 
       for (const lead of wfLeads) {
         const leadLogs = allLogs.filter(log => log.workflow_id === workflow.id && log.lead_id === lead.id);
@@ -180,13 +190,21 @@ export async function GET(req: NextRequest) {
           status = 'running';
         }
 
-        let groupJoinDate = new Date(lead.created_at);
-        if (leadLogs.length > 0) {
-          const processedLogs = leadLogs.filter(l => !['pending', 'failed'].includes(l.status));
-          const logTimes = processedLogs.map(l => new Date(l.sent_at).getTime()).filter(t => !isNaN(t));
-          if (logTimes.length > 0) {
-            groupJoinDate = new Date(Math.min(...logTimes));
+        // Base time starts from workflow ENROLLMENT time, NOT old lead creation date
+        let groupJoinDate = new Date();
+        if (lead.raw_payload?.enrolled_at) {
+          const d = new Date(lead.raw_payload.enrolled_at);
+          if (!isNaN(d.getTime())) groupJoinDate = d;
+        } else if (leadLogs.length > 0) {
+          const allLogTimes = leadLogs
+            .map(l => new Date(l.created_at || l.sent_at).getTime())
+            .filter(t => !isNaN(t));
+          if (allLogTimes.length > 0) {
+            groupJoinDate = new Date(Math.min(...allLogTimes));
           }
+        } else if (lead.updated_at) {
+          const d = new Date(lead.updated_at);
+          if (!isNaN(d.getTime())) groupJoinDate = d;
         }
         const groupJoinTimeFormatted = formatIST(groupJoinDate);
 
@@ -228,27 +246,8 @@ export async function GET(req: NextRequest) {
             if (matchedLog.error_message === 'STOPPED') {
               stepStatus = 'stopped';
             }
-            if (['sent', 'delivered', 'read'].includes(matchedLog.status)) {
-              if (matchedLog.sent_at) sentAtIso = matchedLog.sent_at;
-            } else if (matchedLog.status === 'failed') {
-              if (matchedLog.sent_at) sentAtIso = matchedLog.sent_at;
-            } else if (matchedLog.status === 'pending') {
-              sentAtIso = calculatedDate.toISOString();
-              if (matchedLog.id && matchedLog.sent_at !== sentAtIso) {
-                // Asynchronously sync DB with organic anti-ban jitter schedule
-                supabaseAdmin
-                  .from('whatsapp_workflow_logs')
-                  .update({ sent_at: sentAtIso })
-                  .eq('id', matchedLog.id)
-                  .then();
-                supabaseAdmin
-                  .from('baileys_action_queue')
-                  .update({ next_retry_at: sentAtIso })
-                  .eq('workspace_id', tenantId)
-                  .eq('status', 'pending')
-                  .filter('payload->>workflowLogId', 'eq', matchedLog.id)
-                  .then();
-              }
+            if (matchedLog.sent_at) {
+              sentAtIso = matchedLog.sent_at;
             }
             if (matchedLog.updated_at && !isNaN(new Date(matchedLog.updated_at).getTime())) {
               updatedAtFormatted = formatIST(matchedLog.updated_at);

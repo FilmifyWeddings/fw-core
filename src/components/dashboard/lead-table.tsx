@@ -26,6 +26,7 @@ import { LeadExecutionTimelineModal } from './LeadExecutionTimelineModal';
 import { WorkflowExecutionTimelineModal } from '@/components/integrations/WorkflowExecutionTimelineModal';
 import { BulkGroupEnrollModal } from './BulkGroupEnrollModal';
 import { GoogleContactSyncModal } from './GoogleContactSyncModal';
+import { AssignLeadGroupModal } from './AssignLeadGroupModal';
 
 const MotionDiv = motionImport.div;
 const MotionTr = 'tr' as any;
@@ -902,8 +903,39 @@ export function LeadTable({
     } catch (_) {}
   }, []);
 
+  // Modal for unassigned lead WhatsApp group selection
+  const [assignGroupModalState, setAssignGroupModalState] = useState<{
+    isOpen: boolean;
+    lead: Lead | null;
+    targetAction: 'welcome' | 'followup' | null;
+  }>({
+    isOpen: false,
+    lead: null,
+    targetAction: null,
+  });
+
+  const handleGroupAssignedToLead = (leadId: string, groupId: string) => {
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, whatsapp_group_id: groupId } : l));
+    if (onLeadUpdate) {
+      onLeadUpdate(leadId, { whatsapp_group_id: groupId });
+    }
+    const updatedLead = leads.find(l => l.id === leadId);
+    if (updatedLead) {
+      fetchWaStatuses([{ ...updatedLead, whatsapp_group_id: groupId }]);
+    }
+  };
+
   // Open Unified Timeline Modal for Welcome or Followup
   const handleOpenWelcomeTimeline = useCallback(async (lead: Lead) => {
+    if (!lead.whatsapp_group_id) {
+      setAssignGroupModalState({
+        isOpen: true,
+        lead,
+        targetAction: 'welcome',
+      });
+      return;
+    }
+
     let stat = waStatuses[lead.id]?.welcome;
     let wf = stat?.workflow || null;
     let wfId = stat?.workflow_id || null;
@@ -933,6 +965,15 @@ export function LeadTable({
   }, [waStatuses]);
 
   const handleOpenFollowupTimeline = useCallback(async (lead: Lead) => {
+    if (!lead.whatsapp_group_id) {
+      setAssignGroupModalState({
+        isOpen: true,
+        lead,
+        targetAction: 'followup',
+      });
+      return;
+    }
+
     let stat = waStatuses[lead.id]?.followup;
     let wf = stat?.workflow || null;
     let wfId = stat?.workflow_id || null;
@@ -5444,6 +5485,17 @@ export function LeadTable({
         lead={googleModalLead}
         workspaceId={googleModalLead?.workspace_id || leads[0]?.workspace_id || ''}
         onSyncSuccess={handleGoogleContactsSyncSuccess}
+      />
+
+      {/* Assign WhatsApp Group Modal for unassigned leads */}
+      <AssignLeadGroupModal
+        isOpen={assignGroupModalState.isOpen}
+        onClose={() => setAssignGroupModalState({ isOpen: false, lead: null, targetAction: null })}
+        lead={assignGroupModalState.lead}
+        targetAction={assignGroupModalState.targetAction}
+        contactGroups={contactGroups}
+        workspaceId={assignGroupModalState.lead?.workspace_id || leads[0]?.workspace_id || ''}
+        onAssigned={handleGroupAssignedToLead}
       />
 
       {/* Premium LeadInsiderDrawer workspace sheet */}

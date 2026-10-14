@@ -239,7 +239,7 @@ export async function POST(req: NextRequest) {
           location: parsed.city !== '-' ? parsed.city : '',
           budget: parsed.budget !== '-' ? parsed.budget : '',
           event_date: parsed.eventDate !== '-' ? parsed.eventDate : '',
-          whatsapp_group_id: contactGroupId,
+          whatsapp_group_id: null, // Historical leads from "Sync All Old Leads" must NOT auto-enroll into WhatsApp groups
           form_tag: formName,
           raw_field_data: lead,
           created_at: lead.created_time ? new Date(lead.created_time).toISOString() : new Date().toISOString(),

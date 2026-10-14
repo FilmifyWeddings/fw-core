@@ -81,19 +81,20 @@ interface WorkflowExecutionTimelineModalProps {
 function StatusBadge({ status }: { status: string }) {
   const norm = (status || '').toLowerCase();
   const cfg: Record<string, { cls: string; label: string; dot?: boolean }> = {
-    completed: { cls: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400', label: 'Completed', dot: true },
-    running:   { cls: 'bg-blue-500/15 border-blue-500/30 text-blue-400',       label: 'Running',   dot: true },
-    failed:    { cls: 'bg-red-500/15 border-red-500/30 text-red-400',         label: 'Failed',    dot: true },
-    stopped:   { cls: 'bg-rose-950/40 border-rose-800/40 text-rose-300',      label: 'Stopped',   dot: true },
-    cancelled: { cls: 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500',      label: 'Cancelled' },
-    not_started: { cls: 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500',    label: 'Not Started' },
-    sent:      { cls: 'bg-blue-500/15 border-blue-500/30 text-blue-400',      label: 'Sent',      dot: true },
-    delivered: { cls: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400', label: 'Delivered', dot: true },
-    read:      { cls: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400', label: 'Read', dot: true },
-    pending:   { cls: 'bg-amber-500/15 border-amber-500/30 text-amber-400',   label: 'Pending',   dot: true },
-    unsent:    { cls: 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500',      label: 'Unsent' },
+    active:      { cls: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-extrabold', label: 'Active', dot: true },
+    completed:   { cls: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-extrabold', label: 'Completed', dot: true },
+    running:     { cls: 'bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400 font-extrabold',       label: 'Running',   dot: true },
+    failed:      { cls: 'bg-red-500/15 border-red-500/30 text-red-600 dark:text-red-400 font-extrabold',         label: 'Failed',    dot: true },
+    stopped:     { cls: 'bg-rose-950/40 border-rose-800/40 text-rose-300 font-bold',      label: 'Stopped',   dot: true },
+    cancelled:   { cls: 'bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold',      label: 'Cancelled' },
+    not_started: { cls: 'bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white font-extrabold shadow-2xs',    label: 'Not Started' },
+    sent:        { cls: 'bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400 font-extrabold',      label: 'Sent',      dot: true },
+    delivered:   { cls: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 font-extrabold', label: 'Delivered', dot: true },
+    read:        { cls: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-extrabold', label: 'Read', dot: true },
+    pending:     { cls: 'bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400 font-extrabold',   label: 'Pending',   dot: true },
+    unsent:      { cls: 'bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white font-extrabold shadow-2xs',      label: 'Unsent' },
   };
-  const c = cfg[norm] ?? cfg.unsent;
+  const c = cfg[norm] ?? { cls: 'bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white font-extrabold', label: status || 'Pending' };
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${c.cls}`}>
       {c.dot && <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80 animate-pulse" />}

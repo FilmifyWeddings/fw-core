@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Users, Plus, Search, MoreVertical, Edit2, Trash2, Eraser,
   FolderOpen, Calendar, HelpCircle, RefreshCw, X, CheckCircle, Lock,
-  FileText, UserCheck, ShieldAlert
+  FileText, UserCheck, ShieldAlert, Workflow
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
@@ -27,6 +27,7 @@ interface Lead {
   phone: string;
   email: string | null;
   whatsapp_group_id: string | null;
+  raw_payload?: any;
 }
 
 function WhatsAppGroupsHubCore() {
@@ -37,6 +38,8 @@ function WhatsAppGroupsHubCore() {
   // Data States
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [workflows, setWorkflows] = useState<any[]>([]);
+  const [selectedMemberWorkflows, setSelectedMemberWorkflows] = useState<{ name: string; workflows: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -115,9 +118,16 @@ function WhatsAppGroupsHubCore() {
       // 2. Fetch Leads to calculate dynamic aggregate contact counts
       const { data: fetchedLeads, error: leadsErr } = await supabase
         .from('leads')
-        .select('id, name, phone, email, whatsapp_group_id')
+        .select('id, name, phone, email, whatsapp_group_id, raw_payload')
         .eq('workspace_id', tenantId);
 
+      // 3. Fetch workflows to know which workflows belong to groups
+      const { data: fetchedWfs } = await supabase
+        .from('whatsapp_custom_workflows')
+        .select('id, workflow_name, target_group_id, status')
+        .eq('workspace_id', tenantId);
+
+      setWorkflows(fetchedWfs || []);
       setLeads(fetchedLeads || []);
       setGroups(fetchedGroups);
       
@@ -1011,44 +1021,81 @@ function WhatsAppGroupsHubCore() {
                         (l.email || '').toLowerCase().includes(search)
                       );
                     })
-                    .map(member => (
-                      <div
-                        key={member.id}
-                        className="p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/30 border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-800/80 transition-all flex items-center justify-between group"
-                      >
-                        <div className="min-w-0">
-                          <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-450 transition-colors block">
-                            {member.name || 'Unnamed Lead'}
-                          </span>
-                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-zinc-500 font-mono mt-0.5">
-                            <span>📞 {member.phone}</span>
-                            {member.email && <span>• ✉️ {member.email}</span>}
-                          </div>
-                        </div>
+                    .map(member => {
+                      const enrolledIds = (member as any).raw_payload?.enrolled_workflow_ids;
+                      const memberWfs = (workflows || []).filter(w => {
+                        if (Array.isArray(enrolledIds)) {
+                          return enrolledIds.includes(w.id);
+                        }
+                        return w.target_group_id === selectedGroup.id && w.status === 'Active';
+                      });
 
-                        {/* Remove from group member button */}
-                        <button
-                          onClick={async () => {
-                            if (confirm(`Remove "${member.name || member.phone}" from this group?`)) {
-                              try {
-                                await supabase
-                                  .from('leads')
-                                  .update({ whatsapp_group_id: null })
-                                  .eq('id', member.id);
-                                
-                                setLeads(prev => prev.map(l => l.id === member.id ? { ...l, whatsapp_group_id: null } : l));
-                              } catch (err) {
-                                console.error(err);
-                              }
-                            }
-                          }}
-                          className="p-1.5 opacity-60 group-hover:opacity-100 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-900 hover:border-rose-300 dark:hover:border-rose-900 hover:text-rose-600 dark:hover:text-rose-450 rounded-lg text-slate-400 transition-all"
-                          title="Remove member"
+                      return (
+                        <div
+                          key={member.id}
+                          className="p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/30 border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-800/80 transition-all flex items-center justify-between group"
                         >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))
+                          <div className="min-w-0 flex-1 pr-3">
+                            <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-450 transition-colors block truncate">
+                              {member.name || 'Unnamed Lead'}
+                            </span>
+                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-zinc-500 font-mono mt-0.5">
+                              <span>📞 {member.phone}</span>
+                              {member.email && <span>• ✉️ {member.email}</span>}
+                            </div>
+
+                            {/* Assigned Workflows Pill */}
+                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              {memberWfs.length === 0 ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-zinc-200/80 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-300 dark:border-zinc-700">
+                                  No Workflow
+                                </span>
+                              ) : memberWfs.length === 1 ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 truncate max-w-[200px]">
+                                  <Workflow className="w-2.5 h-2.5 shrink-0" />
+                                  <span className="truncate">{memberWfs[0].workflow_name}</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedMemberWorkflows({
+                                    name: member.name || member.phone,
+                                    workflows: memberWfs.map(w => w.workflow_name)
+                                  })}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/25 cursor-pointer transition-colors"
+                                  title="Click to view assigned workflows"
+                                >
+                                  <Workflow className="w-2.5 h-2.5 shrink-0" />
+                                  {memberWfs.length} Workflows Assigned ▾
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Remove from group member button */}
+                          <button
+                            onClick={async () => {
+                              if (confirm(`Remove "${member.name || member.phone}" from this group?`)) {
+                                try {
+                                  await supabase
+                                    .from('leads')
+                                    .update({ whatsapp_group_id: null })
+                                    .eq('id', member.id);
+                                  
+                                  setLeads(prev => prev.map(l => l.id === member.id ? { ...l, whatsapp_group_id: null } : l));
+                                } catch (err) {
+                                  console.error(err);
+                                }
+                              }
+                            }}
+                            className="p-1.5 opacity-60 group-hover:opacity-100 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-900 hover:border-rose-300 dark:hover:border-rose-900 hover:text-rose-600 dark:hover:text-rose-450 rounded-lg text-slate-400 transition-all"
+                            title="Remove member"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })
                 )}
               </div>
 
@@ -1165,6 +1212,68 @@ function WhatsAppGroupsHubCore() {
                   )}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ VIEW MEMBER ASSIGNED WORKFLOWS MODAL ═══ */}
+      <AnimatePresence>
+        {selectedMemberWorkflows && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedMemberWorkflows(null)}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              className="relative z-10 w-full max-w-sm bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-3xl shadow-2xl p-5 space-y-4"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-900">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center">
+                    <Workflow className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Active Workflows
+                    </h3>
+                    <p className="text-[11px] text-slate-500 truncate max-w-[200px]">
+                      {selectedMemberWorkflows.name}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedMemberWorkflows(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {selectedMemberWorkflows.workflows.map((wfName, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-800 dark:text-zinc-200 flex items-center gap-2"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span>{wfName}</span>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setSelectedMemberWorkflows(null)}
+                className="w-full py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold transition-all cursor-pointer"
+              >
+                Done
+              </button>
             </motion.div>
           </div>
         )}
