@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS storage_physical_disks (
   UNIQUE(workspace_id, disk_name)
 );
 
+-- Ensure color_tag and notes columns exist non-destructively
+ALTER TABLE storage_physical_disks ADD COLUMN IF NOT EXISTS color_tag TEXT DEFAULT '#10B981';
+ALTER TABLE storage_physical_disks ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
+ALTER TABLE storage_memory_cards ADD COLUMN IF NOT EXISTS color_tag TEXT DEFAULT '#F59E0B';
+ALTER TABLE storage_memory_cards ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
+
 -- 3. Connected Google Drive Accounts
 CREATE TABLE IF NOT EXISTS storage_drive_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

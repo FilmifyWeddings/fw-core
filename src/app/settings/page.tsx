@@ -10,7 +10,7 @@ import {
   QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard, Lock, Unlock, ShieldCheck, Key,
   Pencil, X, PackageCheck, Gift, Layers, ListPlus, SlidersHorizontal, Edit2, Edit3, MoveUp, MoveDown,
   Search, FileCheck, Calendar, MapPin, Sliders, Shield, Tag, ChevronRight, CheckSquare, Square,
-  Film, HardDrive, User, PhoneCall, Camera
+  Film, HardDrive, User, PhoneCall, Camera, Cpu, Server, Database
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageToDataUrl } from '@/lib/image-compression';
@@ -87,7 +87,7 @@ function FacebookIcon({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
-type SettingsTab = 'profile' | 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'finance';
+type SettingsTab = 'profile' | 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'storage' | 'finance';
 type QuoteSubTab = 'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms';
 
 interface DropdownItem {
@@ -155,6 +155,12 @@ const SETTINGS_NAV_ITEMS: {
     title: 'Quotations & Proposals',
     subtitle: 'Deliverables, addons, payment milestones, and terms.',
     icon: FileText,
+  },
+  {
+    id: 'storage',
+    title: 'Studio Storage',
+    subtitle: 'Physical memory cards inventory, hard drives, SSDs & NAS arrays.',
+    icon: HardDrive,
   },
   {
     id: 'finance',
@@ -387,6 +393,207 @@ export default function SettingsPage() {
   const [editDefaultFuncLocation, setEditDefaultFuncLocation] = useState('');
   const [editDefaultFuncReqs, setEditDefaultFuncReqs] = useState<Array<{ name: string; qty: number }>>([]);
 
+  // Studio Storage (Memory Cards & Physical Drives) States
+  const [storageCards, setStorageCards] = useState<any[]>([]);
+  const [storageDisks, setStorageDisks] = useState<any[]>([]);
+  const [loadingStorage, setLoadingStorage] = useState(false);
+
+  // Card Form
+  const [newCardName, setNewCardName] = useState('');
+  const [newCardCapacity, setNewCardCapacity] = useState('128');
+  const [newCardCapacityUnit, setNewCardCapacityUnit] = useState<'GB' | 'TB'>('GB');
+  const [newCardType, setNewCardType] = useState('SD_CARD');
+  const [newCardSpeed, setNewCardSpeed] = useState('V90 300MB/s');
+  const [newCardColor, setNewCardColor] = useState('#F59E0B');
+  const [newCardNotes, setNewCardNotes] = useState('');
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [savingCard, setSavingCard] = useState(false);
+
+  // Disk Form
+  const [newDiskName, setNewDiskName] = useState('');
+  const [newDiskType, setNewDiskType] = useState('EXTERNAL_SSD');
+  const [newDiskCapacity, setNewDiskCapacity] = useState('2000');
+  const [newDiskCapacityUnit, setNewDiskCapacityUnit] = useState<'GB' | 'TB'>('GB');
+  const [newDiskLocation, setNewDiskLocation] = useState('Studio Desk 1');
+  const [newDiskColor, setNewDiskColor] = useState('#3B82F6');
+  const [newDiskNotes, setNewDiskNotes] = useState('');
+  const [editingDiskId, setEditingDiskId] = useState<string | null>(null);
+  const [savingDisk, setSavingDisk] = useState(false);
+
+  const fetchStorageHardware = useCallback(async () => {
+    if (!workspaceId) return;
+    try {
+      setLoadingStorage(true);
+      const [cRes, dRes] = await Promise.all([
+        fetch(`/api/storage/cards?workspace_id=${workspaceId}`).then(r => r.json()).catch(() => ({ cards: [] })),
+        fetch(`/api/storage/disks?workspace_id=${workspaceId}`).then(r => r.json()).catch(() => ({ disks: [] }))
+      ]);
+      if (cRes.success) setStorageCards(cRes.cards || []);
+      if (dRes.success) setStorageDisks(dRes.disks || []);
+    } catch (err) {
+      console.warn('Error fetching storage:', err);
+    } finally {
+      setLoadingStorage(false);
+    }
+  }, [workspaceId]);
+
+  const handleSaveCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCardName.trim()) return;
+    setSavingCard(true);
+    try {
+      const capGb = newCardCapacityUnit === 'TB' ? Number(newCardCapacity) * 1000 : Number(newCardCapacity);
+      const payload: any = {
+        workspace_id: workspaceId,
+        card_name: newCardName.trim(),
+        card_type: newCardType,
+        capacity_gb: capGb || 128,
+        speed_class: newCardSpeed,
+        color_tag: newCardColor,
+        notes: newCardNotes.trim(),
+      };
+      if (editingCardId) {
+        payload.id = editingCardId;
+      }
+      const res = await fetch('/api/storage/cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success && data.card) {
+        if (editingCardId) {
+          setStorageCards(prev => prev.map(c => c.id === editingCardId ? data.card : c));
+          setEditingCardId(null);
+        } else {
+          setStorageCards(prev => [...prev.filter(c => c.id !== data.card.id), data.card]);
+        }
+        setNewCardName('');
+        setNewCardCapacity('128');
+        setNewCardCapacityUnit('GB');
+        setNewCardNotes('');
+        setSaveToast('Memory Card saved successfully!');
+        setTimeout(() => setSaveToast(null), 3000);
+      }
+    } catch (err: any) {
+      alert('Failed to save card: ' + err.message);
+    } finally {
+      setSavingCard(false);
+    }
+  };
+
+  const handleEditCard = (card: any) => {
+    setEditingCardId(card.id);
+    setNewCardName(card.card_name);
+    if (card.capacity_gb >= 1000 && card.capacity_gb % 1000 === 0) {
+      setNewCardCapacity(String(card.capacity_gb / 1000));
+      setNewCardCapacityUnit('TB');
+    } else {
+      setNewCardCapacity(String(card.capacity_gb || 128));
+      setNewCardCapacityUnit('GB');
+    }
+    setNewCardType(card.card_type || 'SD_CARD');
+    setNewCardSpeed(card.speed_class || 'V90 300MB/s');
+    setNewCardColor(card.color_tag || '#F59E0B');
+    setNewCardNotes(card.notes || '');
+  };
+
+  const handleDeleteCard = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this memory card?')) return;
+    try {
+      const res = await fetch(`/api/storage/cards?id=${id}&workspace_id=${workspaceId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setStorageCards(prev => prev.filter(c => c.id !== id));
+        if (editingCardId === id) {
+          setEditingCardId(null);
+          setNewCardName('');
+        }
+      }
+    } catch (err: any) {
+      alert('Failed to delete card: ' + err.message);
+    }
+  };
+
+  const handleSaveDisk = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDiskName.trim()) return;
+    setSavingDisk(true);
+    try {
+      const capGb = newDiskCapacityUnit === 'TB' ? Number(newDiskCapacity) * 1000 : Number(newDiskCapacity);
+      const payload: any = {
+        workspace_id: workspaceId,
+        disk_name: newDiskName.trim(),
+        disk_type: newDiskType,
+        total_capacity_gb: capGb || 2000,
+        free_capacity_gb: Math.round((capGb || 2000) * 0.8),
+        physical_location: newDiskLocation.trim() || 'Studio Desk 1',
+        color_tag: newDiskColor,
+        notes: newDiskNotes.trim(),
+      };
+      if (editingDiskId) {
+        payload.id = editingDiskId;
+      }
+      const res = await fetch('/api/storage/disks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success && data.disk) {
+        if (editingDiskId) {
+          setStorageDisks(prev => prev.map(d => d.id === editingDiskId ? data.disk : d));
+          setEditingDiskId(null);
+        } else {
+          setStorageDisks(prev => [...prev.filter(d => d.id !== data.disk.id), data.disk]);
+        }
+        setNewDiskName('');
+        setNewDiskCapacity('2000');
+        setNewDiskCapacityUnit('GB');
+        setNewDiskNotes('');
+        setSaveToast('Storage drive saved successfully!');
+        setTimeout(() => setSaveToast(null), 3000);
+      }
+    } catch (err: any) {
+      alert('Failed to save drive: ' + err.message);
+    } finally {
+      setSavingDisk(false);
+    }
+  };
+
+  const handleEditDisk = (disk: any) => {
+    setEditingDiskId(disk.id);
+    setNewDiskName(disk.disk_name);
+    if (disk.total_capacity_gb >= 1000 && disk.total_capacity_gb % 1000 === 0) {
+      setNewDiskCapacity(String(disk.total_capacity_gb / 1000));
+      setNewDiskCapacityUnit('TB');
+    } else {
+      setNewDiskCapacity(String(disk.total_capacity_gb || 2000));
+      setNewDiskCapacityUnit('GB');
+    }
+    setNewDiskType(disk.disk_type || 'EXTERNAL_SSD');
+    setNewDiskLocation(disk.physical_location || 'Studio Desk 1');
+    setNewDiskColor(disk.color_tag || '#3B82F6');
+    setNewDiskNotes(disk.notes || '');
+  };
+
+  const handleDeleteDisk = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this storage drive?')) return;
+    try {
+      const res = await fetch(`/api/storage/disks?id=${id}&workspace_id=${workspaceId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setStorageDisks(prev => prev.filter(d => d.id !== id));
+        if (editingDiskId === id) {
+          setEditingDiskId(null);
+          setNewDiskName('');
+        }
+      }
+    } catch (err: any) {
+      alert('Failed to delete drive: ' + err.message);
+    }
+  };
+
   // 1. Leads Page Settings
   const [leadOwners, setLeadOwners] = useState<DropdownItem[]>([
     { id: '1', name: 'Unassigned', color: '#10b981' },
@@ -607,6 +814,18 @@ export default function SettingsPage() {
       // Fetch full workspace quotation settings
       const qSettings = await fetchWorkspaceQuotationSettings(wId);
       setQuotationSettings(qSettings);
+
+      // Fetch Studio Storage Hardware (Cards & Physical Disks)
+      try {
+        const [cRes, dRes] = await Promise.all([
+          fetch(`/api/storage/cards?workspace_id=${wId}`).then(r => r.json()).catch(() => ({ cards: [] })),
+          fetch(`/api/storage/disks?workspace_id=${wId}`).then(r => r.json()).catch(() => ({ disks: [] }))
+        ]);
+        if (cRes.success) setStorageCards(cRes.cards || []);
+        if (dRes.success) setStorageDisks(dRes.disks || []);
+      } catch (stErr) {
+        console.warn('Storage load error:', stErr);
+      }
 
       if (res.ok) {
         const data = await res.json();
@@ -3249,6 +3468,513 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* 2.5 STUDIO STORAGE SETTINGS (MEMORY CARDS & PHYSICAL DRIVES INVENTORY) */}
+            {activeTab === 'storage' && (
+              <div className="space-y-6">
+                {/* Header Banner */}
+                <div className="bg-white border border-amber-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 flex items-center justify-center font-bold shrink-0 shadow-xs">
+                      <HardDrive className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                        <span>Studio Storage & Hardware Inventory</span>
+                        <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                          Hardware Sync
+                        </span>
+                      </h2>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        Manage physical memory cards inventory, external SSDs, hard drive racks, and NAS arrays.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchStorageHardware}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer self-start sm:self-auto flex items-center gap-1.5 text-xs font-bold"
+                    title="Refresh Inventory"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingStorage ? 'animate-spin text-amber-600' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                {/* 2-Column Responsive Layout */}
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  {/* ── LEFT COLUMN: MEMORY CARDS (SD / CFexpress) ── */}
+                  <div className="bg-white border border-amber-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 flex flex-col">
+                    <div className="flex items-center justify-between border-b border-amber-100 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                          <Cpu className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-black text-slate-900">
+                            Memory Cards (SD / CFexpress)
+                          </h3>
+                          <p className="text-[11px] text-slate-500 font-medium">
+                            Register shooter cards for ingest & offload tracking
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                        {storageCards.length} Registered
+                      </span>
+                    </div>
+
+                    {/* Card Add / Edit Form */}
+                    <form onSubmit={handleSaveCard} className="p-4 rounded-2xl bg-amber-50/40 border border-amber-200/80 space-y-3.5">
+                      <div className="text-xs font-black uppercase text-amber-950 tracking-wider flex items-center justify-between">
+                        <span>{editingCardId ? '✏️ Edit Memory Card' : '➕ Register New Memory Card'}</span>
+                        {editingCardId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCardId(null);
+                              setNewCardName('');
+                              setNewCardNotes('');
+                            }}
+                            className="text-[11px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Name */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Card Name / Label *</label>
+                          <input
+                            type="text"
+                            required
+                            value={newCardName}
+                            onChange={e => setNewCardName(e.target.value)}
+                            placeholder="e.g. Sony Tough G 128GB #1"
+                            className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                          />
+                        </div>
+
+                        {/* Card Type */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Card Type *</label>
+                          <select
+                            value={newCardType}
+                            onChange={e => setNewCardType(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                          >
+                            <option value="SD_CARD">SD Card (SDXC / SDHC)</option>
+                            <option value="CFEXPRESS_A">CFexpress Type A (Sony Alpha)</option>
+                            <option value="CFEXPRESS_B">CFexpress Type B (Nikon / Canon)</option>
+                            <option value="MICRO_SD">Micro SD (Drone / GoPro)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Storage Capacity with GB / TB selector */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Capacity *</label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="1"
+                              required
+                              value={newCardCapacity}
+                              onChange={e => setNewCardCapacity(e.target.value)}
+                              placeholder="128"
+                              className="flex-1 px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                            />
+                            <select
+                              value={newCardCapacityUnit}
+                              onChange={e => setNewCardCapacityUnit(e.target.value as any)}
+                              className="w-20 px-2 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none"
+                            >
+                              <option value="GB">GB</option>
+                              <option value="TB">TB</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Speed Class */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Speed Class / Rating</label>
+                          <input
+                            type="text"
+                            value={newCardSpeed}
+                            onChange={e => setNewCardSpeed(e.target.value)}
+                            placeholder="e.g. V90 300MB/s, 1700MB/s"
+                            className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Color Label with Custom Color Picker (Millions of Colors) */}
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                          <span>Color Label / Sticker Tag</span>
+                          <span className="font-mono text-[10px] text-slate-400">{newCardColor}</span>
+                        </label>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {GOOGLE_PRESET_COLORS.map(c => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => setNewCardColor(c)}
+                              className={`w-6 h-6 rounded-full border-2 transition-transform cursor-pointer ${
+                                newCardColor === c ? 'scale-125 border-slate-900 shadow-xs' : 'border-white hover:scale-110 shadow-2xs'
+                              }`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                          {/* Native color picker for millions of custom colors */}
+                          <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-amber-200">
+                            <input
+                              type="color"
+                              value={newCardColor}
+                              onChange={e => setNewCardColor(e.target.value)}
+                              className="w-7 h-7 rounded-lg cursor-pointer border border-amber-300 p-0.5 bg-white"
+                              title="Pick custom color from color wheel"
+                            />
+                            <span className="text-[10px] font-bold text-amber-900">Custom Color</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 mb-1 block">Notes / Location (Optional)</label>
+                        <input
+                          type="text"
+                          value={newCardNotes}
+                          onChange={e => setNewCardNotes(e.target.value)}
+                          placeholder="e.g. Sony FX3 A-Cam primary card"
+                          className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-medium focus:outline-none"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={savingCard || !newCardName.trim()}
+                        className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {savingCard ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                        <span>{editingCardId ? 'Update Memory Card' : '+ Add Memory Card to Studio'}</span>
+                      </button>
+                    </form>
+
+                    {/* Cards Inventory List */}
+                    <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[500px] pr-1">
+                      {storageCards.length === 0 ? (
+                        <div className="py-12 text-center text-slate-400 space-y-1 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                          <Cpu className="w-8 h-8 mx-auto text-slate-300" />
+                          <p className="text-xs font-bold text-slate-600">No memory cards registered yet</p>
+                          <p className="text-[11px] text-slate-400">Add your SD and CFexpress cards above.</p>
+                        </div>
+                      ) : (
+                        storageCards.map(card => {
+                          const formattedCap = card.capacity_gb >= 1000 
+                            ? `${(card.capacity_gb / 1000).toFixed(1)} TB`
+                            : `${card.capacity_gb} GB`;
+
+                          return (
+                            <div
+                              key={card.id}
+                              className="p-3 rounded-2xl border border-slate-200 bg-white hover:border-amber-400 hover:shadow-xs transition flex items-center justify-between gap-3 group"
+                              style={{ borderLeftWidth: '4px', borderLeftColor: card.color_tag || '#F59E0B' }}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                {/* 3D Memory Card Visual Badge */}
+                                <div
+                                  className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs text-white shrink-0 shadow-xs relative overflow-hidden"
+                                  style={{ backgroundColor: card.color_tag || '#F59E0B' }}
+                                >
+                                  <div className="absolute top-0 right-0 w-3 h-3 bg-white/20 transform rotate-45 translate-x-1 -translate-y-1" />
+                                  <Cpu className="w-5 h-5 text-white/90" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="text-xs font-black text-slate-900 truncate" title={card.card_name}>
+                                      {card.card_name}
+                                    </h4>
+                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900">
+                                      {formattedCap}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-0.5">
+                                    <span className="font-bold text-slate-700">{card.card_type?.replace(/_/g, ' ')}</span>
+                                    {card.speed_class && <span>• {card.speed_class}</span>}
+                                    {card.notes && <span className="text-slate-400 truncate max-w-[150px]">• {card.notes}</span>}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditCard(card)}
+                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
+                                  title="Edit Card"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCard(card.id)}
+                                  className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer"
+                                  title="Delete Card"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── RIGHT COLUMN: PHYSICAL DRIVES (HDDs, SSDs, NAS) ── */}
+                  <div className="bg-white border border-amber-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 flex flex-col">
+                    <div className="flex items-center justify-between border-b border-amber-100 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center font-bold shrink-0">
+                          <HardDrive className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-black text-slate-900">
+                            Physical Hard Drives & SSDs
+                          </h3>
+                          <p className="text-[11px] text-slate-500 font-medium">
+                            Manage editing SSDs, external hard drives, racks & NAS arrays
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">
+                        {storageDisks.length} Registered
+                      </span>
+                    </div>
+
+                    {/* Drive Add / Edit Form */}
+                    <form onSubmit={handleSaveDisk} className="p-4 rounded-2xl bg-emerald-50/40 border border-emerald-200/80 space-y-3.5">
+                      <div className="text-xs font-black uppercase text-emerald-950 tracking-wider flex items-center justify-between">
+                        <span>{editingDiskId ? '✏️ Edit Storage Drive' : '➕ Register New Hard Drive / SSD'}</span>
+                        {editingDiskId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingDiskId(null);
+                              setNewDiskName('');
+                              setNewDiskNotes('');
+                            }}
+                            className="text-[11px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Name */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Drive Name / Model *</label>
+                          <input
+                            type="text"
+                            required
+                            value={newDiskName}
+                            onChange={e => setNewDiskName(e.target.value)}
+                            placeholder="e.g. Samsung T7 Shield 2TB"
+                            className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                        </div>
+
+                        {/* Drive Type */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Drive Type *</label>
+                          <select
+                            value={newDiskType}
+                            onChange={e => setNewDiskType(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          >
+                            <option value="EXTERNAL_SSD">SSD (External High-Speed SSD)</option>
+                            <option value="HDD_RACK">HDD (External Hard Disk Rack)</option>
+                            <option value="INTERNAL_DRIVE">Internal (Editing Rig Drive)</option>
+                            <option value="NAS">NAS (Network Attached Storage)</option>
+                            <option value="OTHER">Other / Pen Drive</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Storage Capacity with GB / TB selector */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Total Storage Capacity *</label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="1"
+                              required
+                              value={newDiskCapacity}
+                              onChange={e => setNewDiskCapacity(e.target.value)}
+                              placeholder="2000"
+                              className="flex-1 px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            />
+                            <select
+                              value={newDiskCapacityUnit}
+                              onChange={e => setNewDiskCapacityUnit(e.target.value as any)}
+                              className="w-20 px-2 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none"
+                            >
+                              <option value="GB">GB</option>
+                              <option value="TB">TB</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Physical Location */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Physical Location / Shelf</label>
+                          <input
+                            type="text"
+                            value={newDiskLocation}
+                            onChange={e => setNewDiskLocation(e.target.value)}
+                            placeholder="e.g. Studio Desk 1, Safe, Edit Rig 2"
+                            className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Color Label with Custom Color Picker (Millions of Colors) */}
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                          <span>Color Label / Sticker Tag</span>
+                          <span className="font-mono text-[10px] text-slate-400">{newDiskColor}</span>
+                        </label>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {GOOGLE_PRESET_COLORS.map(c => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => setNewDiskColor(c)}
+                              className={`w-6 h-6 rounded-full border-2 transition-transform cursor-pointer ${
+                                newDiskColor === c ? 'scale-125 border-slate-900 shadow-xs' : 'border-white hover:scale-110 shadow-2xs'
+                              }`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                          {/* Native color picker for millions of custom colors */}
+                          <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-emerald-200">
+                            <input
+                              type="color"
+                              value={newDiskColor}
+                              onChange={e => setNewDiskColor(e.target.value)}
+                              className="w-7 h-7 rounded-lg cursor-pointer border border-emerald-300 p-0.5 bg-white"
+                              title="Pick custom color from color wheel"
+                            />
+                            <span className="text-[10px] font-bold text-emerald-900">Custom Color</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 mb-1 block">Notes / Purpose (Optional)</label>
+                        <input
+                          type="text"
+                          value={newDiskNotes}
+                          onChange={e => setNewDiskNotes(e.target.value)}
+                          placeholder="e.g. Primary wedding raw footage archive"
+                          className="w-full px-3 py-1.5 bg-white border border-emerald-200 rounded-xl text-xs font-medium focus:outline-none"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={savingDisk || !newDiskName.trim()}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {savingDisk ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                        <span>{editingDiskId ? 'Update Storage Drive' : '+ Add Storage Drive to Studio'}</span>
+                      </button>
+                    </form>
+
+                    {/* Drives Inventory List */}
+                    <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[500px] pr-1">
+                      {storageDisks.length === 0 ? (
+                        <div className="py-12 text-center text-slate-400 space-y-1 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                          <HardDrive className="w-8 h-8 mx-auto text-slate-300" />
+                          <p className="text-xs font-bold text-slate-600">No storage drives registered yet</p>
+                          <p className="text-[11px] text-slate-400">Add external SSDs and hard drives above.</p>
+                        </div>
+                      ) : (
+                        storageDisks.map(disk => {
+                          const formattedCap = disk.total_capacity_gb >= 1000 
+                            ? `${(disk.total_capacity_gb / 1000).toFixed(1)} TB`
+                            : `${disk.total_capacity_gb} GB`;
+
+                          return (
+                            <div
+                              key={disk.id}
+                              className="p-3 rounded-2xl border border-slate-200 bg-white hover:border-emerald-400 hover:shadow-xs transition flex items-center justify-between gap-3 group"
+                              style={{ borderLeftWidth: '4px', borderLeftColor: disk.color_tag || '#3B82F6' }}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                {/* 3D Drive Visual Badge */}
+                                <div
+                                  className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs text-white shrink-0 shadow-xs relative"
+                                  style={{ backgroundColor: disk.color_tag || '#3B82F6' }}
+                                >
+                                  {disk.disk_type === 'NAS' ? (
+                                    <Server className="w-5 h-5 text-white/90" />
+                                  ) : (
+                                    <HardDrive className="w-5 h-5 text-white/90" />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="text-xs font-black text-slate-900 truncate" title={disk.disk_name}>
+                                      {disk.disk_name}
+                                    </h4>
+                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900">
+                                      {formattedCap}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-0.5">
+                                    <span className="font-bold text-slate-700">{disk.disk_type?.replace(/_/g, ' ')}</span>
+                                    {disk.physical_location && <span>• 📍 {disk.physical_location}</span>}
+                                    {disk.notes && <span className="text-slate-400 truncate max-w-[150px]">• {disk.notes}</span>}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditDisk(disk)}
+                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
+                                  title="Edit Drive"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDisk(disk.id)}
+                                  className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer"
+                                  title="Delete Drive"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 3. FINANCE & INVOICES SETTINGS */}
             {activeTab === 'finance' && (
               <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-6">
@@ -3634,9 +4360,6 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
-
-
-
               </div>
             )}
           </main>

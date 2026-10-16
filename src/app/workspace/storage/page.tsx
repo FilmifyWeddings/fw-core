@@ -10,7 +10,9 @@ import {
   Copy, Check, MapPin, User, Tag, Clock, ArrowUpRight, ShieldCheck, Sparkles, 
   Trash2, Edit3, Monitor, Layers, ChevronRight, Download, Filter, Eye, Cpu, Zap, X,
   FolderOpen, Laptop, CheckSquare, Square, ChevronDown, Building2, Calendar, FolderPlus,
-  Users, CheckCircle, ArrowUpDown, Grid, List, FileText, Video, Music
+  Users, CheckCircle, ArrowUpDown, Grid, List, FileText, Video, Music,
+  MoreVertical, MoreHorizontal, Settings, ChevronUp, Moon, Link as LinkIcon, MessageSquare,
+  UserPlus, Minus, Server, Disc
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
@@ -52,6 +54,7 @@ interface MemoryCard {
   color_tag: string;
   status: string;
   assigned_to_crew_name?: string;
+  notes?: string;
 }
 
 interface PhysicalDisk {
@@ -65,6 +68,8 @@ interface PhysicalDisk {
   total_capacity_gb: number;
   free_capacity_gb: number;
   is_currently_mounted: boolean;
+  color_tag?: string;
+  notes?: string;
 }
 
 interface DriveAccount {
@@ -111,6 +116,15 @@ interface AssignedDiskItem {
   scanned_on_machine?: string;
 }
 
+interface GoogleDriveBackupFolder {
+  id: string;
+  name: string;
+  webViewLink?: string;
+  account_id?: string;
+  account_email?: string;
+  linked_at?: string;
+}
+
 interface GoogleDriveBackupItem {
   is_backed_up?: boolean;
   account_id?: string;
@@ -121,6 +135,7 @@ interface GoogleDriveBackupItem {
   size_gb?: number;
   backup_status?: string;
   backed_up_at?: string;
+  folders?: GoogleDriveBackupFolder[];
 }
 
 interface ProjectAsset {
@@ -141,10 +156,20 @@ interface ProjectAsset {
 }
 
 interface ManualSubEventForm {
+  id: string;
   name: string;
+  subEventNames?: string[];
   date: string;
+  isDateTbd?: boolean;
+  isOvernight?: boolean;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  shiftSlot?: string;
   venue: string;
+  mapLink?: string;
   crew: { name: string; role: string }[];
+  notes?: string;
 }
 
 export default function StorageHubPage() {
@@ -177,6 +202,28 @@ export default function StorageHubPage() {
   const [showGooglePickerModal, setShowGooglePickerModal] = useState(false);
   const [activeProjectForGoogle, setActiveProjectForGoogle] = useState<ProjectAsset | null>(null);
 
+  // Modals for Top Metric Cards
+  const [showDriveAccountsModal, setShowDriveAccountsModal] = useState(false);
+  const [showDisksListModal, setShowDisksListModal] = useState(false);
+  const [showCardsListModal, setShowCardsListModal] = useState(false);
+  const [showProjectsSummaryModal, setShowProjectsSummaryModal] = useState(false);
+
+  // Active Crew Member Memory Card Popover
+  const [activeCardAssignPopover, setActiveCardAssignPopover] = useState<{
+    projectId: string;
+    eventId: string;
+    crewId: string;
+  } | null>(null);
+  const [cardAssignSearch, setCardAssignSearch] = useState('');
+
+  // Google Folder Details Menu Popover state
+  const [folderMenuOpenId, setFolderMenuOpenId] = useState<string | null>(null);
+  const [folderDetailsModalData, setFolderDetailsModalData] = useState<GoogleFolder | null>(null);
+
+  // Add Project hard disks threaded dropdown state
+  const [isDiskSelectDropdownOpen, setIsDiskSelectDropdownOpen] = useState(false);
+  const [diskSearchQuery, setDiskSearchQuery] = useState('');
+
   // Form states for Add Card
   const [newCardName, setNewCardName] = useState('');
   const [newCardType, setNewCardType] = useState('SD_CARD');
@@ -195,13 +242,22 @@ export default function StorageHubPage() {
   const [manualSelectedDiskIds, setManualSelectedDiskIds] = useState<string[]>([]);
   const [manualSubEvents, setManualSubEvents] = useState<ManualSubEventForm[]>([
     {
+      id: 'sub_1',
       name: 'Wedding Ceremony',
+      subEventNames: ['Wedding Ceremony'],
       date: new Date().toISOString().split('T')[0],
+      isDateTbd: false,
+      isOvernight: false,
+      startTime: '09:00 AM',
+      endTime: '02:00 PM',
+      shiftSlot: 'None (Standard)',
       venue: '',
+      mapLink: '',
       crew: [
         { name: 'Lead Photographer', role: 'Traditional Photography' },
         { name: 'Candid Cinematographer', role: 'Candid Cinematography' }
-      ]
+      ],
+      notes: ''
     }
   ]);
   const [availableLeads, setAvailableLeads] = useState<any[]>([]);
@@ -455,20 +511,23 @@ export default function StorageHubPage() {
   }, [projects, searchQuery, statusFilter]);
 
   // Card update handlers
-  const handleAssignMemoryCard = async (projectId: string, eventId: string, crewId: string, cardId: string) => {
-    const card = memoryCards.find(c => c.id === cardId);
-    if (!card) return;
+  // Multi-Select Toggle Memory Card for Crew Member
+  const handleToggleMemoryCardForCrew = async (projectId: string, eventId: string, crewId: string, card: MemoryCard) => {
+    const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) return;
+
+    let updatedSubEvents: SubEventItem[] = [];
 
     setProjects(prev => prev.map(p => {
       if (p.id !== projectId) return p;
-      const updatedSubEvents = p.sub_events.map(ev => {
+      updatedSubEvents = p.sub_events.map(ev => {
         if (ev.id !== eventId) return ev;
         const updatedCrew = ev.crew.map(cr => {
           if (cr.id !== crewId) return cr;
           const currentCards = cr.assigned_card_ids || [];
           const currentNames = cr.assigned_card_names || [];
-          const exists = currentCards.includes(cardId);
-          const nextCards = exists ? currentCards.filter(id => id !== cardId) : [...currentCards, cardId];
+          const exists = currentCards.includes(card.id);
+          const nextCards = exists ? currentCards.filter(id => id !== card.id) : [...currentCards, card.id];
           const nextNames = exists ? currentNames.filter(n => n !== card.card_name) : [...currentNames, card.card_name];
           return {
             ...cr,
@@ -481,33 +540,22 @@ export default function StorageHubPage() {
       return { ...p, sub_events: updatedSubEvents };
     }));
 
-    // Persist to Supabase
-    const targetProject = projects.find(p => p.id === projectId);
-    if (!targetProject) return;
-
-    const updatedSubEvents = targetProject.sub_events.map(ev => {
-      if (ev.id !== eventId) return ev;
-      const updatedCrew = ev.crew.map(cr => {
-        if (cr.id !== crewId) return cr;
-        const currentCards = cr.assigned_card_ids || [];
-        const currentNames = cr.assigned_card_names || [];
-        const exists = currentCards.includes(cardId);
-        const nextCards = exists ? currentCards.filter(id => id !== cardId) : [...currentCards, cardId];
-        const nextNames = exists ? currentNames.filter(n => n !== card.card_name) : [...currentNames, card.card_name];
-        return {
-          ...cr,
-          assigned_card_ids: nextCards,
-          assigned_card_names: nextNames,
-        };
+    try {
+      await fetch('/api/storage/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: projectId, sub_events: updatedSubEvents }),
       });
-      return { ...ev, crew: updatedCrew };
-    });
+    } catch (err) {
+      console.warn('Failed to update crew memory card:', err);
+    }
+  };
 
-    await fetch('/api/storage/projects', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: projectId, sub_events: updatedSubEvents }),
-    });
+  // Card update handlers (Single Card fallback)
+  const handleAssignMemoryCard = async (projectId: string, eventId: string, crewId: string, cardId: string) => {
+    const card = memoryCards.find(c => c.id === cardId);
+    if (!card) return;
+    await handleToggleMemoryCardForCrew(projectId, eventId, crewId, card);
   };
 
   // Toggle Is Copied checkmark
@@ -553,6 +601,51 @@ export default function StorageHubPage() {
         overall_storage_status: nextStatus,
       }),
     });
+  };
+
+  // Select Primary Physical Disk from Studio Settings for Local Storage Box
+  const handleSelectPrimaryDisk = async (projectId: string, diskId: string) => {
+    const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) return;
+
+    let updatedDisks: AssignedDiskItem[] = [...(targetProject.assigned_disks || [])];
+
+    if (!diskId) {
+      updatedDisks = [];
+    } else {
+      const matchedDisk = disks.find(d => d.id === diskId);
+      if (!matchedDisk) return;
+
+      const existingPrimary = updatedDisks[0];
+      const newPrimary: AssignedDiskItem = {
+        disk_id: matchedDisk.id,
+        disk_name: matchedDisk.disk_name,
+        drive_type: matchedDisk.disk_type,
+        role: 'Primary Production Disk',
+        folder_path: existingPrimary?.folder_path || `/${matchedDisk.disk_name}/${targetProject.client_name.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
+        folder_name: existingPrimary?.folder_name || `${targetProject.client_name}_RAW`,
+        total_size_gb: existingPrimary?.total_size_gb || 0,
+        file_count: existingPrimary?.file_count || 0,
+        photo_count: existingPrimary?.photo_count,
+        video_count: existingPrimary?.video_count,
+        last_scanned_at: new Date().toISOString(),
+        scanned_on_machine: existingPrimary?.scanned_on_machine || (typeof window !== 'undefined' && window.navigator.userAgent.includes('Mac') ? 'Mac Studio' : 'Windows Rig'),
+      };
+
+      updatedDisks = [newPrimary, ...updatedDisks.filter((d, i) => i !== 0 && d.disk_id !== diskId)];
+    }
+
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: updatedDisks } : p));
+
+    try {
+      await fetch('/api/storage/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
+      });
+    } catch (err) {
+      console.warn('Failed to update assigned disk:', err);
+    }
   };
 
   // Assign Physical Disk
@@ -835,8 +928,36 @@ export default function StorageHubPage() {
   };
 
   // Link selected Google Drive folder to Active Project
+  // Link selected Google Drive folder to Active Project (Supports Multiple Folders)
   const handleLinkFolderToProject = async (folder: GoogleFolder | { id: string; name: string; webViewLink?: string }) => {
     if (!activeProjectForGoogle || !selectedGoogleAccount) return;
+
+    const currentBackup = activeProjectForGoogle.google_drive_backup || {};
+    let currentFolders: GoogleDriveBackupFolder[] = [];
+    if (Array.isArray(currentBackup.folders) && currentBackup.folders.length > 0) {
+      currentFolders = [...currentBackup.folders];
+    } else if (currentBackup.folder_id && currentBackup.folder_name) {
+      currentFolders = [{
+        id: currentBackup.folder_id,
+        name: currentBackup.folder_name,
+        webViewLink: currentBackup.web_view_link,
+        account_id: currentBackup.account_id,
+        account_email: currentBackup.account_email,
+        linked_at: currentBackup.backed_up_at,
+      }];
+    }
+
+    const newFolderObj: GoogleDriveBackupFolder = {
+      id: folder.id,
+      name: folder.name,
+      webViewLink: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`,
+      account_id: selectedGoogleAccount.id,
+      account_email: selectedGoogleAccount.account_email,
+      linked_at: new Date().toISOString(),
+    };
+
+    const alreadyExists = currentFolders.some(f => f.id === folder.id);
+    const updatedFolders = alreadyExists ? currentFolders : [...currentFolders, newFolderObj];
 
     const backupPayload: GoogleDriveBackupItem = {
       is_backed_up: true,
@@ -847,6 +968,7 @@ export default function StorageHubPage() {
       web_view_link: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`,
       backup_status: 'COMPLETED',
       backed_up_at: new Date().toISOString(),
+      folders: updatedFolders,
     };
 
     setProjects(prev => prev.map(p => p.id === activeProjectForGoogle.id ? {
@@ -873,6 +995,61 @@ export default function StorageHubPage() {
       });
     } catch (err) {
       console.warn('Failed to persist google drive backup:', err);
+    }
+  };
+
+  // Unlink a specific Google Drive folder from a project
+  const handleUnlinkGoogleFolder = async (projectId: string, folderId: string) => {
+    const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) return;
+
+    const currentBackup = targetProject.google_drive_backup || {};
+    let currentFolders: GoogleDriveBackupFolder[] = [];
+    if (Array.isArray(currentBackup.folders) && currentBackup.folders.length > 0) {
+      currentFolders = currentBackup.folders;
+    } else if (currentBackup.folder_id) {
+      currentFolders = [{
+        id: currentBackup.folder_id,
+        name: currentBackup.folder_name || 'Root Folder',
+        webViewLink: currentBackup.web_view_link,
+        account_id: currentBackup.account_id,
+        account_email: currentBackup.account_email,
+      }];
+    }
+
+    const updatedFolders = currentFolders.filter(f => f.id !== folderId);
+    const stillHasFolders = updatedFolders.length > 0;
+
+    const backupPayload: GoogleDriveBackupItem = {
+      ...currentBackup,
+      is_backed_up: stillHasFolders,
+      folder_id: stillHasFolders ? updatedFolders[0].id : undefined,
+      folder_name: stillHasFolders ? updatedFolders[0].name : undefined,
+      web_view_link: stillHasFolders ? updatedFolders[0].webViewLink : undefined,
+      folders: updatedFolders,
+    };
+
+    const allCopied = targetProject.sub_events?.length > 0 && targetProject.sub_events.every(ev => ev.crew?.every(c => c.is_copied));
+    const nextStatus = stillHasFolders ? 'BACKED_UP_CLOUD' : (allCopied ? 'COPIED_LOCAL' : 'INGESTING');
+
+    setProjects(prev => prev.map(p => p.id === projectId ? {
+      ...p,
+      google_drive_backup: backupPayload,
+      overall_storage_status: nextStatus as any,
+    } : p));
+
+    try {
+      await fetch('/api/storage/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: projectId,
+          google_drive_backup: backupPayload,
+          overall_storage_status: nextStatus,
+        }),
+      });
+    } catch (err) {
+      console.warn('Failed to unlink Google Drive folder:', err);
     }
   };
 
@@ -1294,43 +1471,6 @@ export default function StorageHubPage() {
                 <span>+ Add Project Card</span>
               </button>
 
-              {/* Official Google-Style Connect Google Drive Button */}
-              <button
-                type="button"
-                onClick={() => setShowConnectDriveModal(true)}
-                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-250 text-slate-700 text-xs font-semibold shadow-xs transition hover:shadow-sm cursor-pointer"
-              >
-                <div className="w-4 h-4 shrink-0">
-                  <svg viewBox="0 0 87.3 78" className="w-full h-full">
-                    <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-                    <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
-                    <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
-                    <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
-                    <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
-                    <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
-                  </svg>
-                </div>
-                <span>Connect Google Drive</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowAddCardModal(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold shadow-xs transition cursor-pointer"
-              >
-                <Cpu className="w-4 h-4 text-amber-600" />
-                <span>+ Add Memory Card</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowAddDiskModal(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold shadow-xs transition cursor-pointer"
-              >
-                <HardDrive className="w-4 h-4 text-emerald-600" />
-                <span>+ Add Hard Drive / SSD</span>
-              </button>
-
               <button
                 type="button"
                 onClick={loadStorageData}
@@ -1342,66 +1482,94 @@ export default function StorageHubPage() {
             </div>
           </div>
 
-          {/* ── METRICS OVERVIEW CARDS ── */}
+          {/* ── METRICS OVERVIEW CARDS (Interactive Popovers) ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
-            {/* Metric 1 */}
-            <div className="p-3.5 bg-[#FAF8F3] border border-[#EBE6DB] rounded-2xl flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0">
-                <Calendar className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-lg font-black text-slate-900 leading-none">
-                  {stats.totalProjects}
+            {/* Metric 1: Booked Projects */}
+            <div 
+              onClick={() => setShowProjectsSummaryModal(true)}
+              className="p-3.5 bg-[#FAF8F3] hover:bg-[#F5F1E8] border border-[#EBE6DB] hover:border-amber-400 rounded-2xl flex items-center justify-between gap-3 cursor-pointer transition shadow-2xs hover:shadow-xs group"
+              title="Click to view Booked Projects breakdown"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Calendar className="w-5 h-5" />
                 </div>
-                <div className="text-[11px] text-slate-500 font-semibold mt-1 truncate">
-                  Booked Projects ({stats.ingestingCount} Offloading)
+                <div className="min-w-0">
+                  <div className="text-lg font-black text-slate-900 leading-none">
+                    {stats.totalProjects}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-semibold mt-1 truncate">
+                    Booked Projects ({stats.ingestingCount} Offloading)
+                  </div>
                 </div>
               </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition" />
             </div>
 
-            {/* Metric 2 */}
-            <div className="p-3.5 bg-[#FAF8F3] border border-[#EBE6DB] rounded-2xl flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center shrink-0">
-                <Cpu className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-lg font-black text-slate-900 leading-none">
-                  {stats.cardCount}
+            {/* Metric 2: Registered Memory Cards */}
+            <div 
+              onClick={() => setShowCardsListModal(true)}
+              className="p-3.5 bg-[#FAF8F3] hover:bg-[#F5F1E8] border border-[#EBE6DB] hover:border-emerald-400 rounded-2xl flex items-center justify-between gap-3 cursor-pointer transition shadow-2xs hover:shadow-xs group"
+              title="Click to view all Registered Memory Cards"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Cpu className="w-5 h-5" />
                 </div>
-                <div className="text-[11px] text-slate-500 font-semibold mt-1 truncate">
-                  Registered Memory Cards
+                <div className="min-w-0">
+                  <div className="text-lg font-black text-slate-900 leading-none">
+                    {stats.cardCount}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-semibold mt-1 truncate">
+                    Registered Memory Cards
+                  </div>
                 </div>
               </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" />
             </div>
 
-            {/* Metric 3 */}
-            <div className="p-3.5 bg-[#FAF8F3] border border-[#EBE6DB] rounded-2xl flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/15 text-indigo-700 flex items-center justify-center shrink-0">
-                <HardDrive className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-lg font-black text-slate-900 leading-none">
-                  {stats.totalDisks} Disks
+            {/* Metric 3: Physical Disks & SSDs */}
+            <div 
+              onClick={() => setShowDisksListModal(true)}
+              className="p-3.5 bg-[#FAF8F3] hover:bg-[#F5F1E8] border border-[#EBE6DB] hover:border-indigo-400 rounded-2xl flex items-center justify-between gap-3 cursor-pointer transition shadow-2xs hover:shadow-xs group"
+              title="Click to view all Registered Physical Hard Drives & SSDs"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/15 text-indigo-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <HardDrive className="w-5 h-5" />
                 </div>
-                <div className="text-[11px] text-slate-500 font-semibold mt-1 truncate">
-                  {stats.freeDiskCapacityTb} TB / {stats.totalDiskCapacityTb} TB Free
+                <div className="min-w-0">
+                  <div className="text-lg font-black text-slate-900 leading-none">
+                    {stats.totalDisks} Disks
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-semibold mt-1 truncate">
+                    {stats.freeDiskCapacityTb} TB / {stats.totalDiskCapacityTb} TB Free
+                  </div>
                 </div>
               </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition" />
             </div>
 
-            {/* Metric 4 */}
-            <div className="p-3.5 bg-[#FAF8F3] border border-[#EBE6DB] rounded-2xl flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-700 flex items-center justify-center shrink-0">
-                <Cloud className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-lg font-black text-slate-900 leading-none">
-                  {driveAccounts.length} Drive Accs
+            {/* Metric 4: Connected Google Drive Accounts */}
+            <div 
+              onClick={() => setShowDriveAccountsModal(true)}
+              className="p-3.5 bg-[#FAF8F3] hover:bg-[#F5F1E8] border border-[#EBE6DB] hover:border-blue-400 rounded-2xl flex items-center justify-between gap-3 cursor-pointer transition shadow-2xs hover:shadow-xs group"
+              title="Click to view Connected Google Drive Accounts"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Cloud className="w-5 h-5" />
                 </div>
-                <div className="text-[11px] text-slate-500 font-semibold mt-1 truncate">
-                  {stats.usedDriveTb} TB / {stats.totalDriveTb} TB Used
+                <div className="min-w-0">
+                  <div className="text-lg font-black text-slate-900 leading-none">
+                    {driveAccounts.length} Drive Accs
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-semibold mt-1 truncate">
+                    {stats.usedDriveTb} TB / {stats.totalDriveTb} TB Used
+                  </div>
                 </div>
               </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition" />
             </div>
           </div>
         </div>
@@ -1409,153 +1577,6 @@ export default function StorageHubPage() {
 
       {/* ── MAIN CONTENT CONTAINER (Edge-to-Edge 1600px) ── */}
       <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 pt-6 space-y-6">
-
-        {/* ── SLEEK GOOGLE DRIVE CLOUD ACCOUNTS SECTION ── */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs space-y-3.5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                <Cloud className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                  Connected Google Drive Cloud Accounts
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                    {driveAccounts.length} Active
-                  </span>
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Live cloud storage quota tracking & direct folder links for client wedding cards
-                </p>
-              </div>
-            </div>
-
-            {/* Google Drive Connect Button */}
-            <button
-              type="button"
-              onClick={() => setShowConnectDriveModal(true)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-250 text-slate-700 text-xs font-semibold shadow-xs transition hover:shadow-sm cursor-pointer self-start sm:self-auto"
-            >
-              <div className="w-4 h-4 shrink-0">
-                <svg viewBox="0 0 87.3 78" className="w-full h-full">
-                  <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-                  <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
-                  <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
-                  <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
-                  <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
-                  <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
-                </svg>
-              </div>
-              <span>Connect Google Drive</span>
-            </button>
-          </div>
-
-          {driveAccounts.length === 0 ? (
-            <div className="p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <div className="text-slate-500">
-                No Google Drive accounts connected yet. Link your Google account to automatically track storage and link raw backup folders to client cards.
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowConnectDriveModal(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer shrink-0"
-              >
-                ⚡ Connect Google Drive Now
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {(showAllDriveAccounts ? driveAccounts : driveAccounts.slice(0, 3)).map((acc, accIdx) => {
-                const totalGb = Number((acc.total_storage_bytes / (1024 ** 3)).toFixed(1)) || 2000;
-                const usedGb = Number((acc.used_storage_bytes / (1024 ** 3)).toFixed(1)) || 0;
-                const percent = Math.min(100, Math.round((usedGb / (totalGb || 1)) * 100));
-
-                return (
-                  <div
-                    key={acc.id}
-                    className="p-3 sm:px-4 rounded-2xl bg-white border border-slate-200/90 hover:border-blue-300 hover:shadow-xs transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 group"
-                  >
-                    {/* Left: Sequence badge, Google Drive SVG, Email & Label */}
-                    <div className="flex items-center gap-3 min-w-[280px]">
-                      <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 font-mono text-[11px] font-black flex items-center justify-center shrink-0">
-                        #{accIdx + 1}
-                      </span>
-                      <div className="w-8 h-8 rounded-xl bg-blue-50/70 border border-blue-100 flex items-center justify-center p-1.5 shrink-0">
-                        <svg viewBox="0 0 87.3 78" className="w-full h-full">
-                          <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-                          <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
-                          <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
-                          <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
-                          <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
-                          <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
-                        </svg>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-slate-900 truncate" title={acc.account_email}>
-                          {acc.account_email}
-                        </div>
-                        <div className="text-[11px] text-slate-500 font-medium truncate">
-                          {acc.account_label || 'Wedding Deliverables Drive'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Center: Storage progress bar & values */}
-                    <div className="flex-1 max-w-md w-full px-2">
-                      <div className="flex items-center justify-between text-[11px] font-mono font-semibold mb-1">
-                        <span className="text-slate-700">
-                          {usedGb >= 1000 ? `${(usedGb / 1000).toFixed(2)} TB` : `${usedGb} GB`} / {totalGb >= 1000 ? `${(totalGb / 1000).toFixed(1)} TB` : `${totalGb} GB`}
-                        </span>
-                        <span className="text-slate-500 text-[10px]">{percent}% used</span>
-                      </div>
-                      <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            percent > 90 ? 'bg-rose-500' : percent > 75 ? 'bg-amber-500' : 'bg-blue-600'
-                          }`}
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Right: Browse Folders button + Disconnect button */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenExplorerForAccount(acc)}
-                        className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200/60 shadow-2xs"
-                      >
-                        <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Browse Folders</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteGoogleAccount(acc.id)}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Disconnect account"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {driveAccounts.length > 3 && (
-                <div className="pt-1 text-center">
-                  <button
-                    type="button"
-                    onClick={() => setShowAllDriveAccounts(prev => !prev)}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5"
-                  >
-                    <span>{showAllDriveAccounts ? 'Show Less ▲' : `Show More (${driveAccounts.length - 3} more accounts) ▼`}</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
 
         {/* Filters and Search Bar */}
         <div className="bg-white p-3.5 rounded-2xl border border-[#EAE5DA] shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
@@ -1626,23 +1647,48 @@ export default function StorageHubPage() {
             {filteredProjects.map(project => {
               const allCopied = project.sub_events?.length > 0 && project.sub_events.every(ev => ev.crew?.every(c => c.is_copied));
               const hasCloudBackup = Boolean(project.google_drive_backup?.is_backed_up);
-              const isExpanded = expandedProjectIds[project.id] !== false; // expanded by default
+              const isExpanded = Boolean(expandedProjectIds[project.id]); // COLLAPSED by default
               const primaryDisk = project.assigned_disks?.[0];
+
+              // Filter out any assistant roles from sub-events for display
+              const cleanSubEvents = (project.sub_events || []).map(ev => ({
+                ...ev,
+                crew: (ev.crew || []).filter(c => {
+                  const r = (c.role || '').toLowerCase();
+                  return !r.includes('assistant') && !r.includes('light') && !r.includes('helper') && !r.includes('driver');
+                })
+              }));
+
+              // Extract linked Google Drive folders (array)
+              const linkedFolders: GoogleDriveBackupFolder[] = (project.google_drive_backup?.folders && project.google_drive_backup.folders.length > 0)
+                ? project.google_drive_backup.folders
+                : (project.google_drive_backup?.folder_id ? [{
+                    id: project.google_drive_backup.folder_id,
+                    name: project.google_drive_backup.folder_name || 'Project Folder',
+                    webViewLink: project.google_drive_backup.web_view_link,
+                    account_email: project.google_drive_backup.account_email,
+                  }] : []);
 
               return (
                 <div
                   key={project.id}
                   className="bg-white rounded-3xl border border-[#EAE5DA] p-5 sm:p-6 shadow-xs hover:shadow-md transition-all space-y-5"
                 >
-                  {/* Card Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F4EFE6] pb-4">
+                  {/* Card Header (Clickable to Toggle Details) */}
+                  <div 
+                    onClick={() => setExpandedProjectIds(prev => ({
+                      ...prev,
+                      [project.id]: !prev[project.id]
+                    }))}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F4EFE6] pb-4 cursor-pointer select-none group"
+                  >
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-[#FAF8F3] border border-[#EAE5DA] flex items-center justify-center text-slate-800 font-black text-sm shrink-0">
+                      <div className="w-12 h-12 rounded-2xl bg-[#FAF8F3] border border-[#EAE5DA] group-hover:border-amber-400 flex items-center justify-center text-slate-800 font-black text-sm shrink-0 transition-colors">
                         {project.client_name?.slice(0, 2).toUpperCase() || 'ST'}
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                          <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight group-hover:text-amber-700 transition-colors">
                             {project.client_name}
                           </h2>
                           <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
@@ -1657,8 +1703,11 @@ export default function StorageHubPage() {
                         </div>
                         <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-0.5">
                           <span>📅 {project.event_date || 'Date Pending'}</span>
-                          <span>📸 {project.sub_events?.length || 0} Sub-Events</span>
+                          <span>📸 {cleanSubEvents.length} Sub-Events</span>
                           <span>💾 {project.assigned_disks?.length || 0} Disks Assigned</span>
+                          {linkedFolders.length > 0 && (
+                            <span className="text-blue-600 font-bold">☁️ {linkedFolders.length} Cloud Folder{linkedFolders.length > 1 ? 's' : ''}</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1667,11 +1716,14 @@ export default function StorageHubPage() {
                     <div className="flex items-center gap-2 self-start sm:self-auto">
                       <button
                         type="button"
-                        onClick={() => setExpandedProjectIds(prev => ({
-                          ...prev,
-                          [project.id]: prev[project.id] === false ? true : false,
-                        }))}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedProjectIds(prev => ({
+                            ...prev,
+                            [project.id]: !prev[project.id]
+                          }));
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
                       >
                         <span>{isExpanded ? 'Show Less ▲' : 'Show Details ▼'}</span>
                       </button>
@@ -1684,7 +1736,7 @@ export default function StorageHubPage() {
                     <div className="p-4 rounded-2xl bg-[#FAF8F3] border border-[#EBE6DB] flex flex-col justify-between gap-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shrink-0">
+                          <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
                             <HardDrive className="w-4 h-4" />
                           </div>
                           <div className="min-w-0">
@@ -1707,6 +1759,29 @@ export default function StorageHubPage() {
                           <FolderOpen className="w-3.5 h-3.5 text-amber-600" />
                           <span>{primaryDisk?.folder_name ? 'Change Folder' : 'Pick Local Folder'}</span>
                         </button>
+                      </div>
+
+                      {/* Select Physical Hard Drive / SSD Synced with Settings */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
+                          Assigned Physical Drive / SSD (Settings Sync)
+                        </label>
+                        <div className="relative">
+                          <select
+                            aria-label="Assign Physical Drive"
+                            value={primaryDisk?.disk_id || ''}
+                            onChange={(e) => handleSelectPrimaryDisk(project.id, e.target.value)}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-250 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 cursor-pointer shadow-2xs appearance-none pr-8"
+                          >
+                            <option value="">-- Select Physical Drive / SSD from Settings --</option>
+                            {disks.map(d => (
+                              <option key={d.id} value={d.id}>
+                                {d.disk_name} ({d.disk_type} • {d.total_capacity_gb >= 1000 ? `${(d.total_capacity_gb / 1000).toFixed(1)} TB` : `${d.total_capacity_gb} GB`}{d.physical_location ? ` • ${d.physical_location}` : ''})
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
                       </div>
 
                       {/* Path & Copy Button */}
@@ -1749,7 +1824,7 @@ export default function StorageHubPage() {
                       )}
                     </div>
 
-                    {/* 2. Google Drive Cloud Backup Box */}
+                    {/* 2. Google Drive Cloud Backup Box (Multiple Folders Supported) */}
                     <div className="p-4 rounded-2xl bg-[#F6F9FE] border border-blue-150 flex flex-col justify-between gap-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -1768,50 +1843,73 @@ export default function StorageHubPage() {
                               Google Drive Cloud Backup
                             </h4>
                             <p className="text-[11px] text-slate-500 truncate">
-                              {hasCloudBackup ? (project.google_drive_backup?.account_email || 'Linked Google Drive') : 'Cloud archive & deliverable storage'}
+                              {hasCloudBackup 
+                                ? `${linkedFolders.length} Folder${linkedFolders.length > 1 ? 's' : ''} Linked`
+                                : 'Cloud archive & deliverable storage'}
                             </p>
                           </div>
                         </div>
 
-                        {/* Link / Change Google Drive Folder Button */}
+                        {/* Add / Link Google Drive Folder Button */}
                         <button
                           type="button"
                           onClick={() => handleOpenGooglePicker(project)}
                           className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition"
                         >
                           <Cloud className="w-3.5 h-3.5" />
-                          <span>{hasCloudBackup ? 'Change Folder' : '+ Link Google Drive'}</span>
+                          <span>+ Add Drive Folder</span>
                         </button>
                       </div>
 
-                      {/* Drive Folder Display & External Link */}
-                      <div className="bg-white p-2.5 rounded-xl border border-blue-200/80 flex items-center justify-between gap-2 text-xs">
-                        {hasCloudBackup ? (
-                          <>
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Folder className="w-4 h-4 text-amber-500 shrink-0" />
-                              <span className="font-bold text-blue-950 truncate">
-                                {project.google_drive_backup?.folder_name || 'Project Root Folder'}
-                              </span>
+                      {/* Multiple Linked Drive Folders List */}
+                      {linkedFolders.length > 0 ? (
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                          {linkedFolders.map(folder => (
+                            <div
+                              key={folder.id}
+                              className="bg-white p-2 sm:px-2.5 rounded-xl border border-blue-200/80 flex items-center justify-between gap-2 text-xs shadow-2xs"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                                <span className="font-bold text-blue-950 truncate" title={folder.name}>
+                                  {folder.name}
+                                </span>
+                                {folder.account_email && (
+                                  <span className="text-[10px] text-slate-400 truncate hidden sm:inline">
+                                    ({folder.account_email})
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {folder.webViewLink && (
+                                  <a
+                                    href={folder.webViewLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="px-2 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center gap-1"
+                                  >
+                                    <span>Open</span>
+                                    <ExternalLink className="w-2.5 h-2.5" />
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlinkGoogleFolder(project.id, folder.id)}
+                                  className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                  title="Unlink this folder"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
-                            {project.google_drive_backup?.web_view_link && (
-                              <a
-                                href={project.google_drive_backup.web_view_link}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center gap-1 shrink-0"
-                              >
-                                <span>Open in Drive</span>
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-slate-400 font-medium">
-                            No Google Drive folder linked yet. Click &apos;+ Link Google Drive&apos; to browse.
-                          </span>
-                        )}
-                      </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="bg-white p-2.5 rounded-xl border border-dashed border-blue-200 text-xs text-slate-400 font-medium">
+                          No Google Drive folder linked yet. Click &apos;+ Add Drive Folder&apos; to link client raw dumps.
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1820,13 +1918,13 @@ export default function StorageHubPage() {
                     <div className="space-y-3.5 pt-2 border-t border-[#F4EFE6]">
                       <div className="flex items-center justify-between">
                         <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">
-                          Sub-Events & Crew Media Cards ({project.sub_events?.length || 0})
+                          Sub-Events & Crew Media Cards ({cleanSubEvents.length})
                         </h3>
                       </div>
 
                       <div className="grid grid-cols-1 gap-3.5">
-                        {project.sub_events?.map(event => {
-                          const eventAllCopied = event.crew?.every(c => c.is_copied);
+                        {cleanSubEvents.map(event => {
+                          const eventAllCopied = event.crew?.length > 0 && event.crew.every(c => c.is_copied);
                           const copiedCrewCount = event.crew?.filter(c => c.is_copied).length || 0;
                           const totalCrewCount = event.crew?.length || 0;
 
@@ -1855,12 +1953,12 @@ export default function StorageHubPage() {
                                 </span>
                               </div>
 
-                              {/* Crew List in Event */}
+                              {/* Crew List in Event (Excluding Assistant/Lights) */}
                               <div className="space-y-2.5">
                                 {event.crew?.map(member => (
                                   <div
                                     key={member.id}
-                                    className="bg-white border border-slate-200/80 rounded-2xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs"
+                                    className="bg-white border border-slate-200/80 rounded-2xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs relative"
                                   >
                                     {/* Left: Crew Name & Role */}
                                     <div className="flex items-center gap-2.5 min-w-[220px]">
@@ -1873,48 +1971,152 @@ export default function StorageHubPage() {
                                       </div>
                                     </div>
 
-                                    {/* Center: 3D Memory Card Selector (SD / CFexpress) */}
-                                    <div className="flex-1 max-w-md w-full space-y-1">
-                                      <div className="relative">
-                                        <select
-                                          aria-label={`Assign Memory Card for ${member.name}`}
-                                          value=""
-                                          onChange={e => {
-                                            if (e.target.value === '__add_new__') {
-                                              setShowAddCardModal(true);
-                                            } else if (e.target.value) {
-                                              handleAssignMemoryCard(project.id, event.id, member.id, e.target.value);
-                                            }
-                                          }}
-                                          className="w-full px-3 py-1.5 bg-[#FEFDF8] border border-amber-250 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-amber-600 cursor-pointer shadow-2xs appearance-none pr-8"
-                                        >
-                                          <option value="">
+                                    {/* Center: Multi-Select Memory Card Dropdown with Search */}
+                                    <div className="flex-1 max-w-md w-full space-y-1 relative">
+                                      {/* Trigger Button */}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (activeCardAssignPopover?.crewId === member.id && activeCardAssignPopover?.eventId === event.id) {
+                                            setActiveCardAssignPopover(null);
+                                          } else {
+                                            setActiveCardAssignPopover({
+                                              projectId: project.id,
+                                              eventId: event.id,
+                                              crewId: member.id,
+                                            });
+                                            setCardAssignSearch('');
+                                          }
+                                        }}
+                                        className="w-full px-3 py-1.5 bg-[#FEFDF8] hover:bg-amber-50/50 border border-amber-250 rounded-xl text-xs font-bold text-amber-950 flex items-center justify-between cursor-pointer shadow-2xs transition"
+                                      >
+                                        <div className="flex items-center gap-1.5 truncate">
+                                          <Cpu className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                          <span className="truncate">
                                             {member.assigned_card_names?.length > 0 
-                                              ? `+ Add Another Card (${member.assigned_card_names.length} assigned)` 
+                                              ? `${member.assigned_card_names.length} Card(s) Selected` 
                                               : 'Select Memory Card (SD / CFexpress)...'}
-                                          </option>
-                                          {memoryCards.map(c => (
-                                            <option key={c.id} value={c.id}>
-                                              {c.card_name} ({c.card_type} • {c.capacity_gb}GB • {c.speed_class})
-                                            </option>
-                                          ))}
-                                          <option value="__add_new__">➕ Register New Card...</option>
-                                        </select>
-                                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                      </div>
+                                          </span>
+                                        </div>
+                                        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${activeCardAssignPopover?.crewId === member.id && activeCardAssignPopover?.eventId === event.id ? 'rotate-180' : ''}`} />
+                                      </button>
 
-                                      {/* Assigned Card Tags */}
+                                      {/* Interactive Multi-Select Popover with Search */}
+                                      {activeCardAssignPopover?.projectId === project.id && 
+                                       activeCardAssignPopover?.eventId === event.id && 
+                                       activeCardAssignPopover?.crewId === member.id && (
+                                        <div className="absolute left-0 top-full mt-1.5 w-72 sm:w-80 bg-white border border-amber-200 rounded-2xl shadow-2xl p-2.5 z-50 space-y-2">
+                                          {/* Search Input */}
+                                          <div className="relative">
+                                            <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                            <input
+                                              type="text"
+                                              autoFocus
+                                              placeholder="Search memory cards..."
+                                              value={cardAssignSearch}
+                                              onChange={e => setCardAssignSearch(e.target.value)}
+                                              className="w-full pl-7 pr-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-amber-500"
+                                            />
+                                          </div>
+
+                                          {/* Cards Checkbox List */}
+                                          <div className="max-h-48 overflow-y-auto space-y-1">
+                                            {memoryCards.length === 0 ? (
+                                              <div className="p-3 text-center text-xs text-slate-400">
+                                                No memory cards registered yet.
+                                              </div>
+                                            ) : (
+                                              memoryCards
+                                                .filter(c => !cardAssignSearch.trim() || c.card_name.toLowerCase().includes(cardAssignSearch.toLowerCase()) || c.card_type.toLowerCase().includes(cardAssignSearch.toLowerCase()))
+                                                .map(card => {
+                                                  const isSelected = (member.assigned_card_ids || []).includes(card.id);
+                                                  return (
+                                                    <div
+                                                      key={card.id}
+                                                      onClick={() => handleToggleMemoryCardForCrew(project.id, event.id, member.id, card)}
+                                                      className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition ${
+                                                        isSelected 
+                                                          ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold' 
+                                                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                                                      }`}
+                                                    >
+                                                      <div className="flex items-center gap-2 min-w-0">
+                                                        <span 
+                                                          className="w-3 h-3 rounded-full shrink-0 shadow-2xs" 
+                                                          style={{ backgroundColor: card.color_tag || '#f59e0b' }} 
+                                                        />
+                                                        <div className="min-w-0">
+                                                          <div className="text-xs truncate">{card.card_name}</div>
+                                                          <div className="text-[10px] text-slate-400 font-normal">
+                                                            {card.card_type} • {card.capacity_gb}GB • {card.speed_class}
+                                                          </div>
+                                                        </div>
+                                                      </div>
+                                                      <div className="shrink-0">
+                                                        {isSelected ? (
+                                                          <CheckSquare className="w-4 h-4 text-amber-600 fill-amber-100" />
+                                                        ) : (
+                                                          <Square className="w-4 h-4 text-slate-300" />
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })
+                                            )}
+                                          </div>
+
+                                          {/* Popover Footer */}
+                                          <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                                            <Link
+                                              href="/settings?tab=storage"
+                                              className="text-amber-700 hover:text-amber-800 font-bold flex items-center gap-1"
+                                            >
+                                              <Settings className="w-3 h-3" />
+                                              <span>Manage in Settings</span>
+                                            </Link>
+                                            <button
+                                              type="button"
+                                              onClick={() => setActiveCardAssignPopover(null)}
+                                              className="text-slate-500 hover:text-slate-800 font-bold px-2 py-0.5 rounded-md hover:bg-slate-100 cursor-pointer"
+                                            >
+                                              Done
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Assigned Card Tags with Color Dots and Remove X */}
                                       {member.assigned_card_names?.length > 0 && (
                                         <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                                          {member.assigned_card_names.map((name, nIdx) => (
-                                            <span
-                                              key={nIdx}
-                                              className="text-[10px] font-extrabold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1"
-                                            >
-                                              <Cpu className="w-3 h-3 text-amber-600" />
-                                              <span>{name}</span>
-                                            </span>
-                                          ))}
+                                          {member.assigned_card_names.map((name, nIdx) => {
+                                            const cardId = member.assigned_card_ids?.[nIdx];
+                                            const matched = memoryCards.find(c => c.id === cardId);
+                                            return (
+                                              <span
+                                                key={nIdx}
+                                                className="text-[10px] font-extrabold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 flex items-center gap-1.5 shadow-2xs"
+                                              >
+                                                <span 
+                                                  className="w-2 h-2 rounded-full shrink-0" 
+                                                  style={{ backgroundColor: matched?.color_tag || '#f59e0b' }} 
+                                                />
+                                                <Cpu className="w-3 h-3 text-amber-600" />
+                                                <span>{name}</span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    if (matched) {
+                                                      handleToggleMemoryCardForCrew(project.id, event.id, member.id, matched);
+                                                    }
+                                                  }}
+                                                  className="hover:text-rose-600 ml-0.5 cursor-pointer"
+                                                  title="Remove card"
+                                                >
+                                                  <X className="w-2.5 h-2.5" />
+                                                </button>
+                                              </span>
+                                            );
+                                          })}
                                         </div>
                                       )}
                                     </div>
@@ -2064,94 +2266,312 @@ export default function StorageHubPage() {
                 </div>
               </div>
 
-              {/* 3D Multi-Select Physical Disks / SSDs */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block">
-                  Assign Physical Hard Disks / SSDs ({manualSelectedDiskIds.length} Selected)
-                </label>
-                {disks.length === 0 ? (
-                  <div className="p-3 rounded-xl border border-dashed border-slate-200 text-xs text-slate-400">
-                    No physical disks registered yet. You can register hard drives using &quot;+ Add Hard Drive / SSD&quot;.
+              {/* Threaded Multi-Select Physical Hard Disks / SSDs Dropdown */}
+              <div className="space-y-1.5 relative">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <HardDrive className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Assign Physical Hard Disks / SSDs</span>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      {manualSelectedDiskIds.length} Selected
+                    </span>
+                  </label>
+                  <Link
+                    href="/settings?tab=storage"
+                    target="_blank"
+                    className="text-[11px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1"
+                  >
+                    <Settings className="w-3 h-3" />
+                    <span>Manage in Settings</span>
+                  </Link>
+                </div>
+
+                {/* Dropdown Toggle Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsDiskSelectDropdownOpen(!isDiskSelectDropdownOpen)}
+                  className="w-full min-h-[42px] px-3 py-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-2xl flex items-center justify-between gap-2 text-left transition cursor-pointer shadow-2xs"
+                >
+                  <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-0">
+                    {manualSelectedDiskIds.length === 0 ? (
+                      <span className="text-xs text-slate-400 font-medium">
+                        Click to select physical hard disks &amp; SSDs registered in Settings...
+                      </span>
+                    ) : (
+                      disks
+                        .filter(d => manualSelectedDiskIds.includes(d.id))
+                        .map(d => (
+                          <span
+                            key={d.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-white text-slate-800 border border-slate-200 shadow-2xs"
+                            style={{ borderLeftWidth: '3.5px', borderLeftColor: d.color_tag || '#3B82F6' }}
+                          >
+                            <span className="truncate max-w-[130px]">{d.disk_name}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              ({d.total_capacity_gb >= 1000 ? `${(d.total_capacity_gb / 1000).toFixed(0)}TB` : `${d.total_capacity_gb}GB`})
+                            </span>
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setManualSelectedDiskIds(prev => prev.filter(id => id !== d.id));
+                              }}
+                              className="w-3.5 h-3.5 rounded-full hover:bg-rose-500 hover:text-white text-slate-400 flex items-center justify-center transition cursor-pointer ml-0.5"
+                            >
+                              <X className="w-2.5 h-2.5 stroke-[3]" />
+                            </span>
+                          </span>
+                        ))
+                    )}
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-slate-50/70 border border-slate-200 rounded-2xl">
-                    {disks.map(d => {
-                      const isSelected = manualSelectedDiskIds.includes(d.id);
-                      return (
-                        <div
-                          key={d.id}
-                          onClick={() => {
-                            setManualSelectedDiskIds(prev =>
-                              prev.includes(d.id) ? prev.filter(id => id !== d.id) : [...prev, d.id]
-                            );
-                          }}
-                          className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                            isSelected
-                              ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-2xs font-bold'
-                              : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <HardDrive className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-emerald-600' : 'text-slate-400'}`} />
-                            <div className="min-w-0">
-                              <div className="text-xs truncate">{d.disk_name}</div>
-                              <div className="text-[10px] text-slate-400 font-normal">{d.disk_type} • {d.total_capacity_gb}GB</div>
-                            </div>
-                          </div>
-                          <div className="shrink-0">
-                            {isSelected ? (
-                              <CheckSquare className="w-4 h-4 text-emerald-600 fill-emerald-100" />
-                            ) : (
-                              <Square className="w-4 h-4 text-slate-300" />
-                            )}
-                          </div>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isDiskSelectDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Dropdown Popover Panel */}
+                <AnimatePresence>
+                  {isDiskSelectDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      className="absolute z-50 left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-72 overflow-y-auto"
+                    >
+                      {/* Search Bar */}
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={diskSearchQuery}
+                          onChange={e => setDiskSearchQuery(e.target.value)}
+                          placeholder="Search hard drives & SSDs..."
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+
+                      {disks.length === 0 ? (
+                        <div className="p-4 rounded-xl border border-dashed border-amber-200 bg-amber-50/50 text-center space-y-1.5">
+                          <p className="text-xs font-bold text-amber-900">No physical disks registered yet in Settings</p>
+                          <p className="text-[11px] text-amber-700">Add external SSDs, HDDs, or NAS arrays in Studio Settings.</p>
+                          <Link
+                            href="/settings?tab=storage"
+                            target="_blank"
+                            className="inline-flex items-center gap-1 px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-black hover:bg-amber-700"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Go to Settings &gt; Studio Storage</span>
+                          </Link>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
+                      ) : (
+                        <div className="space-y-1.5">
+                          {disks
+                            .filter(d => !diskSearchQuery || d.disk_name.toLowerCase().includes(diskSearchQuery.toLowerCase()) || d.disk_type.toLowerCase().includes(diskSearchQuery.toLowerCase()) || (d.notes && d.notes.toLowerCase().includes(diskSearchQuery.toLowerCase())))
+                            .map(d => {
+                              const isSelected = manualSelectedDiskIds.includes(d.id);
+                              const formattedCap = d.total_capacity_gb >= 1000 
+                                ? `${(d.total_capacity_gb / 1000).toFixed(0)} TB`
+                                : `${d.total_capacity_gb} GB`;
+
+                              return (
+                                <div
+                                  key={d.id}
+                                  onClick={() => {
+                                    setManualSelectedDiskIds(prev =>
+                                      prev.includes(d.id) ? prev.filter(id => id !== d.id) : [...prev, d.id]
+                                    );
+                                  }}
+                                  className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2.5 cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 font-bold shadow-2xs'
+                                      : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                                  }`}
+                                  style={{ borderLeftWidth: '4px', borderLeftColor: d.color_tag || '#3B82F6' }}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div
+                                      className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0 shadow-2xs"
+                                      style={{ backgroundColor: d.color_tag || '#3B82F6' }}
+                                    >
+                                      {d.disk_type === 'NAS' ? (
+                                        <Server className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <HardDrive className="w-3.5 h-3.5" />
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="text-xs truncate font-extrabold">{d.disk_name}</div>
+                                      <div className="text-[10px] text-slate-400 font-normal flex items-center gap-1.5">
+                                        <span className="font-semibold text-slate-600">{d.disk_type?.replace(/_/g, ' ')}</span>
+                                        <span>•</span>
+                                        <span className="font-bold text-emerald-700">{formattedCap}</span>
+                                        {d.physical_location && (
+                                          <>
+                                            <span>•</span>
+                                            <span>📍 {d.physical_location}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="shrink-0">
+                                    {isSelected ? (
+                                      <CheckSquare className="w-4 h-4 text-emerald-600 fill-emerald-100" />
+                                    ) : (
+                                      <Square className="w-4 h-4 text-slate-300" />
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
-              {/* Sub-Events & Crew Assignment Builder (Bookings & Events UI) */}
+              {/* Sub-Events & Crew Assignment Builder (Exact match with Image 2 EventBlock) */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-black uppercase text-slate-500 tracking-wider">
-                    Sub-Events & Crew Assignment
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-amber-600" />
+                    <label className="text-xs font-black uppercase text-slate-700 tracking-wider">
+                      Sub-Events &amp; Crew Assignment ({manualSubEvents.length})
+                    </label>
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
                       setManualSubEvents(prev => [
                         ...prev,
                         {
+                          id: `sub_${Date.now()}`,
                           name: 'Wedding Ceremony',
+                          subEventNames: ['Wedding Ceremony'],
                           date: manualEventDate || new Date().toISOString().split('T')[0],
+                          isDateTbd: false,
+                          isOvernight: false,
+                          startTime: '09:00 AM',
+                          endTime: '02:00 PM',
+                          shiftSlot: 'None (Standard)',
                           venue: '',
-                          crew: [{ name: 'Lead Photographer', role: 'Traditional Photography' }]
+                          mapLink: '',
+                          crew: [
+                            { name: 'Lead Photographer', role: 'Traditional Photography' },
+                            { name: 'Candid Cinematographer', role: 'Candid Cinematography' }
+                          ],
+                          notes: ''
                         }
                       ]);
                     }}
-                    className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 cursor-pointer"
+                    className="text-xs font-black text-amber-700 hover:text-amber-800 flex items-center gap-1.5 cursor-pointer bg-amber-50 hover:bg-amber-100/80 px-3 py-1.5 rounded-xl border border-amber-200 transition active:scale-95 shadow-2xs"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>+ Add Sub-Event</span>
                   </button>
                 </div>
 
-                <div className="space-y-3">
-                  {manualSubEvents.map((ev, evIdx) => (
-                    <div key={evIdx} className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-                      {/* Sub-event Name & Event Type Selector */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="space-y-4">
+                  {manualSubEvents.map((ev, evIdx) => {
+                    const isDateNotFixed = Boolean(ev.isDateTbd);
+                    const isOvernight = Boolean(ev.isOvernight);
+                    const currentProgramNames = ev.subEventNames && ev.subEventNames.length > 0 ? ev.subEventNames : [ev.name || 'Wedding Ceremony'];
+
+                    return (
+                      <div
+                        key={ev.id || evIdx}
+                        className="bg-[#FEFDF8] rounded-2xl border border-amber-200/90 p-3.5 sm:p-4 space-y-3 shadow-2xs relative group"
+                      >
+                        {/* HEADER ROW WITH BLOCK INDEX & ACTIONS */}
+                        <div className="flex items-center justify-between border-b border-amber-200/70 pb-2.5">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <div className="w-5 h-5 rounded-md bg-amber-100 text-amber-900 font-black text-[10px] flex items-center justify-center border border-amber-300 shrink-0">
+                              {evIdx + 1}
+                            </div>
+                            <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider shrink-0">
+                              Sub-Event #{evIdx + 1}
+                            </h4>
+
+                            {/* Individual Program Chips with Cross (X) icon to delete */}
+                            {currentProgramNames.map((name) => (
+                              <span
+                                key={name}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-100/90 hover:bg-amber-100 text-amber-950 border border-amber-300 text-[11px] font-extrabold shadow-2xs transition-colors"
+                              >
+                                <span className="truncate max-w-[140px]">{name}</span>
+                                {currentProgramNames.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const updated = currentProgramNames.filter(n => n !== name);
+                                      setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                        ...item,
+                                        subEventNames: updated,
+                                        name: updated[0] || item.name
+                                      } : item));
+                                    }}
+                                    className="w-3.5 h-3.5 rounded-full hover:bg-rose-500 hover:text-white text-amber-800 flex items-center justify-center transition cursor-pointer p-0 shrink-0"
+                                    title={`Remove ${name}`}
+                                  >
+                                    <X className="w-2.5 h-2.5 stroke-[3]" />
+                                  </button>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            {/* Duplicate Sub-Event */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const clone: ManualSubEventForm = {
+                                  ...ev,
+                                  id: `sub_${Date.now()}`,
+                                  crew: ev.crew.map(c => ({ ...c }))
+                                };
+                                setManualSubEvents(prev => [
+                                  ...prev.slice(0, evIdx + 1),
+                                  clone,
+                                  ...prev.slice(evIdx + 1)
+                                ]);
+                              }}
+                              className="p-1.5 text-zinc-400 hover:text-amber-700 hover:bg-amber-100/70 rounded-lg transition cursor-pointer"
+                              title="Duplicate event block"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            {/* Remove Sub-Event */}
+                            {manualSubEvents.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => setManualSubEvents(prev => prev.filter((_, idx) => idx !== evIdx))}
+                                className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                title="Remove event block"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 1. EVENT TYPE SELECT */}
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 mb-0.5 block">Event Type</label>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                            Event Type <span className="text-red-500">*</span>
+                          </label>
                           <select
                             value={ev.name}
                             onChange={e => {
                               const val = e.target.value;
-                              setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, name: val } : item));
+                              setManualSubEvents(prev => prev.map((item, idx) => {
+                                if (idx !== evIdx) return item;
+                                const existing = item.subEventNames || [];
+                                const nextNames = existing.includes(val) ? existing : [...existing, val];
+                                return { ...item, name: val, subEventNames: nextNames };
+                              }));
                             }}
-                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900"
+                            className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
                           >
                             <option value="Wedding Ceremony">Wedding Ceremony</option>
                             <option value="Reception">Reception</option>
@@ -2159,130 +2579,377 @@ export default function StorageHubPage() {
                             <option value="Haldi">Haldi</option>
                             <option value="Mehendi">Mehendi</option>
                             <option value="Engagement">Engagement</option>
-                            <option value="Pre-Wedding">Pre-Wedding</option>
                             <option value="Ring Ceremony">Ring Ceremony</option>
                             <option value="Cocktail Party">Cocktail Party</option>
+                            <option value="Pre-Wedding">Pre-Wedding</option>
                             <option value="Baraat">Baraat</option>
-                            <option value="Custom Event">Custom Event...</option>
+                            <option value="Custom Event">Custom Event</option>
                           </select>
                         </div>
 
+                        {/* 2. PROGRAM DATE & CHECKBOXES GROUP */}
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 mb-0.5 block">Sub-Event Date</label>
-                          <input
-                            type="date"
-                            value={ev.date}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, date: val } : item));
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900"
-                          />
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                            Program Date <span className="text-red-500">*</span>
+                          </label>
+
+                          {/* Checkboxes row: Date Not Fixed & Spans Overnight */}
+                          <div className="flex flex-wrap items-center gap-4 mb-2">
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none">
+                              <input
+                                type="checkbox"
+                                checked={isDateNotFixed}
+                                onChange={(e) => {
+                                  const isTbd = e.target.checked;
+                                  setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                    ...item,
+                                    isDateTbd: isTbd,
+                                    date: isTbd ? '' : (item.date || manualEventDate || new Date().toISOString().split('T')[0])
+                                  } : item));
+                                }}
+                                className="h-4 w-4 rounded border-slate-300 text-amber-500 shadow-inner focus:ring-amber-400 cursor-pointer accent-amber-600"
+                              />
+                              <span>Date Not Fixed (TBD)</span>
+                            </label>
+
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none">
+                              <input
+                                type="checkbox"
+                                checked={isOvernight}
+                                onChange={(e) => {
+                                  const overnight = e.target.checked;
+                                  setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                    ...item,
+                                    isOvernight: overnight,
+                                    endDate: overnight ? (item.endDate || item.date) : ''
+                                  } : item));
+                                }}
+                                className="h-4 w-4 rounded border-slate-300 text-amber-500 shadow-inner focus:ring-amber-400 cursor-pointer accent-indigo-600"
+                              />
+                              <Moon className="w-3.5 h-3.5 text-indigo-500 inline-block" />
+                              <span>Spans Overnight (Next Day End)</span>
+                            </label>
+                          </div>
+
+                          {/* Date Inputs */}
+                          {isOvernight && !isDateNotFixed ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                                  Start Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={ev.date}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, date: val } : item));
+                                  }}
+                                  className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-black uppercase tracking-wider text-indigo-950 block mb-1">
+                                  End Date (Next Day)
+                                </label>
+                                <input
+                                  type="date"
+                                  value={ev.endDate || ev.date}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, endDate: val } : item));
+                                  }}
+                                  className="w-full px-3 py-1.5 bg-white border border-indigo-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <input
+                              type="date"
+                              disabled={isDateNotFixed}
+                              value={isDateNotFixed ? '' : ev.date}
+                              placeholder={isDateNotFixed ? 'Date Not Fixed (TBD)' : 'Pick date...'}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, date: val } : item));
+                              }}
+                              className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs disabled:bg-slate-100 disabled:text-slate-400"
+                            />
+                          )}
                         </div>
 
-                        <div className="flex items-end gap-1.5">
-                          <div className="flex-1">
-                            <label className="text-[10px] font-bold text-slate-500 mb-0.5 block">Venue / Location</label>
+                        {/* 3. TIME PICKERS & SHIFT SLOT */}
+                        <div className="grid grid-cols-1 sm:grid-cols-7 gap-3 items-end pt-1">
+                          <div className="sm:col-span-3">
+                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-amber-500" />
+                              <span>Roll Call Time (Start)</span>
+                            </label>
                             <input
                               type="text"
+                              value={ev.startTime || '09:00 AM'}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, startTime: val } : item));
+                              }}
+                              placeholder="e.g. 09:00 AM"
+                              className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-indigo-500" />
+                              <span>Dismissal Estimate (End)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={ev.endTime || '02:00 PM'}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, endTime: val } : item));
+                              }}
+                              placeholder="e.g. 02:00 PM"
+                              className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-1">
+                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1 flex items-center gap-1">
+                              <Zap className="w-3 h-3 text-amber-500" />
+                              <span>Shift</span>
+                            </label>
+                            <select
+                              value={ev.shiftSlot || 'None (Standard)'}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, shiftSlot: val } : item));
+                              }}
+                              className="w-full px-2 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs truncate"
+                            >
+                              <option value="None (Standard)">None</option>
+                              <option value="1 Hour Slot">1 Hr</option>
+                              <option value="2 Hours Slot">2 Hrs</option>
+                              <option value="3 Hours Slot">3 Hrs</option>
+                              <option value="4 Hours Slot">4 Hrs</option>
+                              <option value="6 Hours Slot">6 Hrs</option>
+                              <option value="8 Hours Slot">8 Hrs</option>
+                              <option value="10 Hours Slot">10 Hrs</option>
+                              <option value="12 Hours Slot">12 Hrs</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* 4. VENUE COORDINATES / LOCATION */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
+                            <MapPin className="w-3 h-3 text-zinc-500" />
+                            <span>Venue Coordinates / Location</span>
+                            <span className="text-zinc-400 font-normal lowercase text-[9px]">(optional)</span>
+                          </label>
+                          <div className="relative">
+                            <MapPin className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              placeholder="e.g. Royal Lawn Room, Mumbai"
                               value={ev.venue}
                               onChange={e => {
                                 const val = e.target.value;
                                 setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, venue: val } : item));
                               }}
-                              placeholder="e.g. Grand Ballroom"
-                              className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900"
+                              className="w-full bg-white border border-amber-200/90 pl-8 pr-2.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none shadow-2xs"
                             />
                           </div>
+                          <div className="relative">
+                            <LinkIcon className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="url"
+                              placeholder="Map Link (e.g. https://maps.google.com/?q=...)"
+                              value={ev.mapLink || ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, mapLink: val } : item));
+                              }}
+                              className="w-full bg-white border border-amber-200/90 pl-8 pr-2.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none shadow-2xs font-mono"
+                            />
+                          </div>
+                        </div>
 
-                          {manualSubEvents.length > 1 && (
+                        {/* 5. CREW ROLE PLACEMENTS (STRICTLY NO ASSISTANT / LIGHTS) */}
+                        <div className="space-y-2 pt-2 border-t border-amber-100">
+                          {/* Header Bar */}
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-lg bg-[#6C5CE7]/10 flex items-center justify-center text-[#6C5CE7]">
+                                <Users className="w-3.5 h-3.5" />
+                              </div>
+                              <span className="text-[11px] font-black text-[#0B111E] uppercase tracking-wider">
+                                Crew Role Placements
+                              </span>
+                              <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-[#6C5CE7] text-white shadow-2xs">
+                                {ev.crew.length} {ev.crew.length === 1 ? 'Slot' : 'Slots'} Selected
+                              </span>
+                            </div>
+
+                            {/* Add Custom Role */}
                             <button
                               type="button"
-                              onClick={() => setManualSubEvents(prev => prev.filter((_, idx) => idx !== evIdx))}
-                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer shrink-0"
-                              title="Remove sub-event"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Crew List with Role Multiples (Bookings & Events style) */}
-                      <div className="pl-3 border-l-2 border-amber-300 space-y-2">
-                        <div className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
-                          <span>Assigned Crew Members:</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                ...item,
-                                crew: [...item.crew, { name: `Crew Member ${item.crew.length + 1}`, role: 'Candid Cinematography' }]
-                              } : item));
-                            }}
-                            className="text-[10px] font-bold text-amber-600 hover:text-amber-700 cursor-pointer flex items-center gap-1"
-                          >
-                            <Plus className="w-3 h-3" />
-                            <span>Add Crew Role</span>
-                          </button>
-                        </div>
-
-                        {ev.crew.map((cr, crIdx) => (
-                          <div key={crIdx} className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={cr.name}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                  ...item,
-                                  crew: item.crew.map((c, i) => i === crIdx ? { ...c, name: val } : c)
-                                } : item));
-                              }}
-                              placeholder="Crew Member Name"
-                              className="flex-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium"
-                            />
-                            <select
-                              value={cr.role}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                  ...item,
-                                  crew: item.crew.map((c, i) => i === crIdx ? { ...c, role: val } : c)
-                                } : item));
-                              }}
-                              className="w-44 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
-                            >
-                              <option value="Traditional Photography">Traditional Photography</option>
-                              <option value="Candid Photography">Candid Photography</option>
-                              <option value="Traditional Video">Traditional Video</option>
-                              <option value="Cinematic Video">Cinematic Video</option>
-                              <option value="Drone Pilot">Drone Pilot</option>
-                              <option value="Helicam / Crane">Helicam / Crane</option>
-                              <option value="Same Day Editor">Same Day Editor</option>
-                              <option value="Album Designer">Album Designer</option>
-                              <option value="Assistant / Lights">Assistant / Lights</option>
-                            </select>
-
-                            {ev.crew.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => {
+                              onClick={() => {
+                                const customName = prompt('Enter custom role name (e.g. Helicopter Pilot, Crane Operator):');
+                                if (customName && customName.trim()) {
+                                  const clean = customName.trim();
                                   setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
                                     ...item,
-                                    crew: item.crew.filter((_, i) => i !== crIdx)
+                                    crew: [...item.crew, { name: clean, role: clean }]
                                   } : item));
-                                }}
-                                className="p-1 text-slate-400 hover:text-red-500 rounded-md cursor-pointer"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                                }
+                              }}
+                              className="text-xs font-extrabold text-[#6C5CE7] hover:text-[#5b4cd1] transition flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 px-3 py-1 rounded-xl cursor-pointer shadow-2xs active:scale-95"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              <span>+ Custom Role</span>
+                            </button>
                           </div>
-                        ))}
+
+                          {/* SECTION 1: ALLOCATED CREW CARDS */}
+                          {ev.crew.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
+                              {ev.crew.map((cr, crIdx) => {
+                                const roleLower = (cr.role || '').toLowerCase();
+                                let roleCode = 'CRW';
+                                if (roleLower.includes('cinemat')) roleCode = 'CV';
+                                else if (roleLower.includes('candid')) roleCode = 'CP';
+                                else if (roleLower.includes('traditional photo') || roleLower.includes('photo')) roleCode = 'TP';
+                                else if (roleLower.includes('traditional video') || roleLower.includes('video')) roleCode = 'TV';
+                                else if (roleLower.includes('drone')) roleCode = 'DP';
+                                else if (roleLower.includes('reel')) roleCode = 'RC';
+                                else if (roleLower.includes('live')) roleCode = 'LS';
+                                else if (roleLower.includes('editor')) roleCode = 'SDE';
+                                else if (roleLower.includes('project')) roleCode = 'PM';
+                                else if (roleLower.includes('team')) roleCode = 'TM';
+
+                                return (
+                                  <div
+                                    key={crIdx}
+                                    className="flex items-center justify-between bg-white border border-indigo-200 hover:border-[#6C5CE7] rounded-xl px-2.5 py-1.5 shadow-2xs transition-all group gap-2"
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <span className="font-mono font-black text-[10px] bg-indigo-50 text-[#6C5CE7] border border-indigo-200 px-1.5 py-0.5 rounded-md uppercase shrink-0">
+                                        {roleCode}
+                                      </span>
+                                      <div className="min-w-0 flex-1">
+                                        <input
+                                          type="text"
+                                          value={cr.name}
+                                          onChange={e => {
+                                            const val = e.target.value;
+                                            setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                              ...item,
+                                              crew: item.crew.map((c, i) => i === crIdx ? { ...c, name: val } : c)
+                                            } : item));
+                                          }}
+                                          placeholder="Crew Member Name"
+                                          className="w-full text-xs font-bold text-slate-900 border-0 focus:outline-none focus:ring-0 p-0 bg-transparent truncate"
+                                        />
+                                        <div className="text-[10px] text-slate-400 font-semibold truncate leading-none mt-0.5">
+                                          {cr.role}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                          ...item,
+                                          crew: item.crew.filter((_, i) => i !== crIdx)
+                                        } : item));
+                                      }}
+                                      className="w-5 h-5 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer shrink-0"
+                                      title="Remove crew slot"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="py-2.5 px-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/50 text-center">
+                              <p className="text-xs font-semibold text-amber-900">
+                                No crew roles allocated yet. Click any role below to add to this event.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* SECTION 2: AVAILABLE ROLES TO ADD (STRICTLY NO ASSISTANT / LIGHTS) */}
+                          <div className="pt-1.5">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                              <Sparkles className="w-3 h-3 text-amber-500" />
+                              <span>Available Roles to Add:</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {[
+                                { name: 'Cinematographer', code: 'CV' },
+                                { name: 'Candid Photographer', code: 'CP' },
+                                { name: 'Traditional Photographer', code: 'TP' },
+                                { name: 'Traditional Videographer', code: 'TV' },
+                                { name: 'Drone Pilot', code: 'DP' },
+                                { name: 'Reels Creator', code: 'RC' },
+                                { name: 'Live Streaming', code: 'LS' },
+                                { name: 'Same Day Editor', code: 'SDE' },
+                                { name: 'Project Manager', code: 'PM' },
+                                { name: 'Team Manager', code: 'TM' },
+                              ].map((roleItem) => (
+                                <button
+                                  key={roleItem.code}
+                                  type="button"
+                                  onClick={() => {
+                                    setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
+                                      ...item,
+                                      crew: [
+                                        ...item.crew,
+                                        {
+                                          name: `${roleItem.name} ${item.crew.filter(c => c.role === roleItem.name).length + 1}`,
+                                          role: roleItem.name
+                                        }
+                                      ]
+                                    } : item));
+                                  }}
+                                  className="px-2.5 py-1 rounded-xl text-xs font-bold border border-dashed border-slate-300 bg-white hover:bg-indigo-50/80 hover:border-indigo-400 hover:text-indigo-950 text-slate-700 transition flex items-center gap-1.5 cursor-pointer shadow-2xs group active:scale-95"
+                                >
+                                  <Plus className="w-3 h-3 text-indigo-500 group-hover:scale-125 transition-transform" />
+                                  <span>{roleItem.name}</span>
+                                  <span className="text-[10px] font-black text-slate-400 group-hover:text-indigo-600 font-mono">
+                                    {roleItem.code}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 6. OPERATIONAL NOTES & INSTRUCTIONS */}
+                        <div className="space-y-1 pt-1 border-t border-amber-100">
+                          <label className="text-[10px] font-bold text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
+                            <MessageSquare className="w-3 h-3 text-zinc-500" />
+                            <span>Operational Notes &amp; Instructions</span>
+                            <span className="text-zinc-400 font-normal lowercase text-[9px]">(optional)</span>
+                          </label>
+                          <textarea
+                            rows={1}
+                            placeholder="Operational notes, gear requirements, or guidelines..."
+                            value={ev.notes || ''}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, notes: val } : item));
+                            }}
+                            className="w-full text-xs p-2.5 rounded-xl border border-slate-200 bg-white resize-none transition-all text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -3036,35 +3703,66 @@ export default function StorageHubPage() {
                                       <span className="text-[10px] text-zinc-400 font-mono">Folder</span>
                                     </div>
                                   </div>
-                                  {activeProjectForGoogle && (
+
+                                  <div className="relative">
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleLinkFolderToProject(folder);
+                                        setFolderMenuOpenId(folderMenuOpenId === folder.id ? null : folder.id);
                                       }}
-                                      className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 font-bold text-[11px] border border-blue-200 hover:border-blue-600 transition-colors cursor-pointer shrink-0"
-                                      title={`Link ${folder.name} to project`}
+                                      className="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition cursor-pointer"
+                                      title="Folder options"
                                     >
-                                      + Link
+                                      <MoreVertical className="w-4 h-4" />
                                     </button>
-                                  )}
-                                </div>
 
-                                {/* Upfront Real Folder Stats (Folders, Files, Size) */}
-                                <div className="flex items-center justify-between pt-1.5 border-t border-zinc-200/50 dark:border-zinc-700/50 text-[10.5px] font-mono">
-                                  <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
-                                    <span title="Subfolders" className="flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
-                                      <Folder className="w-3 h-3 fill-amber-500/20" /> {folder.foldersCount ?? 0}
-                                    </span>
-                                    <span>•</span>
-                                    <span title="Files" className="flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400">
-                                      <FileText className="w-3 h-3" /> {folder.filesCount ?? 0}
-                                    </span>
+                                    {folderMenuOpenId === folder.id && (
+                                      <div
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="absolute right-0 top-full mt-1 w-44 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-750 rounded-xl shadow-xl p-1 z-50 space-y-0.5 text-xs font-bold"
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setFolderMenuOpenId(null);
+                                            setFolderDetailsModalData(folder);
+                                          }}
+                                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <Folder className="w-3.5 h-3.5 text-amber-500" />
+                                          <span>Folder Details</span>
+                                        </button>
+
+                                        {activeProjectForGoogle && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setFolderMenuOpenId(null);
+                                              handleLinkFolderToProject(folder);
+                                            }}
+                                            className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center gap-2 cursor-pointer"
+                                          >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            <span>+ Link to Project</span>
+                                          </button>
+                                        )}
+
+                                        {folder.webViewLink && (
+                                          <a
+                                            href={folder.webViewLink}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={() => setFolderMenuOpenId(null)}
+                                            className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center gap-2 cursor-pointer"
+                                          >
+                                            <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                                            <span>Open in Drive</span>
+                                          </a>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
-                                  <span className="font-bold text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
-                                    {folder.formattedSize || '0 MB'}
-                                  </span>
                                 </div>
                               </div>
                             ))}
@@ -3084,29 +3782,63 @@ export default function StorageHubPage() {
                                   </span>
                                 </div>
 
-                                <div className="flex items-center gap-3 shrink-0 text-xs font-mono">
-                                  <span title="Subfolders" className="flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
-                                    <Folder className="w-3.5 h-3.5 fill-amber-500/20" /> {folder.foldersCount ?? 0} folders
-                                  </span>
-                                  <span className="text-zinc-300 dark:text-zinc-700">•</span>
-                                  <span title="Files" className="flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400">
-                                    <FileText className="w-3.5 h-3.5" /> {folder.filesCount ?? 0} files
-                                  </span>
-                                  <span className="text-zinc-300 dark:text-zinc-700">•</span>
-                                  <span className="font-bold text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
-                                    📦 {folder.formattedSize || '0 MB'}
-                                  </span>
-                                  {activeProjectForGoogle && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleLinkFolderToProject(folder);
-                                      }}
-                                      className="ml-2 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                                <div className="flex items-center gap-2 shrink-0 relative">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFolderMenuOpenId(folderMenuOpenId === folder.id ? null : folder.id);
+                                    }}
+                                    className="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition cursor-pointer"
+                                    title="Folder options"
+                                  >
+                                    <MoreVertical className="w-4 h-4" />
+                                  </button>
+
+                                  {folderMenuOpenId === folder.id && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="absolute right-0 top-full mt-1 w-44 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-750 rounded-xl shadow-xl p-1 z-50 space-y-0.5 text-xs font-bold"
                                     >
-                                      Link
-                                    </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setFolderMenuOpenId(null);
+                                          setFolderDetailsModalData(folder);
+                                        }}
+                                        className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <Folder className="w-3.5 h-3.5 text-amber-500" />
+                                        <span>Folder Details</span>
+                                      </button>
+
+                                      {activeProjectForGoogle && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setFolderMenuOpenId(null);
+                                            handleLinkFolderToProject(folder);
+                                          }}
+                                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <Plus className="w-3.5 h-3.5" />
+                                          <span>+ Link to Project</span>
+                                        </button>
+                                      )}
+
+                                      {folder.webViewLink && (
+                                        <a
+                                          href={folder.webViewLink}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={() => setFolderMenuOpenId(null)}
+                                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                                          <span>Open in Drive</span>
+                                        </a>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               </div>
@@ -3312,6 +4044,617 @@ export default function StorageHubPage() {
                   allow="autoplay; fullscreen"
                   title={explorerPreviewFile.name}
                 />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── METRIC MODAL 1: BOOKED PROJECTS OVERVIEW ────────────────────── */}
+      <AnimatePresence>
+        {showProjectsSummaryModal && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="w-full max-w-4xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between gap-3 bg-amber-50/40">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <span>Booked Client Projects &amp; Storage Overview</span>
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                        {projects.length} Booked
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      All CRM Booked Clients &amp; Bookings with Sub-events, crew assignments, and offload statuses
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowProjectsSummaryModal(false)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Projects List */}
+              <div className="p-4 overflow-y-auto space-y-3 flex-1">
+                {projects.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 space-y-2">
+                    <Folder className="w-10 h-10 mx-auto text-slate-300" />
+                    <p className="text-sm font-bold text-slate-600">No booked projects found</p>
+                    <p className="text-xs text-slate-400">Projects will appear automatically when leads reach Booked stage in CRM.</p>
+                  </div>
+                ) : (
+                  projects.map(p => {
+                    const totalCrew = (p.sub_events || []).reduce((acc, ev) => acc + (ev.crew?.length || 0), 0);
+                    const copiedCrew = (p.sub_events || []).reduce((acc, ev) => acc + (ev.crew?.filter(c => c.is_copied).length || 0), 0);
+                    const allCopied = totalCrew > 0 && copiedCrew === totalCrew;
+                    const primaryDisk = p.assigned_disks?.[0];
+                    const driveBackup = p.google_drive_backup;
+                    const driveFolders = Array.isArray(driveBackup?.folders) && driveBackup.folders.length > 0
+                      ? driveBackup.folders
+                      : (driveBackup?.folder_name ? [{ name: driveBackup.folder_name }] : []);
+
+                    return (
+                      <div
+                        key={p.id}
+                        className="p-3.5 bg-slate-50/70 hover:bg-amber-50/40 border border-slate-200 hover:border-amber-300 rounded-2xl transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group"
+                      >
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm font-black text-slate-900 truncate">{p.client_name}</h4>
+                            <span className="text-[11px] font-bold text-slate-500 font-mono flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-slate-400" />
+                              <span>{p.event_date || 'Date TBD'}</span>
+                            </span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase ${
+                              p.overall_storage_status === 'BACKED_UP_CLOUD'
+                                ? 'bg-blue-100 text-blue-800'
+                                : (p.overall_storage_status === 'COPIED_LOCAL'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-amber-100 text-amber-800')
+                            }`}>
+                              {p.overall_storage_status?.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap">
+                            <span className="font-semibold text-slate-700">
+                              {p.sub_events?.length || 0} Sub-Events
+                            </span>
+                            <span>•</span>
+                            <span className="flex items-center gap-1">
+                              <Users className="w-3 h-3 text-slate-400" />
+                              <span>{totalCrew} Crew Allocated</span>
+                            </span>
+                            <span>•</span>
+                            <span className={`inline-flex items-center gap-1 font-bold ${allCopied ? 'text-emerald-700' : 'text-amber-700'}`}>
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>{copiedCrew} / {totalCrew} Cards Copied</span>
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap pt-0.5">
+                            <span className="flex items-center gap-1 font-mono">
+                              <HardDrive className="w-3 h-3 text-emerald-600" />
+                              <span>{primaryDisk ? primaryDisk.disk_name : 'No Local Disk Assigned'}</span>
+                            </span>
+                            <span>•</span>
+                            <span className="flex items-center gap-1">
+                              <Cloud className="w-3 h-3 text-blue-600" />
+                              <span>{driveFolders.length > 0 ? `${driveFolders.length} Google Drive Folder(s)` : 'No Cloud Backup'}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowProjectsSummaryModal(false);
+                            setExpandedProjectIds(prev => ({ ...prev, [p.id]: true }));
+                            const el = document.getElementById(`project-card-${p.id}`);
+                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }}
+                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer shrink-0"
+                        >
+                          View Storage Card &rarr;
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowProjectsSummaryModal(false)}
+                  className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── METRIC MODAL 2: REGISTERED MEMORY CARDS ─────────────────────── */}
+      <AnimatePresence>
+        {showCardsListModal && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="w-full max-w-3xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between gap-3 bg-amber-50/40">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold">
+                    <Cpu className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <span>Registered Studio Memory Cards</span>
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                        {memoryCards.length} Registered
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      SD Cards, CFexpress, and MicroSD inventory synced from Studio Settings
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Link
+                    href="/settings?tab=storage"
+                    target="_blank"
+                    className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>Manage in Settings</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setShowCardsListModal(false)}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Memory Cards Grid */}
+              <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
+                {memoryCards.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <Cpu className="w-10 h-10 mx-auto text-slate-300" />
+                    <p className="text-sm font-bold text-slate-600">No memory cards registered yet</p>
+                    <p className="text-xs text-slate-400">Add cards in Studio Settings &gt; Studio Storage.</p>
+                    <Link
+                      href="/settings?tab=storage"
+                      target="_blank"
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-amber-600 text-white text-xs font-black rounded-xl hover:bg-amber-700 shadow-sm"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add First Memory Card</span>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {memoryCards.map(c => {
+                      const formattedCap = c.capacity_gb >= 1000 
+                        ? `${(c.capacity_gb / 1000).toFixed(0)} TB`
+                        : `${c.capacity_gb} GB`;
+
+                      return (
+                        <div
+                          key={c.id}
+                          className="p-3 bg-white border border-slate-200 rounded-2xl flex items-center gap-3 shadow-2xs hover:shadow-xs transition"
+                          style={{ borderLeftWidth: '4px', borderLeftColor: c.color_tag || '#F59E0B' }}
+                        >
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs relative overflow-hidden"
+                            style={{ backgroundColor: c.color_tag || '#F59E0B' }}
+                          >
+                            <Cpu className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-slate-900 truncate" title={c.card_name}>
+                                {c.card_name}
+                              </h4>
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 shrink-0">
+                                {formattedCap}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+                              <span className="font-semibold text-slate-700">{c.card_type?.replace(/_/g, ' ')}</span>
+                              {c.speed_class && <span>• {c.speed_class}</span>}
+                            </div>
+                            {c.notes && (
+                              <p className="text-[10px] text-slate-400 truncate mt-0.5">{c.notes}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowCardsListModal(false)}
+                  className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── METRIC MODAL 3: DISKS & DRIVES INVENTORY ───────────────────── */}
+      <AnimatePresence>
+        {showDisksListModal && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="w-full max-w-3xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between gap-3 bg-emerald-50/40">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center font-bold">
+                    <HardDrive className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <span>Physical Hard Drives &amp; SSD Storage Racks</span>
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        {disks.length} Registered
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      SSDs, HDDs, and NAS arrays registered in Studio Settings
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Link
+                    href="/settings?tab=storage"
+                    target="_blank"
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>Manage in Settings</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setShowDisksListModal(false)}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Disks Grid */}
+              <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
+                {disks.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <HardDrive className="w-10 h-10 mx-auto text-slate-300" />
+                    <p className="text-sm font-bold text-slate-600">No physical storage drives registered</p>
+                    <p className="text-xs text-slate-400">Add external SSDs, HDDs, or NAS arrays in Studio Settings.</p>
+                    <Link
+                      href="/settings?tab=storage"
+                      target="_blank"
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-emerald-600 text-white text-xs font-black rounded-xl hover:bg-emerald-700 shadow-sm"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add First Hard Drive / SSD</span>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {disks.map(d => {
+                      const formattedCap = d.total_capacity_gb >= 1000 
+                        ? `${(d.total_capacity_gb / 1000).toFixed(0)} TB`
+                        : `${d.total_capacity_gb} GB`;
+
+                      return (
+                        <div
+                          key={d.id}
+                          className="p-3 bg-white border border-slate-200 rounded-2xl flex items-center gap-3 shadow-2xs hover:shadow-xs transition"
+                          style={{ borderLeftWidth: '4px', borderLeftColor: d.color_tag || '#3B82F6' }}
+                        >
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs"
+                            style={{ backgroundColor: d.color_tag || '#3B82F6' }}
+                          >
+                            {d.disk_type === 'NAS' ? (
+                              <Server className="w-5 h-5" />
+                            ) : (
+                              <HardDrive className="w-5 h-5" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-slate-900 truncate" title={d.disk_name}>
+                                {d.disk_name}
+                              </h4>
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 shrink-0">
+                                {formattedCap}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+                              <span className="font-semibold text-slate-700">{d.disk_type?.replace(/_/g, ' ')}</span>
+                              {d.physical_location && <span>• 📍 {d.physical_location}</span>}
+                            </div>
+                            {d.notes && (
+                              <p className="text-[10px] text-slate-400 truncate mt-0.5">{d.notes}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowDisksListModal(false)}
+                  className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── METRIC MODAL 4: CONNECTED GOOGLE DRIVE ACCOUNTS ─────────────── */}
+      <AnimatePresence>
+        {showDriveAccountsModal && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="w-full max-w-3xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between gap-3 bg-blue-50/40">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-500/15 text-blue-700 flex items-center justify-center font-bold">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <span>Connected Google Drive Cloud Accounts</span>
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300">
+                        {driveAccounts.length} Connected
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Cloud storage quota meters and account folder browsing
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDriveAccountsModal(false);
+                      setShowConnectDriveModal(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Connect New Google Drive</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDriveAccountsModal(false)}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Accounts List */}
+              <div className="p-4 overflow-y-auto space-y-3 flex-1">
+                {driveAccounts.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <Cloud className="w-10 h-10 mx-auto text-slate-300" />
+                    <p className="text-sm font-bold text-slate-600">No Google Drive accounts connected</p>
+                    <p className="text-xs text-slate-400">Connect a Google account to enable cloud backups.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDriveAccountsModal(false);
+                        setShowConnectDriveModal(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-xs font-black rounded-xl hover:bg-blue-700 shadow-sm cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Connect Google Drive</span>
+                    </button>
+                  </div>
+                ) : (
+                  driveAccounts.map(acc => {
+                    const percentUsed = Math.min(100, Math.round(((acc.used_storage_gb || 0) / (acc.total_capacity_gb || 2000)) * 100));
+
+                    return (
+                      <div
+                        key={acc.id}
+                        className="p-4 bg-slate-50/70 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs hover:bg-blue-50/30 transition"
+                      >
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black text-slate-900">{acc.account_email}</span>
+                            {acc.account_label && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                                {acc.account_label}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Quota Progress Bar */}
+                          <div className="w-full max-w-md space-y-1">
+                            <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-blue-600 rounded-full transition-all"
+                                style={{ width: `${percentUsed}%` }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                              <span>{acc.used_storage_gb || 0} GB Used</span>
+                              <span>{percentUsed}% of {acc.total_capacity_gb || 2000} GB</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowDriveAccountsModal(false);
+                              handleOpenAccountExplorer(acc);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 font-bold text-xs border border-blue-200 transition cursor-pointer flex items-center gap-1"
+                          >
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            <span>Browse Folders</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDisconnectAccount(acc.id)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                            title="Disconnect Account"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowDriveAccountsModal(false)}
+                  className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── FOLDER DETAILS MODAL (FROM THREE DOTS MENU) ─────────────────── */}
+      <AnimatePresence>
+        {folderDetailsModalData && (
+          <div className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-2xl p-5 space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+                    <Folder className="w-5 h-5 fill-amber-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 truncate" title={folderDetailsModalData.name}>
+                      {folderDetailsModalData.name}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-mono">Google Drive Folder</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFolderDetailsModalData(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-xl"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2.5 p-3 bg-slate-50 rounded-2xl text-center">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Subfolders</span>
+                  <p className="text-sm font-extrabold text-amber-700">{folderDetailsModalData.foldersCount ?? 0}</p>
+                </div>
+                <div className="space-y-0.5 border-x border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Files</span>
+                  <p className="text-sm font-extrabold text-blue-700">{folderDetailsModalData.filesCount ?? 0}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Est. Size</span>
+                  <p className="text-sm font-extrabold text-emerald-700">{folderDetailsModalData.formattedSize || '0 MB'}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                {activeProjectForGoogle && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleLinkFolderToProject(folderDetailsModalData);
+                      setFolderDetailsModalData(null);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Link to Active Project</span>
+                  </button>
+                )}
+                {folderDetailsModalData.webViewLink && (
+                  <a
+                    href={folderDetailsModalData.webViewLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open in Drive</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setFolderDetailsModalData(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  Close
+                </button>
               </div>
             </motion.div>
           </div>

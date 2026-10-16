@@ -48,6 +48,8 @@ export async function POST(req: NextRequest) {
       free_capacity_gb = 1500,
       assigned_to_user_name,
       is_currently_mounted = true,
+      color_tag = '#3B82F6',
+      notes = '',
     } = body;
 
     if (!disk_name || !disk_name.trim()) {
@@ -75,6 +77,8 @@ export async function POST(req: NextRequest) {
       free_capacity_bytes: freeGb * 1024 * 1024 * 1024,
       assigned_to_user_name: assigned_to_user_name || '',
       is_currently_mounted: is_currently_mounted ?? true,
+      color_tag: color_tag || '#3B82F6',
+      notes: notes || '',
       last_scanned_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
