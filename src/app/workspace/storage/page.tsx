@@ -102,6 +102,8 @@ interface SubEventItem {
 }
 
 interface AssignedDiskItem {
+  id?: string;
+  label?: string;
   disk_id: string;
   disk_name: string;
   drive_type: string;
@@ -118,12 +120,25 @@ interface AssignedDiskItem {
 
 interface GoogleDriveBackupFolder {
   id: string;
+  label?: string;
   name: string;
   webViewLink?: string;
   account_id?: string;
   account_email?: string;
   linked_at?: string;
 }
+
+// Utility to humanize bytes to MB / GB / TB
+const formatBytesHuman = (bytes: number): string => {
+  if (!bytes || bytes <= 0) return '0 GB';
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1000) return `${(gb / 1024).toFixed(1)} TB`;
+  if (gb < 1) {
+    const mb = bytes / (1024 * 1024);
+    return `${Math.round(mb)} MB`;
+  }
+  return `${gb.toFixed(1)} GB`;
+};
 
 interface GoogleDriveBackupItem {
   is_backed_up?: boolean;
@@ -207,6 +222,7 @@ export default function StorageHubPage() {
   const [showDisksListModal, setShowDisksListModal] = useState(false);
   const [showCardsListModal, setShowCardsListModal] = useState(false);
   const [showProjectsSummaryModal, setShowProjectsSummaryModal] = useState(false);
+  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
 
   // Active Crew Member Memory Card Popover
   const [activeCardAssignPopover, setActiveCardAssignPopover] = useState<{
@@ -686,7 +702,148 @@ export default function StorageHubPage() {
     });
   };
 
-  // HTML5 Native File System Access API
+  // Sync Live Drive Account Quota
+  const handleSyncDriveAccount = async (accountId: string) => {
+    setSyncingAccountId(accountId);
+    try {
+      const res = await fetch('/api/storage/google/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId }),
+      });
+      const data = await res.json();
+      if (data.success && data.account) {
+        setDriveAccounts(prev => prev.map(a => a.id === accountId ? {
+          ...a,
+          total_storage_bytes: data.account.total_storage_bytes,
+          used_storage_bytes: data.account.used_storage_bytes,
+          last_synced_at: data.account.last_synced_at,
+        } : a));
+        setUrlToast({
+          type: 'success',
+          message: 'Storage quota synced successfully!'
+        });
+      }
+    } catch (err) {
+      console.warn('Sync failed:', err);
+    } finally {
+      setSyncingAccountId(null);
+    }
+  };
+
+  // Add a new Local Event Folder to a Client Project
+  const handleAddLocalFolder = async (projectId: string) => {
+    const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) return;
+
+    const primaryDisk = targetProject.assigned_disks?.[0];
+    const diskId = primaryDisk?.disk_id || (disks[0]?.id || '');
+    const diskName = primaryDisk?.disk_name || (disks[0]?.disk_name || 'Primary Storage');
+    const driveType = primaryDisk?.drive_type || (disks[0]?.disk_type || 'SSD');
+
+    let folderName = '';
+    let folderPath = '';
+    let totalSizeGb = 0;
+    let fileCount = 0;
+    let photoCount = 0;
+    let videoCount = 0;
+
+    if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+      try {
+        const dirHandle = await (window as any).showDirectoryPicker({ mode: 'read' });
+        if (dirHandle) {
+          folderName = dirHandle.name;
+          folderPath = `${diskName}/${folderName}`;
+          
+          let totalBytes = 0;
+          const photoExts = ['.arw', '.cr3', '.cr2', '.nef', '.dng', '.jpg', '.jpeg', '.png', '.raw'];
+          const videoExts = ['.mp4', '.mov', '.mxf', '.braw', '.avi'];
+
+          for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') {
+              fileCount++;
+              const file = await entry.getFile();
+              totalBytes += file.size;
+              const lowerName = file.name.toLowerCase();
+              if (photoExts.some(ext => lowerName.endsWith(ext))) photoCount++;
+              if (videoExts.some(ext => lowerName.endsWith(ext))) videoCount++;
+            }
+          }
+          totalSizeGb = Number((totalBytes / (1024 * 1024 * 1024)).toFixed(2));
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    const existingCount = targetProject.assigned_disks?.length || 0;
+    const defaultLabels = ['Pre-Wedding', 'Wedding', 'Reception', 'Haldi', 'Sangeet', 'Engagement'];
+    const assignedLabel = folderName ? folderName.replace(/_/g, ' ') : (defaultLabels[existingCount % defaultLabels.length] || `Event Folder ${existingCount + 1}`);
+
+    const newFolder: AssignedDiskItem = {
+      id: `local_f_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      label: assignedLabel,
+      disk_id: diskId,
+      disk_name: diskName,
+      drive_type: driveType,
+      role: 'Raw Dump',
+      folder_path: folderPath || `${diskName}/${assignedLabel.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
+      folder_name: folderName || `${assignedLabel}_RAW`,
+      total_size_gb: totalSizeGb,
+      file_count: fileCount,
+      photo_count: photoCount,
+      video_count: videoCount,
+      last_scanned_at: new Date().toISOString(),
+      scanned_on_machine: typeof window !== 'undefined' && window.navigator.userAgent.includes('Mac') ? 'Mac Studio' : 'Windows Rig',
+    };
+
+    const updatedDisks = [...(targetProject.assigned_disks || []), newFolder];
+
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: updatedDisks } : p));
+
+    await fetch('/api/storage/projects', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
+    });
+  };
+
+  // Update Local Folder Label (e.g. "Pre-Wedding", "Wedding", "Haldi")
+  const handleUpdateLocalFolderLabel = async (projectId: string, folderIdx: number, newLabel: string) => {
+    const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) return;
+
+    const updatedDisks = targetProject.assigned_disks.map((d, i) => {
+      if (i !== folderIdx) return d;
+      return { ...d, label: newLabel };
+    });
+
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: updatedDisks } : p));
+
+    await fetch('/api/storage/projects', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
+    });
+  };
+
+  // Remove a Local Folder from project
+  const handleRemoveLocalFolder = async (projectId: string, folderIdx: number) => {
+    const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) return;
+
+    const updatedDisks = targetProject.assigned_disks.filter((_, i) => i !== folderIdx);
+
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: updatedDisks } : p));
+
+    await fetch('/api/storage/projects', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
+    });
+  };
+
+  // HTML5 Native File System Access API - Pick / Change Folder
   const handlePickDirectory = async (projectId: string, diskItemIndex: number) => {
     if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
       alert('Your browser does not support the Native Directory Picker. Supported in Chrome, Edge, and Opera desktop.');
@@ -724,12 +881,17 @@ export default function StorageHubPage() {
       const targetProject = projects.find(p => p.id === projectId);
       if (!targetProject) return;
 
+      const primaryDisk = targetProject.assigned_disks?.[0];
+      const diskPrefix = primaryDisk?.disk_name ? `${primaryDisk.disk_name}` : 'Local';
+
       const updatedDisks = [...(targetProject.assigned_disks || [])];
       if (updatedDisks[diskItemIndex]) {
+        const existing = updatedDisks[diskItemIndex];
         updatedDisks[diskItemIndex] = {
-          ...updatedDisks[diskItemIndex],
+          ...existing,
+          label: existing.label || folderName.replace(/_/g, ' '),
           folder_name: folderName,
-          folder_path: `[Local]: /Volumes/${folderName}`,
+          folder_path: `${diskPrefix}/${folderName}`,
           total_size_gb: totalSizeGb,
           file_count: fileCount,
           photo_count: photoCount,
@@ -751,6 +913,31 @@ export default function StorageHubPage() {
         console.error('Directory Picker Error:', err);
       }
     }
+  };
+
+  // Update Google Drive Folder Label (e.g. "Pre-Wedding", "Wedding", "Deliverables")
+  const handleUpdateDriveFolderLabel = async (projectId: string, folderId: string, newLabel: string) => {
+    const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) return;
+
+    const currentFolders = targetProject.google_drive_backup?.folders || [];
+    const updatedFolders = currentFolders.map(f => {
+      if (f.id !== folderId) return f;
+      return { ...f, label: newLabel };
+    });
+
+    const updatedBackup = {
+      ...targetProject.google_drive_backup,
+      folders: updatedFolders,
+    };
+
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, google_drive_backup: updatedBackup } : p));
+
+    await fetch('/api/storage/projects', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: projectId, google_drive_backup: updatedBackup }),
+    });
   };
 
   // Copy local folder path
@@ -949,6 +1136,7 @@ export default function StorageHubPage() {
 
     const newFolderObj: GoogleDriveBackupFolder = {
       id: folder.id,
+      label: folder.name.replace(/_/g, ' '),
       name: folder.name,
       webViewLink: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`,
       account_id: selectedGoogleAccount.id,
@@ -1394,8 +1582,10 @@ export default function StorageHubPage() {
     const totalDiskCapacityTb = Number((disks.reduce((acc, d) => acc + (d.total_capacity_gb || 0), 0) / 1000).toFixed(1));
     const freeDiskCapacityTb = Number((disks.reduce((acc, d) => acc + (d.free_capacity_gb || 0), 0) / 1000).toFixed(1));
 
-    const totalDriveTb = Number((driveAccounts.reduce((acc, a) => acc + (a.total_storage_bytes || 0), 0) / (1024 * 1024 * 1024 * 1024)).toFixed(1));
-    const usedDriveTb = Number((driveAccounts.reduce((acc, a) => acc + (a.used_storage_bytes || 0), 0) / (1024 * 1024 * 1024 * 1024)).toFixed(1));
+    const totalDriveBytes = driveAccounts.reduce((acc, a) => acc + (a.total_storage_bytes || (2000 * 1024 * 1024 * 1024)), 0);
+    const usedDriveBytes = driveAccounts.reduce((acc, a) => acc + (a.used_storage_bytes || 0), 0);
+    const totalDriveTb = Number((totalDriveBytes / (1024 * 1024 * 1024 * 1024)).toFixed(1));
+    const usedDriveTb = Number((usedDriveBytes / (1024 * 1024 * 1024 * 1024)).toFixed(1));
 
     return {
       totalProjects,
@@ -1405,6 +1595,8 @@ export default function StorageHubPage() {
       totalDisks,
       totalDiskCapacityTb,
       freeDiskCapacityTb,
+      totalDriveBytes,
+      usedDriveBytes,
       totalDriveTb,
       usedDriveTb,
       cardCount: memoryCards.length,
@@ -1486,12 +1678,10 @@ export default function StorageHubPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
             {/* Metric 1: Booked Projects */}
             <div 
-              onClick={() => setShowProjectsSummaryModal(true)}
-              className="p-3.5 bg-[#FAF8F3] hover:bg-[#F5F1E8] border border-[#EBE6DB] hover:border-amber-400 rounded-2xl flex items-center justify-between gap-3 cursor-pointer transition shadow-2xs hover:shadow-xs group"
-              title="Click to view Booked Projects breakdown"
+              className="p-3.5 bg-[#FAF8F3] border border-[#EBE6DB] rounded-2xl flex items-center justify-between gap-3 shadow-2xs group"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0">
                   <Calendar className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
@@ -1503,7 +1693,6 @@ export default function StorageHubPage() {
                   </div>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition" />
             </div>
 
             {/* Metric 2: Registered Memory Cards */}
@@ -1557,15 +1746,22 @@ export default function StorageHubPage() {
               title="Click to view Connected Google Drive Accounts"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Cloud className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-xl bg-white border border-[#EBE6DB] flex items-center justify-center p-2 shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
+                  <svg viewBox="0 0 87.3 78" className="w-6 h-6">
+                    <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                    <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                    <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                    <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                    <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                    <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                  </svg>
                 </div>
                 <div className="min-w-0">
                   <div className="text-lg font-black text-slate-900 leading-none">
                     {driveAccounts.length} Drive Accs
                   </div>
                   <div className="text-[11px] text-slate-500 font-semibold mt-1 truncate">
-                    {stats.usedDriveTb} TB / {stats.totalDriveTb} TB Used
+                    {formatBytesHuman(stats.usedDriveBytes)} / {formatBytesHuman(stats.totalDriveBytes)} Used
                   </div>
                 </div>
               </div>
@@ -1674,66 +1870,43 @@ export default function StorageHubPage() {
                   key={project.id}
                   className="bg-white rounded-3xl border border-[#EAE5DA] p-5 sm:p-6 shadow-xs hover:shadow-md transition-all space-y-5"
                 >
-                  {/* Card Header (Clickable to Toggle Details) */}
-                  <div 
-                    onClick={() => setExpandedProjectIds(prev => ({
-                      ...prev,
-                      [project.id]: !prev[project.id]
-                    }))}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F4EFE6] pb-4 cursor-pointer select-none group"
-                  >
+                  {/* Card Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F4EFE6] pb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-[#FAF8F3] border border-[#EAE5DA] group-hover:border-amber-400 flex items-center justify-center text-slate-800 font-black text-sm shrink-0 transition-colors">
+                      <div className="w-12 h-12 rounded-2xl bg-[#FAF8F3] border border-[#EBE6DB] flex items-center justify-center text-slate-800 font-black text-sm shrink-0">
                         {project.client_name?.slice(0, 2).toUpperCase() || 'ST'}
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight group-hover:text-amber-700 transition-colors">
+                          <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
                             {project.client_name}
                           </h2>
                           <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
                             hasCloudBackup 
                               ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                              : allCopied
+                              : (project.assigned_disks?.length > 0)
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               : 'bg-amber-100 text-amber-800 border border-amber-200'
                           }`}>
-                            {hasCloudBackup ? '☁️ Cloud Backed Up' : allCopied ? '💾 Copied to Local' : '⏳ Ingest Pending'}
+                            {hasCloudBackup ? '☁️ Cloud Backed Up' : (project.assigned_disks?.length > 0) ? '💾 Saved to Local Rig' : '⏳ Ingest Pending'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-0.5">
+                        <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-0.5 flex-wrap">
                           <span>📅 {project.event_date || 'Date Pending'}</span>
-                          <span>📸 {cleanSubEvents.length} Sub-Events</span>
-                          <span>💾 {project.assigned_disks?.length || 0} Disks Assigned</span>
+                          <span>💾 {project.assigned_disks?.length || 0} Local Folder{project.assigned_disks?.length === 1 ? '' : 's'}</span>
                           {linkedFolders.length > 0 && (
                             <span className="text-blue-600 font-bold">☁️ {linkedFolders.length} Cloud Folder{linkedFolders.length > 1 ? 's' : ''}</span>
                           )}
                         </div>
                       </div>
                     </div>
-
-                    {/* Right: Expand/Collapse & Quick Actions */}
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedProjectIds(prev => ({
-                            ...prev,
-                            [project.id]: !prev[project.id]
-                          }));
-                        }}
-                        className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                      >
-                        <span>{isExpanded ? 'Show Less ▲' : 'Show Details ▼'}</span>
-                      </button>
-                    </div>
                   </div>
 
                   {/* ── TOP ROOT LEVEL: DUAL SIDE-BY-SIDE STORAGE BOXES (LOCAL RIG & GOOGLE DRIVE) ── */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    {/* 1. Local Machine / SSD Root Storage Box */}
+                    {/* 1. Local Machine / SSD Storage Box (Multiple Local Event Folders Supported) */}
                     <div className="p-4 rounded-2xl bg-[#FAF8F3] border border-[#EBE6DB] flex flex-col justify-between gap-3">
+                      {/* Header */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
@@ -1741,23 +1914,25 @@ export default function StorageHubPage() {
                           </div>
                           <div className="min-w-0">
                             <h4 className="text-xs font-black text-slate-900 truncate">
-                              Local Machine / SSD Storage Path
+                              Local Machine / SSD Storage Paths
                             </h4>
                             <p className="text-[11px] text-slate-500 truncate">
-                              {primaryDisk?.disk_name ? `${primaryDisk.disk_name} (${primaryDisk.drive_type})` : 'Physical hard drive / editing rig storage'}
+                              {project.assigned_disks?.length 
+                                ? `${project.assigned_disks.length} Local Folder${project.assigned_disks.length > 1 ? 's' : ''} Configured` 
+                                : 'Physical hard drive / editing rig storage'}
                             </p>
                           </div>
                         </div>
 
-                        {/* Native Directory Picker Button */}
+                        {/* Add Local Folder Button */}
                         <button
                           type="button"
-                          onClick={() => handlePickDirectory(project.id, 0)}
-                          className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition"
-                          title="Pick root folder from physical drive"
+                          onClick={() => handleAddLocalFolder(project.id)}
+                          className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition"
+                          title="Add another local folder for this client (e.g. Pre-Wedding, Wedding)"
                         >
-                          <FolderOpen className="w-3.5 h-3.5 text-amber-600" />
-                          <span>{primaryDisk?.folder_name ? 'Change Folder' : 'Pick Local Folder'}</span>
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ Add Folder</span>
                         </button>
                       </div>
 
@@ -1784,48 +1959,121 @@ export default function StorageHubPage() {
                         </div>
                       </div>
 
-                      {/* Path & Copy Button */}
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-200/90 flex items-center justify-between gap-2 text-xs font-mono">
-                        <span className="truncate text-slate-700 select-all" title={primaryDisk?.folder_path || ''}>
-                          {primaryDisk?.folder_path || 'No local directory selected yet'}
-                        </span>
-                        {primaryDisk?.folder_path && (
-                          <button
-                            type="button"
-                            onClick={() => handleCopyPath(primaryDisk.folder_path, `${project.id}_root`)}
-                            className="p-1 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer shrink-0 text-[11px] font-sans font-bold flex items-center gap-1"
-                          >
-                            {copiedPathId === `${project.id}_root` ? (
-                              <span className="text-emerald-600 flex items-center gap-1">
-                                <Check className="w-3 h-3" /> Copied
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1">
-                                <Copy className="w-3 h-3" /> Copy Path
-                              </span>
-                            )}
-                          </button>
+                      {/* Multiple Local Folders List */}
+                      <div className="space-y-2.5 max-h-72 overflow-y-auto">
+                        {(project.assigned_disks && project.assigned_disks.length > 0) ? (
+                          project.assigned_disks.map((folder, fIdx) => {
+                            const folderLabel = folder.label || folder.folder_name?.replace(/_RAW$/i, '') || (fIdx === 0 ? 'Pre-Wedding' : `Folder ${fIdx + 1}`);
+
+                            return (
+                              <div
+                                key={folder.id || fIdx}
+                                className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/90 shadow-2xs space-y-2"
+                              >
+                                {/* Top row: Folder Icon + Custom Label Input + Action Buttons */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0">
+                                      <Folder className="w-4 h-4 fill-amber-500/20" />
+                                    </div>
+                                    <input
+                                      type="text"
+                                      placeholder="Event name (e.g. Pre-Wedding, Wedding, Haldi)"
+                                      value={folderLabel}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setProjects(prev => prev.map(p => p.id === project.id ? {
+                                          ...p,
+                                          assigned_disks: p.assigned_disks.map((d, i) => i === fIdx ? { ...d, label: val } : d)
+                                        } : p));
+                                      }}
+                                      onBlur={(e) => handleUpdateLocalFolderLabel(project.id, fIdx, e.target.value)}
+                                      className="px-2 py-1 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-amber-400 rounded-lg text-xs font-bold text-slate-900 transition flex-1 min-w-[120px]"
+                                      title="Click to rename folder label (e.g. Pre-Wedding, Wedding, Reception)"
+                                    />
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePickDirectory(project.id, fIdx)}
+                                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-50 text-slate-700 hover:text-amber-800 border border-slate-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                                      title="Select / change folder path from disk"
+                                    >
+                                      <FolderOpen className="w-3 h-3 text-amber-600" />
+                                      <span>{folder.folder_path ? 'Change' : 'Pick Folder'}</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveLocalFolder(project.id, fIdx)}
+                                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                      title="Remove this folder"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Bottom row: Path display & copy */}
+                                <div className="flex items-center justify-between gap-2 bg-slate-50/80 px-2.5 py-1.5 rounded-lg border border-slate-200/60 text-[11px] font-mono text-slate-600">
+                                  <span className="truncate select-all" title={folder.folder_path || ''}>
+                                    {folder.folder_path || 'No local directory selected yet'}
+                                  </span>
+                                  {folder.folder_path && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyPath(folder.folder_path, `${project.id}_f_${fIdx}`)}
+                                      className="text-[10px] font-sans font-bold text-slate-500 hover:text-slate-900 shrink-0 ml-1 flex items-center gap-0.5 cursor-pointer"
+                                    >
+                                      {copiedPathId === `${project.id}_f_${fIdx}` ? (
+                                        <span className="text-emerald-600 flex items-center gap-1">
+                                          <Check className="w-2.5 h-2.5" /> Copied
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-1">
+                                          <Copy className="w-2.5 h-2.5" /> Copy
+                                        </span>
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* Scanned metadata stats if available */}
+                                {(folder.file_count > 0 || folder.total_size_gb > 0) && (
+                                  <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500 pt-0.5">
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                                      📦 {folder.total_size_gb} GB
+                                    </span>
+                                    <span>•</span>
+                                    <span>📄 {folder.file_count} Files</span>
+                                    {folder.photo_count !== undefined && folder.photo_count > 0 && (
+                                      <>
+                                        <span>•</span>
+                                        <span>📸 {folder.photo_count} Photos</span>
+                                      </>
+                                    )}
+                                    {folder.video_count !== undefined && folder.video_count > 0 && (
+                                      <>
+                                        <span>•</span>
+                                        <span>🎬 {folder.video_count} Videos</span>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="bg-white p-3 rounded-xl border border-dashed border-amber-200 text-xs text-slate-400 font-medium text-center">
+                            No local folders assigned yet. Click &apos;+ Add Folder&apos; above to assign Pre-Wedding, Wedding, or Haldi raw directories.
+                          </div>
                         )}
                       </div>
-
-                      {/* Local footprint info */}
-                      {primaryDisk && (primaryDisk.file_count > 0 || primaryDisk.total_size_gb > 0) && (
-                        <div className="flex items-center gap-3 text-[10px] font-semibold text-slate-500">
-                          <span>📦 Size: {primaryDisk.total_size_gb} GB</span>
-                          <span>•</span>
-                          <span>📄 Files: {primaryDisk.file_count}</span>
-                          {primaryDisk.photo_count !== undefined && (
-                            <>
-                              <span>•</span>
-                              <span>📸 Photos: {primaryDisk.photo_count}</span>
-                            </>
-                          )}
-                        </div>
-                      )}
                     </div>
 
-                    {/* 2. Google Drive Cloud Backup Box (Multiple Folders Supported) */}
+                    {/* 2. Google Drive Cloud Backup Box (Multiple Folders Supported with Event Labels) */}
                     <div className="p-4 rounded-2xl bg-[#F6F9FE] border border-blue-150 flex flex-col justify-between gap-3">
+                      {/* Header */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-8 h-8 rounded-xl bg-white border border-blue-200 flex items-center justify-center p-1.5 shrink-0 shadow-2xs">
@@ -1844,7 +2092,7 @@ export default function StorageHubPage() {
                             </h4>
                             <p className="text-[11px] text-slate-500 truncate">
                               {hasCloudBackup 
-                                ? `${linkedFolders.length} Folder${linkedFolders.length > 1 ? 's' : ''} Linked`
+                                ? `${linkedFolders.length} Cloud Folder${linkedFolders.length > 1 ? 's' : ''} Linked`
                                 : 'Cloud archive & deliverable storage'}
                             </p>
                           </div>
@@ -1862,325 +2110,86 @@ export default function StorageHubPage() {
                       </div>
 
                       {/* Multiple Linked Drive Folders List */}
-                      {linkedFolders.length > 0 ? (
-                        <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                          {linkedFolders.map(folder => (
-                            <div
-                              key={folder.id}
-                              className="bg-white p-2 sm:px-2.5 rounded-xl border border-blue-200/80 flex items-center justify-between gap-2 text-xs shadow-2xs"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <Folder className="w-4 h-4 text-amber-500 shrink-0" />
-                                <span className="font-bold text-blue-950 truncate" title={folder.name}>
-                                  {folder.name}
-                                </span>
-                                {folder.account_email && (
-                                  <span className="text-[10px] text-slate-400 truncate hidden sm:inline">
-                                    ({folder.account_email})
-                                  </span>
-                                )}
-                              </div>
+                      <div className="space-y-2.5 max-h-72 overflow-y-auto">
+                        {linkedFolders.length > 0 ? (
+                          linkedFolders.map((folder, gdIdx) => {
+                            const driveLabel = folder.label || folder.name || (gdIdx === 0 ? 'Wedding' : `Folder ${gdIdx + 1}`);
 
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {folder.webViewLink && (
-                                  <a
-                                    href={folder.webViewLink}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="px-2 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center gap-1"
-                                  >
-                                    <span>Open</span>
-                                    <ExternalLink className="w-2.5 h-2.5" />
-                                  </a>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleUnlinkGoogleFolder(project.id, folder.id)}
-                                  className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                                  title="Unlink this folder"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="bg-white p-2.5 rounded-xl border border-dashed border-blue-200 text-xs text-slate-400 font-medium">
-                          No Google Drive folder linked yet. Click &apos;+ Add Drive Folder&apos; to link client raw dumps.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* ── SUB-EVENTS & CREW-WISE CARD OFFLOADING (COLLAPSIBLE) ── */}
-                  {isExpanded && (
-                    <div className="space-y-3.5 pt-2 border-t border-[#F4EFE6]">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">
-                          Sub-Events & Crew Media Cards ({cleanSubEvents.length})
-                        </h3>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-3.5">
-                        {cleanSubEvents.map(event => {
-                          const eventAllCopied = event.crew?.length > 0 && event.crew.every(c => c.is_copied);
-                          const copiedCrewCount = event.crew?.filter(c => c.is_copied).length || 0;
-                          const totalCrewCount = event.crew?.length || 0;
-
-                          return (
-                            <div
-                              key={event.id}
-                              className="bg-[#FAF8F3] border border-[#EBE6DB] rounded-2xl p-4 space-y-3"
-                            >
-                              {/* Sub-event Top Bar */}
-                              <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-2.5">
-                                <div className="flex items-center gap-2">
-                                  <Sparkles className="w-4 h-4 text-amber-600" />
-                                  <span className="text-xs font-black text-slate-900">{event.name}</span>
-                                  <span className="text-[11px] font-semibold text-slate-500">({event.date})</span>
-                                  {event.venue && (
-                                    <span className="text-[11px] text-slate-500 truncate max-w-[200px]">📍 {event.venue}</span>
-                                  )}
-                                </div>
-
-                                <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                                  eventAllCopied
-                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                    : 'bg-amber-100 text-amber-800 border border-amber-200'
-                                }`}>
-                                  {copiedCrewCount}/{totalCrewCount} Crew Copied
-                                </span>
-                              </div>
-
-                              {/* Crew List in Event (Excluding Assistant/Lights) */}
-                              <div className="space-y-2.5">
-                                {event.crew?.map(member => (
-                                  <div
-                                    key={member.id}
-                                    className="bg-white border border-slate-200/80 rounded-2xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs relative"
-                                  >
-                                    {/* Left: Crew Name & Role */}
-                                    <div className="flex items-center gap-2.5 min-w-[220px]">
-                                      <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
-                                        <User className="w-4 h-4" />
-                                      </div>
-                                      <div>
-                                        <div className="text-xs font-black text-slate-900">{member.name}</div>
-                                        <div className="text-[10px] font-semibold text-slate-500">{member.role}</div>
-                                      </div>
+                            return (
+                              <div
+                                key={folder.id}
+                                className="bg-white p-2.5 sm:p-3 rounded-xl border border-blue-200/80 shadow-2xs space-y-2"
+                              >
+                                {/* Top row: Drive Icon + Custom Label Input + Open / Remove */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0">
+                                      <Folder className="w-4 h-4 fill-blue-500/20 text-blue-600" />
                                     </div>
-
-                                    {/* Center: Multi-Select Memory Card Dropdown with Search */}
-                                    <div className="flex-1 max-w-md w-full space-y-1 relative">
-                                      {/* Trigger Button */}
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (activeCardAssignPopover?.crewId === member.id && activeCardAssignPopover?.eventId === event.id) {
-                                            setActiveCardAssignPopover(null);
-                                          } else {
-                                            setActiveCardAssignPopover({
-                                              projectId: project.id,
-                                              eventId: event.id,
-                                              crewId: member.id,
-                                            });
-                                            setCardAssignSearch('');
+                                    <input
+                                      type="text"
+                                      placeholder="Event name (e.g. Pre-Wedding, Wedding, Deliverables)"
+                                      value={driveLabel}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setProjects(prev => prev.map(p => p.id === project.id ? {
+                                          ...p,
+                                          google_drive_backup: {
+                                            ...p.google_drive_backup,
+                                            folders: (p.google_drive_backup.folders || []).map(f => f.id === folder.id ? { ...f, label: val } : f)
                                           }
-                                        }}
-                                        className="w-full px-3 py-1.5 bg-[#FEFDF8] hover:bg-amber-50/50 border border-amber-250 rounded-xl text-xs font-bold text-amber-950 flex items-center justify-between cursor-pointer shadow-2xs transition"
+                                        } : p));
+                                      }}
+                                      onBlur={(e) => handleUpdateDriveFolderLabel(project.id, folder.id, e.target.value)}
+                                      className="px-2 py-1 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-blue-400 rounded-lg text-xs font-bold text-slate-900 transition flex-1 min-w-[120px]"
+                                      title="Click to rename Drive folder label (e.g. Pre-Wedding, Wedding, Deliverables)"
+                                    />
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {folder.webViewLink && (
+                                      <a
+                                        href={folder.webViewLink}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center gap-1 transition"
                                       >
-                                        <div className="flex items-center gap-1.5 truncate">
-                                          <Cpu className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                          <span className="truncate">
-                                            {member.assigned_card_names?.length > 0 
-                                              ? `${member.assigned_card_names.length} Card(s) Selected` 
-                                              : 'Select Memory Card (SD / CFexpress)...'}
-                                          </span>
-                                        </div>
-                                        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${activeCardAssignPopover?.crewId === member.id && activeCardAssignPopover?.eventId === event.id ? 'rotate-180' : ''}`} />
-                                      </button>
-
-                                      {/* Interactive Multi-Select Popover with Search */}
-                                      {activeCardAssignPopover?.projectId === project.id && 
-                                       activeCardAssignPopover?.eventId === event.id && 
-                                       activeCardAssignPopover?.crewId === member.id && (
-                                        <div className="absolute left-0 top-full mt-1.5 w-72 sm:w-80 bg-white border border-amber-200 rounded-2xl shadow-2xl p-2.5 z-50 space-y-2">
-                                          {/* Search Input */}
-                                          <div className="relative">
-                                            <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                                            <input
-                                              type="text"
-                                              autoFocus
-                                              placeholder="Search memory cards..."
-                                              value={cardAssignSearch}
-                                              onChange={e => setCardAssignSearch(e.target.value)}
-                                              className="w-full pl-7 pr-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-amber-500"
-                                            />
-                                          </div>
-
-                                          {/* Cards Checkbox List */}
-                                          <div className="max-h-48 overflow-y-auto space-y-1">
-                                            {memoryCards.length === 0 ? (
-                                              <div className="p-3 text-center text-xs text-slate-400">
-                                                No memory cards registered yet.
-                                              </div>
-                                            ) : (
-                                              memoryCards
-                                                .filter(c => !cardAssignSearch.trim() || c.card_name.toLowerCase().includes(cardAssignSearch.toLowerCase()) || c.card_type.toLowerCase().includes(cardAssignSearch.toLowerCase()))
-                                                .map(card => {
-                                                  const isSelected = (member.assigned_card_ids || []).includes(card.id);
-                                                  return (
-                                                    <div
-                                                      key={card.id}
-                                                      onClick={() => handleToggleMemoryCardForCrew(project.id, event.id, member.id, card)}
-                                                      className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition ${
-                                                        isSelected 
-                                                          ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold' 
-                                                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                                                      }`}
-                                                    >
-                                                      <div className="flex items-center gap-2 min-w-0">
-                                                        <span 
-                                                          className="w-3 h-3 rounded-full shrink-0 shadow-2xs" 
-                                                          style={{ backgroundColor: card.color_tag || '#f59e0b' }} 
-                                                        />
-                                                        <div className="min-w-0">
-                                                          <div className="text-xs truncate">{card.card_name}</div>
-                                                          <div className="text-[10px] text-slate-400 font-normal">
-                                                            {card.card_type} • {card.capacity_gb}GB • {card.speed_class}
-                                                          </div>
-                                                        </div>
-                                                      </div>
-                                                      <div className="shrink-0">
-                                                        {isSelected ? (
-                                                          <CheckSquare className="w-4 h-4 text-amber-600 fill-amber-100" />
-                                                        ) : (
-                                                          <Square className="w-4 h-4 text-slate-300" />
-                                                        )}
-                                                      </div>
-                                                    </div>
-                                                  );
-                                                })
-                                            )}
-                                          </div>
-
-                                          {/* Popover Footer */}
-                                          <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                                            <Link
-                                              href="/settings?tab=storage"
-                                              className="text-amber-700 hover:text-amber-800 font-bold flex items-center gap-1"
-                                            >
-                                              <Settings className="w-3 h-3" />
-                                              <span>Manage in Settings</span>
-                                            </Link>
-                                            <button
-                                              type="button"
-                                              onClick={() => setActiveCardAssignPopover(null)}
-                                              className="text-slate-500 hover:text-slate-800 font-bold px-2 py-0.5 rounded-md hover:bg-slate-100 cursor-pointer"
-                                            >
-                                              Done
-                                            </button>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* Assigned Card Tags with Color Dots and Remove X */}
-                                      {member.assigned_card_names?.length > 0 && (
-                                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                                          {member.assigned_card_names.map((name, nIdx) => {
-                                            const cardId = member.assigned_card_ids?.[nIdx];
-                                            const matched = memoryCards.find(c => c.id === cardId);
-                                            return (
-                                              <span
-                                                key={nIdx}
-                                                className="text-[10px] font-extrabold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 flex items-center gap-1.5 shadow-2xs"
-                                              >
-                                                <span 
-                                                  className="w-2 h-2 rounded-full shrink-0" 
-                                                  style={{ backgroundColor: matched?.color_tag || '#f59e0b' }} 
-                                                />
-                                                <Cpu className="w-3 h-3 text-amber-600" />
-                                                <span>{name}</span>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    if (matched) {
-                                                      handleToggleMemoryCardForCrew(project.id, event.id, member.id, matched);
-                                                    }
-                                                  }}
-                                                  className="hover:text-rose-600 ml-0.5 cursor-pointer"
-                                                  title="Remove card"
-                                                >
-                                                  <X className="w-2.5 h-2.5" />
-                                                </button>
-                                              </span>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Right: 3D Emerald Green "Mark as Copied" Button */}
+                                        <span>Open ↗</span>
+                                      </a>
+                                    )}
                                     <button
                                       type="button"
-                                      onClick={() => handleToggleCopied(project.id, event.id, member.id)}
-                                      className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs ${
-                                        member.is_copied
-                                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-emerald-600/30 hover:brightness-105 border border-emerald-500'
-                                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                                      }`}
+                                      onClick={() => handleUnlinkGoogleFolder(project.id, folder.id)}
+                                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                      title="Unlink this folder"
                                     >
-                                      {member.is_copied ? (
-                                        <>
-                                          <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                                          <span>✓ Copied & Dumped</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Square className="w-4 h-4 stroke-[1.5]" />
-                                          <span>Mark as Copied</span>
-                                        </>
-                                      )}
+                                      <X className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
-                                ))}
-                              </div>
-
-                              {/* Sub-event Storage Footprint Bar (Disks + Cloud) */}
-                              <div className="pt-2 border-t border-[#EAE5DA] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-bold text-slate-500">Storage Disks:</span>
-                                  {project.assigned_disks?.length === 0 ? (
-                                    <span className="text-slate-400 font-medium">None assigned</span>
-                                  ) : (
-                                    project.assigned_disks?.map(d => (
-                                      <span key={d.disk_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
-                                        <HardDrive className="w-3 h-3 text-emerald-600" />
-                                        <span>{d.disk_name}</span>
-                                      </span>
-                                    ))
-                                  )}
                                 </div>
 
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-slate-500">Google Drive:</span>
-                                  {hasCloudBackup ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700">
-                                      <Cloud className="w-3 h-3 text-blue-600" />
-                                      <span>Backed Up</span>
+                                {/* Bottom row: Drive Folder Name & Account Email */}
+                                <div className="flex items-center justify-between gap-2 bg-blue-50/50 px-2.5 py-1.5 rounded-lg border border-blue-100 text-[11px] text-slate-600">
+                                  <span className="font-bold text-blue-950 truncate" title={folder.name}>
+                                    📁 {folder.name}
+                                  </span>
+                                  {folder.account_email && (
+                                    <span className="text-[10px] text-slate-400 font-mono truncate shrink-0">
+                                      {folder.account_email}
                                     </span>
-                                  ) : (
-                                    <span className="text-slate-400 text-[10px]">Pending Sync</span>
                                   )}
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })
+                        ) : (
+                          <div className="bg-white p-3 rounded-xl border border-dashed border-blue-200 text-xs text-slate-400 font-medium text-center">
+                            No Google Drive folder linked yet. Click &apos;+ Add Drive Folder&apos; above to link client raw dumps or deliverables.
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               );
             })}
@@ -2427,530 +2436,6 @@ export default function StorageHubPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </div>
-
-              {/* Sub-Events & Crew Assignment Builder (Exact match with Image 2 EventBlock) */}
-              <div className="space-y-3 pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-amber-600" />
-                    <label className="text-xs font-black uppercase text-slate-700 tracking-wider">
-                      Sub-Events &amp; Crew Assignment ({manualSubEvents.length})
-                    </label>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setManualSubEvents(prev => [
-                        ...prev,
-                        {
-                          id: `sub_${Date.now()}`,
-                          name: 'Wedding Ceremony',
-                          subEventNames: ['Wedding Ceremony'],
-                          date: manualEventDate || new Date().toISOString().split('T')[0],
-                          isDateTbd: false,
-                          isOvernight: false,
-                          startTime: '09:00 AM',
-                          endTime: '02:00 PM',
-                          shiftSlot: 'None (Standard)',
-                          venue: '',
-                          mapLink: '',
-                          crew: [
-                            { name: 'Lead Photographer', role: 'Traditional Photography' },
-                            { name: 'Candid Cinematographer', role: 'Candid Cinematography' }
-                          ],
-                          notes: ''
-                        }
-                      ]);
-                    }}
-                    className="text-xs font-black text-amber-700 hover:text-amber-800 flex items-center gap-1.5 cursor-pointer bg-amber-50 hover:bg-amber-100/80 px-3 py-1.5 rounded-xl border border-amber-200 transition active:scale-95 shadow-2xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Add Sub-Event</span>
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {manualSubEvents.map((ev, evIdx) => {
-                    const isDateNotFixed = Boolean(ev.isDateTbd);
-                    const isOvernight = Boolean(ev.isOvernight);
-                    const currentProgramNames = ev.subEventNames && ev.subEventNames.length > 0 ? ev.subEventNames : [ev.name || 'Wedding Ceremony'];
-
-                    return (
-                      <div
-                        key={ev.id || evIdx}
-                        className="bg-[#FEFDF8] rounded-2xl border border-amber-200/90 p-3.5 sm:p-4 space-y-3 shadow-2xs relative group"
-                      >
-                        {/* HEADER ROW WITH BLOCK INDEX & ACTIONS */}
-                        <div className="flex items-center justify-between border-b border-amber-200/70 pb-2.5">
-                          <div className="flex items-center gap-2 flex-wrap min-w-0">
-                            <div className="w-5 h-5 rounded-md bg-amber-100 text-amber-900 font-black text-[10px] flex items-center justify-center border border-amber-300 shrink-0">
-                              {evIdx + 1}
-                            </div>
-                            <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider shrink-0">
-                              Sub-Event #{evIdx + 1}
-                            </h4>
-
-                            {/* Individual Program Chips with Cross (X) icon to delete */}
-                            {currentProgramNames.map((name) => (
-                              <span
-                                key={name}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-100/90 hover:bg-amber-100 text-amber-950 border border-amber-300 text-[11px] font-extrabold shadow-2xs transition-colors"
-                              >
-                                <span className="truncate max-w-[140px]">{name}</span>
-                                {currentProgramNames.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const updated = currentProgramNames.filter(n => n !== name);
-                                      setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                        ...item,
-                                        subEventNames: updated,
-                                        name: updated[0] || item.name
-                                      } : item));
-                                    }}
-                                    className="w-3.5 h-3.5 rounded-full hover:bg-rose-500 hover:text-white text-amber-800 flex items-center justify-center transition cursor-pointer p-0 shrink-0"
-                                    title={`Remove ${name}`}
-                                  >
-                                    <X className="w-2.5 h-2.5 stroke-[3]" />
-                                  </button>
-                                )}
-                              </span>
-                            ))}
-                          </div>
-
-                          <div className="flex items-center gap-1">
-                            {/* Duplicate Sub-Event */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const clone: ManualSubEventForm = {
-                                  ...ev,
-                                  id: `sub_${Date.now()}`,
-                                  crew: ev.crew.map(c => ({ ...c }))
-                                };
-                                setManualSubEvents(prev => [
-                                  ...prev.slice(0, evIdx + 1),
-                                  clone,
-                                  ...prev.slice(evIdx + 1)
-                                ]);
-                              }}
-                              className="p-1.5 text-zinc-400 hover:text-amber-700 hover:bg-amber-100/70 rounded-lg transition cursor-pointer"
-                              title="Duplicate event block"
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                            </button>
-                            {/* Remove Sub-Event */}
-                            {manualSubEvents.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => setManualSubEvents(prev => prev.filter((_, idx) => idx !== evIdx))}
-                                className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                title="Remove event block"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* 1. EVENT TYPE SELECT */}
-                        <div>
-                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                            Event Type <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            value={ev.name}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setManualSubEvents(prev => prev.map((item, idx) => {
-                                if (idx !== evIdx) return item;
-                                const existing = item.subEventNames || [];
-                                const nextNames = existing.includes(val) ? existing : [...existing, val];
-                                return { ...item, name: val, subEventNames: nextNames };
-                              }));
-                            }}
-                            className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
-                          >
-                            <option value="Wedding Ceremony">Wedding Ceremony</option>
-                            <option value="Reception">Reception</option>
-                            <option value="Sangeet">Sangeet</option>
-                            <option value="Haldi">Haldi</option>
-                            <option value="Mehendi">Mehendi</option>
-                            <option value="Engagement">Engagement</option>
-                            <option value="Ring Ceremony">Ring Ceremony</option>
-                            <option value="Cocktail Party">Cocktail Party</option>
-                            <option value="Pre-Wedding">Pre-Wedding</option>
-                            <option value="Baraat">Baraat</option>
-                            <option value="Custom Event">Custom Event</option>
-                          </select>
-                        </div>
-
-                        {/* 2. PROGRAM DATE & CHECKBOXES GROUP */}
-                        <div>
-                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                            Program Date <span className="text-red-500">*</span>
-                          </label>
-
-                          {/* Checkboxes row: Date Not Fixed & Spans Overnight */}
-                          <div className="flex flex-wrap items-center gap-4 mb-2">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none">
-                              <input
-                                type="checkbox"
-                                checked={isDateNotFixed}
-                                onChange={(e) => {
-                                  const isTbd = e.target.checked;
-                                  setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                    ...item,
-                                    isDateTbd: isTbd,
-                                    date: isTbd ? '' : (item.date || manualEventDate || new Date().toISOString().split('T')[0])
-                                  } : item));
-                                }}
-                                className="h-4 w-4 rounded border-slate-300 text-amber-500 shadow-inner focus:ring-amber-400 cursor-pointer accent-amber-600"
-                              />
-                              <span>Date Not Fixed (TBD)</span>
-                            </label>
-
-                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none">
-                              <input
-                                type="checkbox"
-                                checked={isOvernight}
-                                onChange={(e) => {
-                                  const overnight = e.target.checked;
-                                  setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                    ...item,
-                                    isOvernight: overnight,
-                                    endDate: overnight ? (item.endDate || item.date) : ''
-                                  } : item));
-                                }}
-                                className="h-4 w-4 rounded border-slate-300 text-amber-500 shadow-inner focus:ring-amber-400 cursor-pointer accent-indigo-600"
-                              />
-                              <Moon className="w-3.5 h-3.5 text-indigo-500 inline-block" />
-                              <span>Spans Overnight (Next Day End)</span>
-                            </label>
-                          </div>
-
-                          {/* Date Inputs */}
-                          {isOvernight && !isDateNotFixed ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div>
-                                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                                  Start Date
-                                </label>
-                                <input
-                                  type="date"
-                                  value={ev.date}
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, date: val } : item));
-                                  }}
-                                  className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-[10px] font-black uppercase tracking-wider text-indigo-950 block mb-1">
-                                  End Date (Next Day)
-                                </label>
-                                <input
-                                  type="date"
-                                  value={ev.endDate || ev.date}
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, endDate: val } : item));
-                                  }}
-                                  className="w-full px-3 py-1.5 bg-white border border-indigo-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs"
-                                />
-                              </div>
-                            </div>
-                          ) : (
-                            <input
-                              type="date"
-                              disabled={isDateNotFixed}
-                              value={isDateNotFixed ? '' : ev.date}
-                              placeholder={isDateNotFixed ? 'Date Not Fixed (TBD)' : 'Pick date...'}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, date: val } : item));
-                              }}
-                              className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs disabled:bg-slate-100 disabled:text-slate-400"
-                            />
-                          )}
-                        </div>
-
-                        {/* 3. TIME PICKERS & SHIFT SLOT */}
-                        <div className="grid grid-cols-1 sm:grid-cols-7 gap-3 items-end pt-1">
-                          <div className="sm:col-span-3">
-                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1 flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-amber-500" />
-                              <span>Roll Call Time (Start)</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={ev.startTime || '09:00 AM'}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, startTime: val } : item));
-                              }}
-                              placeholder="e.g. 09:00 AM"
-                              className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs"
-                            />
-                          </div>
-
-                          <div className="sm:col-span-3">
-                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1 flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-indigo-500" />
-                              <span>Dismissal Estimate (End)</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={ev.endTime || '02:00 PM'}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, endTime: val } : item));
-                              }}
-                              placeholder="e.g. 02:00 PM"
-                              className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs"
-                            />
-                          </div>
-
-                          <div className="sm:col-span-1">
-                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1 flex items-center gap-1">
-                              <Zap className="w-3 h-3 text-amber-500" />
-                              <span>Shift</span>
-                            </label>
-                            <select
-                              value={ev.shiftSlot || 'None (Standard)'}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, shiftSlot: val } : item));
-                              }}
-                              className="w-full px-2 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-900 shadow-2xs truncate"
-                            >
-                              <option value="None (Standard)">None</option>
-                              <option value="1 Hour Slot">1 Hr</option>
-                              <option value="2 Hours Slot">2 Hrs</option>
-                              <option value="3 Hours Slot">3 Hrs</option>
-                              <option value="4 Hours Slot">4 Hrs</option>
-                              <option value="6 Hours Slot">6 Hrs</option>
-                              <option value="8 Hours Slot">8 Hrs</option>
-                              <option value="10 Hours Slot">10 Hrs</option>
-                              <option value="12 Hours Slot">12 Hrs</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* 4. VENUE COORDINATES / LOCATION */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
-                            <MapPin className="w-3 h-3 text-zinc-500" />
-                            <span>Venue Coordinates / Location</span>
-                            <span className="text-zinc-400 font-normal lowercase text-[9px]">(optional)</span>
-                          </label>
-                          <div className="relative">
-                            <MapPin className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                            <input
-                              type="text"
-                              placeholder="e.g. Royal Lawn Room, Mumbai"
-                              value={ev.venue}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, venue: val } : item));
-                              }}
-                              className="w-full bg-white border border-amber-200/90 pl-8 pr-2.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none shadow-2xs"
-                            />
-                          </div>
-                          <div className="relative">
-                            <LinkIcon className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                            <input
-                              type="url"
-                              placeholder="Map Link (e.g. https://maps.google.com/?q=...)"
-                              value={ev.mapLink || ''}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, mapLink: val } : item));
-                              }}
-                              className="w-full bg-white border border-amber-200/90 pl-8 pr-2.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none shadow-2xs font-mono"
-                            />
-                          </div>
-                        </div>
-
-                        {/* 5. CREW ROLE PLACEMENTS (STRICTLY NO ASSISTANT / LIGHTS) */}
-                        <div className="space-y-2 pt-2 border-t border-amber-100">
-                          {/* Header Bar */}
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-lg bg-[#6C5CE7]/10 flex items-center justify-center text-[#6C5CE7]">
-                                <Users className="w-3.5 h-3.5" />
-                              </div>
-                              <span className="text-[11px] font-black text-[#0B111E] uppercase tracking-wider">
-                                Crew Role Placements
-                              </span>
-                              <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-[#6C5CE7] text-white shadow-2xs">
-                                {ev.crew.length} {ev.crew.length === 1 ? 'Slot' : 'Slots'} Selected
-                              </span>
-                            </div>
-
-                            {/* Add Custom Role */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const customName = prompt('Enter custom role name (e.g. Helicopter Pilot, Crane Operator):');
-                                if (customName && customName.trim()) {
-                                  const clean = customName.trim();
-                                  setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                    ...item,
-                                    crew: [...item.crew, { name: clean, role: clean }]
-                                  } : item));
-                                }
-                              }}
-                              className="text-xs font-extrabold text-[#6C5CE7] hover:text-[#5b4cd1] transition flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 px-3 py-1 rounded-xl cursor-pointer shadow-2xs active:scale-95"
-                            >
-                              <UserPlus className="w-3.5 h-3.5" />
-                              <span>+ Custom Role</span>
-                            </button>
-                          </div>
-
-                          {/* SECTION 1: ALLOCATED CREW CARDS */}
-                          {ev.crew.length > 0 ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
-                              {ev.crew.map((cr, crIdx) => {
-                                const roleLower = (cr.role || '').toLowerCase();
-                                let roleCode = 'CRW';
-                                if (roleLower.includes('cinemat')) roleCode = 'CV';
-                                else if (roleLower.includes('candid')) roleCode = 'CP';
-                                else if (roleLower.includes('traditional photo') || roleLower.includes('photo')) roleCode = 'TP';
-                                else if (roleLower.includes('traditional video') || roleLower.includes('video')) roleCode = 'TV';
-                                else if (roleLower.includes('drone')) roleCode = 'DP';
-                                else if (roleLower.includes('reel')) roleCode = 'RC';
-                                else if (roleLower.includes('live')) roleCode = 'LS';
-                                else if (roleLower.includes('editor')) roleCode = 'SDE';
-                                else if (roleLower.includes('project')) roleCode = 'PM';
-                                else if (roleLower.includes('team')) roleCode = 'TM';
-
-                                return (
-                                  <div
-                                    key={crIdx}
-                                    className="flex items-center justify-between bg-white border border-indigo-200 hover:border-[#6C5CE7] rounded-xl px-2.5 py-1.5 shadow-2xs transition-all group gap-2"
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                      <span className="font-mono font-black text-[10px] bg-indigo-50 text-[#6C5CE7] border border-indigo-200 px-1.5 py-0.5 rounded-md uppercase shrink-0">
-                                        {roleCode}
-                                      </span>
-                                      <div className="min-w-0 flex-1">
-                                        <input
-                                          type="text"
-                                          value={cr.name}
-                                          onChange={e => {
-                                            const val = e.target.value;
-                                            setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                              ...item,
-                                              crew: item.crew.map((c, i) => i === crIdx ? { ...c, name: val } : c)
-                                            } : item));
-                                          }}
-                                          placeholder="Crew Member Name"
-                                          className="w-full text-xs font-bold text-slate-900 border-0 focus:outline-none focus:ring-0 p-0 bg-transparent truncate"
-                                        />
-                                        <div className="text-[10px] text-slate-400 font-semibold truncate leading-none mt-0.5">
-                                          {cr.role}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                          ...item,
-                                          crew: item.crew.filter((_, i) => i !== crIdx)
-                                        } : item));
-                                      }}
-                                      className="w-5 h-5 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer shrink-0"
-                                      title="Remove crew slot"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="py-2.5 px-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/50 text-center">
-                              <p className="text-xs font-semibold text-amber-900">
-                                No crew roles allocated yet. Click any role below to add to this event.
-                              </p>
-                            </div>
-                          )}
-
-                          {/* SECTION 2: AVAILABLE ROLES TO ADD (STRICTLY NO ASSISTANT / LIGHTS) */}
-                          <div className="pt-1.5">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                              <Sparkles className="w-3 h-3 text-amber-500" />
-                              <span>Available Roles to Add:</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {[
-                                { name: 'Cinematographer', code: 'CV' },
-                                { name: 'Candid Photographer', code: 'CP' },
-                                { name: 'Traditional Photographer', code: 'TP' },
-                                { name: 'Traditional Videographer', code: 'TV' },
-                                { name: 'Drone Pilot', code: 'DP' },
-                                { name: 'Reels Creator', code: 'RC' },
-                                { name: 'Live Streaming', code: 'LS' },
-                                { name: 'Same Day Editor', code: 'SDE' },
-                                { name: 'Project Manager', code: 'PM' },
-                                { name: 'Team Manager', code: 'TM' },
-                              ].map((roleItem) => (
-                                <button
-                                  key={roleItem.code}
-                                  type="button"
-                                  onClick={() => {
-                                    setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? {
-                                      ...item,
-                                      crew: [
-                                        ...item.crew,
-                                        {
-                                          name: `${roleItem.name} ${item.crew.filter(c => c.role === roleItem.name).length + 1}`,
-                                          role: roleItem.name
-                                        }
-                                      ]
-                                    } : item));
-                                  }}
-                                  className="px-2.5 py-1 rounded-xl text-xs font-bold border border-dashed border-slate-300 bg-white hover:bg-indigo-50/80 hover:border-indigo-400 hover:text-indigo-950 text-slate-700 transition flex items-center gap-1.5 cursor-pointer shadow-2xs group active:scale-95"
-                                >
-                                  <Plus className="w-3 h-3 text-indigo-500 group-hover:scale-125 transition-transform" />
-                                  <span>{roleItem.name}</span>
-                                  <span className="text-[10px] font-black text-slate-400 group-hover:text-indigo-600 font-mono">
-                                    {roleItem.code}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 6. OPERATIONAL NOTES & INSTRUCTIONS */}
-                        <div className="space-y-1 pt-1 border-t border-amber-100">
-                          <label className="text-[10px] font-bold text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
-                            <MessageSquare className="w-3 h-3 text-zinc-500" />
-                            <span>Operational Notes &amp; Instructions</span>
-                            <span className="text-zinc-400 font-normal lowercase text-[9px]">(optional)</span>
-                          </label>
-                          <textarea
-                            rows={1}
-                            placeholder="Operational notes, gear requirements, or guidelines..."
-                            value={ev.notes || ''}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setManualSubEvents(prev => prev.map((item, idx) => idx === evIdx ? { ...item, notes: val } : item));
-                            }}
-                            className="w-full text-xs p-2.5 rounded-xl border border-slate-200 bg-white resize-none transition-all text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
 
               {/* Bottom Actions */}
@@ -4445,8 +3930,15 @@ export default function StorageHubPage() {
             >
               <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between gap-3 bg-blue-50/40">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-blue-500/15 text-blue-700 flex items-center justify-center font-bold">
-                    <Cloud className="w-5 h-5" />
+                  <div className="w-10 h-10 rounded-2xl bg-white border border-blue-200 flex items-center justify-center p-2 shrink-0 shadow-2xs">
+                    <svg viewBox="0 0 87.3 78" className="w-6 h-6">
+                      <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                      <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                      <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                      <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                      <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                      <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                    </svg>
                   </div>
                   <div>
                     <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
@@ -4456,7 +3948,7 @@ export default function StorageHubPage() {
                       </span>
                     </h3>
                     <p className="text-xs text-slate-500 font-medium">
-                      Cloud storage quota meters and account folder browsing
+                      Live storage quota meters and account folder browsing
                     </p>
                   </div>
                 </div>
@@ -4504,7 +3996,9 @@ export default function StorageHubPage() {
                   </div>
                 ) : (
                   driveAccounts.map(acc => {
-                    const percentUsed = Math.min(100, Math.round(((acc.used_storage_gb || 0) / (acc.total_capacity_gb || 2000)) * 100));
+                    const usedBytes = Number(acc.used_storage_bytes) || 0;
+                    const totalBytes = Number(acc.total_storage_bytes) || (2000 * 1024 * 1024 * 1024);
+                    const percentUsed = totalBytes > 0 ? Math.min(100, Math.round((usedBytes / totalBytes) * 100)) : 0;
 
                     return (
                       <div
@@ -4530,8 +4024,8 @@ export default function StorageHubPage() {
                               />
                             </div>
                             <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                              <span>{acc.used_storage_gb || 0} GB Used</span>
-                              <span>{percentUsed}% of {acc.total_capacity_gb || 2000} GB</span>
+                              <span>{formatBytesHuman(usedBytes)} Used</span>
+                              <span>{percentUsed}% of {formatBytesHuman(totalBytes)}</span>
                             </div>
                           </div>
                         </div>
@@ -4539,18 +4033,29 @@ export default function StorageHubPage() {
                         <div className="flex items-center gap-2 shrink-0">
                           <button
                             type="button"
+                            disabled={syncingAccountId === acc.id}
+                            onClick={() => handleSyncDriveAccount(acc.id)}
+                            className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                            title="Sync live quota from Google Drive API"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${syncingAccountId === acc.id ? 'animate-spin text-blue-600' : ''}`} />
+                            <span className="hidden sm:inline">Sync Quota</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               setShowDriveAccountsModal(false);
-                              handleOpenAccountExplorer(acc);
+                              handleOpenExplorerForAccount(acc);
                             }}
                             className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 font-bold text-xs border border-blue-200 transition cursor-pointer flex items-center gap-1"
+                            title="Browse folders inside this account"
                           >
                             <FolderOpen className="w-3.5 h-3.5" />
                             <span>Browse Folders</span>
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDisconnectAccount(acc.id)}
+                            onClick={() => handleDeleteGoogleAccount(acc.id)}
                             className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                             title="Disconnect Account"
                           >
