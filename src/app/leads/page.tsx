@@ -1015,11 +1015,45 @@ export default function LeadsPage() {
           console.warn('[LeadToTeamManager] Error creating team manager events:', fwErr);
         }
 
+        // 6. Studio Storage Hub: Auto-create Client Storage Card in milliseconds
+        try {
+          const safeWs = isValidUUID(currentWorkspaceId) ? currentWorkspaceId : '00000000-0000-0000-0000-000000000000';
+          const { data: existingStorage } = await supabase
+            .from('storage_project_assets')
+            .select('id')
+            .eq('workspace_id', safeWs)
+            .or(`lead_id.eq.${leadId},client_id.eq.${targetClientId}`)
+            .maybeSingle();
+
+          if (!existingStorage) {
+            await supabase
+              .from('storage_project_assets')
+              .insert([{
+                workspace_id: safeWs,
+                lead_id: leadId,
+                client_id: targetClientId,
+                client_name: clientName.trim(),
+                event_date: parsedEventDate || new Date().toISOString().split('T')[0],
+                package_amount: packageAmount || 0,
+                booking_status: 'booked',
+                sub_events: [],
+                assigned_disks: [],
+                google_drive_backup: { is_backed_up: false, folders: [] },
+                overall_storage_status: 'INGESTING',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              }]);
+          }
+        } catch (storageErr) {
+          console.warn('[LeadToStorage] Error auto-creating storage card:', storageErr);
+        }
+
         // Dispatch refresh events to all tabs
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('client_updated'));
           window.dispatchEvent(new CustomEvent('post_production_updated'));
           window.dispatchEvent(new CustomEvent('team_events_updated'));
+          window.dispatchEvent(new CustomEvent('storage_updated'));
         }
       }
     } catch (e) {

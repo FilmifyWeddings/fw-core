@@ -18,6 +18,44 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
 import { getActiveGoogleClientId } from '@/lib/google-credentials';
 
+// 💾 Realistic SD Card Icon (Recognizable cut-corner bevel & metal contact pins)
+const SDCardIcon: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
+  <svg 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <path d="M4 4a2 2 0 0 1 2-2h10l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4z" />
+    <line x1="8" y1="5.5" x2="8" y2="8.5" />
+    <line x1="11" y1="5.5" x2="11" y2="8.5" />
+    <line x1="14" y1="5.5" x2="14" y2="8.5" />
+    <line x1="17" y1="6.5" x2="17" y2="8.5" />
+  </svg>
+);
+
+// 💽 High-End SSD / External Drive Icon
+const SSDIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <line x1="7" y1="8" x2="7" y2="10" />
+    <line x1="10" y1="8" x2="10" y2="10" />
+    <line x1="13" y1="8" x2="13" y2="10" />
+    <circle cx="17" cy="16" r="1.5" fill="currentColor" />
+  </svg>
+);
+
 interface GoogleFolder {
   id: string;
   name: string;
@@ -239,6 +277,28 @@ export default function StorageHubPage() {
   // Add Project hard disks threaded dropdown state
   const [isDiskSelectDropdownOpen, setIsDiskSelectDropdownOpen] = useState(false);
   const [diskSearchQuery, setDiskSearchQuery] = useState('');
+
+  // 📂 Collapsible Project Cards & Dedicated Physical Drive Dropdowns state
+  const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
+  const [openDiskDropdownProjectId, setOpenDiskDropdownProjectId] = useState<string | null>(null);
+  const [projectDiskSearchQuery, setProjectDiskSearchQuery] = useState('');
+
+  const toggleCardExpansion = (projectId: string) => {
+    setExpandedCardIds(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  };
+
+  const handleExpandAllCards = () => {
+    setExpandedCardIds(new Set(projects.map(p => p.id)));
+  };
+
+  const handleCollapseAllCards = () => {
+    setExpandedCardIds(new Set());
+  };
 
   // Form states for Add Card
   const [newCardName, setNewCardName] = useState('');
@@ -619,87 +679,70 @@ export default function StorageHubPage() {
     });
   };
 
-  // Select Primary Physical Disk from Studio Settings for Local Storage Box
-  const handleSelectPrimaryDisk = async (projectId: string, diskId: string) => {
+  // 💽 Helper to extract assigned disk IDs from project notes or assigned_disks
+  const getProjectAssignedDiskIds = (project: ProjectAsset): string[] => {
+    if (project.notes) {
+      try {
+        const match = project.notes.match(/assigned_disk_ids:\s*(\[[^\]]*\])/);
+        if (match && match[1]) {
+          const parsed = JSON.parse(match[1]);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (_) {}
+    }
+    const fromDisks = (project.assigned_disks || []).map(d => d.disk_id).filter(Boolean);
+    return Array.from(new Set(fromDisks));
+  };
+
+  // Toggle physical hard drive / SSD assignment for a client project (supports multiple drives)
+  const handleToggleProjectDisk = async (projectId: string, diskId: string) => {
     const targetProject = projects.find(p => p.id === projectId);
     if (!targetProject) return;
 
-    let updatedDisks: AssignedDiskItem[] = [...(targetProject.assigned_disks || [])];
+    const currentIds = getProjectAssignedDiskIds(targetProject);
+    const nextIds = currentIds.includes(diskId)
+      ? currentIds.filter(id => id !== diskId)
+      : [...currentIds, diskId];
 
-    if (!diskId) {
-      updatedDisks = [];
+    const primaryDisk = disks.find(d => nextIds.includes(d.id));
+
+    // Update disk references on folders if applicable
+    const updatedDisks = (targetProject.assigned_disks || []).map(f => {
+      if ((!f.disk_id || f.disk_id === diskId) && primaryDisk) {
+        return { 
+          ...f, 
+          disk_id: primaryDisk.id, 
+          disk_name: primaryDisk.disk_name, 
+          drive_type: primaryDisk.disk_type 
+        };
+      }
+      return f;
+    });
+
+    // Update notes safely to persist multi-assigned disk IDs
+    let newNotes = targetProject.notes || '';
+    const tag = `assigned_disk_ids: ${JSON.stringify(nextIds)}`;
+    if (newNotes.includes('assigned_disk_ids:')) {
+      newNotes = newNotes.replace(/assigned_disk_ids:\s*(\[[^\]]*\])/, tag);
     } else {
-      const matchedDisk = disks.find(d => d.id === diskId);
-      if (!matchedDisk) return;
-
-      const existingPrimary = updatedDisks[0];
-      const newPrimary: AssignedDiskItem = {
-        disk_id: matchedDisk.id,
-        disk_name: matchedDisk.disk_name,
-        drive_type: matchedDisk.disk_type,
-        role: 'Primary Production Disk',
-        folder_path: existingPrimary?.folder_path || `/${matchedDisk.disk_name}/${targetProject.client_name.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
-        folder_name: existingPrimary?.folder_name || `${targetProject.client_name}_RAW`,
-        total_size_gb: existingPrimary?.total_size_gb || 0,
-        file_count: existingPrimary?.file_count || 0,
-        photo_count: existingPrimary?.photo_count,
-        video_count: existingPrimary?.video_count,
-        last_scanned_at: new Date().toISOString(),
-        scanned_on_machine: existingPrimary?.scanned_on_machine || (typeof window !== 'undefined' && window.navigator.userAgent.includes('Mac') ? 'Mac Studio' : 'Windows Rig'),
-      };
-
-      updatedDisks = [newPrimary, ...updatedDisks.filter((d, i) => i !== 0 && d.disk_id !== diskId)];
+      newNotes = newNotes ? `${newNotes}\n${tag}` : tag;
     }
 
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: updatedDisks } : p));
+    setProjects(prev => prev.map(p => p.id === projectId ? {
+      ...p,
+      notes: newNotes,
+      assigned_disks: updatedDisks
+    } : p));
 
     try {
       await fetch('/api/storage/projects', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
+        body: JSON.stringify({ id: projectId, notes: newNotes, assigned_disks: updatedDisks })
       });
     } catch (err) {
-      console.warn('Failed to update assigned disk:', err);
+      console.warn('Failed to update assigned disks:', err);
     }
-  };
-
-  // Assign Physical Disk
-  const handleAssignDisk = async (projectId: string, diskId: string) => {
-    const targetDisk = disks.find(d => d.id === diskId);
-    if (!targetDisk) return;
-
-    const targetProject = projects.find(p => p.id === projectId);
-    if (!targetProject) return;
-
-    const exists = targetProject.assigned_disks?.some(d => d.disk_id === diskId);
-    let updatedDisks: AssignedDiskItem[];
-
-    if (exists) {
-      updatedDisks = targetProject.assigned_disks.filter(d => d.disk_id !== diskId);
-    } else {
-      const newAssigned: AssignedDiskItem = {
-        disk_id: targetDisk.id,
-        disk_name: targetDisk.disk_name,
-        drive_type: targetDisk.disk_type,
-        role: 'Primary Raw Archive',
-        folder_path: `${targetDisk.disk_name}/${targetProject.client_name.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
-        folder_name: `${targetProject.client_name}_RAW`,
-        total_size_gb: 0,
-        file_count: 0,
-        last_scanned_at: new Date().toISOString(),
-        scanned_on_machine: 'Studio Workstation',
-      };
-      updatedDisks = [...(targetProject.assigned_disks || []), newAssigned];
-    }
-
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: updatedDisks } : p));
-
-    await fetch('/api/storage/projects', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
-    });
   };
 
   // Sync Live Drive Account Quota
@@ -736,10 +779,12 @@ export default function StorageHubPage() {
     const targetProject = projects.find(p => p.id === projectId);
     if (!targetProject) return;
 
-    const primaryDisk = targetProject.assigned_disks?.[0];
-    const diskId = primaryDisk?.disk_id || (disks[0]?.id || '');
-    const diskName = primaryDisk?.disk_name || (disks[0]?.disk_name || 'Primary Storage');
-    const driveType = primaryDisk?.drive_type || (disks[0]?.disk_type || 'SSD');
+    const assignedIds = getProjectAssignedDiskIds(targetProject);
+    const matchedAssignedDisks = disks.filter(d => assignedIds.includes(d.id));
+    const activeDisk = matchedAssignedDisks[0] || disks.find(d => targetProject.assigned_disks?.some(ad => ad.disk_id === d.id)) || disks[0];
+    const diskId = activeDisk?.id || '';
+    const diskName = activeDisk?.disk_name || 'Primary Storage';
+    const driveType = activeDisk?.disk_type || 'SSD';
 
     let folderName = '';
     let folderPath = '';
@@ -881,14 +926,19 @@ export default function StorageHubPage() {
       const targetProject = projects.find(p => p.id === projectId);
       if (!targetProject) return;
 
-      const primaryDisk = targetProject.assigned_disks?.[0];
-      const diskPrefix = primaryDisk?.disk_name ? `${primaryDisk.disk_name}` : 'Local';
+      const assignedIds = getProjectAssignedDiskIds(targetProject);
+      const matchedAssignedDisks = disks.filter(d => assignedIds.includes(d.id));
+      const activeDisk = matchedAssignedDisks[0] || disks.find(d => targetProject.assigned_disks?.some(ad => ad.disk_id === d.id)) || disks[0];
+      const diskPrefix = activeDisk?.disk_name ? `${activeDisk.disk_name}` : 'Local Storage';
 
       const updatedDisks = [...(targetProject.assigned_disks || [])];
       if (updatedDisks[diskItemIndex]) {
         const existing = updatedDisks[diskItemIndex];
         updatedDisks[diskItemIndex] = {
           ...existing,
+          disk_id: existing.disk_id || activeDisk?.id || '',
+          disk_name: existing.disk_name || activeDisk?.disk_name || diskPrefix,
+          drive_type: existing.drive_type || activeDisk?.disk_type || 'SSD',
           label: existing.label || folderName.replace(/_/g, ' '),
           folder_name: folderName,
           folder_path: `${diskPrefix}/${folderName}`,
@@ -1703,7 +1753,7 @@ export default function StorageHubPage() {
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Cpu className="w-5 h-5" />
+                  <SDCardIcon className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
                   <div className="text-lg font-black text-slate-900 leading-none">
@@ -1809,6 +1859,25 @@ export default function StorageHubPage() {
                 {tab.label}
               </button>
             ))}
+
+            <button
+              type="button"
+              onClick={expandedCardIds.size === filteredProjects.length && filteredProjects.length > 0 ? handleCollapseAllCards : handleExpandAllCards}
+              className="px-3 py-1.5 rounded-xl border border-[#EAE5DA] bg-[#FAF8F3] hover:bg-[#F5F1E8] text-slate-800 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs shrink-0"
+              title="Expand or Collapse all client storage cards"
+            >
+              {expandedCardIds.size === filteredProjects.length && filteredProjects.length > 0 ? (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Collapse All</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Expand All</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1843,8 +1912,10 @@ export default function StorageHubPage() {
             {filteredProjects.map(project => {
               const allCopied = project.sub_events?.length > 0 && project.sub_events.every(ev => ev.crew?.every(c => c.is_copied));
               const hasCloudBackup = Boolean(project.google_drive_backup?.is_backed_up);
-              const isExpanded = Boolean(expandedProjectIds[project.id]); // COLLAPSED by default
-              const primaryDisk = project.assigned_disks?.[0];
+              const isExpanded = expandedCardIds.has(project.id);
+              const projectDiskIds = getProjectAssignedDiskIds(project);
+              const assignedDisksList = disks.filter(d => projectDiskIds.includes(d.id));
+              const primaryDisk = assignedDisksList[0] || disks.find(d => project.assigned_disks?.some(ad => ad.disk_id === d.id)) || disks[0];
 
               // Filter out any assistant roles from sub-events for display
               const cleanSubEvents = (project.sub_events || []).map(ev => ({
@@ -1868,10 +1939,10 @@ export default function StorageHubPage() {
               return (
                 <div
                   key={project.id}
-                  className="bg-white rounded-3xl border border-[#EAE5DA] p-5 sm:p-6 shadow-xs hover:shadow-md transition-all space-y-5"
+                  className="bg-white rounded-3xl border border-[#EAE5DA] p-5 sm:p-6 shadow-xs hover:shadow-md transition-all space-y-4"
                 >
                   {/* Card Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F4EFE6] pb-4">
+                  <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isExpanded ? 'border-b border-[#F4EFE6] pb-4' : ''}`}>
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-2xl bg-[#FAF8F3] border border-[#EBE6DB] flex items-center justify-center text-slate-800 font-black text-sm shrink-0">
                         {project.client_name?.slice(0, 2).toUpperCase() || 'ST'}
@@ -1897,299 +1968,431 @@ export default function StorageHubPage() {
                           {linkedFolders.length > 0 && (
                             <span className="text-blue-600 font-bold">☁️ {linkedFolders.length} Cloud Folder{linkedFolders.length > 1 ? 's' : ''}</span>
                           )}
+                          {assignedDisksList.length > 0 && (
+                            <span className="text-emerald-700 font-bold">💽 {assignedDisksList.length} Assigned Drive{assignedDisksList.length > 1 ? 's' : ''}</span>
+                          )}
                         </div>
                       </div>
                     </div>
+
+                    {/* Show More / Show Details Toggle Button */}
+                    <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => toggleCardExpansion(project.id)}
+                        className={`px-3.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-2xs ${
+                          isExpanded
+                            ? 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600'
+                            : 'bg-[#FAF8F3] hover:bg-[#F5F1E8] text-slate-800 border-[#EBE6DB]'
+                        }`}
+                        title={isExpanded ? 'Collapse card details' : 'Show storage details'}
+                      >
+                        <span>{isExpanded ? 'Hide Details ▲' : 'Show Details ▼'}</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* ── TOP ROOT LEVEL: DUAL SIDE-BY-SIDE STORAGE BOXES (LOCAL RIG & GOOGLE DRIVE) ── */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    {/* 1. Local Machine / SSD Storage Box (Multiple Local Event Folders Supported) */}
-                    <div className="p-4 rounded-2xl bg-[#FAF8F3] border border-[#EBE6DB] flex flex-col justify-between gap-3">
-                      {/* Header */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
-                            <HardDrive className="w-4 h-4" />
+                  {/* ── EXPANDED DETAILS: DUAL SIDE-BY-SIDE STORAGE BOXES (LOCAL RIG & GOOGLE DRIVE) ── */}
+                  {isExpanded && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                      {/* 1. Local Machine / SSD Storage Box (Multiple Local Event Folders Supported) */}
+                      <div className="p-4 rounded-2xl bg-[#FAF8F3] border border-[#EBE6DB] flex flex-col justify-start gap-3">
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
+                              <HardDrive className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-black text-slate-900 truncate">
+                                Local Machine / SSD Storage Paths
+                              </h4>
+                              <p className="text-[11px] text-slate-500 truncate">
+                                {project.assigned_disks?.length 
+                                  ? `${project.assigned_disks.length} Local Folder${project.assigned_disks.length > 1 ? 's' : ''} Configured` 
+                                  : 'Physical hard drive / editing rig storage'}
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <h4 className="text-xs font-black text-slate-900 truncate">
-                              Local Machine / SSD Storage Paths
-                            </h4>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              {project.assigned_disks?.length 
-                                ? `${project.assigned_disks.length} Local Folder${project.assigned_disks.length > 1 ? 's' : ''} Configured` 
-                                : 'Physical hard drive / editing rig storage'}
-                            </p>
-                          </div>
-                        </div>
 
-                        {/* Add Local Folder Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleAddLocalFolder(project.id)}
-                          className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition"
-                          title="Add another local folder for this client (e.g. Pre-Wedding, Wedding)"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>+ Add Folder</span>
-                        </button>
-                      </div>
-
-                      {/* Select Physical Hard Drive / SSD Synced with Settings */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
-                          Assigned Physical Drive / SSD (Settings Sync)
-                        </label>
-                        <div className="relative">
-                          <select
-                            aria-label="Assign Physical Drive"
-                            value={primaryDisk?.disk_id || ''}
-                            onChange={(e) => handleSelectPrimaryDisk(project.id, e.target.value)}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-250 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 cursor-pointer shadow-2xs appearance-none pr-8"
+                          {/* Add Local Folder Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleAddLocalFolder(project.id)}
+                            className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition"
+                            title="Add another local folder for this client (e.g. Pre-Wedding, Wedding)"
                           >
-                            <option value="">-- Select Physical Drive / SSD from Settings --</option>
-                            {disks.map(d => (
-                              <option key={d.id} value={d.id}>
-                                {d.disk_name} ({d.disk_type} • {d.total_capacity_gb >= 1000 ? `${(d.total_capacity_gb / 1000).toFixed(1)} TB` : `${d.total_capacity_gb} GB`}{d.physical_location ? ` • ${d.physical_location}` : ''})
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>+ Add Folder</span>
+                          </button>
                         </div>
-                      </div>
 
-                      {/* Multiple Local Folders List */}
-                      <div className="space-y-2.5 max-h-72 overflow-y-auto">
-                        {(project.assigned_disks && project.assigned_disks.length > 0) ? (
-                          project.assigned_disks.map((folder, fIdx) => {
-                            const folderLabel = folder.label || folder.folder_name?.replace(/_RAW$/i, '') || (fIdx === 0 ? 'Pre-Wedding' : `Folder ${fIdx + 1}`);
-
-                            return (
-                              <div
-                                key={folder.id || fIdx}
-                                className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/90 shadow-2xs space-y-2"
-                              >
-                                {/* Top row: Folder Icon + Custom Label Input + Action Buttons */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0">
-                                      <Folder className="w-4 h-4 fill-amber-500/20" />
-                                    </div>
-                                    <input
-                                      type="text"
-                                      placeholder="Event name (e.g. Pre-Wedding, Wedding, Haldi)"
-                                      value={folderLabel}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        setProjects(prev => prev.map(p => p.id === project.id ? {
-                                          ...p,
-                                          assigned_disks: p.assigned_disks.map((d, i) => i === fIdx ? { ...d, label: val } : d)
-                                        } : p));
-                                      }}
-                                      onBlur={(e) => handleUpdateLocalFolderLabel(project.id, fIdx, e.target.value)}
-                                      className="px-2 py-1 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-amber-400 rounded-lg text-xs font-bold text-slate-900 transition flex-1 min-w-[120px]"
-                                      title="Click to rename folder label (e.g. Pre-Wedding, Wedding, Reception)"
-                                    />
-                                  </div>
-
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => handlePickDirectory(project.id, fIdx)}
-                                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-50 text-slate-700 hover:text-amber-800 border border-slate-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                                      title="Select / change folder path from disk"
-                                    >
-                                      <FolderOpen className="w-3 h-3 text-amber-600" />
-                                      <span>{folder.folder_path ? 'Change' : 'Pick Folder'}</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveLocalFolder(project.id, fIdx)}
-                                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                                      title="Remove this folder"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Bottom row: Path display & copy */}
-                                <div className="flex items-center justify-between gap-2 bg-slate-50/80 px-2.5 py-1.5 rounded-lg border border-slate-200/60 text-[11px] font-mono text-slate-600">
-                                  <span className="truncate select-all" title={folder.folder_path || ''}>
-                                    {folder.folder_path || 'No local directory selected yet'}
+                        {/* 💽 Dedicated 3D Assigned Physical Drive / SSD Card */}
+                        <div className="p-3 rounded-2xl bg-white border border-[#EBE6DB] shadow-2xs space-y-2 relative">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-700 flex items-center justify-center shrink-0">
+                                <SSDIcon className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                                <label className="text-[11px] font-black uppercase tracking-wider text-slate-800">
+                                  Assigned Physical Drives / SSDs
+                                </label>
+                                {assignedDisksList.length > 0 && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                    {assignedDisksList.length} {assignedDisksList.length === 1 ? 'Drive' : 'Drives'}
                                   </span>
-                                  {folder.folder_path && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCopyPath(folder.folder_path, `${project.id}_f_${fIdx}`)}
-                                      className="text-[10px] font-sans font-bold text-slate-500 hover:text-slate-900 shrink-0 ml-1 flex items-center gap-0.5 cursor-pointer"
-                                    >
-                                      {copiedPathId === `${project.id}_f_${fIdx}` ? (
-                                        <span className="text-emerald-600 flex items-center gap-1">
-                                          <Check className="w-2.5 h-2.5" /> Copied
-                                        </span>
-                                      ) : (
-                                        <span className="flex items-center gap-1">
-                                          <Copy className="w-2.5 h-2.5" /> Copy
-                                        </span>
-                                      )}
-                                    </button>
-                                  )}
-                                </div>
-
-                                {/* Scanned metadata stats if available */}
-                                {(folder.file_count > 0 || folder.total_size_gb > 0) && (
-                                  <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500 pt-0.5">
-                                    <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
-                                      📦 {folder.total_size_gb} GB
-                                    </span>
-                                    <span>•</span>
-                                    <span>📄 {folder.file_count} Files</span>
-                                    {folder.photo_count !== undefined && folder.photo_count > 0 && (
-                                      <>
-                                        <span>•</span>
-                                        <span>📸 {folder.photo_count} Photos</span>
-                                      </>
-                                    )}
-                                    {folder.video_count !== undefined && folder.video_count > 0 && (
-                                      <>
-                                        <span>•</span>
-                                        <span>🎬 {folder.video_count} Videos</span>
-                                      </>
-                                    )}
-                                  </div>
                                 )}
                               </div>
-                            );
-                          })
-                        ) : (
-                          <div className="bg-white p-3 rounded-xl border border-dashed border-amber-200 text-xs text-slate-400 font-medium text-center">
-                            No local folders assigned yet. Click &apos;+ Add Folder&apos; above to assign Pre-Wedding, Wedding, or Haldi raw directories.
+                            </div>
+                            <Link
+                              href="/settings?tab=storage"
+                              target="_blank"
+                              className="text-[10px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 shrink-0"
+                            >
+                              <Settings className="w-3 h-3" />
+                              <span>Settings</span>
+                            </Link>
                           </div>
-                        )}
-                      </div>
-                    </div>
 
-                    {/* 2. Google Drive Cloud Backup Box (Multiple Folders Supported with Event Labels) */}
-                    <div className="p-4 rounded-2xl bg-[#F6F9FE] border border-blue-150 flex flex-col justify-between gap-3">
-                      {/* Header */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-xl bg-white border border-blue-200 flex items-center justify-center p-1.5 shrink-0 shadow-2xs">
-                            <svg viewBox="0 0 87.3 78" className="w-full h-full">
-                              <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-                              <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
-                              <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
-                              <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
-                              <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
-                              <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
-                            </svg>
-                          </div>
-                          <div className="min-w-0">
-                            <h4 className="text-xs font-black text-slate-900 truncate">
-                              Google Drive Cloud Backup
-                            </h4>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              {hasCloudBackup 
-                                ? `${linkedFolders.length} Cloud Folder${linkedFolders.length > 1 ? 's' : ''} Linked`
-                                : 'Cloud archive & deliverable storage'}
-                            </p>
-                          </div>
+                          {/* Dropdown Toggle Trigger Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDiskDropdownProjectId(prev => prev === project.id ? null : project.id);
+                              setProjectDiskSearchQuery('');
+                            }}
+                            className="w-full min-h-[38px] p-2 bg-slate-50/90 hover:bg-slate-100/80 border border-slate-200 hover:border-amber-400 rounded-xl text-left transition flex items-center justify-between gap-2 cursor-pointer shadow-2xs"
+                          >
+                            <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-0">
+                              {assignedDisksList.length === 0 ? (
+                                <span className="text-xs text-slate-400 font-medium">
+                                  Click to assign physical drives & SSDs (e.g. Sandisk 4TB SSD)...
+                                </span>
+                              ) : (
+                                assignedDisksList.map(d => (
+                                  <span
+                                    key={d.id}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-slate-800 border border-slate-200 shadow-2xs"
+                                    style={{ borderLeftWidth: '3.5px', borderLeftColor: d.color_tag || '#10B981' }}
+                                  >
+                                    <span className="truncate max-w-[130px]">{d.disk_name}</span>
+                                    <span className="text-[10px] text-slate-400 font-normal">
+                                      ({d.total_capacity_gb >= 1000 ? `${(d.total_capacity_gb / 1000).toFixed(0)}TB` : `${d.total_capacity_gb}GB`})
+                                    </span>
+                                    <span
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleToggleProjectDisk(project.id, d.id);
+                                      }}
+                                      className="w-3.5 h-3.5 rounded-full hover:bg-rose-500 hover:text-white text-slate-400 flex items-center justify-center transition cursor-pointer ml-0.5"
+                                    >
+                                      <X className="w-2.5 h-2.5 stroke-[3]" />
+                                    </span>
+                                  </span>
+                                ))
+                              )}
+                            </div>
+                            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${openDiskDropdownProjectId === project.id ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {/* 3D Dropdown Popover Panel */}
+                          <AnimatePresence>
+                            {openDiskDropdownProjectId === project.id && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                                className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-slate-200 shadow-xl z-30 p-3 space-y-2.5"
+                              >
+                                <div className="relative">
+                                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                  <input
+                                    type="text"
+                                    value={projectDiskSearchQuery}
+                                    onChange={(e) => setProjectDiskSearchQuery(e.target.value)}
+                                    placeholder="Search hard drives & SSDs..."
+                                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-amber-500"
+                                  />
+                                </div>
+
+                                <div className="max-h-48 overflow-y-auto space-y-1.5">
+                                  {disks
+                                    .filter(d => !projectDiskSearchQuery || d.disk_name.toLowerCase().includes(projectDiskSearchQuery.toLowerCase()) || d.disk_type.toLowerCase().includes(projectDiskSearchQuery.toLowerCase()))
+                                    .map(d => {
+                                      const isSelected = projectDiskIds.includes(d.id);
+                                      return (
+                                        <div
+                                          key={d.id}
+                                          onClick={() => handleToggleProjectDisk(project.id, d.id)}
+                                          className={`p-2 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                                            isSelected
+                                              ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 font-bold shadow-2xs'
+                                              : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                                          }`}
+                                          style={{ borderLeftWidth: '4px', borderLeftColor: d.color_tag || '#10B981' }}
+                                        >
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <div
+                                              className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-2xs text-[10px] font-bold"
+                                              style={{ backgroundColor: d.color_tag || '#10B981' }}
+                                            >
+                                              <HardDrive className="w-3.5 h-3.5" />
+                                            </div>
+                                            <div className="min-w-0">
+                                              <div className="text-xs truncate font-bold text-slate-900">{d.disk_name}</div>
+                                              <div className="text-[10px] text-slate-400">
+                                                {d.disk_type} • {d.total_capacity_gb >= 1000 ? `${(d.total_capacity_gb / 1000).toFixed(1)} TB` : `${d.total_capacity_gb} GB`}
+                                                {d.physical_location ? ` • ${d.physical_location}` : ''}
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
+                                            isSelected ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300'
+                                          }`}>
+                                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
 
-                        {/* Add / Link Google Drive Folder Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenGooglePicker(project)}
-                          className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition"
-                        >
-                          <Cloud className="w-3.5 h-3.5" />
-                          <span>+ Add Drive Folder</span>
-                        </button>
-                      </div>
+                        {/* Multiple Local Folders List (Expanded without internal scrollbar) */}
+                        <div className="space-y-2.5">
+                          {(project.assigned_disks && project.assigned_disks.length > 0) ? (
+                            project.assigned_disks.map((folder, fIdx) => {
+                              const folderLabel = folder.label || folder.folder_name?.replace(/_RAW$/i, '') || (fIdx === 0 ? 'Pre-Wedding' : `Folder ${fIdx + 1}`);
 
-                      {/* Multiple Linked Drive Folders List */}
-                      <div className="space-y-2.5 max-h-72 overflow-y-auto">
-                        {linkedFolders.length > 0 ? (
-                          linkedFolders.map((folder, gdIdx) => {
-                            const driveLabel = folder.label || folder.name || (gdIdx === 0 ? 'Wedding' : `Folder ${gdIdx + 1}`);
-
-                            return (
-                              <div
-                                key={folder.id}
-                                className="bg-white p-2.5 sm:p-3 rounded-xl border border-blue-200/80 shadow-2xs space-y-2"
-                              >
-                                {/* Top row: Drive Icon + Custom Label Input + Open / Remove */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0">
-                                      <Folder className="w-4 h-4 fill-blue-500/20 text-blue-600" />
+                              return (
+                                <div
+                                  key={folder.id || fIdx}
+                                  className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/90 shadow-2xs space-y-2"
+                                >
+                                  {/* Top row: Folder Icon + Custom Label Input + Action Buttons */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0">
+                                        <Folder className="w-4 h-4 fill-amber-500/20" />
+                                      </div>
+                                      <input
+                                        type="text"
+                                        placeholder="Event name (e.g. Pre-Wedding, Wedding, Haldi)"
+                                        value={folderLabel}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setProjects(prev => prev.map(p => p.id === project.id ? {
+                                            ...p,
+                                            assigned_disks: p.assigned_disks.map((d, i) => i === fIdx ? { ...d, label: val } : d)
+                                          } : p));
+                                        }}
+                                        onBlur={(e) => handleUpdateLocalFolderLabel(project.id, fIdx, e.target.value)}
+                                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-amber-400 rounded-lg text-xs font-bold text-slate-900 transition flex-1 min-w-[120px]"
+                                        title="Click to rename folder label (e.g. Pre-Wedding, Wedding, Reception)"
+                                      />
                                     </div>
-                                    <input
-                                      type="text"
-                                      placeholder="Event name (e.g. Pre-Wedding, Wedding, Deliverables)"
-                                      value={driveLabel}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        setProjects(prev => prev.map(p => p.id === project.id ? {
-                                          ...p,
-                                          google_drive_backup: {
-                                            ...p.google_drive_backup,
-                                            folders: (p.google_drive_backup.folders || []).map(f => f.id === folder.id ? { ...f, label: val } : f)
-                                          }
-                                        } : p));
-                                      }}
-                                      onBlur={(e) => handleUpdateDriveFolderLabel(project.id, folder.id, e.target.value)}
-                                      className="px-2 py-1 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-blue-400 rounded-lg text-xs font-bold text-slate-900 transition flex-1 min-w-[120px]"
-                                      title="Click to rename Drive folder label (e.g. Pre-Wedding, Wedding, Deliverables)"
-                                    />
-                                  </div>
 
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {folder.webViewLink && (
-                                      <a
-                                        href={folder.webViewLink}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center gap-1 transition"
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePickDirectory(project.id, fIdx)}
+                                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-50 text-slate-700 hover:text-amber-800 border border-slate-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                                        title="Select / change folder path from disk"
                                       >
-                                        <span>Open ↗</span>
-                                      </a>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUnlinkGoogleFolder(project.id, folder.id)}
-                                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                                      title="Unlink this folder"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
+                                        <FolderOpen className="w-3 h-3 text-amber-600" />
+                                        <span>{folder.folder_path ? 'Change' : 'Pick Folder'}</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveLocalFolder(project.id, fIdx)}
+                                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                        title="Remove this folder"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
 
-                                {/* Bottom row: Drive Folder Name & Account Email */}
-                                <div className="flex items-center justify-between gap-2 bg-blue-50/50 px-2.5 py-1.5 rounded-lg border border-blue-100 text-[11px] text-slate-600">
-                                  <span className="font-bold text-blue-950 truncate" title={folder.name}>
-                                    📁 {folder.name}
-                                  </span>
-                                  {folder.account_email && (
-                                    <span className="text-[10px] text-slate-400 font-mono truncate shrink-0">
-                                      {folder.account_email}
+                                  {/* Bottom row: Path display & copy */}
+                                  <div className="flex items-center justify-between gap-2 bg-slate-50/80 px-2.5 py-1.5 rounded-lg border border-slate-200/60 text-[11px] font-mono text-slate-600">
+                                    <span className="truncate select-all" title={folder.folder_path || ''}>
+                                      {folder.folder_path || 'No local directory selected yet'}
                                     </span>
+                                    {folder.folder_path && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCopyPath(folder.folder_path, `${project.id}_f_${fIdx}`)}
+                                        className="text-[10px] font-sans font-bold text-slate-500 hover:text-slate-900 shrink-0 ml-1 flex items-center gap-0.5 cursor-pointer"
+                                      >
+                                        {copiedPathId === `${project.id}_f_${fIdx}` ? (
+                                          <span className="text-emerald-600 flex items-center gap-1">
+                                            <Check className="w-2.5 h-2.5" /> Copied
+                                          </span>
+                                        ) : (
+                                          <span className="flex items-center gap-1">
+                                            <Copy className="w-2.5 h-2.5" /> Copy
+                                          </span>
+                                        )}
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {/* Scanned metadata stats if available */}
+                                  {(folder.file_count > 0 || folder.total_size_gb > 0) && (
+                                    <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500 pt-0.5">
+                                      <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                                        📦 {folder.total_size_gb} GB
+                                      </span>
+                                      <span>•</span>
+                                      <span>📄 {folder.file_count} Files</span>
+                                      {folder.photo_count !== undefined && folder.photo_count > 0 && (
+                                        <>
+                                          <span>•</span>
+                                          <span>📸 {folder.photo_count} Photos</span>
+                                        </>
+                                      )}
+                                      {folder.video_count !== undefined && folder.video_count > 0 && (
+                                        <>
+                                          <span>•</span>
+                                          <span>🎬 {folder.video_count} Videos</span>
+                                        </>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="bg-white p-3 rounded-xl border border-dashed border-blue-200 text-xs text-slate-400 font-medium text-center">
-                            No Google Drive folder linked yet. Click &apos;+ Add Drive Folder&apos; above to link client raw dumps or deliverables.
+                              );
+                            })
+                          ) : (
+                            <div className="bg-white p-3 rounded-xl border border-dashed border-amber-200 text-xs text-slate-400 font-medium text-center">
+                              No local folders assigned yet. Click &apos;+ Add Folder&apos; above to assign Pre-Wedding, Wedding, or Haldi raw directories.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 2. Google Drive Cloud Backup Box (Multiple Folders Supported with Event Labels) */}
+                      <div className="p-4 rounded-2xl bg-[#F6F9FE] border border-blue-150 flex flex-col justify-start gap-3">
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-white border border-blue-200 flex items-center justify-center p-1.5 shrink-0 shadow-2xs">
+                              <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                                <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                                <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                                <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                                <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                                <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                                <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                              </svg>
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-black text-slate-900 truncate">
+                                Google Drive Cloud Backup
+                              </h4>
+                              <p className="text-[11px] text-slate-500 truncate">
+                                {hasCloudBackup 
+                                  ? `${linkedFolders.length} Cloud Folder${linkedFolders.length > 1 ? 's' : ''} Linked`
+                                  : 'Cloud archive & deliverable storage'}
+                              </p>
+                            </div>
                           </div>
-                        )}
+
+                          {/* Add / Link Google Drive Folder Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenGooglePicker(project)}
+                            className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition"
+                          >
+                            <Cloud className="w-3.5 h-3.5" />
+                            <span>+ Add Drive Folder</span>
+                          </button>
+                        </div>
+
+                        {/* Multiple Linked Drive Folders List (Expanded without internal scrollbar) */}
+                        <div className="space-y-2.5">
+                          {linkedFolders.length > 0 ? (
+                            linkedFolders.map((folder, gdIdx) => {
+                              const driveLabel = folder.label || folder.name || (gdIdx === 0 ? 'Wedding' : `Folder ${gdIdx + 1}`);
+
+                              return (
+                                <div
+                                  key={folder.id}
+                                  className="bg-white p-2.5 sm:p-3 rounded-xl border border-blue-200/80 shadow-2xs space-y-2"
+                                >
+                                  {/* Top row: Drive Icon + Custom Label Input + Open / Remove */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0">
+                                        <Folder className="w-4 h-4 fill-blue-500/20 text-blue-600" />
+                                      </div>
+                                      <input
+                                        type="text"
+                                        placeholder="Event name (e.g. Pre-Wedding, Wedding, Deliverables)"
+                                        value={driveLabel}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setProjects(prev => prev.map(p => p.id === project.id ? {
+                                            ...p,
+                                            google_drive_backup: {
+                                              ...p.google_drive_backup,
+                                              folders: (p.google_drive_backup.folders || []).map(f => f.id === folder.id ? { ...f, label: val } : f)
+                                            }
+                                          } : p));
+                                        }}
+                                        onBlur={(e) => handleUpdateDriveFolderLabel(project.id, folder.id, e.target.value)}
+                                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-blue-400 rounded-lg text-xs font-bold text-slate-900 transition flex-1 min-w-[120px]"
+                                        title="Click to rename Drive folder label (e.g. Pre-Wedding, Wedding, Deliverables)"
+                                      />
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {folder.webViewLink && (
+                                        <a
+                                          href={folder.webViewLink}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center gap-1 transition"
+                                        >
+                                          <span>Open ↗</span>
+                                        </a>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUnlinkGoogleFolder(project.id, folder.id)}
+                                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                        title="Unlink this folder"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Bottom row: Drive Folder Name & Account Email */}
+                                  <div className="flex items-center justify-between gap-2 bg-blue-50/50 px-2.5 py-1.5 rounded-lg border border-blue-100 text-[11px] text-slate-600">
+                                    <span className="font-bold text-blue-950 truncate" title={folder.name}>
+                                      📁 {folder.name}
+                                    </span>
+                                    {folder.account_email && (
+                                      <span className="text-[10px] text-slate-400 font-mono truncate shrink-0">
+                                        {folder.account_email}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="bg-white p-3 rounded-xl border border-dashed border-blue-200 text-xs text-slate-400 font-medium text-center">
+                              No Google Drive folder linked yet. Click &apos;+ Add Drive Folder&apos; above to link client raw dumps or deliverables.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -2733,7 +2936,7 @@ export default function StorageHubPage() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center">
-                  <Cpu className="w-5 h-5" />
+                  <SDCardIcon className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900">Add New Memory Card</h3>
@@ -3687,7 +3890,7 @@ export default function StorageHubPage() {
               <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between gap-3 bg-amber-50/40">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold">
-                    <Cpu className="w-5 h-5" />
+                    <SDCardIcon className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
@@ -3725,7 +3928,7 @@ export default function StorageHubPage() {
               <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
                 {memoryCards.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    <Cpu className="w-10 h-10 mx-auto text-slate-300" />
+                    <SDCardIcon className="w-10 h-10 mx-auto text-slate-300" />
                     <p className="text-sm font-bold text-slate-600">No memory cards registered yet</p>
                     <p className="text-xs text-slate-400">Add cards in Studio Settings &gt; Studio Storage.</p>
                     <Link
@@ -3754,7 +3957,7 @@ export default function StorageHubPage() {
                             className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs relative overflow-hidden"
                             style={{ backgroundColor: c.color_tag || '#F59E0B' }}
                           >
-                            <Cpu className="w-5 h-5" />
+                            <SDCardIcon className="w-5 h-5" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-1">

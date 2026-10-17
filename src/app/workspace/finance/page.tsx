@@ -1024,7 +1024,9 @@ export default function FinancePage() {
         const hasFinalQuotation = Boolean(linkedFinalQuote || existing?.has_final_quotation);
         const finalVersion = linkedFinalQuote?.version || existing?.final_quotation_version;
 
-        let handledBy = (c as any).handled_by || (c as any).assigned_team_member_name;
+        // Handled By: Strictly manual independent finance attribution (persisted in client_finance_records)
+        // NEVER inherit from project_manager or general assigned_team_member
+        let handledBy = (existing as any)?.handled_by || (c as any).handled_by || null;
         if (!handledBy && (c as any).custom_data?.handled_by) handledBy = (c as any).custom_data.handled_by;
         if (!handledBy && c.notes && typeof c.notes === 'string') {
           const match = c.notes.match(/handled_by:\s*([^\n\r,]+)/i);
@@ -2426,7 +2428,8 @@ export default function FinancePage() {
 
         const milestones = rec.milestones || [];
         const firstStep = milestones[0];
-        const firstStepDate = firstStep?.paid_date || (firstStep as any)?.paidDate || (firstStep as any)?.payment_date || firstStep?.due_date || rec.created_at?.split('T')[0];
+        // 📅 Strictly derive initial contract date from Step 1 of Payment Terms & Schedule (Token / Booking Advance)
+        const firstStepDate = firstStep?.due_date || firstStep?.paid_date || (firstStep as any)?.date || (firstStep as any)?.dueDate || (firstStep as any)?.paidDate || (firstStep as any)?.payment_date;
 
         if (statusFilter === 'received' || revenueTypeFilter !== 'ALL') {
           // Payments received: matches if any completed/paid milestone falls in date range
@@ -2440,46 +2443,23 @@ export default function FinancePage() {
             return true;
           });
           matchesDate = matchingPaidMilestones.length > 0;
-        } else if (statusFilter === 'pending') {
-          // Pending dues: matches if any pending/unpaid milestone has due_date in date range
+        } else if (statusFilter === 'pending' || statusFilter === 'overdue_only') {
+          // 💡 SMART PENDING DUES FILTER:
+          // When filtering by Pending Dues, matches clients that have pending/upcoming milestone payments DUE in that date range!
           const matchingPendingMilestones = milestones.filter(m => {
             const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
             if (isCompleted) return false;
+            if (statusFilter === 'overdue_only') {
+              return m.due_date && m.due_date < todayStr && isInRange(m.due_date);
+            }
             return isInRange(m.due_date);
           });
           const hasAnyDueDate = milestones.some(m => m.due_date);
-          matchesDate = hasAnyDueDate ? matchingPendingMilestones.length > 0 : isInRange(firstStepDate);
-        } else if (statusFilter === 'overdue_only') {
-          // Overdue dues only: pending, overdue (< todayStr), and due_date in date range
-          const matchingOverdueMilestones = milestones.filter(m => {
-            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
-            if (isCompleted) return false;
-            return m.due_date && m.due_date < todayStr && isInRange(m.due_date);
-          });
-          matchesDate = matchingOverdueMilestones.length > 0;
-        } else if (statusFilter === 'partially_paid') {
-          // Partially paid: matches if first payment step in range OR any milestone paid in range OR any milestone due in range
-          const hasPaidInRange = milestones.some(m => {
-            const isPaid = m.status === 'completed' || m.status === 'paid' || (m as any).paidDate || (m as any).paid_date;
-            const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
-            return isPaid && isInRange(pDate);
-          });
-          const hasDueInRange = milestones.some(m => {
-            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
-            return !isCompleted && isInRange(m.due_date);
-          });
-          matchesDate = isInRange(firstStepDate) || hasPaidInRange || hasDueInRange;
-        } else if (statusFilter === 'paid') {
-          // Fully paid: matches if first payment step in range OR any completed milestone payment date in range
-          const hasPaidInRange = milestones.some(m => {
-            const isPaid = m.status === 'completed' || m.status === 'paid' || (m as any).paidDate || (m as any).paid_date;
-            const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
-            return isPaid && isInRange(pDate);
-          });
-          matchesDate = isInRange(firstStepDate) || hasPaidInRange;
+          matchesDate = hasAnyDueDate ? matchingPendingMilestones.length > 0 : Boolean(firstStepDate && isInRange(firstStepDate));
         } else {
-          // All Statuses (default): strictly filter by the contract's first payment step (advance token booking date)
-          matchesDate = isInRange(firstStepDate);
+          // 📅 All Statuses, Partially Paid, Fully Paid, etc.:
+          // STRICTLY filter by the first step in Payment Terms & Schedules (Booking advance date)
+          matchesDate = Boolean(firstStepDate && isInRange(firstStepDate));
         }
       }
 

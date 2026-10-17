@@ -219,7 +219,6 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
                     project_manager_name: effectivePmName,
                     project_manager_email: pmEmail,
                     project_manager_phone: pmPhone,
-                    handled_by: effectivePmName,
                     notes: serializeClientExtended(newExt)
                   };
                 }
