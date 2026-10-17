@@ -17,6 +17,24 @@ import {
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
 import { getActiveGoogleClientId } from '@/lib/google-credentials';
+import { fetchWorkspaceEventTypes, DEFAULT_EVENT_TYPES, type WorkspaceEventType } from '@/lib/workspace-settings';
+
+// Clean drive types without parentheses
+const DRIVE_TYPES = [
+  { id: 'EXTERNAL_SSD', label: 'SSD', desc: 'USB 3.2 / Thunderbolt NVMe', badge: 'Fastest' },
+  { id: 'HDD_RACK', label: 'HDD Rack', desc: 'High-Capacity Cold Storage', badge: 'Archive' },
+  { id: 'INTERNAL_DRIVE', label: 'Internal Drive', desc: 'Workstation PCIe / SATA', badge: 'Local' },
+  { id: 'NVME_SSD', label: 'NVMe SSD', desc: '4K/8K Editing Scratch Disk', badge: 'Ultra' },
+  { id: 'NAS', label: 'NAS', desc: 'Central Multi-User Studio Storage', badge: 'Network' },
+  { id: 'OTHER', label: 'Other / Pen Drive', desc: 'Portable Transfer Media', badge: 'Media' },
+];
+
+const formatCleanDriveType = (rawType?: string): string => {
+  if (!rawType) return 'External Drive';
+  const found = DRIVE_TYPES.find(t => t.id === rawType || t.label.toLowerCase() === rawType.toLowerCase());
+  if (found) return found.label;
+  return rawType.replace(/\s*\([^)]*\)/g, '').replace(/_/g, ' ').trim();
+};
 
 // 💾 Realistic SD Card Icon (Recognizable cut-corner bevel & metal contact pins)
 const SDCardIcon: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
@@ -295,6 +313,26 @@ export default function StorageHubPage() {
   // 3D Dropdown state for Multiple Google Drive Accounts in Explorer
   const [isGoogleAccountDropdownOpen, setIsGoogleAccountDropdownOpen] = useState(false);
 
+  // 💽 3D Dropdown state for Local Folder Drive Selector
+  const [openFolderDiskDropdownKey, setOpenFolderDiskDropdownKey] = useState<string | null>(null);
+
+  // 🏷️ Studio Settings Event Types (Functions & Events)
+  const [workspaceEventTypes, setWorkspaceEventTypes] = useState<WorkspaceEventType[]>(DEFAULT_EVENT_TYPES);
+
+  // 🏷️ Manual Project Form shoot types state
+  const [manualSelectedEventTypes, setManualSelectedEventTypes] = useState<string[]>(['Wedding Ceremony']);
+  const [isManualShootTypeDropdownOpen, setIsManualShootTypeDropdownOpen] = useState(false);
+  const [manualShootTypeSearch, setManualShootTypeSearch] = useState('');
+
+  // 📝 Edit Details Modal state for Client Storage Project Cards (Isolated to Storage Hub)
+  const [editingProjectModal, setEditingProjectModal] = useState<ProjectAsset | null>(null);
+  const [editProjectClientName, setEditProjectClientName] = useState('');
+  const [editProjectEventDate, setEditProjectEventDate] = useState('');
+  const [editProjectShootTypes, setEditProjectShootTypes] = useState<string[]>([]);
+  const [isEditShootTypeDropdownOpen, setIsEditShootTypeDropdownOpen] = useState(false);
+  const [editShootTypeSearch, setEditShootTypeSearch] = useState('');
+  const [savingEditProject, setSavingEditProject] = useState(false);
+
   const toggleCardExpansion = (projectId: string) => {
     setExpandedCardIds(prev => {
       const next = new Set(prev);
@@ -400,16 +438,20 @@ export default function StorageHubPage() {
     }
     setLoading(true);
     try {
-      const [projRes, cardsRes, disksRes, drivesRes] = await Promise.all([
+      const [projRes, cardsRes, disksRes, drivesRes, eventTypesData] = await Promise.all([
         fetch(`/api/storage/projects?workspace_id=${effectiveWsId}`).then(r => r.json()),
         fetch(`/api/storage/cards?workspace_id=${effectiveWsId}`).then(r => r.json()),
         fetch(`/api/storage/disks?workspace_id=${effectiveWsId}`).then(r => r.json()),
         fetch(`/api/storage/google/accounts?workspace_id=${effectiveWsId}`).then(r => r.json()),
+        fetchWorkspaceEventTypes(effectiveWsId).catch(() => DEFAULT_EVENT_TYPES),
       ]);
 
       if (projRes.success) setProjects(projRes.projects || []);
       if (cardsRes.success) setMemoryCards(cardsRes.cards || []);
       if (disksRes.success) setDisks(disksRes.disks || []);
+      if (eventTypesData && eventTypesData.length > 0) {
+        setWorkspaceEventTypes(eventTypesData);
+      }
       if (drivesRes.success) {
         const accs = drivesRes.accounts || [];
         setDriveAccounts(accs);
@@ -489,6 +531,9 @@ export default function StorageHubPage() {
     setManualEventDate(new Date().toISOString().split('T')[0]);
     setSelectedLeadIdForProject('');
     setManualSelectedDiskIds([]);
+    setManualSelectedEventTypes(['Wedding Ceremony']);
+    setIsManualShootTypeDropdownOpen(false);
+    setManualShootTypeSearch('');
     setManualSubEvents([
       {
         name: 'Wedding Ceremony',
@@ -535,6 +580,10 @@ export default function StorageHubPage() {
 
     const rawEvents = raw.events || raw.sub_events;
     if (Array.isArray(rawEvents) && rawEvents.length > 0) {
+      const extractedTypes = rawEvents.map((ev: any) => ev.name || ev.title).filter(Boolean);
+      if (extractedTypes.length > 0) {
+        setManualSelectedEventTypes(extractedTypes);
+      }
       setManualSubEvents(rawEvents.map((ev: any) => ({
         name: ev.name || ev.title || 'Wedding Ceremony',
         date: ev.date || matched.event_date || new Date().toISOString().split('T')[0],
@@ -704,6 +753,118 @@ export default function StorageHubPage() {
     }
     const fromDisks = (project.assigned_disks || []).map(d => d.disk_id).filter(Boolean);
     return Array.from(new Set(fromDisks));
+  };
+
+  // 🏷️ Helper to extract shoot types / event types for a client storage card
+  const getProjectShootTypes = (project: ProjectAsset): string[] => {
+    if (project.notes) {
+      try {
+        const match = project.notes.match(/shoot_types:\s*(\[[^\]]*\])/);
+        if (match && match[1]) {
+          const parsed = JSON.parse(match[1]);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (_) {}
+    }
+    // Fallback: extract distinct event names from project.sub_events
+    if (project.sub_events && project.sub_events.length > 0) {
+      const fromSubs = project.sub_events
+        .map(se => se.name?.trim())
+        .filter((n): n is string => Boolean(n) && n !== 'Project Folder');
+      if (fromSubs.length > 0) return Array.from(new Set(fromSubs));
+    }
+    return [];
+  };
+
+  // 📝 Save updated storage project card details (Client Name, Date, Shoot Types)
+  // Strictly isolated to storage_project_assets - zero side-effects on CRM leads or quotations
+  const handleSaveProjectDetails = async () => {
+    if (!editingProjectModal) return;
+    if (!editProjectClientName.trim()) {
+      alert('Client / Wedding name cannot be empty');
+      return;
+    }
+    setSavingEditProject(true);
+    try {
+      const targetProject = editingProjectModal;
+      let newNotes = targetProject.notes || '';
+      const tag = `shoot_types: ${JSON.stringify(editProjectShootTypes)}`;
+      if (newNotes.includes('shoot_types:')) {
+        newNotes = newNotes.replace(/shoot_types:\s*(\[[^\]]*\])/, tag);
+      } else {
+        newNotes = newNotes ? `${newNotes}\n${tag}` : tag;
+      }
+
+      // Also ensure sub_events has the shoot types represented
+      const existingSubEvents = targetProject.sub_events || [];
+      const updatedSubEvents: SubEventItem[] = [...existingSubEvents];
+
+      editProjectShootTypes.forEach((st, idx) => {
+        const exists = updatedSubEvents.some(se => se.name.toLowerCase() === st.toLowerCase());
+        if (!exists) {
+          updatedSubEvents.push({
+            id: `ev_${Date.now()}_${idx}`,
+            name: st,
+            date: editProjectEventDate || targetProject.event_date || new Date().toISOString().split('T')[0],
+            venue: '',
+            crew: [
+              {
+                id: `cr_${Date.now()}_${idx}_1`,
+                name: 'Lead Photographer',
+                role: 'Traditional Photography',
+                assigned_card_ids: [],
+                assigned_card_names: [],
+                is_copied: false,
+                copied_at: null,
+                copied_by: null,
+              }
+            ]
+          });
+        }
+      });
+
+      const payload = {
+        id: targetProject.id,
+        client_name: editProjectClientName.trim(),
+        event_date: editProjectEventDate || targetProject.event_date || '',
+        notes: newNotes,
+        sub_events: updatedSubEvents,
+      };
+
+      const res = await fetch('/api/storage/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      if (json.success && json.project) {
+        setProjects(prev => prev.map(p => p.id === targetProject.id ? { ...p, ...json.project } : p));
+        setEditingProjectModal(null);
+        setUrlToast({
+          type: 'success',
+          message: `🎉 Storage card details updated for "${editProjectClientName.trim()}"!`
+        });
+      } else {
+        // Optimistic local fallback
+        setProjects(prev => prev.map(p => p.id === targetProject.id ? {
+          ...p,
+          client_name: editProjectClientName.trim(),
+          event_date: editProjectEventDate,
+          notes: newNotes,
+          sub_events: updatedSubEvents,
+        } : p));
+        setEditingProjectModal(null);
+        setUrlToast({
+          type: 'success',
+          message: `Storage card details updated locally!`
+        });
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to update storage project details');
+    } finally {
+      setSavingEditProject(false);
+    }
   };
 
   // Toggle physical hard drive / SSD assignment for a client project (supports multiple drives)
@@ -1444,22 +1605,62 @@ export default function StorageHubPage() {
         file_count: 0,
       }));
 
-      const formattedSubEvents: SubEventItem[] = manualSubEvents.map((ev, evIdx) => ({
-        id: `ev_${evIdx + 1}_${Date.now()}`,
-        name: ev.name.trim() || `Event ${evIdx + 1}`,
-        date: ev.date || manualEventDate || new Date().toISOString().split('T')[0],
-        venue: ev.venue || '',
-        crew: ev.crew.map((c, cIdx) => ({
-          id: `cr_${evIdx + 1}_${cIdx + 1}`,
-          name: c.name.trim() || `Crew Member ${cIdx + 1}`,
-          role: c.role || 'Traditional Photography',
-          assigned_card_ids: [],
-          assigned_card_names: [],
-          is_copied: false,
-          copied_at: null,
-          copied_by: null,
-        }))
-      }));
+      let notes = '';
+      if (manualSelectedDiskIds.length > 0) {
+        notes += `assigned_disk_ids: ${JSON.stringify(manualSelectedDiskIds)}\n`;
+      }
+      if (manualSelectedEventTypes.length > 0) {
+        notes += `shoot_types: ${JSON.stringify(manualSelectedEventTypes)}\n`;
+      }
+
+      let formattedSubEvents: SubEventItem[] = [];
+      if (manualSelectedEventTypes.length > 0) {
+        formattedSubEvents = manualSelectedEventTypes.map((st, sIdx) => ({
+          id: `ev_${sIdx + 1}_${Date.now()}`,
+          name: st.trim(),
+          date: manualEventDate || new Date().toISOString().split('T')[0],
+          venue: '',
+          crew: [
+            {
+              id: `cr_${sIdx + 1}_1`,
+              name: 'Lead Photographer',
+              role: 'Traditional Photography',
+              assigned_card_ids: [],
+              assigned_card_names: [],
+              is_copied: false,
+              copied_at: null,
+              copied_by: null,
+            },
+            {
+              id: `cr_${sIdx + 1}_2`,
+              name: 'Candid Cinematographer',
+              role: 'Candid Cinematography',
+              assigned_card_ids: [],
+              assigned_card_names: [],
+              is_copied: false,
+              copied_at: null,
+              copied_by: null,
+            }
+          ]
+        }));
+      } else {
+        formattedSubEvents = manualSubEvents.map((ev, evIdx) => ({
+          id: `ev_${evIdx + 1}_${Date.now()}`,
+          name: ev.name.trim() || `Event ${evIdx + 1}`,
+          date: ev.date || manualEventDate || new Date().toISOString().split('T')[0],
+          venue: ev.venue || '',
+          crew: ev.crew.map((c, cIdx) => ({
+            id: `cr_${evIdx + 1}_${cIdx + 1}`,
+            name: c.name.trim() || `Crew Member ${cIdx + 1}`,
+            role: c.role || 'Traditional Photography',
+            assigned_card_ids: [],
+            assigned_card_names: [],
+            is_copied: false,
+            copied_at: null,
+            copied_by: null,
+          }))
+        }));
+      }
 
       const matchedLead = availableLeads.find(l => l.id === selectedLeadIdForProject);
       const payload = {
@@ -1472,6 +1673,7 @@ export default function StorageHubPage() {
         assigned_disks: assignedDisksPayload,
         google_drive_backup: {},
         overall_storage_status: 'INGESTING',
+        notes: notes.trim(),
       };
 
       const res = await fetch('/api/storage/projects', {
@@ -1990,6 +2192,8 @@ export default function StorageHubPage() {
                     account_email: project.google_drive_backup.account_email,
                   }] : []);
 
+              const projectShootTypes = getProjectShootTypes(project);
+
               return (
                 <div
                   key={project.id}
@@ -2019,6 +2223,36 @@ export default function StorageHubPage() {
                           }`}>
                             {hasCloudBackup ? '☁️ Cloud Backed Up' : (project.assigned_disks?.length > 0) ? '💾 Saved to Local Rig' : '⏳ Ingest Pending'}
                           </span>
+
+                          {/* Shoot Type Badges */}
+                          {projectShootTypes.length > 0 ? (
+                            projectShootTypes.map((st, sIdx) => (
+                              <span
+                                key={sIdx}
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200/90 shadow-2xs flex items-center gap-1"
+                              >
+                                <Tag className="w-2.5 h-2.5 text-amber-600" />
+                                <span>{st}</span>
+                              </span>
+                            ))
+                          ) : (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingProjectModal(project);
+                                setEditProjectClientName(project.client_name);
+                                setEditProjectEventDate(project.event_date);
+                                setEditProjectShootTypes([]);
+                                setIsEditShootTypeDropdownOpen(false);
+                                setEditShootTypeSearch('');
+                              }}
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-50 hover:bg-amber-50 text-slate-500 hover:text-amber-800 border border-dashed border-slate-300 hover:border-amber-400 cursor-pointer flex items-center gap-1 transition"
+                              title="Click to add shoot types for this card"
+                            >
+                              <Plus className="w-2.5 h-2.5 text-amber-600" />
+                              <span>Add Shoot Type</span>
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-0.5 flex-wrap">
                           <span>📅 {project.event_date || 'Date Pending'}</span>
@@ -2033,8 +2267,26 @@ export default function StorageHubPage() {
                       </div>
                     </div>
 
-                    {/* Show More / Show Details Toggle Button */}
+                    {/* Action Buttons: Edit Details + Show/Hide Details */}
                     <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingProjectModal(project);
+                          setEditProjectClientName(project.client_name);
+                          setEditProjectEventDate(project.event_date);
+                          setEditProjectShootTypes(getProjectShootTypes(project));
+                          setIsEditShootTypeDropdownOpen(false);
+                          setEditShootTypeSearch('');
+                        }}
+                        className="px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                        title="Edit storage project details (Client Name, Date, Shoot Types)"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Edit Details</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => toggleCardExpansion(project.id)}
@@ -2093,6 +2345,7 @@ export default function StorageHubPage() {
                                 <SSDIcon className="w-3.5 h-3.5" />
                               </div>
                               <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                                <HardDrive className="w-3.5 h-3.5 text-indigo-700 shrink-0" />
                                 <label className="text-[11px] font-black uppercase tracking-wider text-indigo-950">
                                   Assigned Physical Drives / SSDs
                                 </label>
@@ -2131,9 +2384,10 @@ export default function StorageHubPage() {
                                 assignedDisksList.map(d => (
                                   <span
                                     key={d.id}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-slate-800 border border-slate-200 shadow-2xs"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-slate-800 border border-slate-200 shadow-2xs"
                                     style={{ borderLeftWidth: '3.5px', borderLeftColor: d.color_tag || '#10B981' }}
                                   >
+                                    <HardDrive className="w-3 h-3 text-slate-500 shrink-0" />
                                     <span className="truncate max-w-[130px]">{d.disk_name}</span>
                                     <span className="text-[10px] text-slate-400 font-normal">
                                       ({d.total_capacity_gb >= 1000 ? `${(d.total_capacity_gb / 1000).toFixed(0)}TB` : `${d.total_capacity_gb}GB`})
@@ -2281,29 +2535,124 @@ export default function StorageHubPage() {
                                     </div>
                                   </div>
 
-                                  {/* Folder Drive Origin Badge + Switcher */}
+                                  {/* Folder Drive Origin Badge + 3D Dropdown Switcher */}
                                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase tracking-wider">
-                                        <HardDrive className="w-3 h-3 text-emerald-600 shrink-0" />
-                                        <span>{folder.disk_name || (primaryDisk ? primaryDisk.disk_name : 'Primary Storage')}</span>
-                                        <span className="text-emerald-600 font-extrabold">• {folder.drive_type || (primaryDisk ? primaryDisk.disk_type : 'External HDD')}</span>
-                                      </span>
-                                      {disks.length > 1 && (
-                                        <select
-                                          value={folder.disk_id || (primaryDisk ? primaryDisk.id : '')}
-                                          onChange={(e) => handleUpdateLocalFolderDisk(project.id, fIdx, e.target.value)}
-                                          className="text-[10px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5 focus:outline-none cursor-pointer"
-                                          title="Switch drive for this folder"
-                                        >
-                                          {disks.map(d => (
-                                            <option key={d.id} value={d.id}>
-                                              {d.disk_name} ({d.disk_type})
-                                            </option>
-                                          ))}
-                                        </select>
-                                      )}
-                                    </div>
+                                    {(() => {
+                                      const dropdownKey = `${project.id}_${fIdx}`;
+                                      const isOpen = openFolderDiskDropdownKey === dropdownKey;
+                                      const currentDisk = disks.find(d => d.id === folder.disk_id) || primaryDisk;
+                                      const currentDiskName = folder.disk_name || (currentDisk ? currentDisk.disk_name : 'Primary Storage');
+                                      const currentDiskType = formatCleanDriveType(folder.drive_type || (currentDisk ? currentDisk.disk_type : 'SSD'));
+                                      const currentDiskColor = currentDisk?.color_tag || '#10B981';
+
+                                      return (
+                                        <div className="relative inline-block">
+                                          <button
+                                            type="button"
+                                            onClick={() => setOpenFolderDiskDropdownKey(prev => prev === dropdownKey ? null : dropdownKey)}
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-50 hover:bg-slate-100/90 border border-slate-200/90 shadow-2xs hover:shadow-xs transition cursor-pointer text-left"
+                                            style={{ borderLeftWidth: '3.5px', borderLeftColor: currentDiskColor }}
+                                            title="Click to switch physical drive or SSD for this folder"
+                                          >
+                                            <div
+                                              className="w-4 h-4 rounded-md flex items-center justify-center text-white shrink-0 text-[9px] font-bold shadow-2xs"
+                                              style={{ backgroundColor: currentDiskColor }}
+                                            >
+                                              <HardDrive className="w-2.5 h-2.5" />
+                                            </div>
+                                            <div className="min-w-0 flex items-center gap-1.5 text-xs">
+                                              <span className="font-extrabold text-slate-900 truncate max-w-[130px]">{currentDiskName}</span>
+                                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-white border border-slate-200/80 text-slate-600">
+                                                {currentDiskType}
+                                              </span>
+                                              {currentDisk?.total_capacity_gb && (
+                                                <span className="text-[10px] font-semibold text-emerald-700">
+                                                  {currentDisk.total_capacity_gb >= 1000 ? `${(currentDisk.total_capacity_gb / 1000).toFixed(0)}TB` : `${currentDisk.total_capacity_gb}GB`}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+                                          </button>
+
+                                          {/* 3D Dropdown Popover */}
+                                          <AnimatePresence>
+                                            {isOpen && (
+                                              <motion.div
+                                                initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                                                className="absolute left-0 top-full mt-1.5 w-72 bg-white rounded-2xl border border-slate-200 shadow-xl z-40 p-2 space-y-1.5"
+                                              >
+                                                <div className="px-2 py-1 border-b border-slate-100 flex items-center justify-between">
+                                                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                                                    <HardDrive className="w-3.5 h-3.5 text-indigo-600" />
+                                                    <span>Assign Storage Drive</span>
+                                                  </span>
+                                                  <Link
+                                                    href="/settings?tab=storage"
+                                                    target="_blank"
+                                                    className="text-[10px] font-bold text-amber-700 hover:text-amber-800"
+                                                  >
+                                                    + Manage
+                                                  </Link>
+                                                </div>
+
+                                                <div className="max-h-52 overflow-y-auto space-y-1">
+                                                  {disks.length === 0 ? (
+                                                    <div className="p-3 text-center text-xs text-slate-400">
+                                                      No physical drives registered
+                                                    </div>
+                                                  ) : (
+                                                    disks.map(d => {
+                                                      const isSelected = (folder.disk_id === d.id) || (!folder.disk_id && primaryDisk?.id === d.id);
+                                                      const cleanType = formatCleanDriveType(d.disk_type);
+                                                      const capStr = d.total_capacity_gb >= 1000 ? `${(d.total_capacity_gb / 1000).toFixed(0)} TB` : `${d.total_capacity_gb} GB`;
+
+                                                      return (
+                                                        <div
+                                                          key={d.id}
+                                                          onClick={() => {
+                                                            handleUpdateLocalFolderDisk(project.id, fIdx, d.id);
+                                                            setOpenFolderDiskDropdownKey(null);
+                                                          }}
+                                                          className={`p-2 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                                                            isSelected
+                                                              ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 font-bold shadow-2xs'
+                                                              : 'bg-white hover:bg-slate-50 border-slate-100 text-slate-700'
+                                                          }`}
+                                                          style={{ borderLeftWidth: '3.5px', borderLeftColor: d.color_tag || '#10B981' }}
+                                                        >
+                                                          <div className="flex items-center gap-2 min-w-0">
+                                                            <div
+                                                              className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 text-[10px] font-bold shadow-2xs"
+                                                              style={{ backgroundColor: d.color_tag || '#10B981' }}
+                                                            >
+                                                              <HardDrive className="w-3.5 h-3.5" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                              <div className="text-xs truncate font-extrabold text-slate-900">{d.disk_name}</div>
+                                                              <div className="text-[10px] text-slate-400 font-medium">
+                                                                {cleanType} • <span className="text-emerald-700 font-bold">{capStr}</span>
+                                                                {d.physical_location ? ` • ${d.physical_location}` : ''}
+                                                              </div>
+                                                            </div>
+                                                          </div>
+                                                          {isSelected && (
+                                                            <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                                                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                      );
+                                                    })
+                                                  )}
+                                                </div>
+                                              </motion.div>
+                                            )}
+                                          </AnimatePresence>
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
 
                                   {/* Bottom row: Path display & copy */}
@@ -2573,6 +2922,142 @@ export default function StorageHubPage() {
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                   />
                 </div>
+              </div>
+
+              {/* 3D Multi-Select Type of Shoot (Event Types) Dropdown */}
+              <div className="space-y-1.5 relative">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Type of Shoot (Event Types)</span>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                      {manualSelectedEventTypes.length} Selected
+                    </span>
+                  </label>
+                  <Link
+                    href="/settings?tab=functions"
+                    target="_blank"
+                    className="text-[11px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1"
+                  >
+                    <Settings className="w-3 h-3" />
+                    <span>Studio Events Settings</span>
+                  </Link>
+                </div>
+
+                {/* Dropdown Toggle Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsManualShootTypeDropdownOpen(!isManualShootTypeDropdownOpen)}
+                  className="w-full min-h-[42px] px-3 py-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-2xl flex items-center justify-between gap-2 text-left transition cursor-pointer shadow-2xs"
+                >
+                  <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-0">
+                    {manualSelectedEventTypes.length === 0 ? (
+                      <span className="text-xs text-slate-400 font-medium">
+                        Click to select shoot types (e.g. Pre-Wedding, Haldi, Wedding Ceremony)...
+                      </span>
+                    ) : (
+                      manualSelectedEventTypes.map((st, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs"
+                        >
+                          <Tag className="w-3 h-3 text-amber-600" />
+                          <span>{st}</span>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setManualSelectedEventTypes(prev => prev.filter(t => t !== st));
+                            }}
+                            className="w-3.5 h-3.5 rounded-full hover:bg-rose-500 hover:text-white text-slate-400 flex items-center justify-center transition cursor-pointer ml-0.5"
+                          >
+                            <X className="w-2.5 h-2.5 stroke-[3]" />
+                          </span>
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isManualShootTypeDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Dropdown Popover Panel */}
+                <AnimatePresence>
+                  {isManualShootTypeDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      className="absolute z-50 left-0 right-0 top-full mt-1.5 bg-white border border-amber-200 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-64 overflow-y-auto"
+                    >
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={manualShootTypeSearch}
+                          onChange={e => setManualShootTypeSearch(e.target.value)}
+                          placeholder="Search or type custom shoot type..."
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        {workspaceEventTypes
+                          .filter(et => !manualShootTypeSearch || et.name.toLowerCase().includes(manualShootTypeSearch.toLowerCase()))
+                          .map(et => {
+                            const isSelected = manualSelectedEventTypes.some(t => t.toLowerCase() === et.name.toLowerCase());
+                            return (
+                              <div
+                                key={et.id}
+                                onClick={() => {
+                                  setManualSelectedEventTypes(prev =>
+                                    isSelected
+                                      ? prev.filter(t => t.toLowerCase() !== et.name.toLowerCase())
+                                      : [...prev, et.name]
+                                  );
+                                }}
+                                className={`p-2 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold shadow-2xs'
+                                    : 'bg-white hover:bg-slate-50 border-slate-100 text-slate-700'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Tag className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span className="text-xs truncate font-bold text-slate-900">{et.name}</span>
+                                  {et.category && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium">
+                                      {et.category}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
+                                  isSelected ? 'bg-amber-600 border-amber-600 text-white' : 'border-slate-300'
+                                }`}>
+                                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                        {manualShootTypeSearch.trim() && !workspaceEventTypes.some(et => et.name.toLowerCase() === manualShootTypeSearch.toLowerCase().trim()) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const customName = manualShootTypeSearch.trim();
+                              if (!manualSelectedEventTypes.includes(customName)) {
+                                setManualSelectedEventTypes(prev => [...prev, customName]);
+                              }
+                              setManualShootTypeSearch('');
+                            }}
+                            className="w-full p-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold text-left flex items-center gap-2 cursor-pointer transition"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Add "{manualShootTypeSearch.trim()}" as custom shoot type</span>
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               {/* Threaded Multi-Select Physical Hard Disks / SSDs Dropdown */}
@@ -4648,6 +5133,248 @@ export default function StorageHubPage() {
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Yes, Remove Folder</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── MODAL 7: 3D EDIT STORAGE PROJECT DETAILS MODAL (STORAGE ISOLATED) ── */}
+      <AnimatePresence>
+        {editingProjectModal && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-xl bg-white rounded-3xl p-5 sm:p-6 border border-[#EAE5DA] shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0">
+                    <Edit3 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Edit Storage Project Details
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Update client name, event date, and shoot types for this card
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingProjectModal(null)}
+                  className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Data Isolation Notice (English) */}
+              <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 text-[11px] text-indigo-900 space-y-1">
+                <p className="font-bold flex items-center gap-1.5 text-indigo-950">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                  Isolated Storage Hub Update
+                </p>
+                <p className="text-indigo-800 leading-relaxed">
+                  Changes made here only affect this Storage Hub card. Parent CRM leads, quotations, and studio financials remain 100% untouched and preserved.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {/* Client Name & Event Date */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Client / Wedding Name *</label>
+                    <input
+                      type="text"
+                      value={editProjectClientName}
+                      onChange={e => setEditProjectClientName(e.target.value)}
+                      placeholder="e.g. Pooja & Rahul Wedding"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Main Event Date</label>
+                    <input
+                      type="date"
+                      value={editProjectEventDate}
+                      onChange={e => setEditProjectEventDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                  </div>
+                </div>
+
+                {/* 3D Multi-Select Shoot Types Dropdown */}
+                <div className="space-y-1.5 relative">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Tag className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Type of Shoot (Event Types)</span>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                        {editProjectShootTypes.length} Selected
+                      </span>
+                    </label>
+                    <Link
+                      href="/settings?tab=functions"
+                      target="_blank"
+                      className="text-[11px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1"
+                    >
+                      <Settings className="w-3 h-3" />
+                      <span>Studio Events Settings</span>
+                    </Link>
+                  </div>
+
+                  {/* Trigger Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsEditShootTypeDropdownOpen(!isEditShootTypeDropdownOpen)}
+                    className="w-full min-h-[42px] px-3 py-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-2xl flex items-center justify-between gap-2 text-left transition cursor-pointer shadow-2xs"
+                  >
+                    <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-0">
+                      {editProjectShootTypes.length === 0 ? (
+                        <span className="text-xs text-slate-400 font-medium">
+                          Click to select shoot types (e.g. Pre-Wedding, Haldi, Wedding Ceremony)...
+                        </span>
+                      ) : (
+                        editProjectShootTypes.map((st, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs"
+                          >
+                            <Tag className="w-3 h-3 text-amber-600" />
+                            <span>{st}</span>
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditProjectShootTypes(prev => prev.filter(t => t !== st));
+                              }}
+                              className="w-3.5 h-3.5 rounded-full hover:bg-rose-500 hover:text-white text-slate-400 flex items-center justify-center transition cursor-pointer ml-0.5"
+                            >
+                              <X className="w-2.5 h-2.5 stroke-[3]" />
+                            </span>
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isEditShootTypeDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* 3D Popover Panel */}
+                  <AnimatePresence>
+                    {isEditShootTypeDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        className="absolute z-50 left-0 right-0 top-full mt-1.5 bg-white border border-amber-200 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-64 overflow-y-auto"
+                      >
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={editShootTypeSearch}
+                            onChange={e => setEditShootTypeSearch(e.target.value)}
+                            placeholder="Search or type custom shoot type..."
+                            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          />
+                        </div>
+
+                        {/* List of event types from Studio Settings */}
+                        <div className="space-y-1">
+                          {workspaceEventTypes
+                            .filter(et => !editShootTypeSearch || et.name.toLowerCase().includes(editShootTypeSearch.toLowerCase()))
+                            .map(et => {
+                              const isSelected = editProjectShootTypes.some(t => t.toLowerCase() === et.name.toLowerCase());
+                              return (
+                                <div
+                                  key={et.id}
+                                  onClick={() => {
+                                    setEditProjectShootTypes(prev =>
+                                      isSelected
+                                        ? prev.filter(t => t.toLowerCase() !== et.name.toLowerCase())
+                                        : [...prev, et.name]
+                                    );
+                                  }}
+                                  className={`p-2 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold shadow-2xs'
+                                      : 'bg-white hover:bg-slate-50 border-slate-100 text-slate-700'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Tag className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span className="text-xs truncate font-bold text-slate-900">{et.name}</span>
+                                    {et.category && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium">
+                                        {et.category}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
+                                    isSelected ? 'bg-amber-600 border-amber-600 text-white' : 'border-slate-300'
+                                  }`}>
+                                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                          {/* Allow adding custom shoot type if search query is not in list */}
+                          {editShootTypeSearch.trim() && !workspaceEventTypes.some(et => et.name.toLowerCase() === editShootTypeSearch.toLowerCase().trim()) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const customName = editShootTypeSearch.trim();
+                                if (!editProjectShootTypes.includes(customName)) {
+                                  setEditProjectShootTypes(prev => [...prev, customName]);
+                                }
+                                setEditShootTypeSearch('');
+                              }}
+                              className="w-full p-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold text-left flex items-center gap-2 cursor-pointer transition"
+                            >
+                              <Plus className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Add "{editShootTypeSearch.trim()}" as custom shoot type</span>
+                            </button>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingProjectModal(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveProjectDetails}
+                  disabled={savingEditProject}
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-md shadow-amber-600/20 cursor-pointer flex items-center gap-1.5 transition disabled:opacity-50"
+                >
+                  {savingEditProject ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>Save Changes</span>
+                    </>
+                  )}
                 </button>
               </div>
             </motion.div>

@@ -47,11 +47,11 @@ const SSDIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) =>
 );
 
 const DRIVE_TYPES = [
-  { id: 'EXTERNAL_SSD', label: 'SSD (External High-Speed SSD)', desc: 'USB 3.2 / Thunderbolt NVMe', badge: 'Fastest' },
-  { id: 'HDD_RACK', label: 'HDD (External Hard Disk Rack)', desc: 'High-Capacity Cold Storage', badge: 'Archive' },
-  { id: 'INTERNAL_DRIVE', label: 'Internal (Editing Rig Drive)', desc: 'Workstation PCIe / SATA', badge: 'Local' },
-  { id: 'NVME_SSD', label: 'NVMe Drive (M.2 Ultra-Fast)', desc: '4K/8K Editing Scratch Disk', badge: 'Ultra' },
-  { id: 'NAS', label: 'NAS (Network Attached Storage)', desc: 'Central Multi-User Studio Storage', badge: 'Network' },
+  { id: 'EXTERNAL_SSD', label: 'SSD', desc: 'USB 3.2 / Thunderbolt NVMe', badge: 'Fastest' },
+  { id: 'HDD_RACK', label: 'HDD Rack', desc: 'High-Capacity Cold Storage', badge: 'Archive' },
+  { id: 'INTERNAL_DRIVE', label: 'Internal Drive', desc: 'Workstation PCIe / SATA', badge: 'Local' },
+  { id: 'NVME_SSD', label: 'NVMe SSD', desc: '4K/8K Editing Scratch Disk', badge: 'Ultra' },
+  { id: 'NAS', label: 'NAS', desc: 'Central Multi-User Studio Storage', badge: 'Network' },
   { id: 'OTHER', label: 'Other / Pen Drive', desc: 'Portable Transfer Media', badge: 'Media' },
 ];
 
@@ -85,6 +85,8 @@ export default function StorageSettingsTab({
   const [newCardColor, setNewCardColor] = useState('#F59E0B');
   const [newCardNotes, setNewCardNotes] = useState('');
   const [savingCard, setSavingCard] = useState(false);
+  const [showAddCardForm, setShowAddCardForm] = useState(false);
+  const [showAddDiskForm, setShowAddDiskForm] = useState(false);
 
   // Disk form
   const [newDiskName, setNewDiskName] = useState('');
@@ -335,79 +337,137 @@ export default function StorageSettingsTab({
               </p>
             </div>
           </div>
-          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-            {cards.length} Cards in Stock
-          </span>
-        </div>
-
-        {/* Add Card Form */}
-        <form onSubmit={handleAddCard} className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/80 space-y-3.5">
-          <h3 className="text-xs font-black text-amber-950 uppercase tracking-wider">+ Register New Memory Card</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="sm:col-span-2">
-              <label className="text-[11px] font-bold text-zinc-600 block mb-1">Card Name / Label *</label>
-              <input
-                type="text"
-                required
-                value={newCardName}
-                onChange={e => setNewCardName(e.target.value)}
-                placeholder="e.g. Sony Tough 128GB #1"
-                className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-zinc-600 block mb-1">Card Type (Manual) *</label>
-              <input
-                type="text"
-                required
-                value={newCardType}
-                onChange={e => setNewCardType(e.target.value)}
-                placeholder="e.g. SDXC V90, CFexpress Type A..."
-                className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-zinc-600 block mb-1">Capacity *</label>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min="1"
-                  required
-                  value={newCardCapacity}
-                  onChange={e => setNewCardCapacity(e.target.value)}
-                  placeholder="128"
-                  className="flex-1 px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-medium focus:outline-none"
-                />
-                <select
-                  value={newCardCapacityUnit}
-                  onChange={e => setNewCardCapacityUnit(e.target.value as any)}
-                  className="w-16 px-2 py-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-                >
-                  <option value="GB">GB</option>
-                  <option value="TB">TB</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-            <div className="w-full sm:w-72">
-              <input
-                type="text"
-                value={newCardSpeed}
-                onChange={e => setNewCardSpeed(e.target.value)}
-                placeholder="Speed Class: e.g. V90 300MB/s"
-                className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+              {cards.length} Cards in Stock
+            </span>
             <button
-              type="submit"
-              disabled={savingCard || !newCardName.trim()}
-              className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+              type="button"
+              onClick={() => setShowAddCardForm(prev => !prev)}
+              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer"
             >
-              {savingCard ? 'Adding...' : '+ Add Card to Inventory'}
+              {showAddCardForm ? (
+                <>
+                  <X className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Close Form</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>+ Add Memory Card</span>
+                </>
+              )}
             </button>
           </div>
-        </form>
+        </div>
+
+        {/* Add Card Form (Shown ONLY when Add button clicked) */}
+        {showAddCardForm && (
+          <form onSubmit={async (e) => {
+            await handleAddCard(e);
+            setShowAddCardForm(false);
+          }} className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/80 space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black text-amber-950 uppercase tracking-wider">+ Register New Memory Card</h3>
+              <button
+                type="button"
+                onClick={() => setShowAddCardForm(false)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-[11px] font-bold text-zinc-600 block mb-1">Card Name / Label *</label>
+                <input
+                  type="text"
+                  required
+                  value={newCardName}
+                  onChange={e => setNewCardName(e.target.value)}
+                  placeholder="e.g. Sony Tough 128GB #1"
+                  className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-zinc-600 block mb-1">Card Type (Manual) *</label>
+                <input
+                  type="text"
+                  required
+                  value={newCardType}
+                  onChange={e => setNewCardType(e.target.value)}
+                  placeholder="e.g. SDXC V90, CFexpress Type A..."
+                  className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-zinc-600 block mb-1">Capacity *</label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={newCardCapacity}
+                    onChange={e => setNewCardCapacity(e.target.value)}
+                    placeholder="128"
+                    className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none"
+                  />
+                  <div className="flex rounded-xl bg-amber-100/90 p-0.5 border border-amber-300 shadow-2xs shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setNewCardCapacityUnit('GB')}
+                      className={`px-2 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        newCardCapacityUnit === 'GB'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'text-amber-800 hover:text-amber-950'
+                      }`}
+                    >
+                      GB
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewCardCapacityUnit('TB')}
+                      className={`px-2 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        newCardCapacityUnit === 'TB'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'text-amber-800 hover:text-amber-950'
+                      }`}
+                    >
+                      TB
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              <div className="w-full sm:w-72">
+                <input
+                  type="text"
+                  value={newCardSpeed}
+                  onChange={e => setNewCardSpeed(e.target.value)}
+                  placeholder="Speed Class: e.g. V90 300MB/s"
+                  className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCardForm(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCard || !newCardName.trim()}
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  {savingCard ? 'Adding...' : '+ Add Card to Inventory'}
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
 
         {/* Cards Visual Grid / List */}
         <div className="space-y-2.5">
@@ -488,112 +548,170 @@ export default function StorageSettingsTab({
               </p>
             </div>
           </div>
-          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-            {disks.length} Drives Registered
-          </span>
-        </div>
-
-        {/* Add Disk Form */}
-        <form onSubmit={handleAddDisk} className="bg-emerald-50/40 p-4 rounded-xl border border-emerald-200/80 space-y-3.5">
-          <h3 className="text-xs font-black text-emerald-950 uppercase tracking-wider">+ Register Hard Drive / SSD</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="sm:col-span-2">
-              <label className="text-[11px] font-bold text-zinc-600 block mb-1">Drive Name / Label *</label>
-              <input
-                type="text"
-                required
-                value={newDiskName}
-                onChange={e => setNewDiskName(e.target.value)}
-                placeholder="e.g. Lacie 4TB Rugged #1"
-                className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-            
-            {/* Drive Type 3D Dropdown */}
-            <div className="relative">
-              <label className="text-[11px] font-bold text-zinc-600 block mb-1">Drive Type *</label>
-              <button
-                type="button"
-                onClick={() => setIsDriveTypeDropdownOpen(prev => !prev)}
-                className="w-full px-3 py-2 bg-white border border-emerald-200 hover:border-emerald-400 rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between transition cursor-pointer shadow-2xs"
-              >
-                <span className="truncate">
-                  {DRIVE_TYPES.find(t => t.id === newDiskType)?.label || newDiskType}
-                </span>
-                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isDriveTypeDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {isDriveTypeDropdownOpen && (
-                <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-emerald-200 shadow-xl z-30 p-2 space-y-1">
-                  {DRIVE_TYPES.map(type => (
-                    <div
-                      key={type.id}
-                      onClick={() => {
-                        setNewDiskType(type.id);
-                        setIsDriveTypeDropdownOpen(false);
-                      }}
-                      className={`p-2 rounded-xl border transition flex items-center justify-between gap-2 cursor-pointer ${
-                        newDiskType === type.id
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold'
-                          : 'hover:bg-slate-50 border-transparent text-slate-700'
-                      }`}
-                    >
-                      <div>
-                        <div className="text-xs font-bold text-slate-900">{type.label}</div>
-                        <div className="text-[10px] text-slate-400">{type.desc}</div>
-                      </div>
-                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
-                        {type.badge}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="text-[11px] font-bold text-zinc-600 block mb-1">Capacity *</label>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min="1"
-                  required
-                  value={newDiskCapacity}
-                  onChange={e => setNewDiskCapacity(e.target.value)}
-                  placeholder="2000"
-                  className="flex-1 px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-medium focus:outline-none"
-                />
-                <select
-                  value={newDiskCapacityUnit}
-                  onChange={e => setNewDiskCapacityUnit(e.target.value as any)}
-                  className="w-16 px-2 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-                >
-                  <option value="GB">GB</option>
-                  <option value="TB">TB</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-            <div className="w-full sm:w-72">
-              <input
-                type="text"
-                value={newDiskLocation}
-                onChange={e => setNewDiskLocation(e.target.value)}
-                placeholder="Physical Location: e.g. Desk 1, Shelf B"
-                className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+              {disks.length} Drives Registered
+            </span>
             <button
-              type="submit"
-              disabled={savingDisk || !newDiskName.trim()}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+              type="button"
+              onClick={() => setShowAddDiskForm(prev => !prev)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer"
             >
-              {savingDisk ? 'Adding...' : '+ Add Drive to Catalog'}
+              {showAddDiskForm ? (
+                <>
+                  <X className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Close Form</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>+ Add Hard Drive / SSD</span>
+                </>
+              )}
             </button>
           </div>
-        </form>
+        </div>
+
+        {/* Add Disk Form (Shown ONLY when Add button is clicked) */}
+        {showAddDiskForm && (
+          <form onSubmit={async (e) => {
+            await handleAddDisk(e);
+            setShowAddDiskForm(false);
+          }} className="bg-emerald-50/40 p-4 rounded-xl border border-emerald-200/80 space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black text-emerald-950 uppercase tracking-wider">+ Register Hard Drive / SSD</h3>
+              <button
+                type="button"
+                onClick={() => setShowAddDiskForm(false)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-[11px] font-bold text-zinc-600 block mb-1">Drive Name / Label *</label>
+                <input
+                  type="text"
+                  required
+                  value={newDiskName}
+                  onChange={e => setNewDiskName(e.target.value)}
+                  placeholder="e.g. Lacie 4TB Rugged #1"
+                  className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+              
+              {/* Drive Type 3D Dropdown (Clean labels, NO parentheses) */}
+              <div className="relative">
+                <label className="text-[11px] font-bold text-zinc-600 block mb-1">Drive Type *</label>
+                <button
+                  type="button"
+                  onClick={() => setIsDriveTypeDropdownOpen(prev => !prev)}
+                  className="w-full px-3 py-2 bg-white border border-emerald-200 hover:border-emerald-400 rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between transition cursor-pointer shadow-2xs"
+                >
+                  <span className="truncate">
+                    {DRIVE_TYPES.find(t => t.id === newDiskType)?.label || newDiskType}
+                  </span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isDriveTypeDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isDriveTypeDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-emerald-200 shadow-xl z-30 p-2 space-y-1">
+                    {DRIVE_TYPES.map(type => (
+                      <div
+                        key={type.id}
+                        onClick={() => {
+                          setNewDiskType(type.id);
+                          setIsDriveTypeDropdownOpen(false);
+                        }}
+                        className={`p-2 rounded-xl border transition flex items-center justify-between gap-2 cursor-pointer ${
+                          newDiskType === type.id
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold'
+                            : 'hover:bg-slate-50 border-transparent text-slate-700'
+                        }`}
+                      >
+                        <div>
+                          <div className="text-xs font-bold text-slate-900">{type.label}</div>
+                          <div className="text-[10px] text-slate-400">{type.desc}</div>
+                        </div>
+                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                          {type.badge}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-zinc-600 block mb-1">Capacity *</label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={newDiskCapacity}
+                    onChange={e => setNewDiskCapacity(e.target.value)}
+                    placeholder="2000"
+                    className="flex-1 px-3 py-2 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none"
+                  />
+                  <div className="flex rounded-xl bg-emerald-100/90 p-0.5 border border-emerald-300 shadow-2xs shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setNewDiskCapacityUnit('GB')}
+                      className={`px-2 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        newDiskCapacityUnit === 'GB'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-emerald-800 hover:text-emerald-950'
+                      }`}
+                    >
+                      GB
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewDiskCapacityUnit('TB')}
+                      className={`px-2 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        newDiskCapacityUnit === 'TB'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-emerald-800 hover:text-emerald-950'
+                      }`}
+                    >
+                      TB
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              <div className="w-full sm:w-72">
+                <input
+                  type="text"
+                  value={newDiskLocation}
+                  onChange={e => setNewDiskLocation(e.target.value)}
+                  placeholder="Physical Location: e.g. Desk 1, Shelf B"
+                  className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddDiskForm(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingDisk || !newDiskName.trim()}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  {savingDisk ? 'Adding...' : '+ Add Drive to Catalog'}
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
 
         {/* Disks Visual Grid / List */}
         <div className="space-y-2.5">
@@ -791,16 +909,32 @@ export default function StorageSettingsTab({
                       required
                       value={editingCardModal.capacity_val || '128'}
                       onChange={e => setEditingCardModal({ ...editingCardModal, capacity_val: e.target.value })}
-                      className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                     />
-                    <select
-                      value={editingCardModal.capacity_unit || 'GB'}
-                      onChange={e => setEditingCardModal({ ...editingCardModal, capacity_unit: e.target.value })}
-                      className="w-20 px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none cursor-pointer"
-                    >
-                      <option value="GB">GB</option>
-                      <option value="TB">TB</option>
-                    </select>
+                    <div className="flex rounded-xl bg-amber-100/90 p-0.5 border border-amber-300 shadow-2xs shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setEditingCardModal({ ...editingCardModal, capacity_unit: 'GB' })}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          (editingCardModal.capacity_unit || 'GB') === 'GB'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'text-amber-800 hover:text-amber-950'
+                        }`}
+                      >
+                        GB
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCardModal({ ...editingCardModal, capacity_unit: 'TB' })}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          editingCardModal.capacity_unit === 'TB'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'text-amber-800 hover:text-amber-950'
+                        }`}
+                      >
+                        TB
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -967,16 +1101,32 @@ export default function StorageSettingsTab({
                       required
                       value={editingDiskModal.capacity_val || '2000'}
                       onChange={e => setEditingDiskModal({ ...editingDiskModal, capacity_val: e.target.value })}
-                      className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                     />
-                    <select
-                      value={editingDiskModal.capacity_unit || 'GB'}
-                      onChange={e => setEditingDiskModal({ ...editingDiskModal, capacity_unit: e.target.value })}
-                      className="w-20 px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none cursor-pointer"
-                    >
-                      <option value="GB">GB</option>
-                      <option value="TB">TB</option>
-                    </select>
+                    <div className="flex rounded-xl bg-emerald-100/90 p-0.5 border border-emerald-300 shadow-2xs shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setEditingDiskModal({ ...editingDiskModal, capacity_unit: 'GB' })}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          (editingDiskModal.capacity_unit || 'GB') === 'GB'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-emerald-800 hover:text-emerald-950'
+                        }`}
+                      >
+                        GB
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingDiskModal({ ...editingDiskModal, capacity_unit: 'TB' })}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          editingDiskModal.capacity_unit === 'TB'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-emerald-800 hover:text-emerald-950'
+                        }`}
+                      >
+                        TB
+                      </button>
+                    </div>
                   </div>
                 </div>
 
