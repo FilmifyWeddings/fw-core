@@ -3668,11 +3668,12 @@ export default function StorageHubPage() {
                     onChange={e => setNewDiskCapacity(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   >
-                    <option value="1000">1 TB (1000 GB)</option>
-                    <option value="2000">2 TB (2000 GB)</option>
-                    <option value="4000">4 TB (4000 GB)</option>
-                    <option value="8000">8 TB (8000 GB)</option>
-                    <option value="16000">16 TB (16000 GB)</option>
+                    <option value="500">500 GB</option>
+                    <option value="1000">1 TB</option>
+                    <option value="2000">2 TB</option>
+                    <option value="4000">4 TB</option>
+                    <option value="8000">8 TB</option>
+                    <option value="16000">16 TB</option>
                   </select>
                 </div>
               </div>

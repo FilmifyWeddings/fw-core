@@ -156,6 +156,107 @@ const GOOGLE_PRESET_COLORS = [
   '#f97316', // 9. Bright Orange
 ];
 
+// 💽 Tactile 3D Capacity Input with Integrated GB / TB Dropdown
+const CapacityInputWith3DDropdown: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  unit: 'GB' | 'TB';
+  onUnitChange: (unit: 'GB' | 'TB') => void;
+  theme?: 'amber' | 'emerald';
+  placeholder?: string;
+  required?: boolean;
+}> = ({
+  value,
+  onChange,
+  unit,
+  onUnitChange,
+  theme = 'amber',
+  placeholder = '128',
+  required = true,
+}) => {
+  const [open, setOpen] = useState(false);
+  const isAmber = theme === 'amber';
+
+  return (
+    <div className={`relative flex items-center w-full rounded-xl border bg-white shadow-2xs transition-all ${
+      isAmber 
+        ? 'border-amber-300 focus-within:ring-2 focus-within:ring-amber-500/20 focus-within:border-amber-500' 
+        : 'border-emerald-300 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500'
+    }`}>
+      <input
+        type="number"
+        min="1"
+        required={required}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full min-w-0 px-3 py-2 bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
+      />
+      <div className="relative shrink-0 pr-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black shadow-xs border transition-all cursor-pointer select-none active:translate-y-0.5 whitespace-nowrap ${
+            isAmber
+              ? 'bg-gradient-to-b from-amber-50 via-amber-100/90 to-amber-200/90 hover:from-amber-100 hover:to-amber-300/90 border-amber-300/90 text-amber-950 shadow-amber-600/10'
+              : 'bg-gradient-to-b from-emerald-50 via-emerald-100/90 to-emerald-200/90 hover:from-emerald-100 hover:to-emerald-300/90 border-emerald-300/90 text-emerald-950 shadow-emerald-600/10'
+          }`}
+          title="Click to toggle between GB and TB"
+        >
+          <span>{unit}</span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${open ? 'rotate-180' : ''} ${isAmber ? 'text-amber-800' : 'text-emerald-800'}`} />
+        </button>
+
+        {open && (
+          <>
+            <div 
+              className="fixed inset-0 z-40" 
+              onClick={() => setOpen(false)} 
+            />
+            <div className={`absolute right-0 top-full mt-1.5 w-36 bg-white rounded-xl border shadow-xl z-50 p-1 space-y-1 animate-in fade-in zoom-in-95 duration-100 ${
+              isAmber ? 'border-amber-300' : 'border-emerald-300'
+            }`}>
+              <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                Storage Unit
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onUnitChange('GB');
+                  setOpen(false);
+                }}
+                className={`w-full px-2.5 py-1.5 rounded-lg text-xs font-black text-left flex items-center justify-between transition cursor-pointer ${
+                  unit === 'GB'
+                    ? (isAmber ? 'bg-amber-500 text-white shadow-2xs' : 'bg-emerald-600 text-white shadow-2xs')
+                    : (isAmber ? 'hover:bg-amber-50 text-slate-800' : 'hover:bg-emerald-50 text-slate-800')
+                }`}
+              >
+                <span>Gigabytes (GB)</span>
+                {unit === 'GB' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onUnitChange('TB');
+                  setOpen(false);
+                }}
+                className={`w-full px-2.5 py-1.5 rounded-lg text-xs font-black text-left flex items-center justify-between transition cursor-pointer ${
+                  unit === 'TB'
+                    ? (isAmber ? 'bg-amber-500 text-white shadow-2xs' : 'bg-emerald-600 text-white shadow-2xs')
+                    : (isAmber ? 'hover:bg-amber-50 text-slate-800' : 'hover:bg-emerald-50 text-slate-800')
+                }`}
+              >
+                <span>Terabytes (TB)</span>
+                {unit === 'TB' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // Module-level in-memory cache for instant 0ms millisecond transitions
 let memCachedEventTypes: WorkspaceEventType[] = [];
 let memCachedCrewRoles: WorkspaceCrewRole[] = [];
@@ -3652,28 +3753,28 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                   {/* ── LEFT COLUMN: MEMORY CARDS (SD / CFexpress) ── */}
                   <div className="bg-white border border-amber-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 flex flex-col">
-                    <div className="flex items-center justify-between border-b border-amber-100 pb-3">
-                      <div className="flex items-center gap-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-amber-100 pb-3 gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold shrink-0">
                           <SDCardIcon className="w-5 h-5" />
                         </div>
-                        <div>
-                          <h3 className="text-sm font-black text-slate-900">
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-black text-slate-900 truncate">
                             Memory Cards (SD / CFexpress)
                           </h3>
-                          <p className="text-[11px] text-slate-500 font-medium">
+                          <p className="text-[11px] text-slate-500 font-medium truncate">
                             Register shooter cards for ingest & offload tracking
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap shrink-0">
                           {storageCards.length} Registered
                         </span>
                         <button
                           type="button"
                           onClick={() => setShowAddCardForm(prev => !prev)}
-                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                         >
                           {showAddCardForm ? (
                             <>
@@ -3736,44 +3837,17 @@ export default function SettingsPage() {
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {/* Storage Capacity with Segmented GB / TB Selector */}
+                          {/* Storage Capacity with 3D GB / TB Dropdown */}
                           <div>
                             <label className="text-[11px] font-bold text-slate-700 mb-1 block">Capacity *</label>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number"
-                                min="1"
-                                required
-                                value={newCardCapacity}
-                                onChange={e => setNewCardCapacity(e.target.value)}
-                                placeholder="128"
-                                className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                              />
-                              <div className="flex rounded-xl bg-amber-100/90 p-0.5 border border-amber-300 shadow-2xs shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => setNewCardCapacityUnit('GB')}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                                    newCardCapacityUnit === 'GB'
-                                      ? 'bg-amber-600 text-white shadow-xs'
-                                      : 'text-amber-800 hover:text-amber-950'
-                                  }`}
-                                >
-                                  GB
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setNewCardCapacityUnit('TB')}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                                    newCardCapacityUnit === 'TB'
-                                      ? 'bg-amber-600 text-white shadow-xs'
-                                      : 'text-amber-800 hover:text-amber-950'
-                                  }`}
-                                >
-                                  TB
-                                </button>
-                              </div>
-                            </div>
+                            <CapacityInputWith3DDropdown
+                              value={newCardCapacity}
+                              onChange={setNewCardCapacity}
+                              unit={newCardCapacityUnit}
+                              onUnitChange={setNewCardCapacityUnit}
+                              theme="amber"
+                              placeholder="128"
+                            />
                           </div>
 
                           {/* Speed Class */}
@@ -3925,28 +3999,28 @@ export default function SettingsPage() {
 
                   {/* ── RIGHT COLUMN: PHYSICAL DRIVES (HDDs, SSDs, NAS) ── */}
                   <div className="bg-white border border-emerald-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 flex flex-col">
-                    <div className="flex items-center justify-between border-b border-emerald-100 pb-3">
-                      <div className="flex items-center gap-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-emerald-100 pb-3 gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center font-bold shrink-0">
                           <SSDIcon className="w-5 h-5" />
                         </div>
-                        <div>
-                          <h3 className="text-sm font-black text-slate-900">
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-black text-slate-900 truncate">
                             Physical Hard Drives & SSDs
                           </h3>
-                          <p className="text-[11px] text-slate-500 font-medium">
+                          <p className="text-[11px] text-slate-500 font-medium truncate">
                             Manage editing SSDs, external hard drives, racks & NAS arrays
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 whitespace-nowrap shrink-0">
                           {storageDisks.length} Registered
                         </span>
                         <button
                           type="button"
                           onClick={() => setShowAddDiskForm(prev => !prev)}
-                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                         >
                           {showAddDiskForm ? (
                             <>
@@ -4038,44 +4112,17 @@ export default function SettingsPage() {
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {/* Storage Capacity with Segmented GB / TB Selector */}
+                          {/* Storage Capacity with 3D GB / TB Dropdown */}
                           <div>
                             <label className="text-[11px] font-bold text-slate-700 mb-1 block">Total Storage Capacity *</label>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number"
-                                min="1"
-                                required
-                                value={newDiskCapacity}
-                                onChange={e => setNewDiskCapacity(e.target.value)}
-                                placeholder="2000"
-                                className="flex-1 px-3 py-2 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                              />
-                              <div className="flex rounded-xl bg-emerald-100/90 p-0.5 border border-emerald-300 shadow-2xs shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => setNewDiskCapacityUnit('GB')}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                                    newDiskCapacityUnit === 'GB'
-                                      ? 'bg-emerald-600 text-white shadow-xs'
-                                      : 'text-emerald-800 hover:text-emerald-950'
-                                  }`}
-                                >
-                                  GB
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setNewDiskCapacityUnit('TB')}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                                    newDiskCapacityUnit === 'TB'
-                                      ? 'bg-emerald-600 text-white shadow-xs'
-                                      : 'text-emerald-800 hover:text-emerald-950'
-                                  }`}
-                                >
-                                  TB
-                                </button>
-                              </div>
-                            </div>
+                            <CapacityInputWith3DDropdown
+                              value={newDiskCapacity}
+                              onChange={setNewDiskCapacity}
+                              unit={newDiskCapacityUnit}
+                              onUnitChange={setNewDiskCapacityUnit}
+                              theme="emerald"
+                              placeholder="2000"
+                            />
                           </div>
 
                           {/* Physical Location */}
@@ -4284,40 +4331,14 @@ export default function SettingsPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="text-[11px] font-bold text-slate-700 mb-1 block">Storage Capacity *</label>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number"
-                                min="1"
-                                required
-                                value={editingCardModal.capacity_val || '128'}
-                                onChange={e => setEditingCardModal({ ...editingCardModal, capacity_val: e.target.value })}
-                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                              />
-                              <div className="flex rounded-xl bg-amber-100/90 p-0.5 border border-amber-300 shadow-2xs shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingCardModal({ ...editingCardModal, capacity_unit: 'GB' })}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                                    (editingCardModal.capacity_unit || 'GB') === 'GB'
-                                      ? 'bg-amber-600 text-white shadow-xs'
-                                      : 'text-amber-800 hover:text-amber-950'
-                                  }`}
-                                >
-                                  GB
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingCardModal({ ...editingCardModal, capacity_unit: 'TB' })}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                                    editingCardModal.capacity_unit === 'TB'
-                                      ? 'bg-amber-600 text-white shadow-xs'
-                                      : 'text-amber-800 hover:text-amber-950'
-                                  }`}
-                                >
-                                  TB
-                                </button>
-                              </div>
-                            </div>
+                            <CapacityInputWith3DDropdown
+                              value={editingCardModal.capacity_val || '128'}
+                              onChange={val => setEditingCardModal({ ...editingCardModal, capacity_val: val })}
+                              unit={editingCardModal.capacity_unit || 'GB'}
+                              onUnitChange={unit => setEditingCardModal({ ...editingCardModal, capacity_unit: unit })}
+                              theme="amber"
+                              placeholder="128"
+                            />
                           </div>
 
                           <div>
@@ -4477,40 +4498,14 @@ export default function SettingsPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="text-[11px] font-bold text-slate-700 mb-1 block">Storage Capacity *</label>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number"
-                                min="1"
-                                required
-                                value={editingDiskModal.capacity_val || '2000'}
-                                onChange={e => setEditingDiskModal({ ...editingDiskModal, capacity_val: e.target.value })}
-                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                              />
-                              <div className="flex rounded-xl bg-emerald-100/90 p-0.5 border border-emerald-300 shadow-2xs shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingDiskModal({ ...editingDiskModal, capacity_unit: 'GB' })}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                                    (editingDiskModal.capacity_unit || 'GB') === 'GB'
-                                      ? 'bg-emerald-600 text-white shadow-xs'
-                                      : 'text-emerald-800 hover:text-emerald-950'
-                                  }`}
-                                >
-                                  GB
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingDiskModal({ ...editingDiskModal, capacity_unit: 'TB' })}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                                    editingDiskModal.capacity_unit === 'TB'
-                                      ? 'bg-emerald-600 text-white shadow-xs'
-                                      : 'text-emerald-800 hover:text-emerald-950'
-                                  }`}
-                                >
-                                  TB
-                                </button>
-                              </div>
-                            </div>
+                            <CapacityInputWith3DDropdown
+                              value={editingDiskModal.capacity_val || '2000'}
+                              onChange={val => setEditingDiskModal({ ...editingDiskModal, capacity_val: val })}
+                              unit={editingDiskModal.capacity_unit || 'GB'}
+                              onUnitChange={unit => setEditingDiskModal({ ...editingDiskModal, capacity_unit: unit })}
+                              theme="emerald"
+                              placeholder="2000"
+                            />
                           </div>
 
                           <div>
