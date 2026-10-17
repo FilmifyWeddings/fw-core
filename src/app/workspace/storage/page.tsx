@@ -283,6 +283,18 @@ export default function StorageHubPage() {
   const [openDiskDropdownProjectId, setOpenDiskDropdownProjectId] = useState<string | null>(null);
   const [projectDiskSearchQuery, setProjectDiskSearchQuery] = useState('');
 
+  // Confirmation Modal state for Folder Deletion (Local & Drive)
+  const [deleteFolderConfirmation, setDeleteFolderConfirmation] = useState<{
+    type: 'local' | 'drive';
+    projectId: string;
+    folderIndexOrId: number | string;
+    folderName: string;
+    folderLabel: string;
+  } | null>(null);
+
+  // 3D Dropdown state for Multiple Google Drive Accounts in Explorer
+  const [isGoogleAccountDropdownOpen, setIsGoogleAccountDropdownOpen] = useState(false);
+
   const toggleCardExpansion = (projectId: string) => {
     setExpandedCardIds(prev => {
       const next = new Set(prev);
@@ -775,6 +787,7 @@ export default function StorageHubPage() {
   };
 
   // Add a new Local Event Folder to a Client Project
+  // Add a new Local Event Folder to a Client Project
   const handleAddLocalFolder = async (projectId: string) => {
     const targetProject = projects.find(p => p.id === projectId);
     if (!targetProject) return;
@@ -784,7 +797,7 @@ export default function StorageHubPage() {
     const activeDisk = matchedAssignedDisks[0] || disks.find(d => targetProject.assigned_disks?.some(ad => ad.disk_id === d.id)) || disks[0];
     const diskId = activeDisk?.id || '';
     const diskName = activeDisk?.disk_name || 'Primary Storage';
-    const driveType = activeDisk?.disk_type || 'SSD';
+    const driveType = activeDisk?.disk_type || 'External HDD';
 
     let folderName = '';
     let folderPath = '';
@@ -798,7 +811,7 @@ export default function StorageHubPage() {
         const dirHandle = await (window as any).showDirectoryPicker({ mode: 'read' });
         if (dirHandle) {
           folderName = dirHandle.name;
-          folderPath = `${diskName}/${folderName}`;
+          folderPath = `${diskName} (${driveType})/${folderName}`;
           
           let totalBytes = 0;
           const photoExts = ['.arw', '.cr3', '.cr2', '.nef', '.dng', '.jpg', '.jpeg', '.png', '.raw'];
@@ -832,7 +845,7 @@ export default function StorageHubPage() {
       disk_name: diskName,
       drive_type: driveType,
       role: 'Raw Dump',
-      folder_path: folderPath || `${diskName}/${assignedLabel.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
+      folder_path: folderPath || `${diskName} (${driveType})/${assignedLabel.replace(/[^a-zA-Z0-9]/g, '_')}_RAW`,
       folder_name: folderName || `${assignedLabel}_RAW`,
       total_size_gb: totalSizeGb,
       file_count: fileCount,
@@ -872,6 +885,35 @@ export default function StorageHubPage() {
     });
   };
 
+  // Update which hard disk/SSD a local folder is stored on
+  const handleUpdateLocalFolderDisk = async (projectId: string, folderIdx: number, newDiskId: string) => {
+    const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) return;
+    const chosenDisk = disks.find(d => d.id === newDiskId);
+    const diskName = chosenDisk?.disk_name || 'Primary Storage';
+    const driveType = chosenDisk?.disk_type || 'External HDD';
+
+    const updatedDisks = targetProject.assigned_disks.map((d, i) => {
+      if (i !== folderIdx) return d;
+      const existingFolderOnly = d.folder_name || d.folder_path?.split('/').pop() || 'RAW';
+      return {
+        ...d,
+        disk_id: newDiskId,
+        disk_name: diskName,
+        drive_type: driveType,
+        folder_path: `${diskName} (${driveType})/${existingFolderOnly}`,
+      };
+    });
+
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assigned_disks: updatedDisks } : p));
+
+    await fetch('/api/storage/projects', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
+    });
+  };
+
   // Remove a Local Folder from project
   const handleRemoveLocalFolder = async (projectId: string, folderIdx: number) => {
     const targetProject = projects.find(p => p.id === projectId);
@@ -886,6 +928,18 @@ export default function StorageHubPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: projectId, assigned_disks: updatedDisks }),
     });
+  };
+
+  // Execute confirmed folder removal from modal (Local or Drive)
+  const handleConfirmDeleteFolder = async () => {
+    if (!deleteFolderConfirmation) return;
+    const { type, projectId, folderIndexOrId } = deleteFolderConfirmation;
+    if (type === 'local') {
+      await handleRemoveLocalFolder(projectId, Number(folderIndexOrId));
+    } else {
+      await handleUnlinkGoogleFolder(projectId, String(folderIndexOrId));
+    }
+    setDeleteFolderConfirmation(null);
   };
 
   // HTML5 Native File System Access API - Pick / Change Folder
@@ -929,7 +983,7 @@ export default function StorageHubPage() {
       const assignedIds = getProjectAssignedDiskIds(targetProject);
       const matchedAssignedDisks = disks.filter(d => assignedIds.includes(d.id));
       const activeDisk = matchedAssignedDisks[0] || disks.find(d => targetProject.assigned_disks?.some(ad => ad.disk_id === d.id)) || disks[0];
-      const diskPrefix = activeDisk?.disk_name ? `${activeDisk.disk_name}` : 'Local Storage';
+      const diskPrefix = activeDisk?.disk_name ? `${activeDisk.disk_name} (${activeDisk.disk_type || 'External HDD'})` : 'Local Storage';
 
       const updatedDisks = [...(targetProject.assigned_disks || [])];
       if (updatedDisks[diskItemIndex]) {
@@ -938,7 +992,7 @@ export default function StorageHubPage() {
           ...existing,
           disk_id: existing.disk_id || activeDisk?.id || '',
           disk_name: existing.disk_name || activeDisk?.disk_name || diskPrefix,
-          drive_type: existing.drive_type || activeDisk?.disk_type || 'SSD',
+          drive_type: existing.drive_type || activeDisk?.disk_type || 'External HDD',
           label: existing.label || folderName.replace(/_/g, ' '),
           folder_name: folderName,
           folder_path: `${diskPrefix}/${folderName}`,
@@ -1943,13 +1997,17 @@ export default function StorageHubPage() {
                 >
                   {/* Card Header */}
                   <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isExpanded ? 'border-b border-[#F4EFE6] pb-4' : ''}`}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-[#FAF8F3] border border-[#EBE6DB] flex items-center justify-center text-slate-800 font-black text-sm shrink-0">
+                    <div 
+                      onClick={() => toggleCardExpansion(project.id)}
+                      className="flex items-center gap-3 cursor-pointer select-none group/title flex-1 min-w-0"
+                      title="Click anywhere to toggle project storage details"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-[#FAF8F3] border border-[#EBE6DB] group-hover/title:border-amber-400 flex items-center justify-center text-slate-800 font-black text-sm shrink-0 transition">
                         {project.client_name?.slice(0, 2).toUpperCase() || 'ST'}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                          <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight group-hover/title:text-amber-800 transition">
                             {project.client_name}
                           </h2>
                           <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
@@ -2027,19 +2085,19 @@ export default function StorageHubPage() {
                           </button>
                         </div>
 
-                        {/* 💽 Dedicated 3D Assigned Physical Drive / SSD Card */}
-                        <div className="p-3 rounded-2xl bg-white border border-[#EBE6DB] shadow-2xs space-y-2 relative">
+                        {/* 💽 Dedicated 3D Assigned Physical Drive / SSD Card (Distinct Minimal Styling) */}
+                        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 border border-indigo-200/90 shadow-xs space-y-2.5 relative">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0">
-                              <div className="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-700 flex items-center justify-center shrink-0">
+                              <div className="w-6 h-6 rounded-lg bg-indigo-500/15 text-indigo-700 flex items-center justify-center shrink-0">
                                 <SSDIcon className="w-3.5 h-3.5" />
                               </div>
                               <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
-                                <label className="text-[11px] font-black uppercase tracking-wider text-slate-800">
+                                <label className="text-[11px] font-black uppercase tracking-wider text-indigo-950">
                                   Assigned Physical Drives / SSDs
                                 </label>
                                 {assignedDisksList.length > 0 && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-300">
                                     {assignedDisksList.length} {assignedDisksList.length === 1 ? 'Drive' : 'Drives'}
                                   </span>
                                 )}
@@ -2048,7 +2106,7 @@ export default function StorageHubPage() {
                             <Link
                               href="/settings?tab=storage"
                               target="_blank"
-                              className="text-[10px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 shrink-0"
+                              className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 flex items-center gap-1 shrink-0"
                             >
                               <Settings className="w-3 h-3" />
                               <span>Settings</span>
@@ -2062,7 +2120,7 @@ export default function StorageHubPage() {
                               setOpenDiskDropdownProjectId(prev => prev === project.id ? null : project.id);
                               setProjectDiskSearchQuery('');
                             }}
-                            className="w-full min-h-[38px] p-2 bg-slate-50/90 hover:bg-slate-100/80 border border-slate-200 hover:border-amber-400 rounded-xl text-left transition flex items-center justify-between gap-2 cursor-pointer shadow-2xs"
+                            className="w-full min-h-[38px] p-2 bg-white hover:bg-slate-50 border border-indigo-200/80 hover:border-indigo-400 rounded-xl text-left transition flex items-center justify-between gap-2 cursor-pointer shadow-2xs"
                           >
                             <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-0">
                               {assignedDisksList.length === 0 ? (
@@ -2103,7 +2161,7 @@ export default function StorageHubPage() {
                                 initial={{ opacity: 0, y: -4, scale: 0.98 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                                className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-slate-200 shadow-xl z-30 p-3 space-y-2.5"
+                                className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-indigo-200 shadow-xl z-30 p-3 space-y-2.5"
                               >
                                 <div className="relative">
                                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -2150,7 +2208,7 @@ export default function StorageHubPage() {
                                           <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
                                             isSelected ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300'
                                           }`}>
-                                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                            {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                                           </div>
                                         </div>
                                       );
@@ -2205,14 +2263,46 @@ export default function StorageHubPage() {
                                         <FolderOpen className="w-3 h-3 text-amber-600" />
                                         <span>{folder.folder_path ? 'Change' : 'Pick Folder'}</span>
                                       </button>
+                                      {/* Delete folder button (Replaced X with Trash2) */}
                                       <button
                                         type="button"
-                                        onClick={() => handleRemoveLocalFolder(project.id, fIdx)}
+                                        onClick={() => setDeleteFolderConfirmation({
+                                          type: 'local',
+                                          projectId: project.id,
+                                          folderIndexOrId: fIdx,
+                                          folderName: folder.folder_name || folderLabel,
+                                          folderLabel: folderLabel
+                                        })}
                                         className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                                         title="Remove this folder"
                                       >
-                                        <X className="w-3.5 h-3.5" />
+                                        <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                                       </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Folder Drive Origin Badge + Switcher */}
+                                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase tracking-wider">
+                                        <HardDrive className="w-3 h-3 text-emerald-600 shrink-0" />
+                                        <span>{folder.disk_name || (primaryDisk ? primaryDisk.disk_name : 'Primary Storage')}</span>
+                                        <span className="text-emerald-600 font-extrabold">• {folder.drive_type || (primaryDisk ? primaryDisk.disk_type : 'External HDD')}</span>
+                                      </span>
+                                      {disks.length > 1 && (
+                                        <select
+                                          value={folder.disk_id || (primaryDisk ? primaryDisk.id : '')}
+                                          onChange={(e) => handleUpdateLocalFolderDisk(project.id, fIdx, e.target.value)}
+                                          className="text-[10px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5 focus:outline-none cursor-pointer"
+                                          title="Switch drive for this folder"
+                                        >
+                                          {disks.map(d => (
+                                            <option key={d.id} value={d.id}>
+                                              {d.disk_name} ({d.disk_type})
+                                            </option>
+                                          ))}
+                                        </select>
+                                      )}
                                     </div>
                                   </div>
 
@@ -2359,13 +2449,20 @@ export default function StorageHubPage() {
                                           <span>Open ↗</span>
                                         </a>
                                       )}
+                                      {/* Delete folder button (Replaced X with Trash2) */}
                                       <button
                                         type="button"
-                                        onClick={() => handleUnlinkGoogleFolder(project.id, folder.id)}
+                                        onClick={() => setDeleteFolderConfirmation({
+                                          type: 'drive',
+                                          projectId: project.id,
+                                          folderIndexOrId: folder.id,
+                                          folderName: folder.name || driveLabel,
+                                          folderLabel: driveLabel
+                                        })}
                                         className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                                         title="Unlink this folder"
                                       >
-                                        <X className="w-3.5 h-3.5" />
+                                        <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                                       </button>
                                     </div>
                                   </div>
@@ -3163,35 +3260,135 @@ export default function StorageHubPage() {
                         📦 Size: {explorerTotalSize || '0 MB'}
                       </span>
                     </div>
-                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono truncate flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center gap-2 flex-wrap mt-1">
                       {driveAccounts.length > 1 ? (
-                        <div className="flex items-center gap-1">
-                          <span className="font-bold text-zinc-700 dark:text-zinc-300">Account:</span>
-                          <select
-                            aria-label="Select Google Drive Account"
-                            value={selectedGoogleAccount.id}
-                            onChange={e => {
-                              const acc = driveAccounts.find(a => a.id === e.target.value);
-                              if (acc) {
-                                setSelectedGoogleAccount(acc);
-                                setGoogleBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
-                                setGoogleCurrentFolder({ id: 'root', name: 'My Drive' });
-                                setExplorerSearch('');
-                                setExplorerIsGlobalSearch(false);
-                                loadExplorerFolder(acc.id, 'root');
-                              }
-                            }}
-                            className="px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-250 dark:border-zinc-700 rounded-md text-[11px] font-bold text-zinc-900 dark:text-white focus:outline-none"
+                        <div className="relative inline-block text-left">
+                          <button
+                            type="button"
+                            onClick={() => setIsGoogleAccountDropdownOpen(prev => !prev)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white text-xs font-bold border border-zinc-200 dark:border-zinc-700 shadow-[0_2px_8px_rgba(0,0,0,0.06),inset_0_1px_1px_rgba(255,255,255,0.9)] hover:border-blue-500/70 hover:shadow-md transition-all cursor-pointer"
                           >
-                            {driveAccounts.map(a => (
-                              <option key={a.id} value={a.id}>
-                                {a.account_email} {a.account_label ? `(${a.account_label})` : ''}
-                              </option>
-                            ))}
-                          </select>
+                            <div className="w-4 h-4 shrink-0">
+                              <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                                <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                                <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                                <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                                <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                                <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                                <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                              </svg>
+                            </div>
+                            <span className="font-extrabold text-zinc-800 dark:text-zinc-100 truncate max-w-[170px] sm:max-w-[220px]">
+                              {selectedGoogleAccount.account_email}
+                            </span>
+                            {selectedGoogleAccount.account_label && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-700/60 truncate max-w-[90px]">
+                                {selectedGoogleAccount.account_label}
+                              </span>
+                            )}
+                            <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 ${isGoogleAccountDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                          </button>
+
+                          {/* 3D Dropdown Menu */}
+                          {isGoogleAccountDropdownOpen && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-40"
+                                onClick={() => setIsGoogleAccountDropdownOpen(false)}
+                              />
+                              <div className="absolute left-0 top-full mt-2 z-50 w-80 sm:w-96 p-2 bg-white/95 dark:bg-[#12161F]/95 backdrop-blur-xl rounded-2xl border border-zinc-200/90 dark:border-zinc-700/80 shadow-[0_20px_50px_rgba(0,0,0,0.22),0_6px_16px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,0.9)] space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
+                                <div className="px-2.5 py-1 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                                    Connected Google Drives ({driveAccounts.length})
+                                  </span>
+                                  <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                                    Select Active Drive
+                                  </span>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                                  {driveAccounts.map(acc => {
+                                    const isSelected = acc.id === selectedGoogleAccount.id;
+                                    return (
+                                      <button
+                                        key={acc.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedGoogleAccount(acc);
+                                          setGoogleBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
+                                          setGoogleCurrentFolder({ id: 'root', name: 'My Drive' });
+                                          setExplorerSearch('');
+                                          setExplorerIsGlobalSearch(false);
+                                          loadExplorerFolder(acc.id, 'root');
+                                          setIsGoogleAccountDropdownOpen(false);
+                                        }}
+                                        className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer group ${
+                                          isSelected
+                                            ? 'bg-blue-50/90 dark:bg-blue-950/50 border-blue-400/80 dark:border-blue-700 shadow-[0_2px_8px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/30'
+                                            : 'bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200/70 dark:border-zinc-700/50 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/80 hover:border-zinc-300'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <div className="w-8 h-8 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-xs flex items-center justify-center p-1.5 shrink-0 group-hover:scale-105 transition-transform">
+                                            <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                                              <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                                              <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                                              <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                                              <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                                              <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                                              <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                                            </svg>
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className={`text-xs font-black truncate ${isSelected ? 'text-blue-900 dark:text-blue-200' : 'text-zinc-900 dark:text-white'}`}>
+                                              {acc.account_email}
+                                            </p>
+                                            <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 truncate flex items-center gap-1.5 mt-0.5">
+                                              <span>{acc.account_label || 'Google Drive Storage'}</span>
+                                              {acc.storage_quota_bytes ? (
+                                                <>
+                                                  <span>•</span>
+                                                  <span>{(acc.storage_quota_bytes / (1024**3)).toFixed(0)} GB Quota</span>
+                                                </>
+                                              ) : null}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <div className="shrink-0 flex items-center">
+                                          {isSelected ? (
+                                            <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                                              <Check className="w-3 h-3" />
+                                            </div>
+                                          ) : (
+                                            <div className="w-4 h-4 rounded-full border border-zinc-300 dark:border-zinc-600 group-hover:border-blue-400" />
+                                          )}
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       ) : (
-                        <span>{selectedGoogleAccount.account_email}</span>
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs font-bold border border-zinc-200 dark:border-zinc-700">
+                          <div className="w-3.5 h-3.5 shrink-0">
+                            <svg viewBox="0 0 87.3 78" className="w-full h-full">
+                              <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                              <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                              <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                              <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                              <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                              <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                            </svg>
+                          </div>
+                          <span>{selectedGoogleAccount.account_email}</span>
+                          {selectedGoogleAccount.account_label && (
+                            <span className="text-[10px] text-zinc-500 font-normal">
+                              ({selectedGoogleAccount.account_label})
+                            </span>
+                          )}
+                        </div>
                       )}
                       <span>•</span>
                       <span className="font-bold text-zinc-800 dark:text-zinc-200">
@@ -4362,6 +4559,95 @@ export default function StorageHubPage() {
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl cursor-pointer"
                 >
                   Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── MODAL 6: ENGLISH FOLDER UNLINK / REMOVAL CONFIRMATION MODAL ── */}
+      <AnimatePresence>
+        {deleteFolderConfirmation && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="w-full max-w-md bg-white dark:bg-[#12161F] rounded-3xl border border-zinc-200/90 dark:border-zinc-800 shadow-2xl overflow-hidden p-6 space-y-5"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/60 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0 shadow-xs">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-extrabold text-zinc-950 dark:text-white">
+                    Remove Folder Link?
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    Are you sure you want to remove this folder from this project?
+                  </p>
+                </div>
+              </div>
+
+              {/* Folder Details Box */}
+              <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-700/60 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                    deleteFolderConfirmation.type === 'local'
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                      : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                  }`}>
+                    {deleteFolderConfirmation.type === 'local' ? (
+                      <>
+                        <HardDrive className="w-3 h-3" /> Local Machine / SSD
+                      </>
+                    ) : (
+                      <>
+                        <Cloud className="w-3 h-3" /> Google Drive Cloud
+                      </>
+                    )}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs font-black text-zinc-900 dark:text-white truncate">
+                    {deleteFolderConfirmation.folderName || 'Selected Folder'}
+                  </p>
+                  {deleteFolderConfirmation.folderLabel && (
+                    <p className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
+                      {deleteFolderConfirmation.folderLabel}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Safety Assurance Alert */}
+              <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/50 text-[11px] text-amber-800 dark:text-amber-300 space-y-1">
+                <p className="font-bold flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                  Files remain 100% safe
+                </p>
+                <p className="text-zinc-600 dark:text-zinc-400 pl-5">
+                  This only removes the folder linkage in Filmify Studio Hub. Your original photos and video files on your physical disk or Google Drive will not be touched or deleted.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteFolderConfirmation(null)}
+                  className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteFolder}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Yes, Remove Folder</span>
                 </button>
               </div>
             </motion.div>

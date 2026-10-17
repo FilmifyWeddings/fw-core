@@ -87,6 +87,53 @@ function FacebookIcon({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
+// 💾 Realistic SD Card Icon (Recognizable cut-corner bevel & metal contact pins)
+const SDCardIcon: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
+  <svg 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <path d="M4 4a2 2 0 0 1 2-2h10l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4z" />
+    <line x1="8" y1="5.5" x2="8" y2="8.5" />
+    <line x1="11" y1="5.5" x2="11" y2="8.5" />
+    <line x1="14" y1="5.5" x2="14" y2="8.5" />
+    <line x1="17" y1="6.5" x2="17" y2="8.5" />
+  </svg>
+);
+
+// 💽 High-End SSD / External Drive Icon
+const SSDIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <line x1="7" y1="8" x2="7" y2="10" />
+    <line x1="10" y1="8" x2="10" y2="10" />
+    <line x1="13" y1="8" x2="13" y2="10" />
+    <circle cx="17" cy="16" r="1.5" fill="currentColor" />
+  </svg>
+);
+
+const DRIVE_TYPES = [
+  { id: 'EXTERNAL_SSD', label: 'SSD (External High-Speed SSD)', desc: 'USB 3.2 / Thunderbolt NVMe', badge: 'Fastest' },
+  { id: 'HDD_RACK', label: 'HDD (External Hard Disk Rack)', desc: 'High-Capacity Cold Storage', badge: 'Archive' },
+  { id: 'INTERNAL_DRIVE', label: 'Internal (Editing Rig Drive)', desc: 'Workstation PCIe / SATA', badge: 'Local' },
+  { id: 'NVME_SSD', label: 'NVMe Drive (M.2 Ultra-Fast)', desc: '4K/8K Editing Scratch Disk', badge: 'Ultra' },
+  { id: 'NAS', label: 'NAS (Network Attached Storage)', desc: 'Central Multi-User Studio Storage', badge: 'Network' },
+  { id: 'OTHER', label: 'Other / Pen Drive', desc: 'Portable Transfer Media', badge: 'Media' },
+];
+
 type SettingsTab = 'profile' | 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'storage' | 'finance';
 type QuoteSubTab = 'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms';
 
@@ -402,7 +449,7 @@ export default function SettingsPage() {
   const [newCardName, setNewCardName] = useState('');
   const [newCardCapacity, setNewCardCapacity] = useState('128');
   const [newCardCapacityUnit, setNewCardCapacityUnit] = useState<'GB' | 'TB'>('GB');
-  const [newCardType, setNewCardType] = useState('SD_CARD');
+  const [newCardType, setNewCardType] = useState('SDXC V90');
   const [newCardSpeed, setNewCardSpeed] = useState('V90 300MB/s');
   const [newCardColor, setNewCardColor] = useState('#F59E0B');
   const [newCardNotes, setNewCardNotes] = useState('');
@@ -412,6 +459,7 @@ export default function SettingsPage() {
   // Disk Form
   const [newDiskName, setNewDiskName] = useState('');
   const [newDiskType, setNewDiskType] = useState('EXTERNAL_SSD');
+  const [isDriveTypeDropdownOpen, setIsDriveTypeDropdownOpen] = useState(false);
   const [newDiskCapacity, setNewDiskCapacity] = useState('2000');
   const [newDiskCapacityUnit, setNewDiskCapacityUnit] = useState<'GB' | 'TB'>('GB');
   const [newDiskLocation, setNewDiskLocation] = useState('Studio Desk 1');
@@ -419,6 +467,13 @@ export default function SettingsPage() {
   const [newDiskNotes, setNewDiskNotes] = useState('');
   const [editingDiskId, setEditingDiskId] = useState<string | null>(null);
   const [savingDisk, setSavingDisk] = useState(false);
+
+  // 3D Popups for Editing Card & Drive
+  const [editingCardModal, setEditingCardModal] = useState<any | null>(null);
+  const [editingDiskModal, setEditingDiskModal] = useState<any | null>(null);
+  const [isModalDriveTypeDropdownOpen, setIsModalDriveTypeDropdownOpen] = useState(false);
+  const [savingModalCard, setSavingModalCard] = useState(false);
+  const [savingModalDisk, setSavingModalDisk] = useState(false);
 
   const fetchStorageHardware = useCallback(async () => {
     if (!workspaceId) return;
@@ -446,7 +501,7 @@ export default function SettingsPage() {
       const payload: any = {
         workspace_id: workspaceId,
         card_name: newCardName.trim(),
-        card_type: newCardType,
+        card_type: newCardType || 'SDXC V90',
         capacity_gb: capGb || 128,
         speed_class: newCardSpeed,
         color_tag: newCardColor,
@@ -485,17 +540,62 @@ export default function SettingsPage() {
   const handleEditCard = (card: any) => {
     setEditingCardId(card.id);
     setNewCardName(card.card_name);
+    let capVal = String(card.capacity_gb || 128);
+    let capUnit: 'GB' | 'TB' = 'GB';
     if (card.capacity_gb >= 1000 && card.capacity_gb % 1000 === 0) {
-      setNewCardCapacity(String(card.capacity_gb / 1000));
-      setNewCardCapacityUnit('TB');
-    } else {
-      setNewCardCapacity(String(card.capacity_gb || 128));
-      setNewCardCapacityUnit('GB');
+      capVal = String(card.capacity_gb / 1000);
+      capUnit = 'TB';
     }
-    setNewCardType(card.card_type || 'SD_CARD');
+    setNewCardCapacity(capVal);
+    setNewCardCapacityUnit(capUnit);
+    setNewCardType(card.card_type || 'SDXC V90');
     setNewCardSpeed(card.speed_class || 'V90 300MB/s');
     setNewCardColor(card.color_tag || '#F59E0B');
     setNewCardNotes(card.notes || '');
+
+    // Open 3D Edit Modal Popup
+    setEditingCardModal({
+      ...card,
+      capacity_val: capVal,
+      capacity_unit: capUnit,
+    });
+  };
+
+  const handleSaveModalCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCardModal || !editingCardModal.card_name?.trim()) return;
+    setSavingModalCard(true);
+    try {
+      const capGb = editingCardModal.capacity_unit === 'TB' 
+        ? Number(editingCardModal.capacity_val) * 1000 
+        : Number(editingCardModal.capacity_val);
+      const payload: any = {
+        id: editingCardModal.id,
+        workspace_id: workspaceId,
+        card_name: editingCardModal.card_name.trim(),
+        card_type: editingCardModal.card_type || 'SDXC V90',
+        capacity_gb: capGb || 128,
+        speed_class: editingCardModal.speed_class || '',
+        color_tag: editingCardModal.color_tag || '#F59E0B',
+        notes: (editingCardModal.notes || '').trim(),
+      };
+      const res = await fetch('/api/storage/cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success && data.card) {
+        setStorageCards(prev => prev.map(c => c.id === editingCardModal.id ? data.card : c));
+        setEditingCardModal(null);
+        setSaveToast('Memory Card updated successfully!');
+        setTimeout(() => setSaveToast(null), 3000);
+      }
+    } catch (err: any) {
+      alert('Failed to update card: ' + err.message);
+    } finally {
+      setSavingModalCard(false);
+    }
   };
 
   const handleDeleteCard = async (id: string) => {
@@ -564,17 +664,63 @@ export default function SettingsPage() {
   const handleEditDisk = (disk: any) => {
     setEditingDiskId(disk.id);
     setNewDiskName(disk.disk_name);
+    let capVal = String(disk.total_capacity_gb || 2000);
+    let capUnit: 'GB' | 'TB' = 'GB';
     if (disk.total_capacity_gb >= 1000 && disk.total_capacity_gb % 1000 === 0) {
-      setNewDiskCapacity(String(disk.total_capacity_gb / 1000));
-      setNewDiskCapacityUnit('TB');
-    } else {
-      setNewDiskCapacity(String(disk.total_capacity_gb || 2000));
-      setNewDiskCapacityUnit('GB');
+      capVal = String(disk.total_capacity_gb / 1000);
+      capUnit = 'TB';
     }
+    setNewDiskCapacity(capVal);
+    setNewDiskCapacityUnit(capUnit);
     setNewDiskType(disk.disk_type || 'EXTERNAL_SSD');
     setNewDiskLocation(disk.physical_location || 'Studio Desk 1');
     setNewDiskColor(disk.color_tag || '#3B82F6');
     setNewDiskNotes(disk.notes || '');
+
+    // Open 3D Edit Modal Popup
+    setEditingDiskModal({
+      ...disk,
+      capacity_val: capVal,
+      capacity_unit: capUnit,
+    });
+  };
+
+  const handleSaveModalDisk = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDiskModal || !editingDiskModal.disk_name?.trim()) return;
+    setSavingModalDisk(true);
+    try {
+      const capGb = editingDiskModal.capacity_unit === 'TB' 
+        ? Number(editingDiskModal.capacity_val) * 1000 
+        : Number(editingDiskModal.capacity_val);
+      const payload: any = {
+        id: editingDiskModal.id,
+        workspace_id: workspaceId,
+        disk_name: editingDiskModal.disk_name.trim(),
+        disk_type: editingDiskModal.disk_type || 'EXTERNAL_SSD',
+        total_capacity_gb: capGb || 2000,
+        free_capacity_gb: Math.round((capGb || 2000) * 0.8),
+        physical_location: (editingDiskModal.physical_location || '').trim() || 'Studio Desk 1',
+        color_tag: editingDiskModal.color_tag || '#3B82F6',
+        notes: (editingDiskModal.notes || '').trim(),
+      };
+      const res = await fetch('/api/storage/disks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success && data.disk) {
+        setStorageDisks(prev => prev.map(d => d.id === editingDiskModal.id ? data.disk : d));
+        setEditingDiskModal(null);
+        setSaveToast('Storage drive updated successfully!');
+        setTimeout(() => setSaveToast(null), 3000);
+      }
+    } catch (err: any) {
+      alert('Failed to update storage drive: ' + err.message);
+    } finally {
+      setSavingModalDisk(false);
+    }
   };
 
   const handleDeleteDisk = async (id: string) => {
@@ -3507,7 +3653,7 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-between border-b border-amber-100 pb-3">
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold shrink-0">
-                          <Cpu className="w-5 h-5" />
+                          <SDCardIcon className="w-5 h-5" />
                         </div>
                         <div>
                           <h3 className="text-sm font-black text-slate-900">
@@ -3523,23 +3669,10 @@ export default function SettingsPage() {
                       </span>
                     </div>
 
-                    {/* Card Add / Edit Form */}
+                    {/* Card Add Form */}
                     <form onSubmit={handleSaveCard} className="p-4 rounded-2xl bg-amber-50/40 border border-amber-200/80 space-y-3.5">
                       <div className="text-xs font-black uppercase text-amber-950 tracking-wider flex items-center justify-between">
-                        <span>{editingCardId ? '✏️ Edit Memory Card' : '➕ Register New Memory Card'}</span>
-                        {editingCardId && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingCardId(null);
-                              setNewCardName('');
-                              setNewCardNotes('');
-                            }}
-                            className="text-[11px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        )}
+                        <span>➕ Register New Memory Card</span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3556,19 +3689,17 @@ export default function SettingsPage() {
                           />
                         </div>
 
-                        {/* Card Type */}
+                        {/* Card Type (Manual Text Input as requested) */}
                         <div>
                           <label className="text-[11px] font-bold text-slate-700 mb-1 block">Card Type *</label>
-                          <select
+                          <input
+                            type="text"
+                            required
                             value={newCardType}
                             onChange={e => setNewCardType(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                          >
-                            <option value="SD_CARD">SD Card (SDXC / SDHC)</option>
-                            <option value="CFEXPRESS_A">CFexpress Type A (Sony Alpha)</option>
-                            <option value="CFEXPRESS_B">CFexpress Type B (Nikon / Canon)</option>
-                            <option value="MICRO_SD">Micro SD (Drone / GoPro)</option>
-                          </select>
+                            placeholder="e.g. SDXC V90, CFexpress Type A, MicroSD..."
+                            className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                          />
                         </div>
                       </div>
 
@@ -3589,7 +3720,7 @@ export default function SettingsPage() {
                             <select
                               value={newCardCapacityUnit}
                               onChange={e => setNewCardCapacityUnit(e.target.value as any)}
-                              className="w-20 px-2 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none"
+                              className="w-20 px-2 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none cursor-pointer"
                             >
                               <option value="GB">GB</option>
                               <option value="TB">TB</option>
@@ -3610,7 +3741,7 @@ export default function SettingsPage() {
                         </div>
                       </div>
 
-                      {/* Color Label with Custom Color Picker (Millions of Colors) */}
+                      {/* Color Label with Custom Color Picker */}
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
                           <span>Color Label / Sticker Tag</span>
@@ -3628,7 +3759,6 @@ export default function SettingsPage() {
                               style={{ backgroundColor: c }}
                             />
                           ))}
-                          {/* Native color picker for millions of custom colors */}
                           <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-amber-200">
                             <input
                               type="color"
@@ -3660,15 +3790,15 @@ export default function SettingsPage() {
                         className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {savingCard ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                        <span>{editingCardId ? 'Update Memory Card' : '+ Add Memory Card to Studio'}</span>
+                        <span>+ Add Memory Card to Studio</span>
                       </button>
                     </form>
 
-                    {/* Cards Inventory List */}
+                    {/* Cards Inventory List (3D Visual Cards) */}
                     <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[500px] pr-1">
                       {storageCards.length === 0 ? (
-                        <div className="py-12 text-center text-slate-400 space-y-1 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                          <Cpu className="w-8 h-8 mx-auto text-slate-300" />
+                        <div className="py-12 text-center text-slate-400 space-y-2 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                          <SDCardIcon className="w-8 h-8 mx-auto text-slate-300" />
                           <p className="text-xs font-bold text-slate-600">No memory cards registered yet</p>
                           <p className="text-[11px] text-slate-400">Add your SD and CFexpress cards above.</p>
                         </div>
@@ -3681,30 +3811,30 @@ export default function SettingsPage() {
                           return (
                             <div
                               key={card.id}
-                              className="p-3 rounded-2xl border border-slate-200 bg-white hover:border-amber-400 hover:shadow-xs transition flex items-center justify-between gap-3 group"
-                              style={{ borderLeftWidth: '4px', borderLeftColor: card.color_tag || '#F59E0B' }}
+                              className="p-3.5 rounded-2xl border border-slate-200/90 bg-white hover:border-amber-400 hover:shadow-md transition-all flex items-center justify-between gap-3 group relative overflow-hidden shadow-2xs"
+                              style={{ borderLeftWidth: '5px', borderLeftColor: card.color_tag || '#F59E0B' }}
                             >
                               <div className="flex items-center gap-3 min-w-0">
                                 {/* 3D Memory Card Visual Badge */}
                                 <div
-                                  className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs text-white shrink-0 shadow-xs relative overflow-hidden"
+                                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm relative overflow-hidden"
                                   style={{ backgroundColor: card.color_tag || '#F59E0B' }}
                                 >
-                                  <div className="absolute top-0 right-0 w-3 h-3 bg-white/20 transform rotate-45 translate-x-1 -translate-y-1" />
-                                  <Cpu className="w-5 h-5 text-white/90" />
+                                  <div className="absolute top-0 right-0 w-3 h-3 bg-white/30 transform rotate-45 translate-x-1 -translate-y-1" />
+                                  <SDCardIcon className="w-5 h-5 text-white drop-shadow-xs" />
                                 </div>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <h4 className="text-xs font-black text-slate-900 truncate" title={card.card_name}>
                                       {card.card_name}
                                     </h4>
-                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900">
+                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
                                       {formattedCap}
                                     </span>
                                   </div>
-                                  <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-0.5">
-                                    <span className="font-bold text-slate-700">{card.card_type?.replace(/_/g, ' ')}</span>
-                                    {card.speed_class && <span>• {card.speed_class}</span>}
+                                  <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-0.5 flex-wrap">
+                                    <span className="font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{card.card_type?.replace(/_/g, ' ')}</span>
+                                    {card.speed_class && <span>⚡ {card.speed_class}</span>}
                                     {card.notes && <span className="text-slate-400 truncate max-w-[150px]">• {card.notes}</span>}
                                   </div>
                                 </div>
@@ -3714,15 +3844,15 @@ export default function SettingsPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleEditCard(card)}
-                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
-                                  title="Edit Card"
+                                  className="p-2 rounded-xl bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-900 transition cursor-pointer shadow-2xs"
+                                  title="Edit Card (Open 3D Modal)"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteCard(card.id)}
-                                  className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer"
+                                  className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer shadow-2xs"
                                   title="Delete Card"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -3736,11 +3866,11 @@ export default function SettingsPage() {
                   </div>
 
                   {/* ── RIGHT COLUMN: PHYSICAL DRIVES (HDDs, SSDs, NAS) ── */}
-                  <div className="bg-white border border-amber-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 flex flex-col">
-                    <div className="flex items-center justify-between border-b border-amber-100 pb-3">
+                  <div className="bg-white border border-emerald-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 flex flex-col">
+                    <div className="flex items-center justify-between border-b border-emerald-100 pb-3">
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center font-bold shrink-0">
-                          <HardDrive className="w-5 h-5" />
+                          <SSDIcon className="w-5 h-5" />
                         </div>
                         <div>
                           <h3 className="text-sm font-black text-slate-900">
@@ -3756,23 +3886,10 @@ export default function SettingsPage() {
                       </span>
                     </div>
 
-                    {/* Drive Add / Edit Form */}
+                    {/* Drive Add Form */}
                     <form onSubmit={handleSaveDisk} className="p-4 rounded-2xl bg-emerald-50/40 border border-emerald-200/80 space-y-3.5">
                       <div className="text-xs font-black uppercase text-emerald-950 tracking-wider flex items-center justify-between">
-                        <span>{editingDiskId ? '✏️ Edit Storage Drive' : '➕ Register New Hard Drive / SSD'}</span>
-                        {editingDiskId && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingDiskId(null);
-                              setNewDiskName('');
-                              setNewDiskNotes('');
-                            }}
-                            className="text-[11px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        )}
+                        <span>➕ Register New Hard Drive / SSD</span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3789,20 +3906,46 @@ export default function SettingsPage() {
                           />
                         </div>
 
-                        {/* Drive Type */}
-                        <div>
+                        {/* Drive Type (3D Dropdown as requested) */}
+                        <div className="relative">
                           <label className="text-[11px] font-bold text-slate-700 mb-1 block">Drive Type *</label>
-                          <select
-                            value={newDiskType}
-                            onChange={e => setNewDiskType(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          <button
+                            type="button"
+                            onClick={() => setIsDriveTypeDropdownOpen(prev => !prev)}
+                            className="w-full px-3 py-2 bg-white border border-emerald-200 hover:border-emerald-400 rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between transition cursor-pointer shadow-2xs"
                           >
-                            <option value="EXTERNAL_SSD">SSD (External High-Speed SSD)</option>
-                            <option value="HDD_RACK">HDD (External Hard Disk Rack)</option>
-                            <option value="INTERNAL_DRIVE">Internal (Editing Rig Drive)</option>
-                            <option value="NAS">NAS (Network Attached Storage)</option>
-                            <option value="OTHER">Other / Pen Drive</option>
-                          </select>
+                            <span className="truncate">
+                              {DRIVE_TYPES.find(t => t.id === newDiskType)?.label || newDiskType}
+                            </span>
+                            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isDriveTypeDropdownOpen ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {isDriveTypeDropdownOpen && (
+                            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-emerald-200 shadow-xl z-30 p-2 space-y-1">
+                              {DRIVE_TYPES.map(type => (
+                                <div
+                                  key={type.id}
+                                  onClick={() => {
+                                    setNewDiskType(type.id);
+                                    setIsDriveTypeDropdownOpen(false);
+                                  }}
+                                  className={`p-2 rounded-xl border transition flex items-center justify-between gap-2 cursor-pointer ${
+                                    newDiskType === type.id
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold'
+                                      : 'hover:bg-slate-50 border-transparent text-slate-700'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-900">{type.label}</div>
+                                    <div className="text-[10px] text-slate-400">{type.desc}</div>
+                                  </div>
+                                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                                    {type.badge}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -3823,7 +3966,7 @@ export default function SettingsPage() {
                             <select
                               value={newDiskCapacityUnit}
                               onChange={e => setNewDiskCapacityUnit(e.target.value as any)}
-                              className="w-20 px-2 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none"
+                              className="w-20 px-2 py-2 bg-white border border-emerald-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none cursor-pointer"
                             >
                               <option value="GB">GB</option>
                               <option value="TB">TB</option>
@@ -3844,7 +3987,7 @@ export default function SettingsPage() {
                         </div>
                       </div>
 
-                      {/* Color Label with Custom Color Picker (Millions of Colors) */}
+                      {/* Color Label with Custom Color Picker */}
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
                           <span>Color Label / Sticker Tag</span>
@@ -3862,7 +4005,6 @@ export default function SettingsPage() {
                               style={{ backgroundColor: c }}
                             />
                           ))}
-                          {/* Native color picker for millions of custom colors */}
                           <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-emerald-200">
                             <input
                               type="color"
@@ -3894,15 +4036,15 @@ export default function SettingsPage() {
                         className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {savingDisk ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                        <span>{editingDiskId ? 'Update Storage Drive' : '+ Add Storage Drive to Studio'}</span>
+                        <span>+ Add Storage Drive to Studio</span>
                       </button>
                     </form>
 
-                    {/* Drives Inventory List */}
+                    {/* Drives Inventory List (3D Visual Cards) */}
                     <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[500px] pr-1">
                       {storageDisks.length === 0 ? (
-                        <div className="py-12 text-center text-slate-400 space-y-1 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                          <HardDrive className="w-8 h-8 mx-auto text-slate-300" />
+                        <div className="py-12 text-center text-slate-400 space-y-2 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                          <SSDIcon className="w-8 h-8 mx-auto text-slate-300" />
                           <p className="text-xs font-bold text-slate-600">No storage drives registered yet</p>
                           <p className="text-[11px] text-slate-400">Add external SSDs and hard drives above.</p>
                         </div>
@@ -3915,19 +4057,21 @@ export default function SettingsPage() {
                           return (
                             <div
                               key={disk.id}
-                              className="p-3 rounded-2xl border border-slate-200 bg-white hover:border-emerald-400 hover:shadow-xs transition flex items-center justify-between gap-3 group"
-                              style={{ borderLeftWidth: '4px', borderLeftColor: disk.color_tag || '#3B82F6' }}
+                              className="p-3.5 rounded-2xl border border-slate-200/90 bg-white hover:border-emerald-400 hover:shadow-md transition-all flex items-center justify-between gap-3 group relative overflow-hidden shadow-2xs"
+                              style={{ borderLeftWidth: '5px', borderLeftColor: disk.color_tag || '#3B82F6' }}
                             >
                               <div className="flex items-center gap-3 min-w-0">
                                 {/* 3D Drive Visual Badge */}
                                 <div
-                                  className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs text-white shrink-0 shadow-xs relative"
+                                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm relative"
                                   style={{ backgroundColor: disk.color_tag || '#3B82F6' }}
                                 >
                                   {disk.disk_type === 'NAS' ? (
-                                    <Server className="w-5 h-5 text-white/90" />
+                                    <Server className="w-5 h-5 text-white drop-shadow-xs" />
+                                  ) : disk.disk_type === 'EXTERNAL_SSD' || disk.disk_type === 'NVME_SSD' ? (
+                                    <SSDIcon className="w-5 h-5 text-white drop-shadow-xs" />
                                   ) : (
-                                    <HardDrive className="w-5 h-5 text-white/90" />
+                                    <HardDrive className="w-5 h-5 text-white drop-shadow-xs" />
                                   )}
                                 </div>
                                 <div className="min-w-0">
@@ -3935,12 +4079,12 @@ export default function SettingsPage() {
                                     <h4 className="text-xs font-black text-slate-900 truncate" title={disk.disk_name}>
                                       {disk.disk_name}
                                     </h4>
-                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900">
+                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300">
                                       {formattedCap}
                                     </span>
                                   </div>
-                                  <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-0.5">
-                                    <span className="font-bold text-slate-700">{disk.disk_type?.replace(/_/g, ' ')}</span>
+                                  <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-0.5 flex-wrap">
+                                    <span className="font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{disk.disk_type?.replace(/_/g, ' ')}</span>
                                     {disk.physical_location && <span>• 📍 {disk.physical_location}</span>}
                                     {disk.notes && <span className="text-slate-400 truncate max-w-[150px]">• {disk.notes}</span>}
                                   </div>
@@ -3951,15 +4095,15 @@ export default function SettingsPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleEditDisk(disk)}
-                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
-                                  title="Edit Drive"
+                                  className="p-2 rounded-xl bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-900 transition cursor-pointer shadow-2xs"
+                                  title="Edit Drive (Open 3D Modal)"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteDisk(disk.id)}
-                                  className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer"
+                                  className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer shadow-2xs"
                                   title="Delete Drive"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -3972,6 +4116,331 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* ── 3D POPUP MODAL: EDIT MEMORY CARD ── */}
+                {editingCardModal && (
+                  <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/65 backdrop-blur-xs">
+                    <div className="relative w-full max-w-lg bg-white rounded-3xl p-5 sm:p-6 border border-amber-300/80 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold">
+                            <SDCardIcon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-slate-900">Edit Memory Card</h3>
+                            <p className="text-xs text-slate-500 font-medium">Update memory card specifications in studio inventory</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingCardModal(null)}
+                          className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleSaveModalCard} className="space-y-3.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-700 mb-1 block">Card Name / Label *</label>
+                            <input
+                              type="text"
+                              required
+                              value={editingCardModal.card_name || ''}
+                              onChange={e => setEditingCardModal({ ...editingCardModal, card_name: e.target.value })}
+                              placeholder="e.g. Sony Tough G 128GB #1"
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-700 mb-1 block">Card Type *</label>
+                            <input
+                              type="text"
+                              required
+                              value={editingCardModal.card_type || ''}
+                              onChange={e => setEditingCardModal({ ...editingCardModal, card_type: e.target.value })}
+                              placeholder="e.g. SDXC V90, CFexpress Type A..."
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-700 mb-1 block">Storage Capacity *</label>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="1"
+                                required
+                                value={editingCardModal.capacity_val || '128'}
+                                onChange={e => setEditingCardModal({ ...editingCardModal, capacity_val: e.target.value })}
+                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                              />
+                              <select
+                                value={editingCardModal.capacity_unit || 'GB'}
+                                onChange={e => setEditingCardModal({ ...editingCardModal, capacity_unit: e.target.value })}
+                                className="w-20 px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none cursor-pointer"
+                              >
+                                <option value="GB">GB</option>
+                                <option value="TB">TB</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-700 mb-1 block">Speed Class / Rating</label>
+                            <input
+                              type="text"
+                              value={editingCardModal.speed_class || ''}
+                              onChange={e => setEditingCardModal({ ...editingCardModal, speed_class: e.target.value })}
+                              placeholder="e.g. V90 300MB/s, 1700MB/s"
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Color Picker Swatches */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                            <span>Color Sticker / Hardware Tag</span>
+                            <span className="font-mono text-[10px] text-slate-400">{editingCardModal.color_tag}</span>
+                          </label>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {GOOGLE_PRESET_COLORS.map(c => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() => setEditingCardModal({ ...editingCardModal, color_tag: c })}
+                                className={`w-6 h-6 rounded-full border-2 transition-transform cursor-pointer ${
+                                  editingCardModal.color_tag === c ? 'scale-125 border-slate-900 shadow-xs' : 'border-white hover:scale-110 shadow-2xs'
+                                }`}
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                            <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-slate-200">
+                              <input
+                                type="color"
+                                value={editingCardModal.color_tag || '#F59E0B'}
+                                onChange={e => setEditingCardModal({ ...editingCardModal, color_tag: e.target.value })}
+                                className="w-7 h-7 rounded-lg cursor-pointer border border-amber-300 p-0.5 bg-white"
+                              />
+                              <span className="text-[10px] font-bold text-slate-700">Custom</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Notes / Assigned Camera (Optional)</label>
+                          <input
+                            type="text"
+                            value={editingCardModal.notes || ''}
+                            onChange={e => setEditingCardModal({ ...editingCardModal, notes: e.target.value })}
+                            placeholder="e.g. Primary FX3 A-Cam card, kept in Pelican case 1"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => setEditingCardModal(null)}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={savingModalCard}
+                            className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                          >
+                            {savingModalCard && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                            <span>Save Changes</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── 3D POPUP MODAL: EDIT HARD DRIVE / SSD ── */}
+                {editingDiskModal && (
+                  <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/65 backdrop-blur-xs">
+                    <div className="relative w-full max-w-lg bg-white rounded-3xl p-5 sm:p-6 border border-emerald-300/80 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center font-bold">
+                            <SSDIcon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-slate-900">Edit Storage Drive / SSD</h3>
+                            <p className="text-xs text-slate-500 font-medium">Update physical drive specifications & shelf location</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingDiskModal(null)}
+                          className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleSaveModalDisk} className="space-y-3.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-700 mb-1 block">Drive Name / Model *</label>
+                            <input
+                              type="text"
+                              required
+                              value={editingDiskModal.disk_name || ''}
+                              onChange={e => setEditingDiskModal({ ...editingDiskModal, disk_name: e.target.value })}
+                              placeholder="e.g. Samsung T7 Shield 2TB"
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            />
+                          </div>
+
+                          <div className="relative">
+                            <label className="text-[11px] font-bold text-slate-700 mb-1 block">Drive Type *</label>
+                            <button
+                              type="button"
+                              onClick={() => setIsModalDriveTypeDropdownOpen(prev => !prev)}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 hover:border-emerald-400 rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between transition cursor-pointer shadow-2xs"
+                            >
+                              <span className="truncate">
+                                {DRIVE_TYPES.find(t => t.id === editingDiskModal.disk_type)?.label || editingDiskModal.disk_type}
+                              </span>
+                              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isModalDriveTypeDropdownOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {isModalDriveTypeDropdownOpen && (
+                              <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-emerald-200 shadow-xl z-50 p-2 space-y-1 max-h-48 overflow-y-auto">
+                                {DRIVE_TYPES.map(type => (
+                                  <div
+                                    key={type.id}
+                                    onClick={() => {
+                                      setEditingDiskModal({ ...editingDiskModal, disk_type: type.id });
+                                      setIsModalDriveTypeDropdownOpen(false);
+                                    }}
+                                    className={`p-2 rounded-xl border transition flex items-center justify-between gap-2 cursor-pointer ${
+                                      editingDiskModal.disk_type === type.id
+                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold'
+                                        : 'hover:bg-slate-50 border-transparent text-slate-700'
+                                    }`}
+                                  >
+                                    <div>
+                                      <div className="text-xs font-bold text-slate-900">{type.label}</div>
+                                      <div className="text-[10px] text-slate-400">{type.desc}</div>
+                                    </div>
+                                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                                      {type.badge}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-700 mb-1 block">Storage Capacity *</label>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="1"
+                                required
+                                value={editingDiskModal.capacity_val || '2000'}
+                                onChange={e => setEditingDiskModal({ ...editingDiskModal, capacity_val: e.target.value })}
+                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              />
+                              <select
+                                value={editingDiskModal.capacity_unit || 'GB'}
+                                onChange={e => setEditingDiskModal({ ...editingDiskModal, capacity_unit: e.target.value })}
+                                className="w-20 px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none cursor-pointer"
+                              >
+                                <option value="GB">GB</option>
+                                <option value="TB">TB</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-700 mb-1 block">Physical Location / Shelf</label>
+                            <input
+                              type="text"
+                              value={editingDiskModal.physical_location || ''}
+                              onChange={e => setEditingDiskModal({ ...editingDiskModal, physical_location: e.target.value })}
+                              placeholder="e.g. Studio Desk 1, Safe, Edit Rig 2"
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Color Picker Swatches */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                            <span>Color Label / Sticker Tag</span>
+                            <span className="font-mono text-[10px] text-slate-400">{editingDiskModal.color_tag}</span>
+                          </label>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {GOOGLE_PRESET_COLORS.map(c => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() => setEditingDiskModal({ ...editingDiskModal, color_tag: c })}
+                                className={`w-6 h-6 rounded-full border-2 transition-transform cursor-pointer ${
+                                  editingDiskModal.color_tag === c ? 'scale-125 border-slate-900 shadow-xs' : 'border-white hover:scale-110 shadow-2xs'
+                                }`}
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                            <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-slate-200">
+                              <input
+                                type="color"
+                                value={editingDiskModal.color_tag || '#3B82F6'}
+                                onChange={e => setEditingDiskModal({ ...editingDiskModal, color_tag: e.target.value })}
+                                className="w-7 h-7 rounded-lg cursor-pointer border border-emerald-300 p-0.5 bg-white"
+                              />
+                              <span className="text-[10px] font-bold text-slate-700">Custom</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 mb-1 block">Notes / Purpose (Optional)</label>
+                          <input
+                            type="text"
+                            value={editingDiskModal.notes || ''}
+                            onChange={e => setEditingDiskModal({ ...editingDiskModal, notes: e.target.value })}
+                            placeholder="e.g. Primary wedding raw footage archive"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => setEditingDiskModal(null)}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={savingModalDisk}
+                            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                          >
+                            {savingModalDisk && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                            <span>Save Changes</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
