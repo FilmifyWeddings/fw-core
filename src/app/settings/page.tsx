@@ -3753,38 +3753,40 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                   {/* ── LEFT COLUMN: MEMORY CARDS (SD / CFexpress) ── */}
                   <div className="bg-white border border-amber-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 flex flex-col">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-amber-100 pb-3 gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold shrink-0">
-                          <SDCardIcon className="w-5 h-5" />
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-black text-slate-900 truncate">
-                            Memory Cards (SD / CFexpress)
-                          </h3>
-                          <p className="text-[11px] text-slate-500 font-medium truncate">
-                            Register shooter cards for ingest & offload tracking
-                          </p>
+                    <div className="flex flex-col gap-3 border-b border-amber-100 pb-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                            <SDCardIcon className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-black text-slate-900 leading-snug">
+                              Memory Cards (SD / CFexpress)
+                            </h3>
+                            <p className="text-[11px] text-slate-500 font-medium leading-normal mt-0.5">
+                              Register shooter cards for ingest & offload tracking
+                            </p>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center justify-between gap-2 pt-0.5">
                         <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap shrink-0">
                           {storageCards.length} Registered
                         </span>
                         <button
                           type="button"
                           onClick={() => setShowAddCardForm(prev => !prev)}
-                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                         >
                           {showAddCardForm ? (
                             <>
-                              <X className="w-3.5 h-3.5 stroke-[3]" />
+                              <X className="w-3.5 h-3.5 stroke-[2.5]" />
                               <span>Close Form</span>
                             </>
                           ) : (
                             <>
-                              <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                              <span>+ Add Memory Card</span>
+                              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>Add Memory Card</span>
                             </>
                           )}
                         </button>
@@ -3999,38 +4001,40 @@ export default function SettingsPage() {
 
                   {/* ── RIGHT COLUMN: PHYSICAL DRIVES (HDDs, SSDs, NAS) ── */}
                   <div className="bg-white border border-emerald-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 flex flex-col">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-emerald-100 pb-3 gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center font-bold shrink-0">
-                          <SSDIcon className="w-5 h-5" />
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-black text-slate-900 truncate">
-                            Physical Hard Drives & SSDs
-                          </h3>
-                          <p className="text-[11px] text-slate-500 font-medium truncate">
-                            Manage editing SSDs, external hard drives, racks & NAS arrays
-                          </p>
+                    <div className="flex flex-col gap-3 border-b border-emerald-100 pb-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center font-bold shrink-0">
+                            <SSDIcon className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-black text-slate-900 leading-snug">
+                              Physical Hard Drives & SSDs
+                            </h3>
+                            <p className="text-[11px] text-slate-500 font-medium leading-normal mt-0.5">
+                              Manage editing SSDs, external hard drives, racks & NAS arrays
+                            </p>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center justify-between gap-2 pt-0.5">
                         <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 whitespace-nowrap shrink-0">
                           {storageDisks.length} Registered
                         </span>
                         <button
                           type="button"
                           onClick={() => setShowAddDiskForm(prev => !prev)}
-                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                         >
                           {showAddDiskForm ? (
                             <>
-                              <X className="w-3.5 h-3.5 stroke-[3]" />
+                              <X className="w-3.5 h-3.5 stroke-[2.5]" />
                               <span>Close Form</span>
                             </>
                           ) : (
                             <>
-                              <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                              <span>+ Add Hard Drive / SSD</span>
+                              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>Add Hard Drive / SSD</span>
                             </>
                           )}
                         </button>

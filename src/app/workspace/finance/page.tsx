@@ -2418,9 +2418,15 @@ export default function FinancePage() {
       let matchesDate = true;
       const isDateActive = Boolean(dateRangePreset !== 'all' || startDate || endDate);
       if (isDateActive) {
+        const normalizeDateStr = (dStr?: string | null): string => {
+          if (!dStr) return '';
+          return dStr.split('T')[0].trim();
+        };
+
         const isInRange = (dStr?: string | null): boolean => {
           if (!dStr) return false;
-          const d = dStr.split('T')[0];
+          const d = normalizeDateStr(dStr);
+          if (!d) return false;
           if (startDate && d < startDate) return false;
           if (endDate && d > endDate) return false;
           return true;
@@ -2431,35 +2437,39 @@ export default function FinancePage() {
         // 📅 Strictly derive initial contract date from Step 1 of Payment Terms & Schedule (Token / Booking Advance)
         const firstStepDate = firstStep?.due_date || firstStep?.paid_date || (firstStep as any)?.date || (firstStep as any)?.dueDate || (firstStep as any)?.paidDate || (firstStep as any)?.payment_date;
 
+        const hasMatchingPaid = milestones.some((m, idx) => {
+          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+          if (!isPaid) return false;
+          const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+          if (!isInRange(pDate)) return false;
+          if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
+          if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
+          return true;
+        });
+
+        const hasMatchingPending = milestones.some(m => {
+          const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
+          if (isCompleted) return false;
+          if (statusFilter === 'overdue_only') {
+            const dNorm = normalizeDateStr(m.due_date);
+            return dNorm && dNorm < todayStr && isInRange(dNorm);
+          }
+          return isInRange(m.due_date);
+        });
+
+        const hasMatchingContractBooking = isInRange(firstStepDate) || isInRange(rec.created_at);
+
         if (statusFilter === 'received' || revenueTypeFilter !== 'ALL') {
           // Payments received: matches if any completed/paid milestone falls in date range
-          const matchingPaidMilestones = milestones.filter((m, idx) => {
-            const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
-            if (!isPaid) return false;
-            const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
-            if (!isInRange(pDate)) return false;
-            if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
-            if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
-            return true;
-          });
-          matchesDate = matchingPaidMilestones.length > 0;
+          matchesDate = hasMatchingPaid;
         } else if (statusFilter === 'pending' || statusFilter === 'overdue_only') {
           // 💡 SMART PENDING DUES FILTER:
           // When filtering by Pending Dues, matches clients that have pending/upcoming milestone payments DUE in that date range!
-          const matchingPendingMilestones = milestones.filter(m => {
-            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
-            if (isCompleted) return false;
-            if (statusFilter === 'overdue_only') {
-              return m.due_date && m.due_date < todayStr && isInRange(m.due_date);
-            }
-            return isInRange(m.due_date);
-          });
-          const hasAnyDueDate = milestones.some(m => m.due_date);
-          matchesDate = hasAnyDueDate ? matchingPendingMilestones.length > 0 : Boolean(firstStepDate && isInRange(firstStepDate));
+          matchesDate = hasMatchingPending || (!milestones.some(m => m.due_date) && hasMatchingContractBooking && Number(rec.pending_amount) > 0);
         } else {
-          // 📅 All Statuses, Partially Paid, Fully Paid, etc.:
-          // STRICTLY filter by the first step in Payment Terms & Schedules (Booking advance date)
-          matchesDate = Boolean(firstStepDate && isInRange(firstStepDate));
+          // 📅 All Statuses (default):
+          // Matches if booked in this period, paid in this period, OR has dues in this period!
+          matchesDate = hasMatchingContractBooking || hasMatchingPaid || hasMatchingPending;
         }
       }
 
@@ -2491,8 +2501,9 @@ export default function FinancePage() {
       const matchesMode = paymentModeFilter === 'all' || exp.payment_mode === paymentModeFilter;
 
       let matchesDate = true;
-      if (startDate && exp.payment_date < startDate) matchesDate = false;
-      if (endDate && exp.payment_date > endDate) matchesDate = false;
+      const expDate = (exp.payment_date || '').split('T')[0];
+      if (startDate && expDate && expDate < startDate) matchesDate = false;
+      if (endDate && expDate && expDate > endDate) matchesDate = false;
 
       return matchesSearch && matchesCategory && matchesMode && matchesDate;
     });
@@ -2514,7 +2525,7 @@ export default function FinancePage() {
         const matchingMilestones = (r.milestones || []).filter((m, idx) => {
           const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
           if (!isPaid) return false;
-          const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+          const pDate = (m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date || '').split('T')[0];
           if (!pDate) return false;
           if (startDate && pDate < startDate) return false;
           if (endDate && pDate > endDate) return false;
@@ -2522,7 +2533,15 @@ export default function FinancePage() {
           if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
           return true;
         });
-        return acc + matchingMilestones.reduce((mSum, m) => mSum + (Number(m.amount) || 0), 0);
+        const milestonesSum = matchingMilestones.reduce((mSum, m) => mSum + (Number(m.amount) || 0), 0);
+        if (milestonesSum > 0) return acc + milestonesSum;
+
+        // Fallback: If milestone paid_date not explicitly set, check firstStepDate / created_at in range
+        const firstDate = (r.firstStepDate || (r.milestones?.[0]?.due_date) || (r.milestones?.[0]?.paid_date) || r.created_at || '').split('T')[0];
+        if (firstDate && (!startDate || firstDate >= startDate) && (!endDate || firstDate <= endDate)) {
+          return acc + (Number(r.received_amount) || 0);
+        }
+        return acc;
       }, 0));
     } else if (revenueTypeFilter !== 'ALL') {
       return Math.round(filteredRecords.reduce((acc, r) => {
@@ -2540,9 +2559,31 @@ export default function FinancePage() {
   }, [filteredRecords, statusFilter, revenueTypeFilter, isDateActive, startDate, endDate]);
 
   const totalPending = useMemo(() => {
-    // Explicitly reconcile: Gross Invoiced - Cash Received for the filtered contracts
+    if (isDateActive && (startDate || endDate)) {
+      // Sum of pending milestones due in this period, plus remaining balance of contracts booked in this period
+      const periodPending = filteredRecords.reduce((acc, r) => {
+        const matchingPending = (r.milestones || []).filter(m => {
+          const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
+          if (isCompleted) return false;
+          const dDate = (m.due_date || '').split('T')[0];
+          if (!dDate) return false;
+          if (startDate && dDate < startDate) return false;
+          if (endDate && dDate > endDate) return false;
+          return true;
+        });
+        const pendingMilestonesSum = matchingPending.reduce((mSum, m) => mSum + (Number(m.amount) || 0), 0);
+        if (pendingMilestonesSum > 0) return acc + pendingMilestonesSum;
+
+        const firstDate = (r.firstStepDate || (r.milestones?.[0]?.due_date) || r.created_at || '').split('T')[0];
+        if (firstDate && (!startDate || firstDate >= startDate) && (!endDate || firstDate <= endDate)) {
+          return acc + (Number(r.pending_amount) || 0);
+        }
+        return acc;
+      }, 0);
+      return Math.round(periodPending);
+    }
     return Math.max(0, Math.round(totalInvoiced - totalReceived));
-  }, [totalInvoiced, totalReceived]);
+  }, [filteredRecords, isDateActive, startDate, endDate, totalInvoiced, totalReceived]);
 
   const totalExpensesAmount = useMemo(() => {
     return Math.round(filteredExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0));

@@ -432,8 +432,8 @@ export default function StorageSettingsTab({
               <SDCardIcon className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-lg font-extrabold text-amber-950 truncate">Memory Cards Inventory</h2>
-              <p className="text-xs font-medium text-zinc-500 truncate">
+              <h2 className="text-lg font-extrabold text-amber-950 leading-snug">Memory Cards Inventory</h2>
+              <p className="text-xs font-medium text-zinc-500 mt-0.5">
                 Register SD Cards & CFexpress media used by crew during wedding events
               </p>
             </div>
@@ -445,17 +445,17 @@ export default function StorageSettingsTab({
             <button
               type="button"
               onClick={() => setShowAddCardForm(prev => !prev)}
-              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
             >
               {showAddCardForm ? (
                 <>
-                  <X className="w-3.5 h-3.5 stroke-[3]" />
+                  <X className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>Close Form</span>
                 </>
               ) : (
                 <>
-                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                  <span>+ Add Memory Card</span>
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Add Memory Card</span>
                 </>
               )}
             </button>
@@ -616,8 +616,8 @@ export default function StorageSettingsTab({
               <SSDIcon className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-lg font-extrabold text-slate-900 truncate">Hard Drives & SSDs Catalog</h2>
-              <p className="text-xs font-medium text-zinc-500 truncate">
+              <h2 className="text-lg font-extrabold text-slate-900 leading-snug">Hard Drives & SSDs Catalog</h2>
+              <p className="text-xs font-medium text-zinc-500 mt-0.5">
                 Manage physical external hard drives, SSDs, and storage locations
               </p>
             </div>
@@ -629,17 +629,17 @@ export default function StorageSettingsTab({
             <button
               type="button"
               onClick={() => setShowAddDiskForm(prev => !prev)}
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
             >
               {showAddDiskForm ? (
                 <>
-                  <X className="w-3.5 h-3.5 stroke-[3]" />
+                  <X className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>Close Form</span>
                 </>
               ) : (
                 <>
-                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                  <span>+ Add Hard Drive / SSD</span>
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Add Hard Drive / SSD</span>
                 </>
               )}
             </button>

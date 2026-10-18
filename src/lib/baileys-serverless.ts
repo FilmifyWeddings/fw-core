@@ -142,28 +142,103 @@ export function resolveTemplateVariable(rawKey: string, lead: any): string {
   const key = rawKey.trim();
   const normalizedKey = key.toLowerCase();
 
+  const cleanStr = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const targetClean = cleanStr(key);
+
+  const searchObj = (obj: any): string => {
+    if (!obj || typeof obj !== 'object') return '';
+    if (obj[key] !== undefined && obj[key] !== null && String(obj[key]).trim() !== '') {
+      return String(obj[key]).trim();
+    }
+    const keys = Object.keys(obj);
+    const directMatch = keys.find(k => k.toLowerCase() === normalizedKey);
+    if (directMatch && obj[directMatch] !== undefined && obj[directMatch] !== null && String(obj[directMatch]).trim() !== '') {
+      return String(obj[directMatch]).trim();
+    }
+    if (targetClean.length > 2) {
+      const normMatch = keys.find(k => cleanStr(k) === targetClean);
+      if (normMatch && obj[normMatch] !== undefined && obj[normMatch] !== null && String(obj[normMatch]).trim() !== '') {
+        return String(obj[normMatch]).trim();
+      }
+    }
+    return '';
+  };
+
   const getRawVal = (field: string): string => {
+    const fieldClean = cleanStr(field);
+    const checkMatch = (k: string) => k.toLowerCase() === field.toLowerCase() || (fieldClean.length > 2 && cleanStr(k) === fieldClean);
+
+    let res = searchObj(lead);
+    if (res) return res;
+
     if (lead[field] !== undefined && lead[field] !== null && String(lead[field]).trim() !== '') {
       return String(lead[field]).trim();
     }
-    const leadKeys = Object.keys(lead);
-    const directMatch = leadKeys.find(k => k.toLowerCase() === field.toLowerCase());
-    if (directMatch && lead[directMatch] !== undefined && lead[directMatch] !== null && String(lead[directMatch]).trim() !== '') {
-      return String(lead[directMatch]).trim();
-    }
+
     if (lead.raw_payload && typeof lead.raw_payload === 'object') {
-      const rawKeys = Object.keys(lead.raw_payload);
-      const found = rawKeys.find(k => k.toLowerCase() === field.toLowerCase());
-      if (found && lead.raw_payload[found] != null && String(lead.raw_payload[found]).trim() !== '') {
-        return String(lead.raw_payload[found]).trim();
+      res = searchObj(lead.raw_payload);
+      if (res) return res;
+      if (lead.raw_payload.raw_lead_form_data && typeof lead.raw_payload.raw_lead_form_data === 'object') {
+        res = searchObj(lead.raw_payload.raw_lead_form_data);
+        if (res) return res;
       }
+    }
+
+    if (lead.lead_payload && typeof lead.lead_payload === 'object') {
+      res = searchObj(lead.lead_payload);
+      if (res) return res;
+    }
+
+    if (Array.isArray(lead.field_data)) {
+      for (const item of lead.field_data) {
+        const itemKey = item.name || '';
+        if (checkMatch(itemKey)) {
+          const val = Array.isArray(item.values) ? item.values[0] : (item.value || item.values);
+          if (val !== undefined && val !== null && String(val).trim() !== '') return String(val).trim();
+        }
+      }
+    }
+
+    return '';
+  };
+
+  // Fuzzy keyword search for common Meta lead fields
+  const getFuzzyVal = (keywords: string[]): string => {
+    const checkKey = (k: string) => {
+      const kl = k.toLowerCase();
+      return keywords.some(kw => kl.includes(kw));
+    };
+
+    const scanObj = (obj: any): string => {
+      if (!obj || typeof obj !== 'object') return '';
+      for (const k of Object.keys(obj)) {
+        if (checkKey(k)) {
+          const v = obj[k];
+          if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+        }
+      }
+      return '';
+    };
+
+    let found = scanObj(lead);
+    if (found) return found;
+    if (lead.raw_payload) {
+      found = scanObj(lead.raw_payload);
+      if (found) return found;
+      if (lead.raw_payload.raw_lead_form_data) {
+        found = scanObj(lead.raw_payload.raw_lead_form_data);
+        if (found) return found;
+      }
+    }
+    if (lead.lead_payload) {
+      found = scanObj(lead.lead_payload);
+      if (found) return found;
     }
     if (Array.isArray(lead.field_data)) {
       for (const item of lead.field_data) {
-        const itemKey = (item.name || '').toLowerCase();
-        if (itemKey === field.toLowerCase()) {
+        if (checkKey(item.name || '')) {
           const val = Array.isArray(item.values) ? item.values[0] : (item.value || item.values);
-          if (val) return String(val).trim();
+          if (val !== undefined && val !== null && String(val).trim() !== '') return String(val).trim();
         }
       }
     }
@@ -208,16 +283,13 @@ export function resolveTemplateVariable(rawKey: string, lead: any): string {
   }
 
   // 2. Name derivations
-  // Full Name resolution
   const fullName = getRawVal('full_name') || getRawVal('name') || getRawVal('lead_name') || getRawVal('client_name') || getRawVal('Name') || getRawVal('Name_1') || '';
   
   if (normalizedKey === 'first_name' || normalizedKey === 'fname') {
     const explicitFirst = getRawVal('first_name') || getRawVal('fname');
-    // If explicit first name exists and has NO whitespace, return it
     if (explicitFirst && !explicitFirst.includes(' ')) {
       return explicitFirst;
     }
-    // Otherwise derive strictly from first word of fullName
     if (fullName) {
       const parts = fullName.trim().split(/\s+/);
       if (parts[0]) return parts[0];
@@ -246,7 +318,6 @@ export function resolveTemplateVariable(rawKey: string, lead: any): string {
   const digitsOnly = rawPhone.replace(/[^0-9]/g, '');
 
   if (normalizedKey === 'phone' || normalizedKey === 'phone_short') {
-    // Return 10-digit mobile number without country code
     if (digitsOnly.length >= 10) {
       return digitsOnly.slice(-10);
     }
@@ -254,7 +325,6 @@ export function resolveTemplateVariable(rawKey: string, lead: any): string {
   }
 
   if (normalizedKey === 'phone_number' || normalizedKey === 'whatsapp_number' || normalizedKey === 'mobile' || normalizedKey === 'contact') {
-    // Return full formatted phone number
     if (rawPhone.startsWith('+')) return rawPhone;
     if (digitsOnly.length === 10) return `+91 ${digitsOnly}`;
     if (digitsOnly.length > 10) return `+${digitsOnly}`;
@@ -282,14 +352,14 @@ export function resolveTemplateVariable(rawKey: string, lead: any): string {
 
   // 5. Wedding / Event specs
   if (normalizedKey === 'event_date' || normalizedKey === 'wedding_date' || normalizedKey === 'shoot_date' || normalizedKey === 'date_of_event') {
-    return getRawVal('event_date') || getRawVal('wedding_date') || getRawVal('shoot_date') || getRawVal('date_of_event') || '';
+    return getRawVal('event_date') || getRawVal('wedding_date') || getRawVal('shoot_date') || getRawVal('date_of_event') || getFuzzyVal(['event_date', 'wedding_date', 'shoot_date']) || '';
   }
 
   if (normalizedKey === 'groom_name') return getRawVal('groom_name');
   if (normalizedKey === 'bride_name') return getRawVal('bride_name');
 
   if (normalizedKey === 'shoot_type' || normalizedKey === 'kind_of_shoot' || normalizedKey === 'what_kind_of_shoot' || normalizedKey === 'services' || normalizedKey === 'photography_services') {
-    return getRawVal('shoot_type') || getRawVal('kind_of_shoot') || getRawVal('what_kind_of_shoot') || getRawVal('photography_services') || getRawVal('service') || '';
+    return getRawVal('shoot_type') || getRawVal('kind_of_shoot') || getRawVal('what_kind_of_shoot') || getRawVal('photography_services') || getRawVal('service') || getFuzzyVal(['shoot', 'looking_for', 'event_type', 'service']) || '';
   }
 
   if (normalizedKey === 'venue' || normalizedKey === 'event_venue') {
@@ -297,7 +367,7 @@ export function resolveTemplateVariable(rawKey: string, lead: any): string {
   }
 
   if (normalizedKey === 'budget' || normalizedKey === 'max_budget' || normalizedKey === 'approximate_budget' || normalizedKey === 'price' || normalizedKey === 'expected_budget') {
-    return getRawVal('budget') || getRawVal('max_budget') || getRawVal('approximate_budget') || getRawVal('expected_budget') || getRawVal('price') || '';
+    return getRawVal('budget') || getRawVal('max_budget') || getRawVal('approximate_budget') || getRawVal('expected_budget') || getRawVal('price') || getFuzzyVal(['budget', 'package', 'price', 'range']) || '';
   }
 
   if (normalizedKey === 'expected_guests') return getRawVal('expected_guests');
@@ -311,13 +381,20 @@ export function resolveTemplateVariable(rawKey: string, lead: any): string {
   if (normalizedKey === 'campaign_name') return getRawVal('campaign_name');
   if (normalizedKey === 'ad_name') return getRawVal('ad_name');
   if (normalizedKey === 'adset_name') return getRawVal('adset_name');
-  if (normalizedKey === 'platform') return getRawVal('platform') || getRawVal('source') || 'Instagram / Facebook';
+  if (normalizedKey === 'platform' || normalizedKey === 'source' || normalizedKey === 'lead_source') {
+    return getRawVal('source') || getRawVal('platform') || getRawVal('lead_source') || 'Facebook Ads';
+  }
   if (normalizedKey === 'facebook_lead_id') return getRawVal('facebook_lead_id') || getRawVal('leadgen_id') || '';
 
   // 7. Lead Info
   if (normalizedKey === 'lead_owner') return getRawVal('lead_owner') || getRawVal('owner_name') || '';
   if (normalizedKey === 'status' || normalizedKey === 'lead_status') return getRawVal('status') || getRawVal('lead_status') || '';
-  if (normalizedKey === 'score' || normalizedKey === 'lead_score') return getRawVal('score') || getRawVal('lead_score') || '';
+  if (normalizedKey === 'score' || normalizedKey === 'lead_score') {
+    const rawScore = getRawVal('score') || getRawVal('lead_score');
+    if (rawScore) return rawScore;
+    // Fallback to source when used in template as "Source : {{score}}"
+    return getRawVal('source') || getRawVal('platform') || 'Facebook Ads';
+  }
   if (normalizedKey === 'email' || normalizedKey === 'email_address' || normalizedKey === 'mail') return getRawVal('email') || getRawVal('email_address') || '';
 
   // 8. General fallback for any custom key in lead or raw_payload

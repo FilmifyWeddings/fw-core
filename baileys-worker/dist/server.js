@@ -20,6 +20,8 @@ import pino from 'pino';
 import ws from 'ws';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+import * as child_process from 'child_process';
 import * as http from 'http';
 import { fileURLToPath } from 'url';
 import { useSupabaseAuthState } from './supabase-auth-state.js';
@@ -381,35 +383,112 @@ function resolveTemplateVariable(rawKey, variables) {
         return '';
     const key = rawKey.trim();
     const normalizedKey = key.toLowerCase();
+    const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const targetClean = cleanStr(key);
+    const searchObj = (obj) => {
+        if (!obj || typeof obj !== 'object')
+            return '';
+        // 1. Direct key match
+        if (obj[key] !== undefined && obj[key] !== null && String(obj[key]).trim() !== '') {
+            return String(obj[key]).trim();
+        }
+        // 2. Case-insensitive key match
+        const keys = Object.keys(obj);
+        const directMatch = keys.find(k => k.toLowerCase() === normalizedKey);
+        if (directMatch && obj[directMatch] !== undefined && obj[directMatch] !== null && String(obj[directMatch]).trim() !== '') {
+            return String(obj[directMatch]).trim();
+        }
+        // 3. Alphanumeric normalized match (handles what_type_of_shoot_you_are_looking_for_? -> whattypeofshootyouarelookingfor)
+        if (targetClean.length > 2) {
+            const normMatch = keys.find(k => cleanStr(k) === targetClean);
+            if (normMatch && obj[normMatch] !== undefined && obj[normMatch] !== null && String(obj[normMatch]).trim() !== '') {
+                return String(obj[normMatch]).trim();
+            }
+        }
+        return '';
+    };
     const getRawVal = (field) => {
+        const fieldClean = cleanStr(field);
+        const checkMatch = (k) => k.toLowerCase() === field.toLowerCase() || (fieldClean.length > 2 && cleanStr(k) === fieldClean);
+        // Check root variables
+        let res = searchObj(variables);
+        if (res)
+            return res;
+        // Check direct field
         if (variables[field] !== undefined && variables[field] !== null && String(variables[field]).trim() !== '') {
             return String(variables[field]).trim();
         }
-        const varKeys = Object.keys(variables);
-        const directMatch = varKeys.find(k => k.toLowerCase() === field.toLowerCase());
-        if (directMatch && variables[directMatch] !== undefined && variables[directMatch] !== null && String(variables[directMatch]).trim() !== '') {
-            return String(variables[directMatch]).trim();
-        }
+        // Check raw_payload & raw_lead_form_data
         if (variables.raw_payload && typeof variables.raw_payload === 'object') {
-            const rawKeys = Object.keys(variables.raw_payload);
-            const found = rawKeys.find(k => k.toLowerCase() === field.toLowerCase());
-            if (found && variables.raw_payload[found] != null && String(variables.raw_payload[found]).trim() !== '') {
-                return String(variables.raw_payload[found]).trim();
+            res = searchObj(variables.raw_payload);
+            if (res)
+                return res;
+            if (variables.raw_payload.raw_lead_form_data && typeof variables.raw_payload.raw_lead_form_data === 'object') {
+                res = searchObj(variables.raw_payload.raw_lead_form_data);
+                if (res)
+                    return res;
             }
         }
+        // Check lead_payload
         if (variables.lead_payload && typeof variables.lead_payload === 'object') {
-            const rawKeys = Object.keys(variables.lead_payload);
-            const found = rawKeys.find(k => k.toLowerCase() === field.toLowerCase());
-            if (found && variables.lead_payload[found] != null && String(variables.lead_payload[found]).trim() !== '') {
-                return String(variables.lead_payload[found]).trim();
+            res = searchObj(variables.lead_payload);
+            if (res)
+                return res;
+        }
+        // Check field_data array from Meta webhook payload
+        if (Array.isArray(variables.field_data)) {
+            for (const item of variables.field_data) {
+                const itemKey = item.name || '';
+                if (checkMatch(itemKey)) {
+                    const val = Array.isArray(item.values) ? item.values[0] : (item.value || item.values);
+                    if (val !== undefined && val !== null && String(val).trim() !== '')
+                        return String(val).trim();
+                }
             }
+        }
+        return '';
+    };
+    // Fuzzy keyword search for common Meta lead fields
+    const getFuzzyVal = (keywords) => {
+        const checkKey = (k) => {
+            const kl = k.toLowerCase();
+            return keywords.some(kw => kl.includes(kw));
+        };
+        const scanObj = (obj) => {
+            if (!obj || typeof obj !== 'object')
+                return '';
+            for (const k of Object.keys(obj)) {
+                if (checkKey(k)) {
+                    const v = obj[k];
+                    if (v !== undefined && v !== null && String(v).trim() !== '')
+                        return String(v).trim();
+                }
+            }
+            return '';
+        };
+        let found = scanObj(variables);
+        if (found)
+            return found;
+        if (variables.raw_payload) {
+            found = scanObj(variables.raw_payload);
+            if (found)
+                return found;
+            if (variables.raw_payload.raw_lead_form_data) {
+                found = scanObj(variables.raw_payload.raw_lead_form_data);
+                if (found)
+                    return found;
+            }
+        }
+        if (variables.lead_payload) {
+            found = scanObj(variables.lead_payload);
+            if (found)
+                return found;
         }
         if (Array.isArray(variables.field_data)) {
             for (const item of variables.field_data) {
-                const itemKey = (item.name || '').toLowerCase();
-                if (itemKey === field.toLowerCase()) {
+                if (checkKey(item.name || '')) {
                     const val = Array.isArray(item.values) ? item.values[0] : (item.value || item.values);
-                    if (val)
+                    if (val !== undefined && val !== null && String(val).trim() !== '')
                         return String(val).trim();
                 }
             }
@@ -520,20 +599,20 @@ function resolveTemplateVariable(rawKey, variables) {
     }
     // 5. Wedding / Event specs
     if (normalizedKey === 'event_date' || normalizedKey === 'wedding_date' || normalizedKey === 'shoot_date' || normalizedKey === 'date_of_event') {
-        return getRawVal('event_date') || getRawVal('wedding_date') || getRawVal('shoot_date') || getRawVal('date_of_event') || '';
+        return getRawVal('event_date') || getRawVal('wedding_date') || getRawVal('shoot_date') || getRawVal('date_of_event') || getFuzzyVal(['event_date', 'wedding_date', 'shoot_date']) || '';
     }
     if (normalizedKey === 'groom_name')
         return getRawVal('groom_name');
     if (normalizedKey === 'bride_name')
         return getRawVal('bride_name');
     if (normalizedKey === 'shoot_type' || normalizedKey === 'kind_of_shoot' || normalizedKey === 'what_kind_of_shoot' || normalizedKey === 'services' || normalizedKey === 'photography_services') {
-        return getRawVal('shoot_type') || getRawVal('kind_of_shoot') || getRawVal('what_kind_of_shoot') || getRawVal('photography_services') || getRawVal('service') || '';
+        return getRawVal('shoot_type') || getRawVal('kind_of_shoot') || getRawVal('what_kind_of_shoot') || getRawVal('photography_services') || getRawVal('service') || getFuzzyVal(['shoot', 'looking_for', 'event_type', 'service']) || '';
     }
     if (normalizedKey === 'venue' || normalizedKey === 'event_venue') {
         return getRawVal('venue') || getRawVal('event_venue') || getRawVal('location') || '';
     }
     if (normalizedKey === 'budget' || normalizedKey === 'max_budget' || normalizedKey === 'approximate_budget' || normalizedKey === 'price' || normalizedKey === 'expected_budget') {
-        return getRawVal('budget') || getRawVal('max_budget') || getRawVal('approximate_budget') || getRawVal('expected_budget') || getRawVal('price') || '';
+        return getRawVal('budget') || getRawVal('max_budget') || getRawVal('approximate_budget') || getRawVal('expected_budget') || getRawVal('price') || getFuzzyVal(['budget', 'package', 'price', 'range']) || '';
     }
     if (normalizedKey === 'expected_guests')
         return getRawVal('expected_guests');
@@ -554,8 +633,9 @@ function resolveTemplateVariable(rawKey, variables) {
         return getRawVal('ad_name');
     if (normalizedKey === 'adset_name')
         return getRawVal('adset_name');
-    if (normalizedKey === 'platform')
-        return getRawVal('platform') || getRawVal('source') || 'Instagram / Facebook';
+    if (normalizedKey === 'platform' || normalizedKey === 'source' || normalizedKey === 'lead_source') {
+        return getRawVal('source') || getRawVal('platform') || getRawVal('lead_source') || 'Facebook Ads';
+    }
     if (normalizedKey === 'facebook_lead_id')
         return getRawVal('facebook_lead_id') || getRawVal('leadgen_id') || '';
     // 7. Lead Info
@@ -563,8 +643,13 @@ function resolveTemplateVariable(rawKey, variables) {
         return getRawVal('lead_owner') || getRawVal('owner_name') || '';
     if (normalizedKey === 'status' || normalizedKey === 'lead_status')
         return getRawVal('status') || getRawVal('lead_status') || '';
-    if (normalizedKey === 'score' || normalizedKey === 'lead_score')
-        return getRawVal('score') || getRawVal('lead_score') || '';
+    if (normalizedKey === 'score' || normalizedKey === 'lead_score') {
+        const rawScore = getRawVal('score') || getRawVal('lead_score');
+        if (rawScore)
+            return rawScore;
+        // Fallback to source when used in template as "Source : {{score}}"
+        return getRawVal('source') || getRawVal('platform') || 'Facebook Ads';
+    }
     if (normalizedKey === 'email' || normalizedKey === 'email_address' || normalizedKey === 'mail')
         return getRawVal('email') || getRawVal('email_address') || '';
     return getRawVal(key);
@@ -654,6 +739,60 @@ async function downloadMediaAsBuffer(mediaSource, overrideMimeType, maxRetries =
     }
     throw new Error(`Failed to download media after ${maxRetries + 1} attempts: ${lastError?.message}`);
 }
+// ─── Video Metadata Extraction (Thumbnail & Duration via ffmpeg/ffprobe) ────────
+/**
+ * ⚡ Extracts genuine thumbnail buffer (96x96 JPEG) and duration (seconds)
+ * from video buffer using ffmpeg / ffprobe and sharp.
+ * Fixes the gray placeholder box and 0:00 duration on WhatsApp iOS & Android!
+ */
+async function extractVideoMetadata(videoBuffer) {
+    const tempDir = os.tmpdir();
+    const tempFile = path.join(tempDir, `wa_vid_${Date.now()}_${Math.random().toString(36).substring(7)}.mp4`);
+    try {
+        fs.writeFileSync(tempFile, videoBuffer);
+        let durationSeconds;
+        let jpegThumbnail;
+        // 1. Extract duration in seconds via ffprobe
+        try {
+            const probeOutput = child_process.execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${tempFile}"`, { timeout: 5000, encoding: 'utf-8' }).trim();
+            const parsedDur = parseFloat(probeOutput);
+            if (!isNaN(parsedDur) && parsedDur > 0) {
+                durationSeconds = Math.round(parsedDur);
+            }
+        }
+        catch (e) {
+            logger.warn({ err: e?.message }, '⚠️ ffprobe duration extraction warning');
+        }
+        // 2. Extract video frame at 1s (or 0s if shorter) via ffmpeg
+        try {
+            const seekTime = (durationSeconds && durationSeconds > 1) ? '00:00:01' : '00:00:00';
+            const frameBuffer = child_process.execSync(`ffmpeg -y -ss ${seekTime} -i "${tempFile}" -vframes 1 -f image2pipe -vcodec mjpeg -`, { timeout: 8000, maxBuffer: 10 * 1024 * 1024 });
+            if (frameBuffer && frameBuffer.length > 0) {
+                const sharp = (await import('sharp')).default;
+                jpegThumbnail = await sharp(frameBuffer)
+                    .resize(96, 96, { fit: 'inside' })
+                    .jpeg({ quality: 70 })
+                    .toBuffer();
+            }
+        }
+        catch (e) {
+            logger.warn({ err: e?.message }, '⚠️ ffmpeg thumbnail frame extraction warning');
+        }
+        return { jpegThumbnail, durationSeconds };
+    }
+    catch (err) {
+        logger.warn({ err: err?.message }, '⚠️ extractVideoMetadata overall warning');
+        return {};
+    }
+    finally {
+        try {
+            if (fs.existsSync(tempFile)) {
+                fs.unlinkSync(tempFile);
+            }
+        }
+        catch (_) { }
+    }
+}
 // ─── Message Sending Helpers ──────────────────────────────────────────────────
 async function sendTextMessage(to, text, wsId = WORKSPACE_ID) {
     const targetSock = await getWorkspaceSocket(wsId);
@@ -724,6 +863,8 @@ async function sendMediaMessage(to, mediaUrl, caption, mimeType, wsId = WORKSPAC
             });
         }
         else if (finalCategory === 'video') {
+            // ⚡ Extract video thumbnail & duration for crisp preview and actual duration display
+            const { jpegThumbnail, durationSeconds } = await extractVideoMetadata(buffer);
             if (buffer.length > 16 * 1024 * 1024) {
                 logger.warn({ to, sizeMb: (buffer.length / (1024 * 1024)).toFixed(1) }, '⚠️ Video exceeds WhatsApp 16 MB playable limit, sending as document');
                 result = await targetSock.sendMessage(to, {
@@ -731,10 +872,17 @@ async function sendMediaMessage(to, mediaUrl, caption, mimeType, wsId = WORKSPAC
                     mimetype: resolvedMime || 'video/mp4',
                     fileName: fileName || 'video.mp4',
                     caption: caption || undefined,
+                    jpegThumbnail,
                 });
             }
             else {
-                result = await targetSock.sendMessage(to, { video: buffer, caption: caption || undefined, mimetype: resolvedMime });
+                result = await targetSock.sendMessage(to, {
+                    video: buffer,
+                    caption: caption || undefined,
+                    mimetype: resolvedMime || 'video/mp4',
+                    jpegThumbnail,
+                    seconds: durationSeconds,
+                });
             }
         }
         else if (finalCategory === 'audio') {

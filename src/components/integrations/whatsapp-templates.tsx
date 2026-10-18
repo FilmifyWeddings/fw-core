@@ -202,6 +202,26 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [showShortcodeDropdown, setShowShortcodeDropdown] = useState(false);
   const [isTextareaFocused, setIsTextareaFocused] = useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const [activeMetaForms, setActiveMetaForms] = useState<Array<{
+    form_id: string;
+    form_name: string;
+    questions: Array<{ key: string; label: string; tag: string }>;
+  }>>([]);
+  const [loadingMetaForms, setLoadingMetaForms] = useState(false);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    setLoadingMetaForms(true);
+    fetch(`/api/meta/forms/active-fields?workspace_id=${workspaceId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.forms)) {
+          setActiveMetaForms(data.forms);
+        }
+      })
+      .catch(err => console.error('[WhatsappTemplates] Error loading active meta forms:', err))
+      .finally(() => setLoadingMetaForms(false));
+  }, [workspaceId]);
 
   const insertAtCursor = (tag: string) => {
     const textarea = textareaRef.current;
@@ -988,6 +1008,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   <UserCheck className="w-3 h-3" /> Client & Contact Info
                 </div>
                 {[
+                  { label: 'Lead Source (Meta / Origin)', tag: '{{source}}' },
                   { label: 'Full Name', tag: '{{full_name}}' },
                   { label: 'First Name', tag: '{{first_name}}' },
                   { label: 'Last Name', tag: '{{last_name}}' },
@@ -1002,9 +1023,39 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   { label: 'Lead Score', tag: '{{score}}' },
                 ].map(renderOption)}
 
+                {/* 2. Active Connected Meta Forms & Custom Questions */}
+                {activeMetaForms.length > 0 ? (
+                  activeMetaForms.map((form) => (
+                    <React.Fragment key={form.form_id}>
+                      <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
+                      <div className="px-3 py-1 text-[9px] uppercase font-bold text-purple-600 dark:text-purple-400 tracking-wider flex items-center gap-1">
+                        <HelpCircle className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{form.form_name || `Form ${form.form_id}`}</span>
+                      </div>
+                      {form.questions && form.questions.length > 0 ? (
+                        form.questions.map(q => renderOption({ label: q.label || q.key, tag: q.tag || `{{${q.key}}}` }))
+                      ) : (
+                        <div className="px-3 py-1 text-[10px] text-zinc-400 dark:text-zinc-500 italic">
+                          Standard form fields (no custom questions)
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))
+                ) : (
+                  <>
+                    <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
+                    <div className="px-3 py-1 text-[9px] uppercase font-bold text-purple-500 dark:text-purple-400 tracking-wider flex items-center gap-1">
+                      <HelpCircle className="w-3 h-3" /> Meta Active Forms
+                    </div>
+                    <div className="px-3 py-1 text-[10px] text-zinc-400 dark:text-zinc-500 italic">
+                      {loadingMetaForms ? 'Loading active forms...' : 'No active Meta forms connected'}
+                    </div>
+                  </>
+                )}
+
                 <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
 
-                {/* 2. Wedding & Event Specifications */}
+                {/* 3. Wedding & Event Specifications */}
                 <div className="px-3 py-1 text-[9px] uppercase font-bold text-rose-500 dark:text-rose-400 tracking-wider flex items-center gap-1">
                   <Sparkles className="w-3 h-3" /> Wedding & Event Details
                 </div>
@@ -1019,23 +1070,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   { label: 'Budget Range', tag: '{{max_budget}}' },
                   { label: 'Expected Guests', tag: '{{expected_guests}}' },
                   { label: 'Call Time', tag: '{{call_time}}' },
-                ].map(renderOption)}
-
-                <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
-
-                {/* 3. Meta Custom Form Questions */}
-                <div className="px-3 py-1 text-[9px] uppercase font-bold text-purple-500 dark:text-purple-400 tracking-wider flex items-center gap-1">
-                  <HelpCircle className="w-3 h-3" /> Meta Form Custom Questions
-                </div>
-                {[
-                  { label: 'Kind of Shoot', tag: '{{kind_of_shoot}}' },
-                  { label: 'What Kind of Shoot', tag: '{{what_kind_of_shoot}}' },
-                  { label: 'Which City', tag: '{{which_city}}' },
-                  { label: 'Approx Budget', tag: '{{approximate_budget}}' },
-                  { label: 'Event Venue', tag: '{{event_venue}}' },
-                  { label: 'Wedding Events', tag: '{{wedding_events}}' },
-                  { label: 'Instagram Handle', tag: '{{instagram_handle}}' },
-                  { label: 'Notes', tag: '{{notes}}' },
                 ].map(renderOption)}
 
                 <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
