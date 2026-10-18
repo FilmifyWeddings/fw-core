@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Sparkles,
@@ -51,9 +51,13 @@ interface EventGallery {
 // Module-level in-memory cache mapped by workspace ID to ensure zero cross-studio leaks
 const memCachedGalleriesMap: Record<string, EventGallery[]> = {};
 
-export default function GalleryManagerPage() {
+function GalleryManagerContent() {
   const { workspaceId, activeWorkspace, userId, loading: wsLoading } = useWorkspace();
   const effectiveWsId = workspaceId || activeWorkspace?.workspaceId || userId || '';
+
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeView = searchParams?.get('view') || 'galleries';
 
   const [galleries, setGalleries] = useState<EventGallery[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,8 +71,6 @@ export default function GalleryManagerPage() {
   // Standee State
   const [standeeGallery, setStandeeGallery] = useState<EventGallery | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
-
-  const router = useRouter();
 
   // Create Form State (3 Fields only)
   const [createForm, setCreateForm] = useState({
@@ -265,9 +267,9 @@ export default function GalleryManagerPage() {
 
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="px-5 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-zinc-900/10 cursor-pointer shrink-0"
+            className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-md shadow-amber-500/20 cursor-pointer shrink-0"
           >
-            <Plus className="w-4 h-4 text-amber-400" />
+            <Plus className="w-4 h-4 text-white" />
             <span>+ Create New Event Gallery</span>
           </button>
         </div>
@@ -313,165 +315,375 @@ export default function GalleryManagerPage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. GALLERIES LIST & GRID
+          AI GALLERY LIQUID VIEW TABS
       ───────────────────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-black text-zinc-900">Event Galleries</h2>
-          <button
-            onClick={fetchGalleries}
-            className="p-2 rounded-xl bg-white border border-zinc-200 text-zinc-600 hover:text-zinc-900 transition cursor-pointer"
-            title="Refresh"
-          >
-            <RefreshCw className={'w-4 h-4 ' + (loading ? 'animate-spin' : '')} />
-          </button>
-        </div>
-
-        {loading && galleries.length === 0 ? (
-          <StudioCoreLiquidLoader label="Loading Galleries & Media..." fullscreen={false} />
-        ) : galleries.length === 0 ? (
-          <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 space-y-4 shadow-2xs">
-            <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto shadow-sm">
-              <Camera className="w-8 h-8" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-base font-bold text-zinc-800">No Wedding Galleries Created Yet</h3>
-              <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                Create your first AI Wedding Gallery. Guests can scan table standees, take a quick selfie, and instantly find all their photos in under a second!
-              </p>
-            </div>
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 menu-scrollbar">
+        {[
+          { id: 'galleries', label: 'All Event Galleries', icon: Camera, count: totalGalleries },
+          { id: 'people', label: 'Face AI & People Hub', icon: Users, count: totalFaces },
+          { id: 'proofing', label: 'Proofing & Selections', icon: Sparkles },
+          { id: 'standees', label: 'Table Standees & QR', icon: QrCode },
+        ].map((tab) => {
+          const isSelected = activeView === tab.id || (tab.id === 'galleries' && (!activeView || activeView === 'all'));
+          return (
             <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-6 py-3 rounded-2xl bg-zinc-900 text-white text-xs font-bold inline-flex items-center gap-2 hover:bg-zinc-800 transition cursor-pointer shadow-md"
+              key={tab.id}
+              onClick={() => {
+                const url = tab.id === 'galleries' ? '/workspace/gallery' : `/workspace/gallery?view=${tab.id}`;
+                router.push(url);
+              }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                isSelected
+                  ? 'bg-white text-zinc-900 border border-[#E7E2D8] shadow-xs'
+                  : 'bg-[#F4F1EA]/80 text-zinc-500 hover:text-zinc-800 hover:bg-white/60 border border-transparent'
+              }`}
             >
-              <Plus className="w-4 h-4 text-amber-400" />
-              <span>+ Create First Gallery</span>
+              <tab.icon className={`w-3.5 h-3.5 ${isSelected ? 'text-amber-600' : 'text-zinc-400'}`} />
+              <span>{tab.label}</span>
+              {typeof tab.count === 'number' && (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  isSelected ? 'bg-amber-100 text-amber-800' : 'bg-zinc-200/70 text-zinc-600'
+                }`}>
+                  {tab.count}
+                </span>
+              )}
             </button>
+          );
+        })}
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          VIEW: TABLE STANDEES & QR STUDIO
+      ───────────────────────────────────────────────────────────── */}
+      {activeView === 'standees' ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200 shadow-2xs">
+                <QrCode className="w-4 h-4" />
+              </span>
+              <h2 className="text-base font-black text-zinc-900">Live Table Standees &amp; Guest QR Print Center</h2>
+            </div>
+            <p className="text-xs text-zinc-500 font-medium max-w-2xl leading-relaxed">
+              Place these stylish branded QR standee cards on guest tables at the wedding. Guests simply scan the QR with any smartphone camera, take a quick selfie, and instantly discover all photos they appear in!
+            </p>
           </div>
-        ) : (
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {galleries.map(gallery => {
+            {galleries.map((gallery) => {
               const publicLink = getPublicUrl(gallery.slug);
-
               return (
-                <div
-                  key={gallery.id}
-                  className="bg-white rounded-3xl border border-[#E7E2D8] shadow-2xs overflow-hidden flex flex-col justify-between hover:border-amber-400 transition-all group"
-                >
-                  {/* Gallery Cover Header */}
-                  <div className="relative h-44 bg-zinc-900 overflow-hidden">
-                    {gallery.cover_url ? (
-                      <img
-                        src={gallery.cover_url}
-                        alt={gallery.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950 text-zinc-500">
-                        <Camera className="w-10 h-10 mb-1 text-zinc-600" />
-                        <span className="text-[11px] font-bold tracking-wider uppercase text-zinc-500">No Cover Set</span>
-                      </div>
-                    )}
-
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-
-                    {/* Top Badges */}
-                    <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-                      {gallery.pin_code ? (
-                        <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-[10px] font-black border border-white/20 flex items-center gap-1">
-                          <Lock className="w-3 h-3 text-amber-400" />
-                          <span>PIN Protected</span>
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-500/80 backdrop-blur-md text-white text-[10px] font-black">
-                          🟢 Public Access
-                        </span>
-                      )}
-
-                      <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-[10px] font-bold border border-white/20 flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-zinc-400" />
-                        <span>{new Date(gallery.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                <div key={gallery.id} className="bg-white rounded-3xl border border-[#E7E2D8] p-5 space-y-4 shadow-2xs hover:border-amber-400 transition flex flex-col justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-black text-zinc-900 line-clamp-1">{gallery.title}</h3>
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                        QR Ready
                       </span>
                     </div>
-
-                    {/* Title in Cover */}
-                    <div className="absolute bottom-3 left-3 right-3">
-                      <h3 className="text-base font-black text-white line-clamp-1 drop-shadow-sm">
-                        {gallery.title}
-                      </h3>
-                      <p className="text-[11px] font-mono text-zinc-300 truncate">
-                        /g/{gallery.slug}
-                      </p>
-                    </div>
+                    <p className="text-[11px] font-mono text-zinc-400">/g/{gallery.slug}</p>
                   </div>
 
-                  {/* Body Content */}
-                  <div className="p-5 space-y-4 flex-1 flex flex-col justify-between">
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="p-2.5 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8]">
-                        <span className="text-[10px] font-bold text-zinc-400 block uppercase">Photos</span>
-                        <span className="text-sm font-black text-zinc-800">{gallery.photo_count || 0}</span>
-                      </div>
-                      <div className="p-2.5 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8]">
-                        <span className="text-[10px] font-bold text-zinc-400 block uppercase">AI Faces</span>
-                        <span className="text-sm font-black text-blue-600">{gallery.total_faces || 0}</span>
-                      </div>
-                      <div className="p-2.5 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8]">
-                        <span className="text-[10px] font-bold text-zinc-400 block uppercase">Storage</span>
-                        <span className="text-sm font-black text-purple-600">{gallery.total_size_mb || 0} <span className="text-[9px]">MB</span></span>
-                      </div>
-                    </div>
+                  <div className="p-4 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8] flex flex-col items-center justify-center space-y-2 text-center">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(publicLink)}`}
+                      alt={`QR for ${gallery.title}`}
+                      className="w-32 h-32 rounded-xl bg-white p-2 shadow-2xs border border-zinc-200"
+                    />
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Scan for Instant Face Find</p>
+                  </div>
 
-                    {/* Action Bar */}
-                    <div className="space-y-2 pt-2 border-t border-zinc-100">
-                      <div className="grid grid-cols-2 gap-2">
-                        <Link
-                          href={`/workspace/gallery/${gallery.id}`}
-                          className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-amber-500/20 cursor-pointer"
-                        >
-                          <ImageIcon className="w-3.5 h-3.5" />
-                          <span>Manage Collection</span>
-                        </Link>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => {
+                        setStandeeGallery(gallery);
+                        setIsStandeeModalOpen(true);
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-amber-500/20 cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-white" />
+                      <span>Print Table Standee Card</span>
+                    </button>
 
-                        <button
-                          onClick={() => {
-                            setStandeeGallery(gallery);
-                            setIsStandeeModalOpen(true);
-                          }}
-                          className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-                        >
-                          <QrCode className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Table Standee</span>
-                        </button>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(publicLink);
+                          alert('Guest Portal URL copied to clipboard!');
+                        }}
+                        className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-[#F4F1EA] text-zinc-700 border border-[#E7E2D8] font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>Copy Link</span>
+                      </button>
 
-                      <div className="flex items-center justify-between pt-1">
-                        <a
-                          href={`/g/${gallery.slug}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 hover:underline cursor-pointer"
-                        >
-                          <span>Open Guest Portal</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-
-                        <button
-                          onClick={() => handleDeleteGallery(gallery.id, gallery.title)}
-                          className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                          title="Delete Gallery"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <a
+                        href={publicLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-2 px-3 rounded-xl bg-white hover:bg-[#F4F1EA] text-blue-600 border border-[#E7E2D8] font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Open</span>
+                      </a>
                     </div>
                   </div>
                 </div>
               );
             })}
           </div>
-        )}
-      </div>
+        </div>
+      ) : activeView === 'people' ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200 shadow-2xs">
+                <Users className="w-4 h-4" />
+              </span>
+              <h2 className="text-base font-black text-zinc-900">Face AI &amp; People Discovery Hub</h2>
+            </div>
+            <p className="text-xs text-zinc-500 font-medium max-w-2xl leading-relaxed">
+              Automatic facial recognition powered by InsightFace 512-dimensional vector embeddings and sub-second DBSCAN clustering. Open any gallery below to review clustered faces and assign person names!
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {galleries.map((gallery) => (
+              <div key={gallery.id} className="bg-white rounded-3xl border border-[#E7E2D8] p-5 space-y-4 shadow-2xs hover:border-amber-400 transition flex flex-col justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-black text-zinc-900 line-clamp-1">{gallery.title}</h3>
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                      {gallery.total_faces || 0} Faces Indexed
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-mono text-zinc-400">/g/{gallery.slug}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="p-3 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8]">
+                    <span className="text-[10px] font-bold text-zinc-400 block uppercase">Total Photos</span>
+                    <span className="text-base font-black text-zinc-900">{gallery.photo_count || 0}</span>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8]">
+                    <span className="text-[10px] font-bold text-zinc-400 block uppercase">Vector Embeddings</span>
+                    <span className="text-base font-black text-blue-600">{gallery.total_faces || 0}</span>
+                  </div>
+                </div>
+
+                <Link
+                  href={`/workspace/gallery/${gallery.id}`}
+                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-amber-500/20 cursor-pointer"
+                >
+                  <Users className="w-3.5 h-3.5 text-white" />
+                  <span>Open Face AI Manager</span>
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : activeView === 'proofing' ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-200 shadow-2xs">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <h2 className="text-base font-black text-zinc-900">Client Proofing &amp; Album Selection</h2>
+            </div>
+            <p className="text-xs text-zinc-500 font-medium max-w-2xl leading-relaxed">
+              Clients can heart favorite photos, submit selection sets for photo album printing, and add revision comments directly in their branded portal.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {galleries.map((gallery) => (
+              <div key={gallery.id} className="bg-white rounded-3xl border border-[#E7E2D8] p-5 space-y-4 shadow-2xs hover:border-amber-400 transition flex flex-col justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-black text-zinc-900 line-clamp-1">{gallery.title}</h3>
+                    <span className="px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold">
+                      Proofing Active
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-mono text-zinc-400">/g/{gallery.slug}</p>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8] text-center space-y-1">
+                  <span className="text-[10px] font-bold text-zinc-400 block uppercase">Gallery Status</span>
+                  <p className="text-xs font-bold text-zinc-700">{gallery.photo_count || 0} photos uploaded &amp; live</p>
+                </div>
+
+                <Link
+                  href={`/workspace/gallery/${gallery.id}`}
+                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-amber-500/20 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-white" />
+                  <span>Review Selections &amp; Favorites</span>
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-black text-zinc-900">Event Galleries</h2>
+            <button
+              onClick={fetchGalleries}
+              className="p-2 rounded-xl bg-white border border-zinc-200 text-zinc-600 hover:text-zinc-900 transition cursor-pointer"
+              title="Refresh"
+            >
+              <RefreshCw className={'w-4 h-4 ' + (loading ? 'animate-spin' : '')} />
+            </button>
+          </div>
+
+          {loading && galleries.length === 0 ? (
+            <StudioCoreLiquidLoader label="Loading Galleries & Media..." fullscreen={false} />
+          ) : galleries.length === 0 ? (
+            <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 space-y-4 shadow-2xs">
+              <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto shadow-sm">
+                <Camera className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-zinc-800">No Wedding Galleries Created Yet</h3>
+                <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                  Create your first AI Wedding Gallery. Guests can scan table standees, take a quick selfie, and instantly find all their photos in under a second!
+                </p>
+              </div>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 text-white text-xs font-bold inline-flex items-center gap-2 hover:from-amber-600 hover:to-amber-700 transition cursor-pointer shadow-md shadow-amber-500/20"
+              >
+                <Plus className="w-4 h-4 text-white" />
+                <span>+ Create First Gallery</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {galleries.map(gallery => {
+                const publicLink = getPublicUrl(gallery.slug);
+
+                return (
+                  <div
+                    key={gallery.id}
+                    className="bg-white rounded-3xl border border-[#E7E2D8] shadow-2xs overflow-hidden flex flex-col justify-between hover:border-amber-400 transition-all group"
+                  >
+                    {/* Gallery Cover Header */}
+                    <div className="relative h-44 bg-[#F5F2EB] border-b border-[#E7E2D8] overflow-hidden">
+                      {gallery.cover_url ? (
+                        <img
+                          src={gallery.cover_url}
+                          alt={gallery.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#FAF9F5] to-[#EFECE4] text-zinc-400">
+                          <Camera className="w-10 h-10 mb-1 text-amber-600/50" />
+                          <span className="text-[11px] font-bold tracking-wider uppercase text-zinc-400">No Cover Set</span>
+                        </div>
+                      )}
+
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                      {/* Top Badges */}
+                      <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
+                        {gallery.pin_code ? (
+                          <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-[10px] font-black border border-white/20 flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-amber-400" />
+                            <span>PIN Protected</span>
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-500/80 backdrop-blur-md text-white text-[10px] font-black">
+                            🟢 Public Access
+                          </span>
+                        )}
+
+                        <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-[10px] font-bold border border-white/20 flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-zinc-400" />
+                          <span>{new Date(gallery.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        </span>
+                      </div>
+
+                      {/* Title in Cover */}
+                      <div className="absolute bottom-3 left-3 right-3">
+                        <h3 className="text-base font-black text-white line-clamp-1 drop-shadow-sm">
+                          {gallery.title}
+                        </h3>
+                        <p className="text-[11px] font-mono text-zinc-300 truncate">
+                          /g/{gallery.slug}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Body Content */}
+                    <div className="p-5 space-y-4 flex-1 flex flex-col justify-between">
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="p-2.5 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8]">
+                          <span className="text-[10px] font-bold text-zinc-400 block uppercase">Photos</span>
+                          <span className="text-sm font-black text-zinc-800">{gallery.photo_count || 0}</span>
+                        </div>
+                        <div className="p-2.5 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8]">
+                          <span className="text-[10px] font-bold text-zinc-400 block uppercase">AI Faces</span>
+                          <span className="text-sm font-black text-blue-600">{gallery.total_faces || 0}</span>
+                        </div>
+                        <div className="p-2.5 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8]">
+                          <span className="text-[10px] font-bold text-zinc-400 block uppercase">Storage</span>
+                          <span className="text-sm font-black text-purple-600">{gallery.total_size_mb || 0} <span className="text-[9px]">MB</span></span>
+                        </div>
+                      </div>
+
+                      {/* Action Bar */}
+                      <div className="space-y-2 pt-2 border-t border-zinc-100">
+                        <div className="grid grid-cols-2 gap-2">
+                          <Link
+                            href={`/workspace/gallery/${gallery.id}`}
+                            className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-amber-500/20 cursor-pointer"
+                          >
+                            <ImageIcon className="w-3.5 h-3.5" />
+                            <span>Manage Collection</span>
+                          </Link>
+
+                          <button
+                            onClick={() => {
+                              setStandeeGallery(gallery);
+                              setIsStandeeModalOpen(true);
+                            }}
+                            className="py-2.5 px-3 rounded-xl bg-white hover:bg-[#F4F1EA] text-zinc-800 border border-[#E7E2D8] font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                          >
+                            <QrCode className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Table Standee</span>
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1">
+                          <a
+                            href={`/g/${gallery.slug}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 hover:underline cursor-pointer"
+                          >
+                            <span>Open Guest Portal</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+
+                          <button
+                            onClick={() => handleDeleteGallery(gallery.id, gallery.title)}
+                            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                            title="Delete Gallery"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           3. CREATE EVENT GALLERY MODAL
@@ -547,9 +759,9 @@ export default function GalleryManagerPage() {
               <button
                 type="submit"
                 disabled={creating}
-                className="flex-1 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-amber-500/20"
               >
-                {creating ? <RefreshCw className="w-4 h-4 animate-spin text-amber-400" /> : <Sparkles className="w-4 h-4 text-amber-400" />}
+                {creating ? <RefreshCw className="w-4 h-4 animate-spin text-white" /> : <Sparkles className="w-4 h-4 text-white" />}
                 <span>{creating ? 'Creating Album...' : 'Create Album & Open Studio'}</span>
               </button>
               <button
@@ -755,9 +967,9 @@ export default function GalleryManagerPage() {
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="flex-1 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-amber-500/20"
                 >
-                  <Printer className="w-4 h-4 text-amber-400" />
+                  <Printer className="w-4 h-4 text-white" />
                   <span>Print Standee Card</span>
                 </button>
 
@@ -780,5 +992,13 @@ export default function GalleryManagerPage() {
       )}
 
     </div>
+  );
+}
+
+export default function GalleryManagerPage() {
+  return (
+    <Suspense fallback={<StudioCoreLiquidLoader label="Loading Galleries & Media..." fullscreen={false} />}>
+      <GalleryManagerContent />
+    </Suspense>
   );
 }

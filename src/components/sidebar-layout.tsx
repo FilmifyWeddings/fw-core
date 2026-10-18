@@ -10,7 +10,7 @@ import {
   Headphones, LogOut, ChevronDown, ChevronRight, ChevronLeft, 
   Menu, X, Sparkles, UserCheck, Archive, UserX, CheckCircle2, 
   ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase, HardDrive, Camera,
-  Flame, PhoneCall, CheckSquare
+  Flame, PhoneCall, CheckSquare, QrCode
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
@@ -94,6 +94,60 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [userId, setUserId] = useState<string>('');
   const [profileData, setProfileData] = useState<any>(null);
+
+  // Liquid Glass Mode Switcher: Studio CRM vs AI Galleries
+  const [appMode, setAppMode] = useState<'crm' | 'gallery'>('crm');
+
+  // Automatically keep appMode synchronized with current route and localStorage
+  useEffect(() => {
+    if (pathname.startsWith('/workspace/gallery')) {
+      setAppMode('gallery');
+      try {
+        localStorage.setItem('sc_workspace_app_mode', 'gallery');
+      } catch (_) {}
+    } else if (
+      pathname === '/workspace' ||
+      pathname.startsWith('/leads') ||
+      pathname === '/team-manager' ||
+      pathname.startsWith('/quotations') ||
+      pathname.startsWith('/workspace/team') ||
+      pathname.startsWith('/workspace/clients') ||
+      pathname.startsWith('/workspace/post-production') ||
+      pathname.startsWith('/workspace/finance') ||
+      pathname.startsWith('/workspace/tasks') ||
+      pathname.startsWith('/workspace/attendance') ||
+      pathname.startsWith('/workspace/integrations')
+    ) {
+      setAppMode('crm');
+      try {
+        localStorage.setItem('sc_workspace_app_mode', 'crm');
+      } catch (_) {}
+    } else {
+      try {
+        const saved = localStorage.getItem('sc_workspace_app_mode');
+        if (saved === 'gallery' || saved === 'crm') {
+          setAppMode(saved);
+        }
+      } catch (_) {}
+    }
+  }, [pathname]);
+
+  const handleSwitchAppMode = useCallback((mode: 'crm' | 'gallery') => {
+    setAppMode(mode);
+    try {
+      localStorage.setItem('sc_workspace_app_mode', mode);
+    } catch (_) {}
+
+    if (mode === 'gallery') {
+      if (!pathname.startsWith('/workspace/gallery')) {
+        router.push(formatPathWithStudio('/workspace/gallery'));
+      }
+    } else {
+      if (pathname.startsWith('/workspace/gallery')) {
+        router.push(formatPathWithStudio('/workspace'));
+      }
+    }
+  }, [pathname, router, formatPathWithStudio]);
 
   // Load user profile & collapsed preference
   const fetchUserProfile = useCallback(async (force = false) => {
@@ -544,7 +598,59 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     },
   ];
 
-  const menuItems = baseMenuItems;
+  const galleryMenuItems = [
+    {
+      id: 'gallery-events',
+      name: 'Event Galleries',
+      path: '/workspace/gallery',
+      icon: Camera,
+      iconBg: 'bg-[#FEF3C7] text-[#D97706]',
+    },
+    {
+      id: 'gallery-people',
+      name: 'Face AI & People',
+      path: '/workspace/gallery?view=people',
+      icon: UserCheck,
+      iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
+    },
+    {
+      id: 'gallery-proofing',
+      name: 'Proofing & Selections',
+      path: '/workspace/gallery?view=proofing',
+      icon: Sparkles,
+      iconBg: 'bg-[#F3E8FF] text-[#7E22CE]',
+    },
+    {
+      id: 'gallery-standees',
+      name: 'Table Standees & QR',
+      path: '/workspace/gallery?view=standees',
+      icon: QrCode,
+      iconBg: 'bg-[#DCFCE7] text-[#15803D]',
+    },
+    {
+      id: 'gallery-storage',
+      name: 'Cloud Storage & B2',
+      path: '/workspace/storage',
+      icon: HardDrive,
+      iconBg: 'bg-[#F0FDF4] text-[#16A34A]',
+    },
+    {
+      id: 'gallery-settings',
+      name: 'Gallery Settings',
+      path: '/workspace/settings?tab=gallery',
+      icon: Settings,
+      iconBg: 'bg-[#F4F4F5] text-[#52525B]',
+    },
+    {
+      id: 'gallery-support',
+      name: 'Help & Support',
+      path: '/support',
+      icon: Headphones,
+      iconBg: 'bg-[#CCFBF1] text-[#0F766E]',
+    },
+  ];
+
+  const menuItems = appMode === 'gallery' ? galleryMenuItems : baseMenuItems;
 
   const isStandalonePage = 
     pathname === '/' ||
@@ -640,6 +746,64 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           <WorkspaceSwitcher isCollapsed={collapsed} />
         </div>
 
+        {/* Liquid Glass App Mode Switcher (Studio CRM <-> AI Galleries) */}
+        {!collapsed ? (
+          <div className="px-3 py-2 shrink-0">
+            <div className="relative p-1 rounded-2xl bg-[#F4F1EA]/85 backdrop-blur-md border border-[#E7E2D8] flex items-center shadow-inner">
+              <button
+                type="button"
+                onClick={() => handleSwitchAppMode('crm')}
+                className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all duration-300 cursor-pointer select-none ${
+                  appMode === 'crm'
+                    ? 'bg-white text-zinc-900 shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] border border-[#E7E2D8]'
+                    : 'text-zinc-500 hover:text-zinc-800 hover:bg-white/40'
+                }`}
+              >
+                <Briefcase className={`w-3.5 h-3.5 transition-colors ${appMode === 'crm' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                <span>Studio CRM</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSwitchAppMode('gallery')}
+                className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all duration-300 cursor-pointer select-none ${
+                  appMode === 'gallery'
+                    ? 'bg-white text-amber-950 shadow-[0_2px_8px_rgba(217,119,6,0.12),0_1px_2px_rgba(0,0,0,0.04)] border border-amber-300/80'
+                    : 'text-zinc-500 hover:text-zinc-800 hover:bg-white/40'
+                }`}
+              >
+                <Camera className={`w-3.5 h-3.5 transition-colors ${appMode === 'gallery' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                <span className="flex items-center gap-1">
+                  <span>AI Gallery</span>
+                  <Sparkles className="w-2.5 h-2.5 text-amber-500 animate-pulse" />
+                </span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-2 py-2 shrink-0 flex justify-center">
+            <button
+              type="button"
+              onClick={() => handleSwitchAppMode(appMode === 'crm' ? 'gallery' : 'crm')}
+              className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center transition-all duration-200 cursor-pointer border ${
+                appMode === 'gallery'
+                  ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-xs'
+                  : 'bg-zinc-50 border-[#E7E2D8] text-zinc-700 hover:bg-white'
+              }`}
+              title={`Switch to ${appMode === 'crm' ? 'AI Galleries' : 'Studio CRM'}`}
+            >
+              {appMode === 'gallery' ? (
+                <Camera className="w-4 h-4 text-amber-600" />
+              ) : (
+                <Briefcase className="w-4 h-4 text-zinc-700" />
+              )}
+              <span className="text-[8px] font-black tracking-tight mt-0.5">
+                {appMode === 'crm' ? 'CRM' : 'AI'}
+              </span>
+            </button>
+          </div>
+        )}
+
         {/* Navigation Items */}
         <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1 menu-scrollbar">
           {menuItems.map((item) => {
@@ -647,13 +811,33 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             const isDashboard = item.id === 'dashboard';
             const isLeads = item.id === 'leads';
             
-            const isActive = isDashboard
-              ? pathname === '/workspace'
-              : isLeads
-                ? pathname.startsWith('/leads')
-                : item.id === 'bookings'
-                  ? (pathname === '/team-manager' || pathname.startsWith('/team-manager') || pathname === '/assigned-shoots' || pathname.startsWith('/assigned-shoots'))
-                  : pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
+            let isActive = false;
+            if (appMode === 'gallery') {
+              if (item.id === 'gallery-events') {
+                isActive = (pathname === '/workspace/gallery' && (!stageParam || stageParam === 'all' || stageParam === 'galleries'))
+                  || (pathname.startsWith('/workspace/gallery/') && !stageParam);
+              } else if (item.id === 'gallery-people') {
+                isActive = pathname === '/workspace/gallery' && stageParam === 'people';
+              } else if (item.id === 'gallery-proofing') {
+                isActive = pathname === '/workspace/gallery' && stageParam === 'proofing';
+              } else if (item.id === 'gallery-standees') {
+                isActive = pathname === '/workspace/gallery' && stageParam === 'standees';
+              } else if (item.id === 'gallery-storage') {
+                isActive = pathname === '/workspace/storage';
+              } else if (item.id === 'gallery-settings') {
+                isActive = pathname === '/workspace/settings' && searchParams?.get('tab') === 'gallery';
+              } else {
+                isActive = pathname === item.path;
+              }
+            } else {
+              isActive = isDashboard
+                ? pathname === '/workspace'
+                : isLeads
+                  ? pathname.startsWith('/leads')
+                  : item.id === 'bookings'
+                    ? (pathname === '/team-manager' || pathname.startsWith('/team-manager') || pathname === '/assigned-shoots' || pathname.startsWith('/assigned-shoots'))
+                    : pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
+            }
 
             return (
               <div key={item.id} className="relative group">
@@ -878,12 +1062,73 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               <div className="px-3 pt-3 pb-1 shrink-0">
                 <WorkspaceSwitcher isCollapsed={false} />
               </div>
+
+              {/* Mobile Liquid Glass Mode Switcher */}
+              <div className="px-3 py-2 shrink-0">
+                <div className="relative p-1 rounded-2xl bg-[#F4F1EA]/85 backdrop-blur-md border border-[#E7E2D8] flex items-center shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSwitchAppMode('crm');
+                      setMobileDrawerOpen(false);
+                    }}
+                    className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all duration-300 cursor-pointer select-none ${
+                      appMode === 'crm'
+                        ? 'bg-white text-zinc-900 shadow-xs border border-[#E7E2D8]'
+                        : 'text-zinc-500 hover:text-zinc-800'
+                    }`}
+                  >
+                    <Briefcase className={`w-3.5 h-3.5 ${appMode === 'crm' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                    <span>Studio CRM</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSwitchAppMode('gallery');
+                      setMobileDrawerOpen(false);
+                    }}
+                    className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all duration-300 cursor-pointer select-none ${
+                      appMode === 'gallery'
+                        ? 'bg-white text-amber-950 shadow-xs border border-amber-300/80'
+                        : 'text-zinc-500 hover:text-zinc-800'
+                    }`}
+                  >
+                    <Camera className={`w-3.5 h-3.5 ${appMode === 'gallery' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                    <span className="flex items-center gap-1">
+                      <span>AI Gallery</span>
+                      <Sparkles className="w-2.5 h-2.5 text-amber-500 animate-pulse" />
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               <div className="flex-1 overflow-y-auto py-2 px-3 space-y-1 menu-scrollbar">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
-                  const isActive = item.id === 'bookings'
-                    ? (pathname === '/team-manager' || pathname.startsWith('/team-manager') || pathname === '/assigned-shoots' || pathname.startsWith('/assigned-shoots'))
-                    : pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
+                  let isActive = false;
+                  if (appMode === 'gallery') {
+                    if (item.id === 'gallery-events') {
+                      isActive = (pathname === '/workspace/gallery' && (!stageParam || stageParam === 'all' || stageParam === 'galleries'))
+                        || (pathname.startsWith('/workspace/gallery/') && !stageParam);
+                    } else if (item.id === 'gallery-people') {
+                      isActive = pathname === '/workspace/gallery' && stageParam === 'people';
+                    } else if (item.id === 'gallery-proofing') {
+                      isActive = pathname === '/workspace/gallery' && stageParam === 'proofing';
+                    } else if (item.id === 'gallery-standees') {
+                      isActive = pathname === '/workspace/gallery' && stageParam === 'standees';
+                    } else if (item.id === 'gallery-storage') {
+                      isActive = pathname === '/workspace/storage';
+                    } else if (item.id === 'gallery-settings') {
+                      isActive = pathname === '/workspace/settings' && searchParams?.get('tab') === 'gallery';
+                    } else {
+                      isActive = pathname === item.path;
+                    }
+                  } else {
+                    isActive = item.id === 'bookings'
+                      ? (pathname === '/team-manager' || pathname.startsWith('/team-manager') || pathname === '/assigned-shoots' || pathname.startsWith('/assigned-shoots'))
+                      : pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
+                  }
 
                   return (
                     <div key={item.id}>
