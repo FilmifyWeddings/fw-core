@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { forceWakeQueue } from '@/lib/baileys-serverless';
+import { forceWakeQueue, buildLeadVariables } from '@/lib/baileys-serverless';
 
 export async function POST(req: NextRequest) {
   try {
@@ -45,12 +45,8 @@ export async function POST(req: NextRequest) {
     const cleanPhone = (lead?.phone || '').replace(/[^0-9]/g, '');
     const cleanJid = `${cleanPhone}@s.whatsapp.net`;
     const v_variables = {
-      Name: lead?.name || 'Guest',
-      Name_1: lead?.name || 'Guest',
-      lead_name: lead?.name || 'Guest',
-      phone: lead?.phone || '',
-      email: lead?.email || '',
-      ...(lead?.raw_payload && typeof lead.raw_payload === 'object' ? lead.raw_payload : {})
+      ...(lead?.raw_payload && typeof lead.raw_payload === 'object' ? lead.raw_payload : {}),
+      ...buildLeadVariables(lead),
     };
 
     // 4. Retrieve existing queue items

@@ -121,97 +121,216 @@ export async function autoReconnectSessions(supabaseAdmin: SupabaseClient) {
 }
 
 // ─── Token Replacement Parser (Regex Parser) ──────────────────────────────────
+/**
+ * ⚡ Universal Template Dynamic Field Resolver
+ * Accurately extracts and derives every single dynamic variable available in Template Hub:
+ * - first_name / fname: strictly the first word of full name (e.g. "Riya")
+ * - last_name / lname: strictly the remaining words (e.g. "Sharma")
+ * - full_name / lead_name: the complete name (e.g. "Riya Sharma")
+ * - phone / phone_short: 10-digit number without country code (e.g. "9876543210")
+ * - phone_number: full formatted phone number
+ * - city: city name (or first part of location)
+ * - location: full location / venue
+ * - current_date: DD/MM/YYYY in IST
+ * - time: hh:mm AM/PM in IST
+ * - created_time: DD MMM YYYY, hh:mm am/pm in IST
+ * - timestamp: ISO string
+ * - shoot_type, budget, venue, groom_name, bride_name, etc.
+ */
+export function resolveTemplateVariable(rawKey: string, lead: any): string {
+  if (!lead || typeof lead !== 'object') return '';
+  const key = rawKey.trim();
+  const normalizedKey = key.toLowerCase();
+
+  const getRawVal = (field: string): string => {
+    if (lead[field] !== undefined && lead[field] !== null && String(lead[field]).trim() !== '') {
+      return String(lead[field]).trim();
+    }
+    const leadKeys = Object.keys(lead);
+    const directMatch = leadKeys.find(k => k.toLowerCase() === field.toLowerCase());
+    if (directMatch && lead[directMatch] !== undefined && lead[directMatch] !== null && String(lead[directMatch]).trim() !== '') {
+      return String(lead[directMatch]).trim();
+    }
+    if (lead.raw_payload && typeof lead.raw_payload === 'object') {
+      const rawKeys = Object.keys(lead.raw_payload);
+      const found = rawKeys.find(k => k.toLowerCase() === field.toLowerCase());
+      if (found && lead.raw_payload[found] != null && String(lead.raw_payload[found]).trim() !== '') {
+        return String(lead.raw_payload[found]).trim();
+      }
+    }
+    if (Array.isArray(lead.field_data)) {
+      for (const item of lead.field_data) {
+        const itemKey = (item.name || '').toLowerCase();
+        if (itemKey === field.toLowerCase()) {
+          const val = Array.isArray(item.values) ? item.values[0] : (item.value || item.values);
+          if (val) return String(val).trim();
+        }
+      }
+    }
+    return '';
+  };
+
+  // 1. System Dates & Times (Indian Standard Time Asia/Kolkata)
+  if (normalizedKey === 'current_date' || normalizedKey === 'date') {
+    return new Date().toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit', month: '2-digit', year: 'numeric'
+    });
+  }
+  if (normalizedKey === 'time' || normalizedKey === 'current_time') {
+    return new Date().toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit', minute: '2-digit', hour12: true
+    });
+  }
+  if (normalizedKey === 'created_time') {
+    const rawTime = getRawVal('created_time') || getRawVal('created_at') || getRawVal('timestamp');
+    try {
+      const d = rawTime ? new Date(rawTime) : new Date();
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', hour12: true
+        });
+      }
+    } catch {}
+    return new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true
+    });
+  }
+  if (normalizedKey === 'timestamp') {
+    const rawTs = getRawVal('timestamp') || getRawVal('created_at');
+    if (rawTs) return rawTs;
+    return new Date().toISOString();
+  }
+
+  // 2. Name derivations
+  // Full Name resolution
+  const fullName = getRawVal('full_name') || getRawVal('name') || getRawVal('lead_name') || getRawVal('client_name') || getRawVal('Name') || getRawVal('Name_1') || '';
+  
+  if (normalizedKey === 'first_name' || normalizedKey === 'fname') {
+    const explicitFirst = getRawVal('first_name') || getRawVal('fname');
+    // If explicit first name exists and has NO whitespace, return it
+    if (explicitFirst && !explicitFirst.includes(' ')) {
+      return explicitFirst;
+    }
+    // Otherwise derive strictly from first word of fullName
+    if (fullName) {
+      const parts = fullName.trim().split(/\s+/);
+      if (parts[0]) return parts[0];
+    }
+    return explicitFirst || 'there';
+  }
+
+  if (normalizedKey === 'last_name' || normalizedKey === 'lname') {
+    const explicitLast = getRawVal('last_name') || getRawVal('lname');
+    if (explicitLast) return explicitLast;
+    if (fullName) {
+      const parts = fullName.trim().split(/\s+/);
+      if (parts.length > 1) {
+        return parts.slice(1).join(' ');
+      }
+    }
+    return '';
+  }
+
+  if (normalizedKey === 'full_name' || normalizedKey === 'name' || normalizedKey === 'lead_name' || normalizedKey === 'client_name') {
+    return fullName || 'Guest';
+  }
+
+  // 3. Phone derivations
+  const rawPhone = getRawVal('phone_number') || getRawVal('phone') || getRawVal('mobile') || getRawVal('contact') || getRawVal('whatsapp_number') || '';
+  const digitsOnly = rawPhone.replace(/[^0-9]/g, '');
+
+  if (normalizedKey === 'phone' || normalizedKey === 'phone_short') {
+    // Return 10-digit mobile number without country code
+    if (digitsOnly.length >= 10) {
+      return digitsOnly.slice(-10);
+    }
+    return digitsOnly || rawPhone;
+  }
+
+  if (normalizedKey === 'phone_number' || normalizedKey === 'whatsapp_number' || normalizedKey === 'mobile' || normalizedKey === 'contact') {
+    // Return full formatted phone number
+    if (rawPhone.startsWith('+')) return rawPhone;
+    if (digitsOnly.length === 10) return `+91 ${digitsOnly}`;
+    if (digitsOnly.length > 10) return `+${digitsOnly}`;
+    return rawPhone;
+  }
+
+  // 4. City & Location
+  if (normalizedKey === 'city' || normalizedKey === 'which_city') {
+    const directCity = getRawVal('city') || getRawVal('which_city');
+    if (directCity) return directCity;
+    const loc = getRawVal('location') || getRawVal('event_location') || getRawVal('venue') || '';
+    if (loc) {
+      return loc.split(',')[0].trim();
+    }
+    return '';
+  }
+
+  if (normalizedKey === 'location' || normalizedKey === 'full_location') {
+    return getRawVal('location') || getRawVal('event_location') || getRawVal('shoot_location') || getRawVal('city') || getRawVal('venue') || getRawVal('address') || '';
+  }
+
+  if (normalizedKey === 'address') {
+    return getRawVal('address') || getRawVal('location') || getRawVal('city') || '';
+  }
+
+  // 5. Wedding / Event specs
+  if (normalizedKey === 'event_date' || normalizedKey === 'wedding_date' || normalizedKey === 'shoot_date' || normalizedKey === 'date_of_event') {
+    return getRawVal('event_date') || getRawVal('wedding_date') || getRawVal('shoot_date') || getRawVal('date_of_event') || '';
+  }
+
+  if (normalizedKey === 'groom_name') return getRawVal('groom_name');
+  if (normalizedKey === 'bride_name') return getRawVal('bride_name');
+
+  if (normalizedKey === 'shoot_type' || normalizedKey === 'kind_of_shoot' || normalizedKey === 'what_kind_of_shoot' || normalizedKey === 'services' || normalizedKey === 'photography_services') {
+    return getRawVal('shoot_type') || getRawVal('kind_of_shoot') || getRawVal('what_kind_of_shoot') || getRawVal('photography_services') || getRawVal('service') || '';
+  }
+
+  if (normalizedKey === 'venue' || normalizedKey === 'event_venue') {
+    return getRawVal('venue') || getRawVal('event_venue') || getRawVal('location') || '';
+  }
+
+  if (normalizedKey === 'budget' || normalizedKey === 'max_budget' || normalizedKey === 'approximate_budget' || normalizedKey === 'price' || normalizedKey === 'expected_budget') {
+    return getRawVal('budget') || getRawVal('max_budget') || getRawVal('approximate_budget') || getRawVal('expected_budget') || getRawVal('price') || '';
+  }
+
+  if (normalizedKey === 'expected_guests') return getRawVal('expected_guests');
+  if (normalizedKey === 'call_time') return getRawVal('call_time');
+  if (normalizedKey === 'wedding_events') return getRawVal('wedding_events');
+  if (normalizedKey === 'instagram_handle') return getRawVal('instagram_handle');
+  if (normalizedKey === 'notes') return getRawVal('notes');
+
+  // 6. Meta / Campaign Info
+  if (normalizedKey === 'form_name') return getRawVal('form_name');
+  if (normalizedKey === 'campaign_name') return getRawVal('campaign_name');
+  if (normalizedKey === 'ad_name') return getRawVal('ad_name');
+  if (normalizedKey === 'adset_name') return getRawVal('adset_name');
+  if (normalizedKey === 'platform') return getRawVal('platform') || getRawVal('source') || 'Instagram / Facebook';
+  if (normalizedKey === 'facebook_lead_id') return getRawVal('facebook_lead_id') || getRawVal('leadgen_id') || '';
+
+  // 7. Lead Info
+  if (normalizedKey === 'lead_owner') return getRawVal('lead_owner') || getRawVal('owner_name') || '';
+  if (normalizedKey === 'status' || normalizedKey === 'lead_status') return getRawVal('status') || getRawVal('lead_status') || '';
+  if (normalizedKey === 'score' || normalizedKey === 'lead_score') return getRawVal('score') || getRawVal('lead_score') || '';
+  if (normalizedKey === 'email' || normalizedKey === 'email_address' || normalizedKey === 'mail') return getRawVal('email') || getRawVal('email_address') || '';
+
+  // 8. General fallback for any custom key in lead or raw_payload
+  return getRawVal(key);
+}
+
 export function parseShortcodes(text: string, lead: any): string {
   if (!text) return '';
   if (!lead) return text;
 
   const replaceFn = (match: string, rawKey: string) => {
-    const key = rawKey.trim();
-    const normalizedKey = key.toLowerCase();
-
-    // 1. Time / Date
-    if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
-      if (lead.created_time) return String(lead.created_time);
-      if (lead.timestamp) {
-        try {
-          return new Date(lead.timestamp).toLocaleString('en-IN', {
-            timeZone: 'Asia/Kolkata',
-            day: '2-digit', month: 'short', year: 'numeric',
-            hour: '2-digit', minute: '2-digit'
-          });
-        } catch {}
-      }
-      return new Date().toLocaleString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit'
-      });
-    }
-    if (normalizedKey === 'current_date' || normalizedKey === 'date') {
-      return lead.current_date || new Date().toLocaleDateString('en-IN', {
-        day: '2-digit', month: '2-digit', year: 'numeric'
-      });
-    }
-
-    // 2. Direct property matches (case-insensitive)
-    const leadKeys = Object.keys(lead);
-    const directMatch = leadKeys.find(k => k.toLowerCase() === normalizedKey);
-    if (directMatch && lead[directMatch] !== undefined && lead[directMatch] !== null && String(lead[directMatch]).trim() !== '') {
-      return String(lead[directMatch]);
-    }
-
-    // 3. Smart Semantic Aliases
-    const aliasMap: Record<string, string[]> = {
-      full_name: ['full_name', 'name', 'lead_name', 'client_name', 'Name', 'Name_1'],
-      first_name: ['first_name', 'fname'],
-      last_name: ['last_name', 'lname'],
-      phone: ['phone', 'phone_number', 'mobile', 'contact', 'whatsapp_number'],
-      email: ['email', 'email_address', 'mail'],
-      shoot_type: [
-        'shoot_type', 'kind_of_shoot', 'shoot', 'service', 'services', 'photography_services',
-        'what_photography_services_are_you_looking_for?', 'what_photography_services_are_you_looking_for'
-      ],
-      location: ['location', 'city', 'venue', 'destination', 'event_location', 'shoot_location', 'address'],
-      budget: [
-        'budget', 'max_budget', 'price', 'expected_budget',
-        'what_is_your_budget_for_photography_services?', 'what_is_your_budget_for_photography_services'
-      ],
-      source: ['source', 'lead_source', 'campaign_name', 'form_name', 'page_name', 'platform', 'ad_name'],
-      wedding_date: ['wedding_date', 'event_date', 'shoot_date', 'date_of_event'],
-    };
-
-    const aliases = aliasMap[normalizedKey] || [];
-    for (const alias of aliases) {
-      const foundKey = leadKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-      if (foundKey && lead[foundKey] !== undefined && lead[foundKey] !== null && String(lead[foundKey]).trim() !== '') {
-        return String(lead[foundKey]);
-      }
-    }
-
-    // 4. Nested field_data array check (Facebook / Meta Lead Ad structure)
-    if (Array.isArray(lead.field_data)) {
-      for (const item of lead.field_data) {
-        const itemKey = (item.name || '').toLowerCase();
-        if (itemKey === normalizedKey || aliases.some(a => a.toLowerCase() === itemKey)) {
-          const val = Array.isArray(item.values) ? item.values[0] : item.values;
-          if (val) return String(val);
-        }
-      }
-    }
-
-    // 5. Nested raw_payload check
-    if (lead.raw_payload && typeof lead.raw_payload === 'object') {
-      const rawKeys = Object.keys(lead.raw_payload);
-      for (const alias of [normalizedKey, ...aliases]) {
-        const found = rawKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-        if (found && lead.raw_payload[found] != null && String(lead.raw_payload[found]).trim() !== '') {
-          return String(lead.raw_payload[found]);
-        }
-      }
-    }
-
-    // Fallback: if not found, return empty string for clean replacement
-    return '';
+    const resolved = resolveTemplateVariable(rawKey, lead);
+    return resolved !== '' ? resolved : '';
   };
 
   // Replace double braces first, then single braces
@@ -220,6 +339,67 @@ export function parseShortcodes(text: string, lead: any): string {
   parsed = parsed.replace(/\{([^{}]+)\}/g, replaceFn);
 
   return parsed;
+}
+
+/**
+ * ⚡ Compiles complete set of template variables from a lead record.
+ * Used across bulk enroll, sequence triggers, retries, and resume routes.
+ */
+export function buildLeadVariables(lead: any): Record<string, string> {
+  if (!lead) return {};
+  const fullName = resolveTemplateVariable('full_name', lead);
+  const firstName = resolveTemplateVariable('first_name', lead);
+  const lastName = resolveTemplateVariable('last_name', lead);
+  const phone = resolveTemplateVariable('phone', lead);
+  const phoneNumber = resolveTemplateVariable('phone_number', lead);
+  const email = resolveTemplateVariable('email', lead);
+  const city = resolveTemplateVariable('city', lead);
+  const location = resolveTemplateVariable('location', lead);
+  const currentDate = resolveTemplateVariable('current_date', lead);
+  const currentTime = resolveTemplateVariable('time', lead);
+  const createdTime = resolveTemplateVariable('created_time', lead);
+  const timestamp = resolveTemplateVariable('timestamp', lead);
+  const shootType = resolveTemplateVariable('shoot_type', lead);
+  const budget = resolveTemplateVariable('budget', lead);
+  const venue = resolveTemplateVariable('venue', lead);
+  const eventDate = resolveTemplateVariable('event_date', lead);
+
+  return {
+    Name: fullName,
+    Name_1: fullName,
+    lead_name: fullName,
+    full_name: fullName,
+    first_name: firstName,
+    fname: firstName,
+    last_name: lastName,
+    lname: lastName,
+    phone: phone,
+    phone_short: phone,
+    phone_number: phoneNumber,
+    whatsapp_number: phoneNumber,
+    email: email,
+    city: city,
+    which_city: city,
+    location: location,
+    full_location: location,
+    current_date: currentDate,
+    date: currentDate,
+    time: currentTime,
+    current_time: currentTime,
+    created_time: createdTime,
+    timestamp: timestamp,
+    shoot_type: shootType,
+    kind_of_shoot: shootType,
+    what_kind_of_shoot: shootType,
+    budget: budget,
+    max_budget: budget,
+    approximate_budget: budget,
+    venue: venue,
+    event_venue: venue,
+    event_date: eventDate,
+    wedding_date: eventDate,
+    ...(lead.raw_payload && typeof lead.raw_payload === 'object' ? lead.raw_payload : {})
+  };
 }
 
 // ─── CORE: Send Message via Standalone Worker Bridge ──────────────────────────

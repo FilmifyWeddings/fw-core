@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 import { config } from 'dotenv';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, Browsers, } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -23,7 +23,7 @@ import * as path from 'path';
 import * as http from 'http';
 import { fileURLToPath } from 'url';
 import { useSupabaseAuthState } from './supabase-auth-state.js';
-import { purgeSessionDir, getSessionDir, hasDiskSession } from './src/auth-adapter.js';
+import { purgeSessionDir, getSessionDir, hasDiskSession, getSessionsBasePath } from './src/auth-adapter.js';
 // Polyfill WebSocket globally for Supabase Realtime in Node.js < 22
 globalThis.WebSocket = ws;
 const __filename = fileURLToPath(import.meta.url);
@@ -321,14 +321,253 @@ function detectMimeTypeFromUrl(url) {
         return 'application/vnd.ms-excel';
     return 'image/jpeg';
 }
+function cleanMimeType(mime, fallback = 'image/jpeg') {
+    if (!mime || typeof mime !== 'string')
+        return fallback;
+    const clean = mime.toLowerCase().trim();
+    if (clean.includes('image/png') || clean.endsWith('.png'))
+        return 'image/png';
+    if (clean.includes('image/webp') || clean.endsWith('.webp'))
+        return 'image/webp';
+    if (clean.includes('image/gif') || clean.endsWith('.gif'))
+        return 'image/gif';
+    if (clean.includes('image/jpeg') || clean.includes('image/jpg') || clean.endsWith('.jpg') || clean.endsWith('.jpeg'))
+        return 'image/jpeg';
+    if (clean.includes('video/mp4') || clean.endsWith('.mp4'))
+        return 'video/mp4';
+    if (clean.includes('video/webm'))
+        return 'video/webm';
+    if (clean.includes('video/quicktime') || clean.endsWith('.mov'))
+        return 'video/quicktime';
+    if (clean.includes('audio/mpeg') || clean.endsWith('.mp3'))
+        return 'audio/mpeg';
+    if (clean.includes('audio/ogg') || clean.endsWith('.ogg'))
+        return 'audio/ogg';
+    if (clean.includes('application/pdf') || clean.endsWith('.pdf'))
+        return 'application/pdf';
+    if (clean.includes('or')) {
+        // If user saved placeholder text e.g. "image/jpeg or video/mp4"
+        return fallback;
+    }
+    return clean.split(';')[0].trim() || fallback;
+}
 function detectMediaCategory(mimeType) {
-    if (mimeType.startsWith('image/'))
+    const clean = cleanMimeType(mimeType);
+    if (clean.startsWith('image/'))
         return 'image';
-    if (mimeType.startsWith('video/'))
+    if (clean.startsWith('video/'))
         return 'video';
-    if (mimeType.startsWith('audio/'))
+    if (clean.startsWith('audio/'))
         return 'audio';
     return 'document';
+}
+/**
+ * ⚡ Universal Template Dynamic Field Resolver for Baileys Worker
+ * Accurately extracts and derives every single dynamic variable:
+ * - first_name / fname: strictly the first word of full name (e.g. "Riya")
+ * - last_name / lname: strictly the remaining words (e.g. "Sharma")
+ * - full_name / lead_name: the complete name (e.g. "Riya Sharma")
+ * - phone / phone_short: 10-digit number without country code (e.g. "9876543210")
+ * - phone_number: full formatted phone number
+ * - city: city name (or first part of location)
+ * - location: full location / venue
+ * - current_date: DD/MM/YYYY in IST
+ * - time: hh:mm AM/PM in IST
+ * - created_time: DD MMM YYYY, hh:mm am/pm in IST
+ * - timestamp: ISO string
+ */
+function resolveTemplateVariable(rawKey, variables) {
+    if (!variables || typeof variables !== 'object')
+        return '';
+    const key = rawKey.trim();
+    const normalizedKey = key.toLowerCase();
+    const getRawVal = (field) => {
+        if (variables[field] !== undefined && variables[field] !== null && String(variables[field]).trim() !== '') {
+            return String(variables[field]).trim();
+        }
+        const varKeys = Object.keys(variables);
+        const directMatch = varKeys.find(k => k.toLowerCase() === field.toLowerCase());
+        if (directMatch && variables[directMatch] !== undefined && variables[directMatch] !== null && String(variables[directMatch]).trim() !== '') {
+            return String(variables[directMatch]).trim();
+        }
+        if (variables.raw_payload && typeof variables.raw_payload === 'object') {
+            const rawKeys = Object.keys(variables.raw_payload);
+            const found = rawKeys.find(k => k.toLowerCase() === field.toLowerCase());
+            if (found && variables.raw_payload[found] != null && String(variables.raw_payload[found]).trim() !== '') {
+                return String(variables.raw_payload[found]).trim();
+            }
+        }
+        if (variables.lead_payload && typeof variables.lead_payload === 'object') {
+            const rawKeys = Object.keys(variables.lead_payload);
+            const found = rawKeys.find(k => k.toLowerCase() === field.toLowerCase());
+            if (found && variables.lead_payload[found] != null && String(variables.lead_payload[found]).trim() !== '') {
+                return String(variables.lead_payload[found]).trim();
+            }
+        }
+        if (Array.isArray(variables.field_data)) {
+            for (const item of variables.field_data) {
+                const itemKey = (item.name || '').toLowerCase();
+                if (itemKey === field.toLowerCase()) {
+                    const val = Array.isArray(item.values) ? item.values[0] : (item.value || item.values);
+                    if (val)
+                        return String(val).trim();
+                }
+            }
+        }
+        return '';
+    };
+    // 1. System Dates & Times (Indian Standard Time Asia/Kolkata)
+    if (normalizedKey === 'current_date' || normalizedKey === 'date') {
+        return new Date().toLocaleDateString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit', month: '2-digit', year: 'numeric'
+        });
+    }
+    if (normalizedKey === 'time' || normalizedKey === 'current_time') {
+        return new Date().toLocaleTimeString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            hour: '2-digit', minute: '2-digit', hour12: true
+        });
+    }
+    if (normalizedKey === 'created_time') {
+        const rawTime = getRawVal('created_time') || getRawVal('created_at') || getRawVal('timestamp');
+        try {
+            const d = rawTime ? new Date(rawTime) : new Date();
+            if (!isNaN(d.getTime())) {
+                return d.toLocaleString('en-IN', {
+                    timeZone: 'Asia/Kolkata',
+                    day: '2-digit', month: 'short', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', hour12: true
+                });
+            }
+        }
+        catch { }
+        return new Date().toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: true
+        });
+    }
+    if (normalizedKey === 'timestamp') {
+        const rawTs = getRawVal('timestamp') || getRawVal('created_at');
+        if (rawTs)
+            return rawTs;
+        return new Date().toISOString();
+    }
+    // 2. Name derivations
+    const fullName = getRawVal('full_name') || getRawVal('name') || getRawVal('lead_name') || getRawVal('client_name') || getRawVal('leadName') || getRawVal('Name') || getRawVal('Name_1') || '';
+    if (normalizedKey === 'first_name' || normalizedKey === 'fname') {
+        const explicitFirst = getRawVal('first_name') || getRawVal('fname');
+        if (explicitFirst && !explicitFirst.includes(' ')) {
+            return explicitFirst;
+        }
+        if (fullName) {
+            const parts = fullName.trim().split(/\s+/);
+            if (parts[0])
+                return parts[0];
+        }
+        return explicitFirst || 'there';
+    }
+    if (normalizedKey === 'last_name' || normalizedKey === 'lname') {
+        const explicitLast = getRawVal('last_name') || getRawVal('lname');
+        if (explicitLast)
+            return explicitLast;
+        if (fullName) {
+            const parts = fullName.trim().split(/\s+/);
+            if (parts.length > 1) {
+                return parts.slice(1).join(' ');
+            }
+        }
+        return '';
+    }
+    if (normalizedKey === 'full_name' || normalizedKey === 'name' || normalizedKey === 'lead_name' || normalizedKey === 'client_name') {
+        return fullName || 'Guest';
+    }
+    // 3. Phone derivations
+    const rawPhone = getRawVal('phone_number') || getRawVal('phone') || getRawVal('mobile') || getRawVal('contact') || getRawVal('whatsapp_number') || '';
+    const digitsOnly = rawPhone.replace(/[^0-9]/g, '');
+    if (normalizedKey === 'phone' || normalizedKey === 'phone_short') {
+        if (digitsOnly.length >= 10) {
+            return digitsOnly.slice(-10);
+        }
+        return digitsOnly || rawPhone;
+    }
+    if (normalizedKey === 'phone_number' || normalizedKey === 'whatsapp_number' || normalizedKey === 'mobile' || normalizedKey === 'contact') {
+        if (rawPhone.startsWith('+'))
+            return rawPhone;
+        if (digitsOnly.length === 10)
+            return `+91 ${digitsOnly}`;
+        if (digitsOnly.length > 10)
+            return `+${digitsOnly}`;
+        return rawPhone;
+    }
+    // 4. City & Location
+    if (normalizedKey === 'city' || normalizedKey === 'which_city') {
+        const directCity = getRawVal('city') || getRawVal('which_city');
+        if (directCity)
+            return directCity;
+        const loc = getRawVal('location') || getRawVal('event_location') || getRawVal('venue') || '';
+        if (loc) {
+            return loc.split(',')[0].trim();
+        }
+        return '';
+    }
+    if (normalizedKey === 'location' || normalizedKey === 'full_location') {
+        return getRawVal('location') || getRawVal('event_location') || getRawVal('shoot_location') || getRawVal('city') || getRawVal('venue') || getRawVal('address') || '';
+    }
+    if (normalizedKey === 'address') {
+        return getRawVal('address') || getRawVal('location') || getRawVal('city') || '';
+    }
+    // 5. Wedding / Event specs
+    if (normalizedKey === 'event_date' || normalizedKey === 'wedding_date' || normalizedKey === 'shoot_date' || normalizedKey === 'date_of_event') {
+        return getRawVal('event_date') || getRawVal('wedding_date') || getRawVal('shoot_date') || getRawVal('date_of_event') || '';
+    }
+    if (normalizedKey === 'groom_name')
+        return getRawVal('groom_name');
+    if (normalizedKey === 'bride_name')
+        return getRawVal('bride_name');
+    if (normalizedKey === 'shoot_type' || normalizedKey === 'kind_of_shoot' || normalizedKey === 'what_kind_of_shoot' || normalizedKey === 'services' || normalizedKey === 'photography_services') {
+        return getRawVal('shoot_type') || getRawVal('kind_of_shoot') || getRawVal('what_kind_of_shoot') || getRawVal('photography_services') || getRawVal('service') || '';
+    }
+    if (normalizedKey === 'venue' || normalizedKey === 'event_venue') {
+        return getRawVal('venue') || getRawVal('event_venue') || getRawVal('location') || '';
+    }
+    if (normalizedKey === 'budget' || normalizedKey === 'max_budget' || normalizedKey === 'approximate_budget' || normalizedKey === 'price' || normalizedKey === 'expected_budget') {
+        return getRawVal('budget') || getRawVal('max_budget') || getRawVal('approximate_budget') || getRawVal('expected_budget') || getRawVal('price') || '';
+    }
+    if (normalizedKey === 'expected_guests')
+        return getRawVal('expected_guests');
+    if (normalizedKey === 'call_time')
+        return getRawVal('call_time');
+    if (normalizedKey === 'wedding_events')
+        return getRawVal('wedding_events');
+    if (normalizedKey === 'instagram_handle')
+        return getRawVal('instagram_handle');
+    if (normalizedKey === 'notes')
+        return getRawVal('notes');
+    // 6. Meta / Campaign Info
+    if (normalizedKey === 'form_name')
+        return getRawVal('form_name');
+    if (normalizedKey === 'campaign_name')
+        return getRawVal('campaign_name');
+    if (normalizedKey === 'ad_name')
+        return getRawVal('ad_name');
+    if (normalizedKey === 'adset_name')
+        return getRawVal('adset_name');
+    if (normalizedKey === 'platform')
+        return getRawVal('platform') || getRawVal('source') || 'Instagram / Facebook';
+    if (normalizedKey === 'facebook_lead_id')
+        return getRawVal('facebook_lead_id') || getRawVal('leadgen_id') || '';
+    // 7. Lead Info
+    if (normalizedKey === 'lead_owner')
+        return getRawVal('lead_owner') || getRawVal('owner_name') || '';
+    if (normalizedKey === 'status' || normalizedKey === 'lead_status')
+        return getRawVal('status') || getRawVal('lead_status') || '';
+    if (normalizedKey === 'score' || normalizedKey === 'lead_score')
+        return getRawVal('score') || getRawVal('lead_score') || '';
+    if (normalizedKey === 'email' || normalizedKey === 'email_address' || normalizedKey === 'mail')
+        return getRawVal('email') || getRawVal('email_address') || '';
+    return getRawVal(key);
 }
 async function downloadMediaAsBuffer(mediaSource, overrideMimeType, maxRetries = 2) {
     // If mediaSource is a B2 proxy path (/api/media/...) or B2 file key, resolve directly to Backblaze S3 pre-signed URL
@@ -452,7 +691,7 @@ async function sendMediaMessage(to, mediaUrl, caption, mimeType, wsId = WORKSPAC
     try {
         if (finalCategory === 'image') {
             let finalBuffer = buffer;
-            let finalMime = resolvedMime || 'image/jpeg';
+            let finalMime = cleanMimeType(resolvedMime || mimeType, 'image/jpeg');
             // WhatsApp phone apps require genuine JPEG/PNG for photo messages (WebP is rejected or displays blank)
             if (finalMime === 'image/webp' || resolvedUrl.toLowerCase().includes('.webp') || mimeType === 'image/webp') {
                 try {
@@ -465,10 +704,23 @@ async function sendMediaMessage(to, mediaUrl, caption, mimeType, wsId = WORKSPAC
                     logger.warn({ err: sharpErr?.message }, '⚠️ Sharp WebP to JPEG conversion failed, sending original buffer');
                 }
             }
+            // ⚡ Generate 96x96 JPEG thumbnail buffer to prevent blank/gray placeholder boxes on WhatsApp!
+            let jpegThumbnail;
+            try {
+                const sharp = (await import('sharp')).default;
+                jpegThumbnail = await sharp(finalBuffer)
+                    .resize(96, 96, { fit: 'inside' })
+                    .jpeg({ quality: 70 })
+                    .toBuffer();
+            }
+            catch (thumbErr) {
+                logger.warn({ err: thumbErr?.message }, '⚠️ Thumbnail generation soft fallback');
+            }
             result = await targetSock.sendMessage(to, {
                 image: finalBuffer,
                 caption: caption || undefined,
                 mimetype: finalMime,
+                jpegThumbnail,
             });
         }
         else if (finalCategory === 'video') {
@@ -679,87 +931,8 @@ async function sendTemplateMessage(to, templateId, variables, wsId = WORKSPACE_I
     let body = tpl.body_text;
     if (body) {
         const replaceFn = (match, rawKey) => {
-            const key = rawKey.trim();
-            const normalizedKey = key.toLowerCase();
-            // 1. Time / Date
-            if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
-                if (variables.created_time)
-                    return String(variables.created_time);
-                if (variables.timestamp) {
-                    try {
-                        return new Date(variables.timestamp).toLocaleString('en-IN', {
-                            timeZone: 'Asia/Kolkata',
-                            day: '2-digit', month: 'short', year: 'numeric',
-                            hour: '2-digit', minute: '2-digit'
-                        });
-                    }
-                    catch { }
-                }
-                return new Date().toLocaleString('en-IN', {
-                    timeZone: 'Asia/Kolkata',
-                    day: '2-digit', month: 'short', year: 'numeric',
-                    hour: '2-digit', minute: '2-digit'
-                });
-            }
-            if (normalizedKey === 'current_date' || normalizedKey === 'date') {
-                return variables.current_date || new Date().toLocaleDateString('en-IN', {
-                    day: '2-digit', month: '2-digit', year: 'numeric'
-                });
-            }
-            // 2. Direct property matches (case-insensitive)
-            const varKeys = Object.keys(variables);
-            const directMatch = varKeys.find(k => k.toLowerCase() === normalizedKey);
-            if (directMatch && variables[directMatch] !== undefined && variables[directMatch] !== null && String(variables[directMatch]).trim() !== '') {
-                return String(variables[directMatch]);
-            }
-            // 3. Smart Semantic Aliases
-            const aliasMap = {
-                full_name: ['full_name', 'name', 'lead_name', 'client_name', 'Name', 'Name_1'],
-                first_name: ['first_name', 'fname'],
-                last_name: ['last_name', 'lname'],
-                phone: ['phone', 'phone_number', 'mobile', 'contact', 'whatsapp_number'],
-                email: ['email', 'email_address', 'mail'],
-                shoot_type: [
-                    'shoot_type', 'kind_of_shoot', 'shoot', 'service', 'services', 'photography_services',
-                    'what_photography_services_are_you_looking_for?', 'what_photography_services_are_you_looking_for'
-                ],
-                location: ['location', 'city', 'venue', 'destination', 'event_location', 'shoot_location', 'address'],
-                budget: [
-                    'budget', 'max_budget', 'price', 'expected_budget',
-                    'what_is_your_budget_for_photography_services?', 'what_is_your_budget_for_photography_services'
-                ],
-                source: ['source', 'lead_source', 'campaign_name', 'form_name', 'page_name', 'platform', 'ad_name'],
-                wedding_date: ['wedding_date', 'event_date', 'shoot_date', 'date_of_event'],
-            };
-            const aliases = aliasMap[normalizedKey] || [];
-            for (const alias of aliases) {
-                const foundKey = varKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-                if (foundKey && variables[foundKey] !== undefined && variables[foundKey] !== null && String(variables[foundKey]).trim() !== '') {
-                    return String(variables[foundKey]);
-                }
-            }
-            // 4. Nested field_data array check (Facebook / Meta Lead Ad structure)
-            if (Array.isArray(variables.field_data)) {
-                for (const item of variables.field_data) {
-                    const itemKey = (item.name || '').toLowerCase();
-                    if (itemKey === normalizedKey || aliases.some(a => a.toLowerCase() === itemKey)) {
-                        const val = Array.isArray(item.values) ? item.values[0] : item.values;
-                        if (val)
-                            return String(val);
-                    }
-                }
-            }
-            // 5. Nested raw_payload check
-            if (variables.raw_payload && typeof variables.raw_payload === 'object') {
-                const rawKeys = Object.keys(variables.raw_payload);
-                for (const alias of [normalizedKey, ...aliases]) {
-                    const found = rawKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-                    if (found && variables.raw_payload[found] != null && String(variables.raw_payload[found]).trim() !== '') {
-                        return String(variables.raw_payload[found]);
-                    }
-                }
-            }
-            return match;
+            const resolved = resolveTemplateVariable(rawKey, variables);
+            return resolved !== '' ? resolved : '';
         };
         body = body.replace(/\{\{([^{}]+)\}\}/g, replaceFn).replace(/\{([^{}]+)\}/g, replaceFn);
     }
@@ -852,74 +1025,12 @@ async function sendGroupAlert(groupId, leadData, templateStr, wsId = WORKSPACE_I
         throw new Error('Template string is empty');
     }
     const replaceFn = (match, key) => {
-        const normalizedKey = key.trim().toLowerCase();
-        // 1. Time fields
-        if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
-            return new Date().toLocaleString('en-IN', {
-                timeZone: 'Asia/Kolkata',
-                day: '2-digit', month: 'short', year: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-            });
-        }
-        // 2. Client fields — check leadData properties (case-insensitive)
-        const leadKeys = Object.keys(leadData);
-        const matchedKey = leadKeys.find(k => k.toLowerCase() === normalizedKey);
-        if (matchedKey !== undefined && leadData[matchedKey] !== undefined && leadData[matchedKey] !== null && String(leadData[matchedKey]).trim() !== '') {
-            return String(leadData[matchedKey]);
-        }
-        // 3. Common alias mappings
-        const aliasMap = {
-            full_name: ['full_name', 'name', 'lead_name', 'client_name', 'Name', 'Name_1'],
-            first_name: ['first_name', 'fname'],
-            last_name: ['last_name', 'lname'],
-            phone: ['phone', 'phone_number', 'mobile', 'contact', 'whatsapp_number'],
-            email: ['email', 'email_address', 'mail'],
-            shoot_type: [
-                'shoot_type', 'kind_of_shoot', 'shoot', 'service', 'services', 'photography_services',
-                'what_photography_services_are_you_looking_for?', 'what_photography_services_are_you_looking_for'
-            ],
-            location: ['location', 'city', 'venue', 'destination', 'event_location', 'shoot_location', 'address'],
-            budget: [
-                'budget', 'max_budget', 'price', 'expected_budget',
-                'what_is_your_budget_for_photography_services?', 'what_is_your_budget_for_photography_services'
-            ],
-            source: ['source', 'lead_source', 'campaign_name', 'form_name', 'page_name', 'platform', 'ad_name'],
-            wedding_date: ['wedding_date', 'event_date', 'shoot_date', 'date_of_event'],
-            score: ['score', 'lead_score'],
-            status: ['status', 'lead_status'],
-        };
-        const aliases = aliasMap[normalizedKey] || [normalizedKey];
-        for (const alias of aliases) {
-            const found = leadKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-            if (found !== undefined && leadData[found] !== undefined && leadData[found] !== null && String(leadData[found]).trim() !== '') {
-                return String(leadData[found]);
-            }
-        }
-        // 4. Check nested field_data array
-        if (Array.isArray(leadData.field_data)) {
-            for (const item of leadData.field_data) {
-                const itemKey = (item.name || '').toLowerCase();
-                if (itemKey === normalizedKey || aliases.some(a => a.toLowerCase() === itemKey)) {
-                    const val = Array.isArray(item.values) ? item.values[0] : item.values;
-                    if (val)
-                        return String(val);
-                }
-            }
-        }
-        // 5. Check raw_payload nested object
-        if (leadData.raw_payload && typeof leadData.raw_payload === 'object') {
-            const rp = leadData.raw_payload;
-            const rpKeys = Object.keys(rp);
-            for (const alias of [normalizedKey, ...aliases]) {
-                const found = rpKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-                if (found !== undefined && rp[found] !== undefined && rp[found] !== null && String(rp[found]).trim() !== '') {
-                    return String(rp[found]);
-                }
-            }
-        }
-        return '';
+        const resolved = resolveTemplateVariable(key, leadData);
+        return resolved !== '' ? resolved : '';
     };
-    const formatted = templateStr.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
+    const formatted = templateStr
+        .replace(/\{\{([^{}]+)\}\}/g, replaceFn)
+        .replace(/\{([^{}]+)\}/g, replaceFn);
     const result = await targetSock.sendMessage(groupId, { text: formatted });
     const waMessageId = result?.key?.id ?? null;
     logger.info({ groupId, waMessageId, workspaceId: wsId }, '📤 Group lead alert sent');
@@ -1002,6 +1113,37 @@ async function executeAction(action) {
     }
     let waMessageId = null;
     try {
+        // ── Pre-flight onWhatsApp validation for individual numbers ─────────────
+        const targetTo = action.payload?.to || action.payload?.jid;
+        if (targetTo && typeof targetTo === 'string' && !targetTo.endsWith('@g.us')) {
+            const cleanDigits = targetTo.split('@')[0].replace(/[^0-9]/g, '');
+            if (cleanDigits) {
+                try {
+                    const waResults = await targetSock.onWhatsApp(cleanDigits);
+                    if (!waResults || waResults.length === 0 || !waResults[0]?.exists) {
+                        const notOnWaErr = 'Phone number is not registered on WhatsApp';
+                        logger.warn({ targetTo, cleanDigits }, `⚠️ ${notOnWaErr}`);
+                        if (checkLogId) {
+                            await supabase
+                                .from('whatsapp_workflow_logs')
+                                .update({
+                                status: 'failed',
+                                error_message: notOnWaErr,
+                                updated_at: new Date().toISOString()
+                            })
+                                .eq('id', checkLogId);
+                        }
+                        throw new Error(notOnWaErr);
+                    }
+                }
+                catch (checkErr) {
+                    if (checkErr.message === 'Phone number is not registered on WhatsApp') {
+                        throw checkErr;
+                    }
+                    logger.warn({ err: checkErr.message, targetTo }, 'onWhatsApp verification soft-error (will proceed with send)');
+                }
+            }
+        }
         // ── Dispatch: throws on failure so the processor marks it 'failed' ──────────
         switch (action.action_type) {
             case 'send_text': {
@@ -1049,10 +1191,17 @@ async function executeAction(action) {
             }
             case 'send_template': {
                 const payload = action.payload;
-                const to = payload.to;
+                const to = payload.to || payload.recipientJid || payload.phone || '';
                 const templateId = payload.templateId || payload.template_id;
                 const fallbackName = payload.template_name || payload.templateName;
-                const variables = payload.variables || payload.leadData || {};
+                const variables = payload.variables || payload.leadData || {
+                    leadId: payload.leadId,
+                    name: payload.leadName,
+                    leadName: payload.leadName,
+                    full_name: payload.leadName,
+                    phone: payload.phone,
+                    ...(payload.lead_payload && typeof payload.lead_payload === 'object' ? payload.lead_payload : {})
+                };
                 waMessageId = await sendTemplateMessage(to, templateId, variables, targetWsId, fallbackName);
                 break;
             }
@@ -1135,6 +1284,22 @@ async function executeAction(action) {
     }
     catch (err) {
         const errStr = String(err?.message || err);
+        // Sync workflow log failure if applicable
+        if (checkLogId) {
+            try {
+                await supabase
+                    .from('whatsapp_workflow_logs')
+                    .update({
+                    status: 'failed',
+                    error_message: errStr,
+                    updated_at: new Date().toISOString(),
+                })
+                    .eq('id', checkLogId);
+            }
+            catch (logErr) {
+                logger.warn({ logErr, checkLogId }, 'Failed to update workflow log error status');
+            }
+        }
         const isDisconnectError = errStr.includes('401') || errStr.includes('403') || errStr.includes('428') ||
             errStr.includes('515') || errStr.toLowerCase().includes('logged out') ||
             errStr.toLowerCase().includes('connection closed') || errStr.toLowerCase().includes('not connected');
@@ -1170,6 +1335,23 @@ async function executeAction(action) {
         }
         else {
             logger.info({ actionId: action.id, type: action.action_type, waMessageId }, '✅ Action executed and status=done written immediately');
+        }
+        // Sync workflow log to sent
+        if (checkLogId) {
+            try {
+                await supabase
+                    .from('whatsapp_workflow_logs')
+                    .update({
+                    status: 'sent',
+                    sent_at: new Date().toISOString(),
+                    error_message: null,
+                    updated_at: new Date().toISOString(),
+                })
+                    .eq('id', checkLogId);
+            }
+            catch (logErr) {
+                logger.warn({ logErr, checkLogId }, 'Failed to update workflow log sent status');
+            }
         }
     }
     catch (dbWriteErr) {
@@ -1256,15 +1438,23 @@ function startConnectingTimeout(wsId) {
     const timer = setTimeout(async () => {
         const { data: cur } = await supabase
             .from('baileys_sessions')
-            .select('conn_state, creds_json')
+            .select('conn_state, creds_json, phone_number')
             .eq('workspace_id', wsId)
             .maybeSingle();
-        if (hasDiskSession(wsId) || cur?.conn_state === 'open' || (cur?.creds_json && cur.creds_json !== 'null')) {
+        if (hasDiskSession(wsId) || cur?.conn_state === 'open' || (cur?.creds_json && cur.creds_json !== 'null') || cur?.phone_number) {
             logger.info({ workspaceId: wsId }, '⏰ Watchdog: session already open, disk credentials exist, or creds saved — skipping force-reset.');
             return;
         }
-        logger.warn({ workspaceId: wsId }, '⏰ Connection stuck in "connecting" for 120s — force-resetting socket for fresh QR...');
-        await initiateForceReset(wsId);
+        logger.warn({ workspaceId: wsId }, '⏰ QR pairing inactive for 120s — safely clearing unauthenticated in-memory socket (preserving disk credentials).');
+        const sess = activeSessions.get(wsId);
+        if (sess && !sess.sock?.user?.id) {
+            try {
+                sess.sock.ev.removeAllListeners();
+                sess.sock.end(undefined);
+            }
+            catch { }
+            activeSessions.delete(wsId);
+        }
     }, 120_000);
     const sess = activeSessions.get(wsId);
     if (sess)
@@ -1415,7 +1605,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                 defaultQueryTimeoutMs: 60_000,
                 retryRequestDelayMs: 2500,
                 markOnlineOnConnect: true,
-                browser: Browsers.ubuntu('Chrome'),
+                browser: ['Studio Core', 'Chrome', '1.0.0'],
                 syncFullHistory: false,
             });
             const currentSess = {
@@ -1940,13 +2130,13 @@ function startHealthServer() {
                     res.end(JSON.stringify({ success: true, qr: existingQr, qr_string: existingQr, message: `Active QR pairing in progress.` }));
                     return;
                 }
-                // 5. If forceFresh or no authenticated session exists, start fresh socket for QR pairing
-                if (forceFresh || !hasDiskSession(qsWorkspace)) {
-                    logger.info({ workspace_id: qsWorkspace }, '🚀 Starting clean Baileys socket for fresh QR pairing...');
+                // 5. If forceFresh explicitly requested, perform hard reset. Otherwise preserve credentials and start pairing socket.
+                if (forceFresh) {
+                    logger.info({ workspace_id: qsWorkspace }, '🚀 Starting clean Baileys socket for fresh QR pairing (hard reset requested)...');
                     await initiateForceReset(qsWorkspace);
                 }
                 else {
-                    logger.info({ workspace_id: qsWorkspace }, '🚀 Starting Baileys socket for QR pairing...');
+                    logger.info({ workspace_id: qsWorkspace }, '🚀 Starting Baileys socket for QR pairing (preserving credentials)...');
                     startBaileysSocket(false, qsWorkspace).catch(err => {
                         logger.error({ err, workspaceId: qsWorkspace }, 'Failed to start socket on /init-qr');
                     });
@@ -2017,6 +2207,30 @@ function startHealthServer() {
                 }
                 let waMessageId = null;
                 const jid = to;
+                // ── Pre-flight onWhatsApp validation for individual numbers ─────────────
+                if (typeof jid === 'string' && !jid.endsWith('@g.us')) {
+                    const cleanDigits = jid.split('@')[0].replace(/[^0-9]/g, '');
+                    if (cleanDigits) {
+                        try {
+                            const waResults = await targetSock.onWhatsApp(cleanDigits);
+                            if (!waResults || waResults.length === 0 || !waResults[0]?.exists) {
+                                const notOnWaErr = 'Phone number is not registered on WhatsApp';
+                                logger.warn({ jid, cleanDigits }, `⚠️ ${notOnWaErr}`);
+                                res.writeHead(400, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ success: false, error: notOnWaErr }));
+                                return;
+                            }
+                        }
+                        catch (checkErr) {
+                            if (checkErr.message === 'Phone number is not registered on WhatsApp') {
+                                res.writeHead(400, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ success: false, error: checkErr.message }));
+                                return;
+                            }
+                            logger.warn({ err: checkErr.message, jid }, 'onWhatsApp verification soft-error (will proceed with send)');
+                        }
+                    }
+                }
                 switch (type) {
                     case 'text':
                         if (!text)
@@ -2700,7 +2914,8 @@ async function main() {
     const { data: activeSessionsDb } = await supabase
         .from('baileys_sessions')
         .select('workspace_id, user_id, conn_state, phone_number')
-        .or('conn_state.eq.open,phone_number.neq.null');
+        .or('conn_state.eq.open,phone_number.not.is.null');
+    const restoredWorkspaces = new Set();
     if (activeSessionsDb && activeSessionsDb.length > 0) {
         logger.info({ count: activeSessionsDb.length }, '🔁 Checking workspace sessions to restore from disk...');
         for (const s of activeSessionsDb) {
@@ -2709,6 +2924,7 @@ async function main() {
                 continue;
             if (hasDiskSession(targetWs)) {
                 logger.info({ workspaceId: targetWs }, 'Restoring local workspace session from disk...');
+                restoredWorkspaces.add(targetWs);
                 startBaileysSocket(false, targetWs).catch(err => {
                     logger.error({ err, workspaceId: targetWs }, 'Failed to restore workspace session at startup');
                 });
@@ -2718,7 +2934,26 @@ async function main() {
             }
         }
     }
-    else if (WORKSPACE_ID && hasDiskSession(WORKSPACE_ID)) {
+    // Multi-Tenant Auto-Discovery: Scan sessions folder on disk for any authenticated credentials
+    try {
+        const basePath = getSessionsBasePath();
+        if (fs.existsSync(basePath)) {
+            const dirs = fs.readdirSync(basePath);
+            for (const d of dirs) {
+                if (!restoredWorkspaces.has(d) && hasDiskSession(d)) {
+                    logger.info({ workspaceId: d }, 'Restoring discovered disk session at startup...');
+                    restoredWorkspaces.add(d);
+                    startBaileysSocket(false, d).catch(err => {
+                        logger.error({ err, workspaceId: d }, 'Failed to restore discovered disk session');
+                    });
+                }
+            }
+        }
+    }
+    catch (scanErr) {
+        logger.warn({ err: scanErr?.message }, 'Session directory auto-scan skipped');
+    }
+    if (WORKSPACE_ID && hasDiskSession(WORKSPACE_ID) && !restoredWorkspaces.has(WORKSPACE_ID)) {
         logger.info({ workspaceId: WORKSPACE_ID }, 'Starting default workspace socket...');
         startBaileysSocket(false, WORKSPACE_ID).catch(() => { });
     }

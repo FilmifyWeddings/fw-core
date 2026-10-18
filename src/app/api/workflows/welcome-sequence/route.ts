@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { forceWakeQueue } from '@/lib/baileys-serverless';
+import { forceWakeQueue, buildLeadVariables } from '@/lib/baileys-serverless';
 import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
 
 function formatIST(dateInput: Date | string | number | null | undefined): string {
@@ -239,6 +239,7 @@ export async function POST(req: NextRequest) {
             templateId: templateId || null,
             stepIndex: stepIdx,
             lead_payload: lead.raw_payload || {},
+            variables: buildLeadVariables(lead),
             forceImmediate: true
           }
         })
@@ -357,6 +358,7 @@ export async function POST(req: NextRequest) {
               templateId: step.template_id || null,
               stepIndex: stepIdx,
               lead_payload: lead.raw_payload || {},
+              variables: buildLeadVariables(lead),
             }
           });
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { forceWakeQueue } from '@/lib/baileys-serverless';
+import { forceWakeQueue, buildLeadVariables } from '@/lib/baileys-serverless';
 import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
 
 export async function POST(req: NextRequest) {
@@ -89,12 +89,8 @@ export async function POST(req: NextRequest) {
     const cleanJid = `${cleanPhone}@s.whatsapp.net`;
 
     const v_variables = {
-      Name: lead.name || 'Guest',
-      Name_1: lead.name || 'Guest',
-      lead_name: lead.name || 'Guest',
-      phone: lead.phone || '',
-      email: lead.email || '',
-      ...(lead.raw_payload && typeof lead.raw_payload === 'object' ? lead.raw_payload : {})
+      ...(lead.raw_payload && typeof lead.raw_payload === 'object' ? lead.raw_payload : {}),
+      ...buildLeadVariables(lead),
     };
 
     // Fetch both failed and pending queue items for this workspace

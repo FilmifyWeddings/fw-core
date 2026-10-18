@@ -99,7 +99,18 @@ export function resolveSubEventAssignments(
       return null;
     }
 
-    // Check if name is a placeholder
+    // 1. First, check if there is an explicit fw_team_members object or matched team member by ID
+    let matched = existing.fw_team_members || null;
+    if (!matched && existing.assigned_member_id) {
+      matched = teamMembers.find(m => m.id === existing.assigned_member_id) || null;
+    }
+
+    // If genuinely assigned to an existing team member in teamMembers, return it! (Even if their name is "Not Fixed")
+    if (matched) {
+      return matched;
+    }
+
+    // 2. Only if NOT matched to any known team member, check if name is a placeholder
     const cleanName = String(existing.assigned_member_name || (existing.fw_team_members?.name) || '').trim().toLowerCase();
     if (
       cleanName === 'not fixed' ||
@@ -112,16 +123,12 @@ export function resolveSubEventAssignments(
       return null;
     }
 
-    let matched = existing.fw_team_members || null;
-    if (!matched && existing.assigned_member_id) {
-      matched = teamMembers.find(m => m.id === existing.assigned_member_id) || null;
-    }
     if (!matched && existing.assigned_member_name) {
       matched = teamMembers.find(m => m.name.toLowerCase().trim() === cleanName) || null;
     }
     if (!matched && existing.assigned_member_id) {
       const fallbackName = existing.assigned_member_name || existing.member_name || '';
-      if (fallbackName && !fallbackName.toLowerCase().includes('not fixed')) {
+      if (fallbackName && !['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(fallbackName.toLowerCase())) {
         matched = {
           id: existing.assigned_member_id,
           name: fallbackName,

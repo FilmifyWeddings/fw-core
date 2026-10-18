@@ -38,14 +38,20 @@ export function isSlotAssigned(slot: any): boolean {
   if (!str || str === 'null' || str === 'undefined' || str === 'unassigned' || str === 'none') {
     return false;
   }
+  if (slot.fw_team_members?.id) {
+    return true;
+  }
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
   const cleanName = String(slot.assigned_member_name || slot.fw_team_members?.name || '').trim().toLowerCase();
   if (
-    cleanName === 'not fixed' ||
-    cleanName.startsWith('not fixed') ||
-    cleanName === 'tbd' ||
-    cleanName === 'unassigned' ||
-    cleanName === 'pending' ||
-    cleanName === 'date not fixed'
+    !isUuid && (
+      cleanName === 'not fixed' ||
+      cleanName.startsWith('not fixed') ||
+      cleanName === 'tbd' ||
+      cleanName === 'unassigned' ||
+      cleanName === 'pending' ||
+      cleanName === 'date not fixed'
+    )
   ) {
     return false;
   }

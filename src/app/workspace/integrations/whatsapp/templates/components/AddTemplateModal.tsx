@@ -220,12 +220,27 @@ export function AddTemplateModal({ isOpen, onClose, workspaceId, onTemplateCreat
       };
 
       if (form.type === 'media' && form.media_url) {
+        let cleanMime = (form.media_mime || '').trim().toLowerCase();
+        if (!cleanMime || cleanMime.includes(' or ') || cleanMime.includes('placeholder')) {
+          const urlLower = (form.media_url || '').toLowerCase();
+          if (urlLower.match(/\.(mp4|mov|avi|webm|mkv)(\?.*)?$/)) {
+            cleanMime = 'video/mp4';
+          } else if (urlLower.match(/\.(pdf)(\?.*)?$/)) {
+            cleanMime = 'application/pdf';
+          } else if (urlLower.match(/\.(png)(\?.*)?$/)) {
+            cleanMime = 'image/png';
+          } else if (urlLower.match(/\.(webp)(\?.*)?$/)) {
+            cleanMime = 'image/webp';
+          } else {
+            cleanMime = 'image/jpeg';
+          }
+        }
         payload.mediaUrl = form.media_url;
         payload.media_url = form.media_url;
         payload.mediaFileKey = form.media_file_key;
         payload.media_file_key = form.media_file_key;
-        payload.mediaMime = form.media_mime;
-        payload.media_mime = form.media_mime;
+        payload.mediaMime = cleanMime;
+        payload.media_mime = cleanMime;
         payload.mediaFileName = form.media_file_name;
         payload.mediaFileSize = form.media_file_size;
       }

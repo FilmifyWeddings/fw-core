@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
+import { buildLeadVariables } from '@/lib/baileys-serverless';
 
 export const runtime = 'nodejs';
 
@@ -217,18 +218,8 @@ export async function POST(req: NextRequest) {
 
         // Build template variables
         const v_variables: Record<string, any> = {
-          Name: lead.name || 'Guest',
-          Name_1: lead.name || 'Guest',
-          lead_name: lead.name || 'Guest',
-          first_name: (lead.name || 'Guest').split(' ')[0],
-          last_name: (lead.name || '').replace(/^[^ ]+ */, ''),
-          full_name: lead.name || 'Guest',
-          phone: lead.phone || '',
-          phone_number: lead.phone || '',
-          email: lead.email || '',
-          timestamp: new Date().toISOString(),
-          current_date: new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
           ...(lead.raw_payload || {}),
+          ...buildLeadVariables(lead),
         };
 
         for (const wf of activeWorkflows) {

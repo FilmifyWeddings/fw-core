@@ -377,11 +377,235 @@ function detectMimeTypeFromUrl(url: string): string {
   return 'image/jpeg';
 }
 
+function cleanMimeType(mime?: string | null, fallback = 'image/jpeg'): string {
+  if (!mime || typeof mime !== 'string') return fallback;
+  const clean = mime.toLowerCase().trim();
+  if (clean.includes('image/png') || clean.endsWith('.png')) return 'image/png';
+  if (clean.includes('image/webp') || clean.endsWith('.webp')) return 'image/webp';
+  if (clean.includes('image/gif') || clean.endsWith('.gif')) return 'image/gif';
+  if (clean.includes('image/jpeg') || clean.includes('image/jpg') || clean.endsWith('.jpg') || clean.endsWith('.jpeg')) return 'image/jpeg';
+  if (clean.includes('video/mp4') || clean.endsWith('.mp4')) return 'video/mp4';
+  if (clean.includes('video/webm')) return 'video/webm';
+  if (clean.includes('video/quicktime') || clean.endsWith('.mov')) return 'video/quicktime';
+  if (clean.includes('audio/mpeg') || clean.endsWith('.mp3')) return 'audio/mpeg';
+  if (clean.includes('audio/ogg') || clean.endsWith('.ogg')) return 'audio/ogg';
+  if (clean.includes('application/pdf') || clean.endsWith('.pdf')) return 'application/pdf';
+  if (clean.includes('or')) {
+    // If user saved placeholder text e.g. "image/jpeg or video/mp4"
+    return fallback;
+  }
+  return clean.split(';')[0].trim() || fallback;
+}
+
 function detectMediaCategory(mimeType: string): 'image' | 'video' | 'audio' | 'document' {
-  if (mimeType.startsWith('image/')) return 'image';
-  if (mimeType.startsWith('video/')) return 'video';
-  if (mimeType.startsWith('audio/')) return 'audio';
+  const clean = cleanMimeType(mimeType);
+  if (clean.startsWith('image/')) return 'image';
+  if (clean.startsWith('video/')) return 'video';
+  if (clean.startsWith('audio/')) return 'audio';
   return 'document';
+}
+
+/**
+ * ⚡ Universal Template Dynamic Field Resolver for Baileys Worker
+ * Accurately extracts and derives every single dynamic variable:
+ * - first_name / fname: strictly the first word of full name (e.g. "Riya")
+ * - last_name / lname: strictly the remaining words (e.g. "Sharma")
+ * - full_name / lead_name: the complete name (e.g. "Riya Sharma")
+ * - phone / phone_short: 10-digit number without country code (e.g. "9876543210")
+ * - phone_number: full formatted phone number
+ * - city: city name (or first part of location)
+ * - location: full location / venue
+ * - current_date: DD/MM/YYYY in IST
+ * - time: hh:mm AM/PM in IST
+ * - created_time: DD MMM YYYY, hh:mm am/pm in IST
+ * - timestamp: ISO string
+ */
+function resolveTemplateVariable(rawKey: string, variables: any): string {
+  if (!variables || typeof variables !== 'object') return '';
+  const key = rawKey.trim();
+  const normalizedKey = key.toLowerCase();
+
+  const getRawVal = (field: string): string => {
+    if (variables[field] !== undefined && variables[field] !== null && String(variables[field]).trim() !== '') {
+      return String(variables[field]).trim();
+    }
+    const varKeys = Object.keys(variables);
+    const directMatch = varKeys.find(k => k.toLowerCase() === field.toLowerCase());
+    if (directMatch && variables[directMatch] !== undefined && variables[directMatch] !== null && String(variables[directMatch]).trim() !== '') {
+      return String(variables[directMatch]).trim();
+    }
+    if (variables.raw_payload && typeof variables.raw_payload === 'object') {
+      const rawKeys = Object.keys(variables.raw_payload);
+      const found = rawKeys.find(k => k.toLowerCase() === field.toLowerCase());
+      if (found && variables.raw_payload[found] != null && String(variables.raw_payload[found]).trim() !== '') {
+        return String(variables.raw_payload[found]).trim();
+      }
+    }
+    if (variables.lead_payload && typeof variables.lead_payload === 'object') {
+      const rawKeys = Object.keys(variables.lead_payload);
+      const found = rawKeys.find(k => k.toLowerCase() === field.toLowerCase());
+      if (found && variables.lead_payload[found] != null && String(variables.lead_payload[found]).trim() !== '') {
+        return String(variables.lead_payload[found]).trim();
+      }
+    }
+    if (Array.isArray(variables.field_data)) {
+      for (const item of variables.field_data) {
+        const itemKey = (item.name || '').toLowerCase();
+        if (itemKey === field.toLowerCase()) {
+          const val = Array.isArray(item.values) ? item.values[0] : (item.value || item.values);
+          if (val) return String(val).trim();
+        }
+      }
+    }
+    return '';
+  };
+
+  // 1. System Dates & Times (Indian Standard Time Asia/Kolkata)
+  if (normalizedKey === 'current_date' || normalizedKey === 'date') {
+    return new Date().toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit', month: '2-digit', year: 'numeric'
+    });
+  }
+  if (normalizedKey === 'time' || normalizedKey === 'current_time') {
+    return new Date().toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit', minute: '2-digit', hour12: true
+    });
+  }
+  if (normalizedKey === 'created_time') {
+    const rawTime = getRawVal('created_time') || getRawVal('created_at') || getRawVal('timestamp');
+    try {
+      const d = rawTime ? new Date(rawTime) : new Date();
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', hour12: true
+        });
+      }
+    } catch {}
+    return new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true
+    });
+  }
+  if (normalizedKey === 'timestamp') {
+    const rawTs = getRawVal('timestamp') || getRawVal('created_at');
+    if (rawTs) return rawTs;
+    return new Date().toISOString();
+  }
+
+  // 2. Name derivations
+  const fullName = getRawVal('full_name') || getRawVal('name') || getRawVal('lead_name') || getRawVal('client_name') || getRawVal('leadName') || getRawVal('Name') || getRawVal('Name_1') || '';
+  
+  if (normalizedKey === 'first_name' || normalizedKey === 'fname') {
+    const explicitFirst = getRawVal('first_name') || getRawVal('fname');
+    if (explicitFirst && !explicitFirst.includes(' ')) {
+      return explicitFirst;
+    }
+    if (fullName) {
+      const parts = fullName.trim().split(/\s+/);
+      if (parts[0]) return parts[0];
+    }
+    return explicitFirst || 'there';
+  }
+
+  if (normalizedKey === 'last_name' || normalizedKey === 'lname') {
+    const explicitLast = getRawVal('last_name') || getRawVal('lname');
+    if (explicitLast) return explicitLast;
+    if (fullName) {
+      const parts = fullName.trim().split(/\s+/);
+      if (parts.length > 1) {
+        return parts.slice(1).join(' ');
+      }
+    }
+    return '';
+  }
+
+  if (normalizedKey === 'full_name' || normalizedKey === 'name' || normalizedKey === 'lead_name' || normalizedKey === 'client_name') {
+    return fullName || 'Guest';
+  }
+
+  // 3. Phone derivations
+  const rawPhone = getRawVal('phone_number') || getRawVal('phone') || getRawVal('mobile') || getRawVal('contact') || getRawVal('whatsapp_number') || '';
+  const digitsOnly = rawPhone.replace(/[^0-9]/g, '');
+
+  if (normalizedKey === 'phone' || normalizedKey === 'phone_short') {
+    if (digitsOnly.length >= 10) {
+      return digitsOnly.slice(-10);
+    }
+    return digitsOnly || rawPhone;
+  }
+
+  if (normalizedKey === 'phone_number' || normalizedKey === 'whatsapp_number' || normalizedKey === 'mobile' || normalizedKey === 'contact') {
+    if (rawPhone.startsWith('+')) return rawPhone;
+    if (digitsOnly.length === 10) return `+91 ${digitsOnly}`;
+    if (digitsOnly.length > 10) return `+${digitsOnly}`;
+    return rawPhone;
+  }
+
+  // 4. City & Location
+  if (normalizedKey === 'city' || normalizedKey === 'which_city') {
+    const directCity = getRawVal('city') || getRawVal('which_city');
+    if (directCity) return directCity;
+    const loc = getRawVal('location') || getRawVal('event_location') || getRawVal('venue') || '';
+    if (loc) {
+      return loc.split(',')[0].trim();
+    }
+    return '';
+  }
+
+  if (normalizedKey === 'location' || normalizedKey === 'full_location') {
+    return getRawVal('location') || getRawVal('event_location') || getRawVal('shoot_location') || getRawVal('city') || getRawVal('venue') || getRawVal('address') || '';
+  }
+
+  if (normalizedKey === 'address') {
+    return getRawVal('address') || getRawVal('location') || getRawVal('city') || '';
+  }
+
+  // 5. Wedding / Event specs
+  if (normalizedKey === 'event_date' || normalizedKey === 'wedding_date' || normalizedKey === 'shoot_date' || normalizedKey === 'date_of_event') {
+    return getRawVal('event_date') || getRawVal('wedding_date') || getRawVal('shoot_date') || getRawVal('date_of_event') || '';
+  }
+
+  if (normalizedKey === 'groom_name') return getRawVal('groom_name');
+  if (normalizedKey === 'bride_name') return getRawVal('bride_name');
+
+  if (normalizedKey === 'shoot_type' || normalizedKey === 'kind_of_shoot' || normalizedKey === 'what_kind_of_shoot' || normalizedKey === 'services' || normalizedKey === 'photography_services') {
+    return getRawVal('shoot_type') || getRawVal('kind_of_shoot') || getRawVal('what_kind_of_shoot') || getRawVal('photography_services') || getRawVal('service') || '';
+  }
+
+  if (normalizedKey === 'venue' || normalizedKey === 'event_venue') {
+    return getRawVal('venue') || getRawVal('event_venue') || getRawVal('location') || '';
+  }
+
+  if (normalizedKey === 'budget' || normalizedKey === 'max_budget' || normalizedKey === 'approximate_budget' || normalizedKey === 'price' || normalizedKey === 'expected_budget') {
+    return getRawVal('budget') || getRawVal('max_budget') || getRawVal('approximate_budget') || getRawVal('expected_budget') || getRawVal('price') || '';
+  }
+
+  if (normalizedKey === 'expected_guests') return getRawVal('expected_guests');
+  if (normalizedKey === 'call_time') return getRawVal('call_time');
+  if (normalizedKey === 'wedding_events') return getRawVal('wedding_events');
+  if (normalizedKey === 'instagram_handle') return getRawVal('instagram_handle');
+  if (normalizedKey === 'notes') return getRawVal('notes');
+
+  // 6. Meta / Campaign Info
+  if (normalizedKey === 'form_name') return getRawVal('form_name');
+  if (normalizedKey === 'campaign_name') return getRawVal('campaign_name');
+  if (normalizedKey === 'ad_name') return getRawVal('ad_name');
+  if (normalizedKey === 'adset_name') return getRawVal('adset_name');
+  if (normalizedKey === 'platform') return getRawVal('platform') || getRawVal('source') || 'Instagram / Facebook';
+  if (normalizedKey === 'facebook_lead_id') return getRawVal('facebook_lead_id') || getRawVal('leadgen_id') || '';
+
+  // 7. Lead Info
+  if (normalizedKey === 'lead_owner') return getRawVal('lead_owner') || getRawVal('owner_name') || '';
+  if (normalizedKey === 'status' || normalizedKey === 'lead_status') return getRawVal('status') || getRawVal('lead_status') || '';
+  if (normalizedKey === 'score' || normalizedKey === 'lead_score') return getRawVal('score') || getRawVal('lead_score') || '';
+  if (normalizedKey === 'email' || normalizedKey === 'email_address' || normalizedKey === 'mail') return getRawVal('email') || getRawVal('email_address') || '';
+
+  return getRawVal(key);
 }
 
 async function downloadMediaAsBuffer(
@@ -539,7 +763,7 @@ async function sendMediaMessage(
   try {
     if (finalCategory === 'image') {
       let finalBuffer = buffer;
-      let finalMime = resolvedMime || 'image/jpeg';
+      let finalMime = cleanMimeType(resolvedMime || mimeType, 'image/jpeg');
 
       // WhatsApp phone apps require genuine JPEG/PNG for photo messages (WebP is rejected or displays blank)
       if (finalMime === 'image/webp' || resolvedUrl.toLowerCase().includes('.webp') || mimeType === 'image/webp') {
@@ -553,10 +777,23 @@ async function sendMediaMessage(
         }
       }
 
+      // ⚡ Generate 96x96 JPEG thumbnail buffer to prevent blank/gray placeholder boxes on WhatsApp!
+      let jpegThumbnail: Buffer | undefined;
+      try {
+        const sharp = (await import('sharp')).default;
+        jpegThumbnail = await sharp(finalBuffer)
+          .resize(96, 96, { fit: 'inside' })
+          .jpeg({ quality: 70 })
+          .toBuffer();
+      } catch (thumbErr: any) {
+        logger.warn({ err: thumbErr?.message }, '⚠️ Thumbnail generation soft fallback');
+      }
+
       result = await targetSock.sendMessage(to, {
         image: finalBuffer,
         caption: caption || undefined,
         mimetype: finalMime,
+        jpegThumbnail,
       } as any);
     } else if (finalCategory === 'video') {
       if (buffer.length > 16 * 1024 * 1024) {
@@ -786,91 +1023,8 @@ async function sendTemplateMessage(
   let body = tpl.body_text;
   if (body) {
     const replaceFn = (match: string, rawKey: string) => {
-      const key = rawKey.trim();
-      const normalizedKey = key.toLowerCase();
-
-      // 1. Time / Date
-      if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
-        if (variables.created_time) return String(variables.created_time);
-        if (variables.timestamp) {
-          try {
-            return new Date(variables.timestamp).toLocaleString('en-IN', {
-              timeZone: 'Asia/Kolkata',
-              day: '2-digit', month: 'short', year: 'numeric',
-              hour: '2-digit', minute: '2-digit'
-            });
-          } catch {}
-        }
-        return new Date().toLocaleString('en-IN', {
-          timeZone: 'Asia/Kolkata',
-          day: '2-digit', month: 'short', year: 'numeric',
-          hour: '2-digit', minute: '2-digit'
-        });
-      }
-      if (normalizedKey === 'current_date' || normalizedKey === 'date') {
-        return variables.current_date || new Date().toLocaleDateString('en-IN', {
-          day: '2-digit', month: '2-digit', year: 'numeric'
-        });
-      }
-
-      // 2. Direct property matches (case-insensitive)
-      const varKeys = Object.keys(variables);
-      const directMatch = varKeys.find(k => k.toLowerCase() === normalizedKey);
-      if (directMatch && variables[directMatch] !== undefined && variables[directMatch] !== null && String(variables[directMatch]).trim() !== '') {
-        return String(variables[directMatch]);
-      }
-
-      // 3. Smart Semantic Aliases
-      const aliasMap: Record<string, string[]> = {
-        full_name: ['full_name', 'name', 'lead_name', 'client_name', 'Name', 'Name_1'],
-        first_name: ['first_name', 'fname'],
-        last_name: ['last_name', 'lname'],
-        phone: ['phone', 'phone_number', 'mobile', 'contact', 'whatsapp_number'],
-        email: ['email', 'email_address', 'mail'],
-        shoot_type: [
-          'shoot_type', 'kind_of_shoot', 'shoot', 'service', 'services', 'photography_services',
-          'what_photography_services_are_you_looking_for?', 'what_photography_services_are_you_looking_for'
-        ],
-        location: ['location', 'city', 'venue', 'destination', 'event_location', 'shoot_location', 'address'],
-        budget: [
-          'budget', 'max_budget', 'price', 'expected_budget',
-          'what_is_your_budget_for_photography_services?', 'what_is_your_budget_for_photography_services'
-        ],
-        source: ['source', 'lead_source', 'campaign_name', 'form_name', 'page_name', 'platform', 'ad_name'],
-        wedding_date: ['wedding_date', 'event_date', 'shoot_date', 'date_of_event'],
-      };
-
-      const aliases = aliasMap[normalizedKey] || [];
-      for (const alias of aliases) {
-        const foundKey = varKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-        if (foundKey && variables[foundKey] !== undefined && variables[foundKey] !== null && String(variables[foundKey]).trim() !== '') {
-          return String(variables[foundKey]);
-        }
-      }
-
-      // 4. Nested field_data array check (Facebook / Meta Lead Ad structure)
-      if (Array.isArray((variables as any).field_data)) {
-        for (const item of (variables as any).field_data) {
-          const itemKey = (item.name || '').toLowerCase();
-          if (itemKey === normalizedKey || aliases.some(a => a.toLowerCase() === itemKey)) {
-            const val = Array.isArray(item.values) ? item.values[0] : item.values;
-            if (val) return String(val);
-          }
-        }
-      }
-
-      // 5. Nested raw_payload check
-      if ((variables as any).raw_payload && typeof (variables as any).raw_payload === 'object') {
-        const rawKeys = Object.keys((variables as any).raw_payload);
-        for (const alias of [normalizedKey, ...aliases]) {
-          const found = rawKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-          if (found && (variables as any).raw_payload[found] != null && String((variables as any).raw_payload[found]).trim() !== '') {
-            return String((variables as any).raw_payload[found]);
-          }
-        }
-      }
-
-      return match;
+      const resolved = resolveTemplateVariable(rawKey, variables);
+      return resolved !== '' ? resolved : '';
     };
 
     body = body.replace(/\{\{([^{}]+)\}\}/g, replaceFn).replace(/\{([^{}]+)\}/g, replaceFn);
@@ -987,81 +1141,13 @@ async function sendGroupAlert(
   }
 
   const replaceFn = (match: string, key: string) => {
-    const normalizedKey = key.trim().toLowerCase();
-
-    // 1. Time fields
-    if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
-      return new Date().toLocaleString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit'
-      });
-    }
-
-    // 2. Client fields — check leadData properties (case-insensitive)
-    const leadKeys = Object.keys(leadData);
-    const matchedKey = leadKeys.find(k => k.toLowerCase() === normalizedKey);
-    if (matchedKey !== undefined && leadData[matchedKey] !== undefined && leadData[matchedKey] !== null && String(leadData[matchedKey]).trim() !== '') {
-      return String(leadData[matchedKey]);
-    }
-
-    // 3. Common alias mappings
-    const aliasMap: Record<string, string[]> = {
-      full_name: ['full_name', 'name', 'lead_name', 'client_name', 'Name', 'Name_1'],
-      first_name: ['first_name', 'fname'],
-      last_name: ['last_name', 'lname'],
-      phone: ['phone', 'phone_number', 'mobile', 'contact', 'whatsapp_number'],
-      email: ['email', 'email_address', 'mail'],
-      shoot_type: [
-        'shoot_type', 'kind_of_shoot', 'shoot', 'service', 'services', 'photography_services',
-        'what_photography_services_are_you_looking_for?', 'what_photography_services_are_you_looking_for'
-      ],
-      location: ['location', 'city', 'venue', 'destination', 'event_location', 'shoot_location', 'address'],
-      budget: [
-        'budget', 'max_budget', 'price', 'expected_budget',
-        'what_is_your_budget_for_photography_services?', 'what_is_your_budget_for_photography_services'
-      ],
-      source: ['source', 'lead_source', 'campaign_name', 'form_name', 'page_name', 'platform', 'ad_name'],
-      wedding_date: ['wedding_date', 'event_date', 'shoot_date', 'date_of_event'],
-      score: ['score', 'lead_score'],
-      status: ['status', 'lead_status'],
-    };
-
-    const aliases = aliasMap[normalizedKey] || [normalizedKey];
-    for (const alias of aliases) {
-      const found = leadKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-      if (found !== undefined && leadData[found] !== undefined && leadData[found] !== null && String(leadData[found]).trim() !== '') {
-        return String(leadData[found]);
-      }
-    }
-
-    // 4. Check nested field_data array
-    if (Array.isArray(leadData.field_data)) {
-      for (const item of leadData.field_data) {
-        const itemKey = (item.name || '').toLowerCase();
-        if (itemKey === normalizedKey || aliases.some(a => a.toLowerCase() === itemKey)) {
-          const val = Array.isArray(item.values) ? item.values[0] : item.values;
-          if (val) return String(val);
-        }
-      }
-    }
-
-    // 5. Check raw_payload nested object
-    if (leadData.raw_payload && typeof leadData.raw_payload === 'object') {
-      const rp = leadData.raw_payload;
-      const rpKeys = Object.keys(rp);
-      for (const alias of [normalizedKey, ...aliases]) {
-        const found = rpKeys.find(k => k.toLowerCase() === alias.toLowerCase());
-        if (found !== undefined && rp[found] !== undefined && rp[found] !== null && String(rp[found]).trim() !== '') {
-          return String(rp[found]);
-        }
-      }
-    }
-
-    return '';
+    const resolved = resolveTemplateVariable(key, leadData);
+    return resolved !== '' ? resolved : '';
   };
 
-  const formatted = templateStr.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
+  const formatted = templateStr
+    .replace(/\{\{([^{}]+)\}\}/g, replaceFn)
+    .replace(/\{([^{}]+)\}/g, replaceFn);
   const result = await targetSock.sendMessage(groupId, { text: formatted });
   const waMessageId = result?.key?.id ?? null;
   logger.info({ groupId, waMessageId, workspaceId: wsId }, '📤 Group lead alert sent');
@@ -1242,10 +1328,17 @@ async function executeAction(action: {
       }
       case 'send_template': {
         const payload = action.payload as any;
-        const to = payload.to;
+        const to = payload.to || payload.recipientJid || payload.phone || '';
         const templateId = payload.templateId || payload.template_id;
         const fallbackName = payload.template_name || payload.templateName;
-        const variables = payload.variables || payload.leadData || {};
+        const variables = payload.variables || payload.leadData || {
+          leadId: payload.leadId,
+          name: payload.leadName,
+          leadName: payload.leadName,
+          full_name: payload.leadName,
+          phone: payload.phone,
+          ...(payload.lead_payload && typeof payload.lead_payload === 'object' ? payload.lead_payload : {})
+        };
         waMessageId = await sendTemplateMessage(to, templateId, variables, targetWsId, fallbackName);
         break;
       }

@@ -774,13 +774,29 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     if (activeTab === 'text') {
       payload = { body: textBody };
     } else if (activeTab === 'media') {
-      const mediaType = mediaMime.startsWith('video') ? 'video' : mediaMime.includes('pdf') ? 'document' : 'image';
+      let cleanMime = (mediaMime || '').trim().toLowerCase();
+      if (!cleanMime || cleanMime.includes(' or ') || cleanMime.includes('placeholder')) {
+        const urlLower = (mediaUrl || '').toLowerCase();
+        if (urlLower.match(/\.(mp4|mov|avi|webm|mkv)(\?.*)?$/)) {
+          cleanMime = 'video/mp4';
+        } else if (urlLower.match(/\.(pdf)(\?.*)?$/)) {
+          cleanMime = 'application/pdf';
+        } else if (urlLower.match(/\.(png)(\?.*)?$/)) {
+          cleanMime = 'image/png';
+        } else if (urlLower.match(/\.(webp)(\?.*)?$/)) {
+          cleanMime = 'image/webp';
+        } else {
+          cleanMime = 'image/jpeg';
+        }
+      }
+      const mediaType = cleanMime.startsWith('video') ? 'video' : cleanMime.includes('pdf') ? 'document' : 'image';
       payload = { 
         body: textBody, 
         mediaUrl, 
         mediaFileKey: mediaFileKey || (mediaUrl.includes('/api/media/') ? mediaUrl.split('/api/media/')[1] : ''),
         media_file_key: mediaFileKey || (mediaUrl.includes('/api/media/') ? mediaUrl.split('/api/media/')[1] : ''),
-        mediaMime,
+        mediaMime: cleanMime,
+        media_mime: cleanMime,
         fileName: mediaFileName || (mediaUrl ? mediaUrl.split('/').pop()?.split('?')[0] : ''),
         fileSize: mediaFileSize,
         media_url: mediaUrl,

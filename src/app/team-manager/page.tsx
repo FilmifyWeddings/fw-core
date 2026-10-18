@@ -3060,8 +3060,8 @@ export default function TeamManagerPage() {
                                       {assignments.map((assignment: any) => {
                                         const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
                                         const cleanName = (memberObj?.name || (assignment as any).assigned_member_name || (assignment as any).member_name || '').replace(/\.\.\./g, '').trim();
-                                        const isPlaceholderName = cleanName.toLowerCase() === 'not fixed' || cleanName.toLowerCase().startsWith('not fixed') || cleanName.toLowerCase() === 'tbd' || cleanName.toLowerCase() === 'unassigned' || cleanName.toLowerCase() === 'pending' || cleanName.toLowerCase() === 'date not fixed';
-                                        const isAssigned = assignment.assigned_member_id !== null && !isPlaceholderName;
+                                        const isPlaceholderName = !memberObj && (cleanName.toLowerCase() === 'not fixed' || cleanName.toLowerCase().startsWith('not fixed') || cleanName.toLowerCase() === 'tbd' || cleanName.toLowerCase() === 'unassigned' || cleanName.toLowerCase() === 'pending' || cleanName.toLowerCase() === 'date not fixed');
+                                        const isAssigned = Boolean((memberObj || assignment.assigned_member_id) && !isPlaceholderName);
                                         const role = assignment.required_role;
                                         const shortRole = getRoleAbbr(role, customCrewRoles);
 
@@ -3568,8 +3568,8 @@ export default function TeamManagerPage() {
                                           const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
                                           const rawName = memberObj?.name || (assignment as any).assigned_member_name || (assignment as any).member_name || '';
                                           const cleanName = rawName.replace(/\.\.\./g, '').trim();
-                                          const isPlaceholderName = cleanName.toLowerCase() === 'not fixed' || cleanName.toLowerCase().startsWith('not fixed') || cleanName.toLowerCase() === 'tbd' || cleanName.toLowerCase() === 'unassigned' || cleanName.toLowerCase() === 'pending' || cleanName.toLowerCase() === 'date not fixed';
-                                          const isAssigned = assignment.assigned_member_id !== null && !isPlaceholderName;
+                                          const isPlaceholderName = !memberObj && (cleanName.toLowerCase() === 'not fixed' || cleanName.toLowerCase().startsWith('not fixed') || cleanName.toLowerCase() === 'tbd' || cleanName.toLowerCase() === 'unassigned' || cleanName.toLowerCase() === 'pending' || cleanName.toLowerCase() === 'date not fixed');
+                                          const isAssigned = Boolean((memberObj || assignment.assigned_member_id) && !isPlaceholderName);
                                           const role = assignment.required_role;
                                           const shortRole = getRoleAbbr(role, customCrewRoles);
 
