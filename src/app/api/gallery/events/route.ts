@@ -4,6 +4,19 @@ import { resolveRequestUser } from '@/lib/auth/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
+function formatCoverUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith('/api/') || url.includes('X-Amz-Signature') || url.includes('token=')) return url;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return `/api/gallery/image?key=${encodeURIComponent(url.replace(/^\/+/, ''))}`;
+  }
+  if (url.includes('.backblazeb2.com/')) {
+    const key = url.split('.backblazeb2.com/')[1];
+    if (key) return `/api/gallery/image?key=${encodeURIComponent(key)}`;
+  }
+  return url;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -49,7 +62,8 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      return NextResponse.json({ success: true, gallery: single, events: [single] });
+      const formatted = { ...single, cover_url: formatCoverUrl(single.cover_url) };
+      return NextResponse.json({ success: true, gallery: formatted, events: [formatted] });
     }
 
     // 2. Fetch single gallery by Slug (used by public client views and direct links)
@@ -65,7 +79,8 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ success: false, error: error.message, gallery: null, events: [] }, { status: 200 });
       }
 
-      return NextResponse.json({ success: true, gallery: single, events: single ? [single] : [] });
+      const formatted = single ? { ...single, cover_url: formatCoverUrl(single.cover_url) } : null;
+      return NextResponse.json({ success: true, gallery: formatted, events: formatted ? [formatted] : [] });
     }
 
     // 3. Fetch all galleries scoped STRICTLY to the studio owner's workspace
@@ -114,6 +129,7 @@ export async function GET(req: NextRequest) {
 
       return {
         ...g,
+        cover_url: formatCoverUrl(g.cover_url),
         photo_count: totalPhotos,
         total_size_bytes: totalBytes,
         total_size_mb: (totalBytes / (1024 * 1024)).toFixed(1),

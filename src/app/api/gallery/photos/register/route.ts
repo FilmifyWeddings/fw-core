@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getGalleryPublicUrl } from '@/lib/storage/galleryB2Client';
+import { getGalleryPresignedDownloadUrl } from '@/lib/storage/galleryB2Client';
 import { extractFacesFromImageUrl } from '@/lib/faceAI';
 
 export const dynamic = 'force-dynamic';
@@ -34,13 +34,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
     }
 
-    // 3. Set cover_url on event_galleries if it does not have one
+    // 3. Set immortal cover_url on event_galleries if it does not have one
     const firstPreview = inserted?.[0]?.preview_key;
     if (firstPreview && !gallery?.cover_url) {
-      const publicUrl = getGalleryPublicUrl(firstPreview);
+      const coverUrl = `/api/gallery/image?key=${encodeURIComponent(firstPreview)}`;
       await supabaseAdmin
         .from('event_galleries')
-        .update({ cover_url: publicUrl })
+        .update({ cover_url: coverUrl })
         .eq('id', galleryId);
     }
 
@@ -49,7 +49,8 @@ export async function POST(req: NextRequest) {
       (async () => {
         for (const p of inserted) {
           try {
-            const previewUrl = getGalleryPublicUrl(p.preview_key);
+            // Generate presigned download URL so face AI can fetch image from Private B2 bucket
+            const previewUrl = await getGalleryPresignedDownloadUrl(p.preview_key, 3600);
             const faces = await extractFacesFromImageUrl(previewUrl);
 
             // 1. Delete previous face vectors for this photo to avoid duplicates

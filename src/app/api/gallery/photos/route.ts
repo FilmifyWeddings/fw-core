@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getGalleryPublicUrl } from '@/lib/storage/galleryB2Client';
+import { getGalleryPresignedDownloadUrl } from '@/lib/storage/galleryB2Client';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,21 +41,39 @@ export async function GET(req: NextRequest) {
 
     if (error) throw error;
 
-    const enriched = (photos || []).map((p) => ({
-      id: p.id,
-      gallery_id: p.gallery_id,
-      collection_id: p.collection_id,
-      preview_url: getGalleryPublicUrl(p.preview_key),
-      thumbnail_url: getGalleryPublicUrl(p.thumbnail_key),
-      original_key: p.original_key,
-      preview_key: p.preview_key,
-      thumbnail_key: p.thumbnail_key,
-      width: p.width,
-      height: p.height,
-      size_bytes: p.size_bytes,
-      face_count: p.face_count,
-      created_at: p.created_at,
-    }));
+    // Generate 24-hour presigned URLs for private B2 bucket access (calculated locally in milliseconds)
+    const enriched = await Promise.all(
+      (photos || []).map(async (p) => {
+        let preview_url = '';
+        let thumbnail_url = '';
+
+        try {
+          [preview_url, thumbnail_url] = await Promise.all([
+            getGalleryPresignedDownloadUrl(p.preview_key, 86400),
+            getGalleryPresignedDownloadUrl(p.thumbnail_key, 86400),
+          ]);
+        } catch (_) {
+          preview_url = `/api/gallery/image?key=${encodeURIComponent(p.preview_key)}`;
+          thumbnail_url = `/api/gallery/image?key=${encodeURIComponent(p.thumbnail_key)}`;
+        }
+
+        return {
+          id: p.id,
+          gallery_id: p.gallery_id,
+          collection_id: p.collection_id,
+          preview_url,
+          thumbnail_url,
+          original_key: p.original_key,
+          preview_key: p.preview_key,
+          thumbnail_key: p.thumbnail_key,
+          width: p.width,
+          height: p.height,
+          size_bytes: p.size_bytes,
+          face_count: p.face_count,
+          created_at: p.created_at,
+        };
+      })
+    );
 
     return NextResponse.json({
       success: true,
