@@ -72,6 +72,14 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Collection ID is required' }, { status: 400 });
     }
 
+    // Safely unassign photos before removing the collection
+    try {
+      await supabaseAdmin
+        .from('gallery_photos')
+        .update({ collection_id: null })
+        .eq('collection_id', id);
+    } catch (_) {}
+
     const { error } = await supabaseAdmin
       .from('gallery_collections')
       .delete()

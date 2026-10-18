@@ -46,6 +46,7 @@ import { supabase } from '@/lib/supabase';
 import { batchUploadPhotos } from '@/lib/imageProcessor';
 import { getPublicGalleryUrl } from '@/lib/r2';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 
 interface EventGallery {
   id: string;
@@ -89,6 +90,9 @@ function AlbumStudioContent() {
   const params = useParams();
   const router = useRouter();
   const galleryId = (Array.isArray(params?.id) ? params?.id[0] : params?.id) as string;
+
+  const { workspaceId, activeWorkspace, userId } = useWorkspace();
+  const effectiveWsId = workspaceId || activeWorkspace?.workspaceId || userId || '';
 
   const [gallery, setGallery] = useState<EventGallery | null>(null);
   const [collections, setCollections] = useState<GalleryCollection[]>([]);
@@ -144,9 +148,10 @@ function AlbumStudioContent() {
     try {
       let gal: any = null;
 
-      // Tier 1: Service Role API Fetch by ID
+      // Tier 1: Service Role API Fetch by ID (with workspace isolation)
       try {
-        const gRes = await fetch(`/api/gallery/events?id=${galleryId}`);
+        const wsParam = effectiveWsId ? `&workspace_id=${encodeURIComponent(effectiveWsId)}` : '';
+        const gRes = await fetch(`/api/gallery/events?id=${galleryId}${wsParam}`);
         const gJson = await gRes.json();
         if (gJson.success && gJson.gallery) {
           gal = gJson.gallery;
@@ -155,7 +160,7 @@ function AlbumStudioContent() {
 
       // Tier 2: Direct Supabase maybeSingle (Safe, no coerce error)
       if (!gal) {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('event_galleries')
           .select('*')
           .eq('id', galleryId)
@@ -418,7 +423,8 @@ function AlbumStudioContent() {
         (current, total, percentage, status) => {
           setUploadProgress({ current, total, percentage, status });
         },
-        targetCol
+        targetCol,
+        effectiveWsId
       );
 
       if (result.success || result.uploadedCount > 0) {
@@ -982,7 +988,7 @@ function AlbumStudioContent() {
                   {selectedCollectionId === 'all' ? 'No Photos in this Album Yet' : 'No Photos in this Collection'}
                 </h3>
                 <p className="text-xs text-zinc-400 max-w-sm mx-auto">
-                  Drag and drop wedding photos to compress in the browser and stream directly to Cloudflare R2.
+                  Drag and drop wedding photos to compress in the browser and stream directly to Backblaze B2 Storage.
                 </p>
               </div>
               <button
@@ -1156,7 +1162,7 @@ function AlbumStudioContent() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black text-zinc-900">Upload Photos</h3>
-                <span className="text-xs text-zinc-400">Direct-to-R2 WebP Pipeline</span>
+                <span className="text-xs text-zinc-400">Direct-to-Backblaze B2 WebP Pipeline</span>
               </div>
               <button
                 type="button"
@@ -1197,7 +1203,7 @@ function AlbumStudioContent() {
                       Click or Drag &amp; Drop Wedding Photos
                     </p>
                     <p className="text-[11px] text-zinc-400 mt-0.5">
-                      RAW / JPEG / PNG files are compressed locally and streamed to R2
+                      RAW / JPEG / PNG files are compressed locally and streamed to Backblaze B2
                     </p>
                   </div>
                   <input
@@ -1257,7 +1263,7 @@ function AlbumStudioContent() {
 
                 <div className="space-y-1">
                   <h4 className="text-sm font-black text-zinc-900">
-                    Uploading &amp; Compressing to Cloudflare R2...
+                    Uploading &amp; Compressing to Backblaze B2...
                   </h4>
                   <p className="text-xs text-zinc-500 font-mono">
                     {uploadProgress.status || `Processing photo ${uploadProgress.current} of ${uploadProgress.total}`}

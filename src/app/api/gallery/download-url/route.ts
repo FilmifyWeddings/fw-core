@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPresignedDownloadUrl, getR2PublicUrl } from '@/lib/r2';
+import { getGalleryPresignedDownloadUrl, getGalleryPublicUrl } from '@/lib/storage/galleryB2Client';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,15 +14,16 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const downloadUrl = await getPresignedDownloadUrl(targetKey, 7200);
+      // Generate 2-hour presigned download URL from Backblaze B2
+      const downloadUrl = await getGalleryPresignedDownloadUrl(targetKey, 7200);
       return NextResponse.json({ success: true, downloadUrl });
     } catch (s3Err) {
-      // Fallback to direct public CDN url if presigner has an issue
-      const publicUrl = getR2PublicUrl(targetKey);
+      // Fallback to direct public URL if presigner encounters an issue
+      const publicUrl = getGalleryPublicUrl(targetKey);
       return NextResponse.json({ success: true, downloadUrl: publicUrl });
     }
   } catch (err: any) {
-    console.error('Error generating download URL:', err);
+    console.error('Error generating Backblaze B2 download URL:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

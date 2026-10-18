@@ -173,13 +173,14 @@ export function uploadBlobToPresignedUrl(
 }
 
 /**
- * Batch processes and uploads photos directly to Cloudflare R2
+ * Batch processes and uploads photos directly to Backblaze B2 Storage
  */
 export async function batchUploadPhotos(
   galleryId: string,
   files: File[],
   onProgress?: UploadProgressCallback,
-  collectionId?: string
+  collectionId?: string,
+  workspaceId?: string
 ): Promise<{ success: boolean; uploadedCount: number; errors: string[] }> {
   let completed = 0;
   const total = files.length;
@@ -201,7 +202,7 @@ export async function batchUploadPhotos(
           // 1. High-Speed Client-Side WebP Conversion
           const variants = await generateImageVariants(file);
 
-          // 2. Fetch Presigned URLs from API
+          // 2. Fetch Backblaze B2 Presigned URLs from API
           const cleanName = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
           const urlRes = await fetch('/api/gallery/upload-url', {
             method: 'POST',
@@ -210,6 +211,7 @@ export async function batchUploadPhotos(
               galleryId,
               filename: cleanName,
               originalType: file.type || 'image/jpeg',
+              workspaceId,
             }),
           });
 
@@ -221,10 +223,10 @@ export async function batchUploadPhotos(
           const { originalUploadUrl, previewUploadUrl, thumbUploadUrl, originalKey, previewKey, thumbKey } = urlJson;
 
           if (onProgress) {
-            onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} to R2...`);
+            onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} to Backblaze B2...`);
           }
 
-          // 3. Direct S3/R2 Parallel Uploads
+          // 3. Direct Backblaze B2 Parallel Uploads via Presigned URLs
           await Promise.all([
             uploadBlobToPresignedUrl(originalUploadUrl, variants.original, file.type || 'image/jpeg'),
             uploadBlobToPresignedUrl(previewUploadUrl, variants.preview, 'image/webp'),

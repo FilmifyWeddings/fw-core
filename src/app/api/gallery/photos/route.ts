@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getR2PublicUrl } from '@/lib/r2';
+import { getGalleryPublicUrl } from '@/lib/storage/galleryB2Client';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,13 +41,15 @@ export async function GET(req: NextRequest) {
 
     if (error) throw error;
 
-    const enriched = (photos || []).map(p => ({
+    const enriched = (photos || []).map((p) => ({
       id: p.id,
       gallery_id: p.gallery_id,
       collection_id: p.collection_id,
-      preview_url: getR2PublicUrl(p.preview_key),
-      thumbnail_url: getR2PublicUrl(p.thumbnail_key),
+      preview_url: getGalleryPublicUrl(p.preview_key),
+      thumbnail_url: getGalleryPublicUrl(p.thumbnail_key),
       original_key: p.original_key,
+      preview_key: p.preview_key,
+      thumbnail_key: p.thumbnail_key,
       width: p.width,
       height: p.height,
       size_bytes: p.size_bytes,
@@ -74,6 +76,11 @@ export async function DELETE(req: NextRequest) {
     if (!photoId) {
       return NextResponse.json({ success: false, error: 'photo_id is required' }, { status: 400 });
     }
+
+    // Clean up face vectors
+    try {
+      await supabaseAdmin.from('photo_faces').delete().eq('photo_id', photoId);
+    } catch (_) {}
 
     const { error } = await supabaseAdmin
       .from('gallery_photos')

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getR2PublicUrl } from '@/lib/r2';
+import { getGalleryPublicUrl } from '@/lib/storage/galleryB2Client';
 import { extractFacesFromImageUrl } from '@/lib/faceAI';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid galleryId or empty photos array' }, { status: 400 });
     }
 
-    // 1. Fetch gallery to get workspace_id
+    // 1. Fetch gallery to verify and get studio workspace_id
     const { data: gallery } = await supabaseAdmin
       .from('event_galleries')
       .select('id, workspace_id, cover_url')
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     // 3. Set cover_url on event_galleries if it does not have one
     const firstPreview = inserted?.[0]?.preview_key;
     if (firstPreview && !gallery?.cover_url) {
-      const publicUrl = getR2PublicUrl(firstPreview);
+      const publicUrl = getGalleryPublicUrl(firstPreview);
       await supabaseAdmin
         .from('event_galleries')
         .update({ cover_url: publicUrl })
@@ -49,14 +49,14 @@ export async function POST(req: NextRequest) {
       (async () => {
         for (const p of inserted) {
           try {
-            const previewUrl = getR2PublicUrl(p.preview_key);
+            const previewUrl = getGalleryPublicUrl(p.preview_key);
             const faces = await extractFacesFromImageUrl(previewUrl);
 
             // 1. Delete previous face vectors for this photo to avoid duplicates
             await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);
 
             if (faces && faces.length > 0) {
-              const faceRecords = faces.map(f => ({
+              const faceRecords = faces.map((f) => ({
                 photo_id: p.id,
                 gallery_id: galleryId,
                 workspace_id: workspaceId,

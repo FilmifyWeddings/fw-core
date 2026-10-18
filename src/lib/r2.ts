@@ -1,70 +1,56 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+/**
+ * Storage adapter - completely migrated from Cloudflare R2 to Backblaze B2.
+ * All functions re-routed to galleryB2Client for 100% backward compatibility.
+ */
+import {
+  galleryB2Client,
+  B2_GALLERY_BUCKET_NAME,
+  B2_GALLERY_CDN_URL,
+  getGalleryPresignedUploadUrl,
+  getGalleryPresignedDownloadUrl,
+  getGalleryPublicUrl,
+  ensureGalleryCors,
+} from '@/lib/storage/galleryB2Client';
 
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '792dd0aa24514d22b048545492ca10f7';
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || 'ec1e80786b584f299f2b42974ec89d65';
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || 'a9bd9c1dcd6d49686fc0f66d118e802fa142a13b087fc80807ea1d92684f7015';
+export const GALLERY_BUCKET_NAME = B2_GALLERY_BUCKET_NAME;
+export const R2_GALLERY_BUCKET_NAME = B2_GALLERY_BUCKET_NAME;
+export const CRM_BUCKET_NAME = B2_GALLERY_BUCKET_NAME;
+export const R2_BUCKET_NAME = B2_GALLERY_BUCKET_NAME;
+export const GALLERY_CDN_URL = B2_GALLERY_CDN_URL;
+export const NEXT_PUBLIC_R2_GALLERY_CDN_URL = B2_GALLERY_CDN_URL;
+export const R2_PUBLIC_URL = B2_GALLERY_CDN_URL;
 
-export const GALLERY_BUCKET_NAME = process.env.R2_GALLERY_BUCKET_NAME || 'studiocore-gallery';
-export const R2_GALLERY_BUCKET_NAME = GALLERY_BUCKET_NAME;
-export const CRM_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'studiocore-madia';
-export const R2_BUCKET_NAME = GALLERY_BUCKET_NAME;
-export const GALLERY_CDN_URL = process.env.NEXT_PUBLIC_R2_GALLERY_CDN_URL || 'https://gallery-cdn.studiocore.in';
-export const NEXT_PUBLIC_R2_GALLERY_CDN_URL = GALLERY_CDN_URL;
-export const R2_PUBLIC_URL = GALLERY_CDN_URL;
-
-export const r2Client = new S3Client({
-  region: 'auto',
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY,
-  },
-});
+// Re-export S3 client pointing to Backblaze B2
+export const r2Client = galleryB2Client;
 
 /**
- * Generate Presigned Upload URL for direct client-to-R2 upload
+ * Generate Presigned Upload URL for direct client-to-storage upload (Backblaze B2)
  */
 export async function getPresignedUploadUrl(
   key: string,
   contentType: string,
   expiresIn = 3600,
-  bucketName = R2_GALLERY_BUCKET_NAME
+  bucketName = B2_GALLERY_BUCKET_NAME
 ): Promise<string> {
-  const command = new PutObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-    ContentType: contentType,
-  });
-
-  return await getSignedUrl(r2Client, command, { expiresIn });
+  return getGalleryPresignedUploadUrl(key, contentType, expiresIn, bucketName);
 }
 
 /**
- * Generate Presigned Download URL for high-res original download
+ * Generate Presigned Download URL for high-res original download (Backblaze B2)
  */
 export async function getPresignedDownloadUrl(
   key: string,
   expiresIn = 7200,
-  bucketName = R2_GALLERY_BUCKET_NAME
+  bucketName = B2_GALLERY_BUCKET_NAME
 ): Promise<string> {
-  const command = new GetObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-  });
-
-  return await getSignedUrl(r2Client, command, { expiresIn });
+  return getGalleryPresignedDownloadUrl(key, expiresIn, bucketName);
 }
 
 /**
- * Get direct public / CDN URL for a gallery R2 key (WebP preview, thumbnail, or original)
+ * Get direct public / CDN URL for a gallery key (WebP preview, thumbnail, or original)
  */
-export function getPublicGalleryUrl(key: string): string {
-  if (!key) return '';
-  if (key.startsWith('http://') || key.startsWith('https://')) return key;
-  const base = GALLERY_CDN_URL.replace(/\/+$/, '');
-  const cleanKey = key.replace(/^\/+/, '');
-  return `${base}/${cleanKey}`;
+export function getPublicGalleryUrl(key: string, bucketName = B2_GALLERY_BUCKET_NAME): string {
+  return getGalleryPublicUrl(key, bucketName);
 }
 
 /**
@@ -72,3 +58,4 @@ export function getPublicGalleryUrl(key: string): string {
  */
 export const getR2PublicUrl = getPublicGalleryUrl;
 
+export { ensureGalleryCors };
