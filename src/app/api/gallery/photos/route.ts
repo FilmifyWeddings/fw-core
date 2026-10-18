@@ -41,21 +41,10 @@ export async function GET(req: NextRequest) {
 
     if (error) throw error;
 
-    // Generate 24-hour presigned URLs for private B2 bucket access (calculated locally in milliseconds)
-    const enriched = await Promise.all(
-      (photos || []).map(async (p) => {
-        let preview_url = '';
-        let thumbnail_url = '';
-
-        try {
-          [preview_url, thumbnail_url] = await Promise.all([
-            getGalleryPresignedDownloadUrl(p.preview_key, 86400),
-            getGalleryPresignedDownloadUrl(p.thumbnail_key, 86400),
-          ]);
-        } catch (_) {
-          preview_url = `/api/gallery/image?key=${encodeURIComponent(p.preview_key)}`;
-          thumbnail_url = `/api/gallery/image?key=${encodeURIComponent(p.thumbnail_key)}`;
-        }
+    // Return 100% White-Labeled Native StudioCore Image URLs
+    const enriched = (photos || []).map((p) => {
+      const preview_url = `/api/gallery/image?key=${encodeURIComponent(p.preview_key)}`;
+      const thumbnail_url = `/api/gallery/image?key=${encodeURIComponent(p.thumbnail_key || p.preview_key)}`;
 
         return {
           id: p.id,
@@ -72,8 +61,7 @@ export async function GET(req: NextRequest) {
           face_count: p.face_count,
           created_at: p.created_at,
         };
-      })
-    );
+      });
 
     return NextResponse.json({
       success: true,

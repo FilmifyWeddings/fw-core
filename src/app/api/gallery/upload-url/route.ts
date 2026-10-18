@@ -82,10 +82,9 @@ export async function POST(req: NextRequest) {
       originalUploadUrl,
       previewUploadUrl,
       thumbUploadUrl,
-      bucket: B2_GALLERY_BUCKET_NAME,
     });
   } catch (err: any) {
-    console.error('Error generating Backblaze B2 presigned upload URLs:', err);
+    console.error('Error generating presigned upload URLs:', err);
     return NextResponse.json({ success: false, error: err.message || 'Failed to generate upload URLs' }, { status: 500 });
   }
 }

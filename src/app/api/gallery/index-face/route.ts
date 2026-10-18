@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { extractFacesFromImageUrl } from '@/lib/faceAI';
-import { getR2PublicUrl } from '@/lib/r2';
+import { extractFacesFromImageUrl, extractFacesFromS3Key, DetectedFace } from '@/lib/faceAI';
+import { getGalleryPublicUrl } from '@/lib/storage/galleryB2Client';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,12 +14,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing galleryId, photoId, or imageUrl' }, { status: 400 });
     }
 
-    let finalImageUrl = imageUrl;
+    let targetKey = previewKey;
     let targetPhotoId = photoId;
 
-    if (!finalImageUrl && previewKey) {
-      finalImageUrl = getR2PublicUrl(previewKey);
-    } else if (!finalImageUrl && photoId) {
+    if (!targetKey && photoId) {
       const { data: photo } = await supabaseAdmin
         .from('gallery_photos')
         .select('preview_key')
@@ -27,16 +25,17 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
       if (photo?.preview_key) {
-        finalImageUrl = getR2PublicUrl(photo.preview_key);
+        targetKey = photo.preview_key;
       }
     }
 
-    if (!finalImageUrl) {
-      return NextResponse.json({ success: false, error: 'Could not resolve image URL' }, { status: 400 });
+    // Call Face AI Extraction (Direct S3 Buffer pipeline)
+    let faces: DetectedFace[] = [];
+    if (targetKey) {
+      faces = await extractFacesFromS3Key(targetKey);
+    } else if (imageUrl) {
+      faces = await extractFacesFromImageUrl(imageUrl);
     }
-
-    // Call Face AI Extraction (VPS / UniFace / ArcFace engine)
-    const faces = await extractFacesFromImageUrl(finalImageUrl);
 
     if (faces.length > 0 && targetPhotoId) {
       // 1. Delete previous face embeddings for this photo if any

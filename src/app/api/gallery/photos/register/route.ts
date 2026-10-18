@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getGalleryPresignedDownloadUrl } from '@/lib/storage/galleryB2Client';
-import { extractFacesFromImageUrl } from '@/lib/faceAI';
+import { extractFacesFromS3Key } from '@/lib/faceAI';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,50 +44,66 @@ export async function POST(req: NextRequest) {
         .eq('id', galleryId);
     }
 
-    // 4. Multi-Face Indexing (Asynchronous background processing)
+    // 4. Automatic Multi-Face Indexing: Direct S3 Buffer -> InsightFace
+    let totalFacesFound = 0;
     if (inserted && inserted.length > 0) {
-      (async () => {
-        for (const p of inserted) {
-          try {
-            // Generate presigned download URL so face AI can fetch image from Private B2 bucket
-            const previewUrl = await getGalleryPresignedDownloadUrl(p.preview_key, 3600);
-            const faces = await extractFacesFromImageUrl(previewUrl);
+      const CHUNK_SIZE = 4;
+      for (let i = 0; i < inserted.length; i += CHUNK_SIZE) {
+        const chunk = inserted.slice(i, i + CHUNK_SIZE);
+        await Promise.all(
+          chunk.map(async (p) => {
+            try {
+              const faces = await extractFacesFromS3Key(p.preview_key);
+              await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);
 
-            // 1. Delete previous face vectors for this photo to avoid duplicates
-            await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);
+              if (faces && faces.length > 0) {
+                totalFacesFound += faces.length;
+                const faceRecords = faces.map((f) => ({
+                  photo_id: p.id,
+                  gallery_id: galleryId,
+                  workspace_id: workspaceId,
+                  bounding_box: f.box,
+                  embedding: f.embedding,
+                }));
 
-            if (faces && faces.length > 0) {
-              const faceRecords = faces.map((f) => ({
-                photo_id: p.id,
-                gallery_id: galleryId,
-                workspace_id: workspaceId,
-                bounding_box: f.box,
-                embedding: f.embedding,
-              }));
-
-              await supabaseAdmin.from('photo_faces').insert(faceRecords);
-
-              // Update photo with true detected face count
-              await supabaseAdmin
-                .from('gallery_photos')
-                .update({ face_count: faces.length })
-                .eq('id', p.id);
-            } else {
-              await supabaseAdmin
-                .from('gallery_photos')
-                .update({ face_count: 0 })
-                .eq('id', p.id);
+                await supabaseAdmin.from('photo_faces').insert(faceRecords);
+                await supabaseAdmin
+                  .from('gallery_photos')
+                  .update({ face_count: faces.length })
+                  .eq('id', p.id);
+              } else {
+                await supabaseAdmin
+                  .from('gallery_photos')
+                  .update({ face_count: 0 })
+                  .eq('id', p.id);
+              }
+            } catch (faceErr) {
+              console.warn(`[FaceIndex] Error processing photo ${p.id}:`, faceErr);
             }
-          } catch (faceErr) {
-            console.warn(`[FaceIndex] Error processing photo ${p.id}:`, faceErr);
-          }
+          })
+        );
+      }
+
+      // Update gallery aggregate total_faces
+      try {
+        const { count: faceCount } = await supabaseAdmin
+          .from('photo_faces')
+          .select('id', { count: 'exact', head: true })
+          .eq('gallery_id', galleryId);
+
+        if (typeof faceCount === 'number') {
+          await supabaseAdmin
+            .from('event_galleries')
+            .update({ total_faces: faceCount })
+            .eq('id', galleryId);
         }
-      })();
+      } catch (_) {}
     }
 
     return NextResponse.json({
       success: true,
       registeredCount: inserted?.length || 0,
+      totalFacesFound,
       photos: inserted,
     });
   } catch (err: any) {

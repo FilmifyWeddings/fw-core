@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { extractFacesFromImageUrl } from '@/lib/faceAI';
+import { extractFacesFromS3Key } from '@/lib/faceAI';
 import { getPublicGalleryUrl } from '@/lib/r2';
 
 export const dynamic = 'force-dynamic';
@@ -64,8 +64,7 @@ export async function POST(req: NextRequest) {
       await Promise.all(
         chunk.map(async (p) => {
           try {
-            const previewUrl = getPublicGalleryUrl(p.preview_key);
-            const faces = await extractFacesFromImageUrl(previewUrl);
+            const faces = await extractFacesFromS3Key(p.preview_key);
 
             // 1. Delete previous faces for this photo to avoid stale/fake records
             await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);

@@ -44,9 +44,11 @@ import {
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { supabase } from '@/lib/supabase';
 import { batchUploadPhotos } from '@/lib/imageProcessor';
-import { getPublicGalleryUrl } from '@/lib/r2';
+import { getGalleryPublicUrl as getPublicGalleryUrl } from '@/lib/storage/galleryB2Client';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
+import { UploadQueueProvider, useUploadQueue } from '@/context/UploadQueueContext';
+import { UploadManagerDrawer } from '@/components/gallery/UploadManagerDrawer';
 
 interface EventGallery {
   id: string;
@@ -128,6 +130,7 @@ function AlbumStudioContent() {
   const [reindexProgress, setReindexProgress] = useState<string>('');
 
   // Uploader State
+  const { enqueueUpload } = useUploadQueue();
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadTargetCollection, setUploadTargetCollection] = useState<string>('all');
   const [uploading, setUploading] = useState(false);
@@ -237,6 +240,17 @@ function AlbumStudioContent() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Live auto-refresh when background uploads register photos & faces
+  useEffect(() => {
+    const handleGalleryUpdated = (e: any) => {
+      if (galleryId && (!e.detail?.galleryId || e.detail?.galleryId === galleryId)) {
+        loadData();
+      }
+    };
+    window.addEventListener('studiocore:gallery_updated', handleGalleryUpdated);
+    return () => window.removeEventListener('studiocore:gallery_updated', handleGalleryUpdated);
+  }, [galleryId, loadData]);
 
   const loadPeople = async (galId: string) => {
     try {
@@ -402,43 +416,19 @@ function AlbumStudioContent() {
     }
   };
 
-  // 5. Batch Direct-to-R2 Upload with Instant UI Rendering
-  const handleStartUpload = async () => {
+  // 5. Non-Blocking Background Floating Upload Queue
+  const handleStartUpload = () => {
     if (!gallery || uploadFiles.length === 0) return;
 
-    setUploading(true);
-    setUploadProgress({
-      current: 0,
-      total: uploadFiles.length,
-      percentage: 0,
-      status: 'Generating WebP previews & thumbnails in browser...',
-    });
-
     const targetCol = uploadTargetCollection !== 'all' ? uploadTargetCollection : (collections[0]?.id || undefined);
+    const targetColName = collections.find(c => c.id === targetCol)?.name || 'Default Collection';
 
-    try {
-      const result = await batchUploadPhotos(
-        gallery.id,
-        uploadFiles,
-        (current, total, percentage, status) => {
-          setUploadProgress({ current, total, percentage, status });
-        },
-        targetCol,
-        effectiveWsId
-      );
+    const filesToUpload = [...uploadFiles];
+    setUploadFiles([]);
+    setIsUploadModalOpen(false);
 
-      if (result.success || result.uploadedCount > 0) {
-        setUploadFiles([]);
-        setIsUploadModalOpen(false);
-
-        // Reload data to show photos instantly
-        await loadData();
-      }
-    } catch (err: any) {
-      alert(`Upload error: ${err.message}`);
-    } finally {
-      setUploading(false);
-    }
+    // Enqueue into floating bottom-right drawer
+    enqueueUpload(gallery.id, targetCol, targetColName, filesToUpload, effectiveWsId);
   };
 
   // 6. Delete Photos
@@ -988,7 +978,7 @@ function AlbumStudioContent() {
                   {selectedCollectionId === 'all' ? 'No Photos in this Album Yet' : 'No Photos in this Collection'}
                 </h3>
                 <p className="text-xs text-zinc-400 max-w-sm mx-auto">
-                  Drag and drop wedding photos to compress in the browser and stream directly to Backblaze B2 Storage.
+                  Drag and drop wedding photos to optimize in the browser and stream directly to StudioCore Cloud.
                 </p>
               </div>
               <button
@@ -1154,19 +1144,18 @@ function AlbumStudioContent() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          4. BATCH PHOTO UPLOADER MODAL
+          4. PHOTO UPLOADER MODAL (ENQUEUES TO FLOATING BACKGROUND DRAWER)
       ───────────────────────────────────────────────────────────── */}
       {isUploadModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full border border-zinc-200 shadow-2xl space-y-5">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full border border-zinc-200 shadow-2xl space-y-5 animate-in fade-in duration-150">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black text-zinc-900">Upload Photos</h3>
-                <span className="text-xs text-zinc-400">Direct-to-Backblaze B2 WebP Pipeline</span>
+                <span className="text-xs text-zinc-400">StudioCore High-Speed Cloud Pipeline</span>
               </div>
               <button
                 type="button"
-                disabled={uploading}
                 onClick={() => setIsUploadModalOpen(false)}
                 className="p-1.5 text-zinc-400 hover:text-zinc-700 cursor-pointer"
               >
@@ -1174,116 +1163,90 @@ function AlbumStudioContent() {
               </button>
             </div>
 
-            {!uploading ? (
-              <div className="space-y-4">
-                {/* Target Collection Selector */}
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Target Collection</label>
-                  <select
-                    value={uploadTargetCollection}
-                    onChange={(e) => setUploadTargetCollection(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-800 cursor-pointer"
-                  >
-                    <option value="all">Default / Main Album</option>
-                    {collections.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-zinc-300 hover:border-amber-500 bg-[#FBF9F5] rounded-3xl p-8 text-center cursor-pointer transition-all space-y-3"
+            <div className="space-y-4">
+              {/* Target Collection Selector */}
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">Target Collection / Album</label>
+                <select
+                  value={uploadTargetCollection}
+                  onChange={(e) => setUploadTargetCollection(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-800 cursor-pointer"
                 >
-                  <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
-                    <Upload className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-black text-zinc-800">
-                      Click or Drag &amp; Drop Wedding Photos
-                    </p>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      RAW / JPEG / PNG files are compressed locally and streamed to Backblaze B2
-                    </p>
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        setUploadFiles(Array.from(e.target.files));
-                      }
-                    }}
-                  />
-                </div>
-
-                {uploadFiles.length > 0 && (
-                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-900 font-bold">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>{uploadFiles.length} photos ready for upload</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setUploadFiles([])}
-                      className="text-[10px] text-rose-600 hover:underline cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-
-                <div className="flex items-center gap-2 pt-2">
-                  <button
-                    type="button"
-                    disabled={uploadFiles.length === 0}
-                    onClick={handleStartUpload}
-                    className="flex-1 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:bg-zinc-300 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Upload &amp; Auto-Index Faces ({uploadFiles.length})</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsUploadModalOpen(false)}
-                    className="px-4 py-3.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
+                  <option value="all">Default / Main Album</option>
+                  {collections.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
-            ) : (
-              <div className="py-8 space-y-5 text-center">
-                <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto animate-pulse">
-                  <Upload className="w-8 h-8" />
-                </div>
 
-                <div className="space-y-1">
-                  <h4 className="text-sm font-black text-zinc-900">
-                    Uploading &amp; Compressing to Backblaze B2...
-                  </h4>
-                  <p className="text-xs text-zinc-500 font-mono">
-                    {uploadProgress.status || `Processing photo ${uploadProgress.current} of ${uploadProgress.total}`}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-zinc-300 hover:border-amber-500 bg-[#FBF9F5] rounded-3xl p-8 text-center cursor-pointer transition-all space-y-3"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+                  <Upload className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-zinc-800">
+                    Click or Drag &amp; Drop Wedding Photos
+                  </p>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    RAW / JPEG / PNG files are optimized locally and streamed directly to StudioCore Cloud
                   </p>
                 </div>
-
-                <div className="space-y-1.5 max-w-md mx-auto">
-                  <div className="h-3 w-full bg-zinc-100 rounded-full overflow-hidden border border-zinc-200 p-0.5">
-                    <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-amber-600 rounded-full transition-all duration-300"
-                      style={{ width: `${uploadProgress.percentage}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] font-bold text-zinc-500">
-                    <span>{uploadProgress.current} / {uploadProgress.total} uploaded</span>
-                    <span>{uploadProgress.percentage}%</span>
-                  </div>
-                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setUploadFiles(Array.from(e.target.files));
+                    }
+                  }}
+                />
               </div>
-            )}
+
+              {uploadFiles.length > 0 && (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-900 font-bold">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{uploadFiles.length} photos selected</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setUploadFiles([])}
+                    className="text-[10px] text-rose-600 hover:underline cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={uploadFiles.length === 0}
+                  onClick={handleStartUpload}
+                  className="flex-1 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:bg-zinc-300 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Start Background Upload ({uploadFiles.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="px-4 py-3.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <p className="text-[10.5px] text-zinc-400 text-center">
+                ✨ Uploads run in the background floating drawer at bottom-right. You can continue browsing!
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -1307,6 +1270,16 @@ function AlbumStudioContent() {
         />
       )}
 
+      {/* ─────────────────────────────────────────────────────────────
+          6. FLOATING NON-BLOCKING UPLOAD MANAGER DRAWER (BOTTOM-RIGHT)
+      ───────────────────────────────────────────────────────────── */}
+      <UploadManagerDrawer
+        onResumeInterrupted={(gId, colId) => {
+          if (colId) setUploadTargetCollection(colId);
+          setIsUploadModalOpen(true);
+        }}
+      />
+
     </div>
   );
 }
@@ -1324,7 +1297,9 @@ export default function AlbumStudioPage() {
         </div>
       }
     >
-      <AlbumStudioContent />
+      <UploadQueueProvider>
+        <AlbumStudioContent />
+      </UploadQueueProvider>
     </Suspense>
   );
 }

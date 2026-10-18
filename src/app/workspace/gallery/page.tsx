@@ -168,7 +168,7 @@ export default function GalleryManagerPage() {
     }
   };
 
-  // Handle Batch File Selection & Direct Backblaze B2 Upload
+  // Handle Batch File Selection & Direct StudioCore Cloud Upload
   const handleStartUpload = async () => {
     if (!selectedGallery || uploadFiles.length === 0) return;
 
@@ -195,7 +195,7 @@ export default function GalleryManagerPage() {
         setUploadFiles([]);
         setIsUploadModalOpen(false);
         await fetchGalleries();
-        alert(`🎉 Successfully uploaded and indexed ${result.uploadedCount} photos to Backblaze B2 Storage!`);
+        alert(`🎉 Successfully uploaded and indexed ${result.uploadedCount} photos to StudioCore Cloud!`);
       } else {
         alert(`Upload finished with some notices. Uploaded ${result.uploadedCount} photos.`);
       }
@@ -259,7 +259,7 @@ export default function GalleryManagerPage() {
               Wedding Event AI Galleries
             </h1>
             <p className="text-xs sm:text-sm text-zinc-500 font-medium max-w-2xl leading-relaxed">
-              Create luxury guest portals with automated client-side WebP compression, direct Backblaze B2 storage uploads, and instant selfie face recognition matching.
+              Create luxury guest portals with automated client-side WebP compression, direct StudioCore Cloud storage, and instant selfie face recognition matching.
             </p>
           </div>
 
@@ -303,7 +303,7 @@ export default function GalleryManagerPage() {
 
           <div className="p-4 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] space-y-1">
             <div className="flex items-center justify-between text-zinc-400">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Backblaze B2</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider">StudioCore Cloud</span>
               <HardDrive className="w-4 h-4 text-purple-600" />
             </div>
             <p className="text-2xl font-black text-zinc-900">{totalStorageGb} <span className="text-xs font-bold text-zinc-400">GB</span></p>
@@ -565,7 +565,7 @@ export default function GalleryManagerPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          4. BATCH PHOTO UPLOADER MODAL (CLIENT WEBP + DIRECT BACKBLAZE B2)
+          4. BATCH PHOTO UPLOADER MODAL (CLIENT WEBP + DIRECT STUDIOCORE CLOUD)
       ───────────────────────────────────────────────────────────── */}
       {isUploadModalOpen && selectedGallery && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
@@ -573,7 +573,7 @@ export default function GalleryManagerPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black text-zinc-900">Upload Photos: {selectedGallery.title}</h3>
-                <span className="text-xs text-zinc-400">Client-Side WebP Compression + Direct Backblaze B2 Pipeline</span>
+                <span className="text-xs text-zinc-400">Client-Side WebP Compression + StudioCore Cloud Pipeline</span>
               </div>
               <button
                 type="button"
@@ -661,7 +661,7 @@ export default function GalleryManagerPage() {
 
                 <div className="space-y-1">
                   <h4 className="text-sm font-black text-zinc-900">
-                    Uploading &amp; Compressing to Backblaze B2...
+                    Uploading &amp; Compressing to StudioCore Cloud...
                   </h4>
                   <p className="text-xs text-zinc-500 font-mono">
                     {uploadProgress.status || `Processing photo ${uploadProgress.current} of ${uploadProgress.total}`}
@@ -683,7 +683,7 @@ export default function GalleryManagerPage() {
                 </div>
 
                 <p className="text-[10.5px] text-zinc-400">
-                  ⚡ Client Web Workers are compressing WebP previews and streaming directly to Backblaze B2 bucket.
+                  ⚡ Client Web Workers are compressing WebP previews and streaming directly to StudioCore Cloud storage.
                 </p>
               </div>
             )}

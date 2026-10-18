@@ -59,7 +59,31 @@ export async function getGalleryPresignedDownloadUrl(
 }
 
 /**
+ * Retrieve raw file buffer directly from storage bucket using S3 GetObjectCommand
+ */
+export async function getGalleryObjectBuffer(
+  key: string,
+  bucketName = B2_GALLERY_BUCKET_NAME
+): Promise<Buffer | null> {
+  try {
+    const cleanKey = key.replace(/^\/+/, '');
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: cleanKey,
+    });
+    const response = await galleryB2Client.send(command);
+    if (!response.Body) return null;
+    const byteArray = await response.Body.transformToByteArray();
+    return Buffer.from(byteArray);
+  } catch (err: any) {
+    console.warn(`[GalleryStorage] getGalleryObjectBuffer failed for key ${key}:`, err.message);
+    return null;
+  }
+}
+
+/**
  * Get direct public / CDN URL for a gallery photo (WebP preview, thumbnail, or cover)
+ * 100% White-Labeled: Routes through /api/gallery/image for private bucket security and clean URLs
  */
 export function getGalleryPublicUrl(key: string, bucketName = B2_GALLERY_BUCKET_NAME): string {
   if (!key) return '';
@@ -72,8 +96,8 @@ export function getGalleryPublicUrl(key: string, bucketName = B2_GALLERY_BUCKET_
     return `${base}/${cleanKey}`;
   }
 
-  // 2. Direct S3 URL on Backblaze B2
-  return `https://${bucketName}.s3.${B2_REGION}.backblazeb2.com/${cleanKey}`;
+  // 2. 100% White-Labeled Native Image Proxy (presigned redirect with browser caching)
+  return `/api/gallery/image?key=${encodeURIComponent(cleanKey)}`;
 }
 
 /**

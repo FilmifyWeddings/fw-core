@@ -1,8 +1,4 @@
-/**
- * StudioCore Multi-Face AI Engine
- * Production-grade multi-face detection, 512-dimensional vector embedding extraction,
- * and high-accuracy cosine similarity matching.
- */
+import { getGalleryObjectBuffer } from '@/lib/storage/galleryB2Client';
 
 export interface DetectedFace {
   box: { x: number; y: number; w: number; h: number };
@@ -14,6 +10,12 @@ const WORKER_ENDPOINTS = [
   process.env.FACE_WORKER_URL,
   'http://127.0.0.1:8005/api/ai/extract-faces',
   'http://143.244.133.235:8005/api/ai/extract-faces',
+].filter(Boolean) as string[];
+
+const CLUSTER_ENDPOINTS = [
+  process.env.FACE_CLUSTER_URL,
+  'http://127.0.0.1:8005/api/ai/cluster-faces',
+  'http://143.244.133.235:8005/api/ai/cluster-faces',
 ].filter(Boolean) as string[];
 
 /**
@@ -43,6 +45,64 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
+ * Extracts multiple faces and 512-D embeddings directly from Base64 image payload
+ */
+export async function extractFacesFromBase64(base64Payload: string): Promise<DetectedFace[]> {
+  if (!base64Payload) return [];
+
+  for (const endpoint of WORKER_ENDPOINTS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_base64: base64Payload }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const json = await res.json();
+        const rawFaces = json.faces || json.data?.faces;
+        if (rawFaces && Array.isArray(rawFaces)) {
+          return rawFaces.map((f: any) => ({
+            box: f.box || { x: 0, y: 0, w: 100, h: 100 },
+            embedding: normalizeVector(f.embedding),
+            confidence: f.confidence || 0.95,
+          }));
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[FaceAI] Worker ${endpoint} error:`, err.message);
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Extracts multiple faces and 512-D embeddings directly from S3 Storage Key
+ * Bypasses public internet URLs and authentication failures with zero 401 errors.
+ */
+export async function extractFacesFromS3Key(key: string): Promise<DetectedFace[]> {
+  if (!key) return [];
+  try {
+    const buf = await getGalleryObjectBuffer(key);
+    if (!buf) {
+      console.warn(`[FaceAI] Could not retrieve S3 buffer for key: ${key}`);
+      return [];
+    }
+    const base64Payload = `data:image/jpeg;base64,${buf.toString('base64')}`;
+    return await extractFacesFromBase64(base64Payload);
+  } catch (err: any) {
+    console.warn(`[FaceAI] extractFacesFromS3Key failed for key ${key}:`, err.message);
+    return [];
+  }
+}
+
+/**
  * Extracts multiple faces and 512-D embeddings from an image URL or buffer
  */
 export async function extractFacesFromImageUrl(imageUrl: string): Promise<DetectedFace[]> {
@@ -61,20 +121,20 @@ export async function extractFacesFromImageUrl(imageUrl: string): Promise<Detect
     console.warn('[FaceAI] Could not fetch image buffer locally:', fetchErr);
   }
 
-  // 2. Query InsightFace AI worker
+  if (base64Payload) {
+    return await extractFacesFromBase64(base64Payload);
+  }
+
+  // 2. Query InsightFace AI worker with URL
   for (const endpoint of WORKER_ENDPOINTS) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-      const requestBody = base64Payload
-        ? { image_base64: base64Payload, image_url: imageUrl }
-        : { image_url: imageUrl };
-
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ image_url: imageUrl }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -104,31 +164,146 @@ export async function extractFacesFromImageUrl(imageUrl: string): Promise<Detect
 export async function extractEmbeddingFromBase64(base64Data: string): Promise<number[]> {
   if (!base64Data) return [];
 
-  // Query InsightFace Deep Engine with base64
-  for (const endpoint of WORKER_ENDPOINTS) {
+  const faces = await extractFacesFromBase64(base64Data);
+  if (faces.length > 0) {
+    return faces[0].embedding;
+  }
+  return [];
+}
+
+/**
+ * Clusters an array of faces into unique people identities using DBSCAN (Python)
+ * or intelligent Union-Find connected component graph clustering (Fallback).
+ * Prevents duplicating the same person across angles/lighting.
+ */
+export async function clusterFacesWithAI(
+  faces: any[],
+  eps = 0.48
+): Promise<{ success: boolean; people: any[]; uniquePeopleCount: number }> {
+  if (!faces || faces.length === 0) {
+    return { success: true, people: [], uniquePeopleCount: 0 };
+  }
+
+  // 1. Try Python DBSCAN microservice
+  for (const endpoint of CLUSTER_ENDPOINTS) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_base64: base64Data, selfieBase64: base64Data }),
+        body: JSON.stringify({ faces, eps }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
 
       if (res.ok) {
         const json = await res.json();
-        const rawFaces = json.faces || json.data?.faces;
-        if (rawFaces && Array.isArray(rawFaces) && rawFaces.length > 0) {
-          return normalizeVector(rawFaces[0].embedding);
+        if (json.status === 'success' && Array.isArray(json.people)) {
+          return {
+            success: true,
+            people: json.people,
+            uniquePeopleCount: json.unique_people_count ?? json.people.length,
+          };
         }
       }
     } catch (err: any) {
-      console.warn(`[FaceAI] Worker ${endpoint} base64 error:`, err.message);
+      console.warn(`[FaceAI] Python cluster endpoint ${endpoint} failed, trying fallback:`, err.message);
     }
   }
 
-  return [];
+  // 2. High-Accuracy Fallback: Union-Find Connected Component Graph Clustering
+  console.log('[FaceAI] Using Union-Find Connected Components Graph Clustering...');
+  return clusterFacesGraph(faces, 0.48);
+}
+
+/**
+ * Union-Find Disjoint Set Clustering Algorithm
+ * Guarantees that any faces linked through intermediate angles (Face A <-> Face B <-> Face C)
+ * are cleanly merged into the same unique person, completely preventing split/duplicate profiles!
+ */
+export function clusterFacesGraph(
+  faces: any[],
+  threshold = 0.48
+): { success: boolean; people: any[]; uniquePeopleCount: number } {
+  const n = faces.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+
+  function find(i: number): number {
+    if (parent[i] === i) return i;
+    return (parent[i] = find(parent[i]));
+  }
+
+  function union(i: number, j: number) {
+    const rootI = find(i);
+    const rootJ = find(j);
+    if (rootI !== rootJ) {
+      parent[rootI] = rootJ;
+    }
+  }
+
+  // Pairwise similarity chaining
+  for (let i = 0; i < n; i++) {
+    const embI = faces[i].embedding;
+    if (!embI || embI.length !== 512) continue;
+
+    for (let j = i + 1; j < n; j++) {
+      const embJ = faces[j].embedding;
+      if (!embJ || embJ.length !== 512) continue;
+
+      const sim = cosineSimilarity(embI, embJ);
+      if (sim >= threshold) {
+        union(i, j);
+      }
+    }
+  }
+
+  // Group into clusters
+  const clusterMap = new Map<number, { faces: any[]; photoIds: Set<string> }>();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    if (!clusterMap.has(root)) {
+      clusterMap.set(root, { faces: [], photoIds: new Set() });
+    }
+    const c = clusterMap.get(root)!;
+    c.faces.push(faces[i]);
+    if (faces[i].photo_id) {
+      c.photoIds.add(faces[i].photo_id);
+    }
+  }
+
+  const people: any[] = [];
+  let pIdx = 1;
+
+  for (const [, c] of clusterMap.entries()) {
+    // Representative face is the one with best confidence or biggest area
+    let bestFace = c.faces[0];
+    let maxArea = 0;
+
+    for (const f of c.faces) {
+      const box = f.bounding_box || f.box || { w: 0, h: 0 };
+      const area = (box.w || 0) * (box.h || 0);
+      if (area > maxArea) {
+        maxArea = area;
+        bestFace = f;
+      }
+    }
+
+    people.push({
+      person_id: `person_${pIdx++}`,
+      avatar_face: bestFace,
+      photo_ids: Array.from(c.photoIds),
+      total_photos: c.photoIds.size,
+      face_count: c.faces.length,
+    });
+  }
+
+  people.sort((a, b) => b.total_photos - a.total_photos);
+
+  return {
+    success: true,
+    people,
+    uniquePeopleCount: people.length,
+  };
 }

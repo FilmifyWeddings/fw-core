@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, downloadUrl: publicUrl });
     }
   } catch (err: any) {
-    console.error('Error generating Backblaze B2 download URL:', err);
+    console.error('Error generating download URL:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
