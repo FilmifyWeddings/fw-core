@@ -10,7 +10,7 @@ import {
   Headphones, LogOut, ChevronDown, ChevronRight, ChevronLeft, 
   Menu, X, Sparkles, UserCheck, Archive, UserX, CheckCircle2, 
   ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase, HardDrive, Camera,
-  Flame, PhoneCall, CheckSquare, QrCode
+  Flame, PhoneCall, CheckSquare, QrCode, Images
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
@@ -601,43 +601,22 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const galleryMenuItems = [
     {
       id: 'gallery-events',
-      name: 'Event Galleries',
+      name: 'My Events',
       path: '/workspace/gallery',
       icon: Camera,
       iconBg: 'bg-[#FEF3C7] text-[#D97706]',
     },
     {
-      id: 'gallery-people',
-      name: 'Face AI & People',
-      path: '/workspace/gallery?view=people',
-      icon: UserCheck,
+      id: 'gallery-analytics',
+      name: 'Analytics',
+      path: '/workspace/gallery/analytics',
+      icon: BarChart3,
       iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
-    },
-    {
-      id: 'gallery-proofing',
-      name: 'Proofing & Selections',
-      path: '/workspace/gallery?view=proofing',
-      icon: Sparkles,
-      iconBg: 'bg-[#F3E8FF] text-[#7E22CE]',
-    },
-    {
-      id: 'gallery-standees',
-      name: 'Table Standees & QR',
-      path: '/workspace/gallery?view=standees',
-      icon: QrCode,
-      iconBg: 'bg-[#DCFCE7] text-[#15803D]',
-    },
-    {
-      id: 'gallery-storage',
-      name: 'Cloud Storage & B2',
-      path: '/workspace/storage',
-      icon: HardDrive,
-      iconBg: 'bg-[#F0FDF4] text-[#16A34A]',
     },
     {
       id: 'gallery-settings',
       name: 'Gallery Settings',
-      path: '/workspace/settings?tab=gallery',
+      path: '/workspace/gallery/settings',
       icon: Settings,
       iconBg: 'bg-[#F4F4F5] text-[#52525B]',
     },
@@ -746,37 +725,44 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           <WorkspaceSwitcher isCollapsed={collapsed} />
         </div>
 
-        {/* Liquid Glass App Mode Switcher (Studio CRM <-> AI Galleries) */}
+        {/* Animated Round Capsule Mode Switcher (CRM <-> Gallery) */}
         {!collapsed ? (
           <div className="px-3 py-2 shrink-0">
-            <div className="relative p-1 rounded-2xl bg-[#F4F1EA]/85 backdrop-blur-md border border-[#E7E2D8] flex items-center shadow-inner">
+            <div className="relative p-1 rounded-full bg-[#F3EFE7] border border-[#E4DEC3] flex items-center shadow-inner">
               <button
                 type="button"
                 onClick={() => handleSwitchAppMode('crm')}
-                className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all duration-300 cursor-pointer select-none ${
-                  appMode === 'crm'
-                    ? 'bg-white text-zinc-900 shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] border border-[#E7E2D8]'
-                    : 'text-zinc-500 hover:text-zinc-800 hover:bg-white/40'
+                className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-black transition-colors duration-200 cursor-pointer select-none ${
+                  appMode === 'crm' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-800'
                 }`}
               >
-                <Briefcase className={`w-3.5 h-3.5 transition-colors ${appMode === 'crm' ? 'text-amber-600' : 'text-zinc-400'}`} />
-                <span>Studio CRM</span>
+                {appMode === 'crm' && (
+                  <motion.div
+                    layoutId="desktopModePill"
+                    transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                    className="absolute inset-0 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] border border-[#E7E2D8]"
+                  />
+                )}
+                <Briefcase className={`relative z-10 w-3.5 h-3.5 ${appMode === 'crm' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                <span className="relative z-10">CRM</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSwitchAppMode('gallery')}
-                className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all duration-300 cursor-pointer select-none ${
-                  appMode === 'gallery'
-                    ? 'bg-white text-amber-950 shadow-[0_2px_8px_rgba(217,119,6,0.12),0_1px_2px_rgba(0,0,0,0.04)] border border-amber-300/80'
-                    : 'text-zinc-500 hover:text-zinc-800 hover:bg-white/40'
+                className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-black transition-colors duration-200 cursor-pointer select-none ${
+                  appMode === 'gallery' ? 'text-amber-950' : 'text-zinc-500 hover:text-zinc-800'
                 }`}
               >
-                <Camera className={`w-3.5 h-3.5 transition-colors ${appMode === 'gallery' ? 'text-amber-600' : 'text-zinc-400'}`} />
-                <span className="flex items-center gap-1">
-                  <span>AI Gallery</span>
-                  <Sparkles className="w-2.5 h-2.5 text-amber-500 animate-pulse" />
-                </span>
+                {appMode === 'gallery' && (
+                  <motion.div
+                    layoutId="desktopModePill"
+                    transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                    className="absolute inset-0 bg-white rounded-full shadow-[0_2px_8px_rgba(217,119,6,0.15),0_1px_2px_rgba(0,0,0,0.04)] border border-amber-300/80"
+                  />
+                )}
+                <Images className={`relative z-10 w-3.5 h-3.5 ${appMode === 'gallery' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                <span className="relative z-10">Gallery</span>
               </button>
             </div>
           </div>
@@ -785,20 +771,20 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             <button
               type="button"
               onClick={() => handleSwitchAppMode(appMode === 'crm' ? 'gallery' : 'crm')}
-              className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center transition-all duration-200 cursor-pointer border ${
+              className={`w-11 h-11 rounded-full flex flex-col items-center justify-center transition-all duration-200 cursor-pointer border shadow-2xs ${
                 appMode === 'gallery'
-                  ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-xs'
+                  ? 'bg-amber-50 border-amber-300 text-amber-800'
                   : 'bg-zinc-50 border-[#E7E2D8] text-zinc-700 hover:bg-white'
               }`}
-              title={`Switch to ${appMode === 'crm' ? 'AI Galleries' : 'Studio CRM'}`}
+              title={`Switch to ${appMode === 'crm' ? 'Gallery' : 'CRM'}`}
             >
               {appMode === 'gallery' ? (
-                <Camera className="w-4 h-4 text-amber-600" />
+                <Images className="w-4 h-4 text-amber-600" />
               ) : (
                 <Briefcase className="w-4 h-4 text-zinc-700" />
               )}
               <span className="text-[8px] font-black tracking-tight mt-0.5">
-                {appMode === 'crm' ? 'CRM' : 'AI'}
+                {appMode === 'crm' ? 'CRM' : 'GAL'}
               </span>
             </button>
           </div>
@@ -814,18 +800,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             let isActive = false;
             if (appMode === 'gallery') {
               if (item.id === 'gallery-events') {
-                isActive = (pathname === '/workspace/gallery' && (!stageParam || stageParam === 'all' || stageParam === 'galleries'))
-                  || (pathname.startsWith('/workspace/gallery/') && !stageParam);
-              } else if (item.id === 'gallery-people') {
-                isActive = pathname === '/workspace/gallery' && stageParam === 'people';
-              } else if (item.id === 'gallery-proofing') {
-                isActive = pathname === '/workspace/gallery' && stageParam === 'proofing';
-              } else if (item.id === 'gallery-standees') {
-                isActive = pathname === '/workspace/gallery' && stageParam === 'standees';
-              } else if (item.id === 'gallery-storage') {
-                isActive = pathname === '/workspace/storage';
+                isActive = pathname === '/workspace/gallery' || (pathname.startsWith('/workspace/gallery/') && !pathname.includes('/analytics') && !pathname.includes('/settings'));
+              } else if (item.id === 'gallery-analytics') {
+                isActive = pathname.startsWith('/workspace/gallery/analytics');
               } else if (item.id === 'gallery-settings') {
-                isActive = pathname === '/workspace/settings' && searchParams?.get('tab') === 'gallery';
+                isActive = pathname.startsWith('/workspace/gallery/settings');
               } else {
                 isActive = pathname === item.path;
               }
@@ -1063,23 +1042,28 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 <WorkspaceSwitcher isCollapsed={false} />
               </div>
 
-              {/* Mobile Liquid Glass Mode Switcher */}
+              {/* Mobile Animated Capsule Mode Switcher */}
               <div className="px-3 py-2 shrink-0">
-                <div className="relative p-1 rounded-2xl bg-[#F4F1EA]/85 backdrop-blur-md border border-[#E7E2D8] flex items-center shadow-inner">
+                <div className="relative p-1 rounded-full bg-[#F3EFE7] border border-[#E4DEC3] flex items-center shadow-inner">
                   <button
                     type="button"
                     onClick={() => {
                       handleSwitchAppMode('crm');
                       setMobileDrawerOpen(false);
                     }}
-                    className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all duration-300 cursor-pointer select-none ${
-                      appMode === 'crm'
-                        ? 'bg-white text-zinc-900 shadow-xs border border-[#E7E2D8]'
-                        : 'text-zinc-500 hover:text-zinc-800'
+                    className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-black transition-colors duration-200 cursor-pointer select-none ${
+                      appMode === 'crm' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-800'
                     }`}
                   >
-                    <Briefcase className={`w-3.5 h-3.5 ${appMode === 'crm' ? 'text-amber-600' : 'text-zinc-400'}`} />
-                    <span>Studio CRM</span>
+                    {appMode === 'crm' && (
+                      <motion.div
+                        layoutId="mobileModePill"
+                        transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                        className="absolute inset-0 bg-white rounded-full shadow-xs border border-[#E7E2D8]"
+                      />
+                    )}
+                    <Briefcase className={`relative z-10 w-3.5 h-3.5 ${appMode === 'crm' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                    <span className="relative z-10">CRM</span>
                   </button>
 
                   <button
@@ -1088,17 +1072,19 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                       handleSwitchAppMode('gallery');
                       setMobileDrawerOpen(false);
                     }}
-                    className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all duration-300 cursor-pointer select-none ${
-                      appMode === 'gallery'
-                        ? 'bg-white text-amber-950 shadow-xs border border-amber-300/80'
-                        : 'text-zinc-500 hover:text-zinc-800'
+                    className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-black transition-colors duration-200 cursor-pointer select-none ${
+                      appMode === 'gallery' ? 'text-amber-950' : 'text-zinc-500 hover:text-zinc-800'
                     }`}
                   >
-                    <Camera className={`w-3.5 h-3.5 ${appMode === 'gallery' ? 'text-amber-600' : 'text-zinc-400'}`} />
-                    <span className="flex items-center gap-1">
-                      <span>AI Gallery</span>
-                      <Sparkles className="w-2.5 h-2.5 text-amber-500 animate-pulse" />
-                    </span>
+                    {appMode === 'gallery' && (
+                      <motion.div
+                        layoutId="mobileModePill"
+                        transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                        className="absolute inset-0 bg-white rounded-full shadow-xs border border-amber-300/80"
+                      />
+                    )}
+                    <Images className={`relative z-10 w-3.5 h-3.5 ${appMode === 'gallery' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                    <span className="relative z-10">Gallery</span>
                   </button>
                 </div>
               </div>
@@ -1109,18 +1095,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                   let isActive = false;
                   if (appMode === 'gallery') {
                     if (item.id === 'gallery-events') {
-                      isActive = (pathname === '/workspace/gallery' && (!stageParam || stageParam === 'all' || stageParam === 'galleries'))
-                        || (pathname.startsWith('/workspace/gallery/') && !stageParam);
-                    } else if (item.id === 'gallery-people') {
-                      isActive = pathname === '/workspace/gallery' && stageParam === 'people';
-                    } else if (item.id === 'gallery-proofing') {
-                      isActive = pathname === '/workspace/gallery' && stageParam === 'proofing';
-                    } else if (item.id === 'gallery-standees') {
-                      isActive = pathname === '/workspace/gallery' && stageParam === 'standees';
-                    } else if (item.id === 'gallery-storage') {
-                      isActive = pathname === '/workspace/storage';
+                      isActive = pathname === '/workspace/gallery' || (pathname.startsWith('/workspace/gallery/') && !pathname.includes('/analytics') && !pathname.includes('/settings'));
+                    } else if (item.id === 'gallery-analytics') {
+                      isActive = pathname.startsWith('/workspace/gallery/analytics');
                     } else if (item.id === 'gallery-settings') {
-                      isActive = pathname === '/workspace/settings' && searchParams?.get('tab') === 'gallery';
+                      isActive = pathname.startsWith('/workspace/gallery/settings');
                     } else {
                       isActive = pathname === item.path;
                     }

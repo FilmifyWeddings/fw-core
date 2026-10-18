@@ -183,22 +183,39 @@ export async function POST(req: NextRequest) {
     // Scoped storage path in Backblaze B2: galleries/{workspaceId}/{slug}_{timestamp}
     const storage_folder_prefix = `galleries/${effectiveWorkspaceId}/${finalSlug}_${Date.now().toString(36)}`;
 
-    const { data: newGallery, error } = await supabaseAdmin
+    const insertPayload: Record<string, any> = {
+      workspace_id: effectiveWorkspaceId,
+      title,
+      slug: finalSlug,
+      event_date: event_date || new Date().toISOString().split('T')[0],
+      pin_code: pin_code ? String(pin_code).trim() : null,
+      cover_url,
+      r2_folder_prefix: storage_folder_prefix, // Stored in existing prefix column
+      allow_downloads,
+      is_active: true,
+      status: 'DRAFT',
+    };
+
+    if (body.event_type) {
+      insertPayload.event_type = body.event_type;
+    }
+
+    let { data: newGallery, error } = await supabaseAdmin
       .from('event_galleries')
-      .insert({
-        workspace_id: effectiveWorkspaceId,
-        title,
-        slug: finalSlug,
-        event_date: event_date || new Date().toISOString().split('T')[0],
-        pin_code: pin_code ? String(pin_code).trim() : null,
-        cover_url,
-        r2_folder_prefix: storage_folder_prefix, // Stored in existing prefix column
-        allow_downloads,
-        is_active: true,
-        status: 'DRAFT',
-      })
+      .insert(insertPayload)
       .select()
       .single();
+
+    if (error && (error.message?.includes('event_type') || (error as any).code === '42703')) {
+      delete insertPayload.event_type;
+      const retry = await supabaseAdmin
+        .from('event_galleries')
+        .insert(insertPayload)
+        .select()
+        .single();
+      newGallery = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       if (error.code === '23505') {
@@ -230,7 +247,7 @@ export async function PATCH(req: NextRequest) {
   try {
     const auth = await resolveRequestUser(req);
     const body = await req.json();
-    const { id, title, event_date, is_active, pin_code, allow_downloads, cover_url, status, workspace_id } = body;
+    const { id, title, event_date, is_active, pin_code, allow_downloads, cover_url, status, workspace_id, event_type } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Gallery ID is required' }, { status: 400 });
@@ -258,13 +275,26 @@ export async function PATCH(req: NextRequest) {
     if (pin_code !== undefined) updates.pin_code = pin_code ? String(pin_code).trim() : null;
     if (allow_downloads !== undefined) updates.allow_downloads = allow_downloads;
     if (cover_url !== undefined) updates.cover_url = cover_url;
+    if (event_type !== undefined) updates.event_type = event_type;
 
-    const { data: updated, error } = await supabaseAdmin
+    let { data: updated, error } = await supabaseAdmin
       .from('event_galleries')
       .update(updates)
       .eq('id', id)
       .select()
       .single();
+
+    if (error && (error.message?.includes('event_type') || (error as any).code === '42703')) {
+      delete updates.event_type;
+      const retry = await supabaseAdmin
+        .from('event_galleries')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      updated = retry.data;
+      error = retry.error;
+    }
 
     if (error) throw error;
 
