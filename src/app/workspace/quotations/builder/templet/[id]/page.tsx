@@ -42,6 +42,7 @@ const AiQuotationModal = dynamic(
   () => import('@/components/dashboard/ai-quotation-modal').then(m => m.AiQuotationModal),
   { ssr: false }
 );
+import { consolidateSameDateFunctions, resolvePrimaryCoverLocation } from '@/lib/quotation-defaults';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 import { resolveFunctionTitle } from '@/components/QuotationDocumentCanvas';
@@ -547,7 +548,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     kicker: 'INVESTMENT & BREAKDOWN',
     heading: 'PRICING DETAILS',
     basePrice: 150000,
-    discountAmount: 10000,
+    discountAmount: 0,
     accommodationCharges: 15000,
     travelCharges: 10000,
     additionalCharges: 5000,
@@ -1951,16 +1952,26 @@ function normalizeQuotationData(loaded: any) {
   const d = DEFAULT_AIRY_PROPOSAL;
   if (!loaded || typeof loaded !== 'object') return d;
 
+  const rawFuncItems = Array.isArray(loaded.functionsPage?.items) ? loaded.functionsPage.items : d.functionsPage.items;
+  const funcItems = consolidateSameDateFunctions(rawFuncItems);
+
+  const rawLocation = loaded.cover?.locationName !== undefined ? loaded.cover.locationName : d.cover.locationName;
+  const coverLocation = resolvePrimaryCoverLocation(rawLocation, funcItems);
+
   return {
     ...d,
     ...loaded,
-    cover: { ...d.cover, ...(loaded.cover || {}) },
+    cover: { 
+      ...d.cover, 
+      ...(loaded.cover || {}),
+      locationName: coverLocation
+    },
     aboutUs: { ...d.aboutUs, ...(loaded.aboutUs || {}) },
     shootDetails: { ...d.shootDetails, ...(loaded.shootDetails || {}) },
     functionsPage: {
       ...d.functionsPage,
       ...(loaded.functionsPage || {}),
-      items: Array.isArray(loaded.functionsPage?.items) ? loaded.functionsPage.items : d.functionsPage.items,
+      items: funcItems,
     },
     deliverablesPage: {
       ...d.deliverablesPage,
@@ -1994,7 +2005,7 @@ function normalizeQuotationData(loaded: any) {
       ...d.pricingPage,
       ...(loaded.pricingPage || {}),
       basePrice: typeof loaded.pricingPage?.basePrice === 'number' ? loaded.pricingPage.basePrice : d.pricingPage.basePrice,
-      discountAmount: typeof loaded.pricingPage?.discountAmount === 'number' ? loaded.pricingPage.discountAmount : d.pricingPage.discountAmount,
+      discountAmount: typeof loaded.pricingPage?.discountAmount === 'number' ? loaded.pricingPage.discountAmount : 0,
       accommodationCharges: typeof loaded.pricingPage?.accommodationCharges === 'number' ? loaded.pricingPage.accommodationCharges : d.pricingPage.accommodationCharges,
       travelCharges: typeof loaded.pricingPage?.travelCharges === 'number' ? loaded.pricingPage.travelCharges : d.pricingPage.travelCharges,
       additionalCharges: typeof loaded.pricingPage?.additionalCharges === 'number' ? loaded.pricingPage.additionalCharges : d.pricingPage.additionalCharges,
@@ -7979,7 +7990,7 @@ function StudioCoreAiryBuilderContent() {
           setAiModalOpen(false);
           if (updatedDoc) {
             setData((prev: any) => {
-              const merged = {
+              const merged = normalizeQuotationData({
                 ...prev,
                 ...updatedDoc,
                 cover: { ...(prev.cover || {}), ...(updatedDoc.cover || {}) },
@@ -7988,7 +7999,8 @@ function StudioCoreAiryBuilderContent() {
                 shootDetails: updatedDoc.shootDetails || prev.shootDetails,
                 pricingPage: updatedDoc.pricingPage || prev.pricingPage,
                 paymentTermsPage: updatedDoc.paymentTermsPage || prev.paymentTermsPage,
-              };
+                specialValueAdditions: updatedDoc.specialValueAdditions || prev.specialValueAdditions,
+              });
               try {
                 cacheDocumentLocal(templateId || routeId, merged, currentVersionRef.current);
               } catch (e) {}
@@ -7996,6 +8008,8 @@ function StudioCoreAiryBuilderContent() {
             });
             setAutoSaveStatus('Auto-saved to cloud');
             setHasUnsavedChanges(false);
+            setActionSuccessMsg('✨ AI Quotation applied live! Events, dates & pricing updated.');
+            setTimeout(() => setActionSuccessMsg(null), 4000);
             if (!isPublicPreview) {
               triggerRevisionSave();
             }

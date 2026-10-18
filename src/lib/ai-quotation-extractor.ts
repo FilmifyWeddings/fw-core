@@ -1,4 +1,10 @@
-import { DEFAULT_AIRY_PROPOSAL, normalizeQuotationData } from '@/lib/quotation-defaults';
+import { 
+  DEFAULT_AIRY_PROPOSAL, 
+  normalizeQuotationData, 
+  consolidateSameDateFunctions, 
+  resolvePrimaryCoverLocation, 
+  sanitizeAndParseJson 
+} from '@/lib/quotation-defaults';
 import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
 
 /**
@@ -135,16 +141,12 @@ export function fallbackHeuristicExtractor(contextData: any) {
   const userNotes = (contextData.additional_user_notes || '').trim();
 
   // If user pasted valid JSON directly into AI prompt notes, parse and unwrap it
-  if (userNotes.startsWith('{') || userNotes.includes('{')) {
-    try {
-      const jsonMatch = userNotes.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.quotation || parsed.pages || parsed.cover || parsed.functionsPage || parsed.functions_coverage || parsed.pricingPage) {
-          return mapAiOutputToQuotationDocument(parsed, {}, contextData);
-        }
-      }
-    } catch (e) {}
+  const directParsed = sanitizeAndParseJson(userNotes);
+  if (directParsed && typeof directParsed === 'object') {
+    const root = directParsed.quotation || directParsed;
+    if (root.cover || root.pages || root.functionsPage || root.functions_coverage || root.pricingPage || root.shootDetails) {
+      return mapAiOutputToQuotationDocument(directParsed, {}, contextData);
+    }
   }
 
   const leadInfo = contextData.lead_info || {};
@@ -522,7 +524,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
         return !nameLower.includes('pre-wedding') && !nameLower.includes('prewedding') && !nameLower.includes('pre wedding') && !nameLower.includes('previewing');
       });
       const itemsToKeep = nonPreWedItems.length > 0 ? nonPreWedItems : normDoc.functionsPage.items;
-      normDoc.functionsPage.items = itemsToKeep.map((fn: any) => ({
+      const mappedItems = itemsToKeep.map((fn: any) => ({
         ...fn,
         name: fn.name || 'Wedding',
         date: fn.date || (fn.dateNotFixed ? 'Date Not Fixed' : 'Date Not Fixed'),
@@ -541,6 +543,17 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
               { name: 'Cinematographer', qty: 1 }
             ]
       }));
+
+      // ⚡ MANDATE: Automatically merge same-date events (e.g. Haldi + Sangeet)
+      normDoc.functionsPage.items = consolidateSameDateFunctions(mappedItems);
+    }
+
+    // ⚡ MANDATE: Resolve single primary cover location (Wedding first, no multi-venue concatenation)
+    if (normDoc.cover) {
+      normDoc.cover.locationName = resolvePrimaryCoverLocation(
+        normDoc.cover.locationName || '', 
+        normDoc.functionsPage?.items || []
+      );
     }
 
     // Filter out any pre-wedding deliverables from deliverablesPage
@@ -658,6 +671,14 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
         notes: fn.notes || ''
       };
     });
+
+    // ⚡ MANDATE: Automatically merge same-date events (e.g. Haldi + Sangeet)
+    doc.functionsPage.items = consolidateSameDateFunctions(doc.functionsPage.items);
+  }
+
+  // ⚡ MANDATE: Resolve single primary cover location (Wedding first, no multi-venue concatenation)
+  if (doc.cover) {
+    doc.cover.locationName = resolvePrimaryCoverLocation(cover.locationName || '', doc.functionsPage?.items || []);
   }
 
   // 4. Deliverables Page (Main Wedding Deliverables Only - Pre-wedding moved to shootDetails)
@@ -698,7 +719,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   // 6. Pricing Page
   if (!doc.pricingPage) doc.pricingPage = {};
   if (pricingPage.basePrice !== undefined) doc.pricingPage.basePrice = Number(pricingPage.basePrice);
-  if (pricingPage.discountAmount !== undefined) doc.pricingPage.discountAmount = Number(pricingPage.discountAmount);
+  doc.pricingPage.discountAmount = pricingPage.discountAmount !== undefined ? Number(pricingPage.discountAmount) : 0;
   if (pricingPage.gstPct !== undefined) doc.pricingPage.gstPct = Number(pricingPage.gstPct);
   if (pricingPage.travelCharges !== undefined) doc.pricingPage.travelCharges = Number(pricingPage.travelCharges);
   if (pricingPage.accommodationCharges !== undefined) doc.pricingPage.accommodationCharges = Number(pricingPage.accommodationCharges);

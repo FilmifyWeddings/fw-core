@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
-import { DEFAULT_AIRY_PROPOSAL, normalizeQuotationData } from '@/lib/quotation-defaults';
+import { DEFAULT_AIRY_PROPOSAL, normalizeQuotationData, sanitizeAndParseJson } from '@/lib/quotation-defaults';
 import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-resolver';
 import {
   normalizeCrewRoleName,
@@ -145,18 +145,12 @@ async function performAiExtraction(contextData: any, baseDoc: any) {
   const baseSchema = baseDoc ? JSON.parse(JSON.stringify(baseDoc)) : JSON.parse(JSON.stringify(DEFAULT_AIRY_PROPOSAL));
 
   // PRIORITY 1: If user pasted valid structured JSON directly into AI prompt notes, parse and map immediately!
-  if (userNotes.startsWith('{') || userNotes.includes('{')) {
-    try {
-      const jsonMatch = userNotes.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.quotation || parsed.pages || parsed.cover || parsed.functionsPage || parsed.functions_coverage || parsed.pricingPage) {
-          console.log('[AI Extract] Direct JSON detected from prompt input - using direct mapping');
-          return mapAiOutputToQuotationDocument(parsed, baseSchema, contextData);
-        }
-      }
-    } catch (e) {
-      console.warn('[Direct JSON Parse Warning]:', e);
+  const directParsed = sanitizeAndParseJson(userNotes);
+  if (directParsed && typeof directParsed === 'object') {
+    const root = directParsed.quotation || directParsed;
+    if (root.cover || root.pages || root.functionsPage || root.functions_coverage || root.pricingPage || root.shootDetails) {
+      console.log('[AI Extract] Direct JSON detected from prompt input - using direct mapping');
+      return mapAiOutputToQuotationDocument(directParsed, baseSchema, contextData);
     }
   }
 
@@ -181,7 +175,14 @@ PAGE-BY-PAGE RULES & MAPPING:
 - groomName: Groom name (e.g. "Sagar").
 - brideName: Bride name (e.g. "Vruddhi").
 - eventType: Title (e.g. "Wedding", "Pre-Wedding", "Pre-Wedding & Wedding", "Engagement", "Reception", "Maternity").
-- locationName: Exact city/venue if mentioned. If NOT mentioned, keep it EMPTY string "" (DO NOT invent fake locations).
+- locationName: SINGLE PRIMARY COVER LOCATION ONLY!
+  * Strict Priority Order for Cover Location:
+    1. Main Wedding ceremony venue/city (HIGHEST PRIORITY - e.g. "Taj Lake Palace, Udaipur").
+    2. Reception or Engagement venue (if no Wedding venue specified).
+    3. First mentioned venue/city.
+  * NEVER concatenate multiple different event locations onto the cover page (NEVER output "Home, Sangeet Hall, Taj Lake Palace").
+  * Individual event venues must stay inside their respective function cards in functionsPage.items!
+  * If NOT mentioned anywhere, keep EMPTY string "" (DO NOT invent fake locations).
 
 2. ABOUT US: Keep template defaults.
 
@@ -196,9 +197,16 @@ PAGE-BY-PAGE RULES & MAPPING:
 
 4. FUNCTIONS & COVERAGE (functionsPage) - MAIN WEDDING FUNCTIONS ONLY:
 - STRICT NEGATIVE RULE: NEVER add "Pre-Wedding" as an item inside functionsPage.items! Pre-wedding must NEVER appear as an event card under Functions & Coverage. Functions & Coverage is ONLY for wedding events (e.g. Haldi, Mehendi, Sangeet, Wedding Ceremony, Reception).
+- CRITICAL SAME-DATE EVENT CONSOLIDATION MANDATE (MUST FOLLOW):
+  * If two or more ceremonies/events occur on the SAME DATE or SAME DAY (for example: "22 February ko Haldi aur Sangeet hai", or "Haldi + Sangeet on 22 Feb", or Mehendi & Ring Ceremony on same date):
+    YOU MUST COMBINE THEM INTO ONE SINGLE FUNCTION CARD!
+    Name it by joining ceremony names with " + " (e.g. "Haldi + Sangeet", "Mehendi + Sangeet", "Puja + Haldi").
+    DO NOT create separate cards for events occurring on the same date! Combine their crew requirements into that single card.
+  * ONLY create separate cards for events that occur on DIFFERENT DATES (e.g. 21 Feb Mehendi card, 22 Feb Haldi + Sangeet card, 23 Feb Wedding card).
+  * REAL CEREMONY NAMES MANDATE: NEVER output generic names like "Event 1", "Event 2", "Function 1", "Function 2". ALWAYS extract and use the real event names (Haldi, Mehendi, Sangeet, Ring Ceremony, Wedding, Reception, Cocktail, Mayra, Ganesh Puja, etc.).
 - items: Array of event objects:
   - id: Unique string "func_1", "func_2", etc.
-  - name: Function name. Combine multi-events on same slot with " + " (e.g. "Haldi + Sangeet").
+  - name: Function name. Combine multi-events on same date/slot with " + " (e.g. "Haldi + Sangeet").
   - date: Exact date string if specified, or "Date Not Fixed" with dateNotFixed: true if not specified.
   - startTime / endTime: Exact time if specified, else EMPTY string "".
   - location: Venue or city if specified, else EMPTY string "".
@@ -207,7 +215,7 @@ PAGE-BY-PAGE RULES & MAPPING:
     * "Cinematographer", "Traditional Photographer", "Candid Photographer", "Traditional Videographer", "Semi Cinematic", "Semi Standard", "Social Media Person", "Reel Creator", "Live Videography", "Drone Pilot", "Assistant", "Team Manager", "Makeup Artist", "Family Photographer".
     * If user mentions "semi-kinematic" or "semi-cinematic", output exact name "Semi Cinematic".
     * If user mentions "semi-standard" or "semi-traditional", output exact name "Semi Standard".
-    * (Custom roles also allowed).
+    * If multiple ceremonies on this card require crew, SUM the quantities together.
 
 5. DELIVERABLES (deliverablesPage) - MAIN WEDDING DELIVERABLES ONLY:
 - STRICT NEGATIVE RULE: NEVER include any pre-wedding deliverables (e.g. pre-wedding photos, pre-wedding teaser, pre-wedding reels) in deliverablesPage.selectedItems! All pre-wedding deliverables belong SOLELY on shootDetails.deliverablesText.
@@ -217,8 +225,14 @@ PAGE-BY-PAGE RULES & MAPPING:
 - selectedItems: Array of complimentary bonus items. If none, empty array [].
 
 7. PRICING (pricingPage):
-- basePrice: Total amount / package budget (Number).
-- discountAmount, gstPct, travelCharges, accommodationCharges, additionalCharges (Numbers, default 0 if not mentioned).
+- STRICT PRICING & DISCOUNT LOGIC:
+  * basePrice: Gross total package price before discount (Integer, e.g. 180000). Inspect context (e.g. "₹1,50,000", "2.5L" -> 250000; "90k" -> 90000).
+  * discountAmount:
+    - If user/client explicitly mentioned a discount, offer, or deduction (e.g. "20,000 discount", "offered 15k off", "discount of 10k"), set discountAmount to that exact amount (e.g. 20000).
+    - If NO discount was mentioned in the prompt or conversation, discountAmount MUST STRICTLY BE 0. DO NOT invent or assume any discount!
+  * Net Total Calculation: Net Amount = basePrice - discountAmount + travelCharges + accommodationCharges.
+  * If only a final agreed amount was stated without any discount breakdown, set basePrice to that amount and discountAmount to 0.
+- gstPct, travelCharges, accommodationCharges, additionalCharges: Numbers, default 0 if not mentioned.
 - showExclusionsNote: true.
 
 8. PAYMENT TERMS & SCHEDULE (paymentTermsPage):

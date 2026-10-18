@@ -192,7 +192,7 @@ export const DEFAULT_AIRY_PROPOSAL = {
     kicker: 'INVESTMENT SUMMARY',
     heading: 'Commercial Proposal & Package Investment',
     basePrice: 285000,
-    discountAmount: 15000,
+    discountAmount: 0,
     gstPct: 0,
     travelCharges: 0,
     accommodationCharges: 0,
@@ -267,6 +267,350 @@ export function calculatePricingTotals(pricing: any) {
 }
 
 /**
+ * Standardized Crew Role Normalization Dictionary with Intelligent Fuzzy Matching
+ */
+export function normalizeCrewRoleName(rawRole: string): string {
+  if (!rawRole) return 'Candid Photographer';
+  const s = rawRole.toLowerCase().trim();
+
+  // 0. Semi Cinematic / Semi Kinematic (MUST be checked before general Cinematographer!)
+  if (
+    s.includes('semi-cinematic') || 
+    s.includes('semi cinematic') || 
+    s.includes('semi-kinematic') || 
+    s.includes('semi kinematic') || 
+    s.includes('semi-cine') || 
+    s.includes('semi cine') || 
+    s.includes('semi cinema') || 
+    s === 'sc' || 
+    s === 'scv'
+  ) {
+    return 'Semi Cinematic';
+  }
+
+  // 0.1 Semi Standard / Semi Traditional (MUST be checked before general Traditional!)
+  if (
+    s.includes('semi-standard') || 
+    s.includes('semi standard') || 
+    s.includes('semi-traditional') || 
+    s.includes('semi traditional') || 
+    s.includes('semi-trad') || 
+    s.includes('semi trad') || 
+    s === 'ss' || 
+    s === 'stv' || 
+    s === 'sst'
+  ) {
+    return 'Semi Standard';
+  }
+
+  // 1. Cinematographer & all variations / spelling mistakes
+  if (
+    s.includes('cinematog') || 
+    s.includes('cinematrap') ||
+    s.includes('cinematraf') ||
+    s.includes('cinematic') || 
+    s.includes('cinema') || 
+    s.includes('cine video') || 
+    s.includes('cine') || 
+    s === 'cv'
+  ) {
+    return 'Cinematographer';
+  }
+
+  // 2. Candid Photographer & spelling mistakes
+  if (
+    s.includes('candid photo') || 
+    s.includes('candid photog') || 
+    s.includes('candid') || 
+    s.includes('candit') || 
+    s.includes('kandid') || 
+    s === 'cp'
+  ) {
+    return 'Candid Photographer';
+  }
+
+  // 3. Traditional Photographer
+  if (
+    s.includes('traditional photo') || 
+    s.includes('trad photo') || 
+    s.includes('tred photo') || 
+    s.includes('treational photo') ||
+    s.includes('trad photog') ||
+    s === 'tp'
+  ) {
+    return 'Traditional Photographer';
+  }
+
+  // 4. Traditional Videographer
+  if (
+    s.includes('traditional video') || 
+    s.includes('trad video') || 
+    s.includes('tred video') || 
+    s.includes('tred videography') ||
+    s.includes('trad videop') ||
+    s === 'tv'
+  ) {
+    return 'Traditional Videographer';
+  }
+
+  // 5. Drone Pilot
+  if (s.includes('drone') || s.includes('dron') || s.includes('aerial') || s === 'dp') {
+    return 'Drone Pilot';
+  }
+
+  // 6. Assistant / Helper
+  if (s.includes('assistant') || s.includes('asistant') || s === 'ass' || s.includes('helper') || s.includes('light boy') || s.includes('lightman')) {
+    return 'Assistant / Helper';
+  }
+
+  // 7. Social Media / Reels
+  if (s.includes('social media') || s.includes('story creator') || s.includes('reel') || s.includes('reels') || s === 'rc') {
+    return 'Social Media Reels Creator';
+  }
+
+  // 8. Live streaming
+  if (s.includes('live') || s.includes('streaming') || s.includes('led') || s === 'ls') {
+    return 'Live Stream Operator';
+  }
+
+  // 9. Teaser
+  if (s.includes('teaser') || s === 'ts') {
+    return 'Teaser Specialist';
+  }
+
+  // 10. Editors
+  if (s.includes('photo edit') || s.includes('retouch') || s === 'pe') {
+    return 'Photo Editor / Retoucher';
+  }
+  if (s.includes('video edit') || s === 've') {
+    return 'Video Editor';
+  }
+  if (s.includes('album') || s === 'ad') {
+    return 'Album Designer';
+  }
+
+  return rawRole.trim().replace(/\b\w/g, l => l.toUpperCase());
+}
+
+/**
+ * Consolidates multiple ceremonies or functions occurring on the SAME DATE into a single function card.
+ * Joins ceremony names with ' + ' (e.g. 'Haldi + Sangeet').
+ * Merges crew requirements, combining quantities for identical roles.
+ * Eliminates generic placeholder names like "Event 1", "Event 2", "Function 1".
+ */
+export function consolidateSameDateFunctions(items: any[]): any[] {
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const normalizeDateKey = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const s = dateStr.trim().toLowerCase();
+    if (s === 'date not fixed' || s === 'tbd' || s === 'not fixed' || s === 'not specified') return '';
+    return s
+      .replace(/(\d+)(st|nd|rd|th)/gi, '$1')
+      .replace(/[,\-\/\.]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const cleanEventName = (rawName: string): string => {
+    if (!rawName) return 'Wedding Ceremony';
+    let name = rawName.trim();
+    if (/^(?:event|function)\s*\d+$/i.test(name)) {
+      return 'Wedding Ceremony';
+    }
+    name = name
+      .replace(/(?:event|function)\s*\d+\s*\+?\s*/gi, '')
+      .replace(/\s*\+\s*$/, '')
+      .replace(/^\s*\+\s*/, '')
+      .trim();
+    return name || 'Wedding Ceremony';
+  };
+
+  const result: any[] = [];
+  const dateMap = new Map<string, any>();
+
+  for (const rawItem of items) {
+    if (!rawItem) continue;
+    const item = { ...rawItem, name: cleanEventName(rawItem.name) };
+    const dateKey = normalizeDateKey(item.date);
+
+    if (dateKey && dateMap.has(dateKey)) {
+      const existing = dateMap.get(dateKey);
+
+      // 1. Combine function titles with ' + ', avoiding duplicates
+      const existingParts = (existing.name || '').split('+').map((s: string) => s.trim().toLowerCase());
+      const newParts = (item.name || '').split('+').map((s: string) => s.trim());
+      const partsToAdd = newParts.filter((p: string) => p && !existingParts.includes(p.toLowerCase()));
+
+      if (partsToAdd.length > 0) {
+        existing.name = `${existing.name} + ${partsToAdd.join(' + ')}`;
+      }
+
+      // 2. Merge Requirements (combine quantities of identical roles)
+      const reqMap = new Map<string, number>();
+      (existing.requirements || []).forEach((r: any) => {
+        const role = normalizeCrewRoleName(typeof r === 'string' ? r : r?.name);
+        reqMap.set(role, (reqMap.get(role) || 0) + Number(r?.qty || 1));
+      });
+      (item.requirements || []).forEach((r: any) => {
+        const role = normalizeCrewRoleName(typeof r === 'string' ? r : r?.name);
+        reqMap.set(role, (reqMap.get(role) || 0) + Number(r?.qty || 1));
+      });
+
+      existing.requirements = Array.from(reqMap.entries()).map(([name, qty]) => ({ name, qty }));
+      existing.team = existing.requirements.map((r: any) => `${r.qty}x ${r.name}`).join(', ');
+
+      // 3. Merge timings
+      if (!existing.startTime && item.startTime) existing.startTime = item.startTime;
+      if (item.endTime) existing.endTime = item.endTime;
+      if (existing.startTime && existing.endTime) {
+        existing.time = `${existing.startTime} - ${existing.endTime}`;
+      } else if (item.time && !existing.time) {
+        existing.time = item.time;
+      }
+
+      // 4. Merge locations
+      if (!existing.location && item.location) {
+        existing.location = item.location;
+        existing.venue = item.venue || item.location;
+      } else if (item.location && existing.location && !existing.location.toLowerCase().includes(item.location.toLowerCase())) {
+        existing.location = `${existing.location} / ${item.location}`;
+        existing.venue = existing.location;
+      }
+
+      // 5. Merge notes
+      if (item.notes && item.notes !== existing.notes) {
+        existing.notes = existing.notes ? `${existing.notes} | ${item.notes}` : item.notes;
+      }
+    } else {
+      const reqs = Array.isArray(item.requirements) && item.requirements.length > 0
+        ? item.requirements.map((r: any) => ({
+            name: normalizeCrewRoleName(typeof r === 'string' ? r : r?.name),
+            qty: Number(r?.qty || 1)
+          }))
+        : [
+            { name: 'Candid Photographer', qty: 1 },
+            { name: 'Cinematographer', qty: 1 }
+          ];
+
+      const processedItem = {
+        ...item,
+        requirements: reqs,
+        team: Array.isArray(item.team) ? item.team.join(', ') : (item.team || reqs.map((r: any) => `${r.qty}x ${r.name}`).join(', '))
+      };
+
+      if (dateKey) {
+        dateMap.set(dateKey, processedItem);
+      }
+      result.push(processedItem);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Resolves the single primary location for the Quotation Cover Page.
+ * Priority:
+ * 1. Main Wedding ceremony venue (HIGHEST PRIORITY)
+ * 2. Reception or Engagement venue (if no Wedding venue specified)
+ * 3. First available function location
+ * 4. Cleaned single city/venue from rawCoverLocation (NEVER concats multiple venues)
+ */
+export function resolvePrimaryCoverLocation(rawCoverLocation: string, functions: any[]): string {
+  if (Array.isArray(functions) && functions.length > 0) {
+    const weddingFunc = functions.find(f => {
+      const n = (f?.name || '').toLowerCase();
+      return (n.includes('wedding') || n.includes('vivah') || n.includes('shaadi') || n.includes('pheras')) && (f.location || f.venue);
+    });
+    if (weddingFunc && (weddingFunc.location || weddingFunc.venue)) {
+      return String(weddingFunc.location || weddingFunc.venue).trim();
+    }
+
+    const majorFunc = functions.find(f => {
+      const n = (f?.name || '').toLowerCase();
+      return (n.includes('reception') || n.includes('sangeet') || n.includes('engagement') || n.includes('ring')) && (f.location || f.venue);
+    });
+    if (majorFunc && (majorFunc.location || majorFunc.venue)) {
+      return String(majorFunc.location || majorFunc.venue).trim();
+    }
+
+    const firstWithLoc = functions.find(f => f?.location || f?.venue);
+    if (firstWithLoc && (firstWithLoc.location || firstWithLoc.venue)) {
+      return String(firstWithLoc.location || firstWithLoc.venue).trim();
+    }
+  }
+
+  if (rawCoverLocation && typeof rawCoverLocation === 'string') {
+    const s = rawCoverLocation.trim();
+    if (s.includes(',') || s.includes(';') || s.includes('\n')) {
+      const parts = s.split(/[,;\n]+/).map(p => p.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        const luxuryVenue = parts.find(p => /hotel|palace|resort|lawn|banquet|bhavan|mandap|gardens?/i.test(p));
+        return luxuryVenue || parts[0];
+      }
+    }
+    return s;
+  }
+
+  return '';
+}
+
+/**
+ * Ultra-robust JSON parser that handles:
+ * - Single-line and multi-line JSON
+ * - Markdown code blocks (```json ... ```)
+ * - Trailing commas before } and ]
+ * - Smart quotes (“ ” ‘ ’)
+ * - Comments (// ...)
+ * - Control characters, zero-width spaces, UTF-8 BOM
+ */
+export function sanitizeAndParseJson(rawText: string): any | null {
+  if (!rawText || !rawText.trim()) return null;
+  let text = rawText.trim();
+
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  if (text.includes('```')) {
+    text = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+  }
+
+  text = text.replace(/[\uFEFF\u200B\u200C\u200D\u2060]/g, '');
+  text = text.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+  text = text.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'");
+
+  const startIdx = text.indexOf('{');
+  const endIdx = text.lastIndexOf('}');
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
+    return null;
+  }
+
+  let candidate = text.substring(startIdx, endIdx + 1);
+
+  try {
+    const parsed = JSON.parse(candidate);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {}
+
+  let repaired = candidate.replace(/,\s*([}\]])/g, '$1');
+  repaired = repaired.replace(/(^|[^:])\/\/[^"\n\r]*/g, '$1');
+
+  try {
+    const parsed = JSON.parse(repaired);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {}
+
+  try {
+    const sanitized = repaired
+      .replace(/[\r\n\t]/g, ' ')
+      .replace(/,\s*([}\]])/g, '$1');
+    const parsed = JSON.parse(sanitized);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {}
+
+  return null;
+}
+
+/**
  * Normalizes input document payload, merging on top of the User's Active Default Template (baseTemplate).
  * Preserves the user's design themes, fonts, colors, branding, custom pages, and default copy!
  */
@@ -284,70 +628,7 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   }
   const pagesObj = loaded.pages && typeof loaded.pages === 'object' ? loaded.pages : loaded;
 
-  // 2. Normalize Cover
-  const coverSrc = loaded.cover || pagesObj.cover || {};
-  const groomName = coverSrc.groomName ?? (d.cover?.groomName || 'Rahul');
-  const brideName = coverSrc.brideName ?? (d.cover?.brideName || 'Neha');
-  const coupleName = coverSrc.coupleName || (coverSrc.groomName && coverSrc.brideName ? `${coverSrc.groomName} & ${coverSrc.brideName}` : (loaded.client?.client_name || d.cover?.coupleName || 'Couple Name'));
-  const eventType = coverSrc.eventType ?? coverSrc.title ?? coverSrc.event_type ?? d.cover?.eventType ?? 'Wedding Photography & Films';
-  const locationName = coverSrc.locationName !== undefined ? coverSrc.locationName : (coverSrc.wedding_location || coverSrc.city || d.cover?.locationName || '');
-  const weddingDate = coverSrc.weddingDate || coverSrc.quotation_date || coverSrc.wedding_date || d.cover?.weddingDate || '';
-
-  const cover = {
-    ...(d.cover || {}),
-    ...coverSrc,
-    groomName,
-    brideName,
-    coupleName,
-    eventType,
-    locationName,
-    weddingDate,
-    sideOption: coverSrc.sideOption || d.cover?.sideOption || 'A Wedding Story',
-    brandName: coverSrc.brandName || d.cover?.brandName || 'STUDIOCORE WEDDINGS',
-    brandLogoUrl: coverSrc.brandLogoUrl || d.cover?.brandLogoUrl || '',
-    brandLogoSize: coverSrc.brandLogoSize || d.cover?.brandLogoSize || 80,
-    photoUrl: coverSrc.photoUrl !== undefined ? coverSrc.photoUrl : (d.cover?.photoUrl || ''),
-    photoHeight: coverSrc.photoHeight ?? d.cover?.photoHeight ?? 360,
-    photoWidth: coverSrc.photoWidth ?? d.cover?.photoWidth ?? 75,
-    photoFocalY: coverSrc.photoFocalY ?? d.cover?.photoFocalY ?? 50,
-    bgOpacity: coverSrc.bgOpacity ?? d.cover?.bgOpacity ?? 40,
-    frameShape: coverSrc.frameShape || d.cover?.frameShape || 'rounded',
-    imagePosition: coverSrc.imagePosition || d.cover?.imagePosition || 'bottom',
-  };
-
-  // 3. Normalize About Us (Preserves template photo & text if AI doesn't pass new copy)
-  const aboutSrc = loaded.aboutUs || pagesObj.about_us || {};
-  const aboutUs = {
-    ...(d.aboutUs || {}),
-    ...aboutSrc,
-    kicker: aboutSrc.kicker || d.aboutUs?.kicker || 'WHO WE ARE',
-    heading: aboutSrc.heading || d.aboutUs?.heading || 'Preserving Emotions & Creating Timeless Visual Legacies',
-    text: aboutSrc.text || d.aboutUs?.text || 'We are a dedicated team of visual artists crafting heartfelt wedding films and editorial photographs that feel as timeless as your love.',
-    signature: aboutSrc.signature || d.aboutUs?.signature || '— StudioCore Photography Crew',
-    photo: aboutSrc.photo !== undefined ? aboutSrc.photo : (d.aboutUs?.photo || ''),
-  };
-
-  // 4. Normalize Pre-Wedding Shoot Details
-  const shootSrc = loaded.shootDetails || pagesObj.pre_wedding || {};
-  const shootVisible = shootSrc.visible !== undefined 
-    ? Boolean(shootSrc.visible) 
-    : Boolean(shootSrc.crewText || shootSrc.deliverablesText || d.shootDetails?.visible);
-
-  const shootDetails = {
-    ...(d.shootDetails || {}),
-    ...shootSrc,
-    visible: shootVisible,
-    kicker: shootSrc.kicker || d.shootDetails?.kicker || 'CHAPTER ONE',
-    heading: shootSrc.heading || d.shootDetails?.heading || 'Pre-Wedding Creative Session',
-    daysText: shootSrc.daysText || d.shootDetails?.daysText || '1 Full Day Creative Session',
-    crewText: shootSrc.crewText !== undefined ? shootSrc.crewText : (d.shootDetails?.crewText || ''),
-    deliverablesHeading: shootSrc.deliverablesHeading || d.shootDetails?.deliverablesHeading || 'Curated Session Deliverables',
-    deliverablesText: shootSrc.deliverablesText !== undefined ? shootSrc.deliverablesText : (d.shootDetails?.deliverablesText || ''),
-    showExclusionsNote: shootSrc.showExclusionsNote !== undefined ? Boolean(shootSrc.showExclusionsNote) : true,
-    photo: shootSrc.photo !== undefined ? shootSrc.photo : (d.shootDetails?.photo || ''),
-  };
-
-  // 5. Normalize Functions / Events Page
+  // 2. Normalize Functions / Events Page (Computed first so Cover Page can extract primary location)
   const funcsSrc = loaded.functionsPage || pagesObj.functions_coverage || pagesObj.functions || {};
   const rawEvents = funcsSrc.items || funcsSrc.events || funcsSrc.functions || [];
   let funcItems: any[] = [];
@@ -357,14 +638,14 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
       let requirements: { name: string; qty: number }[] = [];
       if (Array.isArray(e.requirements) && e.requirements.length > 0) {
         requirements = e.requirements.map((r: any) => ({
-          name: typeof r === 'string' ? r : (r.name || 'Candid Photographer'),
-          qty: Number(r.qty || 1)
+          name: normalizeCrewRoleName(typeof r === 'string' ? r : (r?.name || 'Candid Photographer')),
+          qty: Number(r?.qty || 1)
         }));
       } else if (Array.isArray(e.services) && e.services.length > 0) {
-        requirements = e.services.map((s: string) => ({ name: s, qty: 1 }));
+        requirements = e.services.map((s: string) => ({ name: normalizeCrewRoleName(s), qty: 1 }));
       } else if (e.team || e.services) {
         const teamStr = String(e.team || e.services);
-        requirements = teamStr.split(/,|\n/).map((s: string) => s.trim()).filter(Boolean).map((s: string) => ({ name: s, qty: 1 }));
+        requirements = teamStr.split(/,|\n/).map((s: string) => s.trim()).filter(Boolean).map((s: string) => ({ name: normalizeCrewRoleName(s), qty: 1 }));
       }
 
       if (requirements.length === 0) {
@@ -396,12 +677,81 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     funcItems = d.functionsPage.items;
   }
 
+  // ⚡ MANDATE: Automatically consolidate ceremonies occurring on the same date (e.g. Haldi + Sangeet)
+  funcItems = consolidateSameDateFunctions(funcItems);
+
   const functionsPage = {
     ...(d.functionsPage || {}),
     ...funcsSrc,
     kicker: funcsSrc.kicker || d.functionsPage?.kicker || 'CELEBRATIONS',
     heading: funcsSrc.heading || d.functionsPage?.heading || 'Functions & Crew Coverage',
     items: funcItems
+  };
+
+  // 3. Normalize Cover Page (with single primary location resolver)
+  const coverSrc = loaded.cover || pagesObj.cover || {};
+  const groomName = coverSrc.groomName ?? (d.cover?.groomName || 'Rahul');
+  const brideName = coverSrc.brideName ?? (d.cover?.brideName || 'Neha');
+  const coupleName = coverSrc.coupleName || (coverSrc.groomName && coverSrc.brideName ? `${coverSrc.groomName} & ${coverSrc.brideName}` : (loaded.client?.client_name || d.cover?.coupleName || 'Couple Name'));
+  const eventType = coverSrc.eventType ?? coverSrc.title ?? coverSrc.event_type ?? d.cover?.eventType ?? 'Wedding Photography & Films';
+  
+  const rawLoc = coverSrc.locationName !== undefined ? coverSrc.locationName : (coverSrc.wedding_location || coverSrc.city || d.cover?.locationName || '');
+  const locationName = resolvePrimaryCoverLocation(rawLoc, funcItems);
+
+  const weddingDate = coverSrc.weddingDate || coverSrc.quotation_date || coverSrc.wedding_date || (funcItems[0]?.date !== 'Date Not Fixed' ? funcItems[0]?.date : '') || d.cover?.weddingDate || '';
+
+  const cover = {
+    ...(d.cover || {}),
+    ...coverSrc,
+    groomName,
+    brideName,
+    coupleName,
+    eventType,
+    locationName,
+    weddingDate,
+    sideOption: coverSrc.sideOption || d.cover?.sideOption || 'A Wedding Story',
+    brandName: coverSrc.brandName || d.cover?.brandName || 'STUDIOCORE WEDDINGS',
+    brandLogoUrl: coverSrc.brandLogoUrl || d.cover?.brandLogoUrl || '',
+    brandLogoSize: coverSrc.brandLogoSize || d.cover?.brandLogoSize || 80,
+    photoUrl: coverSrc.photoUrl !== undefined ? coverSrc.photoUrl : (d.cover?.photoUrl || ''),
+    photoHeight: coverSrc.photoHeight ?? d.cover?.photoHeight ?? 360,
+    photoWidth: coverSrc.photoWidth ?? d.cover?.photoWidth ?? 75,
+    photoFocalY: coverSrc.photoFocalY ?? d.cover?.photoFocalY ?? 50,
+    bgOpacity: coverSrc.bgOpacity ?? d.cover?.bgOpacity ?? 40,
+    frameShape: coverSrc.frameShape || d.cover?.frameShape || 'rounded',
+    imagePosition: coverSrc.imagePosition || d.cover?.imagePosition || 'bottom',
+  };
+
+  // 4. Normalize About Us
+  const aboutSrc = loaded.aboutUs || pagesObj.about_us || {};
+  const aboutUs = {
+    ...(d.aboutUs || {}),
+    ...aboutSrc,
+    kicker: aboutSrc.kicker || d.aboutUs?.kicker || 'WHO WE ARE',
+    heading: aboutSrc.heading || d.aboutUs?.heading || 'Preserving Emotions & Creating Timeless Visual Legacies',
+    text: aboutSrc.text || d.aboutUs?.text || 'We are a dedicated team of visual artists crafting heartfelt wedding films and editorial photographs that feel as timeless as your love.',
+    signature: aboutSrc.signature || d.aboutUs?.signature || '— StudioCore Photography Crew',
+    photo: aboutSrc.photo !== undefined ? aboutSrc.photo : (d.aboutUs?.photo || ''),
+  };
+
+  // 5. Normalize Pre-Wedding Shoot Details
+  const shootSrc = loaded.shootDetails || pagesObj.pre_wedding || {};
+  const shootVisible = shootSrc.visible !== undefined 
+    ? Boolean(shootSrc.visible) 
+    : Boolean(shootSrc.crewText || shootSrc.deliverablesText || d.shootDetails?.visible);
+
+  const shootDetails = {
+    ...(d.shootDetails || {}),
+    ...shootSrc,
+    visible: shootVisible,
+    kicker: shootSrc.kicker || d.shootDetails?.kicker || 'CHAPTER ONE',
+    heading: shootSrc.heading || d.shootDetails?.heading || 'Pre-Wedding Creative Session',
+    daysText: shootSrc.daysText || d.shootDetails?.daysText || '1 Full Day Creative Session',
+    crewText: shootSrc.crewText !== undefined ? shootSrc.crewText : (d.shootDetails?.crewText || ''),
+    deliverablesHeading: shootSrc.deliverablesHeading || d.shootDetails?.deliverablesHeading || 'Curated Session Deliverables',
+    deliverablesText: shootSrc.deliverablesText !== undefined ? shootSrc.deliverablesText : (d.shootDetails?.deliverablesText || ''),
+    showExclusionsNote: shootSrc.showExclusionsNote !== undefined ? Boolean(shootSrc.showExclusionsNote) : true,
+    photo: shootSrc.photo !== undefined ? shootSrc.photo : (d.shootDetails?.photo || ''),
   };
 
   // 6. Normalize Deliverables Page

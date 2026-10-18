@@ -11,6 +11,11 @@ import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 import { QuotationTemplateSelector, StudioTemplateItem } from './quotation-template-selector';
+import { 
+  consolidateSameDateFunctions, 
+  resolvePrimaryCoverLocation, 
+  sanitizeAndParseJson 
+} from '@/lib/quotation-defaults';
 
 interface AiQuotationModalProps {
   isOpen: boolean;
@@ -24,24 +29,30 @@ interface AiQuotationModalProps {
 }
 
 function tryParsePastedAiJson(rawText: string): any | null {
-  if (!rawText || !rawText.trim()) return null;
-  let text = rawText.trim();
-  if (text.includes('```')) {
-    text = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-  }
-  const startIdx = text.indexOf('{');
-  const endIdx = text.lastIndexOf('}');
-  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-    try {
-      const candidate = text.substring(startIdx, endIdx + 1);
-      const parsed = JSON.parse(candidate);
-      if (parsed && typeof parsed === 'object') {
-        const root = parsed.quotation || parsed;
-        if (root.cover || root.functionsPage || root.pricingPage || root.pages || root.shootDetails) {
-          return root;
-        }
+  const parsed = sanitizeAndParseJson(rawText);
+  if (!parsed || typeof parsed !== 'object') return null;
+
+  const root = parsed.quotation || parsed;
+  if (root.cover || root.functionsPage || root.pricingPage || root.pages || root.shootDetails) {
+    // ⚡ MANDATE: Consolidate same-date events (e.g. Haldi + Sangeet)
+    if (root.functionsPage?.items && Array.isArray(root.functionsPage.items)) {
+      root.functionsPage.items = consolidateSameDateFunctions(root.functionsPage.items);
+    }
+    // ⚡ MANDATE: Resolve single primary cover location (Wedding first, no multi-venue concatenation)
+    if (root.cover) {
+      root.cover.locationName = resolvePrimaryCoverLocation(
+        root.cover.locationName || '', 
+        root.functionsPage?.items || []
+      );
+    }
+    // ⚡ MANDATE: Ensure proper gross base price and discount amount (0 if not specified)
+    if (root.pricingPage) {
+      if (root.pricingPage.basePrice !== undefined) {
+        root.pricingPage.basePrice = Number(root.pricingPage.basePrice);
       }
-    } catch (_) {}
+      root.pricingPage.discountAmount = root.pricingPage.discountAmount !== undefined ? Number(root.pricingPage.discountAmount) : 0;
+    }
+    return root;
   }
   return null;
 }
@@ -110,12 +121,19 @@ CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi
 - groomName: Extracted groom name (e.g. "Sagar").
 - brideName: Extracted bride name (e.g. "Vruddhi").
 - eventType: Title of event (e.g. "Wedding", "Pre-Wedding", "Pre-Wedding & Wedding", "Engagement", "Reception", "Maternity", "Corporate Event").
-- locationName: Exact city/venue if mentioned in context. If NOT mentioned, keep it EMPTY string "" (DO NOT hallucinate or put fake cities!).
+- locationName: SINGLE PRIMARY COVER LOCATION ONLY!
+  * Strict Priority Order for Cover Location:
+    1. Main Wedding ceremony venue/city (HIGHEST PRIORITY - e.g. "Taj Lake Palace, Udaipur").
+    2. Reception or Engagement venue (if no Wedding venue specified).
+    3. First mentioned venue/city.
+  * NEVER concatenate multiple different event locations onto the cover page (NEVER output "Home, Sangeet Hall, Taj Lake Palace").
+  * Individual event venues must stay inside their respective function cards in functionsPage.items!
+  * If NOT mentioned anywhere, keep EMPTY string "" (DO NOT hallucinate or guess fake locations).
 
 2. ABOUT US (aboutUs):
 - KEEP DEFAULT TEMPLATE AS IS (No changes).
 
-3. PRE-WEDDING SHOOT (shootDetails):
+3. PRE-WEDDING SHOOT (shootDetails) - DEDICATED SEPARATE PAGE:
 - If pre-wedding is requested/included:
   - visible: true
   - daysText: e.g. "1 Day Shoot" (Default if not specified) or "2 Days Shoot", "3 Days Shoot".
@@ -124,13 +142,20 @@ CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi
   - showExclusionsNote: true (Default ON).
 
 4. FUNCTIONS & COVERAGE (functionsPage):
+- CRITICAL SAME-DATE EVENT CONSOLIDATION MANDATE (MUST FOLLOW):
+  * If two or more ceremonies/events occur on the SAME DATE or SAME DAY (for example: "22 February ko Haldi aur Sangeet hai", or "Haldi and Sangeet on 22 Feb", or Mehendi & Ring Ceremony on the same date):
+    YOU MUST COMBINE THEM INTO ONE SINGLE FUNCTION CARD!
+    Name it by joining ceremony names with " + " (e.g. "Haldi + Sangeet", "Mehendi + Sangeet", "Puja + Haldi").
+    DO NOT create separate cards for events occurring on the same date! Combine their crew requirements into that single card.
+  * ONLY create separate cards for events that occur on DIFFERENT DATES (e.g. 21 Feb Mehendi card, 22 Feb Haldi + Sangeet card, 23 Feb Wedding card).
+  * REAL CEREMONY NAMES MANDATE: NEVER output generic names like "Event 1", "Event 2", "Function 1", "Function 2". ALWAYS extract and use the real event names (Haldi, Mehendi, Sangeet, Ring Ceremony, Wedding, Reception, Cocktail, Mayra, Ganesh Puja, etc.).
 - items: Array of event objects:
   - id: Unique string "func_1", "func_2", etc.
-  - name: Function title. If multiple functions occur in the same slot/day, combine them with " + " (e.g. "Haldi + Sangeet", "Ring Ceremony + Cocktail").
-  - CRITICAL EVENT EXTRACTION: Inspect LEAD & CLIENT CONTEXT. If multiple functions are mentioned (e.g. Haldi, Sangeet, Mehendi, Pre-Wedding, Wedding, Reception), create a separate function item in the array for EACH distinct function!
-  - CRITICAL DATE EXTRACTION: Extract the event date or wedding month from LEAD & CLIENT CONTEXT (e.g. if wedding month is "December", output date: "December 2026"; if "14 Dec 2026", output date: "14 Dec 2026" with dateNotFixed: false). ONLY set date: "Date Not Fixed" and dateNotFixed: true if NO date, month, or season is mentioned anywhere in the context!
+  - name: Combined ceremony title (e.g. "Haldi + Sangeet", "Wedding Ceremony", "Reception").
+  - date: Extract the event date or wedding month (e.g. "22 February 2026" or "December 2026"). ONLY set date: "Date Not Fixed" and dateNotFixed: true if NO date, month, or season is mentioned anywhere in context!
+  - dateNotFixed: boolean (false if date or month is known, true only if completely unspecified).
   - startTime / endTime: Exact time if specified (e.g. "09:00 AM" / "02:00 PM"). If NO time specified, keep EMPTY string ""!
-  - location: Venue or location if specified. If NO location specified, keep EMPTY string ""!
+  - location: Venue or location for this specific function. If NO location specified, keep EMPTY string ""!
   - notes: Special event notes if specified. If none, keep EMPTY string ""!
   - requirements: Array of { name: string, qty: number } using the Standardized Crew Normalization Dictionary:
     * "Cinematographer" (CV, Cinematography, Cinematic Video, Cine Video, Cinematic)
@@ -148,7 +173,7 @@ CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi
     * "Makeup Artist" (MUA, Bridal Makeup)
     * "Family Photographer" (Family Photos, Family Photography)
     * IMPORTANT: If user mentions "semi-kinematic" or "semi-cinematic", output exact name "Semi Cinematic". If user mentions "semi-standard" or "semi-traditional", output exact name "Semi Standard".
-    * If any new/custom crew role is mentioned, add it directly with its exact name and qty!
+    * If multiple ceremonies on this card require crew, SUM the quantities together (e.g. if Haldi needs 1 Candid and Sangeet needs 1 Candid + 1 Cinematographer -> the combined Haldi + Sangeet card has { "name": "Candid Photographer", "qty": 2 }, { "name": "Cinematographer", "qty": 1 }).
 
 5. DELIVERABLES (deliverablesPage):
 - selectedItems: Array of exact deliverables requested by user (e.g. "Full Ultra HD Super-Fine Raw Photos", "High Resolution Edited Photos (300+)", "Cinematic Teaser (3-5 Mins)", "Traditional Wedding Film (30-45 Mins)", "Instagram Reels Package (5 Reels)"). Custom deliverables will be added seamlessly.
@@ -157,8 +182,13 @@ CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi
 - selectedItems: Array of complimentary/free bonus items (e.g. "Complimentary Drone Coverage", "Complimentary 1 Day Pre-Wedding Teaser", "Complimentary Wooden USB Box"). If none, keep empty array [].
 
 7. PRICING DETAILS (pricingPage):
-- basePrice: Total package amount / base price (Number). CRITICAL BUDGET EXTRACTION: Inspect LEAD & CLIENT CONTEXT (e.g. 'budget', 'preferred_budget_range', 'approximate_budget', or notes). Convert it to an integer (e.g. "₹1,50,000 - ₹2,00,000" -> 150000; "2.5L" -> 250000; "90k" -> 90000). DO NOT hardcode 150000 if context has a different budget!
-- discountAmount: Discount amount if specified (Number, e.g. 10000), else 0.
+- STRICT PRICING & DISCOUNT LOGIC:
+  * basePrice: Gross total package price before discount (Integer, e.g. 180000). Inspect LEAD & CLIENT CONTEXT (e.g. 'budget', 'preferred_budget_range', or notes). Convert it to an integer (e.g. "₹1,50,000" -> 150000; "2.5L" -> 250000; "90k" -> 90000).
+  * discountAmount:
+    - If user/client explicitly mentioned a discount, offer, or deduction (e.g. "20,000 discount", "offered 15k off", "discounted by 10k"), set discountAmount to that exact amount (e.g. 20000).
+    - If NO discount was mentioned in the prompt or conversation, discountAmount MUST STRICTLY BE 0. DO NOT invent or assume any discount!
+  * Net Total Calculation: Net Amount = basePrice - discountAmount + travelCharges + accommodationCharges.
+  * If only a final agreed amount was stated without any discount breakdown (e.g. "package is 1,60,000 final" or "budget 1,50,000"), set basePrice to that amount and discountAmount to 0.
 - gstPct: GST percentage if specified (Number, e.g. 18), else 0.
 - travelCharges: Travel cost if specified (Number), else 0.
 - accommodationCharges: Stay/Hotel cost if specified (Number), else 0.
@@ -176,8 +206,12 @@ CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi
   - CRITICAL STATUS RULE: Every step status MUST strictly be "Pending". NEVER output "Completed" unless the user's prompt or notes explicitly states that the advance or milestone has already been paid/received.
 
 ==================================================
-OUTPUT FORMAT:
-Respond ONLY with valid JSON matching the schema below (No Markdown formatting around JSON, just pure JSON or standard JSON block).
+OUTPUT FORMAT & CRITICAL JSON MANDATE:
+- Respond ONLY with 100% valid, parseable JSON matching the schema below.
+- NO markdown preamble or conversational text. Wrap in standard \`\`\`json ... \`\`\` or output pure JSON.
+- NO single quotes in keys or string values.
+- NO trailing commas before closing braces/brackets (e.g. NO { "a": 1, } or [ 1, 2, ]).
+- All numbers must be bare numeric literals (e.g. 180000, NOT "1,80,000").
 NOTE: The values in this schema are structure guides. You MUST populate them with the ACTUAL extracted data from LEAD & CLIENT CONTEXT:
 {
   "cover": {
@@ -429,7 +463,7 @@ LEAD & CLIENT CONTEXT:
       }
 
       if (onApplied) {
-        onApplied(docToApply, targetQId || quotationId || 'draft');
+        onApplied(finalDoc || docToApply, targetQId || quotationId || 'draft');
       } else if (targetQId && targetQId !== 'draft') {
         router.push(`/workspace/quotations/builder/templet/${targetQId}`);
         onClose();
@@ -866,12 +900,12 @@ LEAD & CLIENT CONTEXT:
                     {generating || applying ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin text-white" />
-                        <span>Opening Design...</span>
+                        <span>{quotationId ? 'Applying to Quotation...' : 'Opening Design...'}</span>
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4 text-white" />
-                        <span>⚡ Create Quotation</span>
+                        <span>{quotationId ? '⚡ Apply to Quotation' : '⚡ Create Quotation'}</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </>
                     )}
