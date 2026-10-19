@@ -322,7 +322,7 @@ export default function MyEventsPage() {
               style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
               className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
             >
-              Dashboard
+              Events
             </h1>
             <span className="text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-800 px-2.5 py-0.5 rounded-full border border-amber-200">
               Gallery Studio
@@ -535,8 +535,12 @@ export default function MyEventsPage() {
                   key={gallery.id}
                   className="group bg-white rounded-3xl border border-[#E7E2D8] shadow-2xs overflow-hidden flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:border-amber-400/80"
                 >
-                  {/* Card Cover (16:10 Landscape Proportions) */}
-                  <div className="relative aspect-[16/10] bg-[#F5F2EB] border-b border-[#E7E2D8] overflow-hidden">
+                  {/* Card Cover (16:10 Landscape Proportions) - Clickable to open project */}
+                  <Link 
+                    href={`/workspace/gallery/${gallery.id}`}
+                    className="block relative aspect-[16/10] bg-[#F5F2EB] border-b border-[#E7E2D8] overflow-hidden cursor-pointer"
+                    title={`Open ${gallery.title}`}
+                  >
                     {/* Underlying placeholder: shown while loading or if cover image is missing/broken */}
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-[#FAF9F5] to-[#EFECE4] text-zinc-400">
                       <div className="w-12 h-12 rounded-2xl bg-white/80 border border-[#E7E2D8] flex items-center justify-center shadow-2xs mb-1.5">
@@ -577,7 +581,7 @@ export default function MyEventsPage() {
                         {eventTypeLabel}
                       </span>
                     </div>
-                  </div>
+                  </Link>
 
                   {/* Card Body (High-End Editorial Typography - Image 2) */}
                   <div className="p-5 space-y-3.5 flex-1 flex flex-col justify-between">
