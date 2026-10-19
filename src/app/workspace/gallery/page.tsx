@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -14,16 +14,19 @@ import {
   Calendar,
   Image as ImageIcon,
   HardDrive,
-  Users,
   Search,
   X,
-  Printer,
   Copy,
   Check,
   RefreshCw,
   Tag,
   ChevronDown,
   Layers,
+  ArrowUpRight,
+  Video,
+  Star,
+  Activity,
+  FolderPlus,
 } from 'lucide-react';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
@@ -75,6 +78,7 @@ export default function MyEventsPage() {
   const [galleries, setGalleries] = useState<EventGallery[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'all' | 'published' | 'private'>('all');
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -215,259 +219,642 @@ export default function MyEventsPage() {
     return `https://studiocore.in/g/${slug}`;
   };
 
-  // Filtered galleries by search query
+  // Current Date Header Formatter
+  const todayDateStr = useMemo(() => {
+    return new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }, []);
+
+  // Summary Metrics Computation (Image 2 Stats Bar)
+  const totalPhotos = useMemo(() => {
+    return galleries.reduce((acc, g) => acc + (g.photo_count || 0), 0);
+  }, [galleries]);
+
+  const totalFaces = useMemo(() => {
+    return galleries.reduce((acc, g) => acc + (g.total_faces || 0), 0);
+  }, [galleries]);
+
+  const publishedCount = useMemo(() => {
+    return galleries.filter((g) => g.is_active && !g.pin_code).length;
+  }, [galleries]);
+
+  const privateCount = useMemo(() => {
+    return galleries.filter((g) => !!g.pin_code || !g.is_active).length;
+  }, [galleries]);
+
+  const totalStorageBytes = useMemo(() => {
+    return galleries.reduce((acc, g) => {
+      if (g.total_size_bytes && Number(g.total_size_bytes) > 0) {
+        return acc + Number(g.total_size_bytes);
+      }
+      if (g.total_size_mb) {
+        return acc + parseFloat(g.total_size_mb) * 1024 * 1024;
+      }
+      return acc;
+    }, 0);
+  }, [galleries]);
+
+  const totalStorageGb = useMemo(() => {
+    return (totalStorageBytes / (1024 * 1024 * 1024)).toFixed(2);
+  }, [totalStorageBytes]);
+
+  const formatStorageSize = useCallback((g: EventGallery) => {
+    if (g.total_size_bytes && Number(g.total_size_bytes) > 0) {
+      const bytes = Number(g.total_size_bytes);
+      if (bytes >= 1024 * 1024 * 1024) {
+        return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      }
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    if (g.total_size_mb) {
+      const mb = parseFloat(g.total_size_mb);
+      if (mb >= 1000) {
+        return `${(mb / 1024).toFixed(2)} GB`;
+      }
+      return `${mb.toFixed(1)} MB`;
+    }
+    return '0 MB';
+  }, []);
+
+  // Filtered galleries by active tab and search query
   const filteredGalleries = useMemo(() => {
-    if (!searchQuery.trim()) return galleries;
+    let result = galleries;
+    if (activeTab === 'published') {
+      result = result.filter((g) => g.is_active && !g.pin_code);
+    } else if (activeTab === 'private') {
+      result = result.filter((g) => !!g.pin_code || !g.is_active);
+    }
+
+    if (!searchQuery.trim()) return result;
     const q = searchQuery.toLowerCase();
-    return galleries.filter(
+    return result.filter(
       (g) =>
         g.title.toLowerCase().includes(q) ||
         g.slug.toLowerCase().includes(q) ||
         (g.event_type && g.event_type.toLowerCase().includes(q))
     );
-  }, [galleries, searchQuery]);
+  }, [galleries, activeTab, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans p-4 sm:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans p-4 sm:p-8 space-y-7 max-w-7xl mx-auto">
       
       {/* ─────────────────────────────────────────────────────────────
-          1. HEADER WITH ROUNDED SEARCH & "+ CREATE EVENT" PILL
+          1. TOP APP BAR: DASHBOARD TITLE, DATE, SEARCH & + NEW EVENT
       ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E7E2D8] shadow-2xs space-y-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center border border-amber-200 shadow-2xs">
-                <Camera className="w-4 h-4 text-amber-700" />
-              </span>
-              <span className="text-[11px] font-black uppercase tracking-wider bg-[#F4F1EA] text-zinc-600 px-3 py-1 rounded-full border border-[#E7E2D8]">
-                AI Client Portals
-              </span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-              My Events
-            </h1>
-            <p className="text-xs sm:text-sm text-zinc-500 font-medium max-w-2xl">
-              Manage your wedding &amp; event collections, generate live table QR standees, and review guest face AI discovery.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-6 py-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-md shadow-amber-500/20 cursor-pointer shrink-0 select-none active:scale-95"
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
             >
-              <Plus className="w-4 h-4 text-white" />
-              <span>+ Create Event</span>
-            </button>
+              Dashboard
+            </h1>
+            <span className="text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-800 px-2.5 py-0.5 rounded-full border border-amber-200">
+              Gallery Studio
+            </span>
           </div>
+          <p className="text-xs text-zinc-400 font-medium mt-0.5">
+            {todayDateStr}
+          </p>
         </div>
 
-        {/* Real-Time Rounded Search Bar & Fast Stats */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#F2EEE6]">
-          <div className="relative flex-1 max-w-md">
+        {/* Search & Main Action Button */}
+        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+          <div className="relative w-full sm:w-72">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by event title, couple name, or slug..."
-              className="w-full pl-9 pr-4 py-2.5 bg-[#FAF9F5] rounded-full border border-[#E7E2D8] text-xs font-medium text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition shadow-inner"
+              placeholder="Search projects or clients..."
+              className="w-full pl-9 pr-8 py-2 bg-white rounded-full border border-[#E7E2D8] text-xs font-medium text-zinc-900 placeholder-zinc-400 focus:outline-hidden focus:border-amber-500 transition shadow-2xs"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-4 text-xs font-bold text-zinc-500 self-end sm:self-center">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>{galleries.length} Total Events</span>
-            </span>
-            <button
-              onClick={fetchGalleries}
-              className="p-1.5 rounded-full bg-[#FAF9F5] border border-[#E7E2D8] text-zinc-500 hover:text-zinc-800 transition"
-              title="Refresh Events"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-amber-600' : ''}`} />
-            </button>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer shrink-0 select-none active:scale-95 whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4 text-white" />
+            <span>+ NEW PROJECT</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          2. METRIC TILES: 5 CLEAN STAT CARDS (EXACT REFERENCE STYLE)
+      ───────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
+        {/* PROJECTS */}
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Projects</span>
+            <Layers className="w-3.5 h-3.5 text-amber-600/70" />
+          </div>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {galleries.length} <span className="text-xs font-normal text-zinc-400 font-sans">/ 120</span>
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              {publishedCount} published • {privateCount} private
+            </p>
+          </div>
+        </div>
+
+        {/* VIDEOS / EVENT TYPES */}
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Event Types</span>
+            <Video className="w-3.5 h-3.5 text-amber-600/70" />
+          </div>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {allEventTypes.length}
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              Across all projects
+            </p>
+          </div>
+        </div>
+
+        {/* PHOTOS */}
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Photos</span>
+            <ImageIcon className="w-3.5 h-3.5 text-amber-600/70" />
+          </div>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {totalPhotos.toLocaleString()}
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              Indexed & search ready
+            </p>
+          </div>
+        </div>
+
+        {/* WATCH HOURS / GUEST DISCOVERIES */}
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">AI Discoveries</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-600/70" />
+          </div>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {totalFaces.toLocaleString()}
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              Guest selfie matches
+            </p>
+          </div>
+        </div>
+
+        {/* STORAGE */}
+        <div className="col-span-2 sm:col-span-1 bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Storage</span>
+            <HardDrive className="w-3.5 h-3.5 text-amber-600/70" />
+          </div>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {totalStorageGb} <span className="text-xs font-normal text-zinc-400 font-sans">GB</span>
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              of 1,000 GB plan
+            </p>
           </div>
         </div>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. MINIMALIST AESTHETIC EVENT CARDS (HOVER LIFT ANIMATION)
+          3. QUICK ACTION BANNERS: CREATE PROJECT & MANAGE PORTFOLIO
       ───────────────────────────────────────────────────────────── */}
-      {loading && galleries.length === 0 ? (
-        <StudioCoreLiquidLoader label="Loading Events..." fullscreen={false} />
-      ) : filteredGalleries.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 text-center border border-[#E7E2D8] space-y-4 shadow-2xs">
-          <div className="w-16 h-16 rounded-3xl bg-[#FAF9F5] text-amber-600 border border-[#E7E2D8] flex items-center justify-center mx-auto shadow-2xs">
-            <Camera className="w-8 h-8" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Banner 1: Create New Project */}
+        <div 
+          onClick={() => setIsCreateModalOpen(true)}
+          className="group bg-white rounded-2xl p-5 border border-[#E7E2D8] hover:border-amber-400/80 shadow-2xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between select-none"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-[#FAF9F5] border border-[#E7E2D8] text-amber-700 flex items-center justify-center shrink-0 group-hover:bg-amber-500 group-hover:text-white transition">
+              <Plus className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-zinc-900 group-hover:text-amber-800 transition">
+                Create New Project
+              </h4>
+              <p className="text-xs text-zinc-400">
+                Start a new luxury wedding or event gallery from scratch
+              </p>
+            </div>
           </div>
-          <div className="space-y-1">
-            <h3 className="text-base font-bold text-zinc-800">
-              {searchQuery ? 'No matching events found' : 'No Events Created Yet'}
-            </h3>
-            <p className="text-xs text-zinc-400 max-w-md mx-auto">
-              {searchQuery
-                ? `No event matched "${searchQuery}". Clear your search or create a new event.`
-                : 'Create your first luxury event gallery. Guests scan table standees, take a selfie, and find all their photos instantly.'}
-            </p>
-          </div>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="px-6 py-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 text-white text-xs font-bold inline-flex items-center gap-2 hover:from-amber-600 hover:to-amber-700 transition cursor-pointer shadow-md shadow-amber-500/20"
-          >
-            <Plus className="w-4 h-4 text-white" />
-            <span>+ Create Event</span>
-          </button>
+          <ArrowUpRight className="w-4 h-4 text-zinc-300 group-hover:text-amber-600 transition shrink-0" />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredGalleries.map((gallery) => {
-            const publicLink = getPublicUrl(gallery.slug);
-            const eventTypeLabel = gallery.event_type || 'Wedding';
 
-            return (
-              <div
-                key={gallery.id}
-                className="group bg-white rounded-3xl border border-[#E7E2D8] shadow-2xs overflow-hidden flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:border-amber-400/80"
+        {/* Banner 2: Live QR Standees */}
+        <div 
+          onClick={() => {
+            if (galleries.length > 0) {
+              setStandeeGallery(galleries[0]);
+              setIsStandeeModalOpen(true);
+            } else {
+              setIsCreateModalOpen(true);
+            }
+          }}
+          className="group bg-white rounded-2xl p-5 border border-[#E7E2D8] hover:border-amber-400/80 shadow-2xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between select-none"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-[#FAF9F5] border border-[#E7E2D8] text-amber-700 flex items-center justify-center shrink-0 group-hover:bg-amber-500 group-hover:text-white transition">
+              <Star className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-zinc-900 group-hover:text-amber-800 transition">
+                Live Table Standees & QR
+              </h4>
+              <p className="text-xs text-zinc-400">
+                Generate guest AI discovery QR standees for live wedding tables
+              </p>
+            </div>
+          </div>
+          <ArrowUpRight className="w-4 h-4 text-zinc-300 group-hover:text-amber-600 transition shrink-0" />
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          4. "YOUR PROJECTS" SECTION WITH FILTER TABS (EXACT IMAGE 2)
+      ───────────────────────────────────────────────────────────── */}
+      <div className="space-y-4 pt-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE6DF] pb-3">
+          <div className="flex items-center gap-3">
+            <h2 
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              className="text-2xl font-medium text-zinc-900 tracking-tight"
+            >
+              Your Projects
+            </h2>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-mono">
+              {filteredGalleries.length}
+            </span>
+          </div>
+
+          {/* Capsule Filter Tabs (All / Published / Private) */}
+          <div className="flex items-center gap-1 bg-white p-1 rounded-full border border-[#E7E2D8] shadow-2xs self-start sm:self-center">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-3.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                activeTab === 'all'
+                  ? 'bg-amber-500 text-white font-bold shadow-xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setActiveTab('published')}
+              className={`px-3.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                activeTab === 'published'
+                  ? 'bg-amber-500 text-white font-bold shadow-xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              Published
+            </button>
+            <button
+              onClick={() => setActiveTab('private')}
+              className={`px-3.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                activeTab === 'private'
+                  ? 'bg-amber-500 text-white font-bold shadow-xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              Private
+            </button>
+          </div>
+        </div>
+
+        {/* ─────────────────────────────────────────────────────────────
+            5. EDITORIAL SERIF CARDS GRID (EXACT IMAGE 2 REFERENCE)
+        ───────────────────────────────────────────────────────────── */}
+        {loading && galleries.length === 0 ? (
+          <StudioCoreLiquidLoader label="Loading Projects..." fullscreen={false} />
+        ) : filteredGalleries.length === 0 ? (
+          <div className="bg-white rounded-3xl p-12 text-center border border-[#E7E2D8] space-y-4 shadow-2xs">
+            <div className="w-16 h-16 rounded-3xl bg-[#FAF9F5] text-amber-600 border border-[#E7E2D8] flex items-center justify-center mx-auto shadow-2xs">
+              <Camera className="w-8 h-8" />
+            </div>
+            <div className="space-y-1">
+              <h3 
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                className="text-xl font-medium text-zinc-800"
               >
-                {/* Card Thumbnail / Header */}
-                <div className="relative h-48 bg-[#F5F2EB] border-b border-[#E7E2D8] overflow-hidden">
-                  {gallery.cover_url ? (
-                    <img
-                      src={gallery.cover_url}
-                      alt={gallery.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#FAF9F5] to-[#EFECE4] text-zinc-400">
-                      <div className="w-12 h-12 rounded-2xl bg-white/80 border border-[#E7E2D8] flex items-center justify-center shadow-2xs mb-1.5">
-                        <Camera className="w-6 h-6 text-amber-600/70" />
+                {searchQuery ? 'No matching projects found' : 'No Projects Created Yet'}
+              </h3>
+              <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                {searchQuery
+                  ? `No event matched "${searchQuery}". Clear your search or create a new project.`
+                  : 'Create your first luxury wedding gallery. Guests scan table standees, take a selfie, and discover their photos instantly.'}
+              </p>
+            </div>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 text-white text-xs font-bold inline-flex items-center gap-2 hover:from-amber-600 hover:to-amber-700 transition cursor-pointer shadow-xs"
+            >
+              <Plus className="w-4 h-4 text-white" />
+              <span>+ Create Project</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredGalleries.map((gallery) => {
+              const publicLink = getPublicUrl(gallery.slug);
+              const eventTypeLabel = gallery.event_type || 'Wedding';
+              const isPrivate = !!gallery.pin_code;
+              const formattedDate = gallery.event_date
+                ? new Date(gallery.event_date).toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })
+                : 'Date Pending';
+
+              return (
+                <div
+                  key={gallery.id}
+                  className="group bg-white rounded-3xl border border-[#E7E2D8] shadow-2xs overflow-hidden flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:border-amber-400/80"
+                >
+                  {/* Card Cover (16:10 Landscape Proportions) */}
+                  <div className="relative aspect-[16/10] bg-[#F5F2EB] border-b border-[#E7E2D8] overflow-hidden">
+                    {gallery.cover_url ? (
+                      <img
+                        src={gallery.cover_url}
+                        alt={gallery.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#FAF9F5] to-[#EFECE4] text-zinc-400">
+                        <div className="w-12 h-12 rounded-2xl bg-white/80 border border-[#E7E2D8] flex items-center justify-center shadow-2xs mb-1.5">
+                          <Camera className="w-6 h-6 text-amber-600/70" />
+                        </div>
+                        <span className="text-[10px] font-bold tracking-wider uppercase text-zinc-400">
+                          Cover Photo
+                        </span>
                       </div>
-                      <span className="text-[10px] font-bold tracking-wider uppercase text-zinc-400">
-                        Warm Cream Studio Cover
+                    )}
+
+                    {/* Subtle Gradient Scrim at top */}
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent pointer-events-none" />
+
+                    {/* Status Pill Badge (PUBLISHED / PRIVATE) */}
+                    <div className="absolute top-3.5 left-3.5 right-3.5 flex items-center justify-between pointer-events-none">
+                      <span className={`px-2.5 py-1 rounded-md backdrop-blur-md text-[10px] font-bold tracking-wider uppercase border shadow-xs ${
+                        isPrivate 
+                          ? 'bg-amber-500/90 text-white border-white/40' 
+                          : 'bg-white/90 text-emerald-800 border-white/60'
+                      }`}>
+                        {isPrivate ? 'PRIVATE' : 'PUBLISHED'}
+                      </span>
+
+                      {/* Event Type / Tag */}
+                      <span className="px-2.5 py-1 rounded-md bg-black/50 backdrop-blur-md text-white text-[10px] font-medium border border-white/20">
+                        {eventTypeLabel}
                       </span>
                     </div>
-                  )}
-
-                  {/* Gradient Scrim for Contrast */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-
-                  {/* Badges on Cover */}
-                  <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-                    <span className="px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-md text-zinc-900 text-[10px] font-black border border-white/60 flex items-center gap-1 shadow-2xs">
-                      <span>🏷️</span>
-                      <span>{eventTypeLabel}</span>
-                    </span>
-
-                    {gallery.pin_code ? (
-                      <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-amber-300 text-[10px] font-black border border-white/20 flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-amber-400" />
-                        <span>PIN Protected</span>
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 backdrop-blur-md text-white text-[10px] font-black shadow-2xs">
-                        🟢 Live
-                      </span>
-                    )}
                   </div>
 
-                  {/* Event Title on Cover */}
-                  <div className="absolute bottom-3 left-3 right-3 space-y-0.5">
-                    <h3 className="text-base font-black text-white line-clamp-1 drop-shadow-sm">
-                      {gallery.title}
-                    </h3>
-                    <p className="text-[11px] font-mono text-zinc-300 truncate">
-                      /g/{gallery.slug}
+                  {/* Card Body (High-End Editorial Typography - Image 2) */}
+                  <div className="p-5 space-y-3.5 flex-1 flex flex-col justify-between">
+                    <div>
+                      {/* 🌟 CARD NAME IN EDITORIAL SERIF FONT */}
+                      <Link 
+                        href={`/workspace/gallery/${gallery.id}`}
+                        className="block group-hover:text-amber-800 transition"
+                      >
+                        <h3 
+                          style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                          className="text-xl sm:text-2xl font-normal text-zinc-900 tracking-tight leading-snug line-clamp-1"
+                          title={gallery.title}
+                        >
+                          {gallery.title}
+                        </h3>
+                      </Link>
+
+                      {/* Sub-line (Slug / Couple name) in clean subtle italic font */}
+                      <p className="text-xs text-zinc-400 font-normal italic truncate mt-0.5">
+                        /g/{gallery.slug}
+                      </p>
+
+                      {/* Metadata Row: Date & Photos */}
+                      <div className="flex items-center gap-3 text-xs text-zinc-500 font-medium pt-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-zinc-400" />
+                          <span>{formattedDate}</span>
+                        </div>
+                        <span className="text-zinc-300">•</span>
+                        <div className="flex items-center gap-1.5 font-bold text-zinc-700">
+                          <ImageIcon className="w-3.5 h-3.5 text-amber-600" />
+                          <span>{gallery.photo_count || 0} photos</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Storage Line (Image 2 style) */}
+                    <div className="space-y-3">
+                      <div className="border-t border-[#F2EEE6] pt-2.5 flex items-center justify-between text-xs">
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                          Storage
+                        </span>
+                        <span className="font-mono font-semibold text-zinc-600 text-xs">
+                          {formatStorageSize(gallery)}
+                        </span>
+                      </div>
+
+                      {/* Card Action Pill Buttons */}
+                      <div className="pt-2 flex items-center justify-between gap-2 border-t border-[#F2EEE6]">
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/workspace/gallery/${gallery.id}`}
+                            className="py-1.5 px-3.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer select-none"
+                          >
+                            <ImageIcon className="w-3.5 h-3.5" />
+                            <span>Manage</span>
+                          </Link>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStandeeGallery(gallery);
+                              setIsStandeeModalOpen(true);
+                            }}
+                            className="py-1.5 px-3 rounded-full bg-white hover:bg-[#FAF9F5] text-zinc-800 border border-[#E7E2D8] font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer select-none"
+                            title="Table Standee & QR"
+                          >
+                            <QrCode className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Standee</span>
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <a
+                            href={publicLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-full text-zinc-400 hover:text-amber-700 hover:bg-amber-50 transition cursor-pointer"
+                            title="Open Client Live Portal"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteGallery(gallery.id, gallery.title)}
+                            className="p-1.5 rounded-full text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                            title="Delete Gallery"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          5. BOTTOM WIDGETS: RECENT ACTIVITY & STORAGE RING (IMAGE 2)
+      ───────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
+        {/* Recent Activity Feed */}
+        <div className="lg:col-span-2 bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#F2EEE6]">
+            <div>
+              <h3 
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                className="text-lg font-normal text-zinc-900 tracking-tight"
+              >
+                Recent Activity
+              </h3>
+              <p className="text-xs text-zinc-400">Live guest visits, photo indexing & QR scans</p>
+            </div>
+            <Link
+              href="/workspace/gallery/analytics"
+              className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 hover:underline"
+            >
+              <span>Analytics</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="space-y-3">
+            {galleries.slice(0, 4).map((g, idx) => (
+              <div key={g.id || idx} className="flex items-center justify-between py-2 border-b border-zinc-50 last:border-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-[#FAF9F5] border border-[#E7E2D8] flex items-center justify-center shrink-0 text-amber-600">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-zinc-800 truncate">
+                      Gallery active • <span className="text-zinc-600">{g.title}</span>
+                    </p>
+                    <p className="text-[11px] text-zinc-400 truncate">
+                      {g.photo_count || 0} photos registered • /g/{g.slug}
                     </p>
                   </div>
                 </div>
-
-                {/* Card Body & Metrics */}
-                <div className="p-5 space-y-4 flex-1 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-xs text-zinc-500 font-medium">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-zinc-400" />
-                      <span>
-                        {gallery.event_date
-                          ? new Date(gallery.event_date).toLocaleDateString('en-IN', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric',
-                            })
-                          : 'No Date'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 font-bold text-zinc-700">
-                      <ImageIcon className="w-3.5 h-3.5 text-amber-600" />
-                      <span>{gallery.photo_count || 0} Photos</span>
-                      <span className="text-zinc-300">•</span>
-                      <HardDrive className="w-3.5 h-3.5 text-purple-600" />
-                      <span>{gallery.total_size_mb || 0} MB</span>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="space-y-2 pt-2 border-t border-[#F2EEE6]">
-                    <div className="grid grid-cols-2 gap-2">
-                      <Link
-                        href={`/workspace/gallery/${gallery.id}`}
-                        className="py-2.5 px-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-amber-500/20 cursor-pointer"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        <span>Manage Gallery</span>
-                      </Link>
-
-                      <button
-                        onClick={() => {
-                          setStandeeGallery(gallery);
-                          setIsStandeeModalOpen(true);
-                        }}
-                        className="py-2.5 px-3 rounded-full bg-white hover:bg-[#FAF9F5] text-zinc-800 border border-[#E7E2D8] font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-                      >
-                        <QrCode className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Table Standee</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1">
-                      <a
-                        href={publicLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 hover:underline cursor-pointer"
-                      >
-                        <span>Open Portal</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-
-                      <button
-                        onClick={() => handleDeleteGallery(gallery.id, gallery.title)}
-                        className="p-1.5 rounded-full text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                        title="Delete Gallery"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <span className="text-[11px] font-medium text-zinc-400 shrink-0">
+                  {g.event_date ? new Date(g.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Recent'}
+                </span>
               </div>
-            );
-          })}
+            ))}
+            {galleries.length === 0 && (
+              <p className="text-xs text-zinc-400 text-center py-6">No recent gallery activities yet.</p>
+            )}
+          </div>
         </div>
-      )}
+
+        {/* Storage Widget (Circular Progress Ring) */}
+        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between pb-3 border-b border-[#F2EEE6]">
+            <div>
+              <h3 
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                className="text-lg font-normal text-zinc-900 tracking-tight"
+              >
+                Storage Overview
+              </h3>
+              <p className="text-xs text-zinc-400">High-speed Backblaze B2 tier</p>
+            </div>
+            <Link
+              href="/workspace/gallery/settings"
+              className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 hover:underline"
+            >
+              <span>Manage</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="flex flex-col items-center justify-center py-4 space-y-3">
+            {/* Circular Ring SVG */}
+            <div className="relative w-32 h-32 flex items-center justify-center">
+              <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="42"
+                  className="stroke-zinc-100"
+                  strokeWidth="8"
+                  fill="transparent"
+                />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="42"
+                  className="stroke-amber-500 transition-all duration-700"
+                  strokeWidth="8"
+                  strokeDasharray="264"
+                  strokeDashoffset={Math.max(0, 264 - (264 * Math.min(100, Math.max(2, (Number(totalStorageGb) / 1000) * 100))) / 100)}
+                  strokeLinecap="round"
+                  fill="transparent"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="text-lg font-black text-zinc-900 tracking-tight font-mono">{totalStorageGb}</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">GB Used</span>
+              </div>
+            </div>
+
+            <div className="text-center space-y-0.5">
+              <span className="text-xs font-bold text-zinc-700">
+                {((Number(totalStorageGb) / 1000) * 100).toFixed(1)}% of 1,000 GB plan
+              </span>
+              <p className="text-[11px] text-zinc-400">Immortal Private Backblaze B2 Vault</p>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-[#F2EEE6] flex items-center justify-between text-[11px] text-zinc-500">
+            <span>🟢 Status: Online</span>
+            <span className="text-emerald-700 font-bold">100% Redundant</span>
+          </div>
+        </div>
+      </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          3. CREATE EVENT MODAL WITH 3D DROPDOWN & CUSTOM TYPE ADDER
+          6. CREATE EVENT MODAL WITH 3D DROPDOWN & CUSTOM TYPE ADDER
       ───────────────────────────────────────────────────────────── */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
@@ -480,7 +867,12 @@ export default function MyEventsPage() {
                 <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center border border-amber-200">
                   <Camera className="w-4 h-4 text-amber-700" />
                 </div>
-                <h3 className="text-base font-black text-zinc-900">Create New Event</h3>
+                <h3 
+                  style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                  className="text-lg font-medium text-zinc-900"
+                >
+                  Create New Event
+                </h3>
               </div>
               <button
                 type="button"
@@ -614,7 +1006,7 @@ export default function MyEventsPage() {
               <button
                 type="submit"
                 disabled={creating}
-                className="flex-1 py-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-amber-500/20"
+                className="flex-1 py-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
               >
                 {creating ? <RefreshCw className="w-4 h-4 animate-spin text-white" /> : <Sparkles className="w-4 h-4 text-white" />}
                 <span>{creating ? 'Creating Album...' : 'Create Album & Open Studio'}</span>
@@ -632,13 +1024,18 @@ export default function MyEventsPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          4. MODAL: TABLE STANDEE & QR DISPLAY
+          7. MODAL: TABLE STANDEE & QR DISPLAY
       ───────────────────────────────────────────────────────────── */}
       {isStandeeModalOpen && standeeGallery && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-[#E7E2D8] shadow-2xl space-y-5 text-center">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-zinc-900 line-clamp-1">{standeeGallery.title}</span>
+              <span 
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                className="text-sm font-normal text-zinc-900 line-clamp-1"
+              >
+                {standeeGallery.title}
+              </span>
               <button
                 onClick={() => setIsStandeeModalOpen(false)}
                 className="p-1.5 text-zinc-400 hover:text-zinc-700 cursor-pointer"
@@ -677,7 +1074,7 @@ export default function MyEventsPage() {
                 href={getPublicUrl(standeeGallery.slug)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full py-2.5 px-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-amber-500/20"
+                className="w-full py-2.5 px-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>Open Live Portal</span>
