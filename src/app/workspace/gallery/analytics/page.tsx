@@ -87,7 +87,9 @@ export default function GalleryAnalyticsPage() {
     const totalFaces = galleries.reduce((acc, g) => acc + (g.total_faces || 0), 0);
     const totalGuests = galleries.reduce((acc, g) => acc + (g.total_registered_guests || 0), 0);
     const totalBytes = galleries.reduce((acc, g) => acc + (g.total_size_bytes || 0), 0);
-    const totalStorageGb = (totalBytes / 1024 ** 3).toFixed(2);
+    const totalStorageFormatted = totalBytes >= 1024 * 1024 * 1024
+      ? { value: (totalBytes / (1024 * 1024 * 1024)).toFixed(2), unit: 'GB' }
+      : { value: (totalBytes / (1024 * 1024)).toFixed(1), unit: 'MB' };
 
     // Realistic estimated engagement ratios based on gallery size and guests
     const totalEstimatedViews = galleries.reduce((acc, g) => {
@@ -105,11 +107,25 @@ export default function GalleryAnalyticsPage() {
       totalPhotos,
       totalFaces,
       totalGuests,
-      totalStorageGb,
+      totalStorageFormatted,
       totalEstimatedViews,
       totalEstimatedDownloads,
     };
   }, [galleries]);
+
+  const formatStorageSize = (bytes?: number, mb?: string) => {
+    if (bytes && Number(bytes) > 0) {
+      const b = Number(bytes);
+      if (b >= 1024 * 1024 * 1024) return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    if (mb) {
+      const m = parseFloat(mb);
+      if (m >= 1000) return `${(m / 1024).toFixed(2)} GB`;
+      return `${m.toFixed(1)} MB`;
+    }
+    return '0 MB';
+  };
 
   // Filtered galleries by search
   const filteredGalleries = useMemo(() => {
@@ -135,7 +151,7 @@ export default function GalleryAnalyticsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans p-4 sm:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="w-full bg-[#FAF9F5] text-zinc-900 font-sans px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       
       {/* ─────────────────────────────────────────────────────────────
           1. HEADER & CONTROLS
@@ -143,14 +159,17 @@ export default function GalleryAnalyticsPage() {
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E7E2D8] shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center border border-blue-200 shadow-2xs">
-              <BarChart3 className="w-4 h-4 text-blue-600" />
+            <span className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shadow-2xs">
+              <BarChart3 className="w-4 h-4 text-amber-600" />
             </span>
-            <span className="text-[11px] font-black uppercase tracking-wider bg-[#F4F1EA] text-zinc-600 px-3 py-1 rounded-full border border-[#E7E2D8]">
+            <span className="text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-800 px-2.5 py-0.5 rounded-full border border-amber-200">
               Live Gallery Intelligence
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+          <h1 
+            style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+            className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
+          >
             Gallery Analytics &amp; Engagement
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 font-medium max-w-2xl">
@@ -161,14 +180,14 @@ export default function GalleryAnalyticsPage() {
         <div className="flex items-center gap-3">
           <Link
             href="/workspace/gallery"
-            className="px-4 py-2.5 rounded-full bg-[#F4F1EA] hover:bg-white text-zinc-700 font-bold text-xs border border-[#E7E2D8] transition"
+            className="px-4 py-2.5 rounded-full bg-white hover:bg-[#FAF9F5] text-zinc-700 font-bold text-xs border border-[#E7E2D8] transition shadow-2xs"
           >
             ← My Events
           </Link>
 
           <button
             onClick={fetchAnalyticsData}
-            className="px-4 py-2.5 rounded-full bg-white hover:bg-[#F4F1EA] text-zinc-700 font-bold text-xs border border-[#E7E2D8] transition flex items-center gap-2 shadow-2xs cursor-pointer"
+            className="px-4 py-2.5 rounded-full bg-white hover:bg-[#FAF9F5] text-zinc-700 font-bold text-xs border border-[#E7E2D8] transition flex items-center gap-2 shadow-2xs cursor-pointer"
             title="Refresh Data"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-amber-600' : 'text-zinc-500'}`} />
@@ -182,84 +201,83 @@ export default function GalleryAnalyticsPage() {
       ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {/* Total Views */}
-        <div className="p-5 rounded-3xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2">
+        <div className="p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2 flex flex-col justify-between">
           <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Portal Views</span>
-            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Eye className="w-4 h-4" />
-            </div>
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Portal Views</span>
+            <Eye className="w-3.5 h-3.5 text-amber-600/70" />
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-zinc-900">
-            {metrics.totalEstimatedViews.toLocaleString('en-IN')}
-          </p>
-          <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
-            <ArrowUpRight className="w-3 h-3" />
-            <span>Live Guest Visits</span>
-          </span>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {metrics.totalEstimatedViews.toLocaleString('en-IN')}
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              Live guest visits
+            </p>
+          </div>
         </div>
 
         {/* Unique Guests / Face Searches */}
-        <div className="p-5 rounded-3xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2">
+        <div className="p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2 flex flex-col justify-between">
           <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Face Searches</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Sparkles className="w-4 h-4" />
-            </div>
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Face Searches</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-600/70" />
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-zinc-900">
-            {metrics.totalFaces.toLocaleString('en-IN')}
-          </p>
-          <span className="text-[10px] font-bold text-amber-600">
-            Vector Embeddings Matched
-          </span>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {metrics.totalFaces.toLocaleString('en-IN')}
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              Vector selfie matches
+            </p>
+          </div>
         </div>
 
         {/* Photo Downloads */}
-        <div className="p-5 rounded-3xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2">
+        <div className="p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2 flex flex-col justify-between">
           <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Downloads</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <Download className="w-4 h-4" />
-            </div>
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Downloads</span>
+            <Download className="w-3.5 h-3.5 text-amber-600/70" />
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-zinc-900">
-            {metrics.totalEstimatedDownloads.toLocaleString('en-IN')}
-          </p>
-          <span className="text-[10px] font-bold text-emerald-600">
-            Original High-Res &amp; WebP
-          </span>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {metrics.totalEstimatedDownloads.toLocaleString('en-IN')}
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              Original High-Res &amp; WebP
+            </p>
+          </div>
         </div>
 
         {/* Total Photos */}
-        <div className="p-5 rounded-3xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2">
+        <div className="p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2 flex flex-col justify-between">
           <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Active Photos</span>
-            <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-              <Camera className="w-4 h-4" />
-            </div>
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Active Photos</span>
+            <Camera className="w-3.5 h-3.5 text-amber-600/70" />
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-zinc-900">
-            {metrics.totalPhotos.toLocaleString('en-IN')}
-          </p>
-          <span className="text-[10px] font-bold text-purple-600">
-            Across {metrics.totalEvents} Events
-          </span>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {metrics.totalPhotos.toLocaleString('en-IN')}
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              Across {metrics.totalEvents} projects
+            </p>
+          </div>
         </div>
 
         {/* Cloud Storage Bandwidth */}
-        <div className="p-5 rounded-3xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2 col-span-2 sm:col-span-1">
+        <div className="p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2 col-span-2 sm:col-span-1 flex flex-col justify-between">
           <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Cloud Storage</span>
-            <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
-              <HardDrive className="w-4 h-4" />
-            </div>
+            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Cloud Storage</span>
+            <HardDrive className="w-3.5 h-3.5 text-amber-600/70" />
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-zinc-900">
-            {metrics.totalStorageGb} <span className="text-xs font-bold text-zinc-400">GB</span>
-          </p>
-          <span className="text-[10px] font-bold text-rose-600">
-            Backblaze B2 Vault
-          </span>
+          <div>
+            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
+              {metrics.totalStorageFormatted.value} <span className="text-xs font-normal text-zinc-400 font-sans">{metrics.totalStorageFormatted.unit}</span>
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              Backblaze B2 Vault
+            </p>
+          </div>
         </div>
       </div>
 
@@ -269,7 +287,12 @@ export default function GalleryAnalyticsPage() {
       <div className="bg-white rounded-3xl border border-[#E7E2D8] shadow-2xs overflow-hidden space-y-4 p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-0.5">
-            <h2 className="text-base font-black text-zinc-900">Event-by-Event Performance</h2>
+            <h2 
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              className="text-xl font-medium text-zinc-900 tracking-tight"
+            >
+              Event-by-Event Performance
+            </h2>
             <p className="text-xs text-zinc-400">Granular photo counts, visitor face scans, and guest downloads</p>
           </div>
 
@@ -317,17 +340,24 @@ export default function GalleryAnalyticsPage() {
                       {/* Event & Type */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#F3EFE7] border border-[#E7E2D8] shrink-0">
-                            {gallery.cover_url ? (
-                              <img src={gallery.cover_url} alt={gallery.title} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-amber-600">
-                                <Camera className="w-5 h-5" />
-                              </div>
+                          <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#F3EFE7] border border-[#E7E2D8] shrink-0 relative">
+                            {gallery.cover_url && (
+                              <img
+                                src={gallery.cover_url}
+                                alt={gallery.title}
+                                loading="lazy"
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLImageElement).style.opacity = '0';
+                                }}
+                                className="w-full h-full object-cover relative z-10"
+                              />
                             )}
+                            <div className="absolute inset-0 flex items-center justify-center text-amber-600">
+                              <Camera className="w-4 h-4 text-amber-600/70" />
+                            </div>
                           </div>
                           <div>
-                            <span className="font-black text-zinc-900 block line-clamp-1">{gallery.title}</span>
+                            <span className="font-bold text-zinc-900 block line-clamp-1">{gallery.title}</span>
                             <span className="text-[10px] font-mono text-zinc-400">/g/{gallery.slug}</span>
                           </div>
                         </div>
@@ -357,7 +387,7 @@ export default function GalleryAnalyticsPage() {
                       </td>
 
                       {/* Est. Views */}
-                      <td className="py-3 px-4 text-center font-bold text-blue-700">
+                      <td className="py-3 px-4 text-center font-bold text-amber-700">
                         {gallery.photo_count ? estViews.toLocaleString('en-IN') : 0}
                       </td>
 
@@ -368,7 +398,7 @@ export default function GalleryAnalyticsPage() {
 
                       {/* Storage */}
                       <td className="py-3 px-4 text-center text-zinc-600 font-mono text-[11px]">
-                        {gallery.total_size_mb || 0} MB
+                        {formatStorageSize(gallery.total_size_bytes, gallery.total_size_mb)}
                       </td>
 
                       {/* Status */}
@@ -408,7 +438,7 @@ export default function GalleryAnalyticsPage() {
                             href={`/g/${gallery.slug}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg bg-white border border-[#E7E2D8] text-blue-600 hover:text-blue-700 hover:border-blue-300 transition"
+                            className="p-1.5 rounded-lg bg-white border border-[#E7E2D8] text-amber-700 hover:text-amber-800 hover:border-amber-400 transition"
                             title="Open Client Portal"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
@@ -431,7 +461,12 @@ export default function GalleryAnalyticsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-[#E7E2D8] shadow-2xl space-y-5 text-center">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-zinc-900 line-clamp-1">{standeeGallery.title}</span>
+              <span 
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                className="text-base font-medium text-zinc-900 line-clamp-1"
+              >
+                {standeeGallery.title}
+              </span>
               <button
                 onClick={() => setStandeeGallery(null)}
                 className="p-1.5 text-zinc-400 hover:text-zinc-700 cursor-pointer"

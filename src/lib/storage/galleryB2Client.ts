@@ -9,8 +9,8 @@ export const B2_REGION = clean(process.env.B2_GALLERY_REGION) || clean(process.e
 export const B2_ACCESS_KEY_ID = clean(process.env.B2_GALLERY_ACCESS_KEY_ID) || clean(process.env.B2_ACCESS_KEY_ID) || '';
 export const B2_SECRET_ACCESS_KEY = clean(process.env.B2_GALLERY_SECRET_ACCESS_KEY) || clean(process.env.B2_SECRET_ACCESS_KEY) || '';
 
-// Dedicated Gallery Bucket Name (user provides, fallback to WhatsApp bucket or default)
-export const B2_GALLERY_BUCKET_NAME = clean(process.env.B2_GALLERY_BUCKET_NAME) || clean(process.env.B2_WHATSAPP_BUCKET_NAME) || 'studiocore-galleries';
+// Dedicated Gallery Bucket Name (default to studiocore-gallery)
+export const B2_GALLERY_BUCKET_NAME = clean(process.env.B2_GALLERY_BUCKET_NAME) || 'studiocore-gallery';
 
 // Optional Custom CDN Domain (e.g., https://gallery-cdn.studiocore.in)
 export const B2_GALLERY_CDN_URL = clean(process.env.NEXT_PUBLIC_B2_GALLERY_CDN_URL) || clean(process.env.NEXT_PUBLIC_R2_GALLERY_CDN_URL) || '';

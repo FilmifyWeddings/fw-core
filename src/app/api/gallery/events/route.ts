@@ -98,7 +98,9 @@ export async function GET(req: NextRequest) {
         gallery_photos (
           id,
           size_bytes,
-          face_count
+          face_count,
+          preview_key,
+          thumbnail_key
         )
       `)
       .order('created_at', { ascending: false });
@@ -127,9 +129,18 @@ export async function GET(req: NextRequest) {
       const totalBytes = photos.reduce((acc: number, p: any) => acc + (Number(p.size_bytes) || 0), 0);
       const totalFaces = photos.reduce((acc: number, p: any) => acc + (Number(p.face_count) || 0), 0);
 
+      let resolvedCover = formatCoverUrl(g.cover_url);
+      if (!resolvedCover && photos.length > 0) {
+        const firstPhoto = photos.find((p: any) => p.preview_key || p.thumbnail_key);
+        if (firstPhoto) {
+          const key = firstPhoto.thumbnail_key || firstPhoto.preview_key;
+          resolvedCover = `/api/gallery/image?key=${encodeURIComponent(key)}`;
+        }
+      }
+
       return {
         ...g,
-        cover_url: formatCoverUrl(g.cover_url),
+        cover_url: resolvedCover,
         photo_count: totalPhotos,
         total_size_bytes: totalBytes,
         total_size_mb: (totalBytes / (1024 * 1024)).toFixed(1),

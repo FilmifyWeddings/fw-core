@@ -258,8 +258,18 @@ export default function MyEventsPage() {
     }, 0);
   }, [galleries]);
 
-  const totalStorageGb = useMemo(() => {
-    return (totalStorageBytes / (1024 * 1024 * 1024)).toFixed(2);
+  const totalStorageDisplay = useMemo(() => {
+    if (totalStorageBytes <= 0) return { value: '0', unit: 'MB' };
+    if (totalStorageBytes >= 1024 * 1024 * 1024) {
+      return {
+        value: (totalStorageBytes / (1024 * 1024 * 1024)).toFixed(2),
+        unit: 'GB',
+      };
+    }
+    return {
+      value: (totalStorageBytes / (1024 * 1024)).toFixed(1),
+      unit: 'MB',
+    };
   }, [totalStorageBytes]);
 
   const formatStorageSize = useCallback((g: EventGallery) => {
@@ -300,7 +310,7 @@ export default function MyEventsPage() {
   }, [galleries, activeTab, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans p-4 sm:p-8 space-y-7 max-w-7xl mx-auto">
+    <div className="w-full bg-[#FAF9F5] text-zinc-900 font-sans px-4 sm:px-6 lg:px-8 py-6 space-y-7">
       
       {/* ─────────────────────────────────────────────────────────────
           1. TOP APP BAR: DASHBOARD TITLE, DATE, SEARCH & + NEW EVENT
@@ -349,15 +359,15 @@ export default function MyEventsPage() {
             className="px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer shrink-0 select-none active:scale-95 whitespace-nowrap"
           >
             <Plus className="w-4 h-4 text-white" />
-            <span>+ NEW PROJECT</span>
+            <span>NEW PROJECT</span>
           </button>
         </div>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. METRIC TILES: 5 CLEAN STAT CARDS (EXACT REFERENCE STYLE)
+          2. METRIC TILES: 4 CLEAN STAT CARDS (PROJECTS, PHOTOS, AI, STORAGE)
       ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         {/* PROJECTS */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
           <div className="flex items-center justify-between text-zinc-400">
@@ -366,26 +376,10 @@ export default function MyEventsPage() {
           </div>
           <div>
             <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
-              {galleries.length} <span className="text-xs font-normal text-zinc-400 font-sans">/ 120</span>
+              {galleries.length}
             </div>
             <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
               {publishedCount} published • {privateCount} private
-            </p>
-          </div>
-        </div>
-
-        {/* VIDEOS / EVENT TYPES */}
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
-          <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Event Types</span>
-            <Video className="w-3.5 h-3.5 text-amber-600/70" />
-          </div>
-          <div>
-            <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
-              {allEventTypes.length}
-            </div>
-            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
-              Across all projects
             </p>
           </div>
         </div>
@@ -406,7 +400,7 @@ export default function MyEventsPage() {
           </div>
         </div>
 
-        {/* WATCH HOURS / GUEST DISCOVERIES */}
+        {/* AI DISCOVERIES */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
           <div className="flex items-center justify-between text-zinc-400">
             <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">AI Discoveries</span>
@@ -423,73 +417,19 @@ export default function MyEventsPage() {
         </div>
 
         {/* STORAGE */}
-        <div className="col-span-2 sm:col-span-1 bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] shadow-2xs flex flex-col justify-between space-y-2">
           <div className="flex items-center justify-between text-zinc-400">
             <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-400">Storage</span>
             <HardDrive className="w-3.5 h-3.5 text-amber-600/70" />
           </div>
           <div>
             <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
-              {totalStorageGb} <span className="text-xs font-normal text-zinc-400 font-sans">GB</span>
+              {totalStorageDisplay.value} <span className="text-xs font-normal text-zinc-400 font-sans">{totalStorageDisplay.unit}</span>
             </div>
             <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
               of 1,000 GB plan
             </p>
           </div>
-        </div>
-      </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          3. QUICK ACTION BANNERS: CREATE PROJECT & MANAGE PORTFOLIO
-      ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Banner 1: Create New Project */}
-        <div 
-          onClick={() => setIsCreateModalOpen(true)}
-          className="group bg-white rounded-2xl p-5 border border-[#E7E2D8] hover:border-amber-400/80 shadow-2xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between select-none"
-        >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-[#FAF9F5] border border-[#E7E2D8] text-amber-700 flex items-center justify-center shrink-0 group-hover:bg-amber-500 group-hover:text-white transition">
-              <Plus className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-zinc-900 group-hover:text-amber-800 transition">
-                Create New Project
-              </h4>
-              <p className="text-xs text-zinc-400">
-                Start a new luxury wedding or event gallery from scratch
-              </p>
-            </div>
-          </div>
-          <ArrowUpRight className="w-4 h-4 text-zinc-300 group-hover:text-amber-600 transition shrink-0" />
-        </div>
-
-        {/* Banner 2: Live QR Standees */}
-        <div 
-          onClick={() => {
-            if (galleries.length > 0) {
-              setStandeeGallery(galleries[0]);
-              setIsStandeeModalOpen(true);
-            } else {
-              setIsCreateModalOpen(true);
-            }
-          }}
-          className="group bg-white rounded-2xl p-5 border border-[#E7E2D8] hover:border-amber-400/80 shadow-2xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between select-none"
-        >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-[#FAF9F5] border border-[#E7E2D8] text-amber-700 flex items-center justify-center shrink-0 group-hover:bg-amber-500 group-hover:text-white transition">
-              <Star className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-zinc-900 group-hover:text-amber-800 transition">
-                Live Table Standees & QR
-              </h4>
-              <p className="text-xs text-zinc-400">
-                Generate guest AI discovery QR standees for live wedding tables
-              </p>
-            </div>
-          </div>
-          <ArrowUpRight className="w-4 h-4 text-zinc-300 group-hover:text-amber-600 transition shrink-0" />
         </div>
       </div>
 
@@ -573,7 +513,7 @@ export default function MyEventsPage() {
               className="px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 text-white text-xs font-bold inline-flex items-center gap-2 hover:from-amber-600 hover:to-amber-700 transition cursor-pointer shadow-xs"
             >
               <Plus className="w-4 h-4 text-white" />
-              <span>+ Create Project</span>
+              <span>Create Project</span>
             </button>
           </div>
         ) : (
@@ -597,28 +537,33 @@ export default function MyEventsPage() {
                 >
                   {/* Card Cover (16:10 Landscape Proportions) */}
                   <div className="relative aspect-[16/10] bg-[#F5F2EB] border-b border-[#E7E2D8] overflow-hidden">
-                    {gallery.cover_url ? (
+                    {/* Underlying placeholder: shown while loading or if cover image is missing/broken */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-[#FAF9F5] to-[#EFECE4] text-zinc-400">
+                      <div className="w-12 h-12 rounded-2xl bg-white/80 border border-[#E7E2D8] flex items-center justify-center shadow-2xs mb-1.5">
+                        <Camera className="w-6 h-6 text-amber-600/70" />
+                      </div>
+                      <span className="text-[10px] font-bold tracking-wider uppercase text-zinc-400">
+                        Cover Photo
+                      </span>
+                    </div>
+
+                    {gallery.cover_url && (
                       <img
                         src={gallery.cover_url}
                         alt={gallery.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.opacity = '0';
+                        }}
+                        className="relative z-10 w-full h-full object-cover group-hover:scale-105 transition-all duration-500"
                       />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#FAF9F5] to-[#EFECE4] text-zinc-400">
-                        <div className="w-12 h-12 rounded-2xl bg-white/80 border border-[#E7E2D8] flex items-center justify-center shadow-2xs mb-1.5">
-                          <Camera className="w-6 h-6 text-amber-600/70" />
-                        </div>
-                        <span className="text-[10px] font-bold tracking-wider uppercase text-zinc-400">
-                          Cover Photo
-                        </span>
-                      </div>
                     )}
 
                     {/* Subtle Gradient Scrim at top */}
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 z-20 bg-gradient-to-b from-black/40 via-transparent to-transparent pointer-events-none" />
 
                     {/* Status Pill Badge (PUBLISHED / PRIVATE) */}
-                    <div className="absolute top-3.5 left-3.5 right-3.5 flex items-center justify-between pointer-events-none">
+                    <div className="absolute top-3.5 left-3.5 right-3.5 z-30 flex items-center justify-between pointer-events-none">
                       <span className={`px-2.5 py-1 rounded-md backdrop-blur-md text-[10px] font-bold tracking-wider uppercase border shadow-xs ${
                         isPrivate 
                           ? 'bg-amber-500/90 text-white border-white/40' 
@@ -735,123 +680,7 @@ export default function MyEventsPage() {
         )}
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          5. BOTTOM WIDGETS: RECENT ACTIVITY & STORAGE RING (IMAGE 2)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
-        {/* Recent Activity Feed */}
-        <div className="lg:col-span-2 bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-[#F2EEE6]">
-            <div>
-              <h3 
-                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
-                className="text-lg font-normal text-zinc-900 tracking-tight"
-              >
-                Recent Activity
-              </h3>
-              <p className="text-xs text-zinc-400">Live guest visits, photo indexing & QR scans</p>
-            </div>
-            <Link
-              href="/workspace/gallery/analytics"
-              className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 hover:underline"
-            >
-              <span>Analytics</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
 
-          <div className="space-y-3">
-            {galleries.slice(0, 4).map((g, idx) => (
-              <div key={g.id || idx} className="flex items-center justify-between py-2 border-b border-zinc-50 last:border-0">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-[#FAF9F5] border border-[#E7E2D8] flex items-center justify-center shrink-0 text-amber-600">
-                    <Sparkles className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-zinc-800 truncate">
-                      Gallery active • <span className="text-zinc-600">{g.title}</span>
-                    </p>
-                    <p className="text-[11px] text-zinc-400 truncate">
-                      {g.photo_count || 0} photos registered • /g/{g.slug}
-                    </p>
-                  </div>
-                </div>
-                <span className="text-[11px] font-medium text-zinc-400 shrink-0">
-                  {g.event_date ? new Date(g.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Recent'}
-                </span>
-              </div>
-            ))}
-            {galleries.length === 0 && (
-              <p className="text-xs text-zinc-400 text-center py-6">No recent gallery activities yet.</p>
-            )}
-          </div>
-        </div>
-
-        {/* Storage Widget (Circular Progress Ring) */}
-        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between pb-3 border-b border-[#F2EEE6]">
-            <div>
-              <h3 
-                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
-                className="text-lg font-normal text-zinc-900 tracking-tight"
-              >
-                Storage Overview
-              </h3>
-              <p className="text-xs text-zinc-400">High-speed Backblaze B2 tier</p>
-            </div>
-            <Link
-              href="/workspace/gallery/settings"
-              className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 hover:underline"
-            >
-              <span>Manage</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-
-          <div className="flex flex-col items-center justify-center py-4 space-y-3">
-            {/* Circular Ring SVG */}
-            <div className="relative w-32 h-32 flex items-center justify-center">
-              <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="42"
-                  className="stroke-zinc-100"
-                  strokeWidth="8"
-                  fill="transparent"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="42"
-                  className="stroke-amber-500 transition-all duration-700"
-                  strokeWidth="8"
-                  strokeDasharray="264"
-                  strokeDashoffset={Math.max(0, 264 - (264 * Math.min(100, Math.max(2, (Number(totalStorageGb) / 1000) * 100))) / 100)}
-                  strokeLinecap="round"
-                  fill="transparent"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-lg font-black text-zinc-900 tracking-tight font-mono">{totalStorageGb}</span>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">GB Used</span>
-              </div>
-            </div>
-
-            <div className="text-center space-y-0.5">
-              <span className="text-xs font-bold text-zinc-700">
-                {((Number(totalStorageGb) / 1000) * 100).toFixed(1)}% of 1,000 GB plan
-              </span>
-              <p className="text-[11px] text-zinc-400">Immortal Private Backblaze B2 Vault</p>
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-[#F2EEE6] flex items-center justify-between text-[11px] text-zinc-500">
-            <span>🟢 Status: Online</span>
-            <span className="text-emerald-700 font-bold">100% Redundant</span>
-          </div>
-        </div>
-      </div>
 
       {/* ─────────────────────────────────────────────────────────────
           6. CREATE EVENT MODAL WITH 3D DROPDOWN & CUSTOM TYPE ADDER
