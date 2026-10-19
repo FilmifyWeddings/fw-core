@@ -6,13 +6,17 @@ export const dynamic = 'force-dynamic';
 
 function formatCoverUrl(url: string | null | undefined): string | null {
   if (!url) return null;
-  if (url.startsWith('/api/') || url.includes('X-Amz-Signature') || url.includes('token=')) return url;
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    return `/api/gallery/image?key=${encodeURIComponent(url.replace(/^\/+/, ''))}`;
+  const hashIdx = url.indexOf('#');
+  const hash = hashIdx !== -1 ? url.substring(hashIdx) : '';
+  const rawUrl = hashIdx !== -1 ? url.substring(0, hashIdx) : url;
+
+  if (rawUrl.startsWith('/api/') || rawUrl.includes('X-Amz-Signature') || rawUrl.includes('token=')) return url;
+  if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+    return `/api/gallery/image?key=${encodeURIComponent(rawUrl.replace(/^\/+/, ''))}${hash}`;
   }
-  if (url.includes('.backblazeb2.com/')) {
-    const key = url.split('.backblazeb2.com/')[1];
-    if (key) return `/api/gallery/image?key=${encodeURIComponent(key)}`;
+  if (rawUrl.includes('.backblazeb2.com/')) {
+    const key = rawUrl.split('.backblazeb2.com/')[1];
+    if (key) return `/api/gallery/image?key=${encodeURIComponent(key)}${hash}`;
   }
   return url;
 }

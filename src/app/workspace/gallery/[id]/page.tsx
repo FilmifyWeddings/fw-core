@@ -47,6 +47,12 @@ import {
   ShieldCheck,
   Headphones,
   SlidersHorizontal,
+  Phone,
+  Mail,
+  MessageCircle,
+  RotateCcw,
+  Crosshair,
+  ZoomIn,
 } from 'lucide-react';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { supabase } from '@/lib/supabase';
@@ -96,6 +102,79 @@ interface PhotoItem {
 }
 
 type StudioTab = 'photos' | 'selection' | 'design' | 'analytics' | 'settings';
+
+export type SortOption =
+  | 'newest'
+  | 'oldest'
+  | 'capture_newest'
+  | 'capture_oldest'
+  | 'size_desc'
+  | 'size_asc'
+  | 'name_asc'
+  | 'name_desc';
+
+const SORT_OPTIONS: { id: SortOption; label: string }[] = [
+  { id: 'newest', label: 'Newest uploads' },
+  { id: 'oldest', label: 'Oldest uploads' },
+  { id: 'capture_newest', label: 'Capture Time (Newest First)' },
+  { id: 'capture_oldest', label: 'Capture Time (Oldest First)' },
+  { id: 'size_desc', label: 'File Size (Largest First)' },
+  { id: 'size_asc', label: 'File Size (Smallest First)' },
+  { id: 'name_asc', label: 'File Name (A to Z)' },
+  { id: 'name_desc', label: 'File Name (Z to A)' },
+];
+
+interface CoverPositioning {
+  url: string;
+  desktop: { x: number; y: number; zoom: number };
+  mobile: { x: number; y: number; zoom: number };
+}
+
+function parseCoverUrl(coverUrl: string | null | undefined): CoverPositioning {
+  if (!coverUrl) {
+    return {
+      url: '',
+      desktop: { x: 50, y: 50, zoom: 100 },
+      mobile: { x: 50, y: 50, zoom: 100 },
+    };
+  }
+
+  const hashIdx = coverUrl.indexOf('#');
+  if (hashIdx === -1) {
+    return {
+      url: coverUrl,
+      desktop: { x: 50, y: 50, zoom: 100 },
+      mobile: { x: 50, y: 50, zoom: 100 },
+    };
+  }
+
+  const url = coverUrl.substring(0, hashIdx);
+  const hash = coverUrl.substring(hashIdx + 1);
+  const params = new URLSearchParams(hash);
+
+  return {
+    url,
+    desktop: {
+      x: Number(params.get('dx')) || 50,
+      y: Number(params.get('dy')) || 50,
+      zoom: Number(params.get('dz')) || 100,
+    },
+    mobile: {
+      x: Number(params.get('mx')) || 50,
+      y: Number(params.get('my')) || 50,
+      zoom: Number(params.get('mz')) || 100,
+    },
+  };
+}
+
+function buildCoverUrl(
+  url: string,
+  desktop: { x: number; y: number; zoom: number },
+  mobile: { x: number; y: number; zoom: number }
+): string {
+  const clean = url.split('#')[0];
+  return `${clean}#dx=${Math.round(desktop.x)}&dy=${Math.round(desktop.y)}&dz=${Math.round(desktop.zoom)}&mx=${Math.round(mobile.x)}&my=${Math.round(mobile.y)}&mz=${Math.round(mobile.zoom)}`;
+}
 
 const NAV_TABS: { id: StudioTab; label: string; icon: any }[] = [
   { id: 'photos', label: 'Photos', icon: Camera },
@@ -154,20 +233,37 @@ function AlbumStudioContent() {
   // Selected Photos for Bulk Actions
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest'>('newest');
-  const [filterFaceMode, setFilterFaceMode] = useState<'all' | 'faces' | 'nofaces'>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('newest');
+  const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
 
   // Modals
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
   const [isStandeeModalOpen, setIsStandeeModalOpen] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+
+  // Cover Customizer Modal State
+  const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
+  const [coverPreviewMode, setCoverPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
+  const [activeCoverUrl, setActiveCoverUrl] = useState<string>('');
+  const [desktopCrop, setDesktopCrop] = useState<{ x: number; y: number; zoom: number }>({ x: 50, y: 50, zoom: 100 });
+  const [mobileCrop, setMobileCrop] = useState<{ x: number; y: number; zoom: number }>({ x: 50, y: 50, zoom: 100 });
+  const [isSavingCover, setIsSavingCover] = useState(false);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
 
   // People & Registered Guests
   const [people, setPeople] = useState<any[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [copiedPersonId, setCopiedPersonId] = useState<string | null>(null);
   const [registeredGuests, setRegisteredGuests] = useState<any[]>([]);
+  const [selectedGuest, setSelectedGuest] = useState<any | null>(null);
+  const [isGuestModalOpen, setIsGuestModalOpen] = useState(false);
+  const [guestMatchedPhotos, setGuestMatchedPhotos] = useState<any[]>([]);
+  const [loadingGuestPhotos, setLoadingGuestPhotos] = useState(false);
+  const [filterGuest, setFilterGuest] = useState<{ id: string; name: string; photoIds: string[] } | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [isReindexing, setIsReindexing] = useState(false);
   const [reindexProgress, setReindexProgress] = useState<string>('');
@@ -320,7 +416,12 @@ function AlbumStudioContent() {
 
   // Close dropdown on outside click
   useEffect(() => {
-    const handleClickOutside = () => setActiveMenuPhotoId(null);
+    const handleClickOutside = (e: MouseEvent) => {
+      setActiveMenuPhotoId(null);
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target as Node)) {
+        setIsSortDropdownOpen(false);
+      }
+    };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
   }, []);
@@ -346,6 +447,60 @@ function AlbumStudioContent() {
       }
     } catch (_) {}
   };
+
+  // Live query matched photos for selected guest
+  useEffect(() => {
+    if (!selectedGuest || !gallery) {
+      setGuestMatchedPhotos([]);
+      return;
+    }
+
+    let isCancelled = false;
+    const fetchGuestMatches = async () => {
+      setLoadingGuestPhotos(true);
+      try {
+        const payload: any = {
+          gallery_id: gallery.id,
+          match_threshold: 0.28,
+        };
+
+        if (selectedGuest.face_embedding && Array.isArray(selectedGuest.face_embedding) && selectedGuest.face_embedding.length > 0) {
+          payload.embedding = selectedGuest.face_embedding;
+        } else if (selectedGuest.selfie_url) {
+          payload.selfieBase64 = selectedGuest.selfie_url;
+        } else {
+          setGuestMatchedPhotos([]);
+          setLoadingGuestPhotos(false);
+          return;
+        }
+
+        const res = await fetch('/api/gallery/match-face', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const json = await res.json();
+        if (!isCancelled) {
+          if (json.success && Array.isArray(json.photos)) {
+            setGuestMatchedPhotos(json.photos);
+          } else {
+            setGuestMatchedPhotos([]);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load guest matched photos:', err);
+        if (!isCancelled) setGuestMatchedPhotos([]);
+      } finally {
+        if (!isCancelled) setLoadingGuestPhotos(false);
+      }
+    };
+
+    fetchGuestMatches();
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedGuest, gallery]);
 
   const handleReindexFaces = async () => {
     if (!gallery || isReindexing) return;
@@ -522,9 +677,88 @@ function AlbumStudioContent() {
         setSelectedCollectionId(json.collection.id);
         setNewCollectionName('');
         setIsAddCollectionModalOpen(false);
+      } else {
+        alert(json.error || 'Failed to create collection');
       }
     } catch (err: any) {
       alert(`Error creating collection: ${err.message}`);
+    }
+  };
+
+  // Delete Collection
+  const handleDeleteCollection = async (colId: string) => {
+    if (!confirm('Are you sure you want to delete this collection? Photos inside will remain in the album.')) return;
+
+    try {
+      const res = await fetch(`/api/gallery/collections?id=${colId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (json.success) {
+        setCollections((prev) => prev.filter((c) => c.id !== colId));
+        if (selectedCollectionId === colId) {
+          setSelectedCollectionId('all');
+        }
+      } else {
+        alert(json.error || 'Failed to delete collection');
+      }
+    } catch (err: any) {
+      alert(`Error deleting collection: ${err.message}`);
+    }
+  };
+
+  // Save Cover Settings from Customizer Modal
+  const handleSaveCoverSettings = async () => {
+    if (!gallery || !activeCoverUrl) return;
+    setIsSavingCover(true);
+
+    try {
+      const compositeUrl = buildCoverUrl(activeCoverUrl, desktopCrop, mobileCrop);
+      const res = await fetch('/api/gallery/events', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: gallery.id, cover_url: compositeUrl }),
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        setGallery((prev) => (prev ? { ...prev, cover_url: compositeUrl } : null));
+        setIsCoverModalOpen(false);
+      } else {
+        alert(json.error || 'Failed to save cover settings');
+      }
+    } catch (err: any) {
+      alert(`Failed to save cover: ${err.message}`);
+    } finally {
+      setIsSavingCover(false);
+    }
+  };
+
+  // Upload New HD Cover from File Picker
+  const handleUploadNewCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !gallery) return;
+
+    setIsUploadingCover(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', `events/${gallery.slug || gallery.id}`);
+
+      const res = await fetch('/api/upload/r2', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (json.success && json.url) {
+        setActiveCoverUrl(json.url);
+      } else {
+        alert(json.error || 'Failed to upload cover photo');
+      }
+    } catch (err: any) {
+      alert(`Upload error: ${err.message}`);
+    } finally {
+      setIsUploadingCover(false);
+      if (coverFileInputRef.current) coverFileInputRef.current.value = '';
     }
   };
 
@@ -699,6 +933,9 @@ function AlbumStudioContent() {
   const filteredPhotos = useMemo(() => {
     return photos
       .filter((p) => {
+        if (filterGuest) {
+          if (!filterGuest.photoIds || !filterGuest.photoIds.includes(p.id)) return false;
+        }
         if (selectedPersonId && selectedPerson) {
           if (!selectedPerson.photo_ids?.includes(p.id)) return false;
         }
@@ -706,16 +943,6 @@ function AlbumStudioContent() {
           if (!p.face_count || p.face_count <= 0) return false;
         } else if (selectedCollectionId !== 'all' && p.collection_id !== selectedCollectionId) {
           return false;
-        }
-        if (filterFaceMode === 'faces' && (!p.face_count || p.face_count <= 0)) {
-          return false;
-        }
-        if (filterFaceMode === 'nofaces' && p.face_count > 0) {
-          return false;
-        }
-        if (activeTab === 'selection') {
-          if (selectionFilter === 'selected' && !selectedPhotoIds.has(p.id)) return false;
-          if (selectionFilter === 'pending' && selectedPhotoIds.has(p.id)) return false;
         }
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
@@ -728,9 +955,32 @@ function AlbumStudioContent() {
         if (sortBy === 'oldest') {
           return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         }
+        if (sortBy === 'capture_newest') {
+          const timeA = (a as any).capture_time ? new Date((a as any).capture_time).getTime() : new Date(a.created_at).getTime();
+          const timeB = (b as any).capture_time ? new Date((b as any).capture_time).getTime() : new Date(b.created_at).getTime();
+          return timeB - timeA;
+        }
+        if (sortBy === 'capture_oldest') {
+          const timeA = (a as any).capture_time ? new Date((a as any).capture_time).getTime() : new Date(a.created_at).getTime();
+          const timeB = (b as any).capture_time ? new Date((b as any).capture_time).getTime() : new Date(b.created_at).getTime();
+          return timeA - timeB;
+        }
+        if (sortBy === 'size_desc') {
+          return (Number(b.size_bytes) || 0) - (Number(a.size_bytes) || 0);
+        }
+        if (sortBy === 'size_asc') {
+          return (Number(a.size_bytes) || 0) - (Number(b.size_bytes) || 0);
+        }
+        if (sortBy === 'name_asc') {
+          return getCleanFilename(a.original_key).localeCompare(getCleanFilename(b.original_key));
+        }
+        if (sortBy === 'name_desc') {
+          return getCleanFilename(b.original_key).localeCompare(getCleanFilename(a.original_key));
+        }
+        // default: newest
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
-  }, [photos, selectedPersonId, selectedPerson, selectedCollectionId, filterFaceMode, activeTab, selectionFilter, selectedPhotoIds, searchQuery, sortBy, getCleanFilename]);
+  }, [photos, filterGuest, selectedPersonId, selectedPerson, selectedCollectionId, activeTab, selectionFilter, selectedPhotoIds, searchQuery, sortBy, getCleanFilename]);
 
   const totalFaces = useMemo(() => photos.reduce((acc, p) => acc + (p.face_count || 0), 0), [photos]);
   const totalSizeBytes = useMemo(() => photos.reduce((acc, p) => acc + (Number(p.size_bytes) || 0), 0), [photos]);
@@ -865,17 +1115,6 @@ function AlbumStudioContent() {
             <QrCode className="w-4 h-4 text-amber-600" />
           </button>
 
-          {/* AI Scan Faces */}
-          <button
-            onClick={handleReindexFaces}
-            disabled={isReindexing}
-            className="px-3.5 py-1.5 rounded-full bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-60"
-            title="Scan photos with AI and cluster unique people"
-          >
-            <Sparkles className={`w-3.5 h-3.5 text-purple-600 ${isReindexing ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">{isReindexing ? (reindexProgress || 'Scanning Faces...') : 'AI Face Scan'}</span>
-          </button>
-
           {/* Share Button (Screenshot Match: Green Luxury Pill) */}
           <Link
             href={`/workspace/gallery/${gallery.id}/share`}
@@ -915,8 +1154,8 @@ function AlbumStudioContent() {
                 onClick={() => handleTabChange(tab.id)}
                 className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20 font-bold'
-                    : 'text-zinc-400 hover:text-zinc-800 hover:bg-[#FAF9F5]'
+                    ? 'bg-zinc-800 text-white shadow-xs font-bold'
+                    : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 font-medium'
                 }`}
                 title={tab.label}
               >
@@ -935,42 +1174,46 @@ function AlbumStudioContent() {
                 
                 <div className="space-y-4">
                   {/* Event Cover Photo Card with Device Preview Icons [ 💻 📱 ] */}
-                  <div className="relative aspect-[16/10] rounded-2xl overflow-hidden bg-zinc-900 border border-[#E7E2D8] shadow-2xs group">
+                  <div
+                    onClick={() => {
+                      const config = parseCoverUrl(gallery.cover_url);
+                      setActiveCoverUrl(config.url || gallery.cover_url || '');
+                      setDesktopCrop(config.desktop);
+                      setMobileCrop(config.mobile);
+                      setIsCoverModalOpen(true);
+                    }}
+                    className="relative aspect-[16/10] rounded-2xl overflow-hidden bg-zinc-900 border border-[#E7E2D8] shadow-2xs group cursor-pointer hover:border-amber-400 transition"
+                    title="Click to customize Cover Photo & Focal Positions"
+                  >
                     {gallery.cover_url ? (
-                      <img src={gallery.cover_url} alt="Cover" className="w-full h-full object-cover" />
+                      <img
+                        src={parseCoverUrl(gallery.cover_url).url || gallery.cover_url}
+                        alt="Cover"
+                        style={{
+                          objectPosition: `${parseCoverUrl(gallery.cover_url).desktop.x}% ${parseCoverUrl(gallery.cover_url).desktop.y}%`,
+                          transform: `scale(${parseCoverUrl(gallery.cover_url).desktop.zoom / 100})`,
+                          transformOrigin: `${parseCoverUrl(gallery.cover_url).desktop.x}% ${parseCoverUrl(gallery.cover_url).desktop.y}%`,
+                        }}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300"
+                      />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400 bg-[#FAF9F5]">
                         <Camera className="w-8 h-8 mb-1 text-amber-600/70" />
-                        <span className="text-[10px] font-bold uppercase tracking-wider">No Cover</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Set Cover</span>
                       </div>
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
 
                     {/* Device Preview Overlay Icons [ 💻 📱 ] */}
-                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg border border-white/20">
-                      <a
-                        href={getPublicUrl(gallery.slug)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-white/80 hover:text-white p-0.5 cursor-pointer"
-                        title="Desktop Portal Preview"
-                      >
-                        <Laptop className="w-3.5 h-3.5" />
-                      </a>
-                      <span className="text-white/40 text-[10px]">|</span>
-                      <a
-                        href={`${getPublicUrl(gallery.slug)}?view=mobile`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-white/80 hover:text-white p-0.5 cursor-pointer"
-                        title="Mobile Guest Portal Preview"
-                      >
-                        <Smartphone className="w-3.5 h-3.5" />
-                      </a>
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg border border-white/20 text-white text-[11px] font-bold">
+                      <Laptop className="w-3.5 h-3.5 text-white/90" />
+                      <span className="text-white/40">|</span>
+                      <Smartphone className="w-3.5 h-3.5 text-white/90" />
                     </div>
 
-                    <div className="absolute bottom-2.5 left-3 text-white text-xs font-bold truncate">
-                      Event Cover
+                    <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-white text-xs font-bold">
+                      <span className="truncate">Event Cover</span>
+                      <span className="text-[10px] text-amber-300 bg-black/40 px-1.5 py-0.5 rounded-md backdrop-blur-xs font-normal">Edit & Crop</span>
                     </div>
                   </div>
 
@@ -1049,28 +1292,42 @@ function AlbumStudioContent() {
                         {collections.map((col) => {
                           const count = photos.filter((p) => p.collection_id === col.id).length;
                           return (
-                            <button
+                            <div
                               key={col.id}
-                              onClick={() => setSelectedCollectionId(col.id)}
-                              className={`w-full px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                              className={`group/col w-full px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
                                 selectedCollectionId === col.id
                                   ? 'bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs'
                                   : 'text-zinc-600 hover:bg-zinc-50'
                               }`}
                             >
-                              <div className="flex items-center gap-2 truncate">
+                              <button
+                                onClick={() => setSelectedCollectionId(col.id)}
+                                className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer"
+                              >
                                 <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                                 <span className="truncate">{col.name}</span>
+                              </button>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="text-[10.5px] font-mono text-zinc-400">{count}</span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteCollection(col.id);
+                                  }}
+                                  className="opacity-0 group-hover/col:opacity-100 p-0.5 text-zinc-400 hover:text-rose-600 transition cursor-pointer"
+                                  title="Delete Collection"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
                               </div>
-                              <span className="text-[10.5px] font-mono text-zinc-400">{count}</span>
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
                     )}
                   </div>
 
-                  {/* PEOPLE Section Accordion */}
+                  {/* PEOPLE Section Accordion (Registered Guests with Selfies & Profiles) */}
                   <div className="space-y-1.5 pt-1 border-t border-[#F2EEE6]">
                     <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-zinc-500 py-1">
                       <button 
@@ -1078,78 +1335,79 @@ function AlbumStudioContent() {
                         className="flex items-center gap-1.5 hover:text-zinc-900 cursor-pointer"
                       >
                         {isPeopleOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                        <Users className="w-3.5 h-3.5 text-purple-600" />
-                        <span>PEOPLE ({people.length})</span>
-                      </button>
-                      <button
-                        onClick={handleReindexFaces}
-                        disabled={isReindexing}
-                        className="p-1 rounded-md text-purple-600 hover:bg-purple-50 cursor-pointer transition disabled:opacity-50"
-                        title="AI Scan Faces"
-                      >
-                        <Sparkles className={`w-3.5 h-3.5 ${isReindexing ? 'animate-spin' : ''}`} />
+                        <Users className="w-3.5 h-3.5 text-zinc-700" />
+                        <span>PEOPLE ({registeredGuests.length})</span>
                       </button>
                     </div>
 
                     {isPeopleOpen && (
-                      <div className="space-y-1 pl-2 max-h-56 overflow-y-auto scrollbar-thin">
-                        {people.map((p) => {
-                          const isSel = selectedPersonId === p.id;
-                          return (
-                            <button
-                              key={p.id}
-                              onClick={() => setSelectedPersonId(isSel ? null : p.id)}
-                              className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
-                                isSel ? 'bg-purple-50 text-purple-900 border border-purple-200' : 'text-zinc-600 hover:bg-zinc-50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 truncate">
-                                <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 border border-zinc-200">
-                                  <img src={p.avatar_url} alt={p.name} className="w-full h-full object-cover" />
+                      <div className="space-y-1 pl-1 max-h-64 overflow-y-auto scrollbar-thin">
+                        {registeredGuests.length === 0 ? (
+                          <div className="p-3 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-center space-y-2">
+                            <p className="text-[11px] text-zinc-500 font-medium leading-relaxed">
+                              Guests who scan the QR and register their selfie will appear here with their profile and matched photos.
+                            </p>
+                            <div className="flex items-center justify-center gap-1.5 pt-1">
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(getPublicUrl(gallery.slug));
+                                  alert('Guest registration link copied!');
+                                }}
+                                className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-200 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                              >
+                                Copy Link
+                              </button>
+                              <button
+                                onClick={() => setIsStandeeModalOpen(true)}
+                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-bold transition cursor-pointer"
+                              >
+                                Standee QR
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          registeredGuests.map((guest) => {
+                            return (
+                              <button
+                                key={guest.id || guest.guest_phone}
+                                onClick={() => {
+                                  setSelectedGuest(guest);
+                                  setIsGuestModalOpen(true);
+                                }}
+                                className="w-full px-2.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer text-zinc-700 hover:bg-zinc-50 border border-transparent hover:border-zinc-200"
+                              >
+                                <div className="flex items-center gap-2 truncate">
+                                  <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-zinc-200 bg-zinc-100 flex items-center justify-center">
+                                    {guest.selfie_url ? (
+                                      <img src={guest.selfie_url} alt={guest.guest_name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-zinc-600">
+                                        {(guest.guest_name || 'G')[0].toUpperCase()}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="truncate text-left">
+                                    <div className="truncate text-zinc-900 font-bold">{guest.guest_name}</div>
+                                    <div className="text-[9.5px] text-zinc-400 font-normal truncate">{guest.guest_phone}</div>
+                                  </div>
                                 </div>
-                                <span className="truncate text-left">{p.name}</span>
-                              </div>
-                              <span className="text-[10px] font-mono text-purple-700 bg-purple-100/60 px-1.5 py-0.5 rounded-md">
-                                {p.photo_count}
-                              </span>
-                            </button>
-                          );
-                        })}
-                        {people.length === 0 && (
-                          <p className="text-[11px] text-zinc-400 py-1">No faces indexed yet.</p>
+                                <ChevronRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                              </button>
+                            );
+                          })
                         )}
                       </div>
                     )}
                   </div>
-
-                  {/* TAGS Section Accordion */}
-                  <div className="space-y-1.5 pt-1 border-t border-[#F2EEE6]">
-                    <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-zinc-500 py-1">
-                      <button 
-                        onClick={() => setIsTagsOpen(!isTagsOpen)}
-                        className="flex items-center gap-1.5 hover:text-zinc-900 cursor-pointer"
-                      >
-                        {isTagsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                        <Tag className="w-3.5 h-3.5 text-blue-600" />
-                        <span>TAGS</span>
-                      </button>
-                      <button
-                        className="p-1 rounded-md text-blue-600 hover:bg-blue-50 cursor-pointer transition"
-                        title="Add Tag"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
                 </div>
 
-                {/* Screenshot Match: Yellow Circular Collapse Button on Right Edge */}
+                {/* Sleek Collapse Toggle Tab on Divider (Never Overlaps Collections) */}
                 <button
                   onClick={() => setIsDrawerCollapsed(true)}
-                  className="absolute -right-3.5 top-64 z-30 w-7 h-7 rounded-full bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center shadow-md cursor-pointer transition-transform hover:scale-110"
+                  className="absolute -right-3 top-20 z-40 w-6 h-8 rounded-r-lg bg-white border-y border-r border-[#E7E2D8] text-zinc-500 hover:text-zinc-900 shadow-xs flex items-center justify-center cursor-pointer transition-colors hover:bg-zinc-50"
                   title="Collapse Sidebar"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
               </aside>
             ) : (
@@ -1157,10 +1415,10 @@ function AlbumStudioContent() {
               <div className="relative">
                 <button
                   onClick={() => setIsDrawerCollapsed(false)}
-                  className="absolute left-0 top-12 z-30 w-7 h-7 rounded-r-full bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center shadow-md cursor-pointer transition-transform hover:scale-110"
+                  className="absolute left-0 top-20 z-40 w-6 h-8 rounded-r-lg bg-white border-y border-r border-[#E7E2D8] text-zinc-500 hover:text-zinc-900 shadow-xs flex items-center justify-center cursor-pointer transition-colors hover:bg-zinc-50"
                   title="Show Collections & People Panel"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
@@ -1197,28 +1455,46 @@ function AlbumStudioContent() {
                   )}
                 </div>
 
-                {/* Filters, Sort & Action Buttons */}
+                {/* 3D Sort Dropdown & Action Buttons */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* Face Filter */}
-                  <select
-                    value={filterFaceMode}
-                    onChange={(e: any) => setFilterFaceMode(e.target.value)}
-                    className="px-3 py-1.5 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-700 cursor-pointer"
-                  >
-                    <option value="all">All Photos</option>
-                    <option value="faces">With People</option>
-                    <option value="nofaces">Without People</option>
-                  </select>
+                  {/* 3D Luxury Sort Dropdown */}
+                  <div className="relative" ref={sortDropdownRef}>
+                    <button
+                      onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
+                      className="px-3.5 py-2 rounded-xl bg-gradient-to-b from-white via-[#FCFBF8] to-[#F5F2EB] border border-[#D5CFBE] text-xs font-bold text-zinc-800 flex items-center gap-2 cursor-pointer transition-all shadow-[0_2px_4px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.9)] hover:shadow-[0_3px_6px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,1)] active:translate-y-[0.5px]"
+                      title="Sort photos"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-amber-600" />
+                      <span>{SORT_OPTIONS.find((s) => s.id === sortBy)?.label || 'Newest uploads'}</span>
+                      <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
 
-                  {/* Sort */}
-                  <select
-                    value={sortBy}
-                    onChange={(e: any) => setSortBy(e.target.value)}
-                    className="px-3 py-1.5 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-700 cursor-pointer"
-                  >
-                    <option value="newest">Newest uploads</option>
-                    <option value="oldest">Oldest uploads</option>
-                  </select>
+                    {isSortDropdownOpen && (
+                      <div className="absolute right-0 mt-1.5 w-64 bg-white/95 backdrop-blur-md rounded-2xl border border-[#D5CFBE] shadow-[0_12px_28px_rgba(0,0,0,0.12),0_2px_4px_rgba(0,0,0,0.04)] p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                          Sort Photos By
+                        </div>
+                        {SORT_OPTIONS.map((opt) => {
+                          const isSelected = sortBy === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => {
+                                setSortBy(opt.id);
+                                setIsSortDropdownOpen(false);
+                              }}
+                              className={`w-full px-2.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                                isSelected ? 'bg-amber-50 text-amber-900 font-black' : 'text-zinc-700 hover:bg-zinc-100/80'
+                              }`}
+                            >
+                              <span>{opt.label}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-amber-600" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Upload Photos Button */}
                   <button
@@ -1292,6 +1568,31 @@ function AlbumStudioContent() {
                 </div>
               )}
 
+              {/* Filtered by Guest Banner */}
+              {filterGuest && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 px-4 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-800 flex items-center justify-center">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-amber-950">
+                        Showing photos of {filterGuest.name} ({filteredPhotos.length} photos)
+                      </h4>
+                      <span className="text-[10px] text-amber-700">Filtered by guest selfie face match</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setFilterGuest(null)}
+                    className="p-1.5 rounded-lg text-amber-700 hover:bg-amber-100 transition cursor-pointer"
+                    title="Clear Guest Filter"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               {/* Bulk Selection Sticky Toolbar */}
               {selectedPhotoIds.size > 0 && (
                 <div className="sticky top-2 z-30 bg-zinc-900 text-white rounded-2xl p-3 shadow-xl border border-zinc-800 flex items-center justify-between animate-in slide-in-from-top duration-200">
@@ -1358,153 +1659,140 @@ function AlbumStudioContent() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                   {filteredPhotos.map((photo, idx) => {
-                    const isCover = gallery.cover_url === photo.preview_url;
+                    const isCover = gallery.cover_url?.startsWith(photo.preview_url);
                     const isSelected = selectedPhotoIds.has(photo.id);
                     const cleanName = getCleanFilename(photo.original_key);
 
                     return (
                       <div
                         key={photo.id}
-                        className={`group bg-white rounded-2xl border ${
+                        className={`group relative aspect-[4/3] rounded-2xl overflow-hidden border ${
                           isSelected ? 'border-amber-500 ring-2 ring-amber-400/50' : 'border-[#E7E2D8]'
-                        } overflow-hidden shadow-2xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between`}
+                        } bg-zinc-900 shadow-2xs hover:shadow-xl transition-all duration-300 cursor-pointer select-none`}
+                        onClick={() => setSelectedPhotoIndex(idx)}
                       >
-                        {/* Thumbnail Container */}
-                        <div
-                          onClick={() => setSelectedPhotoIndex(idx)}
-                          className="relative aspect-[4/3] bg-zinc-100 overflow-hidden cursor-pointer"
-                        >
-                          <img
-                            src={photo.thumbnail_url || photo.preview_url}
-                            alt={cleanName}
-                            loading="lazy"
-                            onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).src = photo.preview_url;
-                            }}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          />
+                        {/* Image */}
+                        <img
+                          src={photo.thumbnail_url || photo.preview_url}
+                          alt={cleanName}
+                          loading="lazy"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = photo.preview_url;
+                          }}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
 
-                          {/* Selection Checkbox (Top Left) */}
+                        {/* Persistent Top Badges when not hovering */}
+                        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10 transition-opacity duration-200">
+                          {isCover && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-bold shadow-xs flex items-center gap-1">
+                              <Star className="w-2.5 h-2.5 fill-white" />
+                              <span>Cover</span>
+                            </span>
+                          )}
+                          {photo.face_count > 0 && (
+                            <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-white text-[10px] font-bold border border-white/20">
+                              👥 {photo.face_count}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Persistent Selection Checkbox if selected */}
+                        {isSelected && (
                           <div
                             onClick={(e) => {
                               e.stopPropagation();
                               togglePhotoSelection(photo.id);
                             }}
-                            className={`absolute top-2.5 left-2.5 p-1 rounded-lg transition-all z-10 ${
-                              isSelected
-                                ? 'bg-amber-500 text-white shadow-xs'
-                                : 'bg-black/40 backdrop-blur-md text-white/90 hover:bg-black/60 opacity-0 group-hover:opacity-100'
-                            }`}
-                            title="Select photo"
+                            className="absolute top-2.5 left-2.5 p-1 rounded-lg bg-amber-500 text-white shadow-xs z-20 cursor-pointer"
+                            title="Deselect photo"
                           >
-                            {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                            <CheckSquare className="w-4 h-4" />
                           </div>
+                        )}
 
-                          {/* Badges: Cover Photo & Face Count (Top Right) */}
-                          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
-                            {isCover && (
-                              <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-bold shadow-xs flex items-center gap-1">
-                                <Star className="w-2.5 h-2.5 fill-white" />
-                                <span>Cover</span>
-                              </span>
-                            )}
-                            {photo.face_count > 0 && (
-                              <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-white text-[10px] font-bold border border-white/20">
-                                👥 {photo.face_count}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Card Bottom Meta (Exact Reference Match) */}
-                        <div className="p-3 bg-white space-y-1.5 border-t border-[#F0ECE4]">
+                        {/* HOVER OVERLAY: Appears only on cursor hover! */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/55 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-between p-3.5 z-10 pointer-events-none group-hover:pointer-events-auto">
+                          
+                          {/* Top Bar: Checkbox + Actions */}
                           <div className="flex items-center justify-between gap-2">
-                            <span
-                              className="text-xs font-bold text-zinc-900 truncate"
-                              title={cleanName}
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                togglePhotoSelection(photo.id);
+                              }}
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-amber-500 text-white shadow-xs'
+                                  : 'bg-black/50 backdrop-blur-md text-white/90 hover:bg-black/80 hover:text-white'
+                              }`}
+                              title="Select photo"
                             >
-                              {cleanName}
-                            </span>
+                              {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                            </div>
 
-                            <div className="flex items-center gap-1 shrink-0 relative">
+                            <div className="flex items-center gap-1.5">
+                              {/* Set as Cover */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSetCover(photo);
+                                }}
+                                className={`p-1.5 rounded-lg transition backdrop-blur-md cursor-pointer ${
+                                  isCover
+                                    ? 'bg-amber-500 text-white'
+                                    : 'bg-black/50 text-white/90 hover:bg-black/80 hover:text-amber-400'
+                                }`}
+                                title={isCover ? 'Current Cover' : 'Set as Event Cover'}
+                              >
+                                <Star className={`w-3.5 h-3.5 ${isCover ? 'fill-white' : ''}`} />
+                              </button>
+
+                              {/* Download Button */}
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDownloadPhoto(photo);
                                 }}
-                                className="p-1 text-zinc-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition cursor-pointer"
-                                title="Download Photo"
+                                className="p-1.5 rounded-lg bg-black/50 backdrop-blur-md text-white/90 hover:bg-black/80 hover:text-white transition cursor-pointer"
+                                title="Download High-Res Original"
                               >
                                 <Download className="w-3.5 h-3.5" />
                               </button>
 
+                              {/* Delete Button */}
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setActiveMenuPhotoId(activeMenuPhotoId === photo.id ? null : photo.id);
+                                  handleDeletePhoto(photo.id);
                                 }}
-                                className="p-1 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-md transition cursor-pointer"
-                                title="More options"
+                                className="p-1.5 rounded-lg bg-black/50 backdrop-blur-md text-white/90 hover:bg-rose-600 hover:text-white transition cursor-pointer"
+                                title="Delete Photo"
                               >
-                                <MoreVertical className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
-
-                              {/* 3-Dots Action Dropdown */}
-                              {activeMenuPhotoId === photo.id && (
-                                <div
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="absolute right-0 bottom-full mb-1 z-30 w-44 bg-white rounded-2xl shadow-xl border border-[#E7E2D8] py-1 text-xs animate-in fade-in"
-                                >
-                                  <button
-                                    onClick={() => {
-                                      handleSetCover(photo);
-                                      setActiveMenuPhotoId(null);
-                                    }}
-                                    className="w-full px-3 py-1.5 text-left text-zinc-700 hover:bg-[#FAF9F5] flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <Star className="w-3.5 h-3.5 text-amber-500" />
-                                    <span>Set as Cover</span>
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(photo.preview_url);
-                                      setActiveMenuPhotoId(null);
-                                      alert('Photo link copied!');
-                                    }}
-                                    className="w-full px-3 py-1.5 text-left text-zinc-700 hover:bg-[#FAF9F5] flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <Copy className="w-3.5 h-3.5 text-blue-500" />
-                                    <span>Copy Photo Link</span>
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      handleDeletePhoto(photo.id);
-                                      setActiveMenuPhotoId(null);
-                                    }}
-                                    className="w-full px-3 py-1.5 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    <span>Delete Photo</span>
-                                  </button>
-                                </div>
-                              )}
                             </div>
                           </div>
 
-                          {/* Metadata: Size • Dimensions */}
-                          <div className="flex items-center gap-1.5 text-[10.5px] text-zinc-400 font-mono">
-                            <span>{formatBytes(photo.size_bytes)}</span>
-                            {photo.width && photo.height && (
-                              <>
-                                <span>•</span>
-                                <span>{photo.width} × {photo.height}</span>
-                              </>
-                            )}
-                          </div>
+                          {/* Bottom Bar: Filename, Size, Resolution, Date Time */}
+                          <div className="space-y-1 text-white">
+                            <div className="text-xs font-bold truncate drop-shadow-md" title={cleanName}>
+                              {cleanName}
+                            </div>
 
-                          {/* Date/Time Line */}
-                          <div className="text-[10px] text-zinc-400">
-                            {formatPhotoDate(photo.created_at)}
+                            <div className="flex items-center gap-2 text-[10px] text-white/80 font-medium drop-shadow-xs">
+                              <span>{formatBytes(photo.size_bytes)}</span>
+                              {photo.width > 0 && photo.height > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span>{photo.width} × {photo.height}</span>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="text-[9.5px] text-white/60 drop-shadow-xs">
+                              {formatPhotoDate(photo.created_at)}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -2169,6 +2457,553 @@ function AlbumStudioContent() {
                 <span>Open Live Portal</span>
               </a>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          5B. EVENT COVER CUSTOMIZER MODAL (DESKTOP & MOBILE CROP / FOCAL)
+      ───────────────────────────────────────────────────────────── */}
+      {isCoverModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-3xl w-full border border-[#E7E2D8] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-[#E7E2D8] flex items-center justify-between bg-[#FAF9F5]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shadow-xs">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">
+                    Event Cover Customizer
+                  </h3>
+                  <p className="text-[11px] text-zinc-500 font-medium">
+                    Adjust focal center &amp; zoom independently for Desktop and Mobile screens
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCoverModalOpen(false)}
+                className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-full transition cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+              
+              {/* Device Preview Switcher & HD Upload Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5] p-3 rounded-2xl border border-[#E7E2D8]">
+                {/* Desktop / Mobile Tabs */}
+                <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-[#E7E2D8] shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setCoverPreviewMode('desktop')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      coverPreviewMode === 'desktop'
+                        ? 'bg-zinc-900 text-white shadow-xs'
+                        : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+                    }`}
+                  >
+                    <Laptop className="w-3.5 h-3.5" />
+                    <span>Desktop (16:9)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCoverPreviewMode('mobile')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      coverPreviewMode === 'mobile'
+                        ? 'bg-zinc-900 text-white shadow-xs'
+                        : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>Mobile (9:16)</span>
+                  </button>
+                </div>
+
+                {/* Upload New HD Cover Button */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isUploadingCover}
+                    onClick={() => coverFileInputRef.current?.click()}
+                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {isUploadingCover ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isUploadingCover ? 'Uploading HD...' : 'Upload New HD Cover'}</span>
+                  </button>
+                  <input
+                    ref={coverFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleUploadNewCover}
+                  />
+                </div>
+              </div>
+
+              {/* Interactive Preview Canvas */}
+              <div className="flex flex-col items-center">
+                <div className="text-[11px] font-bold text-zinc-500 mb-2 flex items-center gap-1.5">
+                  <Crosshair className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Click anywhere on the preview to place the focal point center</span>
+                </div>
+
+                <div className="w-full flex justify-center bg-zinc-950 p-4 rounded-3xl border border-zinc-800 shadow-inner">
+                  {/* Outer Frame with Selected Aspect Ratio */}
+                  <div
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const x = Math.round(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)));
+                      const y = Math.round(Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100)));
+                      if (coverPreviewMode === 'desktop') {
+                        setDesktopCrop((prev) => ({ ...prev, x, y }));
+                      } else {
+                        setMobileCrop((prev) => ({ ...prev, x, y }));
+                      }
+                    }}
+                    className={`relative overflow-hidden cursor-crosshair group select-none transition-all duration-300 shadow-2xl border border-white/20 ${
+                      coverPreviewMode === 'desktop'
+                        ? 'w-full max-w-xl aspect-[16/9] rounded-2xl'
+                        : 'w-64 aspect-[9/16] rounded-3xl'
+                    }`}
+                  >
+                    {activeCoverUrl ? (
+                      <img
+                        src={activeCoverUrl}
+                        alt="Cover Preview"
+                        style={{
+                          objectPosition: `${
+                            coverPreviewMode === 'desktop' ? desktopCrop.x : mobileCrop.x
+                          }% ${
+                            coverPreviewMode === 'desktop' ? desktopCrop.y : mobileCrop.y
+                          }%`,
+                          transform: `scale(${
+                            (coverPreviewMode === 'desktop' ? desktopCrop.zoom : mobileCrop.zoom) / 100
+                          })`,
+                          transformOrigin: `${
+                            coverPreviewMode === 'desktop' ? desktopCrop.x : mobileCrop.x
+                          }% ${
+                            coverPreviewMode === 'desktop' ? desktopCrop.y : mobileCrop.y
+                          }%`,
+                        }}
+                        className="w-full h-full object-cover pointer-events-none transition-transform duration-100"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400">
+                        <Camera className="w-10 h-10 mb-2 text-zinc-600" />
+                        <span className="text-xs font-bold">No Cover Image Selected</span>
+                      </div>
+                    )}
+
+                    {/* Gradient Overlay Preview */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/30 pointer-events-none" />
+
+                    {/* Glowing Focal Point Indicator / Crosshair */}
+                    <div
+                      style={{
+                        left: `${coverPreviewMode === 'desktop' ? desktopCrop.x : mobileCrop.x}%`,
+                        top: `${coverPreviewMode === 'desktop' ? desktopCrop.y : mobileCrop.y}%`,
+                      }}
+                      className="absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-2 border-amber-400 bg-amber-400/25 shadow-[0_0_16px_rgba(251,191,36,0.8)] pointer-events-none flex items-center justify-center transition-all duration-100"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-amber-300 shadow-xs" />
+                    </div>
+
+                    {/* Live Portal Title Mockup */}
+                    <div className="absolute bottom-4 left-4 right-4 text-white pointer-events-none space-y-1">
+                      <div className="inline-block px-2 py-0.5 rounded-full bg-amber-500/30 text-amber-300 text-[9px] font-black uppercase tracking-wider backdrop-blur-md border border-amber-400/30">
+                        ✨ Official Wedding Gallery
+                      </div>
+                      <h4
+                        style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                        className="text-lg sm:text-xl font-medium text-white truncate drop-shadow-md"
+                      >
+                        {gallery.title}
+                      </h4>
+                      <p className="text-[10px] text-white/70">
+                        {gallery.event_date ? new Date(gallery.event_date).toLocaleDateString() : 'Date Pending'}
+                      </p>
+                    </div>
+
+                    {/* Device Indicator Pill */}
+                    <div className="absolute top-3 left-3 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[10px] font-bold text-white/90 border border-white/20 pointer-events-none flex items-center gap-1.5">
+                      {coverPreviewMode === 'desktop' ? (
+                        <>
+                          <Laptop className="w-3 h-3 text-amber-400" />
+                          <span>Desktop View (16:9)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Smartphone className="w-3 h-3 text-amber-400" />
+                          <span>Mobile View (9:16)</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sliders for Precision Tuning */}
+              <div className="bg-[#FAF9F5] p-4 rounded-2xl border border-[#E7E2D8] space-y-4">
+                <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-zinc-500">
+                  <span>Fine-Tune {coverPreviewMode === 'desktop' ? 'Desktop' : 'Mobile'} Position &amp; Zoom</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (coverPreviewMode === 'desktop') {
+                        setDesktopCrop({ x: 50, y: 50, zoom: 100 });
+                      } else {
+                        setMobileCrop({ x: 50, y: 50, zoom: 100 });
+                      }
+                    }}
+                    className="text-[10px] font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset to Center</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* X Position */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-bold text-zinc-700">
+                      <span>Horizontal Center (X)</span>
+                      <span className="font-mono text-zinc-500">
+                        {coverPreviewMode === 'desktop' ? desktopCrop.x : mobileCrop.x}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={coverPreviewMode === 'desktop' ? desktopCrop.x : mobileCrop.x}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (coverPreviewMode === 'desktop') {
+                          setDesktopCrop((prev) => ({ ...prev, x: val }));
+                        } else {
+                          setMobileCrop((prev) => ({ ...prev, x: val }));
+                        }
+                      }}
+                      className="w-full accent-amber-600 cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Y Position */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-bold text-zinc-700">
+                      <span>Vertical Center (Y)</span>
+                      <span className="font-mono text-zinc-500">
+                        {coverPreviewMode === 'desktop' ? desktopCrop.y : mobileCrop.y}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={coverPreviewMode === 'desktop' ? desktopCrop.y : mobileCrop.y}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (coverPreviewMode === 'desktop') {
+                          setDesktopCrop((prev) => ({ ...prev, y: val }));
+                        } else {
+                          setMobileCrop((prev) => ({ ...prev, y: val }));
+                        }
+                      }}
+                      className="w-full accent-amber-600 cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Zoom Scale */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-bold text-zinc-700">
+                      <span>Zoom Scale</span>
+                      <span className="font-mono text-zinc-500">
+                        {coverPreviewMode === 'desktop' ? desktopCrop.zoom : mobileCrop.zoom}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="100"
+                      max="160"
+                      value={coverPreviewMode === 'desktop' ? desktopCrop.zoom : mobileCrop.zoom}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (coverPreviewMode === 'desktop') {
+                          setDesktopCrop((prev) => ({ ...prev, zoom: val }));
+                        } else {
+                          setMobileCrop((prev) => ({ ...prev, zoom: val }));
+                        }
+                      }}
+                      className="w-full accent-amber-600 cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Photo Selector Strip (Choose from Album) */}
+              <div className="space-y-2">
+                <div className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                  Or Choose from Album Photos ({photos.length})
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                  {photos.map((p) => {
+                    const isCurrent = activeCoverUrl === p.preview_url;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setActiveCoverUrl(p.preview_url)}
+                        className={`relative w-20 h-14 rounded-xl overflow-hidden shrink-0 border-2 transition cursor-pointer ${
+                          isCurrent
+                            ? 'border-amber-500 ring-2 ring-amber-400/40 shadow-xs scale-105'
+                            : 'border-zinc-200 opacity-70 hover:opacity-100 hover:border-zinc-400'
+                        }`}
+                      >
+                        <img
+                          src={p.thumbnail_url || p.preview_url}
+                          alt="Option"
+                          className="w-full h-full object-cover"
+                        />
+                        {isCurrent && (
+                          <div className="absolute inset-0 bg-amber-500/20 flex items-center justify-center">
+                            <Check className="w-4 h-4 text-white drop-shadow-md" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-[#E7E2D8] flex items-center justify-between bg-[#FAF9F5]">
+              <span className="text-[11px] text-zinc-400">
+                Focal points persist across all devices via Supabase.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCoverModalOpen(false)}
+                  className="px-4 py-2 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingCover || !activeCoverUrl}
+                  onClick={handleSaveCoverSettings}
+                  className="px-5 py-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  {isSavingCover ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>{isSavingCover ? 'Saving...' : 'Save Cover Settings'}</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          5C. GUEST PROFILE & MATCHED PHOTOS MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {isGuestModalOpen && selectedGuest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-2xl w-full border border-[#E7E2D8] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-[#E7E2D8] flex items-center justify-between bg-[#FAF9F5]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shadow-xs">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">
+                    Guest Profile &amp; AI Matched Photos
+                  </h3>
+                  <p className="text-[11px] text-zinc-500 font-medium">
+                    Guest registration details &amp; detected photos from album
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsGuestModalOpen(false);
+                  setSelectedGuest(null);
+                }}
+                className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-full transition cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+              
+              {/* Profile Card */}
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 p-4 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8]">
+                {/* Selfie Avatar */}
+                <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 border-2 border-amber-400/60 shadow-md bg-zinc-100 flex items-center justify-center">
+                  {selectedGuest.selfie_url ? (
+                    <img
+                      src={selectedGuest.selfie_url}
+                      alt={selectedGuest.guest_name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-2xl font-black text-zinc-400">
+                      {(selectedGuest.guest_name || 'G')[0].toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                {/* Details */}
+                <div className="flex-1 text-center sm:text-left space-y-2">
+                  <div>
+                    <h4 className="text-base font-bold text-zinc-900">
+                      {selectedGuest.guest_name}
+                    </h4>
+                    <p className="text-xs text-zinc-400">
+                      Registered: {new Date(selectedGuest.created_at || Date.now()).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                    {/* Phone & WhatsApp */}
+                    {selectedGuest.guest_phone && (
+                      <a
+                        href={`https://wa.me/${selectedGuest.guest_phone.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 transition cursor-pointer"
+                        title="Chat on WhatsApp"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{selectedGuest.guest_phone}</span>
+                      </a>
+                    )}
+
+                    {/* Email */}
+                    {selectedGuest.guest_email && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 text-xs font-medium">
+                        <Mail className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>{selectedGuest.guest_email}</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Matched Photos Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-600" />
+                    <h5 className="text-xs font-black uppercase tracking-wider text-zinc-700">
+                      AI Matched Photos ({guestMatchedPhotos.length})
+                    </h5>
+                  </div>
+
+                  {guestMatchedPhotos.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setFilterGuest({
+                          id: selectedGuest.id,
+                          name: selectedGuest.guest_name,
+                          photoIds: guestMatchedPhotos.map((p) => p.id),
+                        });
+                        setIsGuestModalOpen(false);
+                      }}
+                      className="text-xs font-bold text-amber-600 hover:text-amber-700 hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      <Filter className="w-3 h-3" />
+                      <span>Filter Main Gallery ({guestMatchedPhotos.length})</span>
+                    </button>
+                  )}
+                </div>
+
+                {loadingGuestPhotos ? (
+                  <div className="p-8 text-center bg-[#FAF9F5] rounded-2xl border border-[#E7E2D8] space-y-2">
+                    <RefreshCw className="w-6 h-6 text-amber-600 animate-spin mx-auto" />
+                    <p className="text-xs font-bold text-zinc-700">
+                      Searching album for {selectedGuest.guest_name}&apos;s face...
+                    </p>
+                  </div>
+                ) : guestMatchedPhotos.length > 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto p-1 scrollbar-thin">
+                    {guestMatchedPhotos.map((photo) => (
+                      <div
+                        key={photo.id}
+                        onClick={() => {
+                          const idx = filteredPhotos.findIndex((p) => p.id === photo.id);
+                          if (idx >= 0) setSelectedPhotoIndex(idx);
+                        }}
+                        className="group relative aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-200 cursor-pointer shadow-2xs hover:shadow-md transition"
+                      >
+                        <img
+                          src={photo.thumbnail_url || photo.preview_url}
+                          alt="Matched"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        {photo.confidencePercent && (
+                          <div className="absolute bottom-1.5 left-1.5 bg-black/70 backdrop-blur-xs text-[9px] font-bold text-white px-1.5 py-0.5 rounded-md">
+                            {photo.confidencePercent}% match
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center bg-[#FAF9F5] rounded-2xl border border-[#E7E2D8] space-y-2">
+                    <Camera className="w-8 h-8 text-zinc-400 mx-auto" />
+                    <p className="text-xs font-bold text-zinc-700">
+                      No matched photos found yet for {selectedGuest.guest_name}.
+                    </p>
+                    <p className="text-[11px] text-zinc-400 max-w-sm mx-auto">
+                      As soon as photos containing this guest are uploaded, they will automatically match with their selfie.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-[#E7E2D8] flex items-center justify-between bg-[#FAF9F5]">
+              <div className="text-[11px] text-zinc-400">
+                Face embeddings are encrypted &amp; matched server-side.
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsGuestModalOpen(false);
+                  setSelectedGuest(null);
+                }}
+                className="px-5 py-2 rounded-full bg-zinc-900 hover:bg-black text-white font-bold text-xs transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
           </div>
         </div>
       )}

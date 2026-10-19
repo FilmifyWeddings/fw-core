@@ -40,7 +40,7 @@ export interface GallerySettings {
   cover_overlay_opacity: number;
 }
 
-export const DEFAULT_GALLERY_SETTINGS: GallerySettings = {
+const DEFAULT_GALLERY_SETTINGS: GallerySettings = {
   studio_name: 'StudioCore Photography',
   owner_name: 'Lead Photographer',
   tagline: 'Capturing Timeless Stories & Unforgettable Moments',

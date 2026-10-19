@@ -39,14 +39,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing gallery_id or name' }, { status: 400 });
     }
 
-    const slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
+    let cleanSlug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!cleanSlug) {
+      cleanSlug = `col-${Date.now().toString(36)}`;
+    }
+
+    // Check if slug already exists for this gallery
+    const { data: existing } = await supabaseAdmin
+      .from('gallery_collections')
+      .select('id')
+      .eq('gallery_id', gallery_id)
+      .eq('slug', cleanSlug)
+      .maybeSingle();
+
+    if (existing) {
+      cleanSlug = `${cleanSlug}-${Math.random().toString(36).substring(2, 6)}`;
+    }
 
     const { data, error } = await supabaseAdmin
       .from('gallery_collections')
       .insert({
         gallery_id,
         name: name.trim(),
-        slug,
+        slug: cleanSlug,
+        sort_order: 0,
       })
       .select()
       .single();

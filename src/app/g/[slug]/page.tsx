@@ -69,6 +69,49 @@ interface GalleryInfo {
   studio_slug?: string;
 }
 
+interface CoverPositioning {
+  url: string;
+  desktop: { x: number; y: number; zoom: number };
+  mobile: { x: number; y: number; zoom: number };
+}
+
+function parseCoverUrl(coverUrl: string | null | undefined): CoverPositioning {
+  if (!coverUrl) {
+    return {
+      url: '',
+      desktop: { x: 50, y: 50, zoom: 100 },
+      mobile: { x: 50, y: 50, zoom: 100 },
+    };
+  }
+
+  const hashIdx = coverUrl.indexOf('#');
+  if (hashIdx === -1) {
+    return {
+      url: coverUrl,
+      desktop: { x: 50, y: 50, zoom: 100 },
+      mobile: { x: 50, y: 50, zoom: 100 },
+    };
+  }
+
+  const cleanUrl = coverUrl.substring(0, hashIdx);
+  const hash = coverUrl.substring(hashIdx + 1);
+  const params = new URLSearchParams(hash);
+
+  return {
+    url: cleanUrl,
+    desktop: {
+      x: Number(params.get('dx')) || 50,
+      y: Number(params.get('dy')) || 50,
+      zoom: Number(params.get('dz')) || 100,
+    },
+    mobile: {
+      x: Number(params.get('mx')) || 50,
+      y: Number(params.get('my')) || 50,
+      zoom: Number(params.get('mz')) || 100,
+    },
+  };
+}
+
 function GuestSlugGalleryContent() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -350,11 +393,30 @@ function GuestSlugGalleryContent() {
       {/* 1. LUXURY WEDDING HERO */}
       <div className="relative bg-zinc-950 text-white overflow-hidden">
         {gallery.cover_url ? (
-          <img
-            src={gallery.cover_url}
-            alt={gallery.title}
-            className="w-full h-80 sm:h-96 object-cover opacity-45 filter brightness-75 scale-105"
-          />
+          <>
+            {/* Desktop Hero Cover */}
+            <img
+              src={parseCoverUrl(gallery.cover_url).url || gallery.cover_url}
+              alt={gallery.title}
+              style={{
+                objectPosition: `${parseCoverUrl(gallery.cover_url).desktop.x}% ${parseCoverUrl(gallery.cover_url).desktop.y}%`,
+                transform: `scale(${parseCoverUrl(gallery.cover_url).desktop.zoom / 100})`,
+                transformOrigin: `${parseCoverUrl(gallery.cover_url).desktop.x}% ${parseCoverUrl(gallery.cover_url).desktop.y}%`,
+              }}
+              className="hidden sm:block w-full h-80 sm:h-96 object-cover opacity-50 filter brightness-90 transition-all duration-300"
+            />
+            {/* Mobile Hero Cover */}
+            <img
+              src={parseCoverUrl(gallery.cover_url).url || gallery.cover_url}
+              alt={gallery.title}
+              style={{
+                objectPosition: `${parseCoverUrl(gallery.cover_url).mobile.x}% ${parseCoverUrl(gallery.cover_url).mobile.y}%`,
+                transform: `scale(${parseCoverUrl(gallery.cover_url).mobile.zoom / 100})`,
+                transformOrigin: `${parseCoverUrl(gallery.cover_url).mobile.x}% ${parseCoverUrl(gallery.cover_url).mobile.y}%`,
+              }}
+              className="block sm:hidden w-full h-80 sm:h-96 object-cover opacity-50 filter brightness-90 transition-all duration-300"
+            />
+          </>
         ) : (
           <div className="w-full h-80 sm:h-96 bg-gradient-to-b from-zinc-900 via-zinc-950 to-[#FAF9F5]" />
         )}
