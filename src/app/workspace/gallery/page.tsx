@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
+import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothImage';
 
 interface EventGallery {
   id: string;
@@ -41,6 +42,7 @@ interface EventGallery {
   cover_url: string | null;
   allow_downloads: boolean;
   is_active: boolean;
+  status?: string;
   event_type?: string;
   photo_count?: number;
   total_size_bytes?: number;
@@ -78,7 +80,7 @@ export default function MyEventsPage() {
   const [galleries, setGalleries] = useState<EventGallery[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'published' | 'private'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'published' | 'unpublished' | 'expired'>('all');
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -239,11 +241,21 @@ export default function MyEventsPage() {
   }, [galleries]);
 
   const publishedCount = useMemo(() => {
-    return galleries.filter((g) => g.is_active && !g.pin_code).length;
+    return galleries.filter((g) => {
+      const s = g.status?.toUpperCase();
+      return s === 'PUBLISHED' || (g.is_active && s !== 'UNPUBLISHED' && s !== 'EXPIRED');
+    }).length;
   }, [galleries]);
 
-  const privateCount = useMemo(() => {
-    return galleries.filter((g) => !!g.pin_code || !g.is_active).length;
+  const unpublishedCount = useMemo(() => {
+    return galleries.filter((g) => {
+      const s = g.status?.toUpperCase();
+      return s === 'UNPUBLISHED' || (!g.is_active && s !== 'EXPIRED');
+    }).length;
+  }, [galleries]);
+
+  const expiredCount = useMemo(() => {
+    return galleries.filter((g) => g.status?.toUpperCase() === 'EXPIRED').length;
   }, [galleries]);
 
   const totalStorageBytes = useMemo(() => {
@@ -294,9 +306,17 @@ export default function MyEventsPage() {
   const filteredGalleries = useMemo(() => {
     let result = galleries;
     if (activeTab === 'published') {
-      result = result.filter((g) => g.is_active && !g.pin_code);
-    } else if (activeTab === 'private') {
-      result = result.filter((g) => !!g.pin_code || !g.is_active);
+      result = result.filter((g) => {
+        const s = g.status?.toUpperCase();
+        return s === 'PUBLISHED' || (g.is_active && s !== 'UNPUBLISHED' && s !== 'EXPIRED');
+      });
+    } else if (activeTab === 'unpublished') {
+      result = result.filter((g) => {
+        const s = g.status?.toUpperCase();
+        return s === 'UNPUBLISHED' || (!g.is_active && s !== 'EXPIRED');
+      });
+    } else if (activeTab === 'expired') {
+      result = result.filter((g) => g.status?.toUpperCase() === 'EXPIRED');
     }
 
     if (!searchQuery.trim()) return result;
@@ -379,7 +399,7 @@ export default function MyEventsPage() {
               {galleries.length}
             </div>
             <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
-              {publishedCount} published • {privateCount} private
+              {publishedCount} published • {unpublishedCount} unpublished{expiredCount > 0 ? ` • ${expiredCount} expired` : ''}
             </p>
           </div>
         </div>
@@ -450,8 +470,8 @@ export default function MyEventsPage() {
             </span>
           </div>
 
-          {/* Capsule Filter Tabs (All / Published / Private) */}
-          <div className="flex items-center gap-1 bg-white p-1 rounded-full border border-[#E7E2D8] shadow-2xs self-start sm:self-center">
+          {/* Capsule Filter Tabs (All / Published / Unpublished / Expired) */}
+          <div className="flex items-center gap-1 bg-white p-1 rounded-full border border-[#E7E2D8] shadow-2xs self-start sm:self-center overflow-x-auto">
             <button
               onClick={() => setActiveTab('all')}
               className={`px-3.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
@@ -470,18 +490,30 @@ export default function MyEventsPage() {
                   : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
-              Published
+              Published ({publishedCount})
             </button>
             <button
-              onClick={() => setActiveTab('private')}
+              onClick={() => setActiveTab('unpublished')}
               className={`px-3.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
-                activeTab === 'private'
+                activeTab === 'unpublished'
                   ? 'bg-amber-500 text-white font-bold shadow-xs'
                   : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
-              Private
+              Unpublished ({unpublishedCount})
             </button>
+            {expiredCount > 0 && (
+              <button
+                onClick={() => setActiveTab('expired')}
+                className={`px-3.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                  activeTab === 'expired'
+                    ? 'bg-rose-600 text-white font-bold shadow-xs'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                Expired ({expiredCount})
+              </button>
+            )}
           </div>
         </div>
 
@@ -552,13 +584,9 @@ export default function MyEventsPage() {
                     </div>
 
                     {gallery.cover_url && (
-                      <img
+                      <ProgressiveSmoothImage
                         src={gallery.cover_url}
                         alt={gallery.title}
-                        loading="lazy"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).style.opacity = '0';
-                        }}
                         className="relative z-10 w-full h-full object-cover group-hover:scale-105 transition-all duration-500"
                       />
                     )}
@@ -566,15 +594,33 @@ export default function MyEventsPage() {
                     {/* Subtle Gradient Scrim at top */}
                     <div className="absolute inset-0 z-20 bg-gradient-to-b from-black/40 via-transparent to-transparent pointer-events-none" />
 
-                    {/* Status Pill Badge (PUBLISHED / PRIVATE) */}
+                    {/* Status Pill Badge (PUBLISHED / UNPUBLISHED / EXPIRED) */}
                     <div className="absolute top-3.5 left-3.5 right-3.5 z-30 flex items-center justify-between pointer-events-none">
-                      <span className={`px-2.5 py-1 rounded-md backdrop-blur-md text-[10px] font-bold tracking-wider uppercase border shadow-xs ${
-                        isPrivate 
-                          ? 'bg-amber-500/90 text-white border-white/40' 
-                          : 'bg-white/90 text-emerald-800 border-white/60'
-                      }`}>
-                        {isPrivate ? 'PRIVATE' : 'PUBLISHED'}
-                      </span>
+                      {(() => {
+                        const s = gallery.status?.toUpperCase();
+                        const isExpired = s === 'EXPIRED';
+                        const isPublished = s === 'PUBLISHED' || (gallery.is_active && s !== 'UNPUBLISHED' && s !== 'EXPIRED');
+
+                        if (isExpired) {
+                          return (
+                            <span className="px-2.5 py-1 rounded-md backdrop-blur-md text-[10px] font-bold tracking-wider uppercase border shadow-xs bg-rose-600/90 text-white border-white/40">
+                              EXPIRED
+                            </span>
+                          );
+                        }
+                        if (isPublished) {
+                          return (
+                            <span className="px-2.5 py-1 rounded-md backdrop-blur-md text-[10px] font-bold tracking-wider uppercase border shadow-xs bg-emerald-600/90 text-white border-white/60">
+                              PUBLISHED
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="px-2.5 py-1 rounded-md backdrop-blur-md text-[10px] font-bold tracking-wider uppercase border shadow-xs bg-amber-500/90 text-white border-white/40">
+                            UNPUBLISHED
+                          </span>
+                        );
+                      })()}
 
                       {/* Event Type / Tag */}
                       <span className="px-2.5 py-1 rounded-md bg-black/50 backdrop-blur-md text-white text-[10px] font-medium border border-white/20">

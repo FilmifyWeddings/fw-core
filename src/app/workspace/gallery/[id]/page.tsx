@@ -60,6 +60,7 @@ import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { UploadQueueProvider, useUploadQueue } from '@/context/UploadQueueContext';
 import { UploadManagerDrawer } from '@/components/gallery/UploadManagerDrawer';
+import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothImage';
 
 interface EventGallery {
   id: string;
@@ -71,6 +72,7 @@ interface EventGallery {
   cover_url: string | null;
   allow_downloads: boolean;
   is_active: boolean;
+  status?: string;
   created_at: string;
   raw_payload?: any;
 }
@@ -273,6 +275,11 @@ function AlbumStudioContent() {
   const [isReindexing, setIsReindexing] = useState(false);
   const [reindexProgress, setReindexProgress] = useState<string>('');
 
+  // 3-State Status Dropdown State ('UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED')
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+  const statusDropdownRef = useRef<HTMLDivElement>(null);
+  const [copiedGuestLink, setCopiedGuestLink] = useState(false);
+
   // Selection Tab State
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'pending'>('all');
   const [copiedLightroomFilenames, setCopiedLightroomFilenames] = useState(false);
@@ -426,6 +433,9 @@ function AlbumStudioContent() {
       if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target as Node)) {
         setIsSortDropdownOpen(false);
       }
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target as Node)) {
+        setIsStatusDropdownOpen(false);
+      }
     };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
@@ -559,21 +569,33 @@ function AlbumStudioContent() {
     }
   };
 
-  // Publish / Unpublish Toggle
-  const handleTogglePublish = async () => {
+  // 3-State Status Handler: 'UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED'
+  const handleUpdateStatus = async (nextStatus: 'UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED') => {
     if (!gallery) return;
-    const nextState = !gallery.is_active;
-    setGallery((prev) => (prev ? { ...prev, is_active: nextState } : null));
+    const isActive = nextStatus === 'PUBLISHED';
+    setGallery((prev) => (prev ? { ...prev, status: nextStatus, is_active: isActive } : null));
+    setIsStatusDropdownOpen(false);
 
     try {
       await fetch('/api/gallery/events', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: gallery.id, is_active: nextState }),
+        body: JSON.stringify({ id: gallery.id, status: nextStatus, is_active: isActive }),
       });
     } catch (err) {
       console.error('Failed to update publish state:', err);
     }
+  };
+
+  const handleTogglePublish = async () => {
+    if (!gallery) return;
+    const currentStatus = (gallery.status?.toUpperCase() === 'EXPIRED')
+      ? 'EXPIRED'
+      : (gallery.status?.toUpperCase() === 'PUBLISHED' || (gallery.is_active && gallery.status?.toUpperCase() !== 'UNPUBLISHED'))
+      ? 'PUBLISHED'
+      : 'UNPUBLISHED';
+    const nextStatus = currentStatus === 'PUBLISHED' ? 'UNPUBLISHED' : 'PUBLISHED';
+    await handleUpdateStatus(nextStatus);
   };
 
   // Save Title
@@ -1010,6 +1032,14 @@ function AlbumStudioContent() {
     return people.find((p) => p.id === selectedPersonId);
   }, [people, selectedPersonId]);
 
+  const currentGalleryStatus = useMemo<'UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED'>(() => {
+    if (!gallery) return 'UNPUBLISHED';
+    const s = gallery.status?.toUpperCase();
+    if (s === 'EXPIRED') return 'EXPIRED';
+    if (s === 'PUBLISHED' || (gallery.is_active && s !== 'UNPUBLISHED')) return 'PUBLISHED';
+    return 'UNPUBLISHED';
+  }, [gallery]);
+
   // Filter & Sort Photos
   const filteredPhotos = useMemo(() => {
     return photos
@@ -1173,19 +1203,103 @@ function AlbumStudioContent() {
             <span>{totalSizeDisplay}</span>
           </div>
 
-          {/* Status Capsule (Published / Draft) */}
-          <button
-            onClick={handleTogglePublish}
-            className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide flex items-center gap-1.5 transition cursor-pointer border shadow-2xs ${
-              gallery.is_active
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                : 'bg-zinc-100 text-zinc-600 border-zinc-300'
-            }`}
-            title="Click to toggle Public / Draft status"
-          >
-            <span className={`w-2 h-2 rounded-full ${gallery.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`} />
-            <span>{gallery.is_active ? 'Published' : 'Draft'}</span>
-          </button>
+          {/* Status 3-State Dropdown (Unpublished / Published / Expired) */}
+          <div className="relative" ref={statusDropdownRef}>
+            <button
+              onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold tracking-wide flex items-center gap-1.5 transition cursor-pointer border shadow-2xs ${
+                currentGalleryStatus === 'PUBLISHED'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                  : currentGalleryStatus === 'EXPIRED'
+                  ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                  : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+              }`}
+              title="Change Gallery Access Status"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  currentGalleryStatus === 'PUBLISHED'
+                    ? 'bg-emerald-500 animate-pulse'
+                    : currentGalleryStatus === 'EXPIRED'
+                    ? 'bg-rose-500'
+                    : 'bg-amber-500'
+                }`}
+              />
+              <span>
+                {currentGalleryStatus === 'PUBLISHED'
+                  ? 'Published'
+                  : currentGalleryStatus === 'EXPIRED'
+                  ? 'Expired'
+                  : 'Unpublished'}
+              </span>
+              <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform ${isStatusDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isStatusDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl border border-[#E7E2D8] shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                  Select Event Status
+                </div>
+
+                {/* 1. Unpublished Option */}
+                <button
+                  onClick={() => handleUpdateStatus('UNPUBLISHED')}
+                  className={`w-full p-2.5 rounded-xl text-left transition flex items-start gap-2.5 cursor-pointer ${
+                    currentGalleryStatus === 'UNPUBLISHED' ? 'bg-amber-50/80 border border-amber-200' : 'hover:bg-zinc-50'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 mt-1 shrink-0" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-900">Unpublished</span>
+                      {currentGalleryStatus === 'UNPUBLISHED' && <Check className="w-3.5 h-3.5 text-amber-600" />}
+                    </div>
+                    <p className="text-[10px] text-zinc-500 leading-tight mt-0.5">
+                      Pre-event registration. Guests scan QR, register selfie, and see a luxury Thank You message until you publish.
+                    </p>
+                  </div>
+                </button>
+
+                {/* 2. Published Option */}
+                <button
+                  onClick={() => handleUpdateStatus('PUBLISHED')}
+                  className={`w-full p-2.5 rounded-xl text-left transition flex items-start gap-2.5 cursor-pointer ${
+                    currentGalleryStatus === 'PUBLISHED' ? 'bg-emerald-50/80 border border-emerald-200' : 'hover:bg-zinc-50'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse mt-1 shrink-0" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-900">Published</span>
+                      {currentGalleryStatus === 'PUBLISHED' && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                    </div>
+                    <p className="text-[10px] text-zinc-500 leading-tight mt-0.5">
+                      Live gallery. Guests can scan and immediately access &amp; download all their AI matched photos.
+                    </p>
+                  </div>
+                </button>
+
+                {/* 3. Expired Option */}
+                <button
+                  onClick={() => handleUpdateStatus('EXPIRED')}
+                  className={`w-full p-2.5 rounded-xl text-left transition flex items-start gap-2.5 cursor-pointer ${
+                    currentGalleryStatus === 'EXPIRED' ? 'bg-rose-50/80 border border-rose-200' : 'hover:bg-zinc-50'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 mt-1 shrink-0" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-900">Expired</span>
+                      {currentGalleryStatus === 'EXPIRED' && <Check className="w-3.5 h-3.5 text-rose-600" />}
+                    </div>
+                    <p className="text-[10px] text-zinc-500 leading-tight mt-0.5">
+                      Public gallery locked. Guests see an elegant expired screen directing them to contact you.
+                    </p>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Table Standee QR Button */}
           <button
@@ -1589,6 +1703,21 @@ function AlbumStudioContent() {
                     <span>Upload</span>
                   </button>
 
+                  {/* AI Face Scan Button */}
+                  <button
+                    onClick={handleReindexFaces}
+                    disabled={isReindexing}
+                    className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer select-none ${
+                      isReindexing
+                        ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                        : 'bg-white hover:bg-amber-50/50 text-amber-800 border-amber-300/80 hover:border-amber-400'
+                    }`}
+                    title="Scan all photos for faces to enable instant guest matching"
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 text-amber-600 ${isReindexing ? 'animate-spin' : ''}`} />
+                    <span>{isReindexing ? (reindexProgress || 'Scanning Faces...') : 'AI Scan Faces'}</span>
+                  </button>
+
                   {/* Download Button */}
                   <button
                     onClick={selectedPhotoIds.size > 0 ? handleBulkDownload : handleSelectAll}
@@ -1752,14 +1881,12 @@ function AlbumStudioContent() {
                         } bg-zinc-900 shadow-2xs hover:shadow-xl transition-all duration-300 cursor-pointer select-none`}
                         onClick={() => setSelectedPhotoIndex(idx)}
                       >
-                        {/* Image */}
-                        <img
-                          src={photo.thumbnail_url || photo.preview_url}
+                        {/* Progressive Smooth Blur-Up Image */}
+                        <ProgressiveSmoothImage
+                          src={photo.preview_url || photo.thumbnail_url}
+                          thumbnailSrc={photo.thumbnail_url}
                           alt={cleanName}
-                          loading="lazy"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).src = photo.preview_url;
-                          }}
+                          aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
                           className="w-full h-auto object-cover group-hover:scale-105 transition-transform duration-500 block"
                         />
 
@@ -1964,7 +2091,12 @@ function AlbumStudioContent() {
                       } overflow-hidden shadow-2xs cursor-pointer transition-all duration-300 p-2.5 space-y-2`}
                     >
                       <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-zinc-100">
-                        <img src={photo.thumbnail_url || photo.preview_url} alt={cleanName} className="w-full h-full object-cover" />
+                        <ProgressiveSmoothImage
+                          src={photo.preview_url || photo.thumbnail_url}
+                          thumbnailSrc={photo.thumbnail_url}
+                          alt={cleanName}
+                          className="w-full h-full object-cover"
+                        />
                         <div className={`absolute top-2 left-2 p-1 rounded-lg ${isSelected ? 'bg-amber-500 text-white' : 'bg-black/40 text-white'}`}>
                           {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                         </div>
@@ -3083,6 +3215,68 @@ function AlbumStudioContent() {
                       </span>
                     )}
                   </div>
+                </div>
+              </div>
+
+              {/* Direct Unique Access Link (Allows guest to bypass scanning) */}
+              <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/90 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-600" />
+                    <span className="text-xs font-black uppercase tracking-wider text-amber-950">
+                      Direct Private Access Link
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                    Bypasses Face Scan
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-600 leading-relaxed">
+                  Share this private link directly with {selectedGuest.guest_name}. Opening this link will automatically identify them and display all their photos directly.
+                </p>
+                <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-amber-200 shadow-2xs">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${getPublicUrl(gallery.slug)}?guest=${selectedGuest.id}${selectedGuest.access_token ? `&token=${selectedGuest.access_token}` : ''}`}
+                    className="flex-1 bg-transparent px-2 text-xs font-mono text-zinc-700 select-all focus:outline-hidden truncate"
+                  />
+                  <button
+                    onClick={() => {
+                      const link = `${getPublicUrl(gallery.slug)}?guest=${selectedGuest.id}${selectedGuest.access_token ? `&token=${selectedGuest.access_token}` : ''}`;
+                      navigator.clipboard.writeText(link);
+                      setCopiedGuestLink(true);
+                      setTimeout(() => setCopiedGuestLink(false), 2500);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-2xs"
+                  >
+                    {copiedGuestLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedGuestLink ? 'Copied!' : 'Copy Link'}</span>
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 pt-1 flex-wrap sm:flex-nowrap">
+                  {selectedGuest.guest_phone && (
+                    <a
+                      href={`https://wa.me/${selectedGuest.guest_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                        `Hi ${selectedGuest.guest_name}, here is your personal photo gallery link for ${gallery.title}: ${getPublicUrl(gallery.slug)}?guest=${selectedGuest.id}${selectedGuest.access_token ? `&token=${selectedGuest.access_token}` : ''}`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs text-center"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Share on WhatsApp</span>
+                    </a>
+                  )}
+                  <a
+                    href={`${getPublicUrl(gallery.slug)}?guest=${selectedGuest.id}${selectedGuest.access_token ? `&token=${selectedGuest.access_token}` : ''}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0"
+                  >
+                    <span>Open Link</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
                 </div>
               </div>
 

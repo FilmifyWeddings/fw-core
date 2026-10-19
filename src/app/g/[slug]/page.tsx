@@ -34,6 +34,7 @@ import {
 import { getPublicGalleryUrl } from '@/lib/r2';
 import { FaceScannerModal } from '@/components/gallery/FaceScannerModal';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
+import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothImage';
 
 interface PhotoItem {
   id: string;
@@ -65,6 +66,7 @@ interface GalleryInfo {
   admin_pin?: string | null;
   cover_url: string | null;
   allow_downloads: boolean;
+  is_active?: boolean;
   status?: string;
   studio_slug?: string;
 }
@@ -156,6 +158,15 @@ function GuestSlugGalleryContent() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
 
+  const guestIdParam = searchParams?.get('guest') || searchParams?.get('guest_id');
+  const tokenParam = searchParams?.get('token');
+
+  const currentGalleryStatus = (gallery?.status?.toUpperCase() === 'EXPIRED')
+    ? 'EXPIRED'
+    : (gallery?.status?.toUpperCase() === 'PUBLISHED' || (gallery?.is_active && gallery?.status?.toUpperCase() !== 'UNPUBLISHED'))
+    ? 'PUBLISHED'
+    : 'UNPUBLISHED';
+
   // 1. Fetch Gallery Data
   const loadGalleryData = useCallback(async () => {
     if (!slug) return;
@@ -233,6 +244,58 @@ function GuestSlugGalleryContent() {
     loadGalleryData();
   }, [loadGalleryData]);
 
+  // Auto-resolve Unique Guest Link (Bypasses manual scanning)
+  useEffect(() => {
+    if (!gallery || !guestIdParam) return;
+
+    let isMounted = true;
+    const fetchGuestData = async () => {
+      try {
+        const res = await fetch(`/api/gallery/guest?id=${encodeURIComponent(guestIdParam)}${tokenParam ? `&token=${encodeURIComponent(tokenParam)}` : ''}`);
+        const json = await res.json();
+        if (!isMounted || !json.success || !json.guest) return;
+
+        const g = json.guest;
+        setGuestName(g.guest_name || '');
+        setGuestPhone(g.guest_phone || '');
+        setGuestEmail(g.guest_email || '');
+        setIsVerified(true);
+        setHasSearched(true);
+
+        const status = gallery.status?.toUpperCase() || (gallery.is_active ? 'PUBLISHED' : 'UNPUBLISHED');
+
+        // If gallery is published, match photos using their 512-D embedding
+        if (status === 'PUBLISHED' && g.face_embedding && Array.isArray(g.face_embedding) && g.face_embedding.length === 512) {
+          setIsMatching(true);
+          try {
+            const matchRes = await fetch('/api/gallery/match-face', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                gallery_id: gallery.id,
+                embedding: g.face_embedding,
+                threshold: 0.38,
+              }),
+            });
+            const matchJson = await matchRes.json();
+            if (isMounted && matchJson.success && Array.isArray(matchJson.photos)) {
+              setMatchedPhotos(matchJson.photos);
+            }
+          } catch (mErr) {
+            console.warn('Auto match error:', mErr);
+          } finally {
+            if (isMounted) setIsMatching(false);
+          }
+        }
+      } catch (err) {
+        console.warn('Error auto-resolving guest:', err);
+      }
+    };
+
+    fetchGuestData();
+    return () => { isMounted = false; };
+  }, [gallery, guestIdParam, tokenParam]);
+
   // Handle PIN Unlock
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,9 +332,9 @@ function GuestSlugGalleryContent() {
     setGuestEmail(data.email);
 
     try {
-      // 1. Register Guest in CRM in background (non-blocking)
+      // 1. Register Guest in CRM (Uploads selfie to Backblaze B2 & saves 512-D embedding)
       try {
-        fetch('/api/gallery/guest/register', {
+        await fetch('/api/gallery/guest/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -281,12 +344,21 @@ function GuestSlugGalleryContent() {
             guest_email: data.email,
             selfieBase64: data.selfieBase64,
           }),
-        }).catch(() => {});
+        });
       } catch (regErr) {
         console.warn('Guest registration error:', regErr);
       }
 
-      // 2. Neural ArcFace Vector Match
+      // If gallery is UNPUBLISHED, registration is complete! Show Thank You view
+      if (currentGalleryStatus === 'UNPUBLISHED') {
+        setIsFaceScannerOpen(false);
+        setMatchedPhotos([]);
+        setHasSearched(true);
+        setIsVerified(true);
+        return;
+      }
+
+      // 2. If PUBLISHED: Neural ArcFace Vector Match
       const res = await fetch('/api/gallery/match-face', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -387,6 +459,43 @@ function GuestSlugGalleryContent() {
     );
   }
 
+  if (currentGalleryStatus === 'EXPIRED') {
+    return (
+      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
+        <div className="relative w-20 h-20 mx-auto">
+          <div className="absolute inset-0 rounded-3xl bg-rose-500/20 animate-ping pointer-events-none" />
+          <div className="relative w-20 h-20 rounded-3xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shadow-lg">
+            <Lock className="w-10 h-10" />
+          </div>
+        </div>
+
+        <div className="space-y-2 max-w-md">
+          <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest border border-rose-300">
+            Access Concluded
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+            This Wedding Gallery Has Expired
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+            Public access to photos for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-3 text-center">
+          <p className="text-xs text-zinc-600 leading-relaxed">
+            If you are a family member, guest, or client needing to view or download photos, please contact the studio owner directly to request access.
+          </p>
+          <a
+            href="/"
+            className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
+          >
+            Return to StudioCore
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans pb-32 select-none">
       
@@ -470,10 +579,12 @@ function GuestSlugGalleryContent() {
                 🔒 Privacy Protected
               </span>
               <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-                Your Wedding Memories Await
+                {currentGalleryStatus === 'UNPUBLISHED' ? 'Pre-Register for Event Photos' : 'Your Wedding Memories Await'}
               </h2>
               <p className="text-xs sm:text-sm text-zinc-500 max-w-md mx-auto leading-relaxed">
-                To respect guest privacy, photos are locked. Take a quick selfie, and our AI will instantly find and display all your photos on screen.
+                {currentGalleryStatus === 'UNPUBLISHED'
+                  ? 'Scan your selfie & register your contact details now. As soon as the photographers upload & publish the event photos, you will be notified instantly via WhatsApp and Email!'
+                  : 'To respect guest privacy, photos are locked. Take a quick selfie, and our AI will instantly find and display all your photos on screen.'}
               </p>
             </div>
 
@@ -484,7 +595,7 @@ function GuestSlugGalleryContent() {
                 className="px-8 py-4 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-sm tracking-wide shadow-xl shadow-amber-600/30 flex items-center justify-center gap-2.5 mx-auto transition-all active:scale-98 cursor-pointer group"
               >
                 <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
-                <span>Find My Photos (Scan Face)</span>
+                <span>{currentGalleryStatus === 'UNPUBLISHED' ? 'Register Selfie for Live Alerts' : 'Find My Photos (Scan Face)'}</span>
                 <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
               </button>
             </div>
@@ -501,8 +612,117 @@ function GuestSlugGalleryContent() {
           </div>
         )}
 
-        {/* CASE B1: MATCHED PHOTOS FOUND */}
-        {(!isPrivilegedMode && hasSearched && matchedPhotos.length > 0) && (
+        {/* CASE UNPUBLISHED: CELEBRATORY REGISTRATION CONFIRMATION */}
+        {(!isPrivilegedMode && hasSearched && currentGalleryStatus === 'UNPUBLISHED') && (
+          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-emerald-200 shadow-xl text-center space-y-6 max-w-2xl mx-auto animate-in fade-in zoom-in-95 duration-300">
+            {/* Animated Celebration Avatar / Badge */}
+            <div className="relative w-24 h-24 mx-auto">
+              <div className="absolute inset-0 rounded-3xl bg-emerald-400/20 animate-ping" />
+              <div className="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white flex items-center justify-center shadow-lg shadow-emerald-600/30">
+                <CheckCircle2 className="w-12 h-12 text-white animate-bounce" />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider border border-emerald-300">
+                ✨ Registration Successful
+              </span>
+              <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+                Thank You So Much for Registering{guestName ? `, ${guestName}` : ''}!
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed">
+                Your selfie and contact details are safely registered for <span className="font-bold text-zinc-900">{gallery.title}</span>. Our photography team is actively capturing and curating the unforgettable moments from this celebration.
+              </p>
+            </div>
+
+            {/* Notification Alert Box */}
+            <div className="bg-[#FAF9F5] rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] text-left space-y-3">
+              <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span>Instant Notification Guaranteed</span>
+              </div>
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                As soon as the photos are edited and published by the studio, you will receive an instant notification with your personal photo album directly on:
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {guestPhone && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold font-mono">
+                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>WhatsApp: {guestPhone}</span>
+                  </span>
+                )}
+                {guestEmail && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 text-xs font-medium">
+                    <Mail className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>{guestEmail}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* 3-Step Live Progress Timeline */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-left">
+              <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Step 1</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div className="text-xs font-bold text-zinc-900">Selfie Registered</div>
+                <p className="text-[10px] text-zinc-500">Your biometric face index is secured</p>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-1 animate-pulse">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">Step 2</span>
+                  <RefreshCw className="w-4 h-4 text-amber-600 animate-spin" />
+                </div>
+                <div className="text-xs font-bold text-zinc-900">Editing &amp; AI Matching</div>
+                <p className="text-[10px] text-zinc-500">Photos being curated by studio team</p>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Step 3</span>
+                  <Zap className="w-4 h-4 text-zinc-400" />
+                </div>
+                <div className="text-xs font-bold text-zinc-700">Instant Delivery</div>
+                <p className="text-[10px] text-zinc-500">Private album link sent to WhatsApp</p>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    navigator.clipboard.writeText(window.location.href);
+                    alert('Page link copied! Keep this bookmarked to view photos once published.');
+                  }
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-sm"
+              >
+                <Copy className="w-4 h-4 text-amber-400" />
+                <span>Bookmark / Copy Link</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setHasSearched(false);
+                  setIsFaceScannerOpen(true);
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <Users className="w-4 h-4" />
+                <span>Register Another Person</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* CASE B1: MATCHED PHOTOS FOUND (WHEN PUBLISHED) */}
+        {(!isPrivilegedMode && hasSearched && currentGalleryStatus === 'PUBLISHED' && matchedPhotos.length > 0) && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl p-6 border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
@@ -549,10 +769,11 @@ function GuestSlugGalleryContent() {
                   onClick={() => setSelectedPhotoIndex(idx)}
                   className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
                 >
-                  <img
-                    src={photo.thumbnail_url || photo.preview_url}
+                  <ProgressiveSmoothImage
+                    src={photo.preview_url || photo.thumbnail_url}
+                    thumbnailSrc={photo.thumbnail_url}
                     alt="Matched Photo"
-                    loading="lazy"
+                    aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
                     className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
                   />
 
@@ -590,8 +811,8 @@ function GuestSlugGalleryContent() {
           </div>
         )}
 
-        {/* CASE B2: NO MATCHES FOUND */}
-        {(!isPrivilegedMode && hasSearched && matchedPhotos.length === 0) && (
+        {/* CASE B2: NO MATCHES FOUND (ONLY WHEN PUBLISHED) */}
+        {(!isPrivilegedMode && hasSearched && currentGalleryStatus === 'PUBLISHED' && matchedPhotos.length === 0) && (
           <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E7E2D8] shadow-sm text-center space-y-5 max-w-md mx-auto">
             <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
               <Camera className="w-8 h-8" />
@@ -673,10 +894,11 @@ function GuestSlugGalleryContent() {
                         : 'border-[#E7E2D8] hover:shadow-lg'
                     }`}
                   >
-                    <img
-                      src={photo.thumbnail_url || photo.preview_url}
+                    <ProgressiveSmoothImage
+                      src={photo.preview_url || photo.thumbnail_url}
+                      thumbnailSrc={photo.thumbnail_url}
                       alt="Wedding photo"
-                      loading="lazy"
+                      aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
                       className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
                     />
 

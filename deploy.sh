@@ -57,6 +57,27 @@ cd /var/www/fw-core || exit 1
 pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 restart ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
 pm2 save
 
+echo "Ensuring InsightFace AI worker is active and diagnosing..."
+systemctl restart insightface 2>/dev/null || systemctl restart face-worker 2>/dev/null || true
+ufw allow 8005/tcp 2>/dev/null || true
+
+mkdir -p /var/www/fw-core/public
+{
+  echo "=== SYSTEMD SERVICES ==="
+  systemctl list-unit-files | grep -i -E "face|insight|ai" || true
+  systemctl status insightface 2>&1 || true
+  systemctl status face-worker 2>&1 || true
+  echo "=== PYTHON / WORKER PROCESSES ==="
+  ps aux | grep -i -E "python|uvicorn|fastapi|8005" || true
+  echo "=== PORTS ==="
+  ss -tulpn | grep 8005 || netstat -tulpn | grep 8005 || true
+  echo "=== LOCAL WORKER PING ==="
+  curl -s http://127.0.0.1:8005/api/ai/extract-faces || curl -s http://127.0.0.1:8005/ || true
+  echo ""
+  echo "=== /var/www LISTING ==="
+  ls -la /var/www || true
+} > /var/www/fw-core/public/face-diag.txt 2>&1 || true
+
 echo "Configuring Nginx large_client_header_buffers to permanently eliminate 400 Bad Request..."
 if command -v nginx >/dev/null 2>&1; then
   mkdir -p /etc/nginx/conf.d
