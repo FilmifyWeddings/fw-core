@@ -280,6 +280,12 @@ function AlbumStudioContent() {
   const statusDropdownRef = useRef<HTMLDivElement>(null);
   const [copiedGuestLink, setCopiedGuestLink] = useState(false);
 
+  // Publish Confirmation & Email Re-send Modal State
+  const [showPublishConfirmModal, setShowPublishConfirmModal] = useState(false);
+  const [sendEmailNotification, setSendEmailNotification] = useState(true);
+  const [isPublishingEvent, setIsPublishingEvent] = useState(false);
+  const [registeredGuestsCount, setRegisteredGuestsCount] = useState<number>(0);
+
   // Selection Tab State
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'pending'>('all');
   const [copiedLightroomFilenames, setCopiedLightroomFilenames] = useState(false);
@@ -569,21 +575,76 @@ function AlbumStudioContent() {
     }
   };
 
+  // Initiate Publish with Confirmation Modal
+  const handleInitiatePublish = async () => {
+    setIsStatusDropdownOpen(false);
+    if (!gallery) return;
+
+    try {
+      const { count } = await supabase
+        .from('event_guest_registrations')
+        .select('*', { count: 'exact', head: true })
+        .eq('gallery_id', gallery.id);
+      setRegisteredGuestsCount(count || 0);
+    } catch (_) {
+      setRegisteredGuestsCount(0);
+    }
+
+    setShowPublishConfirmModal(true);
+  };
+
+  // Confirm Publish & Dispatch Emails to registered guests
+  const handleConfirmPublish = async () => {
+    if (!gallery) return;
+    setIsPublishingEvent(true);
+    try {
+      const res = await fetch('/api/gallery/events/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gallery_id: gallery.id,
+          send_email: sendEmailNotification,
+          notifyChannels: sendEmailNotification ? ['WHATSAPP', 'EMAIL'] : ['WHATSAPP'],
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGallery((prev) => (prev ? { ...prev, status: 'PUBLISHED', is_active: true } : null));
+        setShowPublishConfirmModal(false);
+        if (sendEmailNotification) {
+          alert(`🎉 Gallery published! Emails dispatched to ${data.total_notified || registeredGuestsCount} registered guests.`);
+        } else {
+          alert('🎉 Gallery published successfully (without emails)!');
+        }
+      } else {
+        alert(data.error || 'Failed to publish event');
+      }
+    } catch (err: any) {
+      alert(`Error publishing event: ${err.message}`);
+    } finally {
+      setIsPublishingEvent(false);
+    }
+  };
+
   // 3-State Status Handler: 'UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED'
   const handleUpdateStatus = async (nextStatus: 'UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED') => {
     if (!gallery) return;
-    const isActive = nextStatus === 'PUBLISHED';
-    setGallery((prev) => (prev ? { ...prev, status: nextStatus, is_active: isActive } : null));
+    if (nextStatus === 'PUBLISHED') {
+      await handleInitiatePublish();
+      return;
+    }
+
+    setGallery((prev) => (prev ? { ...prev, status: nextStatus, is_active: false } : null));
     setIsStatusDropdownOpen(false);
 
     try {
       await fetch('/api/gallery/events', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: gallery.id, status: nextStatus, is_active: isActive }),
+        body: JSON.stringify({ id: gallery.id, status: nextStatus, is_active: false }),
       });
     } catch (err) {
-      console.error('Failed to update publish state:', err);
+      console.error('Failed to update status:', err);
     }
   };
 
@@ -594,8 +655,11 @@ function AlbumStudioContent() {
       : (gallery.status?.toUpperCase() === 'PUBLISHED' || (gallery.is_active && gallery.status?.toUpperCase() !== 'UNPUBLISHED'))
       ? 'PUBLISHED'
       : 'UNPUBLISHED';
-    const nextStatus = currentStatus === 'PUBLISHED' ? 'UNPUBLISHED' : 'PUBLISHED';
-    await handleUpdateStatus(nextStatus);
+    if (currentStatus === 'PUBLISHED') {
+      await handleUpdateStatus('UNPUBLISHED');
+    } else {
+      await handleInitiatePublish();
+    }
   };
 
   // Save Title
@@ -3424,6 +3488,88 @@ function AlbumStudioContent() {
           onDelete={handleDeletePhoto as any}
           allowDownloads={gallery.allow_downloads ?? true}
         />
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          6. PUBLISH & RE-SEND NOTIFICATION EMAILS CONFIRMATION MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {showPublishConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E7E2D8] shadow-2xl space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shadow-xs">
+                <Sparkles className="w-6 h-6 text-amber-600" />
+              </div>
+              <button
+                onClick={() => setShowPublishConfirmModal(false)}
+                className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-full transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider border border-amber-200">
+                Event Publishing
+              </span>
+              <h3 className="text-xl font-black text-zinc-900 tracking-tight">
+                Publish Gallery &amp; Notify Guests?
+              </h3>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                You are about to make <strong className="text-zinc-800">{gallery.title}</strong> live. 
+                There are <strong className="text-amber-700">{registeredGuestsCount} registered guests</strong> who scanned the event QR code.
+              </p>
+            </div>
+
+            <label className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8] cursor-pointer hover:bg-amber-50/50 transition">
+              <input
+                type="checkbox"
+                checked={sendEmailNotification}
+                onChange={(e) => setSendEmailNotification(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded text-amber-600 focus:ring-amber-500 accent-amber-600 cursor-pointer"
+              />
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-zinc-900">
+                  {registeredGuestsCount > 0
+                    ? `Send / Re-send emails to all ${registeredGuestsCount} registered guests`
+                    : 'Send email notification to registered guests'}
+                </div>
+                <p className="text-[11px] text-zinc-500 leading-relaxed">
+                  Guests will receive a luxury email with your studio logo, brand name, and direct magic link to their AI matched photos.
+                </p>
+              </div>
+            </label>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowPublishConfirmModal(false)}
+                disabled={isPublishingEvent}
+                className="px-4 py-2.5 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPublish}
+                disabled={isPublishingEvent}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-black transition cursor-pointer shadow-md shadow-amber-600/20 flex items-center gap-2"
+              >
+                {isPublishingEvent ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Publishing &amp; Dispatching...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{sendEmailNotification ? 'Publish & Send Emails' : 'Publish Only'}</span>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────

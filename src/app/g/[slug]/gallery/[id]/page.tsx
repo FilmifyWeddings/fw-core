@@ -113,6 +113,11 @@ function StrictZeroKnowledgeGuestContent() {
   const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
 
+  // Dual Guest Tab: 'my' (AI Face Matched) vs 'all' (Full Event Photos)
+  const [guestActiveTab, setGuestActiveTab] = useState<'my' | 'all'>('my');
+  const [isSyncingLivePhotos, setIsSyncingLivePhotos] = useState(false);
+  const [guestSavedSession, setGuestSavedSession] = useState<{ id?: string; token?: string; name?: string } | null>(null);
+
   // 50-Photo Progressive Pagination for Privileged View
   const [visibleFullCount, setVisibleFullCount] = useState<number>(50);
 
@@ -180,8 +185,9 @@ function StrictZeroKnowledgeGuestContent() {
         setIsUnlocked(true);
       }
 
-      // ONLY fetch full collections & photos if in PRIVILEGED mode and UNLOCKED
-      if (isPrivilegedMode && hasValidPin) {
+      // Fetch full collections & photos if in PRIVILEGED mode OR gallery is PUBLISHED
+      const isGalleryPublished = gal.status?.toUpperCase() === 'PUBLISHED' || (gal.is_active && gal.status?.toUpperCase() !== 'UNPUBLISHED');
+      if (isGalleryPublished || (isPrivilegedMode && hasValidPin)) {
         // Fetch Collections
         try {
           const cRes = await fetch(`/api/gallery/collections?gallery_id=${gal.id}`);
@@ -219,14 +225,14 @@ function StrictZeroKnowledgeGuestContent() {
     loadGalleryData();
   }, [loadGalleryData]);
 
-  // Auto-resolve Unique Guest Link (Bypasses manual scanning)
+  // Auto-resolve Unique Guest Link or Saved Device Session (No repetitive login on re-scan)
   useEffect(() => {
-    if (!gallery || !guestIdParam) return;
+    if (!gallery) return;
 
     let isMounted = true;
-    const fetchGuestData = async () => {
+    const fetchGuestData = async (guestId: string, tok?: string) => {
       try {
-        const res = await fetch(`/api/gallery/guest?id=${encodeURIComponent(guestIdParam)}${tokenParam ? `&token=${encodeURIComponent(tokenParam)}` : ''}`);
+        const res = await fetch(`/api/gallery/guest?id=${encodeURIComponent(guestId)}${tok ? `&token=${encodeURIComponent(tok)}` : ''}`);
         const json = await res.json();
         if (!isMounted || !json.success || !json.guest) return;
 
@@ -236,6 +242,14 @@ function StrictZeroKnowledgeGuestContent() {
         setGuestEmail(g.guest_email || '');
         setIsVerified(true);
         setHasSearched(true);
+        setGuestSavedSession({ id: g.id, token: g.access_token, name: g.guest_name });
+
+        // Save session in localStorage so subsequent QR scans bypass login
+        try {
+          const sessObj = { id: g.id, token: g.access_token, name: g.guest_name, phone: g.guest_phone, email: g.guest_email };
+          localStorage.setItem(`studiocore_guest_${gallery.slug}`, JSON.stringify(sessObj));
+          localStorage.setItem(`studiocore_guest_${gallery.id}`, JSON.stringify(sessObj));
+        } catch (_) {}
 
         const status = gallery.status?.toUpperCase() || (gallery.is_active ? 'PUBLISHED' : 'UNPUBLISHED');
 
@@ -249,7 +263,7 @@ function StrictZeroKnowledgeGuestContent() {
               body: JSON.stringify({
                 gallery_id: gallery.id,
                 embedding: g.face_embedding,
-                threshold: 0.38,
+                threshold: 0.36,
               }),
             });
             const matchJson = await matchRes.json();
@@ -267,7 +281,21 @@ function StrictZeroKnowledgeGuestContent() {
       }
     };
 
-    fetchGuestData();
+    if (guestIdParam) {
+      fetchGuestData(guestIdParam, tokenParam || undefined);
+    } else {
+      // Check device localStorage
+      try {
+        const rawLocal = localStorage.getItem(`studiocore_guest_${gallery.slug}`) || localStorage.getItem(`studiocore_guest_${gallery.id}`);
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal);
+          if (parsed?.id) {
+            fetchGuestData(parsed.id, parsed.token);
+          }
+        }
+      } catch (_) {}
+    }
+
     return () => { isMounted = false; };
   }, [gallery, guestIdParam, tokenParam]);
 
@@ -326,6 +354,18 @@ function StrictZeroKnowledgeGuestContent() {
         } else {
           setIsAlreadyRegistered(false);
         }
+
+        // Save session in localStorage so subsequent QR scans bypass login
+        const savedId = regJson?.guest_id || regJson?.guest?.id;
+        const savedTok = regJson?.access_token || regJson?.guest?.access_token;
+        if (savedId) {
+          try {
+            const sessObj = { id: savedId, token: savedTok, name: data.name, phone: data.phone, email: data.email };
+            localStorage.setItem(`studiocore_guest_${gallery.slug}`, JSON.stringify(sessObj));
+            localStorage.setItem(`studiocore_guest_${gallery.id}`, JSON.stringify(sessObj));
+            setGuestSavedSession({ id: savedId, token: savedTok, name: data.name });
+          } catch (_) {}
+        }
       } catch (regErr) {
         console.warn('Guest registration error:', regErr);
       }
@@ -347,7 +387,7 @@ function StrictZeroKnowledgeGuestContent() {
           gallery_id: gallery.id,
           galleryId: gallery.id,
           selfieBase64: data.selfieBase64,
-          threshold: 0.38,
+          threshold: 0.36,
         }),
       });
 
@@ -371,6 +411,72 @@ function StrictZeroKnowledgeGuestContent() {
       setIsVerified(true);
     } finally {
       setIsMatching(false);
+    }
+  };
+
+  // Switch Guest / Register Someone Else
+  const handleSwitchGuest = () => {
+    try {
+      if (gallery) {
+        localStorage.removeItem(`studiocore_guest_${gallery.slug}`);
+        localStorage.removeItem(`studiocore_guest_${gallery.id}`);
+      }
+    } catch (_) {}
+    setGuestSavedSession(null);
+    setGuestName('');
+    setGuestPhone('');
+    setGuestEmail('');
+    setMatchedPhotos([]);
+    setHasSearched(false);
+    setIsVerified(false);
+    setIsFaceScannerOpen(true);
+  };
+
+  // Re-sync new photos uploaded later by photographer
+  const handleRefreshLivePhotos = async () => {
+    if (!gallery) return;
+    setIsSyncingLivePhotos(true);
+    try {
+      // 1. Re-fetch all event photos
+      const pRes = await fetch(`/api/gallery/photos?gallery_id=${gallery.id}`);
+      const pJson = await pRes.json();
+      if (pJson.success && Array.isArray(pJson.photos)) {
+        setFullPhotos(pJson.photos);
+      }
+
+      // 2. Re-fetch collections
+      const cRes = await fetch(`/api/gallery/collections?gallery_id=${gallery.id}`);
+      const cJson = await cRes.json();
+      if (cJson.success && Array.isArray(cJson.collections)) {
+        setCollections(cJson.collections);
+      }
+
+      // 3. Re-run face matching if guest is logged in
+      const guestId = guestSavedSession?.id || guestIdParam;
+      const guestTok = guestSavedSession?.token || tokenParam;
+      if (guestId) {
+        const gRes = await fetch(`/api/gallery/guest?id=${encodeURIComponent(guestId)}${guestTok ? `&token=${encodeURIComponent(guestTok)}` : ''}`);
+        const gJson = await gRes.json();
+        if (gJson.success && gJson.guest?.face_embedding) {
+          const mRes = await fetch('/api/gallery/match-face', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              gallery_id: gallery.id,
+              embedding: gJson.guest.face_embedding,
+              threshold: 0.36,
+            }),
+          });
+          const mJson = await mRes.json();
+          if (mJson.success && Array.isArray(mJson.photos)) {
+            setMatchedPhotos(mJson.photos);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Sync live photos notice:', err);
+    } finally {
+      setIsSyncingLivePhotos(false);
     }
   };
 
@@ -707,116 +813,265 @@ function StrictZeroKnowledgeGuestContent() {
           </div>
         )}
 
-        {/* CASE B1: MATCHED PHOTOS FOUND (WHEN PUBLISHED) */}
-        {(!isPrivilegedMode && hasSearched && currentGalleryStatus === 'PUBLISHED' && matchedPhotos.length > 0) && (
-          <div className="space-y-6">
-            
-            {/* Matched Header Bar */}
-            <div className="bg-white rounded-3xl p-6 border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider border border-emerald-200">
-                    ✓ Face Verified
-                  </span>
-                  <span className="text-xs font-bold text-zinc-500">
-                    {guestName || 'Guest'}
-                  </span>
-                </div>
-                <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight flex items-center gap-2">
-                  <span>🎉 Found {matchedPhotos.length} photos of you!</span>
-                </h2>
-              </div>
-
-              <div className="flex items-center gap-2">
+        {/* CASE B: PUBLISHED GUEST VIEW (DUAL TAB: MY PHOTOS VS ALL EVENT PHOTOS) */}
+        {(!isPrivilegedMode && hasSearched && currentGalleryStatus === 'PUBLISHED') && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Top Control Bar: Dual Tabs, Guest Badge & Live Sync */}
+            <div className="bg-white rounded-3xl p-3 sm:p-4 border border-[#E7E2D8] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 p-1 bg-[#FAF9F5] border border-[#E7E2D8] rounded-2xl w-full sm:w-auto">
                 <button
                   type="button"
-                  onClick={handleDownloadAllMyPhotos}
-                  disabled={isDownloadingAll}
-                  className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center gap-2 transition shadow-sm cursor-pointer"
+                  onClick={() => setGuestActiveTab('my')}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    guestActiveTab === 'my'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
                 >
-                  <Download className="w-4 h-4 text-amber-400" />
-                  <span>{isDownloadingAll ? 'Downloading...' : 'Download All Photos'}</span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>My Photos ({matchedPhotos.length})</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setIsFaceScannerOpen(true)}
-                  className="px-3.5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                  onClick={() => setGuestActiveTab('all')}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    guestActiveTab === 'all'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Scan Again</span>
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>All Event Photos ({fullPhotos.length})</span>
                 </button>
               </div>
-            </div>
 
-            {/* Strict Matched Photos Justified Multi-Column Grid */}
-            <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
-              {matchedPhotos.map((photo, idx) => (
-                <div
-                  key={photo.id}
-                  onClick={() => setSelectedPhotoIndex(idx)}
-                  className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
-                >
-                  <ProgressiveSmoothImage
-                    src={photo.preview_url || photo.thumbnail_url}
-                    thumbnailSrc={photo.thumbnail_url}
-                    alt="Matched Photo"
-                    aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                    className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                  />
-
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-
-
-                  {/* Actions Bottom Bar */}
-                  <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="text-[10px] font-mono text-zinc-300">
-                      Photo #{idx + 1}
-                    </span>
-
+              <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+                {guestName && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-full border border-amber-200 text-xs font-bold text-amber-900 shadow-2xs">
+                    <span>👤 {guestName}</span>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownloadPhoto(photo);
-                      }}
-                      className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                      title="Download High-Res"
+                      type="button"
+                      onClick={handleSwitchGuest}
+                      className="text-[10px] text-amber-700 hover:text-amber-900 underline ml-1 cursor-pointer font-bold"
+                      title="Switch guest or scan someone else"
                     >
-                      <Download className="w-3.5 h-3.5" />
+                      (Switch)
                     </button>
                   </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleRefreshLivePhotos}
+                  disabled={isSyncingLivePhotos}
+                  className="px-3.5 py-1.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title="Sync photos uploaded later by photographer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-amber-600 ${isSyncingLivePhotos ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingLivePhotos ? 'Syncing...' : 'Sync Photos'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* TAB 1: MY PHOTOS VIEW */}
+            {guestActiveTab === 'my' && (
+              <div className="space-y-6">
+                {matchedPhotos.length > 0 ? (
+                  <>
+                    <div className="bg-white rounded-3xl p-5 sm:p-6 border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider border border-emerald-200">
+                            ✓ Face Verified
+                          </span>
+                          <span className="text-xs font-bold text-zinc-500">
+                            {guestName || 'Guest'}
+                          </span>
+                        </div>
+                        <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
+                          🎉 Found {matchedPhotos.length} photos of you!
+                        </h2>
+                        <p className="text-xs text-zinc-500">
+                          Out of {fullPhotos.length} celebration photos in {gallery.title}.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleDownloadAllMyPhotos}
+                          disabled={isDownloadingAll}
+                          className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center gap-2 transition shadow-sm cursor-pointer"
+                        >
+                          <Download className="w-4 h-4 text-amber-400" />
+                          <span>{isDownloadingAll ? 'Downloading...' : 'Download All My Photos'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsFaceScannerOpen(true)}
+                          className="px-3.5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Rescan Selfie</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Matched Justified Multi-Column Grid */}
+                    <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
+                      {matchedPhotos.map((photo, idx) => (
+                        <div
+                          key={photo.id}
+                          onClick={() => setSelectedPhotoIndex(idx)}
+                          className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
+                        >
+                          <ProgressiveSmoothImage
+                            src={photo.preview_url || photo.thumbnail_url}
+                            thumbnailSrc={photo.thumbnail_url}
+                            alt="Matched Photo"
+                            aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
+                            className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                          />
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                          {/* Actions Bottom Bar */}
+                          <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-[10px] font-mono text-zinc-300">
+                              Photo #{idx + 1}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadPhoto(photo);
+                              }}
+                              className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
+                              title="Download High-Res"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E7E2D8] shadow-sm text-center space-y-5 max-w-md mx-auto">
+                    <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
+                      <Camera className="w-8 h-8" />
+                    </div>
+
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-black text-zinc-900">
+                        No Matching Photos Found Yet
+                      </h3>
+                      <p className="text-xs text-zinc-500 leading-relaxed">
+                        We scanned all {fullPhotos.length} celebration photos and couldn&apos;t detect a clear match for your selfie yet. You can browse all event photos or re-scan with better lighting.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setGuestActiveTab('all')}
+                        className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                      >
+                        <ImageIcon className="w-4 h-4" />
+                        <span>Browse All {fullPhotos.length} Photos</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsFaceScannerOpen(true)}
+                        className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        <span>Re-scan Selfie</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: ALL EVENT PHOTOS VIEW */}
+            {guestActiveTab === 'all' && (
+              <div className="space-y-6">
+                {/* Collections Capsule Filters */}
+                {collections.length > 0 && (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCollectionId('all')}
+                      className={`px-4 py-2 rounded-2xl text-xs font-black transition shrink-0 cursor-pointer ${
+                        selectedCollectionId === 'all'
+                          ? 'bg-zinc-900 text-white shadow-sm'
+                          : 'bg-white text-zinc-600 border border-[#E7E2D8] hover:bg-zinc-50'
+                      }`}
+                    >
+                      All Celebration Photos ({fullPhotos.length})
+                    </button>
+                    {collections.map((col) => (
+                      <button
+                        key={col.id}
+                        type="button"
+                        onClick={() => setSelectedCollectionId(col.id)}
+                        className={`px-4 py-2 rounded-2xl text-xs font-black transition shrink-0 cursor-pointer ${
+                          selectedCollectionId === col.id
+                            ? 'bg-zinc-900 text-white shadow-sm'
+                            : 'bg-white text-zinc-600 border border-[#E7E2D8] hover:bg-zinc-50'
+                        }`}
+                      >
+                        {col.name} ({col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length})
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* All Photos Grid */}
+                <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
+                  {targetFullPhotos.map((photo, idx) => (
+                    <div
+                      key={photo.id}
+                      onClick={() => setSelectedPhotoIndex(idx)}
+                      className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
+                    >
+                      <ProgressiveSmoothImage
+                        src={photo.preview_url || photo.thumbnail_url}
+                        thumbnailSrc={photo.thumbnail_url}
+                        alt="Event Photo"
+                        aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
+                        className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                      />
+
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                      <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-[10px] font-mono text-zinc-300">
+                          #{idx + 1}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadPhoto(photo);
+                          }}
+                          className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
+                          title="Download High-Res"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-
-          </div>
-        )}
-
-        {/* CASE B2: NO MATCHES FOUND IN PROCESSED ALBUM (WHEN PUBLISHED) */}
-        {(!isPrivilegedMode && hasSearched && currentGalleryStatus === 'PUBLISHED' && matchedPhotos.length === 0) && (
-          <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E7E2D8] shadow-sm text-center space-y-5 max-w-md mx-auto">
-            <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
-              <Camera className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="text-xl font-black text-zinc-900">
-                No Matching Photos Found
-              </h3>
-              <p className="text-xs text-zinc-500 leading-relaxed">
-                We couldn&apos;t find clear matches for this selfie in this album. Try capturing another close-up photo in brighter lighting.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsFaceScannerOpen(true)}
-              className="px-6 py-3.5 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs transition cursor-pointer shadow-md inline-flex items-center gap-2"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Scan Again with Better Light</span>
-            </button>
+              </div>
+            )}
           </div>
         )}
 

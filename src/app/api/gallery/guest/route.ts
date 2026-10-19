@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
         selfie_url: guest.selfie_url,
         face_embedding: guest.face_embedding,
         access_token: guest.access_token,
+        matched_photo_ids: Array.isArray(guest.matched_photo_ids) ? guest.matched_photo_ids : [],
         created_at: guest.created_at,
       },
     });

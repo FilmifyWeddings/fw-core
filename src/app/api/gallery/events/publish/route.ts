@@ -8,8 +8,18 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { gallery_id, galleryId, similarityThreshold = 0.36, notifyChannels = ['WHATSAPP', 'EMAIL'] } = body;
+    const {
+      gallery_id,
+      galleryId,
+      similarityThreshold = 0.36,
+      send_email = true,
+      notifyChannels = ['WHATSAPP', 'EMAIL'],
+    } = body;
     const targetId = gallery_id || galleryId;
+
+    const channelsToUse: string[] = send_email === false
+      ? notifyChannels.filter((c: string) => c !== 'EMAIL')
+      : (notifyChannels.includes('EMAIL') ? notifyChannels : [...notifyChannels, 'EMAIL']);
 
     if (!targetId) {
       return NextResponse.json({ success: false, error: 'gallery_id is required' }, { status: 400 });
@@ -63,6 +73,7 @@ export async function POST(req: NextRequest) {
       .from('event_galleries')
       .update({
         status: 'PUBLISHED',
+        is_active: true,
         updated_at: new Date().toISOString(),
       })
       .eq('id', targetId);
@@ -121,7 +132,7 @@ export async function POST(req: NextRequest) {
         const messageText = `🎉 Hello ${guest.guest_name}! Your photos from "${gallery.title}" are ready! Click here to view and download your ${matchedPhotoIds.length > 0 ? matchedPhotoIds.length : 'curated'} photos: ${guestPortalUrl}`;
 
         // WhatsApp Channel (Logs delivery record for WhatsApp Bot/Worker)
-        if (notifyChannels.includes('WHATSAPP') && guest.guest_phone) {
+        if (channelsToUse.includes('WHATSAPP') && guest.guest_phone) {
           try {
             await supabaseAdmin.from('guest_delivery_logs').insert({
               workspace_id: workspaceId,
@@ -137,8 +148,8 @@ export async function POST(req: NextRequest) {
           } catch (_) {}
         }
 
-        // Email Channel: Real Luxury Branded Email Dispatch via Multi-Tier Fallback
-        if (notifyChannels.includes('EMAIL') && guest.guest_email) {
+        // Email Channel: Real Luxury Branded Email Dispatch via Multi-Tier Fallback (Resend Primary)
+        if (channelsToUse.includes('EMAIL') && guest.guest_email) {
           try {
             const emailRes = await sendGuestGalleryPublishedEmail({
               toEmail: guest.guest_email,

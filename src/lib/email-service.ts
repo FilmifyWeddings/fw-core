@@ -775,7 +775,11 @@ export async function sendGuestGalleryPublishedEmail({
   studioPhone,
 }: SendGuestGalleryPublishedEmailParams) {
   const brandName = studioName?.trim() || 'StudioCore Photography';
-  const fromAddress = `"${brandName} via StudioCore" <support@studiocore.in>`;
+  const defaultFrom = process.env.RESEND_FROM || process.env.SMTP_FROM || 'support@studiocore.in';
+  const fromEmail = defaultFrom.includes('<')
+    ? (defaultFrom.match(/<([^>]+)>/)?.[1] || 'support@studiocore.in')
+    : defaultFrom.trim();
+  const fromAddress = `"${brandName} via StudioCore" <${fromEmail}>`;
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -803,18 +807,20 @@ export async function sendGuestGalleryPublishedEmail({
       border: 1px solid #E7E2D8;
     }
     .header {
-      background: #1c1917;
+      background: #18181b;
       padding: 36px 32px;
       text-align: center;
+      border-bottom: 2px solid #D97706;
     }
     .studio-logo {
-      max-height: 48px;
-      max-width: 180px;
+      max-height: 52px;
+      max-width: 200px;
       margin: 0 auto 12px auto;
       display: block;
+      border-radius: 8px;
     }
     .content {
-      padding: 40px 36px 32px 36px;
+      padding: 36px 32px;
     }
     .badge {
       display: inline-block;
@@ -827,13 +833,35 @@ export async function sendGuestGalleryPublishedEmail({
       padding: 6px 16px;
       border-radius: 50px;
       border: 1px solid #FDE68A;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
+    }
+    .event-card {
+      background: #FAF9F5;
+      border: 1px solid #E7E2D8;
+      border-radius: 18px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .event-tag {
+      font-size: 10px;
+      font-weight: 800;
+      color: #D97706;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+    .event-name {
+      font-size: 19px;
+      font-weight: 900;
+      color: #18181b;
+      margin: 4px 0 0 0;
+      letter-spacing: -0.3px;
     }
     h1 {
-      font-size: 26px;
+      font-size: 24px;
       font-weight: 900;
       color: #1c1917;
-      margin: 0 0 14px 0;
+      margin: 0 0 12px 0;
       line-height: 1.3;
       letter-spacing: -0.5px;
     }
@@ -844,24 +872,24 @@ export async function sendGuestGalleryPublishedEmail({
       margin: 0 0 18px 0;
     }
     .stats-card {
-      background: #FAF9F5;
-      border: 1px solid #E7E2D8;
+      background: #FFFBEB;
+      border: 1px solid #FDE68A;
       border-radius: 20px;
-      padding: 20px;
+      padding: 24px;
       text-align: center;
-      margin: 28px 0;
+      margin: 24px 0;
     }
     .stats-number {
-      font-size: 36px;
+      font-size: 40px;
       font-weight: 900;
       color: #D97706;
       line-height: 1;
       margin-bottom: 6px;
     }
     .stats-label {
-      font-size: 11px;
-      font-weight: 700;
-      color: #78716c;
+      font-size: 12px;
+      font-weight: 800;
+      color: #92400E;
       text-transform: uppercase;
       letter-spacing: 1px;
     }
@@ -876,10 +904,10 @@ export async function sendGuestGalleryPublishedEmail({
       text-decoration: none;
       font-size: 15px;
       font-weight: 800;
-      padding: 16px 40px;
+      padding: 16px 42px;
       border-radius: 50px;
       letter-spacing: 0.5px;
-      box-shadow: 0 8px 24px rgba(217, 119, 6, 0.3);
+      box-shadow: 0 8px 24px rgba(217, 119, 6, 0.35);
       text-transform: uppercase;
     }
     .features-list {
@@ -907,59 +935,76 @@ export async function sendGuestGalleryPublishedEmail({
       padding: 24px 32px;
       text-align: center;
       font-size: 11px;
-      color: #a8a29e;
+      color: #78716c;
       line-height: 1.6;
     }
     .footer strong {
-      color: #44403c;
+      color: #18181b;
     }
   </style>
 </head>
 <body>
   <div class="wrapper">
+    <!-- Studio Header -->
     <div class="header">
       ${studioLogoUrl ? `<img src="${studioLogoUrl}" alt="${brandName}" class="studio-logo" />` : ''}
-      <h2 style="margin: 0; font-size: 20px; font-weight: 900; color: #ffffff; letter-spacing: -0.3px;">
+      <h2 style="margin: 0; font-size: 21px; font-weight: 900; color: #ffffff; letter-spacing: -0.3px;">
         ${brandName}
       </h2>
-      <p style="margin: 4px 0 0 0; font-size: 11px; color: #a8a29e; letter-spacing: 1px; text-transform: uppercase;">
-        Sacred Moments &bull; Timeless Stories
+      <p style="margin: 5px 0 0 0; font-size: 11px; color: #d4d4d8; letter-spacing: 1.2px; text-transform: uppercase;">
+        Official Photography &amp; Cinematography
       </p>
     </div>
 
+    <!-- Main Content -->
     <div class="content">
-      <div class="badge">📸 Photos Ready</div>
+      <div style="text-align: center;">
+        <span class="badge">📸 Photos Live &amp; Ready</span>
+      </div>
+
+      <!-- Couple / Event Box -->
+      <div class="event-card">
+        <div class="event-tag">✨ Celebration Album</div>
+        <div class="event-name">${eventTitle}</div>
+      </div>
+
       <h1>Hello ${guestName}, your celebration memories are here!</h1>
       <p>
-        The photography team at <strong>${brandName}</strong> has completed the curation for <strong>${eventTitle}</strong>. 
-        Our AI facial recognition system has located the photos you appear in.
+        The photography team at <strong>${brandName}</strong> has finalized and published the collection for <strong>${eventTitle}</strong>. 
+        Our AI recognition system has matched the moments where you were captured during this beautiful celebration.
       </p>
 
+      <!-- Stats Highlight -->
       <div class="stats-card">
         <div class="stats-number">${matchedCount > 0 ? matchedCount : 'Curated'}</div>
         <div class="stats-label">${matchedCount > 0 ? 'Personal Photos Matched to Your Selfie' : 'Personal Photo Stream Available'}</div>
+        <p style="margin: 8px 0 0 0; font-size: 12px; color: #78716c;">
+          100% private to you &bull; High resolution downloads enabled
+        </p>
       </div>
 
+      <!-- Action Button -->
       <div class="button-container">
         <a href="${portalUrl}" target="_blank" class="cta-btn">
-          View &amp; Download Your Photos &rarr;
+          View &amp; Download My Photos &rarr;
         </a>
       </div>
 
       <ul class="features-list">
-        <li><strong>Original High-Resolution Downloads:</strong> Download print-ready photos directly to your phone or computer.</li>
-        <li><strong>Face Search Scanner:</strong> Search for family &amp; friends with one-click selfie recognition.</li>
-        <li><strong>Album Favorites:</strong> Heart and shortlist your favorite memories.</li>
+        <li><strong>Original High-Resolution Downloads:</strong> Print-ready photos direct to your phone or computer.</li>
+        <li><strong>Browse All Event Photos:</strong> View the complete celebration album across all rituals.</li>
+        <li><strong>AI Face Search:</strong> Find photos of your friends and family with one-click selfie recognition.</li>
       </ul>
     </div>
 
+    <!-- Studio & StudioCore Footer -->
     <div class="footer">
-      <p style="margin: 0 0 6px 0;">
-        Captured with love by <strong>${brandName}</strong>
-        ${studioPhone ? `<br/>Contact: ${studioPhone}` : ''}
+      <p style="margin: 0 0 8px 0;">
+        Captured with passion by <strong>${brandName}</strong>
+        ${studioPhone ? `<br/>Direct Studio Contact: ${studioPhone}` : ''}
       </p>
-      <p style="margin: 0;">
-        Powered by StudioCore AI Wedding Portal &bull; All Rights Reserved
+      <p style="margin: 0; font-size: 10px; color: #a1a1aa;">
+        Powered by <strong>StudioCore AI</strong> &bull; Luxury Event Media Platform &bull; All Rights Reserved
       </p>
     </div>
   </div>
