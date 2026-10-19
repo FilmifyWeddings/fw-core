@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(signedUrl, {
         status: 307,
         headers: {
-          'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+          'Cache-Control': 'public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400',
         },
       });
     } catch (s3Err) {
