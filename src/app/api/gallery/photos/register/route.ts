@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getGalleryPresignedDownloadUrl } from '@/lib/storage/galleryB2Client';
-import { extractFacesFromS3Key } from '@/lib/faceAI';
+import { extractFacesFromS3Key, cosineSimilarity, normalizeVector } from '@/lib/faceAI';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,6 +98,62 @@ export async function POST(req: NextRequest) {
             .eq('id', galleryId);
         }
       } catch (_) {}
+
+      // 5. Automatic Guest Re-Sync: Match new photo faces against registered guests in real-time
+      try {
+        const { data: guests } = await supabaseAdmin
+          .from('event_guest_registrations')
+          .select('id, face_embedding, matched_photo_ids')
+          .eq('gallery_id', galleryId);
+
+        if (guests && guests.length > 0) {
+          const { data: newFaces } = await supabaseAdmin
+            .from('photo_faces')
+            .select('photo_id, embedding')
+            .in('photo_id', inserted.map((p) => p.id));
+
+          if (newFaces && newFaces.length > 0) {
+            for (const guest of guests) {
+              const rawEmb = Array.isArray(guest.face_embedding)
+                ? guest.face_embedding
+                : (typeof guest.face_embedding === 'string' ? JSON.parse(guest.face_embedding) : null);
+
+              if (!rawEmb || rawEmb.length !== 512) continue;
+              const guestVector = normalizeVector(rawEmb);
+              const currentMatches = new Set<string>(
+                Array.isArray(guest.matched_photo_ids) ? guest.matched_photo_ids : []
+              );
+              let hasNewMatch = false;
+
+              for (const nf of newFaces) {
+                const nfEmb = Array.isArray(nf.embedding)
+                  ? nf.embedding
+                  : (typeof nf.embedding === 'string' ? JSON.parse(nf.embedding) : null);
+
+                if (nfEmb && nfEmb.length === 512) {
+                  const sim = cosineSimilarity(guestVector, nfEmb);
+                  if (sim >= 0.36) {
+                    currentMatches.add(nf.photo_id);
+                    hasNewMatch = true;
+                  }
+                }
+              }
+
+              if (hasNewMatch) {
+                await supabaseAdmin
+                  .from('event_guest_registrations')
+                  .update({
+                    matched_photo_ids: Array.from(currentMatches),
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', guest.id);
+              }
+            }
+          }
+        }
+      } catch (guestSyncErr) {
+        console.warn('[FaceIndex] Auto-matching new photos to guests:', guestSyncErr);
+      }
     }
 
     return NextResponse.json({

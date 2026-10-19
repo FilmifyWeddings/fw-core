@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { cosineSimilarity, normalizeVector } from '@/lib/faceAI';
+import { sendGuestGalleryPublishedEmail } from '@/lib/email-service';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { gallery_id, galleryId, similarityThreshold = 0.40, notifyChannels = ['WHATSAPP', 'EMAIL'] } = body;
+    const { gallery_id, galleryId, similarityThreshold = 0.36, notifyChannels = ['WHATSAPP', 'EMAIL'] } = body;
     const targetId = gallery_id || galleryId;
 
     if (!targetId) {
@@ -28,6 +29,35 @@ export async function POST(req: NextRequest) {
     const workspaceId = gallery.workspace_id || '00000000-0000-0000-0000-000000000000';
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
 
+    // Fetch Studio Profile & Branding for Email
+    let studioName = 'StudioCore Photography';
+    let studioLogoUrl = '';
+    let studioPhone = '';
+
+    try {
+      const { data: wsRow } = await supabaseAdmin
+        .from('workspace_settings')
+        .select('config')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+      const gSet = wsRow?.config?.gallery_settings;
+      if (gSet?.studio_name) studioName = gSet.studio_name;
+      if (gSet?.logo_url) studioLogoUrl = gSet.logo_url;
+      if (gSet?.phone) studioPhone = gSet.phone;
+
+      if (!studioName || studioName === 'StudioCore Photography') {
+        const { data: prof } = await supabaseAdmin
+          .from('profiles')
+          .select('studio_name, logo_url, phone')
+          .eq('id', workspaceId)
+          .maybeSingle();
+        if (prof?.studio_name) studioName = prof.studio_name;
+        if (prof?.logo_url) studioLogoUrl = prof.logo_url;
+        if (prof?.phone) studioPhone = prof.phone;
+      }
+    } catch (_) {}
+
     // 2. Set Gallery Status to PUBLISHED
     await supabaseAdmin
       .from('event_galleries')
@@ -38,13 +68,13 @@ export async function POST(req: NextRequest) {
       .eq('id', targetId);
 
     // 3. Fetch all pre-registered guests for this gallery
-    const { data: registeredGuests, error: guestErr } = await supabaseAdmin
+    const { data: registeredGuests } = await supabaseAdmin
       .from('event_guest_registrations')
       .select('*')
       .eq('gallery_id', targetId);
 
     // 4. Fetch all indexed photo faces for this gallery
-    const { data: photoFaces, error: facesErr } = await supabaseAdmin
+    const { data: photoFaces } = await supabaseAdmin
       .from('photo_faces')
       .select('photo_id, embedding')
       .eq('gallery_id', targetId);
@@ -56,6 +86,7 @@ export async function POST(req: NextRequest) {
     }> = [];
 
     let totalNotified = 0;
+    const effectiveThreshold = Math.min(Number(similarityThreshold) || 0.36, 0.38);
 
     if (registeredGuests && registeredGuests.length > 0 && photoFaces && photoFaces.length > 0) {
       for (const guest of registeredGuests) {
@@ -76,7 +107,7 @@ export async function POST(req: NextRequest) {
 
           if (pfEmb && pfEmb.length === 512) {
             const sim = cosineSimilarity(guestVector, pfEmb);
-            if (sim >= similarityThreshold) {
+            if (sim >= effectiveThreshold) {
               matchedSet.add(pf.photo_id);
             }
           }
@@ -86,10 +117,10 @@ export async function POST(req: NextRequest) {
         const guestPortalUrl = `${baseUrl}/g/${gallery.slug}?guest=${guest.id}&token=${guest.access_token}`;
         const channelResults = [];
 
-        // 5. Automated Dispatch & Notification Simulation
+        // 5. Automated Dispatch & Notification
         const messageText = `🎉 Hello ${guest.guest_name}! Your photos from "${gallery.title}" are ready! Click here to view and download your ${matchedPhotoIds.length > 0 ? matchedPhotoIds.length : 'curated'} photos: ${guestPortalUrl}`;
 
-        // WhatsApp Channel
+        // WhatsApp Channel (Logs delivery record for WhatsApp Bot/Worker)
         if (notifyChannels.includes('WHATSAPP') && guest.guest_phone) {
           try {
             await supabaseAdmin.from('guest_delivery_logs').insert({
@@ -106,21 +137,39 @@ export async function POST(req: NextRequest) {
           } catch (_) {}
         }
 
-        // Email Channel
+        // Email Channel: Real Luxury Branded Email Dispatch via Multi-Tier Fallback
         if (notifyChannels.includes('EMAIL') && guest.guest_email) {
           try {
+            const emailRes = await sendGuestGalleryPublishedEmail({
+              toEmail: guest.guest_email,
+              guestName: guest.guest_name,
+              eventTitle: gallery.title,
+              gallerySlug: gallery.slug,
+              matchedCount: matchedPhotoIds.length,
+              portalUrl: guestPortalUrl,
+              studioName,
+              studioLogoUrl,
+              studioPhone,
+            });
+
             await supabaseAdmin.from('guest_delivery_logs').insert({
               workspace_id: workspaceId,
               gallery_id: targetId,
               guest_id: guest.id,
               channel: 'EMAIL',
-              status: 'DELIVERED',
+              status: emailRes.success ? 'DELIVERED' : 'FAILED',
               recipient: guest.guest_email,
               matched_count: matchedPhotoIds.length,
-              payload: { subject: `Your Photos from ${gallery.title} are Ready!`, link: guestPortalUrl },
+              payload: {
+                subject: `📸 ${guest.guest_name}, your photos from ${gallery.title} are ready!`,
+                link: guestPortalUrl,
+                error: (emailRes as any).error,
+              },
             });
-            channelResults.push({ channel: 'EMAIL', status: 'DELIVERED' });
-          } catch (_) {}
+            channelResults.push({ channel: 'EMAIL', status: emailRes.success ? 'DELIVERED' : 'FAILED' });
+          } catch (mailErr: any) {
+            console.warn('[PublishEmail] Error sending email to guest:', mailErr.message);
+          }
         }
 
         // Update guest registration status

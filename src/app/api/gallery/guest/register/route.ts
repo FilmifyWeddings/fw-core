@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { extractEmbeddingFromBase64, normalizeVector } from '@/lib/faceAI';
+import { extractEmbeddingFromBase64, normalizeVector, cosineSimilarity } from '@/lib/faceAI';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { galleryB2Client, B2_GALLERY_BUCKET_NAME } from '@/lib/storage/galleryB2Client';
 import sharp from 'sharp';
@@ -96,14 +96,52 @@ export async function POST(req: NextRequest) {
     }
     embedding = normalizeVector(embedding);
 
-    // If guest is already registered: Return existing profile, do not create duplicate
+    // 4.5. Compute instant matches against existing photo faces in this gallery
+    const matchedPhotoIds: string[] = [];
+    if (embedding && embedding.length === 512) {
+      try {
+        const { data: existingFaces } = await supabaseAdmin
+          .from('photo_faces')
+          .select('photo_id, embedding')
+          .eq('gallery_id', gallery.id);
+
+        if (existingFaces && existingFaces.length > 0) {
+          const matchedSet = new Set<string>();
+          for (const ef of existingFaces) {
+            const efEmb = Array.isArray(ef.embedding)
+              ? ef.embedding
+              : (typeof ef.embedding === 'string' ? JSON.parse(ef.embedding) : null);
+
+            if (efEmb && efEmb.length === 512) {
+              const sim = cosineSimilarity(embedding, efEmb);
+              if (sim >= 0.36) {
+                matchedSet.add(ef.photo_id);
+              }
+            }
+          }
+          matchedPhotoIds.push(...Array.from(matchedSet));
+        }
+      } catch (err) {
+        console.warn('[GuestRegister] Error matching against existing gallery faces:', err);
+      }
+    }
+
+    // If guest is already registered: Return existing profile and update matched photos
     if (existingGuest) {
+      const mergedMatches = Array.from(
+        new Set([
+          ...(Array.isArray(existingGuest.matched_photo_ids) ? existingGuest.matched_photo_ids : []),
+          ...matchedPhotoIds,
+        ])
+      );
+
       const updatePayload: any = {
         updated_at: new Date().toISOString(),
       };
       if (selfie_url) updatePayload.selfie_url = selfie_url;
       if (embedding.length === 512) updatePayload.face_embedding = embedding;
       if (guest_name?.trim()) updatePayload.guest_name = guest_name.trim();
+      if (mergedMatches.length > 0) updatePayload.matched_photo_ids = mergedMatches;
 
       const { data: updatedGuest } = await supabaseAdmin
         .from('event_guest_registrations')
@@ -125,12 +163,13 @@ export async function POST(req: NextRequest) {
         gallery_title: gallery.title,
         gallery_slug: gallery.slug,
         status: gallery.status,
+        matched_photos_count: mergedMatches.length,
       });
     }
 
     const accessToken = crypto.randomBytes(16).toString('hex');
 
-    // 5. Insert new unique record into event_guest_registrations
+    // 5. Insert new unique record into event_guest_registrations with instant matched photos
     const registrationRecord = {
       workspace_id: workspaceId,
       gallery_id: gallery.id,
@@ -140,6 +179,7 @@ export async function POST(req: NextRequest) {
       selfie_url: selfie_url,
       face_embedding: embedding,
       access_token: accessToken,
+      matched_photo_ids: matchedPhotoIds,
       notification_status: 'PENDING',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

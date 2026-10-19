@@ -747,3 +747,247 @@ Support: support@studiocore.in
     html: htmlContent,
   });
 }
+
+export interface SendGuestGalleryPublishedEmailParams {
+  toEmail: string;
+  guestName: string;
+  eventTitle: string;
+  gallerySlug: string;
+  matchedCount?: number;
+  portalUrl: string;
+  studioName?: string;
+  studioLogoUrl?: string;
+  studioPhone?: string;
+}
+
+/**
+ * Dispatches luxury branded guest email notification when a gallery event is published
+ */
+export async function sendGuestGalleryPublishedEmail({
+  toEmail,
+  guestName,
+  eventTitle,
+  gallerySlug,
+  matchedCount = 0,
+  portalUrl,
+  studioName = 'StudioCore Photography',
+  studioLogoUrl,
+  studioPhone,
+}: SendGuestGalleryPublishedEmailParams) {
+  const brandName = studioName?.trim() || 'StudioCore Photography';
+  const fromAddress = `"${brandName} via StudioCore" <support@studiocore.in>`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Photos from ${eventTitle} are Ready!</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #FAF9F5;
+      margin: 0;
+      padding: 0;
+      color: #1c1917;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      max-width: 580px;
+      margin: 32px auto;
+      background: #ffffff;
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.05);
+      border: 1px solid #E7E2D8;
+    }
+    .header {
+      background: #1c1917;
+      padding: 36px 32px;
+      text-align: center;
+    }
+    .studio-logo {
+      max-height: 48px;
+      max-width: 180px;
+      margin: 0 auto 12px auto;
+      display: block;
+    }
+    .content {
+      padding: 40px 36px 32px 36px;
+    }
+    .badge {
+      display: inline-block;
+      background: #FEF3C7;
+      color: #92400E;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 6px 16px;
+      border-radius: 50px;
+      border: 1px solid #FDE68A;
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 900;
+      color: #1c1917;
+      margin: 0 0 14px 0;
+      line-height: 1.3;
+      letter-spacing: -0.5px;
+    }
+    p {
+      font-size: 14px;
+      line-height: 1.65;
+      color: #57534e;
+      margin: 0 0 18px 0;
+    }
+    .stats-card {
+      background: #FAF9F5;
+      border: 1px solid #E7E2D8;
+      border-radius: 20px;
+      padding: 20px;
+      text-align: center;
+      margin: 28px 0;
+    }
+    .stats-number {
+      font-size: 36px;
+      font-weight: 900;
+      color: #D97706;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .stats-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #78716c;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .button-container {
+      text-align: center;
+      margin: 32px 0;
+    }
+    .cta-btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #D97706 0%, #B45309 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 800;
+      padding: 16px 40px;
+      border-radius: 50px;
+      letter-spacing: 0.5px;
+      box-shadow: 0 8px 24px rgba(217, 119, 6, 0.3);
+      text-transform: uppercase;
+    }
+    .features-list {
+      margin: 24px 0;
+      padding: 0;
+      list-style: none;
+    }
+    .features-list li {
+      font-size: 13px;
+      color: #57534e;
+      margin-bottom: 10px;
+      padding-left: 24px;
+      position: relative;
+    }
+    .features-list li:before {
+      content: '✦';
+      position: absolute;
+      left: 0;
+      color: #D97706;
+      font-weight: bold;
+    }
+    .footer {
+      background: #FAF9F5;
+      border-top: 1px solid #E7E2D8;
+      padding: 24px 32px;
+      text-align: center;
+      font-size: 11px;
+      color: #a8a29e;
+      line-height: 1.6;
+    }
+    .footer strong {
+      color: #44403c;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      ${studioLogoUrl ? `<img src="${studioLogoUrl}" alt="${brandName}" class="studio-logo" />` : ''}
+      <h2 style="margin: 0; font-size: 20px; font-weight: 900; color: #ffffff; letter-spacing: -0.3px;">
+        ${brandName}
+      </h2>
+      <p style="margin: 4px 0 0 0; font-size: 11px; color: #a8a29e; letter-spacing: 1px; text-transform: uppercase;">
+        Sacred Moments &bull; Timeless Stories
+      </p>
+    </div>
+
+    <div class="content">
+      <div class="badge">📸 Photos Ready</div>
+      <h1>Hello ${guestName}, your celebration memories are here!</h1>
+      <p>
+        The photography team at <strong>${brandName}</strong> has completed the curation for <strong>${eventTitle}</strong>. 
+        Our AI facial recognition system has located the photos you appear in.
+      </p>
+
+      <div class="stats-card">
+        <div class="stats-number">${matchedCount > 0 ? matchedCount : 'Curated'}</div>
+        <div class="stats-label">${matchedCount > 0 ? 'Personal Photos Matched to Your Selfie' : 'Personal Photo Stream Available'}</div>
+      </div>
+
+      <div class="button-container">
+        <a href="${portalUrl}" target="_blank" class="cta-btn">
+          View &amp; Download Your Photos &rarr;
+        </a>
+      </div>
+
+      <ul class="features-list">
+        <li><strong>Original High-Resolution Downloads:</strong> Download print-ready photos directly to your phone or computer.</li>
+        <li><strong>Face Search Scanner:</strong> Search for family &amp; friends with one-click selfie recognition.</li>
+        <li><strong>Album Favorites:</strong> Heart and shortlist your favorite memories.</li>
+      </ul>
+    </div>
+
+    <div class="footer">
+      <p style="margin: 0 0 6px 0;">
+        Captured with love by <strong>${brandName}</strong>
+        ${studioPhone ? `<br/>Contact: ${studioPhone}` : ''}
+      </p>
+      <p style="margin: 0;">
+        Powered by StudioCore AI Wedding Portal &bull; All Rights Reserved
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  const textContent = `
+Hello ${guestName},
+
+Your photos from "${eventTitle}" are now live and ready to view!
+Captured by ${brandName}.
+
+${matchedCount > 0 ? `We found ${matchedCount} photos of you.` : 'Your personal photo stream is available.'}
+
+Access and download your photos here:
+${portalUrl}
+
+Captured with love by ${brandName}
+Powered by StudioCore AI
+  `.trim();
+
+  return sendMailWithFallback({
+    from: fromAddress,
+    to: toEmail,
+    subject: `📸 ${guestName}, your photos from ${eventTitle} are ready!`,
+    text: textContent,
+    html: htmlContent,
+  });
+}
+
