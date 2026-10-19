@@ -90,8 +90,8 @@ export function getGalleryPublicUrl(key: string, bucketName = B2_GALLERY_BUCKET_
   if (key.startsWith('http://') || key.startsWith('https://')) return key;
   const cleanKey = key.replace(/^\/+/, '');
 
-  // 1. If custom CDN URL configured, use that
-  if (B2_GALLERY_CDN_URL) {
+  // 1. If custom CDN URL configured (and not the non-existent gallery-cdn.studiocore.in), use that
+  if (B2_GALLERY_CDN_URL && !B2_GALLERY_CDN_URL.includes('gallery-cdn.studiocore.in')) {
     const base = B2_GALLERY_CDN_URL.replace(/\/+$/, '');
     return `${base}/${cleanKey}`;
   }

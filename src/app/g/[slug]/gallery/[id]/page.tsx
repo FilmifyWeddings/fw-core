@@ -107,10 +107,14 @@ function StrictZeroKnowledgeGuestContent() {
   const [isMatching, setIsMatching] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [isAlreadyRegistered, setIsAlreadyRegistered] = useState(false);
   const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
+
+  // 50-Photo Progressive Pagination for Privileged View
+  const [visibleFullCount, setVisibleFullCount] = useState<number>(50);
 
   // Lightbox & Selection State
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
@@ -305,7 +309,7 @@ function StrictZeroKnowledgeGuestContent() {
     try {
       // 1. Register Guest in CRM (Uploads selfie to Backblaze B2 & saves 512-D embedding)
       try {
-        await fetch('/api/gallery/guest/register', {
+        const regRes = await fetch('/api/gallery/guest/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -316,6 +320,12 @@ function StrictZeroKnowledgeGuestContent() {
             selfieBase64: data.selfieBase64,
           }),
         });
+        const regJson = await regRes.json();
+        if (regJson?.isExistingGuest) {
+          setIsAlreadyRegistered(true);
+        } else {
+          setIsAlreadyRegistered(false);
+        }
       } catch (regErr) {
         console.warn('Guest registration error:', regErr);
       }
@@ -400,11 +410,21 @@ function StrictZeroKnowledgeGuestContent() {
     setIsDownloadingAll(false);
   };
 
+  const targetFullPhotos = useMemo(() => {
+    return selectedCollectionId === 'all'
+      ? fullPhotos
+      : fullPhotos.filter((p) => p.collection_id === selectedCollectionId);
+  }, [fullPhotos, selectedCollectionId]);
+
+  const displayedPrivilegedPhotos = useMemo(() => {
+    return targetFullPhotos.slice(0, visibleFullCount);
+  }, [targetFullPhotos, visibleFullCount]);
+
+  const hasMorePrivilegedPhotos = visibleFullCount < targetFullPhotos.length;
+
   // Compute Active Render List
   const displayedPhotos = isPrivilegedMode && isUnlocked
-    ? (selectedCollectionId === 'all'
-        ? fullPhotos
-        : fullPhotos.filter((p) => p.collection_id === selectedCollectionId))
+    ? displayedPrivilegedPhotos
     : matchedPhotos;
 
   if (loading) {
@@ -589,13 +609,15 @@ function StrictZeroKnowledgeGuestContent() {
 
             <div className="space-y-3">
               <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider border border-emerald-300">
-                ✨ Registration Successful
+                {isAlreadyRegistered ? '✨ Already Registered' : '✨ Registration Successful'}
               </span>
               <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-                Thank You So Much for Registering{guestName ? `, ${guestName}` : ''}!
+                {isAlreadyRegistered ? `Welcome Back, ${guestName || 'Guest'}!` : `Thank You So Much for Registering${guestName ? `, ${guestName}` : ''}!`}
               </h2>
               <p className="text-xs sm:text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed">
-                Your selfie and contact details are safely registered for <span className="font-bold text-zinc-900">{gallery.title}</span>. Our photography team is actively capturing and curating the unforgettable moments from this celebration.
+                {isAlreadyRegistered
+                  ? `You have already registered with this phone / email for ${gallery.title}. As soon as the photos are edited & published by the studio, you will be notified instantly!`
+                  : `Your selfie and contact details are safely registered for ${gallery.title}. Our photography team is actively capturing and curating the unforgettable moments from this celebration.`}
               </p>
             </div>
 
@@ -745,14 +767,7 @@ function StrictZeroKnowledgeGuestContent() {
 
                   <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-                  {/* Badges Top Right */}
-                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
-                    {photo.confidencePercent && (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 backdrop-blur-md text-[10px] font-black text-emerald-300 border border-emerald-500/40">
-                        {photo.confidencePercent}% Match
-                      </span>
-                    )}
-                  </div>
+
 
                   {/* Actions Bottom Bar */}
                   <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
@@ -909,6 +924,22 @@ function StrictZeroKnowledgeGuestContent() {
                 );
               })}
             </div>
+
+            {hasMorePrivilegedPhotos && (
+              <div className="py-8 flex flex-col items-center justify-center gap-3">
+                <p className="text-xs text-zinc-500 font-medium">
+                  Showing {displayedPrivilegedPhotos.length} of {targetFullPhotos.length} photos
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setVisibleFullCount((prev) => Math.min(prev + 50, targetFullPhotos.length))}
+                  className="px-6 py-2.5 rounded-2xl bg-zinc-900 hover:bg-black text-white text-xs font-bold shadow-sm transition active:scale-98 flex items-center gap-2 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Load Next 50 Photos</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 

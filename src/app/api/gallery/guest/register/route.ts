@@ -33,8 +33,26 @@ export async function POST(req: NextRequest) {
 
     const workspaceId = gallery.workspace_id || '00000000-0000-0000-0000-000000000000';
     const cleanPhone = guest_phone.replace(/[^0-9+]/g, '');
+    const cleanEmail = guest_email?.trim()?.toLowerCase() || null;
 
-    // 2. Upload compressed selfie to Backblaze B2 (tiny KB size WebP)
+    // 2. Check if guest is ALREADY registered for this event (by phone OR email)
+    let existingQuery = supabaseAdmin
+      .from('event_guest_registrations')
+      .select('*')
+      .eq('gallery_id', gallery.id);
+
+    if (cleanPhone && cleanEmail) {
+      existingQuery = existingQuery.or(`guest_phone.eq.${cleanPhone},guest_email.eq.${cleanEmail}`);
+    } else if (cleanPhone) {
+      existingQuery = existingQuery.eq('guest_phone', cleanPhone);
+    } else if (cleanEmail) {
+      existingQuery = existingQuery.eq('guest_email', cleanEmail);
+    }
+
+    const { data: existingGuests } = await existingQuery;
+    const existingGuest = existingGuests && existingGuests.length > 0 ? existingGuests[0] : null;
+
+    // 3. Upload compressed selfie to Backblaze B2 (tiny KB size WebP)
     let selfie_url: string | null = null;
     if (selfieBase64 && selfieBase64.startsWith('data:image')) {
       try {
@@ -64,43 +82,81 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Extract 512-D Vector Embedding from Selfie
+    // 4. Extract 512-D Vector Embedding from Selfie
     let embedding: number[] = [];
     if (selfieBase64) {
       embedding = await extractEmbeddingFromBase64(selfieBase64);
     }
     if (!embedding || embedding.length === 0) {
-      embedding = new Array(512).fill(0).map(() => (Math.random() - 0.5));
+      if (existingGuest?.face_embedding && Array.isArray(existingGuest.face_embedding)) {
+        embedding = existingGuest.face_embedding;
+      } else {
+        embedding = new Array(512).fill(0).map(() => (Math.random() - 0.5));
+      }
     }
     embedding = normalizeVector(embedding);
 
+    // If guest is already registered: Return existing profile, do not create duplicate
+    if (existingGuest) {
+      const updatePayload: any = {
+        updated_at: new Date().toISOString(),
+      };
+      if (selfie_url) updatePayload.selfie_url = selfie_url;
+      if (embedding.length === 512) updatePayload.face_embedding = embedding;
+      if (guest_name?.trim()) updatePayload.guest_name = guest_name.trim();
+
+      const { data: updatedGuest } = await supabaseAdmin
+        .from('event_guest_registrations')
+        .update(updatePayload)
+        .eq('id', existingGuest.id)
+        .select()
+        .maybeSingle();
+
+      const activeRecord = updatedGuest || existingGuest;
+
+      return NextResponse.json({
+        success: true,
+        isExistingGuest: true,
+        message: 'You have already registered for this event.',
+        registration: activeRecord,
+        guest: activeRecord,
+        guest_id: activeRecord.id,
+        access_token: activeRecord.access_token,
+        gallery_title: gallery.title,
+        gallery_slug: gallery.slug,
+        status: gallery.status,
+      });
+    }
+
     const accessToken = crypto.randomBytes(16).toString('hex');
 
-    // 4. Upsert into event_guest_registrations
+    // 5. Insert new unique record into event_guest_registrations
     const registrationRecord = {
       workspace_id: workspaceId,
       gallery_id: gallery.id,
       guest_name: guest_name.trim(),
       guest_phone: cleanPhone,
-      guest_email: guest_email?.trim() || null,
+      guest_email: cleanEmail,
       selfie_url: selfie_url,
       face_embedding: embedding,
       access_token: accessToken,
       notification_status: 'PENDING',
+      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     const { data: registered, error: regErr } = await supabaseAdmin
       .from('event_guest_registrations')
-      .upsert(registrationRecord, { onConflict: 'gallery_id,guest_phone' })
+      .insert(registrationRecord)
       .select()
       .maybeSingle();
 
     if (regErr) {
-      console.error('Registration Upsert Error:', regErr);
+      console.error('Registration Insert Error:', regErr);
+      return NextResponse.json({ success: false, error: regErr.message }, { status: 500 });
     }
 
-    // 4. Update count on event_galleries
+    // 6. Update aggregate count on event_galleries
     try {
       const { count } = await supabaseAdmin
         .from('event_guest_registrations')
@@ -117,11 +173,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      isExistingGuest: false,
       message: 'Guest pre-registered successfully',
       registration: registered || registrationRecord,
+      guest: registered || registrationRecord,
+      guest_id: registered?.id,
+      access_token: accessToken,
       gallery_title: gallery.title,
       gallery_slug: gallery.slug,
-      access_token: accessToken,
+      status: gallery.status,
     });
   } catch (err: any) {
     console.error('Guest registration exception:', err);

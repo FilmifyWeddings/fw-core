@@ -88,8 +88,8 @@ export async function GET(req: NextRequest) {
       const repFace = c.avatar_face || c.representative_face || c.faces?.[0];
       const repPhotoId = repFace?.photo_id;
       const repPhoto = repPhotoId ? photoMap.get(repPhotoId) : undefined;
-      const previewUrl = repPhoto?.preview_key ? getPublicGalleryUrl(repPhoto.preview_key) : '';
-      const thumbnailUrl = repPhoto?.thumbnail_key ? getPublicGalleryUrl(repPhoto.thumbnail_key) : previewUrl;
+      const previewUrl = repPhoto?.preview_key ? `/api/gallery/image?key=${encodeURIComponent(repPhoto.preview_key)}` : '';
+      const thumbnailUrl = repPhoto?.thumbnail_key ? `/api/gallery/image?key=${encodeURIComponent(repPhoto.thumbnail_key)}` : previewUrl;
 
       const photoIds = Array.isArray(c.photo_ids)
         ? c.photo_ids

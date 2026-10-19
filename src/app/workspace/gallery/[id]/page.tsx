@@ -1093,6 +1093,19 @@ function AlbumStudioContent() {
       });
   }, [photos, filterGuest, selectedPersonId, selectedPerson, selectedCollectionId, activeTab, selectionFilter, selectedPhotoIds, searchQuery, sortBy, getCleanFilename]);
 
+  // 50-Photo Millisecond Progressive Pagination (Prevents Browser Freezing)
+  const [visiblePhotosCount, setVisiblePhotosCount] = useState<number>(50);
+
+  useEffect(() => {
+    setVisiblePhotosCount(50);
+  }, [selectedCollectionId, filterGuest, selectedPersonId, searchQuery, sortBy]);
+
+  const displayedPhotos = useMemo(() => {
+    return filteredPhotos.slice(0, visiblePhotosCount);
+  }, [filteredPhotos, visiblePhotosCount]);
+
+  const hasMorePhotos = visiblePhotosCount < filteredPhotos.length;
+
   const totalFaces = useMemo(() => photos.reduce((acc, p) => acc + (p.face_count || 0), 0), [photos]);
   const totalSizeBytes = useMemo(() => photos.reduce((acc, p) => acc + (Number(p.size_bytes) || 0), 0), [photos]);
   const totalSizeDisplay = useMemo(() => {
@@ -1703,21 +1716,6 @@ function AlbumStudioContent() {
                     <span>Upload</span>
                   </button>
 
-                  {/* AI Face Scan Button */}
-                  <button
-                    onClick={handleReindexFaces}
-                    disabled={isReindexing}
-                    className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer select-none ${
-                      isReindexing
-                        ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
-                        : 'bg-white hover:bg-amber-50/50 text-amber-800 border-amber-300/80 hover:border-amber-400'
-                    }`}
-                    title="Scan all photos for faces to enable instant guest matching"
-                  >
-                    <Sparkles className={`w-3.5 h-3.5 text-amber-600 ${isReindexing ? 'animate-spin' : ''}`} />
-                    <span>{isReindexing ? (reindexProgress || 'Scanning Faces...') : 'AI Scan Faces'}</span>
-                  </button>
-
                   {/* Download Button */}
                   <button
                     onClick={selectedPhotoIds.size > 0 ? handleBulkDownload : handleSelectAll}
@@ -1867,8 +1865,9 @@ function AlbumStudioContent() {
                   </button>
                 </div>
               ) : (
-                <div className="columns-2 sm:columns-3 md:columns-4 xl:columns-5 gap-2.5">
-                  {filteredPhotos.map((photo, idx) => {
+                <>
+                  <div className="columns-2 sm:columns-3 md:columns-4 xl:columns-5 gap-2.5">
+                  {displayedPhotos.map((photo, idx) => {
                     const isCover = gallery.cover_url?.startsWith(photo.preview_url);
                     const isSelected = selectedPhotoIds.has(photo.id);
                     const cleanName = getCleanFilename(photo.original_key);
@@ -2002,7 +2001,25 @@ function AlbumStudioContent() {
                     );
                   })}
                 </div>
-              )}
+
+                {/* 50-Photo Progressive Pagination Indicator */}
+                {hasMorePhotos && (
+                  <div className="py-8 flex flex-col items-center justify-center gap-3">
+                    <p className="text-xs text-zinc-500 font-medium">
+                      Showing {displayedPhotos.length} of {filteredPhotos.length} photos
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setVisiblePhotosCount((prev) => Math.min(prev + 50, filteredPhotos.length))}
+                      className="px-6 py-2.5 rounded-2xl bg-zinc-900 hover:bg-black text-white text-xs font-bold shadow-sm transition active:scale-98 flex items-center gap-2 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Load Next 50 Photos</span>
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
             </div>
           )}
 
@@ -2078,7 +2095,7 @@ function AlbumStudioContent() {
 
               {/* Photo Proofing Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredPhotos.map((photo, idx) => {
+                {displayedPhotos.map((photo, idx) => {
                   const isSelected = selectedPhotoIds.has(photo.id);
                   const cleanName = getCleanFilename(photo.original_key);
 
@@ -2111,6 +2128,23 @@ function AlbumStudioContent() {
                   );
                 })}
               </div>
+
+              {/* 50-Photo Progressive Pagination Indicator */}
+              {hasMorePhotos && (
+                <div className="py-6 flex flex-col items-center justify-center gap-2">
+                  <p className="text-xs text-zinc-500 font-medium">
+                    Showing {displayedPhotos.length} of {filteredPhotos.length} photos
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setVisiblePhotosCount((prev) => Math.min(prev + 50, filteredPhotos.length))}
+                    className="px-6 py-2.5 rounded-2xl bg-zinc-900 hover:bg-black text-white text-xs font-bold shadow-sm transition active:scale-98 flex items-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Load Next 50 Photos</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -3326,17 +3360,14 @@ function AlbumStudioContent() {
                         }}
                         className="group relative aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-200 cursor-pointer shadow-2xs hover:shadow-md transition"
                       >
-                        <img
-                          src={photo.thumbnail_url || photo.preview_url}
+                        <ProgressiveSmoothImage
+                          src={photo.preview_url || photo.thumbnail_url}
+                          thumbnailSrc={photo.thumbnail_url}
                           alt="Matched"
+                          aspectRatio="1/1"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        {photo.confidencePercent && (
-                          <div className="absolute bottom-1.5 left-1.5 bg-black/70 backdrop-blur-xs text-[9px] font-bold text-white px-1.5 py-0.5 rounded-md">
-                            {photo.confidencePercent}% match
-                          </div>
-                        )}
                       </div>
                     ))}
                   </div>
