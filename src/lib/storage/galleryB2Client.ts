@@ -128,3 +128,60 @@ export async function ensureGalleryCors(bucketName = B2_GALLERY_BUCKET_NAME): Pr
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * Permanently delete one or more objects from Backblaze B2 storage bucket
+ * Purges original_key, preview_key, and thumbnail_key to free up storage space and eliminate charges.
+ */
+export async function deleteGalleryObjects(
+  keys: (string | null | undefined)[],
+  bucketName = B2_GALLERY_BUCKET_NAME
+): Promise<{ deleted: number; errors: number }> {
+  const validKeys = Array.from(
+    new Set(
+      keys
+        .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
+        .map((k) => k.replace(/^\/+/, '').split('?')[0].split('#')[0].trim())
+        .map((k) => {
+          if (k.startsWith('http://') || k.startsWith('https://')) {
+            try {
+              const parsed = new URL(k);
+              return parsed.pathname.replace(/^\/+/, '');
+            } catch (_) {
+              return k;
+            }
+          }
+          return k;
+        })
+        .filter((k) => k.length > 0)
+    )
+  );
+
+  if (validKeys.length === 0) return { deleted: 0, errors: 0 };
+
+  let deleted = 0;
+  let errors = 0;
+
+  // Process concurrent deletions in batches of 10
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < validKeys.length; i += BATCH_SIZE) {
+    const chunk = validKeys.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      chunk.map(async (key) => {
+        try {
+          const command = new DeleteObjectCommand({
+            Bucket: bucketName,
+            Key: key,
+          });
+          await galleryB2Client.send(command);
+          deleted++;
+        } catch (err: any) {
+          console.warn(`[GalleryB2] Failed to delete object ${key}:`, err.message);
+          errors++;
+        }
+      })
+    );
+  }
+
+  return { deleted, errors };
+}

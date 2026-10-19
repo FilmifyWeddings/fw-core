@@ -241,6 +241,11 @@ function AlbumStudioContent() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
+  const [isEditCollectionModalOpen, setIsEditCollectionModalOpen] = useState(false);
+  const [collectionToEdit, setCollectionToEdit] = useState<GalleryCollection | null>(null);
+  const [editingCollectionName, setEditingCollectionName] = useState('');
+  const [isSavingCollection, setIsSavingCollection] = useState(false);
+  const [isDeletingCollection, setIsDeletingCollection] = useState(false);
   const [isStandeeModalOpen, setIsStandeeModalOpen] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -685,23 +690,78 @@ function AlbumStudioContent() {
     }
   };
 
-  // Delete Collection
-  const handleDeleteCollection = async (colId: string) => {
-    if (!confirm('Are you sure you want to delete this collection? Photos inside will remain in the album.')) return;
+  // Open Edit Collection Modal
+  const handleOpenEditCollection = (col: GalleryCollection) => {
+    setCollectionToEdit(col);
+    setEditingCollectionName(col.name);
+    setIsEditCollectionModalOpen(true);
+  };
 
+  // Save Renamed Collection
+  const handleSaveEditedCollection = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!collectionToEdit || !editingCollectionName.trim() || isSavingCollection) return;
+
+    setIsSavingCollection(true);
     try {
-      const res = await fetch(`/api/gallery/collections?id=${colId}`, { method: 'DELETE' });
+      const res = await fetch('/api/gallery/collections', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: collectionToEdit.id,
+          name: editingCollectionName.trim(),
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success && json.collection) {
+        setCollections((prev) =>
+          prev.map((c) => (c.id === collectionToEdit.id ? { ...c, name: json.collection.name, slug: json.collection.slug } : c))
+        );
+        setIsEditCollectionModalOpen(false);
+        setCollectionToEdit(null);
+      } else {
+        alert(json.error || 'Failed to update collection name');
+      }
+    } catch (err: any) {
+      alert(`Error updating collection: ${err.message}`);
+    } finally {
+      setIsSavingCollection(false);
+    }
+  };
+
+  // Delete Collection with Deep Backblaze B2 Storage Purge
+  const handleDeleteCollectionWithPurge = async () => {
+    if (!collectionToEdit || isDeletingCollection) return;
+
+    const colPhotosCount = photos.filter((p) => p.collection_id === collectionToEdit.id).length;
+    const confirmMsg =
+      colPhotosCount > 0
+        ? `⚠️ WARNING: This collection contains ${colPhotosCount} photo(s).\n\nDeleting this collection will permanently DELETE all ${colPhotosCount} photos and PURGE them from Backblaze B2 storage so you are not charged for storage.\n\nAre you sure you want to proceed? This cannot be undone.`
+        : `Are you sure you want to delete collection "${collectionToEdit.name}"?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setIsDeletingCollection(true);
+    try {
+      const res = await fetch(`/api/gallery/collections?id=${collectionToEdit.id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
-        setCollections((prev) => prev.filter((c) => c.id !== colId));
-        if (selectedCollectionId === colId) {
+        const deletedId = collectionToEdit.id;
+        setCollections((prev) => prev.filter((c) => c.id !== deletedId));
+        setPhotos((prev) => prev.filter((p) => p.collection_id !== deletedId));
+        if (selectedCollectionId === deletedId) {
           setSelectedCollectionId('all');
         }
+        setIsEditCollectionModalOpen(false);
+        setCollectionToEdit(null);
       } else {
         alert(json.error || 'Failed to delete collection');
       }
     } catch (err: any) {
       alert(`Error deleting collection: ${err.message}`);
+    } finally {
+      setIsDeletingCollection(false);
     }
   };
 
@@ -778,13 +838,23 @@ function AlbumStudioContent() {
 
   // Delete Photo
   const handleDeletePhoto = async (photoId: string) => {
-    if (!confirm('Are you sure you want to delete this photo?')) return;
+    if (!confirm('Are you sure you want to delete this photo? It will also be permanently deleted from Backblaze B2 storage to stop storage charges.')) return;
 
     try {
       const res = await fetch(`/api/gallery/photos?photo_id=${photoId}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
         setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+        setSelectedPhotoIds((prev) => {
+          const next = new Set(prev);
+          next.delete(photoId);
+          return next;
+        });
+        if (selectedPhotoIndex !== null) {
+          setSelectedPhotoIndex(null);
+        }
+      } else {
+        alert(json.error || 'Failed to delete photo');
       }
     } catch (err: any) {
       alert(`Failed to delete photo: ${err.message}`);
@@ -858,15 +928,26 @@ function AlbumStudioContent() {
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedPhotoIds.size} selected photos?`)) return;
+    if (selectedPhotoIds.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedPhotoIds.size} selected photo(s)? They will also be permanently deleted from Backblaze B2 storage to eliminate storage charges.`)) return;
+
     const ids = Array.from(selectedPhotoIds);
-    for (const id of ids) {
-      try {
-        await fetch(`/api/gallery/photos?photo_id=${id}`, { method: 'DELETE' });
-      } catch (_) {}
+    try {
+      const res = await fetch('/api/gallery/photos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo_ids: ids }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setPhotos((prev) => prev.filter((p) => !selectedPhotoIds.has(p.id)));
+        setSelectedPhotoIds(new Set());
+      } else {
+        alert(json.error || 'Failed to delete selected photos');
+      }
+    } catch (err: any) {
+      alert(`Bulk delete error: ${err.message}`);
     }
-    setPhotos((prev) => prev.filter((p) => !selectedPhotoIds.has(p.id)));
-    setSelectedPhotoIds(new Set());
   };
 
   // Selection Export Helpers
@@ -1312,12 +1393,12 @@ function AlbumStudioContent() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleDeleteCollection(col.id);
+                                    handleOpenEditCollection(col);
                                   }}
-                                  className="opacity-0 group-hover/col:opacity-100 p-0.5 text-zinc-400 hover:text-rose-600 transition cursor-pointer"
-                                  title="Delete Collection"
+                                  className="opacity-0 group-hover/col:opacity-100 p-1 rounded-md text-zinc-400 hover:text-amber-700 hover:bg-amber-100/60 transition cursor-pointer"
+                                  title="Edit / Delete Collection"
                                 >
-                                  <X className="w-3 h-3" />
+                                  <Edit2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
@@ -1657,7 +1738,7 @@ function AlbumStudioContent() {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="columns-2 sm:columns-3 md:columns-4 xl:columns-5 gap-2.5">
                   {filteredPhotos.map((photo, idx) => {
                     const isCover = gallery.cover_url?.startsWith(photo.preview_url);
                     const isSelected = selectedPhotoIds.has(photo.id);
@@ -1666,7 +1747,7 @@ function AlbumStudioContent() {
                     return (
                       <div
                         key={photo.id}
-                        className={`group relative aspect-[4/3] rounded-2xl overflow-hidden border ${
+                        className={`group relative break-inside-avoid mb-2.5 rounded-2xl overflow-hidden border ${
                           isSelected ? 'border-amber-500 ring-2 ring-amber-400/50' : 'border-[#E7E2D8]'
                         } bg-zinc-900 shadow-2xs hover:shadow-xl transition-all duration-300 cursor-pointer select-none`}
                         onClick={() => setSelectedPhotoIndex(idx)}
@@ -1679,23 +1760,18 @@ function AlbumStudioContent() {
                           onError={(e) => {
                             (e.currentTarget as HTMLImageElement).src = photo.preview_url;
                           }}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          className="w-full h-auto object-cover group-hover:scale-105 transition-transform duration-500 block"
                         />
 
                         {/* Persistent Top Badges when not hovering */}
-                        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10 transition-opacity duration-200">
-                          {isCover && (
+                        {isCover && (
+                          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10 transition-opacity duration-200">
                             <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-bold shadow-xs flex items-center gap-1">
                               <Star className="w-2.5 h-2.5 fill-white" />
                               <span>Cover</span>
                             </span>
-                          )}
-                          {photo.face_count > 0 && (
-                            <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-white text-[10px] font-bold border border-white/20">
-                              👥 {photo.face_count}
-                            </span>
-                          )}
-                        </div>
+                          </div>
+                        )}
 
                         {/* Persistent Selection Checkbox if selected */}
                         {isSelected && (
@@ -2292,6 +2368,104 @@ function AlbumStudioContent() {
               >
                 Cancel
               </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          3B. EDIT COLLECTION MODAL (LIGHT UI WITH B2 PURGE WARNING)
+      ───────────────────────────────────────────────────────────── */}
+      {isEditCollectionModalOpen && collectionToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <form
+            onSubmit={handleSaveEditedCollection}
+            className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#E7E2D8] shadow-2xl space-y-5"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#E7E2D8]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shadow-xs">
+                  <Edit2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">Edit Collection</h3>
+                  <p className="text-[11px] text-zinc-500 font-medium">Rename or manage collection</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditCollectionModalOpen(false);
+                  setCollectionToEdit(null);
+                }}
+                className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-full transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Collection Name Input */}
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 mb-1.5">Collection Name *</label>
+              <input
+                type="text"
+                required
+                autoFocus
+                placeholder="e.g. Haldi, Sangeet, Reception"
+                value={editingCollectionName}
+                onChange={(e) => setEditingCollectionName(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition"
+              />
+            </div>
+
+            {/* Warning / Storage Details Card */}
+            <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/60 text-amber-950 space-y-1">
+              <div className="flex items-center gap-1.5 text-xs font-bold">
+                <HardDrive className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>
+                  Contains {photos.filter((p) => p.collection_id === collectionToEdit.id).length} photo(s)
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-800/90 leading-relaxed font-normal">
+                Deleting this collection will permanently delete all its photos and purge all original and preview files from Backblaze B2 storage so you will never be charged for them.
+              </p>
+            </div>
+
+            {/* Actions Footer */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              {/* Red Delete Button */}
+              <button
+                type="button"
+                disabled={isDeletingCollection}
+                onClick={handleDeleteCollectionWithPurge}
+                className="px-4 py-2.5 rounded-full bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-600 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeletingCollection ? 'Purging B2 & DB...' : 'Delete Collection'}</span>
+              </button>
+
+              {/* Cancel & Save Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditCollectionModalOpen(false);
+                    setCollectionToEdit(null);
+                  }}
+                  className="px-4 py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingCollection || !editingCollectionName.trim()}
+                  className="px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  {isSavingCollection ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>{isSavingCollection ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              </div>
             </div>
           </form>
         </div>
