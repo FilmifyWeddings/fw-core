@@ -292,7 +292,7 @@ function GuestSlugGalleryContent() {
               body: JSON.stringify({
                 gallery_id: gallery.id,
                 embedding: g.face_embedding,
-                threshold: 0.36,
+                threshold: 0.28,
               }),
             });
             const matchJson = await matchRes.json();
@@ -416,7 +416,7 @@ function GuestSlugGalleryContent() {
           gallery_id: gallery.id,
           galleryId: gallery.id,
           selfieBase64: data.selfieBase64,
-          threshold: 0.36,
+          threshold: 0.28,
         }),
       });
 
@@ -491,7 +491,7 @@ function GuestSlugGalleryContent() {
             body: JSON.stringify({
               gallery_id: gallery.id,
               embedding: gJson.guest.face_embedding,
-              threshold: 0.36,
+              threshold: 0.28,
             }),
           });
           const mJson = await mRes.json();
