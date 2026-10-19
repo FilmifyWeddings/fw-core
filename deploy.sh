@@ -41,10 +41,11 @@ done
 echo "Installing dependencies..."
 npm install --no-audit
 
-echo "Building application..."
+echo "Freeing memory before building application..."
+pm2 stop baileys-worker 2>/dev/null || true
 pkill -9 -f 'processChild.js' 2>/dev/null || true
 rm -rf /var/www/fw-core/node_modules/.es-abstract*
-NEXT_CPU_COUNT=1 NEXT_BUILD_WORKER_THREADS=0 NODE_OPTIONS="--max-old-space-size=2560" npm run build
+NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2048" npm run build
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
