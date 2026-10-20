@@ -71,6 +71,7 @@ interface EventGallery {
   cover_url: string | null;
   allow_downloads: boolean;
   is_active: boolean;
+  is_face_ai_enabled?: boolean;
   status?: string;
   created_at: string;
   raw_payload?: any;
@@ -274,6 +275,10 @@ function AlbumStudioContent() {
   const [isReindexing, setIsReindexing] = useState(false);
   const [reindexProgress, setReindexProgress] = useState<string>('');
 
+  // Face AI State
+  const [isFaceAiEnabledState, setIsFaceAiEnabledState] = useState<boolean>(true);
+  const [isTogglingFaceAi, setIsTogglingFaceAi] = useState(false);
+
   // 3-State Status Dropdown State ('UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED')
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const statusDropdownRef = useRef<HTMLDivElement>(null);
@@ -364,6 +369,7 @@ function AlbumStudioContent() {
       setSlugInput(gal.slug || '');
       setEventDateInput(gal.event_date ? gal.event_date.split('T')[0] : '');
       setAllowDownloadsState(gal.allow_downloads ?? true);
+      setIsFaceAiEnabledState(gal.is_face_ai_enabled !== false);
       if (gal.raw_payload?.design) {
         if (gal.raw_payload.design.theme) setDesignTheme(gal.raw_payload.design.theme);
         if (gal.raw_payload.design.layout) setDesignCoverLayout(gal.raw_payload.design.layout);
@@ -669,6 +675,39 @@ function AlbumStudioContent() {
     }
   };
 
+  // Face AI Toggle Handler (Optimistic & Background Trigger)
+  const handleToggleFaceAi = async (overrideVal?: boolean) => {
+    if (!gallery || isTogglingFaceAi) return;
+    const currentVal = gallery.is_face_ai_enabled !== false;
+    const nextVal = overrideVal !== undefined ? overrideVal : !currentVal;
+
+    setIsTogglingFaceAi(true);
+    setGallery((prev) => (prev ? { ...prev, is_face_ai_enabled: nextVal } : null));
+    setIsFaceAiEnabledState(nextVal);
+
+    try {
+      const res = await fetch('/api/gallery/events', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: gallery.id, is_face_ai_enabled: nextVal }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to update Face AI');
+      }
+      if (nextVal) {
+        alert('✨ Face AI Enabled! Background facial indexing has been initiated for all photos in this event.');
+      }
+    } catch (err: any) {
+      console.error('Error toggling Face AI:', err);
+      alert(`Failed to update Face AI: ${err.message}`);
+      setGallery((prev) => (prev ? { ...prev, is_face_ai_enabled: currentVal } : null));
+      setIsFaceAiEnabledState(currentVal);
+    } finally {
+      setIsTogglingFaceAi(false);
+    }
+  };
+
   // Save Title
   const handleSaveTitle = async () => {
     if (!gallery || !titleInput.trim()) return;
@@ -701,6 +740,7 @@ function AlbumStudioContent() {
         slug: slugInput.trim() || gallery.slug,
         pin_code: pinCodeInput.trim() || null,
         allow_downloads: allowDownloadsState,
+        is_face_ai_enabled: isFaceAiEnabledState,
       };
 
       const res = await fetch('/api/gallery/events', {
@@ -1384,6 +1424,25 @@ function AlbumStudioContent() {
               </div>
             )}
           </div>
+
+          {/* Quick Face AI Toggle Pill */}
+          <button
+            onClick={() => handleToggleFaceAi()}
+            disabled={isTogglingFaceAi}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold tracking-wide flex items-center gap-1.5 transition cursor-pointer border shadow-2xs ${
+              gallery.is_face_ai_enabled !== false
+                ? 'bg-violet-50 text-violet-800 border-violet-300 hover:bg-violet-100'
+                : 'bg-zinc-100 text-zinc-600 border-zinc-300 hover:bg-zinc-200'
+            }`}
+            title={
+              gallery.is_face_ai_enabled !== false
+                ? 'Face AI is ON: Click to turn OFF'
+                : 'Face AI is OFF: Click to turn ON & index existing photos'
+            }
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${gallery.is_face_ai_enabled !== false ? 'text-violet-600' : 'text-zinc-400'}`} />
+            <span>Face AI: {gallery.is_face_ai_enabled !== false ? 'ON' : 'OFF'}</span>
+          </button>
 
           {/* Table Standee QR Button */}
           <button
@@ -2539,6 +2598,31 @@ function AlbumStudioContent() {
                     >
                       <span className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
                         allowDownloadsState ? 'left-6' : 'left-1'
+                      }`} />
+                    </button>
+                  </div>
+
+                  {/* Face AI Toggle */}
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8]">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                        <span className="text-xs font-bold text-zinc-800">AI Face Recognition (Face AI)</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Enable guest face recognition. If toggled ON, background face indexing will automatically process all photos.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleFaceAi()}
+                      disabled={isTogglingFaceAi}
+                      className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+                        gallery.is_face_ai_enabled !== false ? 'bg-amber-600' : 'bg-zinc-200'
+                      }`}
+                    >
+                      <span className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                        gallery.is_face_ai_enabled !== false ? 'left-6' : 'left-1'
                       }`} />
                     </button>
                   </div>

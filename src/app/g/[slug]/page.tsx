@@ -67,6 +67,7 @@ interface GalleryInfo {
   cover_url: string | null;
   allow_downloads: boolean;
   is_active?: boolean;
+  is_face_ai_enabled?: boolean;
   status?: string;
   studio_slug?: string;
 }
@@ -141,6 +142,7 @@ function GuestSlugGalleryContent() {
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
+  const [openFaceScannerAfterPin, setOpenFaceScannerAfterPin] = useState(false);
 
   // Zero-Knowledge Guest State
   const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
@@ -362,8 +364,44 @@ function GuestSlugGalleryContent() {
         sessionStorage.setItem(`unlocked_${gallery.id}`, 'true');
       }
       loadGalleryData();
+
+      if (openFaceScannerAfterPin) {
+        setOpenFaceScannerAfterPin(false);
+        if (gallery.is_face_ai_enabled === false) {
+          setHasSearched(true);
+        } else {
+          setIsFaceScannerOpen(true);
+        }
+      }
     } else {
       setPinError(true);
+    }
+  };
+
+  // Find My Photo Trigger: Checks PIN requirement first
+  const handleFindMyPhotoClick = () => {
+    if (!gallery) return;
+
+    const requiredPin = isSelectionMode
+      ? (gallery.admin_pin || gallery.pin_code)
+      : (gallery.guest_pin || gallery.pin_code);
+
+    const isPinActive = Boolean(requiredPin && requiredPin.trim().length > 0);
+
+    if (isPinActive && !isUnlocked) {
+      setOpenFaceScannerAfterPin(true);
+      setShowPinModal(true);
+    } else {
+      if (gallery.is_face_ai_enabled === false) {
+        setIsUnlocked(true);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(`unlocked_${gallery.id}`, 'true');
+        }
+        setHasSearched(true);
+        loadGalleryData();
+      } else {
+        setIsFaceScannerOpen(true);
+      }
     }
   };
 
@@ -673,25 +711,8 @@ function GuestSlugGalleryContent() {
 
         {/* Clean Luxury Gradient: Crystal clear faces with subtle bottom shade for couple name */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent pointer-events-none" />
-        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/50 to-transparent pointer-events-none" />
 
-        <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-10 max-w-6xl mx-auto">
-          <div className="flex items-center justify-between">
-            <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-widest border border-amber-400/40 backdrop-blur-md">
-              ✨ Official Wedding Gallery
-            </span>
-
-            {!isUnlocked && (
-              <button
-                onClick={() => setShowPinModal(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 backdrop-blur-md border border-white/20 transition cursor-pointer"
-              >
-                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                <span>Enter PIN</span>
-              </button>
-            )}
-          </div>
-
+        <div className="absolute inset-0 flex flex-col justify-end p-6 sm:p-10 max-w-6xl mx-auto">
           <div className="space-y-2 text-center sm:text-left max-w-2xl">
             <div className="flex items-center justify-center sm:justify-start gap-2 text-amber-400 text-xs font-serif italic">
               <Calendar className="w-3.5 h-3.5" />
@@ -719,21 +740,25 @@ function GuestSlugGalleryContent() {
 
             <div className="space-y-2">
               <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-                Register to get your photos on your mobile
+                {gallery.is_face_ai_enabled === false
+                  ? 'Explore Event Gallery'
+                  : 'Register to get your photos on your mobile'}
               </h2>
               <p className="text-xs sm:text-sm text-zinc-500 max-w-md mx-auto leading-relaxed">
-                Complete your registration by capturing a selfie to secure access your photos from this event.
+                {gallery.is_face_ai_enabled === false
+                  ? 'Access and view all high-resolution memories captured during this event.'
+                  : 'Complete your registration by capturing a selfie to secure access your photos from this event.'}
               </p>
             </div>
 
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => setIsFaceScannerOpen(true)}
+                onClick={handleFindMyPhotoClick}
                 className="px-8 py-4 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-sm tracking-wide shadow-xl shadow-amber-600/30 flex items-center justify-center gap-2.5 mx-auto transition-all active:scale-98 cursor-pointer group"
               >
                 <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
-                <span>Find My Photo</span>
+                <span>{gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photo'}</span>
                 <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
               </button>
             </div>
@@ -1263,8 +1288,11 @@ function GuestSlugGalleryContent() {
               </div>
               <button
                 type="button"
-                onClick={() => setShowPinModal(false)}
-                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700"
+                onClick={() => {
+                  setShowPinModal(false);
+                  setOpenFaceScannerAfterPin(false);
+                }}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>

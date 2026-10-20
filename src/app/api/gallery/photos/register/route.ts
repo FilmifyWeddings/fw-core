@@ -14,14 +14,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid galleryId or empty photos array' }, { status: 400 });
     }
 
-    // 1. Fetch gallery to verify and get studio workspace_id
-    const { data: gallery } = await supabaseAdmin
-      .from('event_galleries')
-      .select('id, workspace_id, cover_url')
-      .eq('id', galleryId)
-      .maybeSingle();
+    // 1. Fetch gallery to verify, get studio workspace_id, and check Face AI toggle
+    let isFaceAiEnabled = true;
+    let workspaceId = '00000000-0000-0000-0000-000000000000';
+    let galleryCoverUrl: string | null = null;
 
-    const workspaceId = gallery?.workspace_id || '00000000-0000-0000-0000-000000000000';
+    try {
+      const { data: gallery } = await supabaseAdmin
+        .from('event_galleries')
+        .select('id, workspace_id, cover_url, is_face_ai_enabled')
+        .eq('id', galleryId)
+        .maybeSingle();
+
+      if (gallery) {
+        workspaceId = gallery.workspace_id || workspaceId;
+        galleryCoverUrl = gallery.cover_url || null;
+        if (gallery.is_face_ai_enabled !== undefined && gallery.is_face_ai_enabled !== null) {
+          isFaceAiEnabled = Boolean(gallery.is_face_ai_enabled);
+        } else if (gallery.cover_url && typeof gallery.cover_url === 'string') {
+          if (gallery.cover_url.includes('face_ai=false') || gallery.cover_url.includes('face_ai=0')) {
+            isFaceAiEnabled = false;
+          }
+        }
+      }
+    } catch (_) {
+      // Fallback query if is_face_ai_enabled column does not exist yet
+      try {
+        const { data: fallbackGal } = await supabaseAdmin
+          .from('event_galleries')
+          .select('id, workspace_id, cover_url')
+          .eq('id', galleryId)
+          .maybeSingle();
+        if (fallbackGal) {
+          workspaceId = fallbackGal.workspace_id || workspaceId;
+          galleryCoverUrl = fallbackGal.cover_url || null;
+          if (fallbackGal.cover_url?.includes('face_ai=false')) {
+            isFaceAiEnabled = false;
+          }
+        }
+      } catch (_) {}
+    }
 
     // 2. Insert photos into gallery_photos
     const { data: inserted, error: insertError } = await supabaseAdmin
@@ -36,7 +68,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Set immortal cover_url on event_galleries if it does not have one
     const firstPreview = inserted?.[0]?.preview_key;
-    if (firstPreview && !gallery?.cover_url) {
+    if (firstPreview && !galleryCoverUrl) {
       const coverUrl = `/api/gallery/image?key=${encodeURIComponent(firstPreview)}`;
       await supabaseAdmin
         .from('event_galleries')
@@ -44,9 +76,9 @@ export async function POST(req: NextRequest) {
         .eq('id', galleryId);
     }
 
-    // 4. Automatic Multi-Face Indexing: Direct S3 Buffer -> InsightFace
+    // 4. Automatic Multi-Face Indexing (ONLY if Face AI is Enabled)
     let totalFacesFound = 0;
-    if (inserted && inserted.length > 0) {
+    if (inserted && inserted.length > 0 && isFaceAiEnabled) {
       const CHUNK_SIZE = 4;
       for (let i = 0; i < inserted.length; i += CHUNK_SIZE) {
         const chunk = inserted.slice(i, i + CHUNK_SIZE);
@@ -153,6 +185,14 @@ export async function POST(req: NextRequest) {
       } catch (guestSyncErr) {
         console.warn('[FaceIndex] Auto-matching new photos to guests:', guestSyncErr);
       }
+    } else if (inserted && inserted.length > 0 && !isFaceAiEnabled) {
+      // Face AI is disabled for this event: zero out face_count and skip heavy compute
+      try {
+        await supabaseAdmin
+          .from('gallery_photos')
+          .update({ face_count: 0 })
+          .in('id', inserted.map((p) => p.id));
+      } catch (_) {}
     }
 
     return NextResponse.json({

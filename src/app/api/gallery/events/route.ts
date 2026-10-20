@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
+import { extractFacesFromS3Key } from '@/lib/faceAI';
 
 export const dynamic = 'force-dynamic';
+
+export function resolveIsFaceAiEnabled(gallery: any): boolean {
+  if (gallery?.is_face_ai_enabled !== undefined && gallery?.is_face_ai_enabled !== null) {
+    return Boolean(gallery.is_face_ai_enabled);
+  }
+  if (gallery?.cover_url && typeof gallery.cover_url === 'string') {
+    if (gallery.cover_url.includes('face_ai=false') || gallery.cover_url.includes('face_ai=0')) return false;
+    if (gallery.cover_url.includes('face_ai=true') || gallery.cover_url.includes('face_ai=1')) return true;
+  }
+  return true;
+}
 
 function formatCoverUrl(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -66,7 +78,11 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const formatted = { ...single, cover_url: formatCoverUrl(single.cover_url) };
+      const formatted = {
+        ...single,
+        cover_url: formatCoverUrl(single.cover_url),
+        is_face_ai_enabled: resolveIsFaceAiEnabled(single),
+      };
       return NextResponse.json({ success: true, gallery: formatted, events: [formatted] });
     }
 
@@ -83,7 +99,11 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ success: false, error: error.message, gallery: null, events: [] }, { status: 200 });
       }
 
-      const formatted = single ? { ...single, cover_url: formatCoverUrl(single.cover_url) } : null;
+      const formatted = single ? {
+        ...single,
+        cover_url: formatCoverUrl(single.cover_url),
+        is_face_ai_enabled: resolveIsFaceAiEnabled(single),
+      } : null;
       return NextResponse.json(
         { success: true, gallery: formatted, events: formatted ? [formatted] : [] },
         {
@@ -156,6 +176,7 @@ export async function GET(req: NextRequest) {
         total_size_bytes: totalBytes,
         total_size_mb: (totalBytes / (1024 * 1024)).toFixed(1),
         total_faces: totalFaces,
+        is_face_ai_enabled: resolveIsFaceAiEnabled(g),
         gallery_photos: undefined,
       };
     });
@@ -179,6 +200,7 @@ export async function POST(req: NextRequest) {
       pin_code = null,
       cover_url = null,
       allow_downloads = true,
+      is_face_ai_enabled = true,
     } = body;
 
     if (!title) {
@@ -216,6 +238,7 @@ export async function POST(req: NextRequest) {
       allow_downloads,
       is_active: false,
       status: 'UNPUBLISHED',
+      is_face_ai_enabled: is_face_ai_enabled !== false,
     };
 
     if (body.event_type) {
@@ -228,8 +251,13 @@ export async function POST(req: NextRequest) {
       .select()
       .single();
 
-    if (error && (error.message?.includes('event_type') || (error as any).code === '42703')) {
+    if (error && (error.message?.includes('is_face_ai_enabled') || error.message?.includes('event_type') || (error as any).code === '42703')) {
+      delete insertPayload.is_face_ai_enabled;
       delete insertPayload.event_type;
+      // Persist face AI preference in cover_url hash if column does not exist yet
+      if (is_face_ai_enabled === false) {
+        insertPayload.cover_url = insertPayload.cover_url ? `${insertPayload.cover_url}#face_ai=false` : '#face_ai=false';
+      }
       const retry = await supabaseAdmin
         .from('event_galleries')
         .insert(insertPayload)
@@ -269,7 +297,7 @@ export async function PATCH(req: NextRequest) {
   try {
     const auth = await resolveRequestUser(req);
     const body = await req.json();
-    const { id, title, event_date, is_active, pin_code, allow_downloads, cover_url, status, workspace_id, event_type } = body;
+    const { id, title, event_date, is_active, pin_code, allow_downloads, cover_url, status, workspace_id, event_type, is_face_ai_enabled } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Gallery ID is required' }, { status: 400 });
@@ -298,6 +326,7 @@ export async function PATCH(req: NextRequest) {
     if (allow_downloads !== undefined) updates.allow_downloads = allow_downloads;
     if (cover_url !== undefined) updates.cover_url = cover_url;
     if (event_type !== undefined) updates.event_type = event_type;
+    if (is_face_ai_enabled !== undefined) updates.is_face_ai_enabled = is_face_ai_enabled;
 
     let { data: updated, error } = await supabaseAdmin
       .from('event_galleries')
@@ -306,8 +335,16 @@ export async function PATCH(req: NextRequest) {
       .select()
       .single();
 
-    if (error && (error.message?.includes('event_type') || (error as any).code === '42703')) {
+    if (error && (error.message?.includes('is_face_ai_enabled') || error.message?.includes('event_type') || (error as any).code === '42703')) {
+      delete updates.is_face_ai_enabled;
       delete updates.event_type;
+      if (is_face_ai_enabled !== undefined) {
+        // Fallback: persist in cover_url hash
+        const curCover = updates.cover_url || (await supabaseAdmin.from('event_galleries').select('cover_url').eq('id', id).maybeSingle()).data?.cover_url || '';
+        const baseCover = curCover.replace(/#.*$/, '');
+        updates.cover_url = is_face_ai_enabled ? `${baseCover}#face_ai=true` : `${baseCover}#face_ai=false`;
+      }
+
       const retry = await supabaseAdmin
         .from('event_galleries')
         .update(updates)
@@ -320,7 +357,67 @@ export async function PATCH(req: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json({ success: true, gallery: updated, event: updated });
+    // If Face AI was toggled ON, automatically trigger background face indexing for any unindexed photos in this event
+    if (is_face_ai_enabled === true && id) {
+      (async () => {
+        try {
+          const { data: photos } = await supabaseAdmin
+            .from('gallery_photos')
+            .select('id, preview_key')
+            .eq('gallery_id', id);
+
+          if (!photos || photos.length === 0) return;
+
+          const { data: existingFaces } = await supabaseAdmin
+            .from('photo_faces')
+            .select('photo_id')
+            .eq('gallery_id', id);
+
+          const indexedIds = new Set((existingFaces || []).map((f) => f.photo_id));
+          const unindexed = photos.filter((p) => !indexedIds.has(p.id) && p.preview_key);
+
+          if (unindexed.length === 0) return;
+
+          console.log(`[FaceAI Toggle] Background indexing ${unindexed.length} unindexed photos for event ${id}...`);
+
+          const CHUNK_SIZE = 4;
+          for (let i = 0; i < unindexed.length; i += CHUNK_SIZE) {
+            const chunk = unindexed.slice(i, i + CHUNK_SIZE);
+            await Promise.all(
+              chunk.map(async (p) => {
+                try {
+                  const faces = await extractFacesFromS3Key(p.preview_key);
+                  if (faces && faces.length > 0) {
+                    const faceRecords = faces.map((f) => ({
+                      photo_id: p.id,
+                      gallery_id: id,
+                      bounding_box: f.box,
+                      embedding: f.embedding,
+                    }));
+                    await supabaseAdmin.from('photo_faces').insert(faceRecords);
+                    await supabaseAdmin.from('gallery_photos').update({ face_count: faces.length }).eq('id', p.id);
+                  } else {
+                    await supabaseAdmin.from('gallery_photos').update({ face_count: 0 }).eq('id', p.id);
+                  }
+                } catch (err) {
+                  console.warn(`[FaceAI Toggle] Error indexing photo ${p.id}:`, err);
+                }
+              })
+            );
+          }
+          console.log(`[FaceAI Toggle] Completed background indexing for event ${id}`);
+        } catch (bgErr) {
+          console.warn(`[FaceAI Toggle] Background indexing failed for event ${id}:`, bgErr);
+        }
+      })().catch(() => {});
+    }
+
+    const formatted = updated ? {
+      ...updated,
+      is_face_ai_enabled: resolveIsFaceAiEnabled(updated),
+    } : null;
+
+    return NextResponse.json({ success: true, gallery: formatted, event: formatted });
   } catch (err: any) {
     console.error('Error updating event gallery:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

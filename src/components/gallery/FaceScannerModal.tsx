@@ -6,6 +6,7 @@ import {
   X,
   Sparkles,
   AlertCircle,
+  CheckCircle2,
   RefreshCw,
   User,
   Mail,
@@ -95,6 +96,7 @@ export function FaceScannerModal({
   const [guidance, setGuidance] = useState<GuidanceState>('evaluating');
   const [guidanceMessage, setGuidanceMessage] = useState('Position your face inside the oval');
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraRequested, setCameraRequested] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -333,7 +335,7 @@ export function FaceScannerModal({
   }, [isCameraActive, capturedSelfie]);
 
   useEffect(() => {
-    if (isOpen && !capturedSelfie) {
+    if (isOpen && cameraRequested && !capturedSelfie) {
       startCamera();
     } else {
       stopCamera();
@@ -341,7 +343,7 @@ export function FaceScannerModal({
     return () => {
       stopCamera();
     };
-  }, [isOpen, capturedSelfie, startCamera, stopCamera]);
+  }, [isOpen, cameraRequested, capturedSelfie, startCamera, stopCamera]);
 
   useEffect(() => {
     if (isCameraActive && !capturedSelfie) {
@@ -353,6 +355,14 @@ export function FaceScannerModal({
       }
     };
   }, [isCameraActive, capturedSelfie, evaluateFaceFrame]);
+
+  // Reset camera requested when modal is closed
+  useEffect(() => {
+    if (!isOpen) {
+      setCameraRequested(false);
+      setCapturedSelfie(null);
+    }
+  }, [isOpen]);
 
   // Capture Snapshot from Video
   const handleSnap = () => {
@@ -378,6 +388,8 @@ export function FaceScannerModal({
 
     const base64 = snapCanvas.toDataURL('image/jpeg', 0.92);
     setCapturedSelfie(base64);
+    setCameraRequested(false);
+    setIsCameraActive(false);
     setGuidance('ready');
     setGuidanceMessage('✓ Face Captured');
     stopCamera();
@@ -385,9 +397,9 @@ export function FaceScannerModal({
 
   const handleRetake = () => {
     setCapturedSelfie(null);
+    setCameraRequested(true);
     setGuidance('evaluating');
     setGuidanceMessage('Position your face inside the oval');
-    startCamera();
   };
 
   const [internalProcessing, setInternalProcessing] = useState(false);
@@ -638,103 +650,168 @@ export function FaceScannerModal({
             )}
           </div>
 
-          {/* 4. Live Camera Selfie Viewport (Camera ONLY - No upload tab) */}
-          <div className="space-y-1 pt-1">
+          {/* 4. Live Camera Selfie Viewport / Trigger / Captured Card */}
+          <div className="space-y-1.5 pt-1">
             <label className="text-[11px] font-bold text-zinc-600 pl-1 flex items-center justify-between">
-              <span>Take Live Selfie *</span>
+              <span>Capture Live Selfie *</span>
               <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                 Single Face Only
               </span>
             </label>
 
-            <div className="relative rounded-3xl bg-zinc-950 overflow-hidden aspect-4/3 sm:aspect-square flex items-center justify-center border-2 border-zinc-800 shadow-inner">
-              {cameraError ? (
-                <div className="p-6 text-center space-y-3 text-white">
-                  <AlertCircle className="w-8 h-8 text-rose-400 mx-auto" />
-                  <p className="text-xs text-zinc-300 max-w-xs leading-relaxed">{cameraError}</p>
-                  <button
-                    type="button"
-                    onClick={() => startCamera()}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold text-xs transition cursor-pointer"
-                  >
-                    Allow Camera &amp; Retry
-                  </button>
-                </div>
-              ) : capturedSelfie ? (
-                <div className="relative w-full h-full">
-                  <img
-                    src={capturedSelfie}
-                    alt="Captured Selfie"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                    <button
-                      type="button"
-                      onClick={handleRetake}
-                      className="px-4 py-2.5 rounded-xl bg-white/95 hover:bg-white text-zinc-900 font-bold text-xs flex items-center gap-1.5 shadow-lg backdrop-blur-xs transition cursor-pointer"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 text-zinc-700" />
-                      <span>Retake Selfie</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <video
-                    ref={videoRef}
-                    playsInline
-                    muted
-                    autoPlay
-                    className="w-full h-full object-cover -scale-x-100"
-                  />
-
-                  {/* 3D Glowing Oval Guide */}
-                  <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
-                    <div
-                      className={`relative w-44 h-60 sm:w-52 sm:h-68 rounded-[50%] border-4 transition-all duration-200 flex items-center justify-center ${getRingBorderClass()}`}
-                    >
-                      {guidance === 'ready' && (
-                        <div className="absolute inset-x-4 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-bounce" />
-                      )}
-                      <div className="absolute top-2 w-4 h-1 bg-white/80 rounded-full" />
-                      <div className="absolute bottom-2 w-4 h-1 bg-white/80 rounded-full" />
+            {capturedSelfie ? (
+              /* State A: Captured Selfie (Turns VIBRANT GREEN with checkmark & Retake option) */
+              <div
+                onClick={handleRetake}
+                className="p-3.5 bg-emerald-50 hover:bg-emerald-100/70 border-2 border-emerald-500 rounded-2xl flex items-center justify-between shadow-xs transition-all cursor-pointer group"
+                title="Click anywhere to retake selfie"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="relative w-12 h-12 rounded-xl overflow-hidden border-2 border-emerald-500 shadow-xs shrink-0 bg-black">
+                    <img
+                      src={capturedSelfie}
+                      alt="Captured Selfie"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-0.5 right-0.5 bg-emerald-600 text-white p-0.5 rounded-full shadow-2xs">
+                      <CheckCircle2 className="w-3 h-3" />
                     </div>
                   </div>
-
-                  {/* Real-time Guidance Status */}
-                  <div className="absolute top-3 inset-x-3 flex justify-center pointer-events-none">
-                    <span
-                      className={`px-3 py-1 rounded-full text-[11px] font-black tracking-tight shadow-md backdrop-blur-md border ${
-                        guidance === 'ready'
-                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60'
-                          : guidance === 'too_dark' || guidance === 'too_bright' || guidance === 'no_face'
-                          ? 'bg-rose-950/80 text-rose-300 border-rose-500/60'
-                          : 'bg-zinc-900/80 text-zinc-300 border-zinc-700'
-                      }`}
-                    >
-                      {guidanceMessage}
-                    </span>
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-black text-emerald-950">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Selfie Captured Successfully!</span>
+                    </div>
+                    <p className="text-[10px] text-emerald-700 font-medium">
+                      Click to retake or proceed to register
+                    </p>
                   </div>
+                </div>
 
-                  {/* Capture Button */}
-                  <div className="absolute bottom-3 inset-x-3 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRetake();
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-white text-emerald-800 border border-emerald-300 group-hover:bg-emerald-600 group-hover:text-white group-hover:border-emerald-600 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer shrink-0"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Retake</span>
+                </button>
+              </div>
+            ) : cameraRequested ? (
+              /* State B: Active Camera Viewport with cancel button, 3D oval guide, snap button */
+              <div className="relative rounded-3xl bg-zinc-950 overflow-hidden aspect-4/3 sm:aspect-square flex items-center justify-center border-2 border-zinc-800 shadow-inner">
+                {/* Cancel Camera Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCameraRequested(false);
+                    stopCamera();
+                  }}
+                  className="absolute top-3 right-3 z-30 p-1.5 rounded-full bg-black/60 hover:bg-black/90 text-white/80 hover:text-white transition cursor-pointer"
+                  title="Close camera"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                {cameraError ? (
+                  <div className="p-6 text-center space-y-3 text-white">
+                    <AlertCircle className="w-8 h-8 text-rose-400 mx-auto" />
+                    <p className="text-xs text-zinc-300 max-w-xs leading-relaxed">{cameraError}</p>
                     <button
                       type="button"
-                      onClick={handleSnap}
-                      disabled={guidance === 'too_dark'}
-                      className={`px-5 py-2.5 rounded-2xl font-black text-xs flex items-center gap-2 shadow-xl transition-all cursor-pointer ${
-                        guidance === 'ready'
-                          ? 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 scale-105 shadow-emerald-500/30'
-                          : 'bg-zinc-900/90 text-white hover:bg-zinc-800 border border-zinc-700'
-                      }`}
+                      onClick={() => startCamera()}
+                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold text-xs transition cursor-pointer"
                     >
-                      <Camera className="w-4 h-4" />
-                      <span>{guidance === 'ready' ? 'Ready to Capture' : 'Capture Selfie'}</span>
+                      Allow Camera &amp; Retry
                     </button>
                   </div>
-                </>
-              )}
-            </div>
+                ) : (
+                  <>
+                    <video
+                      ref={videoRef}
+                      playsInline
+                      muted
+                      autoPlay
+                      className="w-full h-full object-cover -scale-x-100"
+                    />
+
+                    {/* 3D Glowing Oval Guide */}
+                    <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
+                      <div
+                        className={`relative w-44 h-60 sm:w-52 sm:h-68 rounded-[50%] border-4 transition-all duration-200 flex items-center justify-center ${getRingBorderClass()}`}
+                      >
+                        {guidance === 'ready' && (
+                          <div className="absolute inset-x-4 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-bounce" />
+                        )}
+                        <div className="absolute top-2 w-4 h-1 bg-white/80 rounded-full" />
+                        <div className="absolute bottom-2 w-4 h-1 bg-white/80 rounded-full" />
+                      </div>
+                    </div>
+
+                    {/* Real-time Guidance Status */}
+                    <div className="absolute top-3 inset-x-3 flex justify-center pointer-events-none">
+                      <span
+                        className={`px-3 py-1 rounded-full text-[11px] font-black tracking-tight shadow-md backdrop-blur-md border ${
+                          guidance === 'ready'
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60'
+                            : guidance === 'too_dark' || guidance === 'too_bright' || guidance === 'no_face'
+                            ? 'bg-rose-950/80 text-rose-300 border-rose-500/60'
+                            : 'bg-zinc-900/80 text-zinc-300 border-zinc-700'
+                        }`}
+                      >
+                        {guidanceMessage}
+                      </span>
+                    </div>
+
+                    {/* Capture Button */}
+                    <div className="absolute bottom-3 inset-x-3 flex items-center justify-center">
+                      <button
+                        type="button"
+                        onClick={handleSnap}
+                        disabled={guidance === 'too_dark'}
+                        className={`px-5 py-2.5 rounded-2xl font-black text-xs flex items-center gap-2 shadow-xl transition-all cursor-pointer ${
+                          guidance === 'ready'
+                            ? 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 scale-105 shadow-emerald-500/30'
+                            : 'bg-zinc-900/90 text-white hover:bg-zinc-800 border border-zinc-700'
+                        }`}
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>{guidance === 'ready' ? 'Ready to Capture' : 'Capture Selfie'}</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              /* State C: Premium "Capture Live Selfie" trigger button */
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraError(null);
+                  setCameraRequested(true);
+                }}
+                className="w-full p-4 rounded-2xl border-2 border-dashed border-amber-300 hover:border-amber-500 bg-gradient-to-br from-amber-50/80 via-white to-amber-50/30 hover:from-amber-100/70 hover:to-amber-50 text-zinc-900 flex items-center justify-between group transition-all duration-200 shadow-2xs hover:shadow-md cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform">
+                    <Camera className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-xs font-black text-zinc-900 group-hover:text-amber-800 flex items-center gap-1.5">
+                      <span>Capture Live Selfie</span>
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                    </div>
+                    <p className="text-[10px] text-zinc-500 font-medium">Click to open camera &amp; capture your face</p>
+                  </div>
+                </div>
+                <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-800 font-bold text-xs border border-amber-300/60 group-hover:bg-amber-500 group-hover:text-white transition-all">
+                  Open Camera
+                </div>
+              </button>
+            )}
           </div>
 
           {/* 5. Submit Action Button */}

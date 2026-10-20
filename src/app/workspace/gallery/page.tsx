@@ -100,6 +100,7 @@ export default function MyEventsPage() {
     slug: '',
     event_date: new Date().toISOString().split('T')[0],
     event_type: 'Wedding',
+    is_face_ai_enabled: true,
   });
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -905,6 +906,32 @@ export default function MyEventsPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* AI Face Recognition Toggle */}
+            <div className="p-3.5 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] flex items-center justify-between gap-3">
+              <div className="space-y-0.5 pr-2">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  <span className="text-xs font-bold text-zinc-900">AI Face Recognition &amp; Search</span>
+                </div>
+                <p className="text-[10.5px] text-zinc-500 leading-snug">
+                  Automatically index faces so guests can find their photos via live selfie. Turn OFF for standard non-AI photo delivery.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreateForm((prev) => ({ ...prev, is_face_ai_enabled: !prev.is_face_ai_enabled }))}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                  createForm.is_face_ai_enabled ? 'bg-amber-600' : 'bg-zinc-300'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    createForm.is_face_ai_enabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
 
             {/* Modal Actions */}
