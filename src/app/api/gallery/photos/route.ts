@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
     const galleryId = searchParams.get('gallery_id');
     const collectionId = searchParams.get('collection_id');
     const slug = searchParams.get('slug');
+    const ids = searchParams.get('ids');
 
     let targetGalleryId = galleryId;
 
@@ -32,6 +33,13 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('gallery_id', targetGalleryId)
       .order('created_at', { ascending: false });
+
+    if (ids) {
+      const idList = ids.split(',').map((s) => s.trim()).filter(Boolean);
+      if (idList.length > 0) {
+        query = query.in('id', idList);
+      }
+    }
 
     if (collectionId && collectionId !== 'all') {
       query = query.eq('collection_id', collectionId);

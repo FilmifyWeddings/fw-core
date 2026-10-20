@@ -84,7 +84,14 @@ export async function GET(req: NextRequest) {
       }
 
       const formatted = single ? { ...single, cover_url: formatCoverUrl(single.cover_url) } : null;
-      return NextResponse.json({ success: true, gallery: formatted, events: formatted ? [formatted] : [] });
+      return NextResponse.json(
+        { success: true, gallery: formatted, events: formatted ? [formatted] : [] },
+        {
+          headers: {
+            'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
+          },
+        }
+      );
     }
 
     // 3. Fetch all galleries scoped STRICTLY to the studio owner's workspace

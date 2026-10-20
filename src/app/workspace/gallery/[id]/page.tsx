@@ -58,8 +58,7 @@ import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { supabase } from '@/lib/supabase';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
-import { UploadQueueProvider, useUploadQueue } from '@/context/UploadQueueContext';
-import { UploadManagerDrawer } from '@/components/gallery/UploadManagerDrawer';
+import { useUploadQueue } from '@/context/UploadQueueContext';
 import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothImage';
 
 interface EventGallery {
@@ -469,7 +468,7 @@ function AlbumStudioContent() {
     } catch (_) {}
   };
 
-  // Live query matched photos for selected guest
+  // Live query matched photos for selected guest (Instant Cache + Parallel Neural Re-check)
   useEffect(() => {
     if (!selectedGuest || !gallery) {
       setGuestMatchedPhotos([]);
@@ -480,38 +479,46 @@ function AlbumStudioContent() {
     const fetchGuestMatches = async () => {
       setLoadingGuestPhotos(true);
       try {
-        const payload: any = {
-          gallery_id: gallery.id,
-          match_threshold: 0.28,
-        };
+        // 1. Instant Render: Load existing pre-matched photos in milliseconds
+        if (Array.isArray(selectedGuest.matched_photo_ids) && selectedGuest.matched_photo_ids.length > 0) {
+          try {
+            const preRes = await fetch(`/api/gallery/photos?gallery_id=${gallery.id}&ids=${selectedGuest.matched_photo_ids.join(',')}`);
+            const preJson = await preRes.json();
+            if (!isCancelled && preJson.success && Array.isArray(preJson.photos) && preJson.photos.length > 0) {
+              setGuestMatchedPhotos(preJson.photos);
+              setLoadingGuestPhotos(false);
+            }
+          } catch (_) {}
+        }
 
-        if (selectedGuest.face_embedding && Array.isArray(selectedGuest.face_embedding) && selectedGuest.face_embedding.length > 0) {
-          payload.embedding = selectedGuest.face_embedding;
-        } else if (selectedGuest.selfie_url) {
-          payload.selfieBase64 = selectedGuest.selfie_url;
-        } else {
-          setGuestMatchedPhotos([]);
-          setLoadingGuestPhotos(false);
+        // Safely parse face embedding
+        const rawEmb = Array.isArray(selectedGuest.face_embedding)
+          ? selectedGuest.face_embedding
+          : (typeof selectedGuest.face_embedding === 'string' ? JSON.parse(selectedGuest.face_embedding) : null);
+
+        if (!rawEmb || rawEmb.length !== 512) {
+          if (!isCancelled) setLoadingGuestPhotos(false);
           return;
         }
 
         const res = await fetch('/api/gallery/match-face', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            gallery_id: gallery.id,
+            embedding: rawEmb,
+            match_threshold: 0.28,
+          }),
         });
 
         const json = await res.json();
         if (!isCancelled) {
-          if (json.success && Array.isArray(json.photos)) {
+          if (json.success && Array.isArray(json.photos) && json.photos.length > 0) {
             setGuestMatchedPhotos(json.photos);
-          } else {
-            setGuestMatchedPhotos([]);
           }
         }
       } catch (err) {
         console.error('Failed to load guest matched photos:', err);
-        if (!isCancelled) setGuestMatchedPhotos([]);
       } finally {
         if (!isCancelled) setLoadingGuestPhotos(false);
       }
@@ -3572,16 +3579,6 @@ function AlbumStudioContent() {
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          7. FLOATING NON-BLOCKING UPLOAD MANAGER DRAWER
-      ───────────────────────────────────────────────────────────── */}
-      <UploadManagerDrawer
-        onResumeInterrupted={(gId, colId) => {
-          if (colId) setUploadTargetCollection(colId);
-          setIsUploadModalOpen(true);
-        }}
-      />
-
     </div>
   );
 }
@@ -3599,9 +3596,7 @@ export default function AlbumStudioPage() {
         </div>
       }
     >
-      <UploadQueueProvider>
-        <AlbumStudioContent />
-      </UploadQueueProvider>
+      <AlbumStudioContent />
     </Suspense>
   );
 }

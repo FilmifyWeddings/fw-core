@@ -225,22 +225,23 @@ function GuestSlugGalleryContent() {
         setIsUnlocked(true);
       }
 
-      // Fetch full collections & photos if in PRIVILEGED mode OR gallery is PUBLISHED
+      // Fetch full collections & photos in parallel if in PRIVILEGED mode OR gallery is PUBLISHED
       const isGalleryPublished = gal.status?.toUpperCase() === 'PUBLISHED' || (gal.is_active && gal.status?.toUpperCase() !== 'UNPUBLISHED');
       if (isGalleryPublished || (isPrivilegedMode && hasValidPin)) {
         try {
-          const cRes = await fetch(`/api/gallery/collections?gallery_id=${gal.id}`);
-          const cJson = await cRes.json();
+          const [cRes, pRes] = await Promise.all([
+            fetch(`/api/gallery/collections?gallery_id=${gal.id}`),
+            fetch(`/api/gallery/photos?gallery_id=${gal.id}`),
+          ]);
+          const [cJson, pJson] = await Promise.all([cRes.json(), pRes.json()]);
+
           if (cJson.success && Array.isArray(cJson.collections)) {
             setCollections(cJson.collections);
           }
+          if (pJson.success && Array.isArray(pJson.photos)) {
+            setFullPhotos(pJson.photos);
+          }
         } catch (_) {}
-
-        const pRes = await fetch(`/api/gallery/photos?gallery_id=${gal.id}`);
-        const pJson = await pRes.json();
-        if (pJson.success && Array.isArray(pJson.photos)) {
-          setFullPhotos(pJson.photos);
-        }
       }
     } catch (err: any) {
       console.error('Error loading gallery:', err);
@@ -282,8 +283,24 @@ function GuestSlugGalleryContent() {
 
         const status = gallery.status?.toUpperCase() || (gallery.is_active ? 'PUBLISHED' : 'UNPUBLISHED');
 
-        // If gallery is published, match photos using their 512-D embedding
-        if (status === 'PUBLISHED' && g.face_embedding && Array.isArray(g.face_embedding) && g.face_embedding.length === 512) {
+        // Safely parse face embedding (array or string)
+        const rawEmb = Array.isArray(g.face_embedding)
+          ? g.face_embedding
+          : (typeof g.face_embedding === 'string' ? JSON.parse(g.face_embedding) : null);
+
+        // 1. Instant Render: Load existing pre-matched photos in milliseconds
+        if (Array.isArray(g.matched_photo_ids) && g.matched_photo_ids.length > 0) {
+          try {
+            const preRes = await fetch(`/api/gallery/photos?gallery_id=${gallery.id}&ids=${g.matched_photo_ids.join(',')}`);
+            const preJson = await preRes.json();
+            if (isMounted && preJson.success && Array.isArray(preJson.photos) && preJson.photos.length > 0) {
+              setMatchedPhotos(preJson.photos);
+            }
+          } catch (_) {}
+        }
+
+        // 2. If gallery is PUBLISHED, background-match to discover any photos newly uploaded since registration
+        if (status === 'PUBLISHED' && rawEmb && rawEmb.length === 512) {
           setIsMatching(true);
           try {
             const matchRes = await fetch('/api/gallery/match-face', {
@@ -291,12 +308,12 @@ function GuestSlugGalleryContent() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 gallery_id: gallery.id,
-                embedding: g.face_embedding,
+                embedding: rawEmb,
                 threshold: 0.28,
               }),
             });
             const matchJson = await matchRes.json();
-            if (isMounted && matchJson.success && Array.isArray(matchJson.photos)) {
+            if (isMounted && matchJson.success && Array.isArray(matchJson.photos) && matchJson.photos.length > 0) {
               setMatchedPhotos(matchJson.photos);
             }
           } catch (mErr) {

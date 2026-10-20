@@ -102,6 +102,7 @@ export async function GET(req: NextRequest) {
         face_count: c.face_count ?? (c.faces ? c.faces.length : 1),
         photo_ids: photoIds,
         avatar_url: thumbnailUrl || previewUrl,
+        avatar_thumbnail: thumbnailUrl || previewUrl,
         box: repFace?.bounding_box || repFace?.box || { x: 0, y: 0, w: 100, h: 100 },
         representative_photo_id: repPhotoId,
       };

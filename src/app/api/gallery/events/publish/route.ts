@@ -69,14 +69,18 @@ export async function POST(req: NextRequest) {
     } catch (_) {}
 
     // 2. Set Gallery Status to PUBLISHED
-    await supabaseAdmin
+    const { error: updateGalleryErr } = await supabaseAdmin
       .from('event_galleries')
       .update({
         status: 'PUBLISHED',
         is_active: true,
-        updated_at: new Date().toISOString(),
       })
       .eq('id', targetId);
+
+    if (updateGalleryErr) {
+      console.error('[PublishEvent] Failed to update event_galleries status:', updateGalleryErr);
+      return NextResponse.json({ success: false, error: updateGalleryErr.message }, { status: 500 });
+    }
 
     // 3. Fetch all pre-registered guests for this gallery
     const { data: registeredGuests } = await supabaseAdmin
@@ -99,37 +103,42 @@ export async function POST(req: NextRequest) {
     let totalNotified = 0;
     const effectiveThreshold = Math.min(Number(similarityThreshold) || 0.28, 0.38);
 
-    if (registeredGuests && registeredGuests.length > 0 && photoFaces && photoFaces.length > 0) {
+    if (registeredGuests && registeredGuests.length > 0) {
       for (const guest of registeredGuests) {
+        // Collect existing matched photo IDs if any
+        const existingMatched = new Set<string>(
+          Array.isArray(guest.matched_photo_ids) ? guest.matched_photo_ids : []
+        );
+
+        // If guest has a selfie embedding and photo faces exist, perform face matching
         const rawEmb = Array.isArray(guest.face_embedding)
           ? guest.face_embedding
           : (typeof guest.face_embedding === 'string' ? JSON.parse(guest.face_embedding) : null);
 
-        if (!rawEmb || rawEmb.length !== 512) continue;
+        if (rawEmb && rawEmb.length === 512 && photoFaces && photoFaces.length > 0) {
+          const guestVector = normalizeVector(rawEmb);
+          for (const pf of photoFaces) {
+            const pfEmb = Array.isArray(pf.embedding)
+              ? pf.embedding
+              : (typeof pf.embedding === 'string' ? JSON.parse(pf.embedding) : null);
 
-        const guestVector = normalizeVector(rawEmb);
-        const matchedSet = new Set<string>();
-
-        // Match against all photo faces in gallery
-        for (const pf of photoFaces) {
-          const pfEmb = Array.isArray(pf.embedding)
-            ? pf.embedding
-            : (typeof pf.embedding === 'string' ? JSON.parse(pf.embedding) : null);
-
-          if (pfEmb && pfEmb.length === 512) {
-            const sim = cosineSimilarity(guestVector, pfEmb);
-            if (sim >= effectiveThreshold) {
-              matchedSet.add(pf.photo_id);
+            if (pfEmb && pfEmb.length === 512) {
+              const sim = cosineSimilarity(guestVector, pfEmb);
+              if (sim >= effectiveThreshold) {
+                existingMatched.add(pf.photo_id);
+              }
             }
           }
         }
 
-        const matchedPhotoIds = Array.from(matchedSet);
-        const guestPortalUrl = `${baseUrl}/g/${gallery.slug}?guest=${guest.id}&token=${guest.access_token}`;
+        const matchedPhotoIds = Array.from(existingMatched);
+        const guestPortalUrl = `${baseUrl}/g/${gallery.slug}?guest=${guest.id}&token=${guest.access_token || ''}`;
         const channelResults = [];
 
         // 5. Automated Dispatch & Notification
-        const messageText = `🎉 Hello ${guest.guest_name}! Your photos from "${gallery.title}" are ready! Click here to view and download your ${matchedPhotoIds.length > 0 ? matchedPhotoIds.length : 'curated'} photos: ${guestPortalUrl}`;
+        const messageText = matchedPhotoIds.length > 0
+          ? `🎉 Hello ${guest.guest_name}! Your photos from "${gallery.title}" are ready! Click here to view and download your ${matchedPhotoIds.length} photos: ${guestPortalUrl}`
+          : `🎉 Hello ${guest.guest_name}! Photos from "${gallery.title}" are now published! Click here to view the celebration gallery: ${guestPortalUrl}`;
 
         // WhatsApp Channel (Logs delivery record for WhatsApp Bot/Worker)
         if (channelsToUse.includes('WHATSAPP') && guest.guest_phone) {
@@ -189,8 +198,8 @@ export async function POST(req: NextRequest) {
           .update({
             matched_photo_ids: matchedPhotoIds,
             notification_status: 'SENT',
-            whatsapp_sent_at: new Date().toISOString(),
-            email_sent_at: guest.guest_email ? new Date().toISOString() : null,
+            whatsapp_sent_at: channelsToUse.includes('WHATSAPP') && guest.guest_phone ? new Date().toISOString() : guest.whatsapp_sent_at,
+            email_sent_at: channelsToUse.includes('EMAIL') && guest.guest_email ? new Date().toISOString() : guest.email_sent_at,
             updated_at: new Date().toISOString(),
           })
           .eq('id', guest.id);
@@ -209,7 +218,6 @@ export async function POST(req: NextRequest) {
       .from('event_galleries')
       .update({
         total_notified_guests: totalNotified,
-        updated_at: new Date().toISOString(),
       })
       .eq('id', targetId);
 

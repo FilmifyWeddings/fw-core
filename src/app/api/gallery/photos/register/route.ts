@@ -61,7 +61,6 @@ export async function POST(req: NextRequest) {
                 const faceRecords = faces.map((f) => ({
                   photo_id: p.id,
                   gallery_id: galleryId,
-                  workspace_id: workspaceId,
                   bounding_box: f.box,
                   embedding: f.embedding,
                 }));

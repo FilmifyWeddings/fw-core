@@ -4,6 +4,8 @@ import React, { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
+import { UploadQueueProvider } from '@/context/UploadQueueContext';
+import { UploadManagerDrawer } from '@/components/gallery/UploadManagerDrawer';
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -51,5 +53,10 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     }
   }
 
- return <>{children}</>;
+  return (
+    <UploadQueueProvider>
+      {children}
+      <UploadManagerDrawer />
+    </UploadQueueProvider>
+  );
 }
