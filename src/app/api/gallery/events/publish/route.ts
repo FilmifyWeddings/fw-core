@@ -142,6 +142,7 @@ export async function POST(req: NextRequest) {
 
         // WhatsApp Channel (Logs delivery record for WhatsApp Bot/Worker)
         if (channelsToUse.includes('WHATSAPP') && guest.guest_phone) {
+          const rawPhone = guest.guest_phone.split('#')[0];
           try {
             await supabaseAdmin.from('guest_delivery_logs').insert({
               workspace_id: workspaceId,
@@ -149,7 +150,7 @@ export async function POST(req: NextRequest) {
               guest_id: guest.id,
               channel: 'WHATSAPP',
               status: 'DELIVERED',
-              recipient: guest.guest_phone,
+              recipient: rawPhone,
               matched_count: matchedPhotoIds.length,
               payload: { message: messageText, link: guestPortalUrl },
             });

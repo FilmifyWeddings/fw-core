@@ -33,24 +33,49 @@ export async function POST(req: NextRequest) {
 
     const workspaceId = gallery.workspace_id || '00000000-0000-0000-0000-000000000000';
     const cleanPhone = guest_phone.replace(/[^0-9+]/g, '');
+    const basePhone = cleanPhone.split('#')[0];
     const cleanEmail = guest_email?.trim()?.toLowerCase() || null;
+    const inputName = guest_name.trim();
+    const normalizedInputName = inputName.toLowerCase();
 
-    // 2. Check if guest is ALREADY registered for this event (by phone OR email)
+    // 2. Multi-Guest Registration Engine:
+    // Query existing registrations for this gallery matching this phone or email
     let existingQuery = supabaseAdmin
       .from('event_guest_registrations')
       .select('*')
       .eq('gallery_id', gallery.id);
 
-    if (cleanPhone && cleanEmail) {
-      existingQuery = existingQuery.or(`guest_phone.eq.${cleanPhone},guest_email.eq.${cleanEmail}`);
-    } else if (cleanPhone) {
-      existingQuery = existingQuery.eq('guest_phone', cleanPhone);
+    if (basePhone && cleanEmail) {
+      existingQuery = existingQuery.or(`guest_phone.ilike.${basePhone}%,guest_email.eq.${cleanEmail}`);
+    } else if (basePhone) {
+      existingQuery = existingQuery.ilike('guest_phone', `${basePhone}%`);
     } else if (cleanEmail) {
       existingQuery = existingQuery.eq('guest_email', cleanEmail);
     }
 
     const { data: existingGuests } = await existingQuery;
-    const existingGuest = existingGuests && existingGuests.length > 0 ? existingGuests[0] : null;
+
+    // Check if there is an exact name match (Same person re-registering or updating selfie)
+    const existingGuest = (existingGuests || []).find(
+      (g) => g.guest_name && g.guest_name.trim().toLowerCase() === normalizedInputName
+    ) || null;
+
+    // Disambiguate phone numbers for family members sharing the same number:
+    // Postgres has a UNIQUE (gallery_id, guest_phone) constraint.
+    // Person 1: +919876543210
+    // Person 2 (Spouse/Child): +919876543210#2
+    // Person 3: +919876543210#3
+    let finalPhone = cleanPhone;
+    if (!existingGuest) {
+      const samePhoneGuests = (existingGuests || []).filter(
+        (g) => g.guest_phone && (g.guest_phone === basePhone || g.guest_phone.startsWith(`${basePhone}#`))
+      );
+      if (samePhoneGuests.length > 0) {
+        finalPhone = `${basePhone}#${samePhoneGuests.length + 1}`;
+      } else {
+        finalPhone = basePhone;
+      }
+    }
 
     // 3. Upload compressed selfie to Backblaze B2 (tiny KB size WebP)
     let selfie_url: string | null = null;
@@ -173,8 +198,8 @@ export async function POST(req: NextRequest) {
     const registrationRecord = {
       workspace_id: workspaceId,
       gallery_id: gallery.id,
-      guest_name: guest_name.trim(),
-      guest_phone: cleanPhone,
+      guest_name: inputName,
+      guest_phone: finalPhone,
       guest_email: cleanEmail,
       selfie_url: selfie_url,
       face_embedding: embedding,

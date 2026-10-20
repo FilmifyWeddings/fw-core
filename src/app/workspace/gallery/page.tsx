@@ -101,6 +101,7 @@ export default function MyEventsPage() {
     event_date: new Date().toISOString().split('T')[0],
     event_type: 'Wedding',
   });
+  const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
   const [creating, setCreating] = useState(false);
 
   // Load custom event types from localStorage
@@ -375,7 +376,10 @@ export default function MyEventsPage() {
           </div>
 
           <button
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={() => {
+              setIsSlugManuallyEdited(false);
+              setIsCreateModalOpen(true);
+            }}
             className="px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer shrink-0 select-none active:scale-95 whitespace-nowrap"
           >
             <Plus className="w-4 h-4 text-white" />
@@ -541,7 +545,10 @@ export default function MyEventsPage() {
               </p>
             </div>
             <button
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={() => {
+                setIsSlugManuallyEdited(false);
+                setIsCreateModalOpen(true);
+              }}
               className="px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 text-white text-xs font-bold inline-flex items-center gap-2 hover:from-amber-600 hover:to-amber-700 transition cursor-pointer shadow-xs"
             >
               <Plus className="w-4 h-4 text-white" />
@@ -779,7 +786,7 @@ export default function MyEventsPage() {
                   setCreateForm((prev) => ({
                     ...prev,
                     title,
-                    slug: prev.slug === '' || prev.slug === autoSlug.slice(0, -1) ? autoSlug : prev.slug,
+                    slug: isSlugManuallyEdited ? prev.slug : autoSlug,
                   }));
                 }}
                 className="w-full px-4 py-2.5 bg-[#FBF9F5] rounded-2xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition"
@@ -788,7 +795,25 @@ export default function MyEventsPage() {
 
             {/* Custom URL Slug */}
             <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">Custom URL Slug *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-zinc-700">Custom URL Slug *</label>
+                {isSlugManuallyEdited && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSlugManuallyEdited(false);
+                      const autoSlug = createForm.title
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/^-+|-+$/g, '');
+                      setCreateForm((prev) => ({ ...prev, slug: autoSlug }));
+                    }}
+                    className="text-[10px] text-amber-600 hover:text-amber-700 font-bold cursor-pointer"
+                  >
+                    Reset to Auto
+                  </button>
+                )}
+              </div>
               <div className="flex items-center">
                 <span className="px-3 py-2.5 bg-[#F4F1EA] border border-r-0 border-[#E7E2D8] rounded-l-2xl text-xs text-zinc-500 font-mono">
                   studiocore.in/g/
@@ -798,12 +823,14 @@ export default function MyEventsPage() {
                   required
                   placeholder="rohit-anjali"
                   value={createForm.slug}
-                  onChange={(e) =>
-                    setCreateForm({
-                      ...createForm,
-                      slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                    })
-                  }
+                  onChange={(e) => {
+                    const val = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                    setIsSlugManuallyEdited(val.length > 0);
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      slug: val,
+                    }));
+                  }}
                   className="w-full px-3.5 py-2.5 bg-[#FBF9F5] rounded-r-2xl border border-[#E7E2D8] text-xs font-mono font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition"
                 />
               </div>

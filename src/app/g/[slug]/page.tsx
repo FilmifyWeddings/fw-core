@@ -172,7 +172,7 @@ function GuestSlugGalleryContent() {
 
   const currentGalleryStatus = (gallery?.status?.toUpperCase() === 'EXPIRED')
     ? 'EXPIRED'
-    : (gallery?.status?.toUpperCase() === 'PUBLISHED' || (gallery?.is_active && gallery?.status?.toUpperCase() !== 'UNPUBLISHED'))
+    : (gallery?.status?.toUpperCase() === 'PUBLISHED')
     ? 'PUBLISHED'
     : 'UNPUBLISHED';
 
@@ -653,7 +653,7 @@ function GuestSlugGalleryContent() {
                 transform: `scale(${parseCoverUrl(gallery.cover_url).desktop.zoom / 100})`,
                 transformOrigin: `${parseCoverUrl(gallery.cover_url).desktop.x}% ${parseCoverUrl(gallery.cover_url).desktop.y}%`,
               }}
-              className="hidden sm:block w-full h-80 sm:h-96 object-cover opacity-50 filter brightness-90 transition-all duration-300"
+              className="hidden sm:block w-full h-80 sm:h-96 object-cover transition-all duration-300"
             />
             {/* Mobile Hero Cover */}
             <img
@@ -662,16 +662,18 @@ function GuestSlugGalleryContent() {
               style={{
                 objectPosition: `${parseCoverUrl(gallery.cover_url).mobile.x}% ${parseCoverUrl(gallery.cover_url).mobile.y}%`,
                 transform: `scale(${parseCoverUrl(gallery.cover_url).mobile.zoom / 100})`,
-                transformOrigin: `${parseCoverUrl(gallery.cover_url).mobile.x}% ${parseCoverUrl(gallery.cover_url).mobile.y}%`,
+                transformOrigin: 'center center',
               }}
-              className="block sm:hidden w-full h-80 sm:h-96 object-cover opacity-50 filter brightness-90 transition-all duration-300"
+              className="block sm:hidden w-full h-80 sm:h-96 object-cover transition-all duration-300"
             />
           </>
         ) : (
           <div className="w-full h-80 sm:h-96 bg-gradient-to-b from-zinc-900 via-zinc-950 to-[#FAF9F5]" />
         )}
 
-        <div className="absolute inset-0 bg-gradient-to-t from-[#FAF9F5] via-black/50 to-black/80" />
+        {/* Clean Luxury Gradient: Crystal clear faces with subtle bottom shade for couple name */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent pointer-events-none" />
+        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/50 to-transparent pointer-events-none" />
 
         <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-10 max-w-6xl mx-auto">
           <div className="flex items-center justify-between">
@@ -710,22 +712,17 @@ function GuestSlugGalleryContent() {
         
         {/* CASE A: STRICT ZERO-KNOWLEDGE LOCKED HERO (Before Face Search) */}
         {!isPrivilegedMode && !hasSearched && (
-          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-[#E7E2D8] shadow-xl text-center space-y-6 max-w-2xl mx-auto">
+          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-[#E7E2D8] shadow-xl text-center space-y-6 max-w-2xl mx-auto animate-in fade-in duration-200">
             <div className="w-20 h-20 rounded-3xl bg-amber-50 border-2 border-amber-200 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
-              <Lock className="w-9 h-9 text-amber-600" />
+              <Camera className="w-9 h-9 text-amber-600" />
             </div>
 
             <div className="space-y-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 bg-amber-100/80 px-3 py-1 rounded-full border border-amber-300">
-                🔒 Privacy Protected
-              </span>
               <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-                {currentGalleryStatus === 'UNPUBLISHED' ? 'Pre-Register for Event Photos' : 'Your Wedding Memories Await'}
+                Register to get your photos on your mobile
               </h2>
               <p className="text-xs sm:text-sm text-zinc-500 max-w-md mx-auto leading-relaxed">
-                {currentGalleryStatus === 'UNPUBLISHED'
-                  ? 'Scan your selfie & register your contact details now. As soon as the photographers upload & publish the event photos, you will be notified instantly via WhatsApp and Email!'
-                  : 'To respect guest privacy, photos are locked. Take a quick selfie, and our AI will instantly find and display all your photos on screen.'}
+                Complete your registration by capturing a selfie to secure access your photos from this event.
               </p>
             </div>
 
@@ -736,19 +733,9 @@ function GuestSlugGalleryContent() {
                 className="px-8 py-4 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-sm tracking-wide shadow-xl shadow-amber-600/30 flex items-center justify-center gap-2.5 mx-auto transition-all active:scale-98 cursor-pointer group"
               >
                 <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
-                <span>{currentGalleryStatus === 'UNPUBLISHED' ? 'Register Selfie for Live Alerts' : 'Find My Photos (Scan Face)'}</span>
+                <span>Find My Photo</span>
                 <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
               </button>
-            </div>
-
-            <div className="pt-4 border-t border-zinc-100 flex items-center justify-center gap-4 text-[11px] text-zinc-400 font-medium">
-              <span className="flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> 100% Private
-              </span>
-              <span>•</span>
-              <span className="flex items-center gap-1">
-                <Zap className="w-3.5 h-3.5 text-amber-500" /> Sub-Second AI Match
-              </span>
             </div>
           </div>
         )}
@@ -769,12 +756,12 @@ function GuestSlugGalleryContent() {
                 {isAlreadyRegistered ? '✨ Already Registered' : '✨ Registration Successful'}
               </span>
               <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-                {isAlreadyRegistered ? `Welcome Back, ${guestName || 'Guest'}!` : `Thank You So Much for Registering${guestName ? `, ${guestName}` : ''}!`}
+                {isAlreadyRegistered ? `Welcome Back, ${guestName || 'Guest'}!` : 'Your registration successfully'}
               </h2>
-              <p className="text-xs sm:text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed">
+              <p className="text-xs sm:text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed font-medium">
                 {isAlreadyRegistered
                   ? `You have already registered with this phone / email for ${gallery.title}. As soon as the photos are edited & published by the studio, you will be notified instantly!`
-                  : `Your selfie and contact details are safely registered for ${gallery.title}. Our photography team is actively capturing and curating the unforgettable moments from this celebration.`}
+                  : 'We will notify you when your photos are ready'}
               </p>
             </div>
 
@@ -853,12 +840,16 @@ function GuestSlugGalleryContent() {
                 type="button"
                 onClick={() => {
                   setHasSearched(false);
+                  setIsAlreadyRegistered(false);
+                  setGuestName('');
+                  setGuestPhone('');
+                  setGuestEmail('');
                   setIsFaceScannerOpen(true);
                 }}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-amber-600/20 active:scale-98"
               >
-                <Users className="w-4 h-4" />
-                <span>Register Another Person</span>
+                <Users className="w-4 h-4 text-amber-200" />
+                <span>Click here to new registration</span>
               </button>
             </div>
           </div>

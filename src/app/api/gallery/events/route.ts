@@ -214,8 +214,8 @@ export async function POST(req: NextRequest) {
       cover_url,
       r2_folder_prefix: storage_folder_prefix, // Stored in existing prefix column
       allow_downloads,
-      is_active: true,
-      status: 'DRAFT',
+      is_active: false,
+      status: 'UNPUBLISHED',
     };
 
     if (body.event_type) {

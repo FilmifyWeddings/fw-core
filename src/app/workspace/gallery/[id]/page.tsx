@@ -1107,7 +1107,7 @@ function AlbumStudioContent() {
     if (!gallery) return 'UNPUBLISHED';
     const s = gallery.status?.toUpperCase();
     if (s === 'EXPIRED') return 'EXPIRED';
-    if (s === 'PUBLISHED' || (gallery.is_active && s !== 'UNPUBLISHED')) return 'PUBLISHED';
+    if (s === 'PUBLISHED') return 'PUBLISHED';
     return 'UNPUBLISHED';
   }, [gallery]);
 
@@ -1667,7 +1667,9 @@ function AlbumStudioContent() {
                                   </div>
                                   <div className="truncate text-left">
                                     <div className="truncate text-zinc-900 font-bold">{guest.guest_name}</div>
-                                    <div className="text-[9.5px] text-zinc-400 font-normal truncate">{guest.guest_phone}</div>
+                                    <div className="text-[9.5px] text-zinc-400 font-normal truncate">
+                                      {guest.guest_phone ? guest.guest_phone.split('#')[0] : ''}
+                                    </div>
                                   </div>
                                 </div>
                                 <ChevronRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
@@ -3000,11 +3002,7 @@ function AlbumStudioContent() {
                           transform: `scale(${
                             (coverPreviewMode === 'desktop' ? desktopCrop.zoom : mobileCrop.zoom) / 100
                           })`,
-                          transformOrigin: `${
-                            coverPreviewMode === 'desktop' ? desktopCrop.x : mobileCrop.x
-                          }% ${
-                            coverPreviewMode === 'desktop' ? desktopCrop.y : mobileCrop.y
-                          }%`,
+                          transformOrigin: 'center center',
                         }}
                         className="w-full h-full object-cover pointer-events-none transition-transform duration-100"
                       />
@@ -3160,41 +3158,6 @@ function AlbumStudioContent() {
                   </div>
                 </div>
               </div>
-
-              {/* Photo Selector Strip (Choose from Album) */}
-              <div className="space-y-2">
-                <div className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                  Or Choose from Album Photos ({photos.length})
-                </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
-                  {photos.map((p) => {
-                    const isCurrent = activeCoverUrl === p.preview_url;
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setActiveCoverUrl(p.preview_url)}
-                        className={`relative w-20 h-14 rounded-xl overflow-hidden shrink-0 border-2 transition cursor-pointer ${
-                          isCurrent
-                            ? 'border-amber-500 ring-2 ring-amber-400/40 shadow-xs scale-105'
-                            : 'border-zinc-200 opacity-70 hover:opacity-100 hover:border-zinc-400'
-                        }`}
-                      >
-                        <img
-                          src={p.thumbnail_url || p.preview_url}
-                          alt="Option"
-                          className="w-full h-full object-cover"
-                        />
-                        {isCurrent && (
-                          <div className="absolute inset-0 bg-amber-500/20 flex items-center justify-center">
-                            <Check className="w-4 h-4 text-white drop-shadow-md" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
             </div>
 
             {/* Modal Footer */}
@@ -3301,14 +3264,14 @@ function AlbumStudioContent() {
                     {/* Phone & WhatsApp */}
                     {selectedGuest.guest_phone && (
                       <a
-                        href={`https://wa.me/${selectedGuest.guest_phone.replace(/[^0-9]/g, '')}`}
+                        href={`https://wa.me/${selectedGuest.guest_phone.split('#')[0].replace(/[^0-9]/g, '')}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 transition cursor-pointer"
                         title="Chat on WhatsApp"
                       >
                         <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{selectedGuest.guest_phone}</span>
+                        <span>{selectedGuest.guest_phone.split('#')[0]}</span>
                       </a>
                     )}
 
@@ -3362,7 +3325,7 @@ function AlbumStudioContent() {
                 <div className="flex items-center gap-2 pt-1 flex-wrap sm:flex-nowrap">
                   {selectedGuest.guest_phone && (
                     <a
-                      href={`https://wa.me/${selectedGuest.guest_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                      href={`https://wa.me/${selectedGuest.guest_phone.split('#')[0].replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
                         `Hi ${selectedGuest.guest_name}, here is your personal photo gallery link for ${gallery.title}: ${getPublicUrl(gallery.slug)}?guest=${selectedGuest.id}${selectedGuest.access_token ? `&token=${selectedGuest.access_token}` : ''}`
                       )}`}
                       target="_blank"

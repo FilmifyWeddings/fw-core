@@ -3,18 +3,51 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Camera,
-  Upload,
   X,
   Sparkles,
   AlertCircle,
-  CheckCircle2,
   RefreshCw,
   User,
-  Phone,
   Mail,
   ShieldCheck,
   Zap,
+  ChevronDown,
+  Search,
+  Check,
 } from 'lucide-react';
+
+export interface CountryCode {
+  code: string;
+  country: string;
+  flag: string;
+  name: string;
+}
+
+export const COUNTRY_CODES: CountryCode[] = [
+  { code: '+91', country: 'IN', flag: '🇮🇳', name: 'India' },
+  { code: '+1', country: 'US', flag: '🇺🇸', name: 'United States' },
+  { code: '+44', country: 'GB', flag: '🇬🇧', name: 'United Kingdom' },
+  { code: '+971', country: 'AE', flag: '🇦🇪', name: 'United Arab Emirates' },
+  { code: '+1', country: 'CA', flag: '🇨🇦', name: 'Canada' },
+  { code: '+61', country: 'AU', flag: '🇦🇺', name: 'Australia' },
+  { code: '+65', country: 'SG', flag: '🇸🇬', name: 'Singapore' },
+  { code: '+49', country: 'DE', flag: '🇩🇪', name: 'Germany' },
+  { code: '+33', country: 'FR', flag: '🇫🇷', name: 'France' },
+  { code: '+966', country: 'SA', flag: '🇸🇦', name: 'Saudi Arabia' },
+  { code: '+974', country: 'QA', flag: '🇶🇦', name: 'Qatar' },
+  { code: '+965', country: 'KW', flag: '🇰🇼', name: 'Kuwait' },
+  { code: '+968', country: 'OM', flag: '🇴🇲', name: 'Oman' },
+  { code: '+973', country: 'BH', flag: '🇧🇭', name: 'Bahrain' },
+  { code: '+977', country: 'NP', flag: '🇳🇵', name: 'Nepal' },
+  { code: '+880', country: 'BD', flag: '🇧🇩', name: 'Bangladesh' },
+  { code: '+94', country: 'LK', flag: '🇱🇰', name: 'Sri Lanka' },
+  { code: '+60', country: 'MY', flag: '🇲🇾', name: 'Malaysia' },
+  { code: '+64', country: 'NZ', flag: '🇳🇿', name: 'New Zealand' },
+  { code: '+27', country: 'ZA', flag: '🇿🇦', name: 'South Africa' },
+  { code: '+254', country: 'KE', flag: '🇰🇪', name: 'Kenya' },
+  { code: '+230', country: 'MU', flag: '🇲🇺', name: 'Mauritius' },
+  { code: '+81', country: 'JP', flag: '🇯🇵', name: 'Japan' },
+];
 
 interface FaceScannerModalProps {
   isOpen: boolean;
@@ -50,10 +83,12 @@ export function FaceScannerModal({
   galleryTitle,
   isProcessing = false,
 }: FaceScannerModalProps) {
-  const [activeTab, setActiveTab] = useState<'camera' | 'upload'>('camera');
   const [guestName, setGuestName] = useState('');
-  const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState<CountryCode>(COUNTRY_CODES[0]); // India (+91) default
+  const [guestPhone, setGuestPhone] = useState('');
+  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
   const [capturedSelfie, setCapturedSelfie] = useState<string | null>(null);
 
   // Guidance status & message
@@ -87,7 +122,7 @@ export function FaceScannerModal({
     setCapturedSelfie(null);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera not supported by your browser. Please use file upload.');
+        throw new Error('Camera is not supported on this browser. Please use Chrome, Safari, or an updated browser.');
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -108,7 +143,7 @@ export function FaceScannerModal({
       }
     } catch (err: any) {
       console.warn('[Camera Access Error]:', err);
-      setCameraError(err.message || 'Unable to access camera. Please allow camera permissions or upload a photo.');
+      setCameraError(err.message || 'Unable to access camera. Please allow camera permissions in your browser settings.');
       setIsCameraActive(false);
     }
   }, []);
@@ -240,8 +275,6 @@ export function FaceScannerModal({
               centralFacePixels++;
 
               // Skin-tone chromaticity detection in YCbCr space
-              // Cb = 128 - 0.168736*R - 0.331264*G + 0.5*B
-              // Cr = 128 + 0.5*R - 0.418688*G - 0.081312*B
               const cb = 128 - 0.1687 * r - 0.3313 * g + 0.5 * b;
               const cr = 128 + 0.5 * r - 0.4187 * g - 0.0813 * b;
 
@@ -266,7 +299,6 @@ export function FaceScannerModal({
         const avgLuma = totalLuma / (w * h);
         const skinRatio = skinPixels / Math.max(centralFacePixels, 1);
 
-        // 1. Lighting validation (Lowered to 35 for indoor ambient light)
         if (avgLuma < 35) {
           setGuidance('too_dark');
           setGuidanceMessage('🔴 Too Dark - Move to better light');
@@ -274,14 +306,12 @@ export function FaceScannerModal({
           setGuidance('too_bright');
           setGuidanceMessage('🔴 Too Bright / Glare - Reduce direct light');
         } else if (skinRatio < 0.15) {
-          // No face / hand or object in frame
           setGuidance('no_face');
           setGuidanceMessage('🔴 No face detected. Keep face in frame');
         } else if (skinRatio < 0.22) {
           setGuidance('not_centered');
           setGuidanceMessage('🟡 Center your face inside the oval');
         } else {
-          // Check bilateral eye symmetry for looking straight (Yaw check)
           const eyeDifference = Math.abs(leftEyeRegionDarkness - rightEyeRegionDarkness);
           const maxEyeDarkness = Math.max(leftEyeRegionDarkness, rightEyeRegionDarkness, 1);
 
@@ -303,7 +333,7 @@ export function FaceScannerModal({
   }, [isCameraActive, capturedSelfie]);
 
   useEffect(() => {
-    if (isOpen && activeTab === 'camera' && !capturedSelfie) {
+    if (isOpen && !capturedSelfie) {
       startCamera();
     } else {
       stopCamera();
@@ -311,7 +341,7 @@ export function FaceScannerModal({
     return () => {
       stopCamera();
     };
-  }, [isOpen, activeTab, capturedSelfie, startCamera, stopCamera]);
+  }, [isOpen, capturedSelfie, startCamera, stopCamera]);
 
   useEffect(() => {
     if (isCameraActive && !capturedSelfie) {
@@ -353,40 +383,21 @@ export function FaceScannerModal({
     stopCamera();
   };
 
-  // Handle File Upload Fallback
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (JPG, PNG, WebP).');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const b64 = event.target?.result as string;
-      setCapturedSelfie(b64);
-      setGuidance('ready');
-      setGuidanceMessage('✓ Photo Loaded');
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleRetake = () => {
     setCapturedSelfie(null);
     setGuidance('evaluating');
     setGuidanceMessage('Position your face inside the oval');
-    if (activeTab === 'camera') {
-      startCamera();
-    }
+    startCamera();
   };
 
   const [internalProcessing, setInternalProcessing] = useState(false);
 
   // Form Validation
   const isEmailValid = guestEmail.trim().length > 3 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim());
-  const isPhoneValid = guestPhone.replace(/[^0-9]/g, '').length >= 10;
+  const cleanPhoneDigits = guestPhone.replace(/\D/g, '');
+  const isPhoneValid = selectedCountry.code === '+91'
+    ? cleanPhoneDigits.length === 10
+    : cleanPhoneDigits.length >= 7 && cleanPhoneDigits.length <= 15;
   const isNameValid = guestName.trim().length >= 2;
   const isSubmitting = isProcessing || internalProcessing;
   const isReadyToSubmit = isNameValid && isPhoneValid && isEmailValid && !!capturedSelfie && !isSubmitting;
@@ -395,10 +406,12 @@ export function FaceScannerModal({
     e.preventDefault();
     if (!isReadyToSubmit || !capturedSelfie) return;
 
+    const fullPhone = `${selectedCountry.code}${cleanPhoneDigits}`;
+
     if (onSubmit) {
       await onSubmit({
         name: guestName.trim(),
-        phone: guestPhone.trim(),
+        phone: fullPhone,
         email: guestEmail.trim(),
         selfieBase64: capturedSelfie,
       });
@@ -425,7 +438,7 @@ export function FaceScannerModal({
 
         await onScanComplete(matchedPhotos, {
           name: guestName.trim(),
-          phone: guestPhone.trim(),
+          phone: fullPhone,
           email: guestEmail.trim(),
         });
         onClose();
@@ -438,6 +451,12 @@ export function FaceScannerModal({
   };
 
   if (!isOpen) return null;
+
+  const filteredCountries = COUNTRY_CODES.filter((c) => {
+    if (!countrySearch.trim()) return true;
+    const q = countrySearch.toLowerCase();
+    return c.name.toLowerCase().includes(q) || c.code.includes(q) || c.country.toLowerCase().includes(q);
+  });
 
   const getRingBorderClass = () => {
     if (capturedSelfie) return 'border-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.6)]';
@@ -461,20 +480,20 @@ export function FaceScannerModal({
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in">
       <canvas ref={canvasRef} className="hidden" />
 
-      <div className="bg-[#FAF9F5] rounded-3xl sm:rounded-4xl p-5 sm:p-7 max-w-lg w-full border border-[#E7E2D8] shadow-2xl space-y-5 my-auto text-zinc-900 relative">
+      <div className="bg-[#FAF9F5] rounded-3xl sm:rounded-4xl p-5 sm:p-7 max-w-lg w-full max-h-[92vh] overflow-y-auto border border-[#E7E2D8] shadow-2xl space-y-4 my-auto text-zinc-900 relative">
         
         {/* Top Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between pb-1">
+          <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center font-black text-xs border border-amber-200">
               <Sparkles className="w-4 h-4 text-amber-600" />
             </div>
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-full border border-amber-200">
-                AI Face Scanner
+                AI Face Registration
               </span>
               <h2 className="text-base sm:text-lg font-black text-zinc-900 leading-tight">
-                Scan Face &amp; Find Photos
+                Register &amp; Find Your Photos
               </h2>
             </div>
           </div>
@@ -489,55 +508,156 @@ export function FaceScannerModal({
           </button>
         </div>
 
-        {/* Tab Controls */}
-        <div className="grid grid-cols-2 p-1 rounded-2xl bg-zinc-200/60 text-xs font-bold">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('camera');
-              if (capturedSelfie) setCapturedSelfie(null);
-            }}
-            className={`py-2 rounded-xl flex items-center justify-center gap-1.5 transition ${
-              activeTab === 'camera'
-                ? 'bg-white text-zinc-900 shadow-xs'
-                : 'text-zinc-500 hover:text-zinc-800'
-            }`}
-          >
-            <Camera className="w-3.5 h-3.5" />
-            <span>Live Camera</span>
-          </button>
+        {/* Guest Details Form */}
+        <form onSubmit={handleSubmit} className="space-y-3.5">
+          {/* 1. Full Name */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-zinc-600 pl-1">Full Name *</label>
+            <div className="relative">
+              <User className="absolute left-3.5 top-3.5 w-4 h-4 text-zinc-400" />
+              <input
+                type="text"
+                required
+                placeholder="Enter your full name"
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                className="w-full pl-10 pr-3 py-2.5 bg-white border border-[#E7E2D8] rounded-2xl text-xs font-bold text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 shadow-2xs transition"
+              />
+            </div>
+          </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('upload');
-              stopCamera();
-            }}
-            className={`py-2 rounded-xl flex items-center justify-center gap-1.5 transition ${
-              activeTab === 'upload'
-                ? 'bg-white text-zinc-900 shadow-xs'
-                : 'text-zinc-500 hover:text-zinc-800'
-            }`}
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Upload Photo</span>
-          </button>
-        </div>
+          {/* 2. Email Address */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-zinc-600 pl-1">Email Address *</label>
+            <div className="relative">
+              <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-zinc-400" />
+              <input
+                type="email"
+                required
+                placeholder="name@example.com"
+                value={guestEmail}
+                onChange={(e) => setGuestEmail(e.target.value)}
+                className="w-full pl-10 pr-3 py-2.5 bg-white border border-[#E7E2D8] rounded-2xl text-xs font-bold text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 shadow-2xs transition"
+              />
+            </div>
+          </div>
 
-        {/* Camera / Upload Viewport */}
-        <div className="relative rounded-3xl bg-zinc-950 overflow-hidden aspect-4/3 sm:aspect-square flex items-center justify-center border-2 border-zinc-800 shadow-inner">
-          {activeTab === 'camera' ? (
-            <>
+          {/* 3. Phone Number with Country Flag Dropdown */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-zinc-600 pl-1">WhatsApp Number *</label>
+            <div className="relative flex items-center gap-2">
+              {/* Flag + Country Code Dropdown Trigger */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+                  className="flex items-center gap-1.5 bg-white border border-[#E7E2D8] hover:border-amber-500/40 px-3 py-2.5 rounded-2xl text-xs font-bold text-zinc-900 transition focus:outline-hidden shadow-2xs cursor-pointer"
+                >
+                  <span className="text-base leading-none">{selectedCountry.flag}</span>
+                  <span className="text-xs font-bold text-zinc-700 font-mono">{selectedCountry.code}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                </button>
+
+                {/* Country Dropdown Menu */}
+                {isCountryDropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => {
+                        setIsCountryDropdownOpen(false);
+                        setCountrySearch('');
+                      }}
+                    />
+                    <div className="absolute top-full left-0 mt-1.5 z-50 w-64 bg-white border border-[#E7E2D8] rounded-2xl shadow-xl max-h-60 overflow-hidden flex flex-col p-1.5 animate-in fade-in zoom-in-95">
+                      {/* Search box inside dropdown */}
+                      <div className="relative p-1 border-b border-zinc-100">
+                        <Search className="absolute left-2.5 top-3 w-3.5 h-3.5 text-zinc-400" />
+                        <input
+                          type="text"
+                          placeholder="Search country..."
+                          value={countrySearch}
+                          onChange={(e) => setCountrySearch(e.target.value)}
+                          className="w-full pl-7 pr-2 py-1 text-xs bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-hidden"
+                          autoFocus
+                        />
+                      </div>
+
+                      {/* Country List */}
+                      <div className="overflow-y-auto max-h-48 py-1 space-y-0.5">
+                        {filteredCountries.map((c, idx) => {
+                          const isSelected = selectedCountry.code === c.code && selectedCountry.country === c.country;
+                          return (
+                            <button
+                              key={`${c.country}-${idx}`}
+                              type="button"
+                              onClick={() => {
+                                setSelectedCountry(c);
+                                setIsCountryDropdownOpen(false);
+                                setCountrySearch('');
+                              }}
+                              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                                isSelected
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : 'text-zinc-700 hover:bg-zinc-100'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 truncate">
+                                <span className="text-base leading-none">{c.flag}</span>
+                                <span className="font-semibold text-zinc-800 truncate text-[11px]">{c.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span className="text-[10px] text-zinc-400 font-mono">{c.code}</span>
+                                {isSelected && <Check className="w-3.5 h-3.5 text-amber-600" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Number Input */}
+              <div className="relative flex-1">
+                <input
+                  type="tel"
+                  required
+                  placeholder={selectedCountry.code === '+91' ? '98765 43210' : 'Phone number'}
+                  value={guestPhone}
+                  onChange={(e) => {
+                    const cleaned = e.target.value.replace(/\D/g, '');
+                    setGuestPhone(cleaned);
+                  }}
+                  className="w-full px-3 py-2.5 bg-white border border-[#E7E2D8] rounded-2xl text-xs font-bold text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 shadow-2xs transition font-mono"
+                />
+              </div>
+            </div>
+            {selectedCountry.code === '+91' && cleanPhoneDigits.length > 0 && cleanPhoneDigits.length !== 10 && (
+              <p className="text-[10px] text-rose-500 pl-1 font-medium">Please enter a valid 10-digit mobile number</p>
+            )}
+          </div>
+
+          {/* 4. Live Camera Selfie Viewport (Camera ONLY - No upload tab) */}
+          <div className="space-y-1 pt-1">
+            <label className="text-[11px] font-bold text-zinc-600 pl-1 flex items-center justify-between">
+              <span>Take Live Selfie *</span>
+              <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                Single Face Only
+              </span>
+            </label>
+
+            <div className="relative rounded-3xl bg-zinc-950 overflow-hidden aspect-4/3 sm:aspect-square flex items-center justify-center border-2 border-zinc-800 shadow-inner">
               {cameraError ? (
                 <div className="p-6 text-center space-y-3 text-white">
                   <AlertCircle className="w-8 h-8 text-rose-400 mx-auto" />
                   <p className="text-xs text-zinc-300 max-w-xs leading-relaxed">{cameraError}</p>
                   <button
                     type="button"
-                    onClick={() => setActiveTab('upload')}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold text-xs transition"
+                    onClick={() => startCamera()}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold text-xs transition cursor-pointer"
                   >
-                    Use File Upload Instead
+                    Allow Camera &amp; Retry
                   </button>
                 </div>
               ) : capturedSelfie ? (
@@ -551,9 +671,9 @@ export function FaceScannerModal({
                     <button
                       type="button"
                       onClick={handleRetake}
-                      className="px-4 py-2 rounded-xl bg-white/90 hover:bg-white text-zinc-900 font-bold text-xs flex items-center gap-1.5 shadow-lg backdrop-blur-xs transition cursor-pointer"
+                      className="px-4 py-2.5 rounded-xl bg-white/95 hover:bg-white text-zinc-900 font-bold text-xs flex items-center gap-1.5 shadow-lg backdrop-blur-xs transition cursor-pointer"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" />
+                      <RefreshCw className="w-3.5 h-3.5 text-zinc-700" />
                       <span>Retake Selfie</span>
                     </button>
                   </div>
@@ -571,7 +691,7 @@ export function FaceScannerModal({
                   {/* 3D Glowing Oval Guide */}
                   <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
                     <div
-                      className={`relative w-48 h-64 sm:w-56 sm:h-72 rounded-[50%] border-4 transition-all duration-200 flex items-center justify-center ${getRingBorderClass()}`}
+                      className={`relative w-44 h-60 sm:w-52 sm:h-68 rounded-[50%] border-4 transition-all duration-200 flex items-center justify-center ${getRingBorderClass()}`}
                     >
                       {guidance === 'ready' && (
                         <div className="absolute inset-x-4 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-bounce" />
@@ -579,6 +699,21 @@ export function FaceScannerModal({
                       <div className="absolute top-2 w-4 h-1 bg-white/80 rounded-full" />
                       <div className="absolute bottom-2 w-4 h-1 bg-white/80 rounded-full" />
                     </div>
+                  </div>
+
+                  {/* Real-time Guidance Status */}
+                  <div className="absolute top-3 inset-x-3 flex justify-center pointer-events-none">
+                    <span
+                      className={`px-3 py-1 rounded-full text-[11px] font-black tracking-tight shadow-md backdrop-blur-md border ${
+                        guidance === 'ready'
+                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60'
+                          : guidance === 'too_dark' || guidance === 'too_bright' || guidance === 'no_face'
+                          ? 'bg-rose-950/80 text-rose-300 border-rose-500/60'
+                          : 'bg-zinc-900/80 text-zinc-300 border-zinc-700'
+                      }`}
+                    >
+                      {guidanceMessage}
+                    </span>
                   </div>
 
                   {/* Capture Button */}
@@ -599,140 +734,41 @@ export function FaceScannerModal({
                   </div>
                 </>
               )}
-            </>
-          ) : (
-            <div className="p-6 text-center space-y-4 text-white w-full h-full flex flex-col items-center justify-center">
-              {capturedSelfie ? (
-                <div className="relative w-full h-full">
-                  <img
-                    src={capturedSelfie}
-                    alt="Uploaded Photo"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <label className="px-4 py-2 rounded-xl bg-white/90 hover:bg-white text-zinc-900 font-bold text-xs flex items-center gap-1.5 shadow-lg backdrop-blur-xs transition cursor-pointer">
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Choose Different Photo</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="w-14 h-14 rounded-3xl bg-zinc-800 border border-zinc-700 text-amber-400 flex items-center justify-center mx-auto shadow-md">
-                    <Upload className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-white">Select a clear face selfie</h4>
-                    <p className="text-[11px] text-zinc-400 mt-1 max-w-xs mx-auto">
-                      Choose a close-up portrait photo with good lighting for highest matching accuracy.
-                    </p>
-                  </div>
-                  <label className="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs transition cursor-pointer shadow-lg shadow-amber-500/20 inline-flex items-center gap-2">
-                    <Upload className="w-4 h-4" />
-                    <span>Upload From Phone / PC</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </>
-              )}
             </div>
-          )}
+          </div>
 
-          {/* Real-time Guidance Message */}
-          <div className="absolute top-3 inset-x-3 flex justify-center pointer-events-none">
-            <span
-              className={`px-3 py-1 rounded-full text-[11px] font-black tracking-tight shadow-md backdrop-blur-md border ${
-                guidance === 'ready'
-                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60'
-                  : guidance === 'too_dark' || guidance === 'too_bright' || guidance === 'no_face'
-                  ? 'bg-rose-950/80 text-rose-300 border-rose-500/60'
-                  : 'bg-zinc-900/80 text-zinc-300 border-zinc-700'
+          {/* 5. Submit Action Button */}
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={!isReadyToSubmit}
+              className={`w-full py-3.5 rounded-2xl font-black text-xs tracking-wide transition-all duration-200 flex items-center justify-center gap-2 shadow-md cursor-pointer ${
+                isReadyToSubmit
+                  ? 'bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white shadow-amber-600/25 active:scale-98'
+                  : 'bg-zinc-200 text-zinc-400 cursor-not-allowed border border-zinc-300'
               }`}
             >
-              {guidanceMessage}
-            </span>
-          </div>
-        </div>
-
-        {/* Guest Details Form */}
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-2">
-            <div className="relative">
-              <User className="absolute left-3.5 top-3 w-4 h-4 text-zinc-400" />
-              <input
-                type="text"
-                required
-                placeholder="Full Name *"
-                value={guestName}
-                onChange={(e) => setGuestName(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 bg-white border border-[#E7E2D8] rounded-2xl text-xs font-bold text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 shadow-2xs transition"
-              />
-            </div>
-
-            <div className="relative">
-              <Phone className="absolute left-3.5 top-3 w-4 h-4 text-emerald-600" />
-              <input
-                type="tel"
-                required
-                placeholder="WhatsApp Number (e.g. +91 98765 43210) *"
-                value={guestPhone}
-                onChange={(e) => setGuestPhone(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 bg-white border border-[#E7E2D8] rounded-2xl text-xs font-bold text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 shadow-2xs transition font-mono"
-              />
-            </div>
-
-            <div className="relative">
-              <Mail className="absolute left-3.5 top-3 w-4 h-4 text-zinc-400" />
-              <input
-                type="email"
-                required
-                placeholder="Email Address *"
-                value={guestEmail}
-                onChange={(e) => setGuestEmail(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 bg-white border border-[#E7E2D8] rounded-2xl text-xs font-bold text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 shadow-2xs transition"
-              />
-            </div>
+              {isProcessing ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Searching ArcFace Vector Database...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4 text-amber-300" />
+                  <span>Find My Photos</span>
+                </>
+              )}
+            </button>
           </div>
 
-          <div className="p-2.5 rounded-2xl bg-amber-50/70 border border-amber-200/60 text-[10.5px] text-amber-900 flex items-start gap-2">
+          {/* 6. Privacy & WhatsApp Notification Notice (strictly below the button as requested) */}
+          <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/60 text-[10.5px] text-amber-900 flex items-start gap-2">
             <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
             <p className="leading-snug">
               Your details and selfie are used strictly for private face-matching. We will send your personal album link directly to your WhatsApp.
             </p>
           </div>
-
-          {/* Submit Action */}
-          <button
-            type="submit"
-            disabled={!isReadyToSubmit}
-            className={`w-full py-3.5 rounded-2xl font-black text-xs tracking-wide transition-all duration-200 flex items-center justify-center gap-2 shadow-md cursor-pointer ${
-              isReadyToSubmit
-                ? 'bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white shadow-amber-600/25 active:scale-98'
-                : 'bg-zinc-200 text-zinc-400 cursor-not-allowed border border-zinc-300'
-            }`}
-          >
-            {isProcessing ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Searching ArcFace Vector Database...</span>
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4 text-amber-300" />
-                <span>Find My Photos</span>
-              </>
-            )}
-          </button>
         </form>
 
       </div>
