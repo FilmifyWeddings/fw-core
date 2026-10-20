@@ -4,24 +4,21 @@ import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Sparkles,
   Camera,
   ArrowLeft,
-  Share2,
   Copy,
   Check,
   QrCode,
   Lock,
-  Unlock,
   MessageCircle,
   ExternalLink,
   Printer,
   X,
   Users,
   CheckSquare,
-  Crown,
   Key,
   KeyRound,
+  Sparkles,
 } from 'lucide-react';
 
 interface EventGallery {
@@ -53,8 +50,8 @@ function GalleryShareCenterContent() {
   // Toggle Controls
   const [guestAskPin, setGuestAskPin] = useState(false);
   const [fullAccessAskPin, setFullAccessAskPin] = useState(true);
-  const [fullAccessRequireReg, setFullAccessRequireReg] = useState(false);
-  const [selectionActive, setSelectionActive] = useState(true);
+  const [selectionAskPin, setSelectionAskPin] = useState(true);
+  const [selectionMaxLimit, setSelectionMaxLimit] = useState<string>('50');
 
   // Standee Modal
   const [isStandeeModalOpen, setIsStandeeModalOpen] = useState(false);
@@ -101,6 +98,7 @@ function GalleryShareCenterContent() {
       setGallery(gal);
       setGuestAskPin(!!gal.pin_code);
       setFullAccessAskPin(!!gal.pin_code);
+      setSelectionAskPin(!!gal.pin_code);
     } catch (err: any) {
       console.error('Error loading gallery share center:', err);
     } finally {
@@ -112,16 +110,22 @@ function GalleryShareCenterContent() {
     loadGallery();
   }, [loadGallery]);
 
-  const studioSlug = gallery?.studio_slug || 'studio';
-  const eventIdentifier = gallery?.event_number || gallery?.id || gallery?.slug || 'event';
+  const eventSlug = gallery?.slug || gallery?.id || 'event';
   const guestPin = gallery?.guest_pin || gallery?.pin_code || '700680';
   const passKey = gallery?.pass_key || gallery?.admin_pin || gallery?.pin_code || '518399';
 
-  // Exact FotoOwl Link Structures
-  const guestAccessUrl = `${origin}/g/${studioSlug}/gallery/${eventIdentifier}`;
-  const fullAccessUrl = `${origin}/g/${studioSlug}/gallery/${eventIdentifier}?access=all`;
-  const photoSelectionUrl = `${origin}/g/${studioSlug}/gallery/${eventIdentifier}?album_selection=true&pass_key=${passKey}`;
-  const vipAccessUrl = `${origin}/g/${studioSlug}/gallery/${eventIdentifier}?vip-link=1&share_key=${guestPin}`;
+  // Dynamic Link Structures directly mapped to /g/[slug]
+  const guestAccessUrl = guestAskPin
+    ? `${origin}/g/${eventSlug}?share_key=${guestPin}`
+    : `${origin}/g/${eventSlug}`;
+
+  const fullAccessUrl = fullAccessAskPin
+    ? `${origin}/g/${eventSlug}?access=all&pass_key=${passKey}`
+    : `${origin}/g/${eventSlug}?access=all`;
+
+  const parsedLimit = parseInt(selectionMaxLimit, 10);
+  const limitQuery = !isNaN(parsedLimit) && parsedLimit > 0 ? `&max_limit=${parsedLimit}` : '';
+  const photoSelectionUrl = `${origin}/g/${eventSlug}?album_selection=true${selectionAskPin ? `&pass_key=${passKey}` : ''}${limitQuery}`;
 
   const copyToClipboard = (text: string, key: string) => {
     if (typeof navigator !== 'undefined') {
@@ -131,17 +135,21 @@ function GalleryShareCenterContent() {
     setTimeout(() => setCopiedKey(null), 2500);
   };
 
-  const copyWhatsAppMessage = (title: string, url: string, pin: string | null, key: string) => {
-    if (!gallery) return;
-    const pinText = pin ? `\n🔐 PIN Code: *${pin}*` : '';
-    const message = `✨ *${gallery.title}* ✨\n\n📸 Access your wedding photos instantly using the link below:\n👉 ${url}${pinText}\n\n_Find all your special moments with AI Selfie Search!_`;
-
+  const shareViaWhatsApp = (message: string, key: string) => {
     if (typeof navigator !== 'undefined') {
       navigator.clipboard.writeText(message);
     }
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2500);
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`, '_blank');
   };
+
+  // WhatsApp Templates strictly matching user's templates
+  const guestWhatsAppMessage = `Hello!\nWe're excited to share your personal photo gallery from the event. This link will take you directly to your own photos, so you can relive and enjoy the special moments captured just for you:\n\n${guestAccessUrl}\n\nThank you for being a part of our event – we hope these memories bring a smile to your face!`;
+
+  const fullAccessWhatsAppMessage = `Hi there!\nWe're delighted to share the complete gallery from the event with you. Please use the link below to view and enjoy all the photos captured during the celebration:\n\n${fullAccessUrl}\n\nFeel free to revisit these memories anytime and share your favorite moments with friends and family.`;
+
+  const photoSelectionWhatsAppMessage = `Dear Guest,\nHere's your exclusive access to the full event photo gallery. You can also select and mark your favorite photos directly within the gallery:\n\n${photoSelectionUrl}\n\nWe hope you enjoy browsing through the collection and finding the moments that mean the most to you.`;
 
   if (loading || !gallery) {
     return (
@@ -152,7 +160,7 @@ function GalleryShareCenterContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-slate-900 font-sans p-4 sm:p-8 space-y-8 max-w-5xl mx-auto">
+    <div className="min-h-screen bg-[#FAF9F5] text-slate-900 font-sans p-4 sm:p-8 space-y-8 max-w-6xl mx-auto">
       
       {/* ─────────────────────────────────────────────────────────────
           1. HEADER & NAVIGATION
@@ -192,9 +200,9 @@ function GalleryShareCenterContent() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. THE 4 FOTOOWL DYNAMIC ACCESS CARDS
+          2. THE 3 DYNAMIC ACCESS CARDS
       ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* CARD 1: GUEST ACCESS (STRICT SELFIE SCAN) */}
         <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-5 flex flex-col justify-between hover:border-amber-400 transition-all">
@@ -210,7 +218,7 @@ function GalleryShareCenterContent() {
 
             <div>
               <h3 className="text-base font-black text-zinc-900">1. Guest Access</h3>
-              <p className="text-xs text-zinc-500 font-medium mt-1">
+              <p className="text-xs text-zinc-500 font-medium mt-1 leading-relaxed">
                 People with this link can see <strong>Only Their Own Photos (Selfie Scan Required)</strong>. Full gallery is hidden.
               </p>
             </div>
@@ -230,6 +238,7 @@ function GalleryShareCenterContent() {
               </div>
 
               <button
+                type="button"
                 onClick={() => copyToClipboard(guestPin, 'pin_guest')}
                 className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-amber-900 hover:bg-amber-100 transition cursor-pointer"
               >
@@ -244,7 +253,7 @@ function GalleryShareCenterContent() {
                 type="checkbox"
                 checked={!guestAskPin}
                 onChange={(e) => setGuestAskPin(!e.target.checked)}
-                className="w-4 h-4 text-amber-600 rounded cursor-pointer"
+                className="w-4 h-4 text-amber-600 rounded cursor-pointer accent-amber-600"
               />
             </div>
           </div>
@@ -253,15 +262,17 @@ function GalleryShareCenterContent() {
           <div className="space-y-2 pt-3 border-t border-zinc-100">
             <div className="grid grid-cols-2 gap-2">
               <button
+                type="button"
                 onClick={() => copyToClipboard(guestAccessUrl, 'guest_url')}
                 className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 {copiedKey === 'guest_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'guest_url' ? 'Copied Link' : 'Copy Link'}</span>
+                <span>{copiedKey === 'guest_url' ? 'Copied' : 'Copy Link'}</span>
               </button>
 
               <button
-                onClick={() => copyWhatsAppMessage(gallery.title, guestAccessUrl, guestAskPin ? guestPin : null, 'guest_wa')}
+                type="button"
+                onClick={() => shareViaWhatsApp(guestWhatsAppMessage, 'guest_wa')}
                 className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
               >
                 {copiedKey === 'guest_wa' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
@@ -270,6 +281,7 @@ function GalleryShareCenterContent() {
             </div>
 
             <button
+              type="button"
               onClick={() => {
                 setStandeeUrl(guestAccessUrl);
                 setStandeeTitle(gallery.title);
@@ -298,7 +310,7 @@ function GalleryShareCenterContent() {
 
             <div>
               <h3 className="text-base font-black text-zinc-900">2. Full Access</h3>
-              <p className="text-xs text-zinc-500 font-medium mt-1">
+              <p className="text-xs text-zinc-500 font-medium mt-1 leading-relaxed">
                 People with this link can see <strong>All the event photos</strong> across all sub-events.
               </p>
             </div>
@@ -313,12 +325,13 @@ function GalleryShareCenterContent() {
                 <KeyRound className="w-4 h-4 text-blue-700" />
                 <div>
                   <span className="text-[10px] uppercase font-bold text-blue-800 block">Access PIN Code</span>
-                  <span className="text-xs font-mono font-black text-zinc-900">{guestPin}</span>
+                  <span className="text-xs font-mono font-black text-zinc-900">{passKey}</span>
                 </div>
               </div>
 
               <button
-                onClick={() => copyToClipboard(guestPin, 'pin_full')}
+                type="button"
+                onClick={() => copyToClipboard(passKey, 'pin_full')}
                 className="px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-[11px] font-bold text-blue-900 hover:bg-blue-100 transition cursor-pointer"
               >
                 {copiedKey === 'pin_full' ? 'Copied' : 'Copy PIN'}
@@ -326,26 +339,14 @@ function GalleryShareCenterContent() {
             </div>
 
             {/* Controls */}
-            <div className="space-y-2 pt-2 border-t border-zinc-100 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-zinc-700">Require PIN Code</span>
-                <input
-                  type="checkbox"
-                  checked={fullAccessAskPin}
-                  onChange={(e) => setFullAccessAskPin(e.target.checked)}
-                  className="w-4 h-4 text-amber-600 rounded cursor-pointer"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-zinc-700">Require Registration</span>
-                <input
-                  type="checkbox"
-                  checked={fullAccessRequireReg}
-                  onChange={(e) => setFullAccessRequireReg(e.target.checked)}
-                  className="w-4 h-4 text-amber-600 rounded cursor-pointer"
-                />
-              </div>
+            <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-xs">
+              <span className="font-bold text-zinc-700">Require PIN Code</span>
+              <input
+                type="checkbox"
+                checked={fullAccessAskPin}
+                onChange={(e) => setFullAccessAskPin(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded cursor-pointer accent-blue-600"
+              />
             </div>
           </div>
 
@@ -353,6 +354,7 @@ function GalleryShareCenterContent() {
           <div className="space-y-2 pt-3 border-t border-zinc-100">
             <div className="grid grid-cols-2 gap-2">
               <button
+                type="button"
                 onClick={() => copyToClipboard(fullAccessUrl, 'full_url')}
                 className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
@@ -361,7 +363,8 @@ function GalleryShareCenterContent() {
               </button>
 
               <button
-                onClick={() => copyWhatsAppMessage(gallery.title, fullAccessUrl, fullAccessAskPin ? guestPin : null, 'full_wa')}
+                type="button"
+                onClick={() => shareViaWhatsApp(fullAccessWhatsAppMessage, 'full_wa')}
                 className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
               >
                 {copiedKey === 'full_wa' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
@@ -370,10 +373,11 @@ function GalleryShareCenterContent() {
             </div>
 
             <button
+              type="button"
               onClick={() => {
                 setStandeeUrl(fullAccessUrl);
                 setStandeeTitle(gallery.title);
-                setStandeePin(fullAccessAskPin ? guestPin : null);
+                setStandeePin(fullAccessAskPin ? passKey : null);
                 setIsStandeeModalOpen(true);
               }}
               className="w-full py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -398,7 +402,7 @@ function GalleryShareCenterContent() {
 
             <div>
               <h3 className="text-base font-black text-zinc-900">3. Photo Selection with Full Access</h3>
-              <p className="text-xs text-zinc-500 font-medium mt-1">
+              <p className="text-xs text-zinc-500 font-medium mt-1 leading-relaxed">
                 People with this link can see All photos and the <strong>photo selection mode is ON</strong> for album prints.
               </p>
             </div>
@@ -418,6 +422,7 @@ function GalleryShareCenterContent() {
               </div>
 
               <button
+                type="button"
                 onClick={() => copyToClipboard(passKey, 'pass_key_copy')}
                 className="px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-[11px] font-bold text-purple-900 hover:bg-purple-100 transition cursor-pointer"
               >
@@ -426,14 +431,32 @@ function GalleryShareCenterContent() {
             </div>
 
             {/* Controls */}
-            <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-xs">
-              <span className="font-bold text-zinc-700">Photo selection active</span>
-              <input
-                type="checkbox"
-                checked={selectionActive}
-                onChange={(e) => setSelectionActive(e.target.checked)}
-                className="w-4 h-4 text-amber-600 rounded cursor-pointer"
-              />
+            <div className="space-y-2 pt-2 border-t border-zinc-100 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-zinc-700">Require Pass Key</span>
+                <input
+                  type="checkbox"
+                  checked={selectionAskPin}
+                  onChange={(e) => setSelectionAskPin(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-zinc-700">Max Selection Limit</span>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={1}
+                    max={5000}
+                    value={selectionMaxLimit}
+                    onChange={(e) => setSelectionMaxLimit(e.target.value)}
+                    placeholder="50"
+                    className="w-20 px-2 py-1 bg-[#FAF9F5] border border-zinc-200 rounded-lg text-xs font-bold text-center focus:outline-hidden focus:border-purple-500"
+                  />
+                  <span className="text-[11px] text-zinc-400 font-bold">photos</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -441,6 +464,7 @@ function GalleryShareCenterContent() {
           <div className="space-y-2 pt-3 border-t border-zinc-100">
             <div className="grid grid-cols-2 gap-2">
               <button
+                type="button"
                 onClick={() => copyToClipboard(photoSelectionUrl, 'selection_url')}
                 className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
@@ -449,7 +473,8 @@ function GalleryShareCenterContent() {
               </button>
 
               <button
-                onClick={() => copyWhatsAppMessage(gallery.title, photoSelectionUrl, passKey, 'selection_wa')}
+                type="button"
+                onClick={() => shareViaWhatsApp(photoSelectionWhatsAppMessage, 'selection_wa')}
                 className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
               >
                 {copiedKey === 'selection_wa' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
@@ -458,98 +483,17 @@ function GalleryShareCenterContent() {
             </div>
 
             <button
+              type="button"
               onClick={() => {
                 setStandeeUrl(photoSelectionUrl);
                 setStandeeTitle(gallery.title);
-                setStandeePin(passKey);
+                setStandeePin(selectionAskPin ? passKey : null);
                 setIsStandeeModalOpen(true);
               }}
-              className="w-full py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full py-2.5 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-950 border border-purple-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <QrCode className="w-3.5 h-3.5 text-zinc-600" />
+              <QrCode className="w-3.5 h-3.5 text-purple-700" />
               <span>View QR Code</span>
-            </button>
-          </div>
-        </div>
-
-        {/* CARD 4: VIP GUEST ACCESS LINK */}
-        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-5 flex flex-col justify-between hover:border-amber-400 transition-all">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
-                <Crown className="w-5 h-5" />
-              </div>
-              <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
-                VIP Bypass
-              </span>
-            </div>
-
-            <div>
-              <h3 className="text-base font-black text-zinc-900">4. VIP Guest Access Link</h3>
-              <p className="text-xs text-zinc-500 font-medium mt-1">
-                <strong>No User Data will be asked for Face Search.</strong> Direct high-priority access.
-              </p>
-            </div>
-
-            <div className="p-3 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] text-xs font-mono text-zinc-700 truncate select-all">
-              {vipAccessUrl}
-            </div>
-
-            {/* Dedicated Share Key Box */}
-            <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-amber-700" />
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-amber-800 block">Share Key</span>
-                  <span className="text-xs font-mono font-black text-zinc-900">{guestPin}</span>
-                </div>
-              </div>
-
-              <button
-                onClick={() => copyToClipboard(guestPin, 'share_key_copy')}
-                className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-amber-900 hover:bg-amber-100 transition cursor-pointer"
-              >
-                {copiedKey === 'share_key_copy' ? 'Copied' : 'Copy Key'}
-              </button>
-            </div>
-
-            <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-xs text-zinc-500">
-              <span className="font-bold">Bypasses registration gates</span>
-              <span className="text-[10px] font-bold text-emerald-600">Active</span>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="space-y-2 pt-3 border-t border-zinc-100">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => copyToClipboard(vipAccessUrl, 'vip_url')}
-                className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-              >
-                {copiedKey === 'vip_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'vip_url' ? 'Copied Link' : 'Copy Link'}</span>
-              </button>
-
-              <button
-                onClick={() => copyWhatsAppMessage(gallery.title, vipAccessUrl, null, 'vip_wa')}
-                className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
-              >
-                {copiedKey === 'vip_wa' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'vip_wa' ? 'Copied' : 'WhatsApp Share'}</span>
-              </button>
-            </div>
-
-            <button
-              onClick={() => {
-                setStandeeUrl(vipAccessUrl);
-                setStandeeTitle(gallery.title);
-                setStandeePin(null);
-                setIsStandeeModalOpen(true);
-              }}
-              className="w-full py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <QrCode className="w-3.5 h-3.5 text-amber-600" />
-              <span>Print Table Standee</span>
             </button>
           </div>
         </div>

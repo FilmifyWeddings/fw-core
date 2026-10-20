@@ -124,6 +124,8 @@ function GuestSlugGalleryContent() {
   // Search parameters for access modes
   const isFullAccess = searchParams?.get('access') === 'all' || searchParams?.get('access') === 'full';
   const isSelectionMode = searchParams?.get('album_selection') === 'true';
+  const maxLimitParam = searchParams?.get('max_limit');
+  const maxSelectionLimit = maxLimitParam ? parseInt(maxLimitParam, 10) : null;
   const isVipMode = searchParams?.get('vip-link') === '1';
   const passKeyParam = searchParams?.get('pass_key');
   const shareKeyParam = searchParams?.get('share_key');
@@ -136,6 +138,9 @@ function GuestSlugGalleryContent() {
   const [fullPhotos, setFullPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Selection Filter State
+  const [showOnlySelected, setShowOnlySelected] = useState(false);
 
   // PIN / PassKey State for Privileged Access
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -609,10 +614,61 @@ function GuestSlugGalleryContent() {
   }, [targetFullPhotos, visibleFullCount]);
 
   const hasMorePrivilegedPhotos = visibleFullCount < targetFullPhotos.length;
+  const infiniteGuestSentinelRef = useRef<HTMLDivElement>(null);
 
-  const displayedPhotos = isPrivilegedMode && isUnlocked
-    ? displayedPrivilegedPhotos
-    : matchedPhotos;
+  // Automatic Infinite Scroll for Guest Portal
+  useEffect(() => {
+    if (!hasMorePrivilegedPhotos) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleFullCount((prev) => Math.min(prev + 50, targetFullPhotos.length));
+        }
+      },
+      { rootMargin: '400px' }
+    );
+
+    const el = infiniteGuestSentinelRef.current;
+    if (el) observer.observe(el);
+    return () => {
+      if (el) observer.unobserve(el);
+      observer.disconnect();
+    };
+  }, [hasMorePrivilegedPhotos, targetFullPhotos.length]);
+
+  // LocalStorage persistence for Album Selection Mode
+  useEffect(() => {
+    if (!gallery?.id || !isSelectionMode) return;
+    try {
+      const saved = localStorage.getItem(`studiocore_album_selection_${gallery.id}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSelectedForAlbum(new Set(parsed));
+        }
+      }
+    } catch (_) {}
+  }, [gallery?.id, isSelectionMode]);
+
+  useEffect(() => {
+    if (!gallery?.id || !isSelectionMode) return;
+    try {
+      localStorage.setItem(`studiocore_album_selection_${gallery.id}`, JSON.stringify(Array.from(selectedForAlbum)));
+    } catch (_) {}
+  }, [selectedForAlbum, gallery?.id, isSelectionMode]);
+
+  const displayedPhotos = useMemo(() => {
+    let list = isPrivilegedMode && isUnlocked
+      ? displayedPrivilegedPhotos
+      : matchedPhotos;
+
+    if (isSelectionMode && showOnlySelected) {
+      list = (isPrivilegedMode && isUnlocked ? targetFullPhotos : matchedPhotos).filter((p) =>
+        selectedForAlbum.has(p.id)
+      );
+    }
+    return list;
+  }, [isPrivilegedMode, isUnlocked, displayedPrivilegedPhotos, matchedPhotos, isSelectionMode, showOnlySelected, targetFullPhotos, selectedForAlbum]);
 
   if (loading) {
     return (
@@ -1145,7 +1201,78 @@ function GuestSlugGalleryContent() {
         {/* CASE C: PRIVILEGED FULL ACCESS */}
         {isPrivilegedMode && isUnlocked && (
           <div className="space-y-6">
-            {collections.length > 0 && (
+            {/* Album Selection Sticky Banner */}
+            {isSelectionMode && (
+              <div className="sticky top-4 z-40 bg-zinc-950/95 backdrop-blur-md text-white rounded-2xl p-4 shadow-2xl border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center border border-purple-500/30 shrink-0">
+                    <CheckSquare className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black uppercase tracking-wider text-purple-400">Album Selection Mode</span>
+                      {maxSelectionLimit && (
+                        <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/30">
+                          Limit: {maxSelectionLimit}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-300 font-medium">
+                      Selected <strong className="text-white text-sm font-black">{selectedForAlbum.size}</strong>
+                      {maxSelectionLimit ? ` / ${maxSelectionLimit}` : ''} photos
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowOnlySelected(!showOnlySelected)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      showOnlySelected
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                        : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                    }`}
+                  >
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    <span>{showOnlySelected ? 'Show All Photos' : `View Selected (${selectedForAlbum.size})`}</span>
+                  </button>
+
+                  {selectedForAlbum.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm('Clear all photo selections?')) {
+                          setSelectedForAlbum(new Set());
+                        }
+                      }}
+                      className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-bold transition cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {isSelectionMode && showOnlySelected && displayedPhotos.length === 0 && (
+              <div className="bg-white rounded-3xl p-8 border border-[#E7E2D8] text-center space-y-3">
+                <CheckSquare className="w-8 h-8 text-purple-600 mx-auto" />
+                <h3 className="text-base font-black text-zinc-900">No Photos Selected Yet</h3>
+                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                  Click on any photo in the gallery to mark it for your album selection.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowOnlySelected(false)}
+                  className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-bold hover:bg-zinc-800 transition"
+                >
+                  Browse All Photos
+                </button>
+              </div>
+            )}
+
+            {collections.length > 0 && !showOnlySelected && (
               <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
                 <button
                   type="button"
@@ -1185,9 +1312,17 @@ function GuestSlugGalleryContent() {
                     onClick={() => {
                       if (isSelectionMode) {
                         const next = new Set(selectedForAlbum);
-                        if (isSelected) next.delete(photo.id);
-                        else next.add(photo.id);
-                        setSelectedForAlbum(next);
+                        if (isSelected) {
+                          next.delete(photo.id);
+                          setSelectedForAlbum(next);
+                        } else {
+                          if (maxSelectionLimit && next.size >= maxSelectionLimit) {
+                            alert(`You can select up to a maximum of ${maxSelectionLimit} photos.`);
+                            return;
+                          }
+                          next.add(photo.id);
+                          setSelectedForAlbum(next);
+                        }
                       } else {
                         setSelectedPhotoIndex(idx);
                       }
@@ -1245,19 +1380,13 @@ function GuestSlugGalleryContent() {
               })}
             </div>
 
+            {/* Automatic Infinite Scroll Sentinel */}
             {hasMorePrivilegedPhotos && (
-              <div className="py-8 flex flex-col items-center justify-center gap-3">
-                <p className="text-xs text-zinc-500 font-medium">
-                  Showing {displayedPrivilegedPhotos.length} of {targetFullPhotos.length} photos
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setVisibleFullCount((prev) => Math.min(prev + 50, targetFullPhotos.length))}
-                  className="px-6 py-2.5 rounded-2xl bg-zinc-900 hover:bg-black text-white text-xs font-bold shadow-sm transition active:scale-98 flex items-center gap-2 cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Load Next 50 Photos</span>
-                </button>
+              <div ref={infiniteGuestSentinelRef} className="py-8 flex flex-col items-center justify-center gap-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-800 bg-amber-50 px-4 py-2 rounded-full border border-amber-200 shadow-2xs animate-pulse">
+                  <RefreshCw className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                  <span>Loading more photos... ({displayedPrivilegedPhotos.length} of {targetFullPhotos.length})</span>
+                </div>
               </div>
             )}
           </div>

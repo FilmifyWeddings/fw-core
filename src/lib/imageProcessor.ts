@@ -279,8 +279,8 @@ export async function batchUploadPhotos(
     }
   };
 
-  // Memory-safe concurrency: 2 files at a time to keep RAM flat (<80MB)
-  const CONCURRENCY = 2;
+  // High-throughput parallel concurrency: 4 files at a time for maximum bandwidth utilization
+  const CONCURRENCY = 4;
 
   for (let i = 0; i < files.length; i += CONCURRENCY) {
     if (signal?.aborted) {

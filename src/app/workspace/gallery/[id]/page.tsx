@@ -794,11 +794,12 @@ function AlbumStudioContent() {
     }
   };
 
-  // Create Collection
+  // Create Collection (Debounced & Instant Lock)
   const handleCreateCollection = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!gallery || !newCollectionName.trim()) return;
+    if (!gallery || !newCollectionName.trim() || isSavingCollection) return;
 
+    setIsSavingCollection(true);
     try {
       const res = await fetch('/api/gallery/collections', {
         method: 'POST',
@@ -820,6 +821,8 @@ function AlbumStudioContent() {
       }
     } catch (err: any) {
       alert(`Error creating collection: ${err.message}`);
+    } finally {
+      setIsSavingCollection(false);
     }
   };
 
@@ -1206,6 +1209,7 @@ function AlbumStudioContent() {
 
   // 50-Photo Millisecond Progressive Pagination (Prevents Browser Freezing)
   const [visiblePhotosCount, setVisiblePhotosCount] = useState<number>(50);
+  const infiniteSentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setVisiblePhotosCount(50);
@@ -1216,6 +1220,26 @@ function AlbumStudioContent() {
   }, [filteredPhotos, visiblePhotosCount]);
 
   const hasMorePhotos = visiblePhotosCount < filteredPhotos.length;
+
+  // Seamless Automatic Infinite Scroll Observer
+  useEffect(() => {
+    if (!hasMorePhotos) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisiblePhotosCount((prev) => Math.min(prev + 50, filteredPhotos.length));
+        }
+      },
+      { rootMargin: '400px' }
+    );
+
+    const el = infiniteSentinelRef.current;
+    if (el) observer.observe(el);
+    return () => {
+      if (el) observer.unobserve(el);
+      observer.disconnect();
+    };
+  }, [hasMorePhotos, filteredPhotos.length]);
 
   const totalFaces = useMemo(() => photos.reduce((acc, p) => acc + (p.face_count || 0), 0), [photos]);
   const totalSizeBytes = useMemo(() => photos.reduce((acc, p) => acc + (Number(p.size_bytes) || 0), 0), [photos]);
@@ -1741,24 +1765,24 @@ function AlbumStudioContent() {
                   </div>
                 </div>
 
-                {/* Sleek Collapse Toggle Tab on Divider (Never Overlaps Collections) */}
+                {/* Sleek Skinny Orange Collapse Toggle Tab (Higher placement & Prominent Theme) */}
                 <button
                   onClick={() => setIsDrawerCollapsed(true)}
-                  className="absolute -right-3 top-20 z-40 w-6 h-8 rounded-r-lg bg-white border-y border-r border-[#E7E2D8] text-zinc-500 hover:text-zinc-900 shadow-xs flex items-center justify-center cursor-pointer transition-colors hover:bg-zinc-50"
+                  className="absolute -right-3.5 top-6 z-50 w-7 h-9 rounded-r-xl bg-amber-500 hover:bg-amber-600 text-white shadow-md border-y border-r border-amber-600 flex items-center justify-center cursor-pointer transition-all active:scale-95 group"
                   title="Collapse Sidebar"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <ChevronLeft className="w-4 h-4 text-white group-hover:-translate-x-0.5 transition-transform" />
                 </button>
               </aside>
             ) : (
-              /* Floating Button to Expand Sub-sidebar when Collapsed */
+              /* Floating Button to Expand Sub-sidebar when Collapsed (Skinny Orange Theme) */
               <div className="relative">
                 <button
                   onClick={() => setIsDrawerCollapsed(false)}
-                  className="absolute left-0 top-20 z-40 w-6 h-8 rounded-r-lg bg-white border-y border-r border-[#E7E2D8] text-zinc-500 hover:text-zinc-900 shadow-xs flex items-center justify-center cursor-pointer transition-colors hover:bg-zinc-50"
+                  className="absolute left-0 top-6 z-50 w-7 h-9 rounded-r-xl bg-amber-500 hover:bg-amber-600 text-white shadow-md border-y border-r border-amber-600 flex items-center justify-center cursor-pointer transition-all active:scale-95 group"
                   title="Show Collections & People Panel"
                 >
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  <ChevronRight className="w-4 h-4 text-white group-hover:translate-x-0.5 transition-transform" />
                 </button>
               </div>
             )}
@@ -2134,20 +2158,13 @@ function AlbumStudioContent() {
                   })}
                 </div>
 
-                {/* 50-Photo Progressive Pagination Indicator */}
+                {/* 50-Photo Progressive Automatic Infinite Scroll Sentinel */}
                 {hasMorePhotos && (
-                  <div className="py-8 flex flex-col items-center justify-center gap-3">
-                    <p className="text-xs text-zinc-500 font-medium">
-                      Showing {displayedPhotos.length} of {filteredPhotos.length} photos
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setVisiblePhotosCount((prev) => Math.min(prev + 50, filteredPhotos.length))}
-                      className="px-6 py-2.5 rounded-2xl bg-zinc-900 hover:bg-black text-white text-xs font-bold shadow-sm transition active:scale-98 flex items-center gap-2 cursor-pointer"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Load Next 50 Photos</span>
-                    </button>
+                  <div ref={infiniteSentinelRef} className="py-8 flex flex-col items-center justify-center gap-2">
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-800 bg-amber-50 px-4 py-2 rounded-full border border-amber-200 shadow-2xs">
+                      <RefreshCw className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                      <span>Loading more photos... ({displayedPhotos.length} of {filteredPhotos.length})</span>
+                    </div>
                   </div>
                 )}
               </>
@@ -2261,20 +2278,13 @@ function AlbumStudioContent() {
                 })}
               </div>
 
-              {/* 50-Photo Progressive Pagination Indicator */}
+              {/* 50-Photo Progressive Automatic Infinite Scroll Sentinel */}
               {hasMorePhotos && (
-                <div className="py-6 flex flex-col items-center justify-center gap-2">
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Showing {displayedPhotos.length} of {filteredPhotos.length} photos
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setVisiblePhotosCount((prev) => Math.min(prev + 50, filteredPhotos.length))}
-                    className="px-6 py-2.5 rounded-2xl bg-zinc-900 hover:bg-black text-white text-xs font-bold shadow-sm transition active:scale-98 flex items-center gap-2 cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Load Next 50 Photos</span>
-                  </button>
+                <div ref={infiniteSentinelRef} className="py-6 flex flex-col items-center justify-center gap-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-amber-800 bg-amber-50 px-4 py-2 rounded-full border border-amber-200 shadow-2xs">
+                    <RefreshCw className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                    <span>Loading more photos... ({displayedPhotos.length} of {filteredPhotos.length})</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -2680,9 +2690,17 @@ function AlbumStudioContent() {
             <div className="flex items-center gap-2 pt-2">
               <button
                 type="submit"
-                className="flex-1 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition cursor-pointer shadow-xs"
+                disabled={isSavingCollection || !newCollectionName.trim()}
+                className="flex-1 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 text-white font-bold text-xs transition cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
               >
-                Create Collection
+                {isSavingCollection ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <span>Create Collection</span>
+                )}
               </button>
               <button
                 type="button"

@@ -100,7 +100,7 @@ export default function MyEventsPage() {
     slug: '',
     event_date: new Date().toISOString().split('T')[0],
     event_type: 'Wedding',
-    is_face_ai_enabled: true,
+    is_face_ai_enabled: false,
   });
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
   const [creating, setCreating] = useState(false);

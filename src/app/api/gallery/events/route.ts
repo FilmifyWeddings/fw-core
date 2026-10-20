@@ -9,11 +9,10 @@ export function resolveIsFaceAiEnabled(gallery: any): boolean {
   if (gallery?.is_face_ai_enabled !== undefined && gallery?.is_face_ai_enabled !== null) {
     return Boolean(gallery.is_face_ai_enabled);
   }
-  if (gallery?.cover_url && typeof gallery.cover_url === 'string') {
-    if (gallery.cover_url.includes('face_ai=false') || gallery.cover_url.includes('face_ai=0')) return false;
-    if (gallery.cover_url.includes('face_ai=true') || gallery.cover_url.includes('face_ai=1')) return true;
-  }
-  return true;
+  const strToCheck = `${gallery?.cover_url || ''} ${gallery?.r2_folder_prefix || ''}`;
+  if (strToCheck.includes('face_ai=true') || strToCheck.includes('face_ai=1')) return true;
+  if (strToCheck.includes('face_ai=false') || strToCheck.includes('face_ai=0')) return false;
+  return false; // Default is OFF as requested
 }
 
 function formatCoverUrl(url: string | null | undefined): string | null {
@@ -238,7 +237,7 @@ export async function POST(req: NextRequest) {
       allow_downloads,
       is_active: false,
       status: 'UNPUBLISHED',
-      is_face_ai_enabled: is_face_ai_enabled !== false,
+      is_face_ai_enabled: is_face_ai_enabled === true,
     };
 
     if (body.event_type) {
@@ -254,10 +253,10 @@ export async function POST(req: NextRequest) {
     if (error && (error.message?.includes('is_face_ai_enabled') || error.message?.includes('event_type') || (error as any).code === '42703')) {
       delete insertPayload.is_face_ai_enabled;
       delete insertPayload.event_type;
-      // Persist face AI preference in cover_url hash if column does not exist yet
-      if (is_face_ai_enabled === false) {
-        insertPayload.cover_url = insertPayload.cover_url ? `${insertPayload.cover_url}#face_ai=false` : '#face_ai=false';
-      }
+      // Persist face AI preference in r2_folder_prefix and cover_url hash if column does not exist yet
+      const faceAiTag = is_face_ai_enabled === true ? '#face_ai=true' : '#face_ai=false';
+      insertPayload.r2_folder_prefix = `${insertPayload.r2_folder_prefix || ''}${faceAiTag}`;
+      insertPayload.cover_url = insertPayload.cover_url ? `${insertPayload.cover_url}${faceAiTag}` : faceAiTag;
       const retry = await supabaseAdmin
         .from('event_galleries')
         .insert(insertPayload)
@@ -339,10 +338,15 @@ export async function PATCH(req: NextRequest) {
       delete updates.is_face_ai_enabled;
       delete updates.event_type;
       if (is_face_ai_enabled !== undefined) {
-        // Fallback: persist in cover_url hash
-        const curCover = updates.cover_url || (await supabaseAdmin.from('event_galleries').select('cover_url').eq('id', id).maybeSingle()).data?.cover_url || '';
+        // Fallback: persist in both cover_url and r2_folder_prefix
+        const { data: curGal } = await supabaseAdmin.from('event_galleries').select('cover_url, r2_folder_prefix').eq('id', id).maybeSingle();
+        const curCover = updates.cover_url || curGal?.cover_url || '';
         const baseCover = curCover.replace(/#.*$/, '');
-        updates.cover_url = is_face_ai_enabled ? `${baseCover}#face_ai=true` : `${baseCover}#face_ai=false`;
+        const curPrefix = curGal?.r2_folder_prefix || '';
+        const basePrefix = curPrefix.replace(/#.*$/, '');
+        const tag = is_face_ai_enabled ? '#face_ai=true' : '#face_ai=false';
+        updates.cover_url = baseCover ? `${baseCover}${tag}` : tag;
+        updates.r2_folder_prefix = `${basePrefix}${tag}`;
       }
 
       const retry = await supabaseAdmin

@@ -76,117 +76,116 @@ export async function POST(req: NextRequest) {
         .eq('id', galleryId);
     }
 
-    // 4. Automatic Multi-Face Indexing (ONLY if Face AI is Enabled)
-    let totalFacesFound = 0;
+    // 4. Automatic Multi-Face Indexing
     if (inserted && inserted.length > 0 && isFaceAiEnabled) {
-      const CHUNK_SIZE = 4;
-      for (let i = 0; i < inserted.length; i += CHUNK_SIZE) {
-        const chunk = inserted.slice(i, i + CHUNK_SIZE);
-        await Promise.all(
-          chunk.map(async (p) => {
-            try {
-              const faces = await extractFacesFromS3Key(p.preview_key);
-              await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);
+      // Non-blocking background face extraction: returns immediate 200 OK so uploads finish in milliseconds
+      (async () => {
+        try {
+          const CHUNK_SIZE = 4;
+          for (let i = 0; i < inserted.length; i += CHUNK_SIZE) {
+            const chunk = inserted.slice(i, i + CHUNK_SIZE);
+            await Promise.all(
+              chunk.map(async (p) => {
+                try {
+                  const faces = await extractFacesFromS3Key(p.preview_key);
+                  await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);
 
-              if (faces && faces.length > 0) {
-                totalFacesFound += faces.length;
-                const faceRecords = faces.map((f) => ({
-                  photo_id: p.id,
-                  gallery_id: galleryId,
-                  bounding_box: f.box,
-                  embedding: f.embedding,
-                }));
+                  if (faces && faces.length > 0) {
+                    const faceRecords = faces.map((f) => ({
+                      photo_id: p.id,
+                      gallery_id: galleryId,
+                      bounding_box: f.box,
+                      embedding: f.embedding,
+                    }));
 
-                await supabaseAdmin.from('photo_faces').insert(faceRecords);
-                await supabaseAdmin
-                  .from('gallery_photos')
-                  .update({ face_count: faces.length })
-                  .eq('id', p.id);
-              } else {
-                await supabaseAdmin
-                  .from('gallery_photos')
-                  .update({ face_count: 0 })
-                  .eq('id', p.id);
-              }
-            } catch (faceErr) {
-              console.warn(`[FaceIndex] Error processing photo ${p.id}:`, faceErr);
-            }
-          })
-        );
-      }
+                    await supabaseAdmin.from('photo_faces').insert(faceRecords);
+                    await supabaseAdmin
+                      .from('gallery_photos')
+                      .update({ face_count: faces.length })
+                      .eq('id', p.id);
+                  } else {
+                    await supabaseAdmin
+                      .from('gallery_photos')
+                      .update({ face_count: 0 })
+                      .eq('id', p.id);
+                  }
+                } catch (faceErr) {
+                  console.warn(`[FaceIndex] Error processing photo ${p.id}:`, faceErr);
+                }
+              })
+            );
+          }
 
-      // Update gallery aggregate total_faces
-      try {
-        const { count: faceCount } = await supabaseAdmin
-          .from('photo_faces')
-          .select('id', { count: 'exact', head: true })
-          .eq('gallery_id', galleryId);
-
-        if (typeof faceCount === 'number') {
-          await supabaseAdmin
-            .from('event_galleries')
-            .update({ total_faces: faceCount })
-            .eq('id', galleryId);
-        }
-      } catch (_) {}
-
-      // 5. Automatic Guest Re-Sync: Match new photo faces against registered guests in real-time
-      try {
-        const { data: guests } = await supabaseAdmin
-          .from('event_guest_registrations')
-          .select('id, face_embedding, matched_photo_ids')
-          .eq('gallery_id', galleryId);
-
-        if (guests && guests.length > 0) {
-          const { data: newFaces } = await supabaseAdmin
+          // Update gallery aggregate total_faces
+          const { count: faceCount } = await supabaseAdmin
             .from('photo_faces')
-            .select('photo_id, embedding')
-            .in('photo_id', inserted.map((p) => p.id));
+            .select('id', { count: 'exact', head: true })
+            .eq('gallery_id', galleryId);
 
-          if (newFaces && newFaces.length > 0) {
-            for (const guest of guests) {
-              const rawEmb = Array.isArray(guest.face_embedding)
-                ? guest.face_embedding
-                : (typeof guest.face_embedding === 'string' ? JSON.parse(guest.face_embedding) : null);
+          if (typeof faceCount === 'number') {
+            await supabaseAdmin
+              .from('event_galleries')
+              .update({ total_faces: faceCount })
+              .eq('id', galleryId);
+          }
 
-              if (!rawEmb || rawEmb.length !== 512) continue;
-              const guestVector = normalizeVector(rawEmb);
-              const currentMatches = new Set<string>(
-                Array.isArray(guest.matched_photo_ids) ? guest.matched_photo_ids : []
-              );
-              let hasNewMatch = false;
+          // Automatic Guest Re-Sync: Match new photo faces against registered guests in background
+          const { data: guests } = await supabaseAdmin
+            .from('event_guest_registrations')
+            .select('id, face_embedding, matched_photo_ids')
+            .eq('gallery_id', galleryId);
 
-              for (const nf of newFaces) {
-                const nfEmb = Array.isArray(nf.embedding)
-                  ? nf.embedding
-                  : (typeof nf.embedding === 'string' ? JSON.parse(nf.embedding) : null);
+          if (guests && guests.length > 0) {
+            const { data: newFaces } = await supabaseAdmin
+              .from('photo_faces')
+              .select('photo_id, embedding')
+              .in('photo_id', inserted.map((p) => p.id));
 
-                if (nfEmb && nfEmb.length === 512) {
-                  const sim = cosineSimilarity(guestVector, nfEmb);
-                  if (sim >= 0.28) {
-                    currentMatches.add(nf.photo_id);
-                    hasNewMatch = true;
+            if (newFaces && newFaces.length > 0) {
+              for (const guest of guests) {
+                const rawEmb = Array.isArray(guest.face_embedding)
+                  ? guest.face_embedding
+                  : (typeof guest.face_embedding === 'string' ? JSON.parse(guest.face_embedding) : null);
+
+                if (!rawEmb || rawEmb.length !== 512) continue;
+                const guestVector = normalizeVector(rawEmb);
+                const currentMatches = new Set<string>(
+                  Array.isArray(guest.matched_photo_ids) ? guest.matched_photo_ids : []
+                );
+                let hasNewMatch = false;
+
+                for (const nf of newFaces) {
+                  const nfEmb = Array.isArray(nf.embedding)
+                    ? nf.embedding
+                    : (typeof nf.embedding === 'string' ? JSON.parse(nf.embedding) : null);
+
+                  if (nfEmb && nfEmb.length === 512) {
+                    const sim = cosineSimilarity(guestVector, nfEmb);
+                    if (sim >= 0.28) {
+                      currentMatches.add(nf.photo_id);
+                      hasNewMatch = true;
+                    }
                   }
                 }
-              }
 
-              if (hasNewMatch) {
-                await supabaseAdmin
-                  .from('event_guest_registrations')
-                  .update({
-                    matched_photo_ids: Array.from(currentMatches),
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq('id', guest.id);
+                if (hasNewMatch) {
+                  await supabaseAdmin
+                    .from('event_guest_registrations')
+                    .update({
+                      matched_photo_ids: Array.from(currentMatches),
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', guest.id);
+                }
               }
             }
           }
+        } catch (bgErr) {
+          console.warn('[FaceIndex Background Task Notice]:', bgErr);
         }
-      } catch (guestSyncErr) {
-        console.warn('[FaceIndex] Auto-matching new photos to guests:', guestSyncErr);
-      }
+      })();
     } else if (inserted && inserted.length > 0 && !isFaceAiEnabled) {
-      // Face AI is disabled for this event: zero out face_count and skip heavy compute
+      // Face AI is disabled for this event: zero out face_count immediately
       try {
         await supabaseAdmin
           .from('gallery_photos')
@@ -198,7 +197,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       registeredCount: inserted?.length || 0,
-      totalFacesFound,
       photos: inserted,
     });
   } catch (err: any) {

@@ -36,11 +36,28 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { gallery_id, name } = body;
 
-    if (!gallery_id || !name) {
+    if (!gallery_id || !name || !name.trim()) {
       return NextResponse.json({ success: false, error: 'Missing gallery_id or name' }, { status: 400 });
     }
 
-    let cleanSlug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const trimmedName = name.trim();
+
+    // Check if collection with same name already exists in this gallery (deduplicate double/triple taps)
+    const { data: existingSameName } = await supabaseAdmin
+      .from('gallery_collections')
+      .select('id, name')
+      .eq('gallery_id', gallery_id)
+      .ilike('name', trimmedName)
+      .maybeSingle();
+
+    if (existingSameName) {
+      return NextResponse.json({
+        success: false,
+        error: `A collection named "${trimmedName}" already exists in this event.`,
+      }, { status: 409 });
+    }
+
+    let cleanSlug = trimmedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     if (!cleanSlug) {
       cleanSlug = `col-${Date.now().toString(36)}`;
     }
@@ -61,7 +78,7 @@ export async function POST(req: NextRequest) {
       .from('gallery_collections')
       .insert({
         gallery_id,
-        name: name.trim(),
+        name: trimmedName,
         slug: cleanSlug,
         sort_order: 0,
       })
