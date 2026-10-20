@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import {
   Camera,
@@ -141,6 +141,10 @@ function GuestSlugGalleryContent() {
 
   // Selection Filter State
   const [showOnlySelected, setShowOnlySelected] = useState(false);
+  const [selectorName, setSelectorName] = useState('');
+  const [selectorEmail, setSelectorEmail] = useState('');
+  const [showSelectorModal, setShowSelectorModal] = useState(false);
+  const [isSyncingSelection, setIsSyncingSelection] = useState(false);
 
   // PIN / PassKey State for Privileged Access
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -635,6 +639,89 @@ function GuestSlugGalleryContent() {
       observer.disconnect();
     };
   }, [hasMorePrivilegedPhotos, targetFullPhotos.length]);
+
+  // Load selector identity and sync from backend for cross-device persistence
+  useEffect(() => {
+    if (!gallery?.id || !isSelectionMode) return;
+    try {
+      const stored = localStorage.getItem(`studiocore_selector_${gallery.id}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.email) {
+          setSelectorName(parsed.name || '');
+          setSelectorEmail(parsed.email);
+          // Load selections from database
+          fetch(`/api/gallery/selections?gallery_id=${gallery.id}&email=${encodeURIComponent(parsed.email)}`)
+            .then((r) => r.json())
+            .then((res) => {
+              if (res.success && Array.isArray(res.selected_photo_ids)) {
+                setSelectedForAlbum(new Set(res.selected_photo_ids));
+              }
+            })
+            .catch(() => {});
+          return;
+        }
+      }
+      if (isUnlocked) {
+        setShowSelectorModal(true);
+      }
+    } catch (_) {}
+  }, [gallery?.id, isSelectionMode, isUnlocked]);
+
+  // Sync selections to backend
+  const syncSelectionToBackend = useCallback(async (newSelection: Set<string>, name: string, email: string) => {
+    if (!gallery?.id || !email) return;
+    setIsSyncingSelection(true);
+    try {
+      await fetch('/api/gallery/selections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gallery_id: gallery.id,
+          client_name: name || 'Guest',
+          client_email: email,
+          selected_photo_ids: Array.from(newSelection),
+          max_limit: maxSelectionLimit,
+        }),
+      });
+    } catch (_) {} finally {
+      setIsSyncingSelection(false);
+    }
+  }, [gallery?.id, maxSelectionLimit]);
+
+  const handleSelectorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectorEmail || !selectorEmail.includes('@')) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+    const cleanName = selectorName.trim() || 'Guest';
+    const cleanEmail = selectorEmail.trim().toLowerCase();
+
+    try {
+      localStorage.setItem(`studiocore_selector_${gallery?.id}`, JSON.stringify({ name: cleanName, email: cleanEmail }));
+    } catch (_) {}
+
+    setShowSelectorModal(false);
+
+    // Fetch existing selections for this email
+    if (gallery?.id) {
+      setIsSyncingSelection(true);
+      try {
+        const res = await fetch(`/api/gallery/selections?gallery_id=${gallery.id}&email=${encodeURIComponent(cleanEmail)}`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.selected_photo_ids)) {
+          setSelectedForAlbum(new Set(json.selected_photo_ids));
+        }
+      } catch (_) {} finally {
+        setIsSyncingSelection(false);
+      }
+    }
+  };
+
+  const handleSwitchSelector = () => {
+    setShowSelectorModal(true);
+  };
 
   // LocalStorage persistence for Album Selection Mode
   useEffect(() => {
@@ -1216,11 +1303,34 @@ function GuestSlugGalleryContent() {
                           Limit: {maxSelectionLimit}
                         </span>
                       )}
+                      {isSyncingSelection ? (
+                        <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1">
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Saving...
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                          ✓ Synced
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-zinc-300 font-medium">
-                      Selected <strong className="text-white text-sm font-black">{selectedForAlbum.size}</strong>
-                      {maxSelectionLimit ? ` / ${maxSelectionLimit}` : ''} photos
-                    </p>
+                    <div className="flex items-center gap-2 text-xs text-zinc-300 font-medium">
+                      <span>
+                        Selected <strong className="text-white text-sm font-black">{selectedForAlbum.size}</strong>
+                        {maxSelectionLimit ? ` / ${maxSelectionLimit}` : ''} photos
+                      </span>
+                      {selectorEmail && (
+                        <span className="text-zinc-500">
+                          • for <strong className="text-zinc-300">{selectorName || selectorEmail}</strong>
+                          <button
+                            type="button"
+                            onClick={handleSwitchSelector}
+                            className="text-amber-400 hover:text-amber-300 underline ml-1.5 cursor-pointer font-bold"
+                          >
+                            (Switch User)
+                          </button>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -1242,8 +1352,10 @@ function GuestSlugGalleryContent() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (confirm('Clear all photo selections?')) {
-                          setSelectedForAlbum(new Set());
+                        if (confirm('Clear all your photo selections?')) {
+                          const next = new Set<string>();
+                          setSelectedForAlbum(next);
+                          syncSelectionToBackend(next, selectorName, selectorEmail);
                         }
                       }}
                       className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-bold transition cursor-pointer"
@@ -1311,10 +1423,15 @@ function GuestSlugGalleryContent() {
                     key={photo.id}
                     onClick={() => {
                       if (isSelectionMode) {
+                        if (!selectorEmail) {
+                          setShowSelectorModal(true);
+                          return;
+                        }
                         const next = new Set(selectedForAlbum);
                         if (isSelected) {
                           next.delete(photo.id);
                           setSelectedForAlbum(next);
+                          syncSelectionToBackend(next, selectorName, selectorEmail);
                         } else {
                           if (maxSelectionLimit && next.size >= maxSelectionLimit) {
                             alert(`You can select up to a maximum of ${maxSelectionLimit} photos.`);
@@ -1322,6 +1439,7 @@ function GuestSlugGalleryContent() {
                           }
                           next.add(photo.id);
                           setSelectedForAlbum(next);
+                          syncSelectionToBackend(next, selectorName, selectorEmail);
                         }
                       } else {
                         setSelectedPhotoIndex(idx);
@@ -1451,6 +1569,75 @@ function GuestSlugGalleryContent() {
                 className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-white font-black text-xs rounded-2xl transition shadow-md cursor-pointer"
               >
                 Unlock Gallery
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. CLIENT SELECTION IDENTITY MODAL (NAME & EMAIL) */}
+      {showSelectorModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="w-5 h-5 text-purple-600" />
+                <h3 className="text-sm font-black text-zinc-900">Album Photo Selection</h3>
+              </div>
+              {selectorEmail && (
+                <button
+                  type="button"
+                  onClick={() => setShowSelectorModal(false)}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs text-zinc-600 font-medium leading-relaxed">
+                Enter your details to select photos for the album. Your selections will automatically sync across your phone and laptop!
+              </p>
+            </div>
+
+            <form onSubmit={handleSelectorSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-500 mb-1">
+                  Your Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Rahul Sharma"
+                  value={selectorName}
+                  onChange={(e) => setSelectorName(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-[#FAF9F5] border border-zinc-200 rounded-xl text-xs font-bold text-zinc-900 focus:outline-hidden focus:border-purple-600 focus:bg-white transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-500 mb-1">
+                  Your Email Address <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="name@example.com"
+                  value={selectorEmail}
+                  onChange={(e) => setSelectorEmail(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-[#FAF9F5] border border-zinc-200 rounded-xl text-xs font-bold text-zinc-900 focus:outline-hidden focus:border-purple-600 focus:bg-white transition"
+                />
+                <span className="text-[10px] text-zinc-400 mt-1 block">
+                  Log in with this email on any device to continue your selections.
+                </span>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs rounded-xl transition shadow-md shadow-purple-600/20 cursor-pointer"
+              >
+                Start Selecting Photos
               </button>
             </form>
           </div>
