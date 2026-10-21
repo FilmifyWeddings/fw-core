@@ -277,13 +277,19 @@ export default function LeadsPage() {
       } else {
         setImpersonatedWorkspaceName(null);
       }
-      setUserId(uId);
+      const effectiveWs = workspaceId || uId;
+      setUserId(effectiveWs);
       setIsDemoMode(false);
-      await loadLeadsAndPreferences(uId);
+      if (leadsAccess !== 'NONE' || isOwner) {
+        await loadLeadsAndPreferences(effectiveWs);
+      } else {
+        setLeads([]);
+        setLoading(false);
+      }
     };
 
     checkAuth();
-  }, [router]);
+  }, [router, workspaceId, leadsAccess, isOwner]);
 
   // Settings & Leads sync listener
   useEffect(() => {
@@ -1650,6 +1656,7 @@ export default function LeadsPage() {
             <LeadTable 
               leads={leads} 
               stages={stages}
+              isReadOnly={isReadOnly}
               onStatusChange={isReadOnly ? undefined : handleStatusChange} 
               onLeadUpdate={isReadOnly ? undefined : handleLeadUpdate}
               onCreateLead={isReadOnly ? undefined : handleCreateLead}

@@ -19,6 +19,7 @@ interface DeliverableRowItemProps {
   teamMembers: { id: string; name: string; role?: string; default_daily_rate?: number; daily_rate?: number; email?: string }[];
   clientName?: string;
   workspaceId?: string;
+  isReadOnly?: boolean;
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
   onUpdateItemFields?: (itemId: string, fields: Partial<PostProductionDeliverable>) => void;
   onDeleteItem: (itemId: string) => void;
@@ -48,6 +49,7 @@ export default function DeliverableRowItem({
   teamMembers,
   clientName,
   workspaceId,
+  isReadOnly = false,
   onUpdateItem,
   onUpdateItemFields,
   onDeleteItem,
@@ -251,9 +253,9 @@ export default function DeliverableRowItem({
           ) : (
             <div className="flex items-center gap-2 group min-w-0 flex-wrap">
               <span
-                onClick={() => setIsEditingTitle(true)}
-                className="text-xs font-black text-slate-800 dark:text-stone-100 truncate cursor-pointer hover:text-amber-700 dark:hover:text-amber-400 transition"
-                title="Click to edit deliverable title"
+                onClick={() => !isReadOnly && setIsEditingTitle(true)}
+                className={`text-xs font-black text-slate-800 dark:text-stone-100 truncate ${!isReadOnly ? 'cursor-pointer hover:text-amber-700 dark:hover:text-amber-400' : 'cursor-default'} transition`}
+                title={!isReadOnly ? 'Click to edit deliverable title' : undefined}
               >
                 {item.title}
               </span>
@@ -291,40 +293,46 @@ export default function DeliverableRowItem({
                   {(item.specs || item.count) ? (
                     <span
                       onClick={() => {
-                        setSpecInput(String(item.specs ?? item.count ?? ''));
-                        setIsEditingSpec(true);
+                        if (!isReadOnly) {
+                          setSpecInput(String(item.specs ?? item.count ?? ''));
+                          setIsEditingSpec(true);
+                        }
                       }}
-                      className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100/70 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 shadow-2xs hover:bg-amber-200/80 hover:border-amber-400 transition cursor-pointer shrink-0 flex items-center gap-1 group/spec"
-                      title="Click to edit specs / count (e.g. 25 Mins, 500 Photos, 40 Pages)"
+                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100/70 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 shadow-2xs ${!isReadOnly ? 'hover:bg-amber-200/80 hover:border-amber-400 cursor-pointer' : 'cursor-default'} transition shrink-0 flex items-center gap-1 group/spec`}
+                      title={!isReadOnly ? 'Click to edit specs / count (e.g. 25 Mins, 500 Photos, 40 Pages)' : undefined}
                     >
                       <span>{item.specs || item.count}</span>
-                      <Edit3 className="w-2.5 h-2.5 opacity-50 group-hover/spec:opacity-100 transition" />
+                      {!isReadOnly && <Edit3 className="w-2.5 h-2.5 opacity-50 group-hover/spec:opacity-100 transition" />}
                     </span>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSpecInput('');
-                        setIsEditingSpec(true);
-                      }}
-                      className="opacity-50 hover:opacity-100 group-hover:opacity-100 text-[10px] font-bold px-2 py-0.5 rounded-md text-amber-800 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/30 border border-dashed border-amber-300 dark:border-amber-700/60 hover:border-amber-400 transition cursor-pointer shrink-0 flex items-center gap-1"
-                      title="Add deliverable specs (e.g. 25 Mins, 500 Photos)"
-                    >
-                      <Plus className="w-2.5 h-2.5" />
-                      <span>Specs</span>
-                    </button>
+                    !isReadOnly && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSpecInput('');
+                          setIsEditingSpec(true);
+                        }}
+                        className="opacity-50 hover:opacity-100 group-hover:opacity-100 text-[10px] font-bold px-2 py-0.5 rounded-md text-amber-800 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/30 border border-dashed border-amber-300 dark:border-amber-700/60 hover:border-amber-400 transition cursor-pointer shrink-0 flex items-center gap-1"
+                        title="Add deliverable specs (e.g. 25 Mins, 500 Photos)"
+                      >
+                        <Plus className="w-2.5 h-2.5" />
+                        <span>Specs</span>
+                      </button>
+                    )
                   )}
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => setIsEditingTitle(true)}
-                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 dark:hover:text-stone-200 transition cursor-pointer shrink-0"
-                title="Edit title"
-              >
-                <Edit3 className="w-3 h-3" />
-              </button>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingTitle(true)}
+                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 dark:hover:text-stone-200 transition cursor-pointer shrink-0"
+                  title="Edit title"
+                >
+                  <Edit3 className="w-3 h-3" />
+                </button>
+              )}
             </div>
           )}
 
@@ -356,7 +364,9 @@ export default function DeliverableRowItem({
         <div className="w-44 sm:w-52 shrink-0">
           <Searchable3DCreamSelect
             value={currentAssignee}
+            disabled={isReadOnly}
             onChange={(val) => {
+              if (isReadOnly) return;
               if (val === 'unassigned') {
                 if (onUpdateItemFields) {
                   onUpdateItemFields(item.id, { 
@@ -386,7 +396,7 @@ export default function DeliverableRowItem({
               }
             }}
             options={teamMemberOptions}
-            searchable={true}
+            searchable={!isReadOnly}
             usePortal={true}
             searchPlaceholder="🔍 Search editor..."
             placeholder="+ Assign Editor"
@@ -396,16 +406,22 @@ export default function DeliverableRowItem({
         {/* Column 2: Due Date & Countdown Status (Clean width w-48 sm:w-52, direct box click) */}
         <div className="w-48 sm:w-52 shrink-0 flex items-center gap-1.5">
           <div 
-            onClick={() => datePickerRef.current?.showPicker?.() || datePickerRef.current?.focus()}
-            className="relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs cursor-pointer flex-1 hover:border-amber-400 transition min-w-0"
-            title="Click to select due date"
+            onClick={() => {
+              if (!isReadOnly) {
+                datePickerRef.current?.showPicker?.() || datePickerRef.current?.focus();
+              }
+            }}
+            className={`relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs ${!isReadOnly ? 'cursor-pointer hover:border-amber-400' : 'cursor-default'} transition flex-1 min-w-0`}
+            title={!isReadOnly ? 'Click to select due date' : undefined}
           >
             <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 pointer-events-none" />
             <input
               ref={datePickerRef}
               type="date"
+              disabled={isReadOnly}
               value={dueDateStr}
               onChange={(e) => {
+                if (isReadOnly) return;
                 const dateVal = e.target.value;
                 if (onUpdateItemFields) {
                   onUpdateItemFields(item.id, { due_date: dateVal, deadline: dateVal });
@@ -414,7 +430,7 @@ export default function DeliverableRowItem({
                   onUpdateItem(item.id, 'deadline', dateVal);
                 }
               }}
-              className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none cursor-pointer w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+              className={`bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none ${!isReadOnly ? 'cursor-pointer' : 'cursor-default'} w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full ${!isReadOnly ? '[&::-webkit-calendar-picker-indicator]:cursor-pointer' : ''}`}
             />
           </div>
 
@@ -431,7 +447,9 @@ export default function DeliverableRowItem({
             currentStatus={currentStatus}
             statuses={ppStatuses}
             workspaceId={workspaceId || 'ws_default'}
+            disabled={isReadOnly}
             onChange={(val) => {
+              if (isReadOnly) return;
               if (onUpdateItemFields) {
                 onUpdateItemFields(item.id, { status: val });
               } else {
@@ -490,17 +508,19 @@ export default function DeliverableRowItem({
           </button>
 
           {/* Edit Title Button */}
-          <button
-            type="button"
-            onClick={() => setIsEditingTitle(true)}
-            title="Edit Title"
-            className="p-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-400 hover:text-amber-600 hover:border-amber-300 transition cursor-pointer"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-          </button>
+          {!isReadOnly && (
+            <button
+              type="button"
+              onClick={() => setIsEditingTitle(true)}
+              title="Edit Title"
+              className="p-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-400 hover:text-amber-600 hover:border-amber-300 transition cursor-pointer"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* Edit Commercials Fee Button */}
-          {(item.assigned_member_id || item.assigned_to) && (
+          {!isReadOnly && (item.assigned_member_id || item.assigned_to) && (
             <button
               type="button"
               onClick={() => setIsAssignModalOpen(true)}
@@ -512,14 +532,16 @@ export default function DeliverableRowItem({
           )}
 
           {/* Delete Item with 3D confirmation dialog */}
-          <button
-            type="button"
-            onClick={() => setShowDeleteConfirm(true)}
-            title="Delete item"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {!isReadOnly && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(true)}
+              title="Delete item"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 

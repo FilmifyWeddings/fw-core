@@ -27,6 +27,7 @@ interface SegmentContainerProps {
   clientName?: string;
   workspaceId?: string;
   disabledCategories?: string[];
+  isReadOnly?: boolean;
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
   onUpdateItemFields?: (itemId: string, fields: Partial<PostProductionDeliverable>) => void;
   onDeleteItem: (itemId: string) => void;
@@ -47,6 +48,7 @@ export default function SegmentContainer({
   clientName,
   workspaceId,
   disabledCategories = [],
+  isReadOnly = false,
   onUpdateItem,
   onUpdateItemFields,
   onDeleteItem,
@@ -324,14 +326,15 @@ export default function SegmentContainer({
                 teamMembers={teamMembers}
                 clientName={clientName}
                 workspaceId={workspaceId}
+                isReadOnly={isReadOnly}
                 onUpdateItem={onUpdateItem}
                 onUpdateItemFields={onUpdateItemFields}
                 onDeleteItem={onDeleteItem}
                 onAddItem={onAddItem}
-                onRemoveCategory={(seg, c) => {
+                onRemoveCategory={!isReadOnly ? (seg, c) => {
                   setManuallyAddedCategories(prev => prev.filter(x => x.toLowerCase() !== c.toLowerCase()));
                   onRemoveCategory(seg, c);
-                }}
+                } : undefined}
                 onOpenComments={onOpenComments}
                 onOpenDrive={onOpenDrive}
               />
@@ -339,87 +342,89 @@ export default function SegmentContainer({
           })}
 
           {/* ── LIGHT-YELLOW "+ ADD CATEGORY" BUTTON (UNDERNEATH LAST CATEGORY CARD) ── */}
-          <div className="pt-2">
-            {showAddCatPopover ? (
-              <div className="p-4 bg-white dark:bg-stone-900 border border-amber-300/80 dark:border-amber-700/80 rounded-2xl shadow-md space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
-                    <FolderPlus className="w-4 h-4 text-amber-600" />
-                    Add Category to {segmentName}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddCatPopover(false);
-                      setIsAddingCustomCat(false);
-                    }}
-                    className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-xs font-bold cursor-pointer p-1"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* Standard Categories to re-add */}
-                {availableToAdd.length > 0 && (
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-stone-400">
-                      Configured Categories
+          {!isReadOnly && (
+            <div className="pt-2">
+              {showAddCatPopover ? (
+                <div className="p-4 bg-white dark:bg-stone-900 border border-amber-300/80 dark:border-amber-700/80 rounded-2xl shadow-md space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                      <FolderPlus className="w-4 h-4 text-amber-600" />
+                      Add Category to {segmentName}
                     </span>
-                    <div className="flex flex-wrap gap-2">
-                      {availableToAdd.map(cat => (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => {
-                            setManuallyAddedCategories(prev => [...prev, cat]);
-                            onAddCategory(segmentName, cat);
-                            setShowAddCatPopover(false);
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-300/80 dark:border-amber-800 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
-                        >
-                          <Plus className="w-3.5 h-3.5 text-amber-600" />
-                          <span>{cat}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Custom Category Input */}
-                <div className="pt-1 border-t border-[#EAE5DA] dark:border-stone-800 space-y-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-purple-600" />
-                    Custom Category
-                  </span>
-                  <form onSubmit={handleAddCustomCategory} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      autoFocus
-                      placeholder="e.g. Drone Raw Cuts, Reels & Shorts, Candid Stills..."
-                      value={customCatInput}
-                      onChange={(e) => setCustomCatInput(e.target.value)}
-                      className="flex-1 px-3 py-1.5 text-xs font-semibold bg-[#FAF9F5] dark:bg-stone-800 border border-amber-300/80 dark:border-amber-700 rounded-xl text-slate-800 dark:text-stone-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                    />
                     <button
-                      type="submit"
-                      className="px-4 py-1.5 text-xs font-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl shadow-xs transition cursor-pointer"
+                      type="button"
+                      onClick={() => {
+                        setShowAddCatPopover(false);
+                        setIsAddingCustomCat(false);
+                      }}
+                      className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-xs font-bold cursor-pointer p-1"
                     >
-                      Add
+                      <X className="w-4 h-4" />
                     </button>
-                  </form>
+                  </div>
+
+                  {/* Standard Categories to re-add */}
+                  {availableToAdd.length > 0 && (
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-stone-400">
+                        Configured Categories
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {availableToAdd.map(cat => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => {
+                              setManuallyAddedCategories(prev => [...prev, cat]);
+                              onAddCategory(segmentName, cat);
+                              setShowAddCatPopover(false);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-300/80 dark:border-amber-800 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-amber-600" />
+                            <span>{cat}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom Category Input */}
+                  <div className="pt-1 border-t border-[#EAE5DA] dark:border-stone-800 space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-purple-600" />
+                      Custom Category
+                    </span>
+                    <form onSubmit={handleAddCustomCategory} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="e.g. Drone Raw Cuts, Reels & Shorts, Candid Stills..."
+                        value={customCatInput}
+                        onChange={(e) => setCustomCatInput(e.target.value)}
+                        className="flex-1 px-3 py-1.5 text-xs font-semibold bg-[#FAF9F5] dark:bg-stone-800 border border-amber-300/80 dark:border-amber-700 rounded-xl text-slate-800 dark:text-stone-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      />
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 text-xs font-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl shadow-xs transition cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </form>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowAddCatPopover(true)}
-                className="w-full py-2.5 px-4 rounded-xl bg-amber-50/80 hover:bg-amber-100 text-amber-900 border border-amber-300/60 dark:bg-amber-950/30 dark:border-amber-800/40 dark:text-amber-300 text-xs font-semibold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Plus className="w-4 h-4 text-amber-700 dark:text-amber-400" />
-                <span>+ Add Category</span>
-              </button>
-            )}
-          </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAddCatPopover(true)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-50/80 hover:bg-amber-100 text-amber-900 border border-amber-300/60 dark:bg-amber-950/30 dark:border-amber-800/40 dark:text-amber-300 text-xs font-semibold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+                  <span>+ Add Category</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
           </motion.div>

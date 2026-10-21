@@ -155,7 +155,7 @@ export async function GET(req: NextRequest) {
       if (!leadId && d.template_id) {
         for (const [lId] of leadMap.entries()) {
           const lShort = lId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-          if (d.template_id.includes(lId) || (lShort && d.template_id.includes(lShort))) {
+          if (d.template_id.includes(lId) || (lShort && d.template_id.includes(`FW-L-${lShort}`))) {
             leadId = lId;
             break;
           }

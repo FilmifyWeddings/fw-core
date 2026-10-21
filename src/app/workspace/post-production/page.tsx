@@ -5,9 +5,10 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Film, Filter, Search, RefreshCw, User, Layers, CheckCircle2, 
-  Clock, AlertTriangle, RotateCcw, Trash2
+  Clock, AlertTriangle, RotateCcw, Trash2, Lock, ShieldAlert
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import PostProductionCard, { PostProductionProjectData } from './components/PostProductionCard';
 import PostProductionFilterModal, { PostProductionFilters } from './components/PostProductionFilterModal';
@@ -33,6 +34,12 @@ let memCachedPostProdClients: any[] = [];
 let memCachedPostProdQuotations: any[] = [];
 
 export default function PostProductionPage() {
+  const { workspaceId, userName, userRole, isOwner, permissions, userId } = useWorkspace();
+
+  const ppAccess = isOwner ? 'ALL_MANAGE' : (permissions?.post_production_access || 'NONE');
+  const isReadOnly = !isOwner && (ppAccess === 'ASSIGNED_VIEW' || ppAccess === 'ASSIGNED_ONLY' || ppAccess === 'ALL_VIEW');
+  const isAssignedOnly = !isOwner && (ppAccess === 'ASSIGNED_VIEW' || ppAccess === 'ASSIGNED_ONLY');
+
   const [projects, setProjects] = useState<PostProductionProjectData[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [quotations, setQuotations] = useState<any[]>([]);
@@ -138,20 +145,39 @@ export default function PostProductionPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (workspaceId) {
+      memCachedPostProdProjects = [];
+      fetchPostProductionData();
+    }
+  }, [workspaceId]);
+
   const fetchPostProductionData = async () => {
     if (memCachedPostProdProjects.length === 0) {
       setLoading(true);
     }
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
+      const effectiveWsId = workspaceId || session?.user?.id || 'ws_demo';
+
+      if (!isOwner && ppAccess === 'NONE') {
+        setProjects([]);
+        setLoading(false);
+        return;
+      }
 
       // 1. Fetch Team Members with In-House and PM Access tags
       const members: PostProductionTeamMember[] = [];
       try {
-        const { data: fwData } = await supabase
+        let fwQuery = supabase
           .from('fw_team_members')
-          .select('id, name, primary_role, primary_type, member_types, phone, user_id');
+          .select('id, name, primary_role, primary_type, member_types, phone, user_id, workspace_id');
+
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+          fwQuery = fwQuery.or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
+        }
+
+        const { data: fwData } = await fwQuery;
 
         if (fwData && fwData.length > 0) {
           fwData.forEach((f: any) => {
@@ -181,7 +207,7 @@ export default function PostProductionPage() {
 
       try {
         const token = session?.access_token;
-        const res = await fetch(`/api/workspace/members?workspace_id=${workspaceId}`, {
+        const res = await fetch(`/api/workspace/members?workspace_id=${effectiveWsId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const json = await res.json();
@@ -205,7 +231,7 @@ export default function PostProductionPage() {
       const ownerName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Studio Owner';
       if (!members.some(m => m.name.toLowerCase() === ownerName.toLowerCase())) {
         members.unshift({
-          id: workspaceId,
+          id: effectiveWsId,
           name: ownerName,
           role: 'Owner / Lead',
           isInHouse: true,
@@ -216,7 +242,7 @@ export default function PostProductionPage() {
 
       // 1.5 Fetch Studio Event Types (for custom segments sync)
       try {
-        const evTypes = await fetchWorkspaceEventTypes(workspaceId);
+        const evTypes = await fetchWorkspaceEventTypes(effectiveWsId);
         if (evTypes && evTypes.length > 0) {
           setEventTypes(evTypes);
         }
@@ -232,8 +258,8 @@ export default function PostProductionPage() {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          qQuery = qQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+          qQuery = qQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
         }
 
         const { data: qData } = await qQuery;
@@ -244,8 +270,8 @@ export default function PostProductionPage() {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          qDocQuery = qDocQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+          qDocQuery = qDocQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
         }
 
         const { data: qDocData } = await qDocQuery;
@@ -276,8 +302,8 @@ export default function PostProductionPage() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (workspaceId && workspaceId !== 'ws_demo') {
-        clientQuery = clientQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        clientQuery = clientQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
       }
 
       const { data: clientData } = await clientQuery;
@@ -291,8 +317,8 @@ export default function PostProductionPage() {
           .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)')
           .order('created_at', { ascending: false });
 
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          leadsQuery = leadsQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+          leadsQuery = leadsQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
         }
 
         const { data: leadsData } = await leadsQuery;
@@ -342,27 +368,47 @@ export default function PostProductionPage() {
 
       setClients(clientList);
 
-      // 4. Fetch FW Projects (master booking projects)
-      const { data: fwProjects } = await supabase
+      // 4. Fetch FW Projects (strictly scoped to workspace)
+      let fwProjectsQuery = supabase
         .from('fw_projects')
         .select('*')
         .order('created_at', { ascending: false });
 
-      // 5. Fetch Post Production Projects & Existing Deliverables
-      const { data: pppData } = await supabase
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        fwProjectsQuery = fwProjectsQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+      const { data: fwProjects } = await fwProjectsQuery;
+
+      // 5. Fetch Post Production Projects & Existing Deliverables (strictly scoped to workspace)
+      let pppQuery = supabase
         .from('post_production_projects')
         .select('*');
 
-      const { data: ppDeliverables } = await supabase
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        pppQuery = pppQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+      const { data: pppData } = await pppQuery;
+
+      let ppDelivQuery = supabase
         .from('post_production_deliverables')
         .select('*');
+
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        ppDelivQuery = ppDelivQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+      const { data: ppDeliverables } = await ppDelivQuery;
 
       // Fetch dynamic segments/categories configuration
       const configByProjectId = new Map<string, any>();
       try {
-        const { data: configData } = await supabase
+        let configQuery = supabase
           .from('post_production_project_config')
           .select('*');
+
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+          configQuery = configQuery.eq('workspace_id', effectiveWsId);
+        }
+        const { data: configData } = await configQuery;
         if (configData) {
           configData.forEach(c => configByProjectId.set(c.project_id, c));
         }
@@ -608,7 +654,7 @@ export default function PostProductionPage() {
         cards.push({
           id: ppp?.id || `proj_${client.id}`,
           project_id: matchedFwProject?.id || client.id,
-          workspace_id: workspaceId,
+          workspace_id: effectiveWsId,
           client_id: client.id,
           lead_id: client.lead_id || null,
           client_name: client.name,
@@ -627,9 +673,12 @@ export default function PostProductionPage() {
         });
       }
 
-      // Include any standalone post_production_projects that may not be linked to a client record yet
+      // Include any standalone post_production_projects strictly within this workspace
       if (pppData) {
         for (const p of pppData) {
+          if (p.workspace_id && p.workspace_id !== effectiveWsId && p.user_id !== effectiveWsId) {
+            continue;
+          }
           const alreadyAdded = cards.some(c => 
             c.client_id === p.client_id || 
             c.id === p.id ||
@@ -657,13 +706,17 @@ export default function PostProductionPage() {
               };
             });
 
+            // Resolve real client name so it NEVER falls back to "Project Client"
+            const matchedClientRec = clientList.find(c => c.id === p.client_id || c.lead_id === p.client_id);
+            const resolvedClientName = matchedClientRec?.name || p.couple_names || (p.client_name && p.client_name !== 'Project Client' ? p.client_name : 'Wedding Client');
+
             cards.push({
               id: p.id || `proj_${p.client_id}`,
               project_id: p.client_id,
-              workspace_id: workspaceId,
+              workspace_id: effectiveWsId,
               client_id: p.client_id,
-              client_name: p.client_name || 'Project Client',
-              couple_names: null,
+              client_name: resolvedClientName,
+              couple_names: p.couple_names || null,
               event_date: p.created_at,
               event_type: 'Wedding',
               project_manager_id: p.project_manager_id || null,
@@ -679,18 +732,36 @@ export default function PostProductionPage() {
         }
       }
 
-      setProjects(cards);
-      memCachedPostProdProjects = cards;
+      // Filter by Assigned Only if user only has ASSIGNED_VIEW / ASSIGNED_ONLY permission
+      let displayCards = cards;
+      if (isAssignedOnly) {
+        displayCards = cards.filter(c => {
+          const pmMatch = (
+            (userId && c.project_manager_id === userId) ||
+            (userName && c.project_manager_name && c.project_manager_name.toLowerCase().trim() === userName.toLowerCase().trim())
+          );
+          if (pmMatch) return true;
+          const deliverableMatch = (c.deliverables || []).some(d => {
+            const idMatch = userId && (d.assigned_member_id === userId || (d as any).assigned_to_id === userId);
+            const nameMatch = userName && d.assigned_to && d.assigned_to.toLowerCase().trim() === userName.toLowerCase().trim();
+            return Boolean(idMatch || nameMatch);
+          });
+          return deliverableMatch;
+        });
+      }
+
+      setProjects(displayCards);
+      memCachedPostProdProjects = displayCards;
       memCachedPostProdTeamMembers = members;
       memCachedPostProdClients = clients;
       memCachedPostProdQuotations = quotations;
       if (typeof window !== 'undefined') {
         try {
-          localStorage.setItem('sc_cached_pp_projects', JSON.stringify(cards));
+          localStorage.setItem('sc_cached_pp_projects', JSON.stringify(displayCards));
         } catch (_) {}
       }
-      if (cards.length > 0) {
-        setExpandedCards(new Set([cards[0].id]));
+      if (displayCards.length > 0) {
+        setExpandedCards(new Set([displayCards[0].id]));
       }
     } catch (e) {
       console.error('Error fetching post production data:', e);
@@ -1436,6 +1507,28 @@ export default function PostProductionPage() {
     }
   };
 
+  if (mounted && !isOwner && ppAccess === 'NONE') {
+    return (
+      <div className="min-h-screen bg-[#FDFBF7] dark:bg-[#121110] flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl p-8 text-center shadow-xl">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-200 dark:border-rose-800">
+            <Lock className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-black text-slate-900 dark:text-stone-100 mb-2">Restricted Access</h2>
+          <p className="text-sm text-slate-600 dark:text-stone-400 mb-6">
+            You do not have permission to view or manage Post-Production projects in this studio. Please contact your studio administrator for access.
+          </p>
+          <Link
+            href="/workspace"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition shadow-sm"
+          >
+            Back to Workspace
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#FAF9F5] dark:bg-[#121110] text-slate-900 dark:text-stone-100 pb-20 pt-2 px-4 sm:px-6 lg:px-8 py-3">
       <div className="w-full space-y-6">
@@ -1690,6 +1783,8 @@ export default function PostProductionPage() {
                 eventTypes={eventTypes}
                 isExpanded={expandedCards.has(project.id)}
                 isHighlighted={highlightedCardId === project.id}
+                isReadOnly={isReadOnly}
+                currentUser={{ id: userId || undefined, name: userName || undefined, role: userRole || undefined }}
                 onToggleExpand={() => toggleCardExpansion(project.id)}
                 onUpdateProject={handleUpdateProject}
                 onOpenComments={handleOpenComments}

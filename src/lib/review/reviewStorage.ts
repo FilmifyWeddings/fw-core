@@ -26,11 +26,11 @@ export const B2_SECRET_ACCESS_KEY =
   clean(process.env.R2_SECRET_ACCESS_KEY) || 
   '';
 
-// Default to studiocore-gallery where reviews are stored under reviews/ path prefix
+// Dedicated B2 bucket for video reviews as requested: studiocore-video-review
 export const REVIEW_BUCKET_NAME = 
+  clean(process.env.B2_VIDEO_REVIEW_BUCKET_NAME) || 
   clean(process.env.B2_REVIEW_BUCKET_NAME) || 
-  clean(process.env.B2_GALLERY_BUCKET_NAME) || 
-  'studiocore-gallery';
+  'studiocore-video-review';
 
 export const REVIEW_CDN_URL = 
   clean(process.env.NEXT_PUBLIC_REVIEW_CDN_URL) || 

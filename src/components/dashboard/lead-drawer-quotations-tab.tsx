@@ -17,6 +17,7 @@ export interface QuotationVersionItem {
   version: number;
   version_label?: string;
   title: string;
+  couple_name?: string;
   is_final?: boolean;
   public_token?: string | null;
   updated_at?: string;
@@ -307,7 +308,7 @@ export function LeadDrawerQuotationsTab({
           leadId: lead.id,
           unmark,
           version: q.version,
-          actor_name: authorProfile?.name || session?.user?.email?.split('@')[0] || 'Studio Admin'
+          actor_name: session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Studio Admin'
         })
       });
 

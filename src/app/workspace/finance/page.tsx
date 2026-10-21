@@ -68,10 +68,13 @@ let memCachedFinanceClients: WorkspaceClient[] = [];
 
 export default function FinancePage() {
   const { workspaceMembers } = useWorkspaceData();
-  const { userName, isOwner, userEmail, workspaceId } = useWorkspace();
+  const { userName, isOwner, userEmail, workspaceId, permissions } = useWorkspace();
 
-  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>('');
-  const activeWsId = currentWorkspaceId || workspaceId;
+  const financeAccess = isOwner ? 'MANAGE' : (permissions?.finance_access || 'NONE');
+  const isReadOnly = !isOwner && (financeAccess === 'VIEW' || financeAccess === 'VIEW_ONLY');
+
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(workspaceId || '');
+  const activeWsId = workspaceId || currentWorkspaceId;
 
   // 👥 Filter ONLY Studio Owner + team members who have Finance Access strictly for the active studio
   const financeTeamMembers = useMemo(() => {
@@ -638,7 +641,7 @@ export default function FinancePage() {
       setIsCheckingPinStatus(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const wsId = session?.user?.id || 'ws_demo';
+        const wsId = workspaceId || session?.user?.id || 'ws_demo';
         if (!isCancelled) {
           setCurrentWorkspaceId(wsId);
         }
@@ -769,8 +772,8 @@ export default function FinancePage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId: string = String(activeWsId || session?.user?.id || 'ws_demo');
-      if (session?.user?.id && !currentWorkspaceId) {
-        setCurrentWorkspaceId(session.user.id);
+      if (!currentWorkspaceId) {
+        setCurrentWorkspaceId(workspaceId);
       }
 
       // 1. Fetch Clients (Fetch all active workspace clients up to 1000 records)
@@ -2658,6 +2661,25 @@ export default function FinancePage() {
     setIsQuotationModalOpen(true);
   };
 
+  // 0. GRANULAR RBAC ACCESS RESTRICTION: Block users without finance access
+  if (!isOwner && financeAccess === 'NONE') {
+    return (
+      <div className="flex min-h-[85vh] w-full items-center justify-center p-4 bg-[#FDFBF7]">
+        <div className="max-w-md w-full bg-white rounded-3xl border border-rose-200/80 p-8 text-center shadow-xl space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center mx-auto text-rose-500">
+            <Lock className="w-8 h-8 stroke-[2.5]" />
+          </div>
+          <div>
+            <h2 className="text-lg font-black text-slate-800 tracking-tight">Access Restricted</h2>
+            <p className="text-xs font-medium text-slate-500 mt-2 leading-relaxed">
+              You do not have permission to view or manage the Finance & Payments ledger for this studio. Please contact your studio administrator to grant you finance access.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // 1. HARD ZERO-DOM SECURITY GATE: If component not mounted or PIN is NOT verified, NEVER render the finance dashboard DOM
   if (!isMounted || !isPinVerified) {
     if (isMounted && isPinRequired) {
@@ -3418,6 +3440,7 @@ export default function FinancePage() {
                   teamMembersList={effectiveTeamMembers}
                   financeTeamMembers={financeTeamMembers}
                   paymentMilestoneTemplates={paymentMilestoneTemplates}
+                  isReadOnly={isReadOnly}
                   onAssignTeamMember={handleAssignTeamMember}
                   onAddNewTeamMember={handleAddNewTeamMember}
                   onOpenPricingEditModal={handleOpenPricingEditModal}
@@ -3454,12 +3477,14 @@ export default function FinancePage() {
                   <h3 className="text-base font-black text-slate-900">Logged Studio Expenses & Team Payouts</h3>
                   <p className="text-xs text-slate-500 font-medium">Direct edit, delete, and real-time P&L recalculation</p>
                 </div>
-                <button
-                  onClick={() => setShowAddExpenseModal(true)}
-                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl text-xs shadow-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" /> Log Expense
-                </button>
+                {!isReadOnly && (
+                  <button
+                    onClick={() => setShowAddExpenseModal(true)}
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl text-xs shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" /> Log Expense
+                  </button>
+                )}
               </div>
 
               {filteredExpenses.length === 0 ? (
@@ -4520,12 +4545,15 @@ export default function FinancePage() {
           client={showInvoiceModal.client || null}
           financeRecord={showInvoiceModal.financeRecord || null}
           defaultQuotationTemplate={defaultQuotationTemplate}
+          workspaceId={activeWsId}
+          isReadOnly={isReadOnly}
         />
       )}
 
       {isQuotationModalOpen && quotationModalLead && (
         <LeadQuotationModal
           isOpen={isQuotationModalOpen}
+          isReadOnly={isReadOnly}
           onClose={() => {
             setIsQuotationModalOpen(false);
             setQuotationModalLead(null);

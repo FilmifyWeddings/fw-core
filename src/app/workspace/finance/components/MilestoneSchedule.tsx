@@ -24,6 +24,7 @@ export interface MilestoneScheduleProps {
   onOpenEditMilestone: (recordId: string, milestone: FinanceMilestoneItem) => void;
   onDeleteMilestone: (recordId: string, milestoneId: string) => void;
   onSaveNewTemplate?: (name: string) => void;
+  isReadOnly?: boolean;
 }
 
 export function MilestoneSchedule({
@@ -36,6 +37,7 @@ export function MilestoneSchedule({
   onOpenEditMilestone,
   onDeleteMilestone,
   onSaveNewTemplate,
+  isReadOnly = false,
 }: MilestoneScheduleProps) {
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [editingRemarkMilestoneId, setEditingRemarkMilestoneId] = useState<string | null>(null);
@@ -75,13 +77,15 @@ export function MilestoneSchedule({
           <p className="text-[11px] text-slate-400 font-medium">Installment milestones and completion records</p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onAddMilestoneStep(record.id)}
-          className="h-7 px-2.5 text-xs font-bold text-slate-800 bg-emerald-50 border border-emerald-200/80 hover:bg-emerald-100 rounded-md flex items-center gap-1 cursor-pointer transition active:scale-95"
-        >
-          <Plus className="w-3.5 h-3.5 text-emerald-700" /> Add Step
-        </button>
+        {!isReadOnly && (
+          <button
+            type="button"
+            onClick={() => onAddMilestoneStep(record.id)}
+            className="h-7 px-2.5 text-xs font-bold text-slate-800 bg-emerald-50 border border-emerald-200/80 hover:bg-emerald-100 rounded-md flex items-center gap-1 cursor-pointer transition active:scale-95"
+          >
+            <Plus className="w-3.5 h-3.5 text-emerald-700" /> Add Step
+          </button>
+        )}
       </div>
 
       {/* Prominent Gap Warning Alert if milestone steps don't match total package */}
@@ -141,8 +145,9 @@ export function MilestoneSchedule({
                     <input
                       type="date"
                       value={ms.due_date || ''}
+                      disabled={isReadOnly}
                       onChange={(e) => onMilestoneChange(record.id, ms.id, 'due_date', e.target.value)}
-                      className="w-full h-7 px-2 bg-white border border-slate-200 rounded-lg text-xs font-sans font-bold [font-variant-numeric:normal] text-slate-700 focus:outline-none focus:border-amber-500"
+                      className={`w-full h-7 px-2 bg-white border border-slate-200 rounded-lg text-xs font-sans font-bold [font-variant-numeric:normal] text-slate-700 focus:outline-none focus:border-amber-500 ${isReadOnly ? 'opacity-70 cursor-not-allowed bg-slate-50' : ''}`}
                     />
                   </div>
 
@@ -154,6 +159,7 @@ export function MilestoneSchedule({
                       templates={paymentMilestoneTemplates}
                       onAddTemplate={onSaveNewTemplate || (() => {})}
                       placeholder="Select Milestone"
+                      disabled={isReadOnly}
                     />
                   </div>
 
@@ -163,8 +169,9 @@ export function MilestoneSchedule({
                     <input
                       type="number"
                       value={ms.amount || 0}
+                      disabled={isReadOnly}
                       onChange={(e) => onMilestoneChange(record.id, ms.id, 'amount', Number(e.target.value))}
-                      className="w-full h-7 pl-4.5 pr-2 bg-white border border-slate-200 rounded-lg text-xs font-sans font-bold [font-variant-numeric:normal] text-slate-900 text-right focus:outline-none focus:border-amber-500"
+                      className={`w-full h-7 pl-4.5 pr-2 bg-white border border-slate-200 rounded-lg text-xs font-sans font-bold [font-variant-numeric:normal] text-slate-900 text-right focus:outline-none focus:border-amber-500 ${isReadOnly ? 'opacity-70 cursor-not-allowed bg-slate-50' : ''}`}
                     />
                   </div>
 
@@ -172,8 +179,11 @@ export function MilestoneSchedule({
                   <div className="w-28 sm:w-32 shrink-0 flex items-center justify-center gap-1">
                     <button
                       type="button"
-                      onClick={() => onOpenCompletePaymentModal(record, ms)}
-                      className={`flex-1 h-7 sm:h-7.5 px-2 text-[10px] font-extrabold uppercase rounded-md border transition cursor-pointer flex items-center justify-center truncate ${
+                      disabled={isReadOnly}
+                      onClick={() => !isReadOnly && onOpenCompletePaymentModal(record, ms)}
+                      className={`flex-1 h-7 sm:h-7.5 px-2 text-[10px] font-extrabold uppercase rounded-md border transition flex items-center justify-center truncate ${
+                        isReadOnly ? 'cursor-default' : 'cursor-pointer'
+                      } ${
                         isPaid
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                           : isOverdue
@@ -206,61 +216,63 @@ export function MilestoneSchedule({
                   </div>
 
                   {/* Actions Menu */}
-                  <div className="w-6 shrink-0 flex items-center justify-end relative" ref={openActionMenuId === ms.id ? milestoneMenuRef : undefined}>
-                    <button
-                      type="button"
-                      onClick={() => setOpenActionMenuId(openActionMenuId === ms.id ? null : ms.id)}
-                      className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-                    >
-                      <MoreVertical className="w-3.5 h-3.5" />
-                    </button>
+                  {!isReadOnly && (
+                    <div className="w-6 shrink-0 flex items-center justify-end relative" ref={openActionMenuId === ms.id ? milestoneMenuRef : undefined}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenActionMenuId(openActionMenuId === ms.id ? null : ms.id)}
+                        className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
 
-                    {openActionMenuId === ms.id && (
-                      <div className="absolute right-0 top-7 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-44 z-30 space-y-0.5 text-xs">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenActionMenuId(null);
-                            onOpenCompletePaymentModal(record, ms);
-                          }}
-                          className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-emerald-700 flex items-center gap-2"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Complete Payment
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenActionMenuId(null);
-                            setEditingRemarkMilestoneId(ms.id);
-                            setRemarkDraft(ms.remarks || ms.notes || '');
-                          }}
-                          className="w-full text-left px-3 py-1.5 hover:bg-amber-50 font-bold text-amber-700 flex items-center gap-2"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" /> {ms.remarks || ms.notes ? 'Edit Remark/Note' : 'Add Note'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenActionMenuId(null);
-                            onOpenEditMilestone(record.id, ms);
-                          }}
-                          className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-slate-700 flex items-center gap-2"
-                        >
-                          <Pencil className="w-3.5 h-3.5" /> Edit Step
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenActionMenuId(null);
-                            onDeleteMilestone(record.id, ms.id);
-                          }}
-                          className="w-full text-left px-3 py-1.5 hover:bg-rose-50 font-bold text-rose-600 flex items-center gap-2"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                      {openActionMenuId === ms.id && (
+                        <div className="absolute right-0 top-7 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-44 z-30 space-y-0.5 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenActionMenuId(null);
+                              onOpenCompletePaymentModal(record, ms);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-emerald-700 flex items-center gap-2"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Complete Payment
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenActionMenuId(null);
+                              setEditingRemarkMilestoneId(ms.id);
+                              setRemarkDraft(ms.remarks || ms.notes || '');
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-amber-50 font-bold text-amber-700 flex items-center gap-2"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" /> {ms.remarks || ms.notes ? 'Edit Remark/Note' : 'Add Note'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenActionMenuId(null);
+                              onOpenEditMilestone(record.id, ms);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-slate-700 flex items-center gap-2"
+                          >
+                            <Pencil className="w-3.5 h-3.5" /> Edit Step
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenActionMenuId(null);
+                              onDeleteMilestone(record.id, ms.id);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-rose-50 font-bold text-rose-600 flex items-center gap-2"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Inline Remark Display / Editable Field (Desktop) */}
@@ -356,14 +368,16 @@ export function MilestoneSchedule({
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteMilestone(record.id, ms.id)}
-                        className="text-slate-300 hover:text-rose-500 p-1 shrink-0 transition cursor-pointer"
-                        title="Delete Milestone"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteMilestone(record.id, ms.id)}
+                          className="text-slate-300 hover:text-rose-500 p-1 shrink-0 transition cursor-pointer"
+                          title="Delete Milestone"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -374,8 +388,9 @@ export function MilestoneSchedule({
                       <input
                         type="date"
                         value={ms.due_date || ''}
+                        disabled={isReadOnly}
                         onChange={(e) => onMilestoneChange(record.id, ms.id, 'due_date', e.target.value)}
-                        className="w-full h-7 px-1.5 text-xs font-sans font-bold [font-variant-numeric:normal] text-slate-700 bg-slate-50 border border-slate-200 rounded-md outline-none focus:bg-white focus:border-amber-500"
+                        className={`w-full h-7 px-1.5 text-xs font-sans font-bold [font-variant-numeric:normal] text-slate-700 bg-slate-50 border border-slate-200 rounded-md outline-none focus:bg-white focus:border-amber-500 ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`}
                       />
                     </div>
 
@@ -385,8 +400,9 @@ export function MilestoneSchedule({
                       <input
                         type="number"
                         value={ms.amount || ''}
+                        disabled={isReadOnly}
                         onChange={(e) => onMilestoneChange(record.id, ms.id, 'amount', Number(e.target.value))}
-                        className="w-full h-7 pl-4 pr-1.5 text-xs font-sans font-bold [font-variant-numeric:normal] text-slate-900 bg-slate-50 border border-slate-200 rounded-md outline-none text-right focus:bg-white focus:border-amber-500"
+                        className={`w-full h-7 pl-4 pr-1.5 text-xs font-sans font-bold [font-variant-numeric:normal] text-slate-900 bg-slate-50 border border-slate-200 rounded-md outline-none text-right focus:bg-white focus:border-amber-500 ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`}
                       />
                     </div>
 
@@ -394,8 +410,11 @@ export function MilestoneSchedule({
                     <div className="col-span-3 flex justify-end">
                       <button
                         type="button"
-                        onClick={() => onOpenCompletePaymentModal(record, ms)}
-                        className={`w-full h-6 text-[10px] font-extrabold uppercase px-1 py-0.5 rounded-md border transition flex items-center justify-center truncate cursor-pointer ${
+                        disabled={isReadOnly}
+                        onClick={() => !isReadOnly && onOpenCompletePaymentModal(record, ms)}
+                        className={`w-full h-6 text-[10px] font-extrabold uppercase px-1 py-0.5 rounded-md border transition flex items-center justify-center truncate ${
+                          isReadOnly ? 'cursor-default' : 'cursor-pointer'
+                        } ${
                           isPaid
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                             : isOverdue

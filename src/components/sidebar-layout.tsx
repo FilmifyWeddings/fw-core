@@ -566,7 +566,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: FileText,
       iconBg: 'bg-[#FEF3C7] text-[#B45309]',
     }] : []),
-    // 4. Post-Production & Review
+    // 4. Post-Production
     ...(permissions?.post_production_access && permissions.post_production_access !== 'NONE' ? [
       {
         id: 'post-production',
@@ -574,7 +574,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         path: '/workspace/post-production',
         icon: Film,
         iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
-      },
+      }
+    ] : []),
+    // 4.1 Video Review (Only for Post-Production Full Manage or explicitly granted review access)
+    ...(permissions?.post_production_access === 'ALL_MANAGE' || (permissions as any)?.video_review_access === 'ALL_MANAGE' || (permissions as any)?.video_review_access === true ? [
       {
         id: 'review',
         name: 'Video Review',

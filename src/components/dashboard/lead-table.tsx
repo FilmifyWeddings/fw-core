@@ -54,6 +54,7 @@ interface LeadTableProps {
   notifications?: Array<{ id: string; text: string; time: string; read: boolean; leadId?: string; leadName?: string }>;
   unreadNotificationCount?: number;
   onNotificationClick?: () => void;
+  isReadOnly?: boolean;
 }
 
 interface ColumnConfig {
@@ -503,7 +504,8 @@ export function LeadTable({
   loadingMore = false,
   notifications = [],
   unreadNotificationCount = 0,
-  onNotificationClick
+  onNotificationClick,
+  isReadOnly = false
 }: LeadTableProps) {
   const [mounted, setMounted] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(104);
@@ -2865,7 +2867,8 @@ export function LeadTable({
 
       // Purge via atomic delete-lead endpoint (cleans baileys_action_queue + workflow logs + leads)
       try {
-        await fetch(`/api/integrations/whatsapp/workflows/delete-lead?tenant_id=${workspaceId}`, {
+        const targetWsId = leads[0]?.workspace_id || '';
+        await fetch(`/api/integrations/whatsapp/workflows/delete-lead?tenant_id=${targetWsId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ leadIds: idsToDelete })
@@ -3200,14 +3203,16 @@ export function LeadTable({
               )}
 
               {/* MOBILE ONLY: Quick Add Lead Button */}
-              <button
-                type="button"
-                onClick={() => setCreateModalOpen(true)}
-                className="md:hidden shrink-0 px-3.5 py-2 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white font-extrabold rounded-xl transition-all shadow-xs flex items-center gap-1 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                <span>Add</span>
-              </button>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => setCreateModalOpen(true)}
+                  className="md:hidden shrink-0 px-3.5 py-2 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white font-extrabold rounded-xl transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Add</span>
+                </button>
+              )}
             </div>
 
             {/* Filters Panel (Collapsible on Mobile, Full row on Desktop) */}
@@ -3409,13 +3414,15 @@ export function LeadTable({
               </div>
 
               {/* Desktop Manual lead creation */}
-              <button
-                onClick={() => setCreateModalOpen(true)}
-                className="hidden md:flex shrink-0 px-3.5 py-1.5 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] hover:opacity-95 text-white font-extrabold rounded-xl transition-all shadow-[0_4px_12px_rgba(212,175,55,0.2)] items-center gap-1.5 hover:scale-105 font-sans"
-              >
-                <Plus className="w-4 h-4 stroke-[3]" />
-                Add New Lead
-              </button>
+              {!isReadOnly && (
+                <button
+                  onClick={() => setCreateModalOpen(true)}
+                  className="hidden md:flex shrink-0 px-3.5 py-1.5 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] hover:opacity-95 text-white font-extrabold rounded-xl transition-all shadow-[0_4px_12px_rgba(212,175,55,0.2)] items-center gap-1.5 hover:scale-105 font-sans"
+                >
+                  <Plus className="w-4 h-4 stroke-[3]" />
+                  Add New Lead
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -3589,6 +3596,7 @@ export function LeadTable({
                       value={resolveLeadStageValue(lead)}
                       placeholder="Select status"
                       compact={true}
+                      disabled={isReadOnly}
                       className="w-full"
                       customAddTitle="Add Custom Status"
                       options={[
@@ -4206,6 +4214,7 @@ export function LeadTable({
                                     <CRMDropdown
                                       value={resolveLeadStageValue(lead)}
                                       placeholder="Select status"
+                                      disabled={isReadOnly}
                                       customAddTitle="Add Custom Status"
                                       options={[
                                         ...stagesState.map(s => ({
@@ -5803,7 +5812,8 @@ export function LeadTable({
                         setLeads(prev => prev.filter(l => l.id !== targetLeadId));
                         
                         try {
-                          await fetch(`/api/integrations/whatsapp/workflows/delete-lead?tenant_id=${workspaceId}`, {
+                          const targetWsId = targetLead.workspace_id || leads[0]?.workspace_id || '';
+                          await fetch(`/api/integrations/whatsapp/workflows/delete-lead?tenant_id=${targetWsId}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ leadId: targetLeadId })
@@ -5903,6 +5913,7 @@ export function LeadTable({
         lead={quotationModalLead} 
         initialQuotations={quotationModalLead ? (quotationSummaryMap[quotationModalLead.id]?.versions || []) : []}
         onQuotationChange={handleQuotationChange}
+        isReadOnly={isReadOnly}
         onFinalSet={(q) => {
           if (quotationModalLead) {
             const currentVersions = quotationSummaryMap[quotationModalLead.id]?.versions || [];

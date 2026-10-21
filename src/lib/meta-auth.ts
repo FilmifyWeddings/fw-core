@@ -71,35 +71,43 @@ export async function verifyMetaAuth(
       };
     }
 
-    // 5. Resolve active/primary workspace directly from Supabase profile
+    // 5. Resolve active/primary workspace directly from Supabase profile or client request
     let resolvedWorkspaceId = authenticatedUserId;
+    let userProfile: any = null;
     try {
-      const { data: userProfile } = await supabaseAdmin
+      const { data: profileData } = await supabaseAdmin
         .from('profiles')
         .select('role, workspace_id, studio_id')
         .eq('id', authenticatedUserId)
         .maybeSingle();
+      userProfile = profileData;
 
-      if (userProfile?.workspace_id) {
-        resolvedWorkspaceId = userProfile.workspace_id;
+      // If client explicitly requested their own personal user workspace, strictly respect it!
+      if (clientSuppliedWorkspaceId && clientSuppliedWorkspaceId === authenticatedUserId) {
+        resolvedWorkspaceId = authenticatedUserId;
       } else {
-        const { data: memberEntry } = await supabaseAdmin
-          .from('workspace_members')
-          .select('workspace_id')
-          .eq('user_id', authenticatedUserId)
-          .limit(1)
-          .maybeSingle();
-        if (memberEntry?.workspace_id) {
-          resolvedWorkspaceId = memberEntry.workspace_id;
-        } else {
-          const { data: ownedEntry } = await supabaseAdmin
-            .from('workspaces')
-            .select('id')
-            .eq('owner_id', authenticatedUserId)
+        if (userProfile?.workspace_id) {
+          resolvedWorkspaceId = userProfile.workspace_id;
+        } else if (!clientSuppliedWorkspaceId || clientSuppliedWorkspaceId === '00000000-0000-0000-0000-000000000000') {
+          // Only fallback to invited workspace if client did NOT explicitly request a specific workspace
+          const { data: memberEntry } = await supabaseAdmin
+            .from('workspace_members')
+            .select('workspace_id')
+            .eq('user_id', authenticatedUserId)
             .limit(1)
             .maybeSingle();
-          if (ownedEntry?.id) {
-            resolvedWorkspaceId = ownedEntry.id;
+          if (memberEntry?.workspace_id) {
+            resolvedWorkspaceId = memberEntry.workspace_id;
+          } else {
+            const { data: ownedEntry } = await supabaseAdmin
+              .from('workspaces')
+              .select('id')
+              .eq('owner_id', authenticatedUserId)
+              .limit(1)
+              .maybeSingle();
+            if (ownedEntry?.id) {
+              resolvedWorkspaceId = ownedEntry.id;
+            }
           }
         }
       }

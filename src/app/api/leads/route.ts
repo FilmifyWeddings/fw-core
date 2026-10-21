@@ -14,36 +14,76 @@ export async function GET(req: NextRequest) {
 
     // Verify Session
     const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
-    let workspaceId = authResult.workspaceId || requestedWorkspaceId || authResult.userId;
-
-    if (!workspaceId && requestedWorkspaceId) {
-      workspaceId = requestedWorkspaceId;
-    }
+    let workspaceId = requestedWorkspaceId || authResult.workspaceId || authResult.userId;
 
     if (!workspaceId) {
       return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 });
     }
 
+    const currentUserId = authResult.userId;
+
+    // 🔒 RBAC Permission Check for Workspace Members (Non-owners)
+    let isOwner = (currentUserId === workspaceId);
+    let memberRecord: any = null;
+    let leadsAccessLevel: string = 'ALL_MANAGE';
+
+    if (!isOwner) {
+      // Check if user is a member of this workspace
+      const { data: member } = await supabaseAdmin
+        .from('workspace_members')
+        .select('id, name, email, roles, primary_role')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', currentUserId)
+        .maybeSingle();
+
+      if (member) {
+        memberRecord = member;
+        // Check studio_member_permissions
+        const { data: perm } = await supabaseAdmin
+          .from('studio_member_permissions')
+          .select('leads_access')
+          .eq('owner_id', workspaceId)
+          .eq('member_id', member.id)
+          .maybeSingle();
+
+        leadsAccessLevel = perm?.leads_access || 'NONE';
+      } else {
+        // Check if user owns this workspace in workspaces table
+        const { data: wsOwner } = await supabaseAdmin
+          .from('workspaces')
+          .select('id')
+          .eq('id', workspaceId)
+          .eq('owner_id', currentUserId)
+          .maybeSingle();
+
+        if (wsOwner) {
+          isOwner = true;
+          leadsAccessLevel = 'ALL_MANAGE';
+        } else {
+          leadsAccessLevel = 'NONE';
+        }
+      }
+    }
+
+    // If non-owner has NO access to leads, return empty array immediately (Prevent data leak)
+    if (!isOwner && (!leadsAccessLevel || leadsAccessLevel === 'NONE')) {
+      return NextResponse.json({
+        success: true,
+        leads: [],
+        count: 0,
+        access_level: 'NONE',
+        message: 'No access granted to leads for this studio.'
+      });
+    }
+
     const from = page * pageSize;
     const to = from + pageSize - 1;
 
-    const candidateSet = new Set<string>();
-    if (workspaceId) candidateSet.add(workspaceId);
-    if (authResult.workspaceId) candidateSet.add(authResult.workspaceId);
-    if (authResult.userId) candidateSet.add(authResult.userId);
-    if (requestedWorkspaceId) candidateSet.add(requestedWorkspaceId);
-    const candidates = Array.from(candidateSet);
-
-    // Fetch leads using supabaseAdmin (bypasses RLS issues)
-    let dbLeads: any[] = [];
-    let totalCount = 0;
-
-    // 1. Query by workspace_id or tenant_id across all valid candidates
-    const orConditions = candidates.flatMap(c => [`workspace_id.eq.${c}`, `tenant_id.eq.${c}`]).join(',');
+    // Strict workspace query (Never mix other workspaces)
     let query = supabaseAdmin
       .from('leads')
       .select('*', { count: 'exact' })
-      .or(orConditions);
+      .or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`);
 
     if (search) {
       query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
@@ -52,6 +92,9 @@ export async function GET(req: NextRequest) {
     const res = await query
       .order('created_at', { ascending: false })
       .range(from, to);
+
+    let dbLeads: any[] = [];
+    let totalCount: number = 0;
 
     if (res.error) {
       console.warn('[API /leads Workspace Query Warning]:', res.error.message);
@@ -73,6 +116,27 @@ export async function GET(req: NextRequest) {
     } else {
       dbLeads = res.data || [];
       totalCount = res.count ?? dbLeads.length;
+    }
+
+    // 🔒 Enforce ASSIGNED_VIEW / ASSIGNED_EDIT: Filter leads strictly assigned to this member
+    if (!isOwner && (leadsAccessLevel === 'ASSIGNED_VIEW' || leadsAccessLevel === 'ASSIGNED_EDIT')) {
+      const uName = (memberRecord?.name || '').trim().toLowerCase();
+      const uEmail = (memberRecord?.email || '').trim().toLowerCase();
+      const memberId = memberRecord?.id;
+
+      dbLeads = dbLeads.filter(l => {
+        const owner = String(l.owner || l.lead_owner || l.assigned_to || '').trim().toLowerCase();
+        const rawOwner = String(l.raw_payload?.lead_owner || l.raw_payload?.assigned_to || '').trim().toLowerCase();
+        const assignedId = l.assigned_to_id || l.assigned_member_id || l.raw_payload?.assigned_member_id;
+
+        return (
+          (memberId && assignedId === memberId) ||
+          (currentUserId && (assignedId === currentUserId || owner === currentUserId)) ||
+          (uName && (owner.includes(uName) || uName.includes(owner) || rawOwner.includes(uName))) ||
+          (uEmail && (owner === uEmail || rawOwner === uEmail))
+        );
+      });
+      totalCount = dbLeads.length;
     }
 
     // 3. Sanitize lead data

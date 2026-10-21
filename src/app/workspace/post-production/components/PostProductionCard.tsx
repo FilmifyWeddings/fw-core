@@ -3,8 +3,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ChevronDown, Calendar, Layers, FileCheck, Plus, Sparkles, UserCheck, Search, X, RefreshCw, Trash2, RotateCcw
+  ChevronDown, Calendar, Layers, FileCheck, Plus, Sparkles, UserCheck, Search, X, RefreshCw, Trash2, RotateCcw, History
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import SegmentContainer from './SegmentContainer';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
@@ -12,6 +13,7 @@ import { DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
 import { PostProductionTeamMember } from '../page';
 import { ProjectManagerAssignModal } from '@/components/modals/ProjectManagerAssignModal';
+import PostProductionHistoryDrawer from './PostProductionHistoryDrawer';
 
 export interface PostProductionProjectData {
   id: string;
@@ -41,6 +43,8 @@ interface PostProductionCardProps {
   eventTypes?: { id?: string; name: string; category?: string }[];
   isExpanded: boolean;
   isHighlighted?: boolean;
+  isReadOnly?: boolean;
+  currentUser?: { id?: string; name?: string; role?: string };
   onToggleExpand: () => void;
   onUpdateProject: (projectId: string, updated: Partial<PostProductionProjectData>) => void;
   onOpenComments: (itemId: string, title: string) => void;
@@ -58,6 +62,8 @@ export default function PostProductionCard({
   eventTypes,
   isExpanded,
   isHighlighted = false,
+  isReadOnly = false,
+  currentUser,
   onToggleExpand,
   onUpdateProject,
   onOpenComments,
@@ -73,6 +79,7 @@ export default function PostProductionCard({
   const [segmentToDelete, setSegmentToDelete] = useState<string | null>(null);
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showPMAssignModal, setShowPMAssignModal] = useState(false);
+  const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
   const [localPM, setLocalPM] = useState<string | null>(project.project_manager_name || null);
 
   useEffect(() => {
@@ -168,8 +175,50 @@ export default function PostProductionCard({
     return list;
   }, [teamMembers, localPM, project.project_manager_name]);
 
+  // Background audit logger for post-production card actions
+  const logAudit = async (params: {
+    actionType: string;
+    title: string;
+    deliverableId?: string;
+    deliverableTitle?: string;
+    category?: string;
+    segment?: string;
+    oldValue?: string;
+    newValue?: string;
+    details?: string;
+  }) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      fetch('/api/workspace/post-production/history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          projectId: project.id,
+          workspaceId: project.workspace_id,
+          clientId: project.client_id,
+          actorName: currentUser?.name || session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Team Member',
+          actorRole: currentUser?.role || 'Editor / Manager',
+          actionType: params.actionType,
+          deliverableId: params.deliverableId,
+          deliverableTitle: params.deliverableTitle,
+          category: params.category,
+          segment: params.segment,
+          title: params.title,
+          oldValue: params.oldValue,
+          newValue: params.newValue,
+          details: params.details
+        })
+      }).catch(() => {});
+    } catch (_) {}
+  };
+
   // Handle Deliverable Item Update
   const handleUpdateItem = (itemId: string, field: keyof PostProductionDeliverable, value: any) => {
+    const targetItem = deliverables.find(item => item.id === itemId);
     const updated = deliverables.map(item => {
       if (item.id === itemId) {
         const nextItem = { ...item, [field]: value };
@@ -186,6 +235,20 @@ export default function PostProductionCard({
     const allDone = updated.length > 0 && updated.every(d => (d.status || '').toLowerCase().includes('done'));
     const newStatus = allDone ? 'completed' : 'active';
 
+    if (targetItem && targetItem[field] !== value) {
+      logAudit({
+        actionType: field === 'status' ? 'status_changed' : field === 'due_date' ? 'due_date_changed' : 'item_updated',
+        title: `Updated ${targetItem.title} ${String(field)}`,
+        deliverableId: itemId,
+        deliverableTitle: targetItem.title,
+        category: targetItem.category,
+        segment: targetItem.segment,
+        oldValue: targetItem[field] !== undefined && targetItem[field] !== null ? String(targetItem[field]) : 'None',
+        newValue: value !== undefined && value !== null ? String(value) : 'None',
+        details: `${String(field)} changed from "${targetItem[field] || 'None'}" to "${value || 'None'}"`
+      });
+    }
+
     onUpdateProject(project.id, {
       deliverables: updated,
       overall_status: newStatus as any,
@@ -194,6 +257,7 @@ export default function PostProductionCard({
 
   // Atomic Multi-Field Deliverable Item Update (Fixes race condition on Assign Editor)
   const handleUpdateItemFields = (itemId: string, fields: Partial<PostProductionDeliverable>) => {
+    const targetItem = deliverables.find(item => item.id === itemId);
     const updated = deliverables.map(item => {
       if (item.id === itemId) {
         const nextItem = { ...item, ...fields };
@@ -210,6 +274,20 @@ export default function PostProductionCard({
     const allDone = updated.length > 0 && updated.every(d => (d.status || '').toLowerCase().includes('done'));
     const newStatus = allDone ? 'completed' : 'active';
 
+    if (targetItem && fields.assigned_to !== undefined && fields.assigned_to !== targetItem.assigned_to) {
+      logAudit({
+        actionType: 'assignee_changed',
+        title: `Assigned Editor for ${targetItem.title}`,
+        deliverableId: itemId,
+        deliverableTitle: targetItem.title,
+        category: targetItem.category,
+        segment: targetItem.segment,
+        oldValue: targetItem.assigned_to || 'Unassigned',
+        newValue: fields.assigned_to || 'Unassigned',
+        details: `Assigned editor to ${fields.assigned_to || 'Unassigned'}`
+      });
+    }
+
     onUpdateProject(project.id, {
       deliverables: updated,
       overall_status: newStatus as any,
@@ -218,6 +296,19 @@ export default function PostProductionCard({
 
   // Handle Deliverable Item Delete
   const handleDeleteItem = (itemId: string) => {
+    const targetItem = deliverables.find(item => item.id === itemId);
+    if (targetItem) {
+      logAudit({
+        actionType: 'deliverable_deleted',
+        title: `Deleted deliverable "${targetItem.title}"`,
+        deliverableId: itemId,
+        deliverableTitle: targetItem.title,
+        category: targetItem.category,
+        segment: targetItem.segment,
+        oldValue: targetItem.title,
+        details: `Deleted deliverable from ${targetItem.segment} > ${targetItem.category}`
+      });
+    }
     const updated = deliverables.filter(item => item.id !== itemId);
     onUpdateProject(project.id, { deliverables: updated });
   };
@@ -239,6 +330,16 @@ export default function PostProductionCard({
       due_date: null,
       is_custom: true,
     };
+
+    logAudit({
+      actionType: 'deliverable_added',
+      title: `Added deliverable "${title}"`,
+      deliverableTitle: title,
+      category,
+      segment,
+      newValue: title,
+      details: `Added new deliverable to ${segment} > ${category}`
+    });
 
     const updated = [...deliverables, newItem];
     onUpdateProject(project.id, { deliverables: updated });
@@ -397,24 +498,37 @@ export default function PostProductionCard({
               <span className="text-[10px] font-black uppercase tracking-wider text-amber-900/70 dark:text-amber-400/70 block">
                 Project Manager
               </span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowPMAssignModal(true);
-                }}
-                className="text-[10px] font-bold text-amber-700 dark:text-amber-400 hover:underline cursor-pointer"
-                title="Open Multi-Module Assignment Modal"
-              >
-                Assign Modules ↗
-              </button>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowPMAssignModal(true);
+                  }}
+                  className="text-[10px] font-bold text-amber-700 dark:text-amber-400 hover:underline cursor-pointer"
+                  title="Open Multi-Module Assignment Modal"
+                >
+                  Assign Modules ↗
+                </button>
+              )}
             </div>
             <Searchable3DCreamSelect
               value={localPM || 'unassigned'}
+              disabled={isReadOnly}
               onChange={(val) => {
+                if (isReadOnly) return;
                 const matched = teamMembers.find(m => m.name === val || m.id === val);
                 const nextName = val === 'unassigned' ? null : (matched?.name || val);
                 const nextId = val === 'unassigned' ? null : (matched?.id || null);
+                if (localPM !== nextName) {
+                  logAudit({
+                    actionType: 'pm_assigned',
+                    title: 'Changed Project Manager',
+                    oldValue: localPM || 'Unassigned',
+                    newValue: nextName || 'Unassigned',
+                    details: `Project Manager set to ${nextName || 'Unassigned'}`
+                  });
+                }
                 setLocalPM(nextName);
                 onUpdateProject(project.id, {
                   project_manager_id: nextId,
@@ -422,12 +536,26 @@ export default function PostProductionCard({
                 });
               }}
               options={pmOptions}
-              searchable={true}
+              searchable={!isReadOnly}
               usePortal={true}
               searchPlaceholder="🔍 Search PM..."
               placeholder="Assign PM"
             />
           </div>
+
+          {/* Change History Button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowHistoryDrawer(true);
+            }}
+            className="px-3 py-2 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:border-amber-400 transition cursor-pointer shadow-2xs flex items-center gap-1.5"
+            title="View Card History & Audit Log"
+          >
+            <History className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <span className="hidden sm:inline text-xs font-bold">History</span>
+          </button>
 
           {/* Expand/Collapse Toggle */}
           <button
@@ -445,7 +573,7 @@ export default function PostProductionCard({
           {/* Trash vs Active Actions */}
           {project.overall_status === 'trash' || project.is_trash ? (
             <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-              {onRestoreProject && (
+              {!isReadOnly && onRestoreProject && (
                 <button
                   type="button"
                   onClick={() => onRestoreProject(project.id)}
@@ -456,7 +584,7 @@ export default function PostProductionCard({
                   <span>Restore</span>
                 </button>
               )}
-              {onPermanentDeleteProject && (
+              {!isReadOnly && onPermanentDeleteProject && (
                 <button
                   type="button"
                   onClick={() => onPermanentDeleteProject(project.id)}
@@ -469,17 +597,19 @@ export default function PostProductionCard({
               )}
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowDeleteProjectModal(true);
-              }}
-              className="p-2.5 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-rose-600 hover:border-rose-300 dark:hover:border-rose-800 transition cursor-pointer shadow-2xs"
-              title="Move Project to Trash"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            !isReadOnly && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDeleteProjectModal(true);
+                }}
+                className="p-2.5 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-rose-600 hover:border-rose-300 dark:hover:border-rose-800 transition cursor-pointer shadow-2xs"
+                title="Move Project to Trash"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )
           )}
         </div>
       </div>
@@ -582,35 +712,38 @@ export default function PostProductionCard({
                         </span>
 
                         {/* Subtle ✕ close trigger */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSegmentToDelete(seg);
-                          }}
-                          className="text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-0.5 rounded transition cursor-pointer"
-                          title={`Remove ${seg} segment`}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                        {!isReadOnly && enabledSegments.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSegmentToDelete(seg);
+                            }}
+                            className="text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-0.5 rounded transition cursor-pointer"
+                            title={`Remove ${seg} segment`}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
                 </div>
 
                 {/* + Add Custom Segment Searchable 3D Popover Trigger */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddingSegment(prev => !prev);
-                      setSegmentSearchQuery('');
-                    }}
-                    className="px-3 py-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-950/50 hover:bg-amber-200/80 border border-amber-300 dark:border-amber-800 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Add Custom Segment</span>
-                  </button>
+                {!isReadOnly && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddingSegment(prev => !prev);
+                        setSegmentSearchQuery('');
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-950/50 hover:bg-amber-200/80 border border-amber-300 dark:border-amber-800 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add Custom Segment</span>
+                    </button>
 
                   {isAddingSegment && (
                     <div 
@@ -697,6 +830,7 @@ export default function PostProductionCard({
                     </div>
                   )}
                 </div>
+                )}
               </div>
             </div>
 
@@ -737,6 +871,7 @@ export default function PostProductionCard({
                       clientName={project.client_name}
                       workspaceId={project.workspace_id}
                       disabledCategories={disabledCats}
+                      isReadOnly={isReadOnly}
                       onUpdateItem={handleUpdateItem}
                       onUpdateItemFields={handleUpdateItemFields}
                       onDeleteItem={handleDeleteItem}
@@ -807,6 +942,15 @@ export default function PostProductionCard({
           });
           setShowPMAssignModal(false);
         }}
+      />
+
+      {/* Post Production Card History & Change Log Drawer */}
+      <PostProductionHistoryDrawer
+        isOpen={showHistoryDrawer}
+        onClose={() => setShowHistoryDrawer(false)}
+        projectId={project.id}
+        clientName={project.client_name}
+        workspaceId={project.workspace_id}
       />
     </div>
   );

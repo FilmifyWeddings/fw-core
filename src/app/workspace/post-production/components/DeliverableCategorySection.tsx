@@ -61,6 +61,7 @@ interface DeliverableCategorySectionProps {
   teamMembers: { id: string; name: string; role?: string; default_daily_rate?: number; daily_rate?: number; email?: string }[];
   clientName?: string;
   workspaceId?: string;
+  isReadOnly?: boolean;
   onAddItem: (segment: string, category: string, title: string, specs?: string) => void;
   onAddMultipleItems?: (items: Partial<PostProductionDeliverable>[]) => void;
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
@@ -78,6 +79,7 @@ export default function DeliverableCategorySection({
   teamMembers,
   clientName,
   workspaceId,
+  isReadOnly = false,
   onAddItem,
   onAddMultipleItems,
   onUpdateItem,
@@ -351,7 +353,8 @@ export default function DeliverableCategorySection({
         {/* Header Action Buttons & 3D Creamy Multi-Select Dropdown Popover */}
         <div className="flex items-center gap-2 self-end sm:self-auto">
           {/* Add Deliverable Dropdown Trigger & Popover */}
-          <div className="relative" ref={dropdownRef}>
+          {!isReadOnly && (
+            <div className="relative" ref={dropdownRef}>
             <button
               type="button"
               onClick={() => {
@@ -611,9 +614,10 @@ export default function DeliverableCategorySection({
               </form>
             )}
           </div>
+          )}
 
           {/* Remove Category button */}
-          {onRemoveCategory && (
+          {!isReadOnly && onRemoveCategory && (
             <button
               type="button"
               onClick={() => setShowDeleteCatConfirm(true)}
@@ -632,28 +636,30 @@ export default function DeliverableCategorySection({
           <p className="text-xs text-slate-500 dark:text-stone-400 font-medium">
             No {category.toLowerCase()} deliverables currently set for {segment}.
           </p>
-          <div className="flex items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsAddingItem(true)}
-              className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Create First {category} Item</span>
-            </button>
-            {onRemoveCategory && (
-              <span className="text-slate-300 dark:text-stone-700">•</span>
-            )}
-            {onRemoveCategory && (
+          {!isReadOnly && (
+            <div className="flex items-center justify-center gap-3">
               <button
                 type="button"
-                onClick={() => setShowDeleteCatConfirm(true)}
-                className="text-xs font-bold text-stone-500 hover:text-rose-600 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                onClick={() => setIsAddingItem(true)}
+                className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
               >
-                <span>Remove Empty Category</span>
+                <Plus className="w-3 h-3" />
+                <span>Create First {category} Item</span>
               </button>
-            )}
-          </div>
+              {onRemoveCategory && (
+                <span className="text-slate-300 dark:text-stone-700">•</span>
+              )}
+              {onRemoveCategory && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteCatConfirm(true)}
+                  className="text-xs font-bold text-stone-500 hover:text-rose-600 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Remove Empty Category</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-2.5">
@@ -664,6 +670,7 @@ export default function DeliverableCategorySection({
               teamMembers={filteredTeamMembers}
               clientName={clientName}
               workspaceId={workspaceId}
+              isReadOnly={isReadOnly}
               onUpdateItem={onUpdateItem}
               onUpdateItemFields={onUpdateItemFields}
               onDeleteItem={onDeleteItem}

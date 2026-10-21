@@ -236,7 +236,15 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
       if (savedWsId === 'all') {
         active = ALL_STUDIOS_WORKSPACE;
       } else {
-        active = workspaceList.find(w => w.workspaceId === savedWsId || (w as any).studioSlug === savedWsId) || ownerOption;
+        const found = workspaceList.find(w => w.workspaceId === savedWsId || (w as any).studioSlug === savedWsId);
+        if (found) {
+          active = found;
+        } else {
+          // If no specific workspace saved and user is an invited member with partner workspaces, prefer partner workspace
+          const partnerWs = workspaceList.find(w => !w.isOwner);
+          const hasOwnStudio = Boolean(profile?.workspace_name && profile?.workspace_name !== 'My Studio');
+          active = (!hasOwnStudio && partnerWs) ? partnerWs : ownerOption;
+        }
       }
 
       setActiveWorkspace(active);

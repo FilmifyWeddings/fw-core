@@ -49,6 +49,7 @@ interface ClientFinanceCardProps {
   endDate?: string;
   revenueTypeFilter?: 'ALL' | 'NEW_BOOKING' | 'DUE_BALANCE';
   isDateActive?: boolean;
+  isReadOnly?: boolean;
 }
 
 export function formatDateDDMMYYYY(dateStr?: string | null): string {
@@ -117,6 +118,7 @@ export function ClientFinanceCard({
   endDate,
   revenueTypeFilter = 'ALL',
   isDateActive,
+  isReadOnly = false,
 }: ClientFinanceCardProps) {
   const [openMenu, setOpenMenu] = useState(false);
   const [addingMember, setAddingMember] = useState(false);
@@ -379,7 +381,7 @@ export function ClientFinanceCard({
           </div>
 
           {/* Direct Restore & Delete Buttons when in Trash View */}
-          {isCardTrashed && (
+          {!isReadOnly && isCardTrashed && (
             <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
               {onRestoreRecord && (
                 <button
@@ -426,47 +428,51 @@ export function ClientFinanceCard({
                   className="absolute right-0 mt-1 w-52 bg-white rounded-2xl border border-slate-200 shadow-xl py-1.5 z-40 space-y-0.5 text-xs font-bold font-sans"
                 >
                   {isCardTrashed ? (
+                    !isReadOnly ? (
+                      <>
+                        {onRestoreRecord && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenu(false);
+                              onRestoreRecord(record);
+                            }}
+                            className="w-full px-3 py-2 text-left text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer font-black"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Restore to Ledger</span>
+                          </button>
+                        )}
+                        {onPermanentDelete && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenu(false);
+                              onPermanentDelete(record);
+                            }}
+                            className="w-full px-3 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-slate-100 font-bold"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                            <span>Delete Permanently</span>
+                          </button>
+                        )}
+                      </>
+                    ) : null
+                  ) : (
                     <>
-                      {onRestoreRecord && (
+                      {!isReadOnly && (
                         <button
                           type="button"
                           onClick={() => {
                             setOpenMenu(false);
-                            onRestoreRecord(record);
+                            onOpenRecordPayment(record);
                           }}
                           className="w-full px-3 py-2 text-left text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer font-black"
                         >
-                          <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Restore to Ledger</span>
+                          <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Record Payment</span>
                         </button>
                       )}
-                      {onPermanentDelete && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenMenu(false);
-                            onPermanentDelete(record);
-                          }}
-                          className="w-full px-3 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-slate-100 font-bold"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                          <span>Delete Permanently</span>
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOpenMenu(false);
-                          onOpenRecordPayment(record);
-                        }}
-                        className="w-full px-3 py-2 text-left text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer font-black"
-                      >
-                        <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Record Payment</span>
-                      </button>
 
                       <button
                         type="button"
@@ -480,17 +486,19 @@ export function ClientFinanceCard({
                         <span>View / Send Invoice</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOpenMenu(false);
-                          onOpenPricingEditModal(record);
-                        }}
-                        className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                      >
-                        <Pencil className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Edit Pricing Breakdown</span>
-                      </button>
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenu(false);
+                            onOpenPricingEditModal(record);
+                          }}
+                          className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Edit Pricing Breakdown</span>
+                        </button>
+                      )}
 
                       {record.client_id && (
                         <a
@@ -505,7 +513,7 @@ export function ClientFinanceCard({
                         </a>
                       )}
 
-                      {onDeleteRecord && (
+                      {!isReadOnly && onDeleteRecord && (
                         <button
                           type="button"
                           onClick={() => {
@@ -657,6 +665,7 @@ export function ClientFinanceCard({
                   onOpenEditMilestone={onOpenEditMilestone}
                   onDeleteMilestone={onDeleteMilestone}
                   onSaveNewTemplate={onSaveNewTemplate}
+                  isReadOnly={isReadOnly}
                 />
 
                 {/* Bottom 3 Summary Metric Cards */}

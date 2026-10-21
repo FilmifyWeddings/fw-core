@@ -69,6 +69,8 @@ export interface InvoiceModalDialogProps {
   totalPackage?: number;
   paidAmount?: number;
   studioSettings?: any;
+  workspaceId?: string;
+  isReadOnly?: boolean;
 }
 
 export function InvoiceModalDialog({
@@ -77,6 +79,8 @@ export function InvoiceModalDialog({
   client,
   financeRecord,
   defaultQuotationTemplate,
+  workspaceId,
+  isReadOnly = false,
 }: InvoiceModalDialogProps) {
   const [activeTab, setActiveTab] = useState<'preview' | 'settings'>('preview');
   const [config, setConfig] = useState<InvoiceTemplateConfig>(DEFAULT_INVOICE_CONFIG);
@@ -160,7 +164,8 @@ export function InvoiceModalDialog({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return null;
-      const res = await fetch(`/api/settings?workspace_id=${session.user.id}`, {
+      const targetWs = workspaceId || session.user.id;
+      const res = await fetch(`/api/settings?workspace_id=${targetWs}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`
         }
@@ -399,32 +404,34 @@ export function InvoiceModalDialog({
             {/* View & Action Buttons */}
             <div className="flex items-center gap-2.5">
               {/* Tab Toggle: Preview / Settings */}
-              <div className="p-1 bg-[#F5EEDC] border border-[#E5DAC4] rounded-xl flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('preview')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
-                    activeTab === 'preview'
-                      ? 'bg-white text-[#221B10] shadow-xs'
-                      : 'text-[#7A6950] hover:text-[#221B10]'
-                  }`}
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  Invoice Preview
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('settings')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
-                    activeTab === 'settings'
-                      ? 'bg-white text-[#221B10] shadow-xs'
-                      : 'text-[#7A6950] hover:text-[#221B10]'
-                  }`}
-                >
-                  <Settings2 className="w-3.5 h-3.5 text-[#D4AF37]" />
-                  Customize Template
-                </button>
-              </div>
+              {!isReadOnly && (
+                <div className="p-1 bg-[#F5EEDC] border border-[#E5DAC4] rounded-xl flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('preview')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                      activeTab === 'preview'
+                        ? 'bg-white text-[#221B10] shadow-xs'
+                        : 'text-[#7A6950] hover:text-[#221B10]'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Invoice Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('settings')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                      activeTab === 'settings'
+                        ? 'bg-white text-[#221B10] shadow-xs'
+                        : 'text-[#7A6950] hover:text-[#221B10]'
+                    }`}
+                  >
+                    <Settings2 className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    Customize Template
+                  </button>
+                </div>
+              )}
 
               {/* Download PDF Button */}
               <button
@@ -732,7 +739,7 @@ export function InvoiceModalDialog({
             )}
 
             {/* ── TAB 2: INVOICE TEMPLATE CUSTOMIZER & QR UPLOAD ── */}
-            {activeTab === 'settings' && (
+            {!isReadOnly && activeTab === 'settings' && (
               <div className="space-y-6 max-w-2xl mx-auto">
                 <div className="p-4 bg-[#F5EEDC] rounded-2xl border border-[#E3D3AC] flex items-center justify-between">
                   <div className="flex items-center gap-2.5">

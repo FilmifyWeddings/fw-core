@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
 import { 
   X, FileText, Plus, ExternalLink, Calendar, RefreshCw, AlertCircle, 
   Send, Download, CheckCircle2, DollarSign, Copy, Check, Sparkles, Loader2, 
-  ArrowRight, ChevronDown, LayoutTemplate, Eye, Pencil, Crown
+  ArrowRight, ChevronDown, LayoutTemplate, Eye, Pencil, Crown, ShieldCheck
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -28,13 +28,14 @@ import {
 interface QuotationVersionItem {
   id?: string;
   template_id: string;
-  lead_id: string;
+  lead_id?: string;
   version: number;
   version_label: string;
   title: string;
+  couple_name?: string;
   is_final?: boolean;
-  updated_at: string;
-  created_at: string;
+  updated_at?: string;
+  created_at?: string;
   public_token?: string;
   responseBadge?: {
     type: 'accepted' | 'budget_discussion';
@@ -51,6 +52,7 @@ interface LeadQuotationModalProps {
   initialQuotations?: QuotationVersionItem[];
   onFinalSet?: (quotation: QuotationVersionItem) => void;
   onQuotationChange?: (leadId: string, updatedVersions: QuotationVersionItem[]) => void;
+  isReadOnly?: boolean;
 }
 
 function safeSessionSet(key: string, data: any) {
@@ -86,7 +88,8 @@ export function LeadQuotationModal({
   lead, 
   initialQuotations = [],
   onFinalSet,
-  onQuotationChange 
+  onQuotationChange,
+  isReadOnly = false
 }: LeadQuotationModalProps) {
   const router = useRouter();
   const [quotations, setQuotations] = useState<QuotationVersionItem[]>([]);
@@ -183,14 +186,16 @@ export function LeadQuotationModal({
       const sessionCache = safeSessionGet(cacheKey);
       const sessionHasFinal = Array.isArray(sessionCache) && sessionCache.some((item: any) => item.is_final);
 
-      // Best candidate for instant display
-      const candidateVersions = 
+      // Best candidate for instant display strictly scoped to this lead to prevent cross-lead leakage
+      const rawCandidates = 
         sessionHasFinal ? sessionCache :
         (Array.isArray(sessionCache) && sessionCache.length > 0) ? sessionCache :
         (Array.isArray(localQuotesCache) && localQuotesCache.length > 0) ? localQuotesCache :
         (Array.isArray(initialQuotations) && initialQuotations.length > 0) ? initialQuotations :
         (Array.isArray(localSummaryVersions) && localSummaryVersions.length > 0) ? localSummaryVersions :
         [];
+
+      const candidateVersions = (rawCandidates || []).filter((item: any) => !item.lead_id || item.lead_id === lead.id);
 
       if (candidateVersions.length > 0) {
         const reconciled = candidateVersions.map((item: any) => ({
@@ -307,7 +312,8 @@ export function LeadQuotationModal({
     if (!silent) {
       const cachedData = safeSessionGet(cacheKey);
       if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
-        const reconciled = cachedData.map((item: QuotationVersionItem) => ({
+        const leadScoped = cachedData.filter((item: any) => !item.lead_id || item.lead_id === lead.id);
+        const reconciled = leadScoped.map((item: QuotationVersionItem) => ({
           ...item,
           is_final: Boolean(
             (targetFinalId && (
@@ -345,7 +351,8 @@ export function LeadQuotationModal({
       }
 
       if (json.success && Array.isArray(json.quotations)) {
-        const finalizedList = json.quotations.map((item: QuotationVersionItem) => ({
+        const leadScoped = json.quotations.filter((item: any) => !item.lead_id || item.lead_id === lead.id);
+        const finalizedList = leadScoped.map((item: QuotationVersionItem) => ({
           ...item,
           is_final: Boolean(
             (targetFinalId && (
@@ -668,6 +675,7 @@ export function LeadQuotationModal({
         const newVer: QuotationVersionItem = {
           id: qId,
           template_id: qId,
+          lead_id: lead.id,
           version: newVerNum,
           version_label: `V${newVerNum}`,
           title: `${q.couple_name || lead.name || 'Client'} - Quotation V${newVerNum}`,
@@ -683,13 +691,16 @@ export function LeadQuotationModal({
         safeSessionSet(cacheKey, updatedList);
         try {
           localStorage.setItem(cacheKey, JSON.stringify(updatedList));
-          sessionStorage.removeItem(`current_quotation_doc_${qId}`);
+          if (json.quotation) {
+            sessionStorage.setItem(`current_quotation_doc_${qId}`, JSON.stringify(json.quotation));
+          }
         } catch (_) {}
 
         if (onQuotationChange) {
           onQuotationChange(lead.id, updatedList);
         }
 
+        router.prefetch(`/workspace/quotations/builder/templet/${qId}`);
         router.push(`/workspace/quotations/builder/templet/${qId}`);
       } else {
         console.warn('[handleBranchAndEdit] Branching note, opening directly:', json?.error);
@@ -1070,20 +1081,30 @@ export function LeadQuotationModal({
                                 {/* Top Right: Final Quotation Toggle / Badge */}
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   {q.is_final ? (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setUnmarkingFinalQuotation(q);
-                                      }}
-                                      disabled={settingFinalId === q.template_id}
-                                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm border border-emerald-400 hover:brightness-110 transition cursor-pointer shrink-0"
-                                      title="Click to Unlock / Unmark Final Quotation"
-                                    >
-                                      <CheckCircle2 className="w-3 h-3 text-emerald-100" />
-                                      <span>Final Quotation (Locked)</span>
-                                    </button>
-                                  ) : (
+                                    isReadOnly ? (
+                                      <div
+                                        className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm border border-emerald-400 shrink-0"
+                                        title="Final Quotation (Locked)"
+                                      >
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-100" />
+                                        <span>Final Quotation (Locked)</span>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setUnmarkingFinalQuotation(q);
+                                        }}
+                                        disabled={settingFinalId === q.template_id}
+                                        className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm border border-emerald-400 hover:brightness-110 transition cursor-pointer shrink-0"
+                                        title="Click to Unlock / Unmark Final Quotation"
+                                      >
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-100" />
+                                        <span>Final Quotation (Locked)</span>
+                                      </button>
+                                    )
+                                  ) : !isReadOnly ? (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1101,7 +1122,7 @@ export function LeadQuotationModal({
                                       )}
                                       <span>Mark as Final</span>
                                     </button>
-                                  )}
+                                  ) : null}
 
                                   {/* Client Response Badge if present */}
                                   {q.responseBadge && (
@@ -1137,14 +1158,16 @@ export function LeadQuotationModal({
                               </button>
 
                               {/* Edit Builder Button (Auto-branches into new Version) */}
-                              <button
-                                type="button"
-                                onClick={() => handleBranchAndEdit(q)}
-                                className="p-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-all cursor-pointer flex items-center justify-center hover:scale-105"
-                                title="Edit in Builder (Creates new Version)"
-                              >
-                                <Pencil className="w-4 h-4 text-white" />
-                              </button>
+                              {!isReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleBranchAndEdit(q)}
+                                  className="p-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-all cursor-pointer flex items-center justify-center hover:scale-105"
+                                  title="Edit in Builder (Creates new Version)"
+                                >
+                                  <Pencil className="w-4 h-4 text-white" />
+                                </button>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-1.5">
@@ -1187,52 +1210,56 @@ export function LeadQuotationModal({
               </div>
 
               {/* TEMPLATE PICKER DROPDOWN BAR */}
-              <div className="px-4 py-2 border-t border-zinc-200 dark:border-zinc-800/80 bg-amber-500/5 relative">
-                <div className="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                  <span className="text-[10px] uppercase font-black tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-                    <LayoutTemplate className="w-3.5 h-3.5" /> Template to Use:
-                  </span>
-                  <QuotationTemplateSelector
-                    templates={availableTemplates}
-                    selectedId={selectedTemplateId}
-                    onSelect={(id) => setSelectedTemplateId(id)}
-                    workspaceId={lead?.workspace_id}
-                    placement="top"
-                    align="right"
-                  />
+              {!isReadOnly && (
+                <div className="px-4 py-2 border-t border-zinc-200 dark:border-zinc-800/80 bg-amber-500/5 relative">
+                  <div className="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                    <span className="text-[10px] uppercase font-black tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                      <LayoutTemplate className="w-3.5 h-3.5" /> Template to Use:
+                    </span>
+                    <QuotationTemplateSelector
+                      templates={availableTemplates}
+                      selectedId={selectedTemplateId}
+                      onSelect={(id) => setSelectedTemplateId(id)}
+                      workspaceId={lead?.workspace_id}
+                      placement="top"
+                      align="right"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Modal Footer Actions */}
-              <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex items-center justify-between gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setAiModalOpen(true)}
-                  className="px-3.5 py-2 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                  <span>Create with AI</span>
-                </button>
+              {!isReadOnly && (
+                <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex items-center justify-between gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setAiModalOpen(true)}
+                    className="px-3.5 py-2 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                    <span>Create with AI</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={handleCreateNewQuotation}
-                  disabled={creating}
-                  className="px-4 py-2 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-black text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer flex items-center gap-1.5"
-                >
-                  {creating ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Creating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                      <span>New Version</span>
-                    </>
-                  )}
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={handleCreateNewQuotation}
+                    disabled={creating}
+                    className="px-4 py-2 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-black text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    {creating ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Creating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>New Version</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}

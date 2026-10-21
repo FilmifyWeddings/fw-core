@@ -243,40 +243,17 @@ export async function GET(
       return NextResponse.json({ error: 'Lead ID is required' }, { status: 400 });
     }
 
-    // 1. Fetch lead details to verify lead existence & access
-    const { data: lead } = await supabaseAdmin
-      .from('leads')
-      .select('id, workspace_id, name, full_name, email, phone, final_quotation_id, raw_payload')
-      .eq('id', leadId)
-      .maybeSingle();
-
-    const effectiveLead = lead || {
-      id: leadId,
-      name: 'Client',
-      full_name: 'Client',
-      email: '',
-      phone: '',
-      final_quotation_id: null,
-      raw_payload: {}
-    };
-
-    // 2. Fetch quotation documents specifically for this lead (Fast indexed lead_id query)
-    let { data: matchedDocs } = await supabaseAdmin
-      .from('quotation_documents')
-      .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-      .eq('lead_id', leadId);
-
-    if (!matchedDocs || matchedDocs.length === 0) {
-      const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-      const { data: fallbackDocs } = await supabaseAdmin
+    // 1. Fetch lead details, quotation documents, responses & legacy quotes in parallel for ultra-fast response
+    const [leadRes, docsRes, responsesRes, quotesRes] = await Promise.all([
+      supabaseAdmin
+        .from('leads')
+        .select('id, workspace_id, name, full_name, email, phone, final_quotation_id, raw_payload')
+        .eq('id', leadId)
+        .maybeSingle(),
+      supabaseAdmin
         .from('quotation_documents')
         .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-        .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`);
-      matchedDocs = fallbackDocs || [];
-    }
-
-    // 3. Fetch client response metadata & quotations in parallel
-    const [responsesRes, quotesRes] = await Promise.all([
+        .eq('lead_id', leadId),
       supabaseAdmin
         .from('quotation_responses')
         .select('quotation_id, lead_version, response_type, client_name, client_notes, budget_amount, created_at')
@@ -286,6 +263,33 @@ export async function GET(
         .select('id, quotation_number, title, status, client_name, client_notes, content_json, public_token, is_final, created_at, updated_at')
         .eq('client_id', leadId)
     ]);
+
+    const effectiveLead = leadRes.data || {
+      id: leadId,
+      name: 'Client',
+      full_name: 'Client',
+      email: '',
+      phone: '',
+      final_quotation_id: null,
+      raw_payload: {}
+    };
+
+    // 2. Process quotation documents specifically for this lead
+    let matchedDocs = docsRes.data || [];
+
+    if (!matchedDocs || matchedDocs.length === 0) {
+      const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+      const { data: fallbackDocs } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
+        .ilike('template_id', `%FW-L-${leadShortId}%`);
+      
+      // Strictly verify that any fallback doc belongs to this lead only!
+      matchedDocs = (fallbackDocs || []).filter((doc: any) => {
+        const docLeadId = doc.lead_id || doc.content_json?.lead_id;
+        return !docLeadId || docLeadId === leadId;
+      });
+    }
 
     const allResponses = responsesRes.data || [];
     const allQuotes = quotesRes.data || [];
@@ -623,60 +627,78 @@ export async function POST(
         .upsert(docPayload, { onConflict: 'template_id' });
     }
 
-    // 6. Save to quotation_versions audit table
+    // 6. Save audit version, legacy quote sync and live log in parallel non-blocking background tasks
+    const bgPromises: Promise<any>[] = [];
+
     if (savedDoc?.id) {
-      try {
-        await supabaseAdmin.from('quotation_versions').insert({
-          document_id: savedDoc.id,
-          template_id: newTemplateId,
-          user_id: currentUserId,
-          version: nextLeadVersion,
-          content_json: newQuotationJson,
-          created_at: now
-        });
-      } catch (_) {}
+      bgPromises.push(
+        (async () => {
+          try {
+            await supabaseAdmin.from('quotation_versions').insert({
+              document_id: savedDoc.id,
+              template_id: newTemplateId,
+              user_id: currentUserId,
+              version: nextLeadVersion,
+              content_json: newQuotationJson,
+              created_at: now
+            });
+          } catch (_) {}
+        })()
+      );
     }
 
-    // Also sync to legacy quotations table for full backwards compatibility
     try {
       const calcFin = extractFinancialsFromQuotation(newQuotationJson);
-      await supabaseAdmin.from('quotations').upsert({
-        workspace_id: currentUserId,
-        quotation_number: newTemplateId,
-        title: quotationTitle,
-        client_name: leadName,
-        total_amount: calcFin.final_total_amount,
-        client_id: leadId,
-        status: 'draft',
-        is_final: false,
-        created_at: now,
-        updated_at: now
-      });
+      bgPromises.push(
+        (async () => {
+          try {
+            await supabaseAdmin.from('quotations').upsert({
+              workspace_id: currentUserId,
+              quotation_number: newTemplateId,
+              title: quotationTitle,
+              client_name: leadName,
+              total_amount: calcFin.final_total_amount,
+              client_id: leadId,
+              status: 'draft',
+              is_final: false,
+              created_at: now,
+              updated_at: now
+            });
+          } catch (_) {}
+        })()
+      );
     } catch (finErr) {
-      console.warn('[leads/[id]/quotations] quotations table upsert note:', finErr);
+      console.warn('[leads/[id]/quotations] extractFinancials note:', finErr);
     }
 
-    // Log quotation creation to live_logs audit trail
-    try {
-      await supabaseAdmin.from('live_logs').insert({
-        workspace_id: lead?.workspace_id || currentUserId,
-        lead_id: leadId,
-        event_type: 'lead_activity',
-        message: `Created Quotation Version ${nextLeadVersion} ("${quotationTitle}")`,
-        metadata: {
-          action_type: 'quote_created',
-          actor_name: 'Studio Admin',
-          version: nextLeadVersion,
-          template_id: newTemplateId,
-          logged_at: now
-        }
-      });
-    } catch (_) {}
+    bgPromises.push(
+      (async () => {
+        try {
+          await supabaseAdmin.from('live_logs').insert({
+            workspace_id: lead?.workspace_id || currentUserId,
+            lead_id: leadId,
+            event_type: 'lead_activity',
+            message: `Created Quotation Version ${nextLeadVersion} ("${quotationTitle}")`,
+            metadata: {
+              action_type: 'quote_created',
+              actor_name: 'Studio Admin',
+              version: nextLeadVersion,
+              template_id: newTemplateId,
+              logged_at: now
+            }
+          });
+        } catch (_) {}
+      })()
+    );
+
+    // Run all non-blocking background tasks without delaying user response
+    Promise.allSettled(bgPromises).catch(() => {});
 
     return NextResponse.json({
       success: true,
       templateId: newTemplateId,
       version: nextLeadVersion,
+      quotation: newQuotationJson,
       message: `Quotation V${nextLeadVersion} created for ${leadName}`
     });
   } catch (err: any) {
