@@ -1,2 +1,17 @@
+'use client';
+
+import React, { Suspense } from 'react';
 import ReviewStudioPage from '@/app/workspace/review/[id]/page';
-export default ReviewStudioPage;
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
+
+export default function VideoReviewDetailPage(props: any) {
+  return (
+    <Suspense fallback={
+      <div className="h-screen w-screen bg-[#0E0F12] flex items-center justify-center p-4">
+        <StudioCoreLiquidLoader />
+      </div>
+    }>
+      <ReviewStudioPage {...props} />
+    </Suspense>
+  );
+}

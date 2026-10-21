@@ -385,16 +385,21 @@ export default function WorkspaceQuotationsGalleryPage() {
 
         const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
         // Await the backend duplication so Supabase records exist BEFORE navigating
         const dupRes = await fetch('/api/templates/duplicate', {
           method: 'POST',
           headers,
+          signal: controller.signal,
           body: JSON.stringify({
             sourceTemplateId: quoteId,
             workspaceId: currentUserId,
             title: copyTitle
           })
         });
+        clearTimeout(timeoutId);
 
         if (!dupRes.ok) {
           const errData = await dupRes.json().catch(() => ({}));

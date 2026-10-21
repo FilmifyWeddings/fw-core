@@ -4,6 +4,11 @@ import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 
+function isValidUUID(str?: string | null): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+}
+
 /**
  * Authoritative Route to Duplicate Any Template
  * Deep clones the requested template, generates fresh IDs,
@@ -17,18 +22,21 @@ export async function POST(req: NextRequest) {
     const { sourceTemplateId, targetTemplateId, workspaceId: bodyWsId, title: bodyTitle, asSystemTemplate } = body;
 
     let workspaceId = bodyWsId || userId;
-    if (!bodyWsId) {
+    if (userId && !bodyWsId) {
       const { data: profile } = await supabaseAdmin
         .from('profiles')
-        .select('id')
+        .select('id, workspace_id')
         .eq('id', userId)
         .maybeSingle();
-      if (profile?.id) workspaceId = profile.id;
+      if (profile?.workspace_id) workspaceId = profile.workspace_id;
+      else if (profile?.id) workspaceId = profile.id;
     }
 
     if (!sourceTemplateId) {
       return NextResponse.json({ error: 'sourceTemplateId is required' }, { status: 400 });
     }
+
+    const isSourceUuid = isValidUUID(sourceTemplateId);
 
     // 1. Fetch Source Template Metadata from quotation_templates or quotations
     const [{ data: sourceTmpl }, { data: sourceLegacyQuote }] = await Promise.all([
@@ -37,19 +45,35 @@ export async function POST(req: NextRequest) {
         .select('*')
         .eq('id', sourceTemplateId)
         .maybeSingle(),
-      supabaseAdmin
-        .from('quotations')
-        .select('*')
-        .or(`id.eq.${sourceTemplateId},quotation_number.eq.${sourceTemplateId}`)
-        .maybeSingle()
+      isSourceUuid
+        ? supabaseAdmin
+            .from('quotations')
+            .select('*')
+            .or(`id.eq.${sourceTemplateId},quotation_number.eq.${sourceTemplateId}`)
+            .maybeSingle()
+        : supabaseAdmin
+            .from('quotations')
+            .select('*')
+            .eq('quotation_number', sourceTemplateId)
+            .maybeSingle()
     ]);
 
     // 2. Fetch Source Document JSON
-    const { data: sourceDoc } = await supabaseAdmin
-      .from('quotation_documents')
-      .select('*')
-      .or(`template_id.eq.${sourceTemplateId},id.eq.${sourceTemplateId}`)
-      .maybeSingle();
+    const { data: sourceDoc } = await (isSourceUuid
+      ? supabaseAdmin
+          .from('quotation_documents')
+          .select('*')
+          .or(`template_id.eq.${sourceTemplateId},id.eq.${sourceTemplateId}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : supabaseAdmin
+          .from('quotation_documents')
+          .select('*')
+          .eq('template_id', sourceTemplateId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle());
 
     let docJson = sourceDoc?.document_json || sourceDoc?.content_json || sourceLegacyQuote?.content_json;
 

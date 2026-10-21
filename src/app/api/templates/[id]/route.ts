@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
@@ -24,12 +24,15 @@ async function handleGet(
     const { userId, isSuperAdmin } = await resolveRequestUser(req);
 
     let workspaceId = userId;
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
-    if (profile?.id) workspaceId = profile.id;
+    if (userId) {
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('id, workspace_id')
+        .eq('id', userId)
+        .maybeSingle();
+      if (profile?.workspace_id) workspaceId = profile.workspace_id;
+      else if (profile?.id) workspaceId = profile.id;
+    }
 
     // 1. System Template is readable by all authenticated users
     if (id === GLOBAL_SYSTEM_TEMPLATE_ID) {
@@ -129,8 +132,21 @@ async function handleGet(
     // 5. User Isolation Check — Super Admin can view all, users can view system templates, public previews, or their own
     const isPublicPreview = req.nextUrl.searchParams.get('preview') === 'public' || !!req.nextUrl.searchParams.get('token');
     const targetWorkspace = tmpl?.workspace_id || tmpl?.user_id || doc?.workspace_id || doc?.user_id || quoteRec?.workspace_id || quoteRec?.user_id;
+
+    let isMember = false;
+    if (!isSuperAdmin && !isPublicPreview && targetWorkspace && targetWorkspace !== workspaceId && targetWorkspace !== userId && targetWorkspace !== 'SYSTEM' && targetWorkspace !== 'demo_user' && userId) {
+      const { data: member } = await supabaseAdmin
+        .from('workspace_members')
+        .select('id')
+        .eq('workspace_id', targetWorkspace)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (member) isMember = true;
+    }
+
     const isOwner = isSuperAdmin ||
       isPublicPreview ||
+      isMember ||
       (Boolean(tmpl?.is_system_template) && tmpl?.status === 'published') ||
       !targetWorkspace ||
       targetWorkspace === workspaceId ||
