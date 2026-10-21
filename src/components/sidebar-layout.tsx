@@ -116,6 +116,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       pathname.startsWith('/workspace/finance') ||
       pathname.startsWith('/workspace/tasks') ||
       pathname.startsWith('/workspace/attendance') ||
+      pathname.startsWith('/workspace/review') ||
+      pathname.startsWith('/workspace/workflows') ||
       pathname.startsWith('/workspace/integrations')
     ) {
       setAppMode('crm');
@@ -472,6 +474,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
     },
     {
+      id: 'review',
+      name: 'Video Review',
+      path: '/workspace/review',
+      icon: PlaySquare,
+      iconBg: 'bg-[#EDE9FE] text-[#7C3AED]',
+    },
+    {
       id: 'storage',
       name: 'Studio Storage',
       path: '/workspace/storage',
@@ -557,14 +566,23 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: FileText,
       iconBg: 'bg-[#FEF3C7] text-[#B45309]',
     }] : []),
-    // 4. Post-Production
-    ...(permissions?.post_production_access && permissions.post_production_access !== 'NONE' ? [{
-      id: 'post-production',
-      name: 'Post-Production',
-      path: '/workspace/post-production',
-      icon: Film,
-      iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
-    }] : []),
+    // 4. Post-Production & Review
+    ...(permissions?.post_production_access && permissions.post_production_access !== 'NONE' ? [
+      {
+        id: 'post-production',
+        name: 'Post-Production',
+        path: '/workspace/post-production',
+        icon: Film,
+        iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
+      },
+      {
+        id: 'review',
+        name: 'Video Review',
+        path: '/workspace/review',
+        icon: PlaySquare,
+        iconBg: 'bg-[#EDE9FE] text-[#7C3AED]',
+      }
+    ] : []),
     // 5. Team & Partners (Only for full manage)
     ...(permissions?.team_manager_access === 'ALL_MANAGE' || permissions?.team_manager_access === 'MANAGE_ALL' ? [{
       id: 'team',
@@ -653,6 +671,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname.startsWith('/pdf-preview') ||
     pathname.startsWith('/p/') ||
     pathname.startsWith('/g/') ||
+    pathname.startsWith('/r/') ||
+    pathname.startsWith('/review/') ||
     pathname.startsWith('/attendance/') ||
     pathname.startsWith('/workspace/quotations/builder') ||
     pathname.startsWith('/admin/workspace/quotations/builder') ||
