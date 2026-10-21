@@ -10,7 +10,7 @@ import {
   Headphones, LogOut, ChevronDown, ChevronRight, ChevronLeft, 
   Menu, X, Sparkles, UserCheck, Archive, UserX, CheckCircle2, 
   ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase, HardDrive, Camera,
-  Flame, PhoneCall, CheckSquare, QrCode, Images
+  Flame, PhoneCall, CheckSquare, QrCode, Images, PlaySquare
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';

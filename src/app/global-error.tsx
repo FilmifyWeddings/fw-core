@@ -9,16 +9,16 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const isChunkError =
+    error?.message?.includes('ChunkLoadError') ||
+    error?.message?.includes('Loading chunk') ||
+    error?.message?.includes('Failed to fetch') ||
+    error?.name === 'ChunkLoadError';
+
   useEffect(() => {
     console.error('[Global App Error Caught]:', error);
-    if (process.env.NODE_ENV === 'production') {
-      const isChunkError =
-        error?.message?.includes('ChunkLoadError') ||
-        error?.message?.includes('Loading chunk') ||
-        error?.message?.includes('Failed to fetch') ||
-        error?.name === 'ChunkLoadError';
-
-      if (isChunkError && typeof window !== 'undefined') {
+    if (process.env.NODE_ENV === 'production' && isChunkError) {
+      if (typeof window !== 'undefined') {
         const lastReload = sessionStorage.getItem('last_sc_hard_reload');
         const now = Date.now();
         // Automatically attempt 1 hard cache-bust reload if not already tried in the last 20 seconds
@@ -32,7 +32,7 @@ export default function GlobalError({
         }
       }
     }
-  }, [error]);
+  }, [error, isChunkError]);
 
   // Disable in Development Mode: strictly runs ONLY in production
   if (process.env.NODE_ENV !== 'production') {
@@ -42,7 +42,7 @@ export default function GlobalError({
   return (
     <html lang="en">
       <head>
-        <title>App Update Detected | StudioCore</title>
+        <title>{isChunkError ? 'App Update Detected | StudioCore' : 'Application Recovered | StudioCore'}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <script
           dangerouslySetInnerHTML={{
@@ -75,15 +75,17 @@ export default function GlobalError({
       <body className="min-h-screen bg-[#FAF9F5] text-slate-900 flex items-center justify-center p-6 font-sans">
         <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-amber-200/80 shadow-xl text-center space-y-6">
           <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto text-2xl font-bold">
-            ⚡
+            {isChunkError ? '⚡' : '⚠️'}
           </div>
 
           <div className="space-y-2">
             <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-              App Update Detected
+              {isChunkError ? 'App Update Detected' : 'Application Recovered'}
             </h2>
             <p className="text-xs text-slate-500 font-medium leading-relaxed">
-              A new version of StudioCore has been deployed. Please reload the page to load the latest updates.
+              {isChunkError
+                ? 'A new version of StudioCore has been deployed. Please reload the page to load the latest updates.'
+                : (error?.message || 'A temporary interface issue occurred. Click below to continue.')}
             </p>
           </div>
 
