@@ -10,6 +10,11 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+function isValidUUID(val?: string | null): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 function extractYouTubeId(url: string): string | null {
   if (!url) return null;
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
@@ -29,8 +34,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'video_id and project_id are required' }, { status: 400 });
     }
 
+    const validWsId = isValidUUID(workspace_id) ? workspace_id : null;
+
     // Determine current version count
-    let existingVersions = listReviewCache('review_video_versions', (v: any) => v.video_id === video_id);
+    let existingVersions: any[] = [];
     try {
       const { data } = await supabaseAdmin
         .from('review_video_versions')
@@ -39,6 +46,10 @@ export async function POST(req: NextRequest) {
       if (data && data.length > 0) existingVersions = data;
     } catch (_) {}
 
+    if (existingVersions.length === 0) {
+      existingVersions = listReviewCache('review_video_versions', (v: any) => v.video_id === video_id);
+    }
+
     const nextVerNum = (existingVersions.length || 0) + 1;
     const finalLabel = version_label?.trim() || `V${nextVerNum}`;
     const isYouTube = source_type === 'youtube' || Boolean(youtube_url);
@@ -46,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     const resolvedVideoUrl = isYouTube 
       ? `https://www.youtube.com/watch?v=${ytId}` 
-      : (video_url || '');
+      : (video_url || (storage_key ? `/api/review/media?key=${encodeURIComponent(storage_key)}` : ''));
 
     const resolvedThumbnail = isYouTube 
       ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` 
@@ -57,7 +68,7 @@ export async function POST(req: NextRequest) {
       id: versionId,
       video_id,
       project_id,
-      workspace_id: workspace_id || null,
+      workspace_id: validWsId,
       version_number: nextVerNum,
       version_label: finalLabel,
       source_type: isYouTube ? 'youtube' : 'upload',
@@ -75,7 +86,7 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    // Update video's current_version_id
+    // Update video's current_version_id in cache
     const videos = readReviewCache('review_videos');
     if (videos[video_id]) {
       videos[video_id].current_version_id = versionId;
@@ -84,13 +95,27 @@ export async function POST(req: NextRequest) {
     }
     writeReviewCache('review_video_versions', versionId, newVersion);
 
+    // Supabase DB persistent insert
     try {
       await supabaseAdmin.from('review_video_versions').insert(newVersion);
       await supabaseAdmin
         .from('review_videos')
         .update({ current_version_id: versionId, updated_at: new Date().toISOString() })
         .eq('id', video_id);
-    } catch (_) {}
+
+      // Quota update for uploads
+      if (validWsId && !isYouTube && Number(file_size_bytes) > 0) {
+        const { data: q } = await supabaseAdmin.from('review_storage_quotas').select('used_bytes').eq('workspace_id', validWsId).maybeSingle();
+        if (q) {
+          await supabaseAdmin
+            .from('review_storage_quotas')
+            .update({ used_bytes: (Number(q.used_bytes) || 0) + Number(file_size_bytes), updated_at: new Date().toISOString() })
+            .eq('workspace_id', validWsId);
+        }
+      }
+    } catch (dbErr) {
+      console.error('[Review DB] Version insert error:', dbErr);
+    }
 
     return NextResponse.json({
       success: true,

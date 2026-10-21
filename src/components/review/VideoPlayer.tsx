@@ -58,6 +58,7 @@ export default function VideoPlayer({
 }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const ytIntervalRef = useRef<any>(null);
@@ -382,14 +383,17 @@ export default function VideoPlayer({
         />
       )}
 
-      {/* 2. YouTube IFrame Player Container */}
+      {/* 2. YouTube IFrame Player Container (Branding Cloaked & Scaled) */}
       {sourceType === 'youtube' && (
-        <div className="w-full h-full flex items-center justify-center">
-          <div id={`yt-review-player-${youtubeVideoId}`} className="w-full h-full pointer-events-none" />
-          {/* Overlay to intercept clicks for custom control bar */}
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black select-none">
+          <div 
+            id={`yt-review-player-${youtubeVideoId}`} 
+            className="w-[104%] h-[116%] pointer-events-none scale-[1.08] transform origin-center" 
+          />
+          {/* Overlay to intercept clicks for custom StudioCore control bar */}
           <div 
             onClick={togglePlay} 
-            className="absolute inset-0 cursor-pointer bg-transparent" 
+            className="absolute inset-0 cursor-pointer bg-transparent z-10" 
           />
         </div>
       )}
@@ -474,9 +478,14 @@ export default function VideoPlayer({
           onMouseMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const pos = (e.clientX - rect.left) / rect.width;
-            setHoverTime(pos * duration);
+            const targetHoverTime = Math.max(0, Math.min(duration, pos * duration));
+            setHoverTime(targetHoverTime);
             setHoverX(e.clientX - rect.left);
             setIsHoveringTimeline(true);
+
+            if (previewVideoRef.current && sourceType === 'upload' && isFinite(targetHoverTime)) {
+              previewVideoRef.current.currentTime = targetHoverTime;
+            }
           }}
           onMouseLeave={() => setIsHoveringTimeline(false)}
         >
@@ -486,13 +495,33 @@ export default function VideoPlayer({
             className="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-full"
           />
 
-          {/* Hover Scrub Preview Badge */}
+          {/* Hover Scrub Preview Thumbnail Card (YouTube & Frame.io Style) */}
           {isHoveringTimeline && (
             <div 
               style={{ left: `${hoverX}px` }}
-              className="absolute -top-7 -translate-x-1/2 bg-black/85 text-amber-400 font-mono text-[10px] font-bold px-2 py-0.5 rounded-md border border-white/10 pointer-events-none shadow-md"
+              className="absolute -top-28 -translate-x-1/2 flex flex-col items-center pointer-events-none z-40"
             >
-              {formatTimecode(hoverTime)}
+              <div className="w-28 h-16 bg-zinc-950 rounded-xl overflow-hidden border border-white/20 shadow-2xl relative flex items-center justify-center">
+                {sourceType === 'upload' ? (
+                  <video
+                    ref={previewVideoRef}
+                    src={videoUrl}
+                    className="w-full h-full object-cover"
+                    muted
+                    preload="metadata"
+                  />
+                ) : (
+                  <img
+                    src={`https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`}
+                    alt="Scrub frame preview"
+                    className="w-full h-full object-cover"
+                  />
+                )}
+                <div className="absolute inset-0 bg-black/10" />
+              </div>
+              <div className="mt-1 bg-black/90 text-amber-400 font-mono text-[10px] font-bold px-2 py-0.5 rounded-md border border-white/10 shadow-md">
+                {formatTimecode(hoverTime)}
+              </div>
             </div>
           )}
 

@@ -7,16 +7,23 @@ import {
   Film, Plus, Search, Filter, HardDrive, Share2, 
   CheckCircle2, Clock, FileEdit, AlertCircle, Sparkles, 
   ChevronRight, Calendar, User, LayoutGrid, List, Video,
-  PlaySquare, ArrowUpRight, Copy, Check 
+  PlaySquare, ArrowUpRight, Copy, Check, Trash2, ShieldCheck
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import NewProjectModal from '@/components/review/NewProjectModal';
+import DeleteProjectModal from '@/components/review/DeleteProjectModal';
+
+function isValidUUID(val?: string | null): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
 
 export default function ReviewProjectsPage() {
   const router = useRouter();
   const { activeWorkspace, isOwner, loading } = useWorkspace();
-  const workspaceId = activeWorkspace?.workspaceId || 'default';
+  const rawWsId = activeWorkspace?.workspaceId;
+  const workspaceId = isValidUUID(rawWsId) ? rawWsId : null;
 
   const [projects, setProjects] = useState<any[]>([]);
   const [quota, setQuota] = useState<any>(null);
@@ -25,14 +32,18 @@ export default function ReviewProjectsPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'in_review' | 'changes_requested' | 'approved' | 'draft'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<any | null>(null);
 
   const loadData = async () => {
     try {
       setIsLoading(true);
+      const queryParam = workspaceId ? `workspace_id=${workspaceId}` : '';
+      const statusParam = statusFilter ? `status=${statusFilter}` : '';
+      const qs = [queryParam, statusParam].filter(Boolean).join('&');
+
       const [projRes, quotaRes] = await Promise.all([
-        fetch(`/api/review/projects?workspace_id=${workspaceId}&status=${statusFilter}`),
-        fetch(`/api/review/quotas?workspace_id=${workspaceId}`),
+        fetch(`/api/review/projects${qs ? `?${qs}` : ''}`),
+        fetch(`/api/review/quotas${workspaceId ? `?workspace_id=${workspaceId}` : ''}`),
       ]);
 
       const projData = await projRes.json();
@@ -100,20 +111,20 @@ export default function ReviewProjectsPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 text-[11px] font-black tracking-wider uppercase border border-amber-500/20">
-              Workflows · Review
+              Workflows · Video Review
             </span>
             <span className="text-zinc-300">|</span>
-            <span className="text-xs text-zinc-400 font-medium">FreeFrame / Frame.io Architecture</span>
+            <span className="text-xs text-zinc-400 font-medium">FreeFrame / Frame.io Native Integration</span>
           </div>
 
           <h1 
             style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
             className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
           >
-            StudioCore Review
+            StudioCore Video Review
           </h1>
           <p className="text-xs text-zinc-500 max-w-xl">
-            Frame-accurate video review, real-time client feedback, canvas drawings & version approval workflow.
+            Frame-accurate video proofing, timecode comments, on-frame pencil drawings, Backblaze B2 storage & 1-click approvals.
           </p>
         </div>
 
@@ -128,7 +139,7 @@ export default function ReviewProjectsPage() {
         </div>
       </div>
 
-      {/* 2. Storage Quota Banner */}
+      {/* 2. Storage Quota Banner (1 GB Free Trial Limit Enforced) */}
       {quota && (
         <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -137,13 +148,22 @@ export default function ReviewProjectsPage() {
             </div>
             <div>
               <div className="text-xs font-bold text-zinc-800 flex items-center gap-2">
-                <span>Review Storage: {quota.tier_name}</span>
-                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                <span>Storage Quota: {quota.tier_name}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                  quota.percentage_used > 85 
+                    ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}>
                   {quota.percentage_used}% used
                 </span>
+                {quota.is_trial && (
+                  <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md">
+                    1 GB Free Trial Limit
+                  </span>
+                )}
               </div>
               <div className="text-[11px] text-zinc-400">
-                {quota.formatted_used} used of {quota.formatted_total} available
+                {quota.formatted_used} used of {quota.formatted_total} on Backblaze B2 Storage
               </div>
             </div>
           </div>
@@ -158,45 +178,44 @@ export default function ReviewProjectsPage() {
               />
             </div>
             <div className="text-[10px] text-right text-zinc-400">
-              {((quota.available_bytes) / (1024 * 1024 * 1024)).toFixed(1)} GB free
+              {quota.available_bytes > 0 ? `${(quota.available_bytes / (1024*1024)).toFixed(0)} MB free space` : 'Storage full'}
             </div>
           </div>
         </div>
       )}
 
-      {/* 3. Search and Status Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {(['all', 'in_review', 'changes_requested', 'approved', 'draft'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setStatusFilter(tab)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition capitalize cursor-pointer shrink-0 ${
-                statusFilter === tab 
-                  ? 'bg-amber-500 text-white shadow-2xs' 
-                  : 'bg-white text-zinc-600 hover:bg-zinc-50 border border-[#E7E2D8]'
-              }`}
-            >
-              {tab.replace('_', ' ')}
-            </button>
-          ))}
+      {/* 3. Search & Filter Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search projects by name or client..."
+            className="w-full pl-10 pr-4 py-2 rounded-xl bg-white border border-[#E7E2D8] text-xs font-medium placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs"
+          />
         </div>
 
-        {/* Search & View Switcher */}
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search projects or clients..."
-              className="pl-8 pr-3 py-1.5 bg-white border border-[#E7E2D8] rounded-xl text-xs text-zinc-800 placeholder-zinc-400 focus:outline-hidden focus:border-amber-400 w-52 sm:w-64 shadow-2xs"
-            />
+          {/* Status Filter Tabs */}
+          <div className="flex items-center bg-white border border-[#E7E2D8] rounded-xl p-1 shadow-2xs text-xs font-bold">
+            {(['all', 'in_review', 'changes_requested', 'approved'] as const).map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                className={`px-3 py-1.5 rounded-lg transition capitalize cursor-pointer ${
+                  statusFilter === st 
+                    ? 'bg-amber-500 text-white shadow-xs' 
+                    : 'text-zinc-500 hover:text-zinc-900'
+                }`}
+              >
+                {st === 'all' ? 'All' : st.replace('_', ' ')}
+              </button>
+            ))}
           </div>
 
+          {/* View Toggle */}
           <div className="flex items-center bg-white border border-[#E7E2D8] rounded-xl p-1 shadow-2xs">
             <button
               onClick={() => setViewMode('grid')}
@@ -247,8 +266,8 @@ export default function ReviewProjectsPage() {
           {filteredProjects.map((project) => (
             <div
               key={project.id}
-              onClick={() => router.push(`/workspace/review/${project.id}`)}
-              className="group bg-white rounded-3xl border border-[#E7E2D8] overflow-hidden shadow-2xs hover:shadow-md hover:border-amber-400 transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              onClick={() => router.push(`/workspace/video-review/${project.id}`)}
+              className="group bg-white rounded-3xl border border-[#E7E2D8] overflow-hidden shadow-2xs hover:shadow-md hover:border-amber-400 transition-all duration-300 cursor-pointer flex flex-col justify-between relative"
             >
               {/* Card Thumbnail / Header */}
               <div className="relative aspect-[16/10] bg-zinc-900 overflow-hidden">
@@ -273,12 +292,18 @@ export default function ReviewProjectsPage() {
                   {getStatusBadge(project.status)}
                 </div>
 
-                {/* Category Tags */}
-                {project.tags && project.tags.length > 0 && (
-                  <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-white border border-white/10">
-                    {project.tags[0]}
-                  </div>
-                )}
+                {/* Delete button on hover */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setProjectToDelete(project);
+                  }}
+                  className="absolute top-3 right-3 p-1.5 rounded-xl bg-black/60 hover:bg-rose-600 text-white/80 hover:text-white transition backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
+                  title="Delete Project & Purge Storage"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
 
                 {/* Bottom title */}
                 <div className="absolute bottom-3 left-3 right-3 text-white">
@@ -300,7 +325,7 @@ export default function ReviewProjectsPage() {
                 </div>
 
                 <div className="flex items-center gap-1 font-bold text-amber-600 group-hover:translate-x-0.5 transition-transform">
-                  <span>Open Studio</span>
+                  <span>Open Review</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </div>
               </div>
@@ -313,29 +338,37 @@ export default function ReviewProjectsPage() {
           {filteredProjects.map((project) => (
             <div
               key={project.id}
-              onClick={() => router.push(`/workspace/review/${project.id}`)}
+              onClick={() => router.push(`/workspace/video-review/${project.id}`)}
               className="p-4 flex items-center justify-between gap-4 hover:bg-[#FAF9F5] transition cursor-pointer"
             >
               <div className="flex items-center gap-3.5 min-w-0">
                 <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold shrink-0">
-                  <Film className="w-5 h-5" />
+                  <Video className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-sm text-zinc-900 truncate">{project.name}</h3>
-                    {getStatusBadge(project.status)}
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-zinc-400 mt-0.5">
-                    {project.client_name && <span>Client: {project.client_name}</span>}
-                    {project.event_date && <span>Date: {new Date(project.event_date).toLocaleDateString()}</span>}
-                  </div>
+                  <h4 className="font-bold text-xs text-zinc-900 truncate">{project.name}</h4>
+                  <p className="text-[11px] text-zinc-400 truncate">
+                    {project.client_name ? `Client: ${project.client_name}` : 'No client specified'}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs font-bold text-amber-600 flex items-center gap-1">
-                  Review Studio <ChevronRight className="w-3.5 h-3.5" />
-                </span>
+              <div className="flex items-center gap-4">
+                {getStatusBadge(project.status)}
+                <div className="text-[11px] text-zinc-400 hidden sm:block">
+                  {project.event_date ? new Date(project.event_date).toLocaleDateString() : '—'}
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setProjectToDelete(project);
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                  title="Delete Project & Purge Storage"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
           ))}
@@ -346,10 +379,24 @@ export default function ReviewProjectsPage() {
       <NewProjectModal
         isOpen={isNewProjectModalOpen}
         onClose={() => setIsNewProjectModalOpen(false)}
-        workspaceId={workspaceId}
+        workspaceId={workspaceId || ''}
         onProjectCreated={(newProj) => {
           setProjects(prev => [newProj, ...prev]);
-          router.push(`/workspace/review/${newProj.id}`);
+          router.push(`/workspace/video-review/${newProj.id}`);
+        }}
+      />
+
+      {/* Delete Project Confirmation Modal */}
+      <DeleteProjectModal
+        isOpen={Boolean(projectToDelete)}
+        project={projectToDelete}
+        onClose={() => setProjectToDelete(null)}
+        onDeleted={() => {
+          if (projectToDelete) {
+            setProjects(prev => prev.filter(p => p.id !== projectToDelete.id));
+            setProjectToDelete(null);
+            loadData();
+          }
         }}
       />
     </div>

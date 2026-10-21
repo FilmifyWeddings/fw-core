@@ -10,6 +10,11 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+function isValidUUID(val?: string | null): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const versionId = searchParams.get('version_id');
@@ -26,10 +31,12 @@ export async function GET(req: NextRequest) {
       .order('timestamp_seconds', { ascending: true })
       .order('created_at', { ascending: true });
 
-    if (!error && Array.isArray(data) && data.length > 0) {
+    if (!error && Array.isArray(data)) {
       return NextResponse.json({ success: true, comments: data });
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[Review Comments API] Fallback to cache:', err);
+  }
 
   // Fallback cache
   const cached = listReviewCache('review_comments', (c: any) => c.version_id === versionId);
@@ -57,15 +64,19 @@ export async function POST(req: NextRequest) {
     }
 
     const commentId = crypto.randomUUID();
+    const validParentId = isValidUUID(parent_comment_id) ? parent_comment_id : null;
+    const validVideoId = isValidUUID(video_id) ? video_id : null;
+    const validProjectId = isValidUUID(project_id) ? project_id : null;
+
     const newComment = {
       id: commentId,
       version_id,
-      video_id: video_id || null,
-      project_id: project_id || null,
-      parent_comment_id: parent_comment_id || null,
+      video_id: validVideoId,
+      project_id: validProjectId,
+      parent_comment_id: validParentId,
       timestamp_seconds: Number(timestamp_seconds) || 0,
       author_name: (author_name || 'Reviewer').trim(),
-      author_email: (author_email || '').trim().toLowerCase(),
+      author_email: (author_email || '').trim().toLowerCase() || null,
       author_role: author_role || 'reviewer',
       content: content.trim(),
       is_resolved: false,
@@ -79,8 +90,13 @@ export async function POST(req: NextRequest) {
     writeReviewCache('review_comments', commentId, newComment);
 
     try {
-      await supabaseAdmin.from('review_comments').insert(newComment);
-    } catch (_) {}
+      const { data, error } = await supabaseAdmin.from('review_comments').insert(newComment).select().single();
+      if (!error && data) {
+        return NextResponse.json({ success: true, comment: data });
+      }
+    } catch (dbErr) {
+      console.error('[Review DB] Comment insert error:', dbErr);
+    }
 
     return NextResponse.json({ success: true, comment: newComment });
   } catch (err: any) {
@@ -106,25 +122,28 @@ export async function PATCH(req: NextRequest) {
       const updatePayload: any = { updated_at: new Date().toISOString() };
       if (typeof is_resolved === 'boolean') updatePayload.is_resolved = is_resolved;
       if (typeof content === 'string') updatePayload.content = content.trim();
-
       await supabaseAdmin.from('review_comments').update(updatePayload).eq('id', id);
     } catch (_) {}
 
-    return NextResponse.json({ success: true, comment: comments[id] || { id, is_resolved, content } });
+    return NextResponse.json({ success: true });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
 export async function DELETE(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get('id');
-  if (!id) return NextResponse.json({ success: false, error: 'id required' }, { status: 400 });
-
-  deleteReviewCache('review_comments', id);
   try {
-    await supabaseAdmin.from('review_comments').delete().eq('id', id);
-  } catch (_) {}
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+    if (!id) return NextResponse.json({ success: false, error: 'id required' }, { status: 400 });
 
-  return NextResponse.json({ success: true });
+    deleteReviewCache('review_comments', id);
+    try {
+      await supabaseAdmin.from('review_comments').delete().eq('id', id);
+    } catch (_) {}
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
 }

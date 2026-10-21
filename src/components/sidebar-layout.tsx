@@ -476,7 +476,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     {
       id: 'review',
       name: 'Video Review',
-      path: '/workspace/review',
+      path: '/workspace/video-review',
       icon: PlaySquare,
       iconBg: 'bg-[#EDE9FE] text-[#7C3AED]',
     },
@@ -578,7 +578,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       {
         id: 'review',
         name: 'Video Review',
-        path: '/workspace/review',
+        path: '/workspace/video-review',
         icon: PlaySquare,
         iconBg: 'bg-[#EDE9FE] text-[#7C3AED]',
       }

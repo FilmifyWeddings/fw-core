@@ -10,6 +10,11 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+function isValidUUID(val?: string | null): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 function extractYouTubeId(url: string): string | null {
   if (!url) return null;
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
@@ -31,16 +36,18 @@ export async function POST(req: NextRequest) {
 
     const videoId = crypto.randomUUID();
     const versionId = crypto.randomUUID();
+    const validWsId = isValidUUID(workspace_id) ? workspace_id : null;
+
     const isYouTube = source_type === 'youtube' || Boolean(youtube_url);
     const ytId = isYouTube ? (extractYouTubeId(youtube_url || video_url || '') || '') : null;
 
     if (isYouTube && !ytId) {
-      return NextResponse.json({ success: false, error: 'Invalid YouTube URL' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Invalid YouTube URL provided' }, { status: 400 });
     }
 
     const resolvedVideoUrl = isYouTube 
       ? `https://www.youtube.com/watch?v=${ytId}` 
-      : (video_url || '');
+      : (video_url || (storage_key ? `/api/review/media?key=${encodeURIComponent(storage_key)}` : ''));
 
     const resolvedThumbnail = isYouTube 
       ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` 
@@ -51,7 +58,7 @@ export async function POST(req: NextRequest) {
       id: versionId,
       video_id: videoId,
       project_id,
-      workspace_id: workspace_id || null,
+      workspace_id: validWsId,
       version_number: 1,
       version_label: 'V1',
       source_type: isYouTube ? 'youtube' : 'upload',
@@ -73,7 +80,7 @@ export async function POST(req: NextRequest) {
     const newVideo = {
       id: videoId,
       project_id,
-      workspace_id: workspace_id || null,
+      workspace_id: validWsId,
       title: title.trim(),
       category: category || 'Highlight Film',
       current_version_id: versionId,
@@ -83,22 +90,42 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    // Fallback cache
+    // Fallback cache write
     writeReviewCache('review_video_versions', versionId, newVersion);
     writeReviewCache('review_videos', videoId, newVideo);
 
-    // Update project cover thumbnail if not set
+    // Update project cover thumbnail if not already set
     const projects = readReviewCache('review_projects');
     if (projects[project_id] && !projects[project_id].cover_thumbnail_url && resolvedThumbnail) {
       projects[project_id].cover_thumbnail_url = resolvedThumbnail;
       writeReviewCache('review_projects', project_id, projects[project_id]);
     }
 
-    // Supabase DB
+    // Supabase DB persistent insert
     try {
       await supabaseAdmin.from('review_videos').insert(newVideo);
       await supabaseAdmin.from('review_video_versions').insert(newVersion);
-    } catch (_) {}
+      if (resolvedThumbnail) {
+        await supabaseAdmin
+          .from('review_projects')
+          .update({ cover_thumbnail_url: resolvedThumbnail, updated_at: new Date().toISOString() })
+          .eq('id', project_id)
+          .is('cover_thumbnail_url', null);
+      }
+
+      // Update storage quota used_bytes for uploads
+      if (validWsId && !isYouTube && Number(file_size_bytes) > 0) {
+        const { data: q } = await supabaseAdmin.from('review_storage_quotas').select('used_bytes').eq('workspace_id', validWsId).maybeSingle();
+        if (q) {
+          await supabaseAdmin
+            .from('review_storage_quotas')
+            .update({ used_bytes: (Number(q.used_bytes) || 0) + Number(file_size_bytes), updated_at: new Date().toISOString() })
+            .eq('workspace_id', validWsId);
+        }
+      }
+    } catch (dbErr) {
+      console.error('[Review DB] Video insert error:', dbErr);
+    }
 
     return NextResponse.json({
       success: true,
@@ -108,17 +135,4 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
-}
-
-export async function DELETE(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get('id');
-  if (!id) return NextResponse.json({ success: false, error: 'id required' }, { status: 400 });
-
-  deleteReviewCache('review_videos', id);
-  try {
-    await supabaseAdmin.from('review_videos').delete().eq('id', id);
-  } catch (_) {}
-
-  return NextResponse.json({ success: true });
 }

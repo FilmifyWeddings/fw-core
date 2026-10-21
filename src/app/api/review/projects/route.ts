@@ -10,23 +10,32 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+function isValidUUID(val?: string | null): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get('workspace_id');
+  const rawWorkspaceId = searchParams.get('workspace_id');
   const status = searchParams.get('status');
   const search = searchParams.get('search');
 
+  const validWsId = isValidUUID(rawWorkspaceId) ? rawWorkspaceId : null;
+
   try {
     let query = supabaseAdmin.from('review_projects').select('*').order('updated_at', { ascending: false });
-    if (workspaceId && workspaceId !== 'all') {
-      query = query.eq('workspace_id', workspaceId);
+
+    if (validWsId) {
+      query = query.or(`workspace_id.eq.${validWsId},workspace_id.is.null`);
     }
+
     if (status && status !== 'all') {
       query = query.eq('status', status);
     }
 
     const { data, error } = await query;
-    if (!error && Array.isArray(data) && data.length > 0) {
+    if (!error && Array.isArray(data)) {
       let filtered = data;
       if (search) {
         const term = search.toLowerCase();
@@ -37,12 +46,14 @@ export async function GET(req: NextRequest) {
       }
       return NextResponse.json({ success: true, projects: filtered });
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[Review API] Projects fetch error, falling back to cache:', err);
+  }
 
   // Resilient fallback to local cache
   let cached = listReviewCache('review_projects');
-  if (workspaceId && workspaceId !== 'all') {
-    cached = cached.filter((p: any) => p.workspace_id === workspaceId);
+  if (validWsId) {
+    cached = cached.filter((p: any) => !p.workspace_id || p.workspace_id === validWsId);
   }
   if (status && status !== 'all') {
     cached = cached.filter((p: any) => p.status === status);
@@ -62,48 +73,44 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { 
-      workspace_id, name, description, client_id, client_name, client_email, 
-      event_date, tags, cover_thumbnail_url 
-    } = body;
+    const { name, description, client_name, client_email, event_date, workspace_id, tags } = body;
 
     if (!name?.trim()) {
       return NextResponse.json({ success: false, error: 'Project name is required' }, { status: 400 });
     }
 
+    const projectId = crypto.randomUUID();
+    const validWsId = isValidUUID(workspace_id) ? workspace_id : null;
+
     const newProject = {
-      id: crypto.randomUUID(),
-      workspace_id: workspace_id || null,
+      id: projectId,
+      workspace_id: validWsId,
       name: name.trim(),
-      description: description?.trim() || '',
-      client_id: client_id || null,
-      client_name: client_name?.trim() || '',
-      client_email: client_email?.trim() || '',
+      description: description?.trim() || null,
+      client_name: client_name?.trim() || null,
+      client_email: client_email?.trim() || null,
       event_date: event_date || null,
       status: 'in_review',
-      cover_thumbnail_url: cover_thumbnail_url || null,
-      tags: Array.isArray(tags) ? tags : ['Highlight Film'],
+      cover_thumbnail_url: null,
+      assigned_team_member_ids: [],
+      tags: Array.isArray(tags) ? tags : [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    // Mirror to fallback cache
-    writeReviewCache('review_projects', newProject.id, newProject);
+    // Cache fallback
+    writeReviewCache('review_projects', projectId, newProject);
 
-    // Save to Supabase
+    // Supabase DB persistent insert
     try {
-      const { data, error } = await supabaseAdmin
-        .from('review_projects')
-        .insert(newProject)
-        .select()
-        .single();
+      const { data, error } = await supabaseAdmin.from('review_projects').insert(newProject).select().single();
       if (!error && data) {
         return NextResponse.json({ success: true, project: data });
       }
     } catch (_) {}
 
-    return NextResponse.json({ success: true, project: newProject, is_fallback: true });
+    return NextResponse.json({ success: true, project: newProject });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message || 'Failed to create project' }, { status: 500 });
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

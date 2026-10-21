@@ -47,3 +47,6 @@ next-env.d.ts
 /scratch/
 /run.bat
 baileys-worker/sessions/
+
+.next-chunks-backup/
+.review_cache/

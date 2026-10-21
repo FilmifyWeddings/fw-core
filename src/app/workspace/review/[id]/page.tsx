@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Film, Plus, Share2, CheckCircle2, Clock, 
   FileEdit, AlertCircle, Sparkles, ChevronDown, Download, 
-  PenTool, Users, Calendar, GitCommit, ExternalLink 
+  PenTool, Users, Calendar, GitCommit, ExternalLink, Trash2 
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
@@ -16,13 +16,20 @@ import AddVideoModal from '@/components/review/AddVideoModal';
 import NewVersionModal from '@/components/review/NewVersionModal';
 import ShareModal from '@/components/review/ShareModal';
 import ApprovalModal from '@/components/review/ApprovalModal';
+import DeleteProjectModal from '@/components/review/DeleteProjectModal';
+
+function isValidUUID(val?: string | null): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
 
 export default function ReviewStudioPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
   const router = useRouter();
   const { activeWorkspace, isOwner } = useWorkspace();
-  const workspaceId = activeWorkspace?.workspaceId || 'default';
+  const rawWsId = activeWorkspace?.workspaceId;
+  const workspaceId = isValidUUID(rawWsId) ? rawWsId : null;
 
   const [project, setProject] = useState<any>(null);
   const [videos, setVideos] = useState<any[]>([]);
@@ -46,6 +53,7 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
   const [isNewVersionModalOpen, setIsNewVersionModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Load project details
   const loadProject = async () => {
@@ -173,10 +181,10 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
 
   if (!project) {
     return (
-      <div className="min-h-screen bg-[#FAF9F5] p-8 text-center">
+      <div className="min-h-screen bg-[#FAF9F5] p-8 text-center space-y-3">
         <h2 className="text-xl font-bold text-zinc-800">Project Not Found</h2>
-        <Link href="/workspace/review" className="mt-4 inline-block text-amber-600 font-bold text-xs">
-          ← Back to Projects
+        <Link href="/workspace/video-review" className="inline-block text-amber-600 font-bold text-xs underline">
+          ← Back to Video Review Projects
         </Link>
       </div>
     );
@@ -191,7 +199,7 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
         {/* Left: Back & Project Title */}
         <div className="flex items-center gap-3 min-w-0">
           <Link
-            href="/workspace/review"
+            href="/workspace/video-review"
             className="p-2 rounded-xl text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition cursor-pointer shrink-0"
             title="Back to Review Projects"
           >
@@ -226,7 +234,7 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        {/* Right Actions: Approval Status, Share, Add Video */}
+        {/* Right Actions: Approval Status, Share, Add Video, Delete */}
         <div className="flex items-center gap-2.5 shrink-0">
           
           {/* Approval Sign-off Trigger */}
@@ -258,6 +266,16 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
           >
             <Plus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Add Video</span>
+          </button>
+
+          {/* Delete Project Button */}
+          <button
+            type="button"
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="p-2 rounded-full border border-rose-200 text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+            title="Delete Project & Purge Storage"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </header>
@@ -350,87 +368,70 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
               comments={comments}
               activeCommentId={activeCommentId}
               currentTime={currentTime}
-              onTimeUpdate={setCurrentTime}
+              onTimeUpdate={(t) => setCurrentTime(t)}
               isDrawMode={isDrawMode}
               setIsDrawMode={setIsDrawMode}
               currentAnnotation={currentAnnotation}
               setCurrentAnnotation={setCurrentAnnotation}
             />
           ) : (
-            <div className="w-full aspect-video bg-white rounded-3xl border border-[#E7E2D8] p-8 flex flex-col items-center justify-center text-center space-y-3 shadow-2xs">
-              <Film className="w-12 h-12 text-zinc-300" />
-              <div className="space-y-1">
-                <h3 className="font-bold text-sm text-zinc-800">No Video Added Yet</h3>
-                <p className="text-xs text-zinc-400 max-w-sm">
-                  Upload an MP4/MOV file or paste a YouTube URL to start reviewing this project.
-                </p>
+            <div className="aspect-video bg-zinc-900 rounded-3xl flex flex-col items-center justify-center text-center p-8 text-zinc-400 space-y-3">
+              <Film className="w-12 h-12 text-zinc-600" />
+              <div>
+                <h3 className="font-bold text-white text-base">No Video Selected</h3>
+                <p className="text-xs text-zinc-400 mt-1">Upload a video or add an unlisted YouTube video link to start reviewing.</p>
               </div>
               <button
                 onClick={() => setIsAddVideoModalOpen(true)}
-                className="px-4 py-2 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                className="px-4 py-2 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
               >
-                <Plus className="w-4 h-4" /> Add Video
+                <Plus className="w-4 h-4" /> Add Video to Project
               </button>
             </div>
           )}
 
-          {/* Version Changelog & Revision Card */}
+          {/* Revision Changelog Notes Banner */}
           {activeVersion && (
-            <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-zinc-900">
-                    {activeVersion.version_label || `Version ${activeVersion.version_number}`} Changelog
-                  </span>
-                  <span className="text-[10px] text-zinc-400 font-mono">
-                    {new Date(activeVersion.created_at).toLocaleString()}
-                  </span>
-                </div>
-                <p className="text-zinc-600">
-                  {activeVersion.changelog_notes || 'No revision notes provided for this version.'}
-                </p>
+            <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  {activeVersion.version_label || `Version ${activeVersion.version_number}`} Changelog / Cut Notes
+                </span>
+                <span className="text-[10px] text-zinc-400">
+                  {new Date(activeVersion.created_at).toLocaleString()}
+                </span>
               </div>
-
-              <div className="flex items-center gap-2 text-[11px] text-zinc-400 shrink-0">
-                <span>Source: <strong className="text-zinc-700 capitalize">{activeVersion.source_type}</strong></span>
-                {activeVersion.file_size_bytes > 0 && (
-                  <>
-                    <span>·</span>
-                    <span>{(activeVersion.file_size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
-                  </>
-                )}
-              </div>
+              <p className="text-xs text-zinc-600 leading-relaxed font-mono">
+                {activeVersion.changelog_notes || 'Initial cut uploaded.'}
+              </p>
             </div>
           )}
         </div>
 
-        {/* Right Column: Timecoded Comments Panel */}
-        <div className="lg:col-span-4 h-[650px] lg:h-auto flex flex-col">
+        {/* Right Column: Timecoded Feedback & Client Notes Panel */}
+        <div className="lg:col-span-4 h-[calc(100vh-160px)] min-h-[500px]">
           <CommentsPanel
             comments={comments}
             currentTime={currentTime}
-            activeCommentId={activeCommentId}
-            onSelectComment={(comm) => {
-              setActiveCommentId(comm.id);
-              setCurrentTime(comm.timestamp_seconds);
-            }}
+            onSeek={(t) => setCurrentTime(t)}
             onAddComment={handleAddComment}
             onToggleResolve={handleToggleResolve}
             onDeleteComment={handleDeleteComment}
             isDrawMode={isDrawMode}
-            setIsDrawMode={setIsDrawMode}
-            hasCurrentAnnotation={Boolean(currentAnnotation)}
-            currentUserRole={isOwner ? 'owner' : 'editor'}
+            onToggleDraw={() => setIsDrawMode(!isDrawMode)}
+            activeCommentId={activeCommentId}
+            onSelectComment={(id) => setActiveCommentId(id)}
           />
         </div>
       </main>
 
-      {/* Add Video Modal */}
+      {/* Modals */}
       <AddVideoModal
         isOpen={isAddVideoModalOpen}
         onClose={() => setIsAddVideoModalOpen(false)}
         projectId={projectId}
-        workspaceId={workspaceId}
+        workspaceId={workspaceId || ''}
         onVideoAdded={(newVid, newVer) => {
           setVideos(prev => [...prev, newVid]);
           setVersions(prev => [...prev, newVer]);
@@ -439,41 +440,48 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
         }}
       />
 
-      {/* New Version Modal */}
       <NewVersionModal
         isOpen={isNewVersionModalOpen}
         onClose={() => setIsNewVersionModalOpen(false)}
-        video={activeVideo}
+        videoId={activeVideo?.id || ''}
         projectId={projectId}
-        workspaceId={workspaceId}
+        workspaceId={workspaceId || ''}
+        currentVersionNumber={currentVideoVersions.length}
         onVersionAdded={(newVer) => {
           setVersions(prev => [...prev, newVer]);
           setActiveVersionId(newVer.id);
         }}
       />
 
-      {/* Share Modal */}
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         project={project}
         shares={shares}
-        workspaceId={workspaceId}
-        onShareCreated={(newShare) => setShares([newShare])}
+        workspaceId={workspaceId || ''}
+        onShareCreated={(newShare) => setShares(prev => [newShare, ...prev])}
       />
 
-      {/* Approval Modal */}
       <ApprovalModal
         isOpen={isApprovalModalOpen}
         onClose={() => setIsApprovalModalOpen(false)}
+        projectId={projectId}
+        videoId={activeVideo?.id || ''}
+        versionId={activeVersion?.id || ''}
+        workspaceId={workspaceId || ''}
+        currentStatus={activeVersion?.status || 'in_review'}
+        onStatusUpdated={(status) => {
+          setVersions(prev => prev.map(v => v.id === activeVersion?.id ? { ...v, status } : v));
+          setProject((prev: any) => ({ ...prev, status }));
+        }}
+      />
+
+      <DeleteProjectModal
+        isOpen={isDeleteModalOpen}
         project={project}
-        video={activeVideo}
-        version={activeVersion}
-        onApprovalSubmitted={(approval) => {
-          if (activeVersion) {
-            setVersions(prev => prev.map(v => v.id === activeVersion.id ? { ...v, status: approval.decision } : v));
-          }
-          setProject((prev: any) => ({ ...prev, status: approval.decision }));
+        onClose={() => setIsDeleteModalOpen(false)}
+        onDeleted={() => {
+          router.push('/workspace/video-review');
         }}
       />
     </div>

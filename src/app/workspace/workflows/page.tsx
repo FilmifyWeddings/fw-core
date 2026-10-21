@@ -12,7 +12,7 @@ export default function WorkflowsHubPage() {
     {
       title: 'StudioCore Review',
       description: 'Frame-accurate video proofing, client timestamped comments, frame annotations & final approval sign-offs.',
-      path: '/workspace/review',
+      path: '/workspace/video-review',
       icon: PlaySquare,
       badge: 'New & Active',
       badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
