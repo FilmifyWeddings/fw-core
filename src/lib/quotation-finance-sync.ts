@@ -1359,16 +1359,42 @@ export async function syncBookedLeadOrFinalQuotation({
         ? extractSubEventsFromQuotation(finalDoc.content_json, eventDate, mainVenue)
         : [];
 
-      const clientEventsList = quoteSubEvents.map((se, idx) => ({
-        id: `ev_${Date.now()}_${idx}`,
-        name: se.event_title || eventType,
-        date: se.event_date || eventDate || '',
-        time_start: se.roll_call_time || '',
-        time_end: se.dismissal_estimate_time || '',
-        venue: se.venue_name || ((mainVenue && mainVenue !== 'TBD Venue') ? mainVenue : ''),
-        city: lead.city || '',
-        assigned_crew: (se.roles && se.roles.length > 0) ? se.roles.join(', ') : ''
-      }));
+      let existingNotesJson: any = {};
+      try {
+        if (existingWsClient?.notes) {
+          existingNotesJson = typeof existingWsClient.notes === 'string'
+            ? JSON.parse(existingWsClient.notes)
+            : existingWsClient.notes;
+        }
+      } catch (_) {}
+
+      const existingEventsList = Array.isArray(existingNotesJson.events) ? existingNotesJson.events : [];
+
+      const clientEventsList = quoteSubEvents.map((se, idx) => {
+        const normTitle = (se.event_title || '').trim().toLowerCase();
+        const matchedExistingEv = existingEventsList.find((ee: any) =>
+          (ee.name && ee.name.trim().toLowerCase() === normTitle) ||
+          (ee.date && ee.date === se.event_date)
+        );
+
+        let finalAssignedCrew = (se.roles && se.roles.length > 0) ? se.roles.join(', ') : '';
+        if (matchedExistingEv?.assigned_crew && matchedExistingEv.assigned_crew.trim() !== '') {
+          // Strictly preserve existing assigned team members / crew!
+          finalAssignedCrew = matchedExistingEv.assigned_crew;
+        }
+
+        return {
+          id: matchedExistingEv?.id || `ev_${Date.now()}_${idx}`,
+          name: se.event_title || eventType,
+          date: se.event_date || eventDate || '',
+          time_start: se.roll_call_time || matchedExistingEv?.time_start || '',
+          time_end: se.dismissal_estimate_time || matchedExistingEv?.time_end || '',
+          venue: se.venue_name || matchedExistingEv?.venue || ((mainVenue && mainVenue !== 'TBD Venue') ? mainVenue : ''),
+          city: lead.city || matchedExistingEv?.city || '',
+          assigned_crew: finalAssignedCrew,
+          ...(matchedExistingEv?.crew_members ? { crew_members: matchedExistingEv.crew_members } : {})
+        };
+      });
 
       const extendedNotesPayload = JSON.stringify({
         client_code: `CL-${Math.floor(1000 + Math.random() * 9000)}`,

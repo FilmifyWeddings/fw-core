@@ -480,13 +480,52 @@ export async function POST(
 
     const body = await req.json().catch(() => ({}));
     const explicitTemplateId = body.explicitTemplateId || body.templateId;
+    const sourceQuotationId = body.sourceQuotationId || body.sourceVersionId || body.fromVersionId;
 
-    // 3. Authoritative Default Template Resolution from Supabase
-    const resolvedDefault = await resolveUserDefaultQuotationTemplate(currentUserId, currentUserId, explicitTemplateId);
-    const sourceTemplateId = resolvedDefault.templateId;
-    let sourceJson = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
+    // 3. Source Document Resolution (Clone from existing quotation version if sourceQuotationId provided, else default template)
+    let sourceJson: any = null;
+    let sourceTemplateId = explicitTemplateId;
 
-    // 100% COMPLETE DEEP CLONE of the user's active default template
+    if (sourceQuotationId) {
+      const isIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceQuotationId);
+      const { data: srcDoc } = await (isIdUuid
+        ? supabaseAdmin
+            .from('quotation_documents')
+            .select('*')
+            .or(`template_id.eq.${sourceQuotationId},id.eq.${sourceQuotationId}`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : supabaseAdmin
+            .from('quotation_documents')
+            .select('*')
+            .eq('template_id', sourceQuotationId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle());
+
+      if (srcDoc?.content_json || srcDoc?.document_json) {
+        sourceJson = srcDoc.content_json || srcDoc.document_json;
+      } else {
+        const { data: legacyQ } = await supabaseAdmin
+          .from('quotations')
+          .select('*')
+          .or(`id.eq.${sourceQuotationId},quotation_number.eq.${sourceQuotationId}`)
+          .maybeSingle();
+        if (legacyQ?.content_json || legacyQ?.canvas_data) {
+          sourceJson = legacyQ.content_json || legacyQ.canvas_data;
+        }
+      }
+    }
+
+    if (!sourceJson) {
+      // Authoritative Default Template Resolution from Supabase
+      const resolvedDefault = await resolveUserDefaultQuotationTemplate(currentUserId, currentUserId, explicitTemplateId);
+      sourceTemplateId = resolvedDefault.templateId;
+      sourceJson = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
+    }
+
+    // 100% COMPLETE DEEP CLONE of the resolved document
     const newQuotationJson = typeof structuredClone === 'function' 
       ? structuredClone(sourceJson) 
       : JSON.parse(JSON.stringify(sourceJson));
@@ -515,6 +554,8 @@ export async function POST(
 
     newQuotationJson.lead_id = leadId;
     newQuotationJson.lead_version = nextLeadVersion;
+    newQuotationJson.version = nextLeadVersion;
+    newQuotationJson.is_final = false;
 
     if (!newQuotationJson.cover) newQuotationJson.cover = {};
     newQuotationJson.cover.coupleName = rawLeadCouple;
@@ -526,7 +567,7 @@ export async function POST(
     }
 
     const eventType = newQuotationJson.cover?.eventType || 'Wedding';
-    const quotationTitle = `${rawLeadCouple} - ${eventType} Quotation`;
+    const quotationTitle = `${rawLeadCouple} - ${eventType} Quotation V${nextLeadVersion}`;
     newQuotationJson.designName = quotationTitle;
     newQuotationJson.title = quotationTitle;
 
@@ -558,7 +599,7 @@ export async function POST(
     const docPayload: any = {
       template_id: newTemplateId,
       user_id: currentUserId,
-      version: 1,
+      version: nextLeadVersion,
       lead_id: leadId,
       lead_version: nextLeadVersion,
       content_json: newQuotationJson,
@@ -589,7 +630,7 @@ export async function POST(
           document_id: savedDoc.id,
           template_id: newTemplateId,
           user_id: currentUserId,
-          version: 1,
+          version: nextLeadVersion,
           content_json: newQuotationJson,
           created_at: now
         });
@@ -607,82 +648,12 @@ export async function POST(
         total_amount: calcFin.final_total_amount,
         client_id: leadId,
         status: 'draft',
+        is_final: false,
         created_at: now,
         updated_at: now
       });
-
-      // If a workspace_client exists for this lead, sync finance card immediately
-      const { data: linkedClients } = await supabaseAdmin
-        .from('workspace_clients')
-        .select('id')
-        .eq('lead_id', leadId);
-
-      if (linkedClients && linkedClients.length > 0) {
-        for (const lc of linkedClients) {
-          await supabaseAdmin
-            .from('workspace_clients')
-            .update({
-              total_package_amount: calcFin.final_total_amount,
-              paid_amount: calcFin.received_amount,
-              updated_at: now
-            })
-            .eq('id', lc.id);
-
-          const finPayload = {
-            user_id: currentUserId,
-            workspace_id: currentUserId,
-            client_id: lc.id,
-            base_package_price: calcFin.base_package_price,
-            discount_amount: calcFin.discount_amount,
-            accommodation_charges: calcFin.accommodation_charges,
-            travel_charges: calcFin.travel_charges,
-            additional_charges: calcFin.additional_charges,
-            subtotal_amount: calcFin.subtotal_amount,
-            gst_rate: calcFin.gst_rate,
-            gst_amount: calcFin.gst_amount,
-            final_total_amount: calcFin.final_total_amount,
-            received_amount: calcFin.received_amount,
-            pending_amount: calcFin.pending_amount,
-            payment_status: calcFin.payment_status,
-            milestones: calcFin.milestones,
-            updated_at: now
-          };
-
-          const { data: exFin } = await supabaseAdmin
-            .from('client_finance_records')
-            .select('id')
-            .eq('client_id', lc.id)
-            .maybeSingle();
-
-          if (exFin) {
-            await supabaseAdmin
-              .from('client_finance_records')
-              .update(finPayload)
-              .eq('client_id', lc.id);
-          } else {
-            await supabaseAdmin
-              .from('client_finance_records')
-              .insert([{ ...finPayload, created_at: now }]);
-          }
-
-          try {
-            await syncQuotationToTeamManagerEvents(
-              supabaseAdmin,
-              leadId,
-              newQuotationJson,
-              extractCoupleNameFromQuotation(newQuotationJson, leadName),
-              currentUserId,
-              calcFin.event_date || null,
-              newQuotationJson?.cover?.venue || null,
-              lc.id
-            );
-          } catch (tmErr) {
-            console.error('[leads/[id]/quotations] Error syncing team manager events:', tmErr);
-          }
-        }
-      }
     } catch (finErr) {
-      console.warn('[leads/[id]/quotations] Finance sync warning:', finErr);
+      console.warn('[leads/[id]/quotations] quotations table upsert note:', finErr);
     }
 
     // Log quotation creation to live_logs audit trail

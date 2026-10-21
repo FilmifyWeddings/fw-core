@@ -460,6 +460,7 @@ export function LeadQuotationModal({
           quotationId: q.template_id,
           leadId: lead.id,
           unmark,
+          reSyncCards: !unmark ? true : false,
           version: q.version,
           actor_name: session?.user?.email?.split('@')[0] || 'Studio Admin'
         })
@@ -628,6 +629,75 @@ export function LeadQuotationModal({
       console.error('[LeadQuotationModal] Create error:', err);
       setErrorMsg('Network error while creating quotation.');
       setOpeningQuotation(null);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleBranchAndEdit = async (q: QuotationVersionItem) => {
+    if (!lead?.id || creating) return;
+    setCreating(true);
+    setOpeningQuotation({
+      id: q.template_id,
+      title: q.title || `Quotation V${q.version}`,
+      step: `Branching Version ${q.version} into new version for editing...`
+    });
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      const res = await fetch(`/api/leads/${lead.id}/quotations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          sourceQuotationId: q.template_id,
+          mode: 'edit_branch'
+        })
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (res.ok && json.success && json.templateId) {
+        const qId = json.templateId;
+        const newVerNum = json.version || ((quotations[0]?.version || 1) + 1);
+
+        const newVer: QuotationVersionItem = {
+          id: qId,
+          template_id: qId,
+          version: newVerNum,
+          version_label: `V${newVerNum}`,
+          title: `${q.couple_name || lead.name || 'Client'} - Quotation V${newVerNum}`,
+          couple_name: q.couple_name || lead.name,
+          is_final: false,
+          created_at: new Date().toISOString()
+        };
+
+        const updatedList = [newVer, ...quotations];
+        setQuotations(updatedList);
+
+        const cacheKey = `lead_quotes_cache_${lead.id}`;
+        safeSessionSet(cacheKey, updatedList);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(updatedList));
+          sessionStorage.removeItem(`current_quotation_doc_${qId}`);
+        } catch (_) {}
+
+        if (onQuotationChange) {
+          onQuotationChange(lead.id, updatedList);
+        }
+
+        router.push(`/workspace/quotations/builder/templet/${qId}`);
+      } else {
+        console.warn('[handleBranchAndEdit] Branching note, opening directly:', json?.error);
+        handleOpenQuotation(q.template_id, q.title);
+      }
+    } catch (err) {
+      console.error('[handleBranchAndEdit] Error:', err);
+      handleOpenQuotation(q.template_id, q.title);
     } finally {
       setCreating(false);
     }
@@ -1066,12 +1136,12 @@ export function LeadQuotationModal({
                                 <Eye className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                               </button>
 
-                              {/* Edit Builder Button */}
+                              {/* Edit Builder Button (Auto-branches into new Version) */}
                               <button
                                 type="button"
-                                onClick={() => handleOpenQuotation(q.template_id, q.title || `Quotation V${q.version}`)}
+                                onClick={() => handleBranchAndEdit(q)}
                                 className="p-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-all cursor-pointer flex items-center justify-center hover:scale-105"
-                                title="Edit in Builder"
+                                title="Edit in Builder (Creates new Version)"
                               >
                                 <Pencil className="w-4 h-4 text-white" />
                               </button>
@@ -1210,12 +1280,19 @@ export function LeadQuotationModal({
             </div>
 
             <div>
-              <h3 className="text-lg font-black text-amber-950">Confirm Final Quotation</h3>
+              <h3 className="text-lg font-black text-amber-950">Set as Final Quotation</h3>
               <p className="text-xs font-semibold text-zinc-600 mt-1.5 leading-relaxed">
-                Are you sure you want to lock <span className="font-bold text-amber-900">Version {confirmingFinalQuotation.version}</span> as the Final Quotation for <span className="font-bold text-zinc-900">{lead?.name || 'this client'}</span>?
+                Do you want to set <span className="font-bold text-amber-900">Version {confirmingFinalQuotation.version}</span> as the Final Quotation and re-sync all workspace cards for <span className="font-bold text-zinc-900">{lead?.name || 'this client'}</span>?
               </p>
-              <div className="p-3 bg-amber-50/70 border border-amber-200/90 rounded-2xl text-[11px] font-bold text-amber-900 mt-3 text-left">
-                ✨ This will automatically synchronize all sub-events, deliverables, and payment milestones directly into <span className="underline">Bookings & Finance Records</span>.
+              <div className="p-3 bg-amber-50/70 border border-amber-200/90 rounded-2xl text-[11px] font-medium text-amber-950 mt-3 text-left space-y-1.5">
+                <div className="flex items-start gap-1.5 font-bold text-amber-900">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Syncs Client Directory, Finance & Payments, Bookings, Post-Production, and Storage.</span>
+                </div>
+                <div className="flex items-start gap-1.5 font-bold text-emerald-800">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Existing assigned crew members in Team Manager/Bookings are safely preserved!</span>
+                </div>
               </div>
             </div>
 
@@ -1231,17 +1308,17 @@ export function LeadQuotationModal({
                 type="button"
                 disabled={Boolean(settingFinalId)}
                 onClick={() => handleSetFinalQuotation(confirmingFinalQuotation, false)}
-                className="px-6 py-2.5 rounded-2xl bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs shadow-md shadow-amber-500/30 flex items-center gap-2 cursor-pointer transition active:translate-y-0.5"
+                className="px-6 py-2.5 rounded-2xl bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 hover:from-emerald-600 hover:to-emerald-800 text-white font-black text-xs shadow-md shadow-emerald-500/30 flex items-center gap-2 cursor-pointer transition active:translate-y-0.5"
               >
                 {settingFinalId ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Locking...</span>
+                    <span>Re-Syncing Cards...</span>
                   </>
                 ) : (
                   <>
-                    <Crown className="w-4 h-4 text-amber-100" />
-                    <span>Confirm & Lock</span>
+                    <Crown className="w-4 h-4 text-emerald-100" />
+                    <span>Confirm & Re-Sync Cards</span>
                   </>
                 )}
               </button>

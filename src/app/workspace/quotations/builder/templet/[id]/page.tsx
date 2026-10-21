@@ -3525,19 +3525,19 @@ function StudioCoreAiryBuilderContent() {
   }, [params, userId]);
 
   // ── 3. REVISION-SAFE SERIALIZED AUTOSAVE ENGINE ──
-  const triggerRevisionSave = async () => {
+  const triggerRevisionSave = async (force: boolean = false) => {
     if (isPublicPreview || !userId || userId === 'PUBLIC_USER' || !isInitialLoadedRef.current) return;
 
     if (isSaveInFlightRef.current) {
       if (pendingSaveTimeoutRef.current) clearTimeout(pendingSaveTimeoutRef.current);
       pendingSaveTimeoutRef.current = setTimeout(() => {
-        triggerRevisionSave();
+        triggerRevisionSave(force);
       }, 350);
       return;
     }
 
     const targetRevision = localRevisionRef.current;
-    if (targetRevision <= lastSavedRevisionRef.current && !isDirtyRef.current) {
+    if (!force && targetRevision <= lastSavedRevisionRef.current && !isDirtyRef.current) {
       setAutoSaveStatus('Auto-saved to cloud');
       setHasUnsavedChanges(false);
       return;
@@ -3686,6 +3686,21 @@ function StudioCoreAiryBuilderContent() {
 
           window.dispatchEvent(new Event('wg_quotations_updated'));
           window.dispatchEvent(new Event('quotation_template_updated'));
+
+          if (snapshotData.lead_id) {
+            try {
+              sessionStorage.removeItem(`lead_quotes_cache_${snapshotData.lead_id}`);
+              localStorage.removeItem(`lead_quotes_cache_${snapshotData.lead_id}`);
+              const smStr = localStorage.getItem('sc_quotation_summary_map');
+              if (smStr) {
+                const sm = JSON.parse(smStr);
+                if (sm[snapshotData.lead_id]) {
+                  delete sm[snapshotData.lead_id];
+                  localStorage.setItem('sc_quotation_summary_map', JSON.stringify(sm));
+                }
+              }
+            } catch (_) {}
+          }
         } catch (_) {}
 
       if (realtimeChannelRef.current) {
@@ -3739,12 +3754,12 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  const flushSaveImmediately = async () => {
+  const flushSaveImmediately = async (force: boolean = true) => {
     if (pendingSaveTimeoutRef.current) {
       clearTimeout(pendingSaveTimeoutRef.current);
       pendingSaveTimeoutRef.current = null;
     }
-    await triggerRevisionSave();
+    await triggerRevisionSave(force);
   };
   flushSaveRef.current = flushSaveImmediately;
 

@@ -361,6 +361,68 @@ export function LeadDrawerQuotationsTab({
     }
   };
 
+  const handleBranchAndEdit = async (q: QuotationVersionItem) => {
+    if (!lead?.id || creating) return;
+    setCreating(true);
+    setErrorMsg(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      const res = await fetch(`/api/leads/${lead.id}/quotations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          sourceQuotationId: q.template_id,
+          mode: 'edit_branch'
+        })
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (json.success && (json.quotationId || json.templateId)) {
+        const qId = json.quotationId || json.templateId;
+        const newVerNum = json.version || ((quotations[0]?.version || 1) + 1);
+
+        const newVer: QuotationVersionItem = {
+          id: qId,
+          template_id: qId,
+          version: newVerNum,
+          version_label: `V${newVerNum}`,
+          title: `${q.couple_name || lead.name || 'Client'} - Quotation V${newVerNum}`,
+          couple_name: q.couple_name || lead.name,
+          is_final: false,
+          created_at: new Date().toISOString()
+        };
+
+        const updatedList = [newVer, ...quotations];
+        setQuotations(updatedList);
+
+        const cacheKey = `lead_quotes_cache_${lead.id}`;
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify(updatedList));
+          localStorage.setItem(cacheKey, JSON.stringify(updatedList));
+        } catch (_) {}
+
+        if (onCloseDrawer) onCloseDrawer();
+        router.push(`/workspace/quotations/builder/templet/${qId}`);
+      } else {
+        if (onCloseDrawer) onCloseDrawer();
+        router.push(`/workspace/quotations/builder/templet/${q.template_id}`);
+      }
+    } catch (err: any) {
+      console.error('[LeadDrawerQuotationsTab] Branch error:', err);
+      if (onCloseDrawer) onCloseDrawer();
+      router.push(`/workspace/quotations/builder/templet/${q.template_id}`);
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const handleCreateNewQuotation = async () => {
     if (!lead?.id || creating) return;
     setCreating(true);
@@ -591,18 +653,16 @@ export function LeadDrawerQuotationsTab({
 
                 {/* Bottom Row: Actions */}
                 <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800/70">
-                  {/* Left: Open in Builder */}
-                  <a
-                    href={`/workspace/quotations/builder/templet/${q.template_id}`}
-                    onClick={() => {
-                      if (onCloseDrawer) onCloseDrawer();
-                    }}
+                  {/* Left: Open in Builder (Auto-branches into new Version) */}
+                  <button
+                    type="button"
+                    onClick={() => handleBranchAndEdit(q)}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60 text-xs font-bold transition-colors cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-amber-600" />
                     <span>Edit in Builder</span>
                     <ArrowUpRight className="w-3 h-3 text-amber-500" />
-                  </a>
+                  </button>
 
                   {/* Right Action Icons & Set Final Toggle */}
                   <div className="flex items-center gap-1.5">

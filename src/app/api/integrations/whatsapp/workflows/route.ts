@@ -156,6 +156,37 @@ export async function PATCH(req: NextRequest) {
 
     if (error) throw error;
 
+    // If workflow was set to Inactive, cancel all pending queue tasks and logs immediately!
+    if (status === 'Inactive') {
+      try {
+        const now = new Date().toISOString();
+        await supabaseAdmin
+          .from('whatsapp_workflow_logs')
+          .update({ status: 'stopped', error_message: 'STOPPED', updated_at: now })
+          .eq('workflow_id', workflowId)
+          .eq('status', 'pending');
+
+        const { data: qItems } = await supabaseAdmin
+          .from('baileys_action_queue')
+          .select('id, payload')
+          .eq('workspace_id', tenantId)
+          .in('status', ['pending', 'processing']);
+
+        const cancelIds = (qItems || [])
+          .filter((item: any) => item.payload?.workflowId === workflowId || item.payload?.workflow_id === workflowId)
+          .map((item: any) => item.id);
+
+        if (cancelIds.length > 0) {
+          await supabaseAdmin
+            .from('baileys_action_queue')
+            .update({ status: 'cancelled', error_message: 'Cancelled: workflow paused/inactive', processed_at: now })
+            .in('id', cancelIds);
+        }
+      } catch (cancelErr) {
+        console.warn('[PATCH workflows] Cancel pending tasks notice:', cancelErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       workflow
@@ -177,6 +208,34 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
+    const now = new Date().toISOString();
+
+    // Cancel pending queue actions and logs for this deleted workflow
+    try {
+      await supabaseAdmin
+        .from('whatsapp_workflow_logs')
+        .update({ status: 'stopped', error_message: 'STOPPED: workflow deleted', updated_at: now })
+        .eq('workflow_id', workflowId)
+        .eq('status', 'pending');
+
+      const { data: qItems } = await supabaseAdmin
+        .from('baileys_action_queue')
+        .select('id, payload')
+        .eq('workspace_id', tenantId)
+        .in('status', ['pending', 'processing']);
+
+      const cancelIds = (qItems || [])
+        .filter((item: any) => item.payload?.workflowId === workflowId || item.payload?.workflow_id === workflowId)
+        .map((item: any) => item.id);
+
+      if (cancelIds.length > 0) {
+        await supabaseAdmin
+          .from('baileys_action_queue')
+          .update({ status: 'cancelled', error_message: 'Cancelled: workflow deleted', processed_at: now })
+          .in('id', cancelIds);
+      }
+    } catch (_) {}
+
     const { error } = await supabaseAdmin
       .from('whatsapp_custom_workflows')
       .delete()
