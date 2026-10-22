@@ -241,6 +241,7 @@ export default function TeamManagerPage() {
   }, [teamMembers, activeWorkspace, userEmail, userId]);
   
   // Team & Partner Financial Engine States
+  const [memberFinancials, setMemberFinancials] = useState<Record<string, any>>({});
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<any>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
   const [loading, setLoading] = useState<boolean>(() => {

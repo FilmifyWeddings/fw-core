@@ -7,7 +7,7 @@ import {
   ArrowLeft, ShieldCheck, RefreshCw, Key, Copy, Check,
   BarChart3, Globe, Mail, Calendar, UserPlus,
   CheckCircle2, Lock, FileSpreadsheet, Trash2, LogOut,
-  Search, Clock, Phone, User, Tag, AlertTriangle, Activity
+  Search, Clock, Phone, User, Tag, AlertTriangle, Activity, ExternalLink
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';

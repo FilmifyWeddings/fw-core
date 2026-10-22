@@ -77,7 +77,7 @@ export async function verifyMetaAuth(
     try {
       const { data: profileData } = await supabaseAdmin
         .from('profiles')
-        .select('role, workspace_id, studio_id')
+        .select('role, workspace_id, studio_id, studio_slug')
         .eq('id', authenticatedUserId)
         .maybeSingle();
       userProfile = profileData;
@@ -118,37 +118,68 @@ export async function verifyMetaAuth(
       if (
         clientSuppliedWorkspaceId &&
         clientSuppliedWorkspaceId !== '00000000-0000-0000-0000-000000000000' &&
+        clientSuppliedWorkspaceId !== 'all' &&
         clientSuppliedWorkspaceId !== authenticatedUserId &&
         clientSuppliedWorkspaceId !== userProfile?.workspace_id
       ) {
-        // Check if user is legitimately a member or owner of the requested workspace
-        const { data: memberCheck } = await supabaseAdmin
-          .from('workspace_members')
-          .select('id')
-          .eq('workspace_id', clientSuppliedWorkspaceId)
-          .eq('user_id', authenticatedUserId)
-          .maybeSingle();
+        // Resolve target workspace ID if client supplied a studio slug instead of a UUID
+        let targetUuid = clientSuppliedWorkspaceId;
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientSuppliedWorkspaceId);
 
-        const { data: ownerCheck } = await supabaseAdmin
-          .from('workspaces')
-          .select('id')
-          .eq('id', clientSuppliedWorkspaceId)
-          .eq('owner_id', authenticatedUserId)
-          .maybeSingle();
+        let slugOwnerMatch = false;
+        if (!isUuid) {
+          const { data: wsBySlug } = await supabaseAdmin
+            .from('workspaces')
+            .select('id, owner_id')
+            .eq('slug', clientSuppliedWorkspaceId)
+            .maybeSingle();
+          if (wsBySlug?.id) {
+            targetUuid = wsBySlug.id;
+            if (wsBySlug.owner_id === authenticatedUserId) {
+              slugOwnerMatch = true;
+            }
+          } else if (
+            userProfile?.studio_slug === clientSuppliedWorkspaceId ||
+            clientSuppliedWorkspaceId.includes(authenticatedUserId.slice(0, 6)) ||
+            clientSuppliedWorkspaceId.includes(authenticatedUserId.slice(0, 8))
+          ) {
+            slugOwnerMatch = true;
+            targetUuid = userProfile?.workspace_id || authenticatedUserId;
+          }
+        }
 
-        if (memberCheck || ownerCheck || isAdminRole) {
-          resolvedWorkspaceId = clientSuppliedWorkspaceId;
+        if (slugOwnerMatch) {
+          resolvedWorkspaceId = targetUuid;
         } else {
-          console.warn(`[SECURITY 403] Non-admin user ${authenticatedUserId} attempted cross-workspace access to ${clientSuppliedWorkspaceId}. Access Denied.`);
-          return {
-            authorized: false,
-            workspaceId: resolvedWorkspaceId,
-            userId: authenticatedUserId,
-            errorResponse: NextResponse.json(
-              { error: 'Forbidden: Cross-workspace access denied. You do not have permission to access another user workspace.' },
-              { status: 403 }
-            ),
-          };
+          // Check if user is legitimately a member or owner of the requested workspace
+          const { data: memberCheck } = await supabaseAdmin
+            .from('workspace_members')
+            .select('id')
+            .eq('workspace_id', targetUuid)
+            .eq('user_id', authenticatedUserId)
+            .maybeSingle();
+
+          const { data: ownerCheck } = await supabaseAdmin
+            .from('workspaces')
+            .select('id')
+            .eq('id', targetUuid)
+            .eq('owner_id', authenticatedUserId)
+            .maybeSingle();
+
+          if (memberCheck || ownerCheck || isAdminRole || targetUuid === authenticatedUserId || targetUuid === userProfile?.workspace_id) {
+            resolvedWorkspaceId = targetUuid;
+          } else {
+            console.warn(`[SECURITY 403] Non-admin user ${authenticatedUserId} attempted cross-workspace access to ${clientSuppliedWorkspaceId} (target: ${targetUuid}). Access Denied.`);
+            return {
+              authorized: false,
+              workspaceId: resolvedWorkspaceId,
+              userId: authenticatedUserId,
+              errorResponse: NextResponse.json(
+                { error: 'Forbidden: Cross-workspace access denied. You do not have permission to access another user workspace.' },
+                { status: 403 }
+              ),
+            };
+          }
         }
       }
     } catch (profileErr) {

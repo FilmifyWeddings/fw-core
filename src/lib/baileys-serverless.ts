@@ -1669,6 +1669,7 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
             const actionId = action.id;
             const actionType = action.action_type;
             const stepDesc = `${actionType}[${actionId.slice(0, 8)}]`;
+            const payload = (typeof action.payload === 'string' ? (() => { try { return JSON.parse(action.payload); } catch (_) { return {}; } })() : action.payload) || {};
 
             // Log: Attempting to claim
             await supabaseAdmin.from('live_logs').insert({

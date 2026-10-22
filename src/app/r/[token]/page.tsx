@@ -4,7 +4,7 @@ import React, { useState, useEffect, use } from 'react';
 import { 
   Film, CheckCircle2, FileEdit, Lock, Key, 
   MessageSquare, ExternalLink, AlertCircle, Sparkles, 
-  Clock, Check, Play, User 
+  Clock, Check, Play, User, X 
 } from 'lucide-react';
 import VideoPlayer, { formatTimecode } from '@/components/review/VideoPlayer';
 import CommentsPanel from '@/components/review/CommentsPanel';

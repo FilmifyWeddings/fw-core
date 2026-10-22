@@ -104,9 +104,10 @@ export async function POST(req: NextRequest) {
     // - Preset veryfast with auto threads
     // - Injects +faststart MOOV atom for 0ms web playback
     // - Audio AAC 160kbps stereo
+    const ffmpegBin = 'ffmpeg';
     const isLinux = process.platform === 'linux';
     const nicePrefix = isLinux ? 'nice -n 19 ' : '';
-    const ffmpegCmd = `${nicePrefix}"${ffmpegBin}" -i "${tempInputPath}" -threads 0 -vf "scale='min(1920,iw)':-2" -c:v libx264 -crf 24 -preset veryfast -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 160k -y "${tempOutputPath}"`;
+    const ffmpegCmd = `${nicePrefix}${ffmpegBin} -i "${tempInputPath}" -threads 0 -vf "scale='min(1920,iw)':-2" -c:v libx264 -crf 24 -preset veryfast -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 160k -y "${tempOutputPath}"`;
 
     await execAsync(ffmpegCmd);
 
