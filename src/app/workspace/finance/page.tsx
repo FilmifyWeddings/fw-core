@@ -2416,19 +2416,57 @@ export default function FinancePage() {
       }
 
       // 📅 Unified Milestone-Based Date Range Match:
-      // NEVER filter by client?.event_date or wedding_date!
-      // Filter dates are strictly derived from milestone payment steps:
+      // When "This Month" filter is selected (without additional sub-filters):
+      // STRICT RULE: Inspect ONLY Step 1 of Payment Terms & Schedule (first installment)!
       let matchesDate = true;
       const isDateActive = Boolean(dateRangePreset !== 'all' || startDate || endDate);
       if (isDateActive) {
-        const normalizeDateStr = (dStr?: string | null): string => {
-          if (!dStr) return '';
-          return dStr.split('T')[0].trim();
+        const parseToIsoDate = (rawDate?: string | null): string => {
+          if (!rawDate) return '';
+          const str = String(rawDate).trim();
+          if (!str || str.toLowerCase() === 'undefined' || str.toLowerCase() === 'null') return '';
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+          if (str.includes('T')) return str.split('T')[0];
+
+          const MONTHS: Record<string, string> = {
+            jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+            jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+          };
+
+          const parts = str.split(/[\s\-\/.]+/);
+          if (parts.length === 3) {
+            const p0 = parts[0];
+            const p1 = parts[1].toLowerCase().slice(0, 3);
+            const p2 = parts[2];
+            if (MONTHS[p1]) {
+              const day = p0.padStart(2, '0');
+              const month = MONTHS[p1];
+              const year = p2.length === 2 ? `20${p2}` : p2;
+              return `${year}-${month}-${day}`;
+            }
+            const p0m = p0.toLowerCase().slice(0, 3);
+            if (MONTHS[p0m]) {
+              const month = MONTHS[p0m];
+              const day = p1.padStart(2, '0');
+              const year = p2.length === 2 ? `20${p2}` : p2;
+              return `${year}-${month}-${day}`;
+            }
+            if (p2.length === 4 && !isNaN(Number(p0)) && !isNaN(Number(parts[1]))) {
+              return `${p2}-${parts[1].padStart(2, '0')}-${p0.padStart(2, '0')}`;
+            }
+            if (p2.length === 2 && !isNaN(Number(p0)) && !isNaN(Number(parts[1]))) {
+              return `20${p2}-${parts[1].padStart(2, '0')}-${p0.padStart(2, '0')}`;
+            }
+          }
+
+          const d = new Date(str);
+          if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+          return '';
         };
 
         const isInRange = (dStr?: string | null): boolean => {
           if (!dStr) return false;
-          const d = normalizeDateStr(dStr);
+          const d = parseToIsoDate(dStr);
           if (!d) return false;
           if (startDate && d < startDate) return false;
           if (endDate && d > endDate) return false;
@@ -2438,41 +2476,51 @@ export default function FinancePage() {
         const milestones = rec.milestones || [];
         const firstStep = milestones[0];
         // 📅 Strictly derive initial contract date from Step 1 of Payment Terms & Schedule (Token / Booking Advance)
-        const firstStepDate = firstStep?.due_date || firstStep?.paid_date || (firstStep as any)?.date || (firstStep as any)?.dueDate || (firstStep as any)?.paidDate || (firstStep as any)?.payment_date;
+        const rawFirstDate = firstStep?.due_date 
+          || firstStep?.paid_date 
+          || (firstStep as any)?.date 
+          || (firstStep as any)?.dueDate 
+          || (firstStep as any)?.paidDate 
+          || (firstStep as any)?.payment_date
+          || (rec as any)?.firstStepDate;
+        const firstStepDate = parseToIsoDate(rawFirstDate);
 
-        const hasMatchingPaid = milestones.some((m, idx) => {
-          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
-          if (!isPaid) return false;
-          const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
-          if (!isInRange(pDate)) return false;
-          if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
-          if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
-          return true;
-        });
+        // When "This Month" filter is selected without other sub-filters:
+        // STRICT RULE: Inspect ONLY Step 1 of the payment schedule!
+        const isOnlyThisMonthFilter = dateRangePreset === 'this_month' && statusFilter === 'all' && revenueTypeFilter === 'ALL';
 
-        const hasMatchingPending = milestones.some(m => {
-          const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
-          if (isCompleted) return false;
-          if (statusFilter === 'overdue_only') {
-            const dNorm = normalizeDateStr(m.due_date);
-            return dNorm && dNorm < todayStr && isInRange(dNorm);
-          }
-          return isInRange(m.due_date);
-        });
-
-        const hasMatchingContractBooking = isInRange(firstStepDate) || isInRange(rec.created_at);
-
-        if (statusFilter === 'received' || revenueTypeFilter !== 'ALL') {
-          // Payments received: matches if any completed/paid milestone falls in date range
-          matchesDate = hasMatchingPaid;
-        } else if (statusFilter === 'pending' || statusFilter === 'overdue_only') {
-          // 💡 SMART PENDING DUES FILTER:
-          // When filtering by Pending Dues, matches clients that have pending/upcoming milestone payments DUE in that date range!
-          matchesDate = hasMatchingPending || (!milestones.some(m => m.due_date) && hasMatchingContractBooking && Number(rec.pending_amount) > 0);
+        if (isOnlyThisMonthFilter) {
+          matchesDate = Boolean(firstStepDate && isInRange(firstStepDate));
         } else {
-          // 📅 All Statuses (default):
-          // Matches if booked in this period, paid in this period, OR has dues in this period!
-          matchesDate = hasMatchingContractBooking || hasMatchingPaid || hasMatchingPending;
+          const hasMatchingPaid = milestones.some((m, idx) => {
+            const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+            if (!isPaid) return false;
+            const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+            if (!isInRange(pDate)) return false;
+            if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
+            if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
+            return true;
+          });
+
+          const hasMatchingPending = milestones.some(m => {
+            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
+            if (isCompleted) return false;
+            if (statusFilter === 'overdue_only') {
+              const dNorm = parseToIsoDate(m.due_date);
+              return dNorm && dNorm < todayStr && isInRange(dNorm);
+            }
+            return isInRange(m.due_date);
+          });
+
+          const hasMatchingContractBooking = isInRange(firstStepDate) || isInRange(rec.created_at);
+
+          if (statusFilter === 'received' || revenueTypeFilter !== 'ALL') {
+            matchesDate = hasMatchingPaid;
+          } else if (statusFilter === 'pending' || statusFilter === 'overdue_only') {
+            matchesDate = hasMatchingPending || (!milestones.some(m => m.due_date) && hasMatchingContractBooking && Number(rec.pending_amount) > 0);
+          } else {
+            matchesDate = hasMatchingContractBooking || hasMatchingPaid || hasMatchingPending;
+          }
         }
       }
 

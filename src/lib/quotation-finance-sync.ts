@@ -962,7 +962,7 @@ export async function syncQuotationToTeamManagerEvents(
     const { data: existingProjects } = await projQuery;
 
     const firstSubEventDate = uniqueEvents[0]?.event_date || fallbackEventDate || new Date().toISOString().split('T')[0];
-    const firstSubEventVenue = uniqueEvents[0]?.venue_name || fallbackVenue || 'TBD Venue';
+    const firstSubEventVenue = (uniqueEvents[0]?.venue_name && String(uniqueEvents[0].venue_name).trim()) || (fallbackVenue && String(fallbackVenue).trim()) || 'Studio Venue / TBD';
 
     if (existingProjects && existingProjects.length > 0) {
       targetProjectId = existingProjects[0].id;
@@ -1231,9 +1231,10 @@ export async function syncBookedLeadOrFinalQuotation({
       // Determine if lead is genuinely in Booked stage or being explicitly booked right now
       let isBookedStage = Boolean(
         forceBookedStatus === true ||
-        lead.stage === 'booked' ||
-        lead.status === 'booked' ||
-        (lead.raw_payload?.stage && String(lead.raw_payload.stage).toLowerCase().includes('book'))
+        String(lead.stage || '').toLowerCase() === 'booked' ||
+        String(lead.status || '').toLowerCase() === 'booked' ||
+        String(lead.raw_payload?.stage || '').toLowerCase().includes('book') ||
+        String(lead.status || '').toLowerCase().includes('book')
       );
 
       if (!isBookedStage && lead.stage_id) {
@@ -1634,7 +1635,7 @@ export async function syncBookedLeadOrFinalQuotation({
                 client_name: coupleName.trim(),
                 client_id: workspaceClientId || null,
                 main_date: eventDate || now.split('T')[0],
-                main_venue: mainVenue,
+                main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
                 user_id: workspaceId,
                 status: 'active'
               }])
@@ -1649,7 +1650,7 @@ export async function syncBookedLeadOrFinalQuotation({
                 client_name: coupleName.trim(),
                 client_id: workspaceClientId || null,
                 main_date: eventDate || undefined,
-                main_venue: mainVenue || undefined,
+                main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
                 updated_at: now
               })
               .eq('id', targetProjectId);
@@ -1743,7 +1744,6 @@ export async function syncBookedLeadOrFinalQuotation({
                     title: deliv.title,
                     specs: deliv.specs || deliv.count || null,
                     status: 'Upcoming',
-                    is_custom: false,
                     updated_at: now
                   }));
                   await supabaseClient.from('post_production_deliverables').insert(rowsToInsert);
@@ -1884,7 +1884,7 @@ export async function syncBookedLeadOrFinalQuotation({
             client_id: workspaceClientId,
             client_name: coupleName.trim(),
             event_date: lead.event_date || now.split('T')[0],
-            package_amount: Number(lead.budget || lead.package_amount || 0),
+            package_amount: financials.final_total_amount || Number(lead.budget || lead.package_amount || 0),
             booking_status: 'booked',
             sub_events: existingAsset?.sub_events?.length > 0 ? existingAsset.sub_events : normalizedSubEvents,
             assigned_disks: existingAsset?.assigned_disks || [],

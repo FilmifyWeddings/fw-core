@@ -344,7 +344,7 @@ export async function POST(
                 client_id: workspaceClientId,
                 client_name: coupleName.trim(),
                 main_date: eventDate || nowIso.split('T')[0],
-                main_venue: mainVenue || null,
+                main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
                 status: 'active',
                 is_archived: false,
                 updated_at: nowIso
@@ -358,7 +358,7 @@ export async function POST(
                 client_id: workspaceClientId,
                 client_name: coupleName.trim(),
                 main_date: eventDate || nowIso.split('T')[0],
-                main_venue: mainVenue || null,
+                main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
                 status: 'active',
                 is_archived: false
               });
