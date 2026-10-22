@@ -175,7 +175,7 @@ export default function ReviewProjectsPage() {
         </div>
       </div>
 
-      {/* 2. Luxury 3D Storage Quota Card (Projects Count, Storage Filled, Storage Remaining) */}
+      {/* 2. Light Theme: Storage Quota & Usage Card (Aligned with Reference Image) */}
       {quota && (() => {
         const availableBytes = Number(quota.available_bytes) || 0;
         const formattedRemaining = availableBytes >= 1024 * 1024 * 1024
@@ -183,126 +183,184 @@ export default function ReviewProjectsPage() {
           : `${Math.max(0, availableBytes / (1024 * 1024)).toFixed(1)} MB`;
         
         const isNearFull = quota.percentage_used >= 85;
+        const freePercentage = Math.max(0, 100 - quota.percentage_used);
+        const projectsCapacityPercent = Math.min(100, Math.max(5, (projects.length / 25) * 100));
+
+        // SVG circle circumference for r=24 is 2 * PI * 24 ≈ 150.8
+        const circumference = 150.8;
 
         return (
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#121620] via-[#1A2232] to-[#0B0E14] text-white p-5 sm:p-6 shadow-2xl border border-white/10 select-none transition-all duration-300">
-            {/* Ambient Background 3D Glow Orbs */}
-            <div className="absolute -right-16 -top-16 w-56 h-56 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -left-16 -bottom-16 w-56 h-56 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
-
-            {/* Top Bar: Brand, Tier & B2 Indicator */}
-            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 shadow-lg shadow-amber-500/25 flex items-center justify-center text-zinc-950 font-black shrink-0">
-                  <HardDrive className="w-5 h-5 text-zinc-950 stroke-[2.2]" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-bold tracking-tight text-white">
-                      Storage Allocation & Cloud Review Quota
-                    </h2>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Backblaze B2 Active
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-400">
-                    High-speed enterprise object storage with automated 1080p compression
-                  </p>
-                </div>
+          <div className="bg-white rounded-3xl border border-[#E7E2D8] p-5 sm:p-7 shadow-xs space-y-5 select-none transition-all duration-200">
+            
+            {/* Header: Title & Quota Badges */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-zinc-100">
+              <div>
+                <h2 className="text-base sm:text-lg font-extrabold text-zinc-900 tracking-tight flex items-center gap-2">
+                  <span>Quota & Usage</span>
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 font-mono">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Backblaze B2 Active
+                  </span>
+                </h2>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Monitor your review storage and cloud allocation in real-time.
+                </p>
               </div>
 
-              {/* Status Badge */}
-              <div className="flex items-center gap-2 self-start sm:self-auto">
-                <div className={`px-3 py-1 rounded-xl border text-xs font-bold flex items-center gap-1.5 shadow-inner ${
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-bold px-3 py-1 rounded-xl border ${
                   quota.is_trial
-                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                    : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-blue-50 text-blue-800 border-blue-200'
                 }`}>
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{quota.tier_name}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Middle: 3D Metric Tiles */}
-            <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-5 pb-5">
-              
-              {/* Tile 1: Projects Uploaded */}
-              <div className="rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 p-4 transition-all duration-200 shadow-inner group">
-                <div className="flex items-center justify-between text-zinc-400 text-xs font-semibold mb-2">
-                  <span>Projects Uploaded</span>
-                  <div className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-400 flex items-center justify-center">
-                    <Film className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-black text-white tracking-tight">
-                  {projects.length}
-                  <span className="text-xs font-semibold text-zinc-400 ml-1.5 font-normal">Active {projects.length === 1 ? 'Project' : 'Projects'}</span>
-                </div>
-                <div className="text-[11px] text-zinc-400 mt-1">
-                  Cloud Proofing Workflows
-                </div>
-              </div>
-
-              {/* Tile 2: Storage Filled */}
-              <div className="rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 p-4 transition-all duration-200 shadow-inner group">
-                <div className="flex items-center justify-between text-zinc-400 text-xs font-semibold mb-2">
-                  <span>Storage Used</span>
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center">
-                    <HardDrive className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-black text-amber-400 tracking-tight">
-                  {quota.formatted_used}
-                  <span className="text-xs font-semibold text-zinc-400 ml-1.5 font-normal">of {quota.formatted_total}</span>
-                </div>
-                <div className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${isNearFull ? 'bg-rose-500 animate-ping' : 'bg-amber-400'}`} />
-                  <span>{quota.percentage_used}% storage footprint consumed</span>
-                </div>
-              </div>
-
-              {/* Tile 3: Storage Remaining */}
-              <div className="rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 p-4 transition-all duration-200 shadow-inner group">
-                <div className="flex items-center justify-between text-zinc-400 text-xs font-semibold mb-2">
-                  <span>Storage Remaining</span>
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
-                    <CheckCircle2 className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-black text-emerald-400 tracking-tight">
-                  {formattedRemaining}
-                  <span className="text-xs font-semibold text-zinc-400 ml-1.5 font-normal">Free Space</span>
-                </div>
-                <div className="text-[11px] text-zinc-400 mt-1">
-                  {availableBytes > 0 ? 'Ready for new high-res video cuts' : 'Quota limit reached — archive or delete cuts'}
-                </div>
-              </div>
-
-            </div>
-
-            {/* Bottom: 3D Layered Progress Track */}
-            <div className="relative z-10 space-y-2 pt-1">
-              <div className="flex items-center justify-between text-xs font-bold text-zinc-300">
-                <span className="text-zinc-400">Cloud Storage Capacity</span>
-                <span className={isNearFull ? 'text-rose-400 font-extrabold' : 'text-amber-400'}>
-                  {quota.percentage_used}% Allocated
+                  {quota.tier_name}
                 </span>
               </div>
+            </div>
+
+            {/* Usage Panels Stack (Exact Light Style with Progress Bar + Circular Gauges) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               
-              <div className="w-full h-3 rounded-full bg-black/50 border border-white/10 p-0.5 shadow-inner overflow-hidden">
-                <div 
-                  style={{ width: `${Math.max(2, quota.percentage_used)}%` }}
-                  className={`h-full rounded-full transition-all duration-500 relative overflow-hidden ${
-                    isNearFull 
-                      ? 'bg-gradient-to-r from-orange-500 to-rose-600 shadow-[0_0_12px_rgba(244,63,94,0.6)]' 
-                      : 'bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 shadow-[0_0_12px_rgba(245,158,11,0.5)]'
-                  }`}
-                >
-                  <div className="absolute inset-0 bg-white/20 opacity-40 animate-pulse" />
+              {/* Row 1: Cloud Storage Used */}
+              <div className="bg-[#FAF9F5] rounded-2xl border border-[#E7E2D8] p-4.5 flex items-center justify-between gap-4 transition hover:border-amber-300 hover:shadow-2xs">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
+                    <span className="truncate">Cloud Storage Used</span>
+                    <span className="font-mono text-zinc-500">{quota.percentage_used}%</span>
+                  </div>
+
+                  {/* Horizontal Bar */}
+                  <div className="w-full h-2 rounded-full bg-zinc-200/80 overflow-hidden">
+                    <div 
+                      style={{ width: `${Math.min(100, Math.max(3, quota.percentage_used))}%` }}
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        isNearFull ? 'bg-rose-500' : 'bg-blue-600'
+                      }`}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-0.5 font-medium">
+                    <span className="truncate">{quota.formatted_used} used</span>
+                    <span className="truncate font-mono">Limit: {quota.formatted_total}</span>
+                  </div>
+                </div>
+
+                {/* Circular Gauge */}
+                <div className="relative w-14 h-14 shrink-0 flex items-center justify-center">
+                  <svg className="w-14 h-14 -rotate-90" viewBox="0 0 60 60">
+                    <circle cx="30" cy="30" r="24" stroke="#E5E7EB" strokeWidth="4.5" fill="none" />
+                    <circle 
+                      cx="30" cy="30" r="24" 
+                      stroke={isNearFull ? '#EF4444' : '#2563EB'} 
+                      strokeWidth="4.5" 
+                      fill="none" 
+                      strokeDasharray={circumference} 
+                      strokeDashoffset={circumference - (circumference * Math.min(100, quota.percentage_used)) / 100}
+                      strokeLinecap="round"
+                      className="transition-all duration-700 ease-out"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className="text-[11px] font-black text-zinc-900 leading-none">
+                      {quota.percentage_used}%
+                    </span>
+                    <span className="text-[8px] text-zinc-400 font-semibold leading-none mt-0.5">used</span>
+                  </div>
                 </div>
               </div>
+
+              {/* Row 2: Active Review Projects */}
+              <div className="bg-[#FAF9F5] rounded-2xl border border-[#E7E2D8] p-4.5 flex items-center justify-between gap-4 transition hover:border-amber-300 hover:shadow-2xs">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
+                    <span className="truncate">Projects Uploaded</span>
+                    <span className="font-mono text-amber-700">{projects.length} Active</span>
+                  </div>
+
+                  {/* Horizontal Bar */}
+                  <div className="w-full h-2 rounded-full bg-zinc-200/80 overflow-hidden">
+                    <div 
+                      style={{ width: `${projectsCapacityPercent}%` }}
+                      className="h-full rounded-full bg-amber-500 transition-all duration-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-0.5 font-medium">
+                    <span className="truncate">{projects.length} {projects.length === 1 ? 'Project' : 'Projects'}</span>
+                    <span className="truncate">Live Review Hubs</span>
+                  </div>
+                </div>
+
+                {/* Circular Gauge */}
+                <div className="relative w-14 h-14 shrink-0 flex items-center justify-center">
+                  <svg className="w-14 h-14 -rotate-90" viewBox="0 0 60 60">
+                    <circle cx="30" cy="30" r="24" stroke="#E5E7EB" strokeWidth="4.5" fill="none" />
+                    <circle 
+                      cx="30" cy="30" r="24" 
+                      stroke="#F59E0B" 
+                      strokeWidth="4.5" 
+                      fill="none" 
+                      strokeDasharray={circumference} 
+                      strokeDashoffset={circumference - (circumference * projectsCapacityPercent) / 100}
+                      strokeLinecap="round"
+                      className="transition-all duration-700 ease-out"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className="text-[13px] font-black text-zinc-900 leading-none">
+                      {projects.length}
+                    </span>
+                    <span className="text-[8px] text-zinc-400 font-semibold leading-none mt-0.5">projects</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 3: Remaining Free Space */}
+              <div className="bg-[#FAF9F5] rounded-2xl border border-[#E7E2D8] p-4.5 flex items-center justify-between gap-4 transition hover:border-amber-300 hover:shadow-2xs">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
+                    <span className="truncate">Remaining Space</span>
+                    <span className="font-mono text-emerald-700">{formattedRemaining}</span>
+                  </div>
+
+                  {/* Horizontal Bar */}
+                  <div className="w-full h-2 rounded-full bg-zinc-200/80 overflow-hidden">
+                    <div 
+                      style={{ width: `${Math.min(100, Math.max(3, freePercentage))}%` }}
+                      className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-0.5 font-medium">
+                    <span className="truncate">{freePercentage}% capacity free</span>
+                    <span className="truncate">1080p Optimized</span>
+                  </div>
+                </div>
+
+                {/* Circular Gauge */}
+                <div className="relative w-14 h-14 shrink-0 flex items-center justify-center">
+                  <svg className="w-14 h-14 -rotate-90" viewBox="0 0 60 60">
+                    <circle cx="30" cy="30" r="24" stroke="#E5E7EB" strokeWidth="4.5" fill="none" />
+                    <circle 
+                      cx="30" cy="30" r="24" 
+                      stroke="#10B981" 
+                      strokeWidth="4.5" 
+                      fill="none" 
+                      strokeDasharray={circumference} 
+                      strokeDashoffset={circumference - (circumference * Math.min(100, freePercentage)) / 100}
+                      strokeLinecap="round"
+                      className="transition-all duration-700 ease-out"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className="text-[11px] font-black text-emerald-700 leading-none">
+                      {freePercentage}%
+                    </span>
+                    <span className="text-[8px] text-zinc-400 font-semibold leading-none mt-0.5">free</span>
+                  </div>
+                </div>
+              </div>
+
             </div>
 
           </div>
@@ -387,15 +445,15 @@ export default function ReviewProjectsPage() {
           </button>
         </div>
       ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {filteredProjects.map((project) => (
             <div
               key={project.id}
               onClick={() => router.push(`/workspace/video-review/${project.id}`)}
-              className="group bg-white rounded-3xl border border-[#E7E2D8] overflow-hidden shadow-2xs hover:shadow-md hover:border-amber-400 transition-all duration-300 cursor-pointer flex flex-col justify-between relative"
+              className="group bg-white rounded-2xl border border-[#E7E2D8] overflow-hidden shadow-2xs hover:shadow-md hover:border-amber-400 transition-all duration-200 cursor-pointer flex flex-col justify-between relative"
             >
-              {/* Card Thumbnail / Header */}
-              <div className="relative aspect-[16/10] bg-zinc-900 overflow-hidden">
+              {/* Compact Card Thumbnail */}
+              <div className="relative aspect-[16/9] bg-zinc-900 overflow-hidden">
                 {project.cover_thumbnail_url ? (
                   <img
                     src={project.cover_thumbnail_url}
@@ -403,17 +461,17 @@ export default function ReviewProjectsPage() {
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500 bg-gradient-to-br from-zinc-800 to-zinc-900 p-4 text-center">
-                    <Film className="w-10 h-10 mb-2 text-amber-500/70" />
-                    <span className="text-xs font-bold text-zinc-300 truncate max-w-full">
+                  <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500 bg-gradient-to-br from-zinc-800 to-zinc-900 p-3 text-center">
+                    <Film className="w-7 h-7 mb-1.5 text-amber-500/70" />
+                    <span className="text-[11px] font-bold text-zinc-300 truncate max-w-full px-2">
                       {project.name}
                     </span>
                   </div>
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
 
                 {/* Status Badge */}
-                <div className="absolute top-3 left-3">
+                <div className="absolute top-2.5 left-2.5 scale-90 origin-top-left">
                   {getStatusBadge(project.status)}
                 </div>
 
@@ -424,34 +482,34 @@ export default function ReviewProjectsPage() {
                     e.stopPropagation();
                     setProjectToDelete(project);
                   }}
-                  className="absolute top-3 right-3 p-1.5 rounded-xl bg-black/60 hover:bg-rose-600 text-white/80 hover:text-white transition backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
+                  className="absolute top-2.5 right-2.5 p-1 rounded-lg bg-black/60 hover:bg-rose-600 text-white/80 hover:text-white transition backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10 cursor-pointer"
                   title="Delete Project & Purge Storage"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3 h-3" />
                 </button>
 
                 {/* Bottom title */}
-                <div className="absolute bottom-3 left-3 right-3 text-white">
-                  <h3 className="font-bold text-sm truncate">{project.name}</h3>
+                <div className="absolute bottom-2.5 left-2.5 right-2.5 text-white">
+                  <h3 className="font-bold text-xs truncate drop-shadow-xs">{project.name}</h3>
                   {project.client_name && (
-                    <p className="text-[11px] text-zinc-300 truncate flex items-center gap-1 mt-0.5">
-                      <User className="w-3 h-3 text-amber-400" />
+                    <p className="text-[10px] text-zinc-300 truncate flex items-center gap-1 mt-0.5 font-medium drop-shadow-xs">
+                      <User className="w-2.5 h-2.5 text-amber-400" />
                       <span>{project.client_name}</span>
                     </p>
                   )}
                 </div>
               </div>
 
-              {/* Card Footer */}
-              <div className="p-4 border-t border-[#E7E2D8] bg-[#FAF9F5] flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 text-zinc-400 text-[11px]">
-                  <Calendar className="w-3 h-3 text-zinc-400" />
-                  <span>{project.event_date ? new Date(project.event_date).toLocaleDateString() : 'No date'}</span>
+              {/* Compact Card Footer */}
+              <div className="py-2.5 px-3 border-t border-[#E7E2D8] bg-[#FAF9F5] flex items-center justify-between text-[11px]">
+                <div className="flex items-center gap-1 text-zinc-400 text-[10px]">
+                  <Calendar className="w-3 h-3 text-zinc-400 shrink-0" />
+                  <span className="truncate">{project.event_date ? new Date(project.event_date).toLocaleDateString() : 'No date'}</span>
                 </div>
 
-                <div className="flex items-center gap-1 font-bold text-amber-600 group-hover:translate-x-0.5 transition-transform">
-                  <span>Open Review</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-0.5 font-bold text-[11px] text-amber-600 group-hover:translate-x-0.5 transition-transform shrink-0">
+                  <span>Open</span>
+                  <ChevronRight className="w-3 h-3" />
                 </div>
               </div>
             </div>
