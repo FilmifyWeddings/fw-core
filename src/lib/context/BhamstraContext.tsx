@@ -274,12 +274,32 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
     const handleProfileUpdated = () => {
       refreshContext(true);
     };
+
+    // Realtime Permission Revocation & Role Updates
+    const channel = supabase
+      .channel('sc_permissions_live_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_member_permissions' }, () => {
+        refreshContext(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_permissions' }, () => {
+        refreshContext(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, () => {
+        refreshContext(true);
+      })
+      .subscribe();
+
     if (typeof window !== 'undefined') {
       window.addEventListener('sc_profile_updated', handleProfileUpdated);
       return () => {
         window.removeEventListener('sc_profile_updated', handleProfileUpdated);
+        supabase.removeChannel(channel);
       };
     }
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [refreshContext]);
 
   // Workspace Switcher Action

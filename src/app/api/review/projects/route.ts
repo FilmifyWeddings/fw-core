@@ -23,12 +23,17 @@ export async function GET(req: NextRequest) {
 
   const validWsId = isValidUUID(rawWorkspaceId) ? rawWorkspaceId : null;
 
-  try {
-    let query = supabaseAdmin.from('review_projects').select('*').order('updated_at', { ascending: false });
+  // STRICT MULTI-TENANCY: If no valid workspace_id provided, return empty array to prevent cross-studio leaks
+  if (!validWsId) {
+    return NextResponse.json({ success: true, projects: [] });
+  }
 
-    if (validWsId) {
-      query = query.or(`workspace_id.eq.${validWsId},workspace_id.is.null`);
-    }
+  try {
+    let query = supabaseAdmin
+      .from('review_projects')
+      .select('*')
+      .eq('workspace_id', validWsId)
+      .order('updated_at', { ascending: false });
 
     if (status && status !== 'all') {
       query = query.eq('status', status);
@@ -50,11 +55,10 @@ export async function GET(req: NextRequest) {
     console.warn('[Review API] Projects fetch error, falling back to cache:', err);
   }
 
-  // Resilient fallback to local cache
+  // Resilient fallback to local cache strictly scoped to this workspace
   let cached = listReviewCache('review_projects');
-  if (validWsId) {
-    cached = cached.filter((p: any) => !p.workspace_id || p.workspace_id === validWsId);
-  }
+  cached = cached.filter((p: any) => p.workspace_id === validWsId);
+
   if (status && status !== 'all') {
     cached = cached.filter((p: any) => p.status === status);
   }
@@ -81,6 +85,10 @@ export async function POST(req: NextRequest) {
 
     const projectId = crypto.randomUUID();
     const validWsId = isValidUUID(workspace_id) ? workspace_id : null;
+
+    if (!validWsId) {
+      return NextResponse.json({ success: false, error: 'Valid workspace_id is required' }, { status: 400 });
+    }
 
     const newProject = {
       id: projectId,

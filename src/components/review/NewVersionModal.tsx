@@ -100,22 +100,31 @@ export default function NewVersionModal({
 
         setUploadProgress(40);
 
-        if (presignData.upload_url.startsWith('http')) {
-          await new Promise<void>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('PUT', presignData.upload_url, true);
-            xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+        // Direct upload to storage bucket via PUT with auto-retry
+        const doPutUpload = (targetUrl: string) => new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', targetUrl, true);
+          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
 
-            xhr.upload.onprogress = (evt) => {
-              if (evt.lengthComputable) {
-                const percent = Math.round(40 + (evt.loaded / evt.total) * 50);
-                setUploadProgress(percent);
-              }
-            };
-            xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject());
-            xhr.onerror = () => reject();
-            xhr.send(file);
-          });
+          xhr.upload.onprogress = (evt) => {
+            if (evt.lengthComputable) {
+              const percent = Math.round(40 + (evt.loaded / evt.total) * 50);
+              setUploadProgress(percent);
+            }
+          };
+          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed with status ${xhr.status}`)));
+          xhr.onerror = () => reject(new Error('Network error during version upload'));
+          xhr.send(file);
+        });
+
+        if (presignData.upload_url.startsWith('http')) {
+          try {
+            await doPutUpload(presignData.upload_url);
+          } catch (firstErr) {
+            console.warn('[Version Upload] First upload attempt failed, retrying once...', firstErr);
+            await new Promise(r => setTimeout(r, 800));
+            await doPutUpload(presignData.upload_url);
+          }
         }
 
         setUploadProgress(95);

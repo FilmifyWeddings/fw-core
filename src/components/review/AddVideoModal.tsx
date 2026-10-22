@@ -151,27 +151,35 @@ export default function AddVideoModal({
 
         setUploadProgress(30);
 
-        // 2. Direct upload to storage bucket via PUT or fallback
+        // 2. Direct upload to storage bucket via PUT with auto-retry
+        const doPutUpload = (targetUrl: string) => new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', targetUrl, true);
+          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+
+          xhr.upload.onprogress = (evt) => {
+            if (evt.lengthComputable) {
+              const percent = Math.round(30 + (evt.loaded / evt.total) * 60);
+              setUploadProgress(percent);
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`Upload rejected with status ${xhr.status}: ${xhr.statusText}`));
+          };
+          xhr.onerror = () => reject(new Error('Network error during video upload. Please check your internet connection or Backblaze bucket configuration.'));
+          xhr.send(file);
+        });
+
         if (presignData.upload_url.startsWith('http')) {
-          await new Promise<void>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('PUT', presignData.upload_url, true);
-            xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-
-            xhr.upload.onprogress = (evt) => {
-              if (evt.lengthComputable) {
-                const percent = Math.round(30 + (evt.loaded / evt.total) * 60);
-                setUploadProgress(percent);
-              }
-            };
-
-            xhr.onload = () => {
-              if (xhr.status >= 200 && xhr.status < 300) resolve();
-              else reject(new Error(`Upload failed with status ${xhr.status}`));
-            };
-            xhr.onerror = () => reject(new Error('Network error during video upload'));
-            xhr.send(file);
-          });
+          try {
+            await doPutUpload(presignData.upload_url);
+          } catch (firstErr) {
+            console.warn('[Video Upload] First upload attempt failed, retrying once...', firstErr);
+            await new Promise(r => setTimeout(r, 800));
+            await doPutUpload(presignData.upload_url);
+          }
         }
 
         setUploadProgress(95);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getReviewPresignedUploadUrl, REVIEW_BUCKET_NAME } from '@/lib/review/reviewStorage';
+import { getReviewPresignedUploadUrl, ensureReviewCors, REVIEW_BUCKET_NAME } from '@/lib/review/reviewStorage';
 import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
@@ -48,14 +48,18 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
-    // Check existing used bytes
+    // Check existing used bytes strictly for this workspace
     let usedBytes = 0;
     try {
-      let query = supabaseAdmin.from('review_video_versions').select('file_size_bytes');
-      if (validWsId) query = query.or(`workspace_id.eq.${validWsId},workspace_id.is.null`);
-      const { data: versions } = await query;
-      if (versions && versions.length > 0) {
-        usedBytes = versions.reduce((sum, v) => sum + (Number(v.file_size_bytes) || 0), 0);
+      if (validWsId) {
+        const { data: versions } = await supabaseAdmin
+          .from('review_video_versions')
+          .select('file_size_bytes')
+          .eq('workspace_id', validWsId);
+
+        if (versions && versions.length > 0) {
+          usedBytes = versions.reduce((sum, v) => sum + (Number(v.file_size_bytes) || 0), 0);
+        }
       }
     } catch (_) {}
 
@@ -68,6 +72,9 @@ export async function POST(req: NextRequest) {
         error: `Storage quota exceeded. Your current limit is ${limitText}. Used: ${(usedBytes / (1024*1024)).toFixed(1)} MB. Please upgrade your subscription or delete older project files from Backblaze B2.`,
       }, { status: 403 });
     }
+
+    // Proactively guarantee CORS on Backblaze B2
+    ensureReviewCors(REVIEW_BUCKET_NAME).catch(() => {});
 
     // Generate direct Backblaze B2 presigned upload URL
     const uploadUrl = await getReviewPresignedUploadUrl(key, contentType, 7200);

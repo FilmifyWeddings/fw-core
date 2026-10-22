@@ -49,7 +49,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
       pathname.startsWith('/workspace/clients');
 
     if (isOwnerOnlyWorkspaceRoute) {
-      return <StudioCoreLiquidLoader label="Redirecting to your partner portal..." />;
+      return <StudioCoreLiquidLoader label="Redirecting to your workspace..." />;
     }
   }
 

@@ -32,18 +32,7 @@ export async function GET(req: NextRequest) {
       .eq('provider', 'meta')
       .maybeSingle();
 
-    if (!conn && requestedWorkspaceId) {
-      const { data: altConn } = await supabaseAdmin
-        .from('integration_credentials')
-        .select('*')
-        .eq('user_id', requestedWorkspaceId)
-        .eq('provider', 'meta')
-        .maybeSingle();
 
-      if (altConn) {
-        conn = altConn;
-      }
-    }
 
     const isConnected = conn?.status === 'connected' && !!conn?.access_token;
 

@@ -401,7 +401,7 @@ export default function MetaIntegrationPage() {
     if (memCachedMetaStatus) return false;
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('sc_cached_meta_status');
+        const stored = null;
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed && typeof parsed.isConnected === 'boolean') {
@@ -418,7 +418,7 @@ export default function MetaIntegrationPage() {
     if (memCachedMetaStatus) return Boolean(memCachedMetaStatus.isConnected);
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('sc_cached_meta_status');
+        const stored = null;
         if (stored) {
           const parsed = JSON.parse(stored);
           return Boolean(parsed.isConnected);
@@ -444,7 +444,7 @@ export default function MetaIntegrationPage() {
     if (memCachedMetaStatus?.connectedAccountName) return memCachedMetaStatus.connectedAccountName;
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('sc_cached_meta_status');
+        const stored = null;
         if (stored) {
           const parsed = JSON.parse(stored);
           return parsed.connectedAccountName || 'Meta User';
@@ -458,7 +458,7 @@ export default function MetaIntegrationPage() {
     if (memCachedMetaStatus?.connectedUserEmail) return memCachedMetaStatus.connectedUserEmail;
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('sc_cached_meta_status');
+        const stored = null;
         if (stored) {
           const parsed = JSON.parse(stored);
           return parsed.connectedUserEmail || '';
@@ -472,7 +472,7 @@ export default function MetaIntegrationPage() {
     if (memCachedMetaStatus?.businessName) return memCachedMetaStatus.businessName;
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('sc_cached_meta_status');
+        const stored = null;
         if (stored) {
           const parsed = JSON.parse(stored);
           return parsed.businessName || 'Meta Business';
@@ -488,7 +488,7 @@ export default function MetaIntegrationPage() {
     if (memCachedMetaStatus?.pages) return memCachedMetaStatus.pages;
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('sc_cached_meta_status');
+        const stored = null;
         if (stored) {
           const parsed = JSON.parse(stored);
           return parsed.pages || [];
@@ -502,7 +502,7 @@ export default function MetaIntegrationPage() {
     if (memCachedMetaStatus?.leadForms) return memCachedMetaStatus.leadForms;
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('sc_cached_meta_status');
+        const stored = null;
         if (stored) {
           const parsed = JSON.parse(stored);
           return parsed.leadForms || [];
@@ -516,7 +516,7 @@ export default function MetaIntegrationPage() {
     if (memCachedMetaStatus?.realSyncLogs) return memCachedMetaStatus.realSyncLogs;
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('sc_cached_meta_status');
+        const stored = null;
         if (stored) {
           const parsed = JSON.parse(stored);
           return parsed.realSyncLogs || [];
@@ -530,7 +530,7 @@ export default function MetaIntegrationPage() {
     if (typeof memCachedMetaStatus?.totalLeadsSynced === 'number') return memCachedMetaStatus.totalLeadsSynced;
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('sc_cached_meta_status');
+        const stored = null;
         if (stored) {
           const parsed = JSON.parse(stored);
           return parsed.totalLeadsSynced || 0;
@@ -767,7 +767,7 @@ export default function MetaIntegrationPage() {
         memCachedMetaStatus = cacheObj;
         if (typeof window !== 'undefined') {
           try {
-            localStorage.setItem('sc_cached_meta_status', JSON.stringify(cacheObj));
+            localStorage.setItem(`sc_cached_meta_status_${wsId}`, JSON.stringify(cacheObj));
           } catch (_) {}
         }
 
@@ -796,7 +796,7 @@ export default function MetaIntegrationPage() {
         memCachedMetaStatus = cacheObj;
         if (typeof window !== 'undefined') {
           try {
-            localStorage.setItem('sc_cached_meta_status', JSON.stringify(cacheObj));
+            localStorage.setItem(`sc_cached_meta_status_${wsId}`, JSON.stringify(cacheObj));
           } catch (_) {}
         }
       }

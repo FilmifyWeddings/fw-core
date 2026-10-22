@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const clean = (val?: string) => (val ? val.replace(/^["'\\]+|["'\\]+$/g, '').trim() : '');
@@ -45,6 +45,38 @@ export const reviewB2Client = new S3Client({
     secretAccessKey: B2_SECRET_ACCESS_KEY || 'placeholder',
   },
 });
+
+/**
+ * Configure CORS on the Video Review B2 bucket
+ * Allows web browsers to perform direct PUT uploads and GET range requests smoothly.
+ */
+export async function ensureReviewCors(bucketName = REVIEW_BUCKET_NAME): Promise<{ success: boolean; error?: string }> {
+  if (!B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY) {
+    return { success: false, error: 'Missing B2 credentials' };
+  }
+  try {
+    const command = new PutBucketCorsCommand({
+      Bucket: bucketName,
+      CORSConfiguration: {
+        CORSRules: [
+          {
+            AllowedHeaders: ['*'],
+            AllowedMethods: ['GET', 'PUT', 'POST', 'HEAD', 'DELETE'],
+            AllowedOrigins: ['*'],
+            ExposeHeaders: ['ETag', 'x-amz-request-id', 'Content-Length', 'Content-Range'],
+            MaxAgeSeconds: 3600,
+          },
+        ],
+      },
+    });
+
+    await reviewB2Client.send(command);
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[Review Storage] CORS check note:', err?.message || err);
+    return { success: false, error: err?.message || 'CORS setup warning' };
+  }
+}
 
 /**
  * Generate Presigned Upload URL for direct client-to-B2 browser upload (PUT)

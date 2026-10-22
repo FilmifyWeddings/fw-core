@@ -86,9 +86,24 @@ export default function WorkspaceTeamPage() {
   const { workspaceId, workspaceName, isOwner, userEmail, userName } = useWorkspace();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<'directory' | 'activity_logs'>('directory');
-  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [members, setMembers] = useState<TeamMember[]>(() => {
+    if (memCachedTeamMembers.length > 0) return memCachedTeamMembers;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_team_members');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedTeamMembers = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
   const [logs, setLogs] = useState<ActivityLog[]>(() => memCachedLogs);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!members.length);
   const [logsLoading, setLogsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('All');

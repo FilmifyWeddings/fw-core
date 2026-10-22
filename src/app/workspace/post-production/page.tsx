@@ -40,12 +40,27 @@ export default function PostProductionPage() {
   const isReadOnly = !isOwner && (ppAccess === 'ASSIGNED_VIEW' || ppAccess === 'ASSIGNED_ONLY' || ppAccess === 'ALL_VIEW');
   const isAssignedOnly = !isOwner && (ppAccess === 'ASSIGNED_VIEW' || ppAccess === 'ASSIGNED_ONLY');
 
-  const [projects, setProjects] = useState<PostProductionProjectData[]>([]);
+  const [projects, setProjects] = useState<PostProductionProjectData[]>(() => {
+    if (memCachedPostProdProjects.length > 0) return memCachedPostProdProjects;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_pp_projects');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedPostProdProjects = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
   const [clients, setClients] = useState<any[]>([]);
   const [quotations, setQuotations] = useState<any[]>([]);
-  const [teamMembers, setTeamMembers] = useState<PostProductionTeamMember[]>([]);
+  const [teamMembers, setTeamMembers] = useState<PostProductionTeamMember[]>(() => memCachedPostProdTeamMembers);
   const [eventTypes, setEventTypes] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(() => memCachedPostProdProjects.length === 0);
   const [mounted, setMounted] = useState(false);
   const [postProdTab, setPostProdTab] = useState<'active' | 'trash'>('active');
   const [searchQuery, setSearchQuery] = useState('');
@@ -147,7 +162,18 @@ export default function PostProductionPage() {
 
   useEffect(() => {
     if (workspaceId) {
-      memCachedPostProdProjects = [];
+      if (typeof window !== 'undefined') {
+        const wsCache = localStorage.getItem(`sc_cached_pp_projects_${workspaceId}`);
+        if (wsCache) {
+          try {
+            const parsed = JSON.parse(wsCache);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setProjects(parsed);
+              setLoading(false);
+            }
+          } catch (_) {}
+        }
+      }
       fetchPostProductionData();
     }
   }, [workspaceId]);
@@ -166,67 +192,165 @@ export default function PostProductionPage() {
         return;
       }
 
-      // 1. Fetch Team Members with In-House and PM Access tags
+      // 1. Launch all 11 Supabase queries simultaneously in parallel for instant sub-second response
       const members: PostProductionTeamMember[] = [];
-      try {
-        let fwQuery = supabase
-          .from('fw_team_members')
-          .select('id, name, primary_role, primary_type, member_types, phone, user_id, workspace_id');
 
-        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-          fwQuery = fwQuery.or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
-        }
+      // Query 1: Team Members
+      let fwQuery = supabase
+        .from('fw_team_members')
+        .select('id, name, primary_role, primary_type, member_types, phone, user_id, workspace_id');
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        fwQuery = fwQuery.or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
+      }
 
-        const { data: fwData } = await fwQuery;
+      // Query 2: Workspace members API
+      const token = session?.access_token;
+      const wsMembersPromise = fetch(`/api/workspace/members?workspace_id=${effectiveWsId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }).then(r => r.json()).catch(() => ({}));
 
-        if (fwData && fwData.length > 0) {
-          fwData.forEach((f: any) => {
-            const cleanName = f.name?.trim();
-            if (cleanName && !members.some(existing => existing.name.toLowerCase() === cleanName.toLowerCase())) {
-              const isInHouse = (
-                f.primary_type?.toLowerCase() === 'in-house' || 
-                f.primary_type?.toLowerCase() === 'in_house' || 
-                (Array.isArray(f.member_types) && f.member_types.some((t: any) => String(t).toUpperCase() === 'IN_HOUSE'))
-              );
-              const roleStr = f.primary_role || '';
-              const hasPMAccess = (
-                isInHouse ||
-                /manager|lead|head|director|owner|producer|supervisor/i.test(roleStr)
-              );
-              members.push({
-                id: f.id,
-                name: cleanName,
-                role: f.primary_role,
-                isInHouse,
-                hasPMAccess,
-              });
-            }
-          });
-        }
-      } catch (_) {}
+      // Query 3: Event Types
+      const evTypesPromise = fetchWorkspaceEventTypes(effectiveWsId).catch(() => []);
 
-      try {
-        const token = session?.access_token;
-        const res = await fetch(`/api/workspace/members?workspace_id=${effectiveWsId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+      // Query 4: Quotations
+      let qQuery = supabase
+        .from('quotations')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        qQuery = qQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+
+      // Query 5: Quotation documents
+      let qDocQuery = supabase
+        .from('quotation_documents')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        qDocQuery = qDocQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+
+      // Query 6: Workspace Clients
+      let clientQuery = supabase
+        .from('workspace_clients')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        clientQuery = clientQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+
+      // Query 7: Leads
+      let leadsQuery = supabase
+        .from('leads')
+        .select('*')
+        .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)')
+        .order('created_at', { ascending: false });
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        leadsQuery = leadsQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+
+      // Query 8: FW Projects
+      let fwProjectsQuery = supabase
+        .from('fw_projects')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        fwProjectsQuery = fwProjectsQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+
+      // Query 9: Post Production Projects
+      let pppQuery = supabase
+        .from('post_production_projects')
+        .select('*');
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        pppQuery = pppQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+
+      // Query 10: Deliverables
+      let ppDelivQuery = supabase
+        .from('post_production_deliverables')
+        .select('*');
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        ppDelivQuery = ppDelivQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      }
+
+      // Query 11: Config
+      let configQuery = supabase
+        .from('post_production_project_config')
+        .select('*');
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        configQuery = configQuery.eq('workspace_id', effectiveWsId);
+      }
+
+      // Run all queries simultaneously
+      const [
+        fwRes,
+        jsonMembers,
+        evTypes,
+        qRes,
+        qDocRes,
+        clientRes,
+        leadsRes,
+        fwProjectsRes,
+        pppRes,
+        ppDelivRes,
+        configRes,
+      ] = await Promise.all([
+        fwQuery,
+        wsMembersPromise,
+        evTypesPromise,
+        qQuery,
+        qDocQuery,
+        clientQuery,
+        leadsQuery,
+        fwProjectsQuery,
+        pppQuery,
+        ppDelivQuery,
+        configQuery,
+      ]);
+
+      // Process Team Members
+      const fwData = fwRes?.data;
+      if (fwData && fwData.length > 0) {
+        fwData.forEach((f: any) => {
+          const cleanName = f.name?.trim();
+          if (cleanName && !members.some(existing => existing.name.toLowerCase() === cleanName.toLowerCase())) {
+            const isInHouse = (
+              f.primary_type?.toLowerCase() === 'in-house' || 
+              f.primary_type?.toLowerCase() === 'in_house' || 
+              (Array.isArray(f.member_types) && f.member_types.some((t: any) => String(t).toUpperCase() === 'IN_HOUSE'))
+            );
+            const roleStr = f.primary_role || '';
+            const hasPMAccess = (
+              isInHouse ||
+              /manager|lead|head|director|owner|producer|supervisor/i.test(roleStr)
+            );
+            members.push({
+              id: f.id,
+              name: cleanName,
+              role: f.primary_role,
+              isInHouse,
+              hasPMAccess,
+            });
+          }
         });
-        const json = await res.json();
-        if (json.success && Array.isArray(json.members)) {
-          json.members.forEach((m: any) => {
-            const cleanName = m.name?.trim();
-            if (cleanName && !members.some(existing => existing.name.toLowerCase() === cleanName.toLowerCase())) {
-              const isLead = /owner|admin|manager|lead/i.test(m.role || '');
-              members.push({
-                id: m.id || m.user_id,
-                name: cleanName,
-                role: m.role || (isLead ? 'Studio Manager' : 'Member'),
-                isInHouse: true,
-                hasPMAccess: true,
-              });
-            }
-          });
-        }
-      } catch (_) {}
+      }
+
+      if (jsonMembers?.success && Array.isArray(jsonMembers.members)) {
+        jsonMembers.members.forEach((m: any) => {
+          const cleanName = m.name?.trim();
+          if (cleanName && !members.some(existing => existing.name.toLowerCase() === cleanName.toLowerCase())) {
+            const isLead = /owner|admin|manager|lead/i.test(m.role || '');
+            members.push({
+              id: m.id || m.user_id,
+              name: cleanName,
+              role: m.role || (isLead ? 'Studio Manager' : 'Member'),
+              isInHouse: true,
+              hasPMAccess: true,
+            });
+          }
+        });
+      }
 
       const ownerName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Studio Owner';
       if (!members.some(m => m.name.toLowerCase() === ownerName.toLowerCase())) {
@@ -239,182 +363,88 @@ export default function PostProductionPage() {
         });
       }
       setTeamMembers(members);
+      memCachedPostProdTeamMembers = members;
 
-      // 1.5 Fetch Studio Event Types (for custom segments sync)
-      try {
-        const evTypes = await fetchWorkspaceEventTypes(effectiveWsId);
-        if (evTypes && evTypes.length > 0) {
-          setEventTypes(evTypes);
-        }
-      } catch (evErr) {
-        console.warn('Error fetching workspace event types:', evErr);
+      // Process Event Types
+      if (evTypes && evTypes.length > 0) {
+        setEventTypes(evTypes);
       }
 
-      // 2. Fetch Quotations with strict workspace isolation
-      let qList: any[] = [];
-      try {
-        let qQuery = supabase
-          .from('quotations')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-          qQuery = qQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+      // Process Quotations
+      const qData = qRes?.data || [];
+      const qDocData = qDocRes?.data || [];
+      const mergedMap = new Map<string, any>();
+      qData.forEach((q: any) => {
+        if (q.id) mergedMap.set(q.id, q);
+        if (q.quotation_number) mergedMap.set(q.quotation_number, q);
+      });
+      qDocData.forEach((qd: any) => {
+        const key = qd.template_id || qd.id;
+        if (mergedMap.has(key)) {
+          mergedMap.set(key, { ...mergedMap.get(key), ...qd });
+        } else {
+          mergedMap.set(key, qd);
         }
+      });
+      const qList = Array.from(mergedMap.values());
+      setQuotations(qList);
 
-        const { data: qData } = await qQuery;
-
-        // Also fetch quotation_documents for this workspace / user
-        let qDocQuery = supabase
-          .from('quotation_documents')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-          qDocQuery = qDocQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-        }
-
-        const { data: qDocData } = await qDocQuery;
-
-        const mergedMap = new Map<string, any>();
-        (qData || []).forEach((q: any) => {
-          if (q.id) mergedMap.set(q.id, q);
-          if (q.quotation_number) mergedMap.set(q.quotation_number, q);
-        });
-        (qDocData || []).forEach((qd: any) => {
-          const key = qd.template_id || qd.id;
-          if (mergedMap.has(key)) {
-            mergedMap.set(key, { ...mergedMap.get(key), ...qd });
-          } else {
-            mergedMap.set(key, qd);
-          }
-        });
-
-        qList = Array.from(mergedMap.values());
-        setQuotations(qList);
-      } catch (qErr) {
-        console.warn('Error fetching quotations:', qErr);
-      }
-
-      // 3. Fetch Workspace Clients & FW Projects & Booked/Finalized Leads
-      let clientQuery = supabase
-        .from('workspace_clients')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        clientQuery = clientQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
-
-      const { data: clientData } = await clientQuery;
-      const clientList: any[] = clientData ? [...clientData] : [];
-
-      // Also fetch leads that have final_quotation_id or booked/accepted status
-      try {
-        let leadsQuery = supabase
-          .from('leads')
-          .select('*')
-          .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)')
-          .order('created_at', { ascending: false });
-
-        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-          leadsQuery = leadsQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-        }
-
-        const { data: leadsData } = await leadsQuery;
-        if (leadsData) {
-          for (const lead of leadsData) {
-            const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
-            const matchedClient = clientList.find(
-              c => {
-                const cleanLeadName = coupleName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
-                const cleanCName = (c.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
-                return (
-                  c.id === lead.id || 
-                  c.lead_id === lead.id || 
-                  (lead.client_id && (c.id === lead.client_id || c.lead_id === lead.client_id)) ||
-                  (c.lead_id && lead.client_id && c.lead_id === lead.client_id) ||
-                  (cleanCName && cleanLeadName && cleanCName === cleanLeadName)
-                );
-              }
-            );
-            if (matchedClient) {
-              if (lead.final_quotation_id) {
-                matchedClient.final_quotation_id = lead.final_quotation_id;
-              }
-              if (!matchedClient.lead_id) {
-                matchedClient.lead_id = lead.id;
-              }
-            } else {
-              clientList.push({
-                id: lead.id,
-                lead_id: lead.id,
-                name: coupleName,
-                phone: lead.phone,
-                email: lead.email,
-                event_date: lead.event_date || lead.created_at,
-                event_type: lead.event_type || 'Wedding',
-                status: lead.status || 'booked',
-                created_at: lead.created_at,
-                notes: lead.notes,
-                final_quotation_id: lead.final_quotation_id
-              });
+      // Process Clients & Leads
+      const clientList: any[] = clientRes?.data ? [...clientRes.data] : [];
+      const leadsData = leadsRes?.data;
+      if (leadsData) {
+        for (const lead of leadsData) {
+          const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
+          const matchedClient = clientList.find(
+            c => {
+              const cleanLeadName = coupleName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+              const cleanCName = (c.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+              return (
+                c.id === lead.id || 
+                c.lead_id === lead.id || 
+                (lead.client_id && (c.id === lead.client_id || c.lead_id === lead.client_id)) ||
+                (c.lead_id && lead.client_id && c.lead_id === lead.client_id) ||
+                (cleanCName && cleanLeadName && cleanCName === cleanLeadName)
+              );
             }
+          );
+          if (matchedClient) {
+            if (lead.final_quotation_id) {
+              matchedClient.final_quotation_id = lead.final_quotation_id;
+            }
+            if (!matchedClient.lead_id) {
+              matchedClient.lead_id = lead.id;
+            }
+          } else {
+            clientList.push({
+              id: lead.id,
+              lead_id: lead.id,
+              name: coupleName,
+              phone: lead.phone,
+              email: lead.email,
+              event_date: lead.event_date || lead.created_at,
+              event_type: lead.event_type || 'Wedding',
+              status: lead.status || 'booked',
+              created_at: lead.created_at,
+              notes: lead.notes,
+              final_quotation_id: lead.final_quotation_id
+            });
           }
         }
-      } catch (leadErr) {
-        console.warn('Error fetching booked leads for post production:', leadErr);
       }
-
       setClients(clientList);
 
-      // 4. Fetch FW Projects (strictly scoped to workspace)
-      let fwProjectsQuery = supabase
-        .from('fw_projects')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // FW Projects & Deliverables
+      const fwProjects = fwProjectsRes?.data;
+      const pppData = pppRes?.data;
+      const ppDeliverables = ppDelivRes?.data;
+      const configData = configRes?.data;
 
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        fwProjectsQuery = fwProjectsQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
-      const { data: fwProjects } = await fwProjectsQuery;
-
-      // 5. Fetch Post Production Projects & Existing Deliverables (strictly scoped to workspace)
-      let pppQuery = supabase
-        .from('post_production_projects')
-        .select('*');
-
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        pppQuery = pppQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
-      const { data: pppData } = await pppQuery;
-
-      let ppDelivQuery = supabase
-        .from('post_production_deliverables')
-        .select('*');
-
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        ppDelivQuery = ppDelivQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
-      const { data: ppDeliverables } = await ppDelivQuery;
-
-      // Fetch dynamic segments/categories configuration
       const configByProjectId = new Map<string, any>();
-      try {
-        let configQuery = supabase
-          .from('post_production_project_config')
-          .select('*');
+      if (configData) {
+        configData.forEach(c => configByProjectId.set(c.project_id, c));
+      }
 
-        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-          configQuery = configQuery.eq('workspace_id', effectiveWsId);
-        }
-        const { data: configData } = await configQuery;
-        if (configData) {
-          configData.forEach(c => configByProjectId.set(c.project_id, c));
-        }
-      } catch (_) {}
-
-      // Map deliverables by project_id
       const delivsByProjectId = new Map<string, any[]>();
       if (ppDeliverables) {
         ppDeliverables.forEach(d => {

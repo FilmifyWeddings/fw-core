@@ -4356,7 +4356,9 @@ export function LeadTable({
                                       value={currentAssignedOwner}
                                       leadId={lead.id}
                                       teamMembers={teamMembers}
+                                      disabled={isReadOnly}
                                       onChange={(val) => {
+                                        if (isReadOnly) return;
                                         handleInlineRawPayloadEdit('lead_owner', val, lead.id);
                                       }}
                                     />
@@ -4452,11 +4454,13 @@ export function LeadTable({
                                       value={lead.whatsapp_group_id || ''}
                                       placeholder="Unassigned"
                                       allowCustomAdd={false}
+                                      disabled={isReadOnly}
                                       options={[
                                         { value: '', label: 'Unassigned', color: '#64748b' },
                                         ...contactGroups.map(g => ({ value: g.id, label: `💬 ${g.group_name}`, color: '#0866ff' }))
                                       ]}
                                       onChange={(val) => {
+                                        if (isReadOnly) return;
                                         const newGrp = val || null;
                                         handleInlineLeadEdit({ whatsapp_group_id: newGrp }, lead.id);
                                         fetchWaStatuses([{ ...lead, whatsapp_group_id: newGrp }]);
@@ -5531,6 +5535,7 @@ export function LeadTable({
             commentsOnlyMode={drawerMode === 'comments'}
             initialQuotations={selectedLead ? (quotationSummaryMap[selectedLead.id]?.versions || []) : []}
             onQuotationChange={handleQuotationChange}
+            isReadOnly={isReadOnly}
           />
         )}
       </AnimatePresenceComponent>

@@ -25,32 +25,66 @@ export default function ReviewProjectsPage() {
   const rawWsId = activeWorkspace?.workspaceId;
   const workspaceId = isValidUUID(rawWsId) ? rawWsId : null;
 
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>(() => {
+    if (typeof window !== 'undefined' && workspaceId) {
+      try {
+        const stored = sessionStorage.getItem(`sc_review_projects_${workspaceId}`);
+        if (stored) return JSON.parse(stored);
+      } catch (_) {}
+    }
+    return [];
+  });
   const [quota, setQuota] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!projects.length);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'in_review' | 'changes_requested' | 'approved' | 'draft'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<any | null>(null);
 
-  const loadData = async () => {
+  // Instant 0ms hydration from workspace cache on workspaceId change
+  useEffect(() => {
+    if (!workspaceId) {
+      setProjects([]);
+      setIsLoading(loading);
+      return;
+    }
     try {
-      setIsLoading(true);
-      const queryParam = workspaceId ? `workspace_id=${workspaceId}` : '';
+      const stored = sessionStorage.getItem(`sc_review_projects_${workspaceId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setProjects(parsed);
+          setIsLoading(false);
+        }
+      } else {
+        setProjects([]);
+        setIsLoading(true);
+      }
+    } catch (_) {}
+  }, [workspaceId, loading]);
+
+  const loadData = async () => {
+    if (loading || !workspaceId) return;
+
+    try {
+      const queryParam = `workspace_id=${workspaceId}`;
       const statusParam = statusFilter ? `status=${statusFilter}` : '';
       const qs = [queryParam, statusParam].filter(Boolean).join('&');
 
       const [projRes, quotaRes] = await Promise.all([
-        fetch(`/api/review/projects${qs ? `?${qs}` : ''}`),
-        fetch(`/api/review/quotas${workspaceId ? `?workspace_id=${workspaceId}` : ''}`),
+        fetch(`/api/review/projects?${qs}`),
+        fetch(`/api/review/quotas?workspace_id=${workspaceId}`),
       ]);
 
       const projData = await projRes.json();
       const quotaData = await quotaRes.json();
 
-      if (projData.success) {
-        setProjects(projData.projects || []);
+      if (projData.success && Array.isArray(projData.projects)) {
+        setProjects(projData.projects);
+        try {
+          sessionStorage.setItem(`sc_review_projects_${workspaceId}`, JSON.stringify(projData.projects));
+        } catch (_) {}
       }
       if (quotaData.success) {
         setQuota(quotaData.quota);
@@ -62,8 +96,10 @@ export default function ReviewProjectsPage() {
   };
 
   useEffect(() => {
-    loadData();
-  }, [workspaceId, statusFilter]);
+    if (!loading && workspaceId) {
+      loadData();
+    }
+  }, [workspaceId, statusFilter, loading]);
 
   const filteredProjects = projects.filter(p => {
     if (!searchQuery) return true;
@@ -382,6 +418,11 @@ export default function ReviewProjectsPage() {
         workspaceId={workspaceId || ''}
         onProjectCreated={(newProj) => {
           setProjects(prev => [newProj, ...prev]);
+          if (workspaceId) {
+            try {
+              sessionStorage.setItem(`sc_review_projects_${workspaceId}`, JSON.stringify([newProj, ...projects]));
+            } catch (_) {}
+          }
           router.push(`/workspace/video-review/${newProj.id}`);
         }}
       />
@@ -393,7 +434,13 @@ export default function ReviewProjectsPage() {
         onClose={() => setProjectToDelete(null)}
         onDeleted={() => {
           if (projectToDelete) {
-            setProjects(prev => prev.filter(p => p.id !== projectToDelete.id));
+            const remaining = projects.filter(p => p.id !== projectToDelete.id);
+            setProjects(remaining);
+            if (workspaceId) {
+              try {
+                sessionStorage.setItem(`sc_review_projects_${workspaceId}`, JSON.stringify(remaining));
+              } catch (_) {}
+            }
             setProjectToDelete(null);
             loadData();
           }

@@ -413,7 +413,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: LayoutDashboard,
       iconBg: 'bg-[#E0F2FE] text-[#0369A1]',
     },
-    ...(hasPartnerWorkspaces ? [partnerPortalItem] : []),
     {
       id: 'leads',
       name: 'Leads & CRM',
@@ -531,7 +530,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     },
   ] : [
     // PARTNER / FREELANCER WORKSPACE RESTRICTED NAVIGATION
-    partnerPortalItem,
     // 1. Leads
     ...(permissions?.leads_access && permissions.leads_access !== 'NONE' ? [{
       id: 'leads',

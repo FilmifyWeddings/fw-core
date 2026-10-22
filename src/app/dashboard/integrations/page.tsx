@@ -87,7 +87,48 @@ function IntegrationsCore() {
           setWhatsappBetaConnected(true);
         }
 
-        // 3. Check integration_credentials for other tools
+        // 3. Check Baileys WhatsApp Web session status accurately
+        if (effectiveWs) {
+          try {
+            const token = session?.access_token;
+            if (token) {
+              const waRes = await fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(effectiveWs)}`, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: 'no-store'
+              });
+              if (waRes.ok) {
+                const waData = await waRes.json();
+                const isWaOpen = Boolean((waData.isConnected === true || waData.status === 'open' || waData.conn_state === 'open') && !waData.qr_string && !!waData.phone_number);
+                setWhatsappConnected(isWaOpen);
+              } else {
+                setWhatsappConnected(false);
+              }
+            }
+          } catch (_) {
+            setWhatsappConnected(false);
+          }
+
+          // Check Meta connection status strictly scoped to this workspace
+          try {
+            const token = session?.access_token;
+            if (token) {
+              const metaRes = await fetch(`/api/meta/status?workspace_id=${encodeURIComponent(effectiveWs)}`, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: 'no-store'
+              });
+              if (metaRes.ok) {
+                const metaData = await metaRes.json();
+                setMetaConnected(Boolean(metaData.success && metaData.connection?.is_connected));
+              } else {
+                setMetaConnected(false);
+              }
+            }
+          } catch (_) {
+            setMetaConnected(false);
+          }
+        }
+
+        // 4. Check integration_credentials for other tools
         const { data: creds } = await supabase
           .from('integration_credentials')
           .select('*')

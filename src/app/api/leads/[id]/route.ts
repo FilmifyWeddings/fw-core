@@ -1,3 +1,4 @@
+import { verifyMetaAuth } from '@/lib/meta-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { syncBookedLeadOrFinalQuotation } from '@/lib/quotation-finance-sync';
@@ -24,6 +25,65 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .select('*')
       .eq('id', leadId)
       .maybeSingle();
+
+    if (!existingLead) {
+      return NextResponse.json({ success: false, error: 'Lead not found' }, { status: 404 });
+    }
+
+    // 🔒 Enforce Backend RBAC for Workspace Partners & Freelancers
+    const leadWs = existingLead.workspace_id || existingLead.tenant_id;
+    const authResult = await verifyMetaAuth(req, leadWs);
+
+    if (authResult.authorized && leadWs && authResult.userId !== leadWs) {
+      const { data: member } = await supabaseAdmin
+        .from('workspace_members')
+        .select('id, name, email')
+        .eq('workspace_id', leadWs)
+        .eq('user_id', authResult.userId)
+        .maybeSingle();
+
+      let leadsAccess = 'NONE';
+      if (member) {
+        const { data: perm } = await supabaseAdmin
+          .from('studio_member_permissions')
+          .select('leads_access')
+          .eq('owner_id', leadWs)
+          .eq('member_id', member.id)
+          .maybeSingle();
+        leadsAccess = perm?.leads_access || 'NONE';
+      }
+
+      // Tier 1 & Tier 3: View-Only blocks mutations
+      if (leadsAccess === 'NONE' || leadsAccess === 'ASSIGNED_VIEW' || leadsAccess === 'ALL_VIEW') {
+        return NextResponse.json({
+          success: false,
+          error: 'Forbidden: You have view-only access to leads. Modifications are restricted.'
+        }, { status: 403 });
+      }
+
+      // Tier 2: Assigned Leads (Can Edit) — must be strictly assigned to this member
+      if (leadsAccess === 'ASSIGNED_EDIT') {
+        const uName = (member?.name || '').trim().toLowerCase();
+        const uEmail = (member?.email || '').trim().toLowerCase();
+        const owner = String(existingLead.owner || existingLead.lead_owner || existingLead.assigned_to || '').trim().toLowerCase();
+        const rawOwner = String(existingLead.raw_payload?.lead_owner || existingLead.raw_payload?.assigned_to || '').trim().toLowerCase();
+        const assignedId = existingLead.assigned_to_id || existingLead.assigned_member_id || existingLead.raw_payload?.assigned_member_id;
+
+        const isAssigned = (
+          (member?.id && assignedId === member.id) ||
+          (authResult.userId && (assignedId === authResult.userId || owner === authResult.userId)) ||
+          (uName && (owner.includes(uName) || uName.includes(owner) || rawOwner.includes(uName))) ||
+          (uEmail && (owner === uEmail || rawOwner === uEmail))
+        );
+
+        if (!isAssigned) {
+          return NextResponse.json({
+            success: false,
+            error: 'Forbidden: You can only edit leads directly assigned to you.'
+          }, { status: 403 });
+        }
+      }
+    }
 
     // Auto-detect if booking action was explicitly requested
     const isBookedNow = Boolean(

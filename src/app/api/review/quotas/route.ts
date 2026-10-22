@@ -28,8 +28,8 @@ export async function GET(req: NextRequest) {
   let usedBytes = 0;
 
   try {
-    // 1. Check workspace subscription tier in profiles
     if (validWsId) {
+      // 1. Check workspace subscription tier in profiles
       const { data: profile } = await supabaseAdmin
         .from('profiles')
         .select('subscription_plan')
@@ -40,23 +40,23 @@ export async function GET(req: NextRequest) {
         totalQuota = FIFTY_GB;
         tierName = `${profile.subscription_plan.toUpperCase()} (50 GB)`;
       }
-    }
 
-    // 2. Aggregate actual video version file sizes
-    let query = supabaseAdmin.from('review_video_versions').select('file_size_bytes');
-    if (validWsId) {
-      query = query.or(`workspace_id.eq.${validWsId},workspace_id.is.null`);
-    }
-    const { data: versions } = await query;
-    if (versions && versions.length > 0) {
-      usedBytes = versions.reduce((sum, v) => sum + (Number(v.file_size_bytes) || 0), 0);
+      // 2. Aggregate actual video version file sizes strictly for this workspace
+      const { data: versions } = await supabaseAdmin
+        .from('review_video_versions')
+        .select('file_size_bytes')
+        .eq('workspace_id', validWsId);
+
+      if (versions && versions.length > 0) {
+        usedBytes = versions.reduce((sum, v) => sum + (Number(v.file_size_bytes) || 0), 0);
+      }
     }
   } catch (err) {
     console.warn('[Review Quota API] DB calculate fallback:', err);
   }
 
-  if (usedBytes === 0) {
-    const cachedVersions = listReviewCache('review_video_versions');
+  if (usedBytes === 0 && validWsId) {
+    const cachedVersions = listReviewCache('review_video_versions', (v: any) => v.workspace_id === validWsId);
     usedBytes = cachedVersions.reduce((sum, v) => sum + (Number(v.file_size_bytes) || 0), 0);
   }
 
