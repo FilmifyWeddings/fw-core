@@ -10,6 +10,7 @@ export interface ClientStatusDropdownProps {
   onStatusChange?: (newStatus: 'active' | 'completed') => void;
   size?: 'sm' | 'md';
   className?: string;
+  disabled?: boolean;
 }
 
 export const ClientStatusDropdown: React.FC<ClientStatusDropdownProps> = ({
@@ -18,6 +19,7 @@ export const ClientStatusDropdown: React.FC<ClientStatusDropdownProps> = ({
   onStatusChange,
   size = 'sm',
   className = '',
+  disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<'active' | 'completed'>(
@@ -105,10 +107,12 @@ export const ClientStatusDropdown: React.FC<ClientStatusDropdownProps> = ({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          setIsOpen((prev) => !prev);
+          if (!disabled) setIsOpen((prev) => !prev);
         }}
-        disabled={isUpdating}
-        className={`inline-flex items-center gap-1.5 rounded-full font-black border transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95 select-none ${
+        disabled={isUpdating || disabled}
+        className={`inline-flex items-center gap-1.5 rounded-full font-black border transition-all shadow-2xs select-none ${
+          disabled ? 'cursor-default' : 'cursor-pointer hover:scale-105 active:scale-95'
+        } ${
           size === 'sm'
             ? 'px-2.5 py-1 text-[11px]'
             : 'px-3.5 py-1.5 text-xs'
@@ -117,7 +121,7 @@ export const ClientStatusDropdown: React.FC<ClientStatusDropdownProps> = ({
             ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
             : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
         } ${isUpdating ? 'opacity-60 cursor-wait' : ''}`}
-        title="Click to switch status"
+        title={disabled ? 'Status (View Only)' : 'Click to switch status'}
       >
         <span
           className={`w-2 h-2 rounded-full shrink-0 ${
@@ -125,11 +129,13 @@ export const ClientStatusDropdown: React.FC<ClientStatusDropdownProps> = ({
           }`}
         />
         <span>{isCompleted ? 'Completed' : 'Active'}</span>
-        <ChevronDown
-          className={`w-3 h-3 text-slate-500 transition-transform duration-150 ${
-            isOpen ? 'rotate-180' : ''
-          }`}
-        />
+        {!disabled && (
+          <ChevronDown
+            className={`w-3 h-3 text-slate-500 transition-transform duration-150 ${
+              isOpen ? 'rotate-180' : ''
+            }`}
+          />
+        )}
       </button>
 
       {isOpen && (

@@ -251,7 +251,12 @@ export async function POST(req: NextRequest) {
           ? p.post_production_access
           : 'NONE';
 
-        const permPayload = {
+        const clientsAccess = p.clients_access && p.clients_access !== 'NONE' ? p.clients_access : 'NONE';
+        const clientModules = Array.isArray(p.client_modules_access) && p.client_modules_access.length > 0 
+          ? p.client_modules_access 
+          : ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
+
+        const permPayload: any = {
           member_id: targetMemberId,
           workspace_id,
           leads_access: p.leads_access && p.leads_access !== 'NONE' ? p.leads_access : 'NONE',
@@ -279,20 +284,40 @@ export async function POST(req: NextRequest) {
             .insert([permPayload]);
         }
 
-        // 3.1 Upsert into dedicated studio_member_permissions table
+        // 3.1 Upsert into dedicated studio_member_permissions table (with partner_access_code metadata fallback)
         try {
-          await supabaseAdmin
+          const extraJson = JSON.stringify({
+            clients_access: clientsAccess,
+            client_modules_access: clientModules,
+          });
+
+          // Try with direct columns
+          const smpPayload: any = {
+            owner_id: user.id,
+            member_id: targetMemberId,
+            leads_access: permPayload.leads_access,
+            team_manager_access: permPayload.team_manager_access,
+            quotations_access: permPayload.quotations_access,
+            post_production_access: permPayload.post_production_access,
+            finance_access: permPayload.finance_access,
+            clients_access: clientsAccess,
+            client_modules_access: clientModules,
+            partner_access_code: extraJson,
+            updated_at: new Date().toISOString(),
+          };
+
+          const { error: smpErr } = await supabaseAdmin
             .from('studio_member_permissions')
-            .upsert({
-              owner_id: user.id,
-              member_id: targetMemberId,
-              leads_access: permPayload.leads_access,
-              team_manager_access: permPayload.team_manager_access,
-              quotations_access: permPayload.quotations_access,
-              post_production_access: permPayload.post_production_access,
-              finance_access: permPayload.finance_access,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'owner_id,member_id' });
+            .upsert(smpPayload, { onConflict: 'owner_id,member_id' });
+
+          if (smpErr) {
+            // Fallback without direct columns
+            delete smpPayload.clients_access;
+            delete smpPayload.client_modules_access;
+            await supabaseAdmin
+              .from('studio_member_permissions')
+              .upsert(smpPayload, { onConflict: 'owner_id,member_id' });
+          }
         } catch (smpErr) {
           console.warn('[studio_member_permissions update notice]:', smpErr);
         }

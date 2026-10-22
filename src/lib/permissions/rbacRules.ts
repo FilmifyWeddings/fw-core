@@ -5,6 +5,21 @@ export type TeamManagerAccessLevel = 'NONE' | 'ASSIGNED_OWN_ROLE' | 'ASSIGNED_FU
 export type QuotationsAccessLevel = 'NONE' | 'VIEW' | 'MANAGE';
 export type PostProductionAccessLevel = 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ASSIGNED_ONLY' | 'ALL_VIEW' | 'ALL_MANAGE' | 'FULL_ACCESS';
 export type FinanceAccessLevel = 'NONE' | 'VIEW' | 'MANAGE';
+export type ClientsAccessLevel = 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ALL_VIEW' | 'ALL_MANAGE';
+
+export const CLIENT_SUB_MODULES = [
+  { key: 'overview', label: 'Overview & Profile' },
+  { key: 'quotations', label: 'Quotation Versions' },
+  { key: 'events', label: 'Event Booking' },
+  { key: 'moodboard', label: 'Moodboard' },
+  { key: 'tasks', label: 'Task Workflow' },
+  { key: 'post_production', label: 'Post Production' },
+  { key: 'finance', label: 'Finance & Invoices' },
+] as const;
+
+export type ClientSubModuleKey = typeof CLIENT_SUB_MODULES[number]['key'];
+
+export const ALL_CLIENT_MODULE_KEYS: string[] = CLIENT_SUB_MODULES.map(m => m.key);
 
 export interface StudioMemberPermissions {
   id?: string;
@@ -15,6 +30,9 @@ export interface StudioMemberPermissions {
   quotations_access: QuotationsAccessLevel | string;
   post_production_access: PostProductionAccessLevel | string;
   finance_access: FinanceAccessLevel | string;
+  clients_access?: ClientsAccessLevel | string;
+  client_modules_access?: string[] | null;
+  partner_access_code?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -25,6 +43,8 @@ export const DEFAULT_STUDIO_PERMISSIONS: Omit<StudioMemberPermissions, 'owner_id
   quotations_access: 'NONE',
   post_production_access: 'NONE',
   finance_access: 'NONE',
+  clients_access: 'NONE',
+  client_modules_access: ALL_CLIENT_MODULE_KEYS,
 };
 
 /**
@@ -52,6 +72,21 @@ export async function getMemberStudioPermissions(ownerId: string, memberId: stri
     }
 
     if (data) {
+      let clientsAccess = (data.clients_access || 'NONE') as ClientsAccessLevel;
+      let clientModulesAccess = Array.isArray(data.client_modules_access) ? data.client_modules_access : null;
+
+      if (data.partner_access_code) {
+        try {
+          const parsed = JSON.parse(data.partner_access_code);
+          if (parsed.clients_access && (!clientsAccess || clientsAccess === 'NONE')) {
+            clientsAccess = parsed.clients_access;
+          }
+          if (Array.isArray(parsed.client_modules_access) && (!clientModulesAccess || clientModulesAccess.length === 0)) {
+            clientModulesAccess = parsed.client_modules_access;
+          }
+        } catch (_) {}
+      }
+
       return {
         id: data.id,
         owner_id: data.owner_id,
@@ -61,6 +96,8 @@ export async function getMemberStudioPermissions(ownerId: string, memberId: stri
         quotations_access: (data.quotations_access || 'NONE') as QuotationsAccessLevel,
         post_production_access: (data.post_production_access || 'NONE') as PostProductionAccessLevel,
         finance_access: (data.finance_access || 'NONE') as FinanceAccessLevel,
+        clients_access: clientsAccess,
+        client_modules_access: clientModulesAccess || ALL_CLIENT_MODULE_KEYS,
         created_at: data.created_at,
         updated_at: data.updated_at,
       };
@@ -88,7 +125,16 @@ export async function saveMemberStudioPermissions(
     return { success: false, error: 'Missing ownerId or memberId' };
   }
 
-  const payload = {
+  const clientModules = permissions.client_modules_access && permissions.client_modules_access.length > 0
+    ? permissions.client_modules_access
+    : ALL_CLIENT_MODULE_KEYS;
+
+  const extraMeta = {
+    clients_access: permissions.clients_access || 'NONE',
+    client_modules_access: clientModules,
+  };
+
+  const basePayload: any = {
     owner_id: ownerId,
     member_id: memberId,
     leads_access: permissions.leads_access || 'NONE',
@@ -96,13 +142,34 @@ export async function saveMemberStudioPermissions(
     quotations_access: permissions.quotations_access || 'NONE',
     post_production_access: permissions.post_production_access || 'NONE',
     finance_access: permissions.finance_access || 'NONE',
+    partner_access_code: JSON.stringify(extraMeta),
     updated_at: new Date().toISOString(),
   };
 
+  // Try saving with direct columns first
+  try {
+    const fullPayload = {
+      ...basePayload,
+      clients_access: permissions.clients_access || 'NONE',
+      client_modules_access: clientModules,
+    };
+
+    const { data, error } = await supabase
+      .from('studio_member_permissions')
+      .upsert(fullPayload, { onConflict: 'owner_id,member_id' })
+      .select()
+      .single();
+
+    if (!error && data) {
+      return { success: true, data };
+    }
+  } catch (_) {}
+
+  // Fallback to basePayload with partner_access_code encoding
   try {
     const { data, error } = await supabase
       .from('studio_member_permissions')
-      .upsert(payload, { onConflict: 'owner_id,member_id' })
+      .upsert(basePayload, { onConflict: 'owner_id,member_id' })
       .select()
       .single();
 
@@ -216,5 +283,27 @@ export function resolveEventCrewVisibility(
 
   // Default to OWN_ROLE_ONLY for ASSIGNED_OWN_ROLE or restricted partner
   return 'OWN_ROLE_ONLY';
+}
+
+// ── CLIENT DIRECTORY RBAC HELPERS ──
+
+export function canAccessClients(access?: string, isOwner?: boolean): boolean {
+  if (isOwner) return true;
+  return Boolean(access && access !== 'NONE');
+}
+
+export function isClientsReadOnly(access?: string, isOwner?: boolean): boolean {
+  if (isOwner) return false;
+  return access === 'ASSIGNED_VIEW' || access === 'ALL_VIEW';
+}
+
+export function isAssignedClientsOnly(access?: string, isOwner?: boolean): boolean {
+  if (isOwner) return false;
+  return access === 'ASSIGNED_VIEW' || access === 'ASSIGNED_EDIT';
+}
+
+export function canManageAllClients(access?: string, isOwner?: boolean): boolean {
+  if (isOwner) return true;
+  return access === 'ALL_MANAGE';
 }
 

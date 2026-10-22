@@ -74,6 +74,7 @@ export default function TeamTableRow({
   const teamAccess = member.team_access || member.permissions?.team_manager_access || member.permissions?.team_access;
   const quotationsAccess = member.quotations_access || member.permissions?.quotations_access;
   const postProductionAccess = member.post_production_access || member.permissions?.post_production_access;
+  const clientsAccess = member.clients_access || member.permissions?.clients_access;
   const financeAccess = member.finance_access || member.permissions?.finance_access;
   const isAdmin = member.is_admin === true || member.role === 'admin' || member.role === 'owner' || member.primary_type === 'ADMIN' || member.permissions?.is_admin === true;
 
@@ -89,6 +90,7 @@ export default function TeamTableRow({
     isGranted(teamAccess) || 
     isGranted(quotationsAccess) || 
     isGranted(postProductionAccess) || 
+    isGranted(clientsAccess) ||
     isGranted(financeAccess)
   );
 
@@ -213,14 +215,14 @@ export default function TeamTableRow({
           </div>
         )}
 
-        {/* Finance Access */}
-        {isGranted(financeAccess) && (
+        {/* Clients Directory Access */}
+        {isGranted(clientsAccess) && (
           <div 
-            title={`Finance: ${financeAccess}`}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200/70 text-[10px] font-bold"
+            title={`Clients Directory: ${clientsAccess}`}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200/70 text-[10px] font-bold"
           >
-            <DollarSign className="w-3 h-3 text-emerald-600"/>
-            <span className="hidden lg:inline">Finance</span>
+            <Users2 className="w-3 h-3 text-purple-600"/>
+            <span className="hidden lg:inline">Clients</span>
           </div>
         )}
 

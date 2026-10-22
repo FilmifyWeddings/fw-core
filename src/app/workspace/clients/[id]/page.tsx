@@ -11,7 +11,7 @@ import {
   Camera, Layers, Lock, ShieldCheck, Sparkles, MapPin, Users, Users as UsersIcon,
   FileText, Download, Printer, RefreshCw, Key, MessageCircle, Link2,
   ArrowLeft, CheckSquare, Play, ChevronRight, ChevronLeft, Hash, Crown, Eye, Pencil, CheckCheck,
-  Heart, Package, Upload
+  Heart, Package, Upload, History
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getMediaUrl } from '@/lib/r2-storage';
@@ -27,6 +27,8 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import PostProductionCard, { PostProductionProjectData } from '@/app/workspace/post-production/components/PostProductionCard';
 import DeliverableCommentDrawer from '@/app/workspace/post-production/components/DeliverableCommentDrawer';
 import { PostProductionDeliverable } from '@/app/workspace/post-production/components/DeliverableCategorySection';
+import ClientHistoryDrawer from '../components/ClientHistoryDrawer';
+import { logClientAudit } from '@/lib/client-audit';
 import { 
   parseClientExtended, serializeClientExtended, type ClientEventItem, type ClientExtendedData, type StudioCommentItem 
 } from '@/components/clients/client-insider-modal';
@@ -79,10 +81,48 @@ export default function ClientWorkspaceDetailPage() {
   const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>([]);
 
   const { workspaceMembers } = useWorkspaceData();
-  const { userName, isOwner, userEmail, workspaceId: currentWsId } = useWorkspace();
+  const { userName, isOwner, userEmail, userId, permissions, activeWorkspace, workspaceId: currentWsId } = useWorkspace();
+
+  // Client Directory RBAC & Sub-Module Visibility
+  const clientsAccess = isOwner ? 'ALL_MANAGE' : (permissions?.clients_access || 'NONE');
+  const isReadOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ALL_VIEW');
+  const rawModules = permissions?.client_modules_access;
+  const allowedModules = useMemo(() => {
+    if (isOwner || clientsAccess === 'ALL_MANAGE' || clientsAccess === 'ALL_VIEW') {
+      return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
+    }
+    if (Array.isArray(rawModules) && rawModules.length > 0) {
+      return rawModules;
+    }
+    return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
+  }, [isOwner, clientsAccess, rawModules]);
+
+  // Client Audit History Drawer State
+  const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'events' | 'post_production' | 'finance' | 'moodboard' | 'tasks'>('overview');
+
+  // Permitted Visible Tabs
+  const visibleTabs = useMemo(() => {
+    const allTabs = [
+      { id: 'overview', label: 'Overview & Profile', icon: User },
+      { id: 'quotations', label: 'Quotations & Versions', icon: FileText },
+      { id: 'events', label: 'Events & Bookings', icon: Calendar },
+      { id: 'moodboard', label: 'Mood Board ✨', icon: Sparkles },
+      { id: 'tasks', label: 'Tasks & Workflow', icon: CheckSquare },
+      { id: 'post_production', label: 'Post-Production', icon: Film },
+      { id: 'finance', label: 'Finance & Invoices', icon: DollarSign },
+    ];
+    return allTabs.filter(tab => allowedModules.includes(tab.id));
+  }, [allowedModules]);
+
+  // Ensure activeTab is always within permitted tabs
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id as any);
+    }
+  }, [visibleTabs, activeTab]);
 
   // ── Tab: Tasks & Post-Production State ──
   const [clientTasks, setClientTasks] = useState<any[]>([]);
@@ -650,6 +690,19 @@ export default function ClientWorkspaceDetailPage() {
           console.error('[handleQuickAssignPM] direct DB update error:', dbErr);
         }
       }
+
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail,
+        module: 'overview',
+        actionType: 'ASSIGN',
+        title: pmN ? `Project Manager assigned: ${pmN}` : 'Project Manager removed',
+        description: pmN ? `Assigned Project Manager ${pmN} (${pmE || 'no email'}) to manage client deliverables and shoot events.` : 'Unassigned Project Manager from client.',
+        oldValue: projectManagerName || 'None',
+        newValue: pmN || 'None'
+      });
     }
   };
 
@@ -2691,7 +2744,9 @@ export default function ClientWorkspaceDetailPage() {
                   status={status}
                   clientId={client?.id}
                   size="md"
+                  disabled={isReadOnly}
                   onStatusChange={async (newStatus) => {
+                    const prevStatus = status;
                     setStatus(newStatus);
                     if (client) {
                       setClient(prev => prev ? { ...prev, status: newStatus } : null);
@@ -2703,6 +2758,18 @@ export default function ClientWorkspaceDetailPage() {
                         if (typeof window !== 'undefined') {
                           window.dispatchEvent(new CustomEvent('workspace_client_updated', { detail: { clientId: client.id, status: newStatus } }));
                         }
+                        logClientAudit({
+                          clientId: client.id,
+                          workspaceId: currentWsId,
+                          actorName: userName || userEmail || 'Studio Member',
+                          actorEmail: userEmail,
+                          module: 'overview',
+                          actionType: 'STATUS_CHANGE',
+                          title: `Client status changed to ${newStatus.toUpperCase()}`,
+                          description: `Updated client lifecycle status from ${prevStatus} to ${newStatus}.`,
+                          oldValue: prevStatus,
+                          newValue: newStatus,
+                        });
                       } catch (err) {
                         console.error('Error updating status:', err);
                       }
@@ -2740,35 +2807,38 @@ export default function ClientWorkspaceDetailPage() {
               <Searchable3DCreamSelect
                 options={pmOptions}
                 value={resolvedPmValue}
-                onChange={(val) => handleQuickAssignPM(val)}
-                placeholder="Assign Project Manager..."
+                onChange={(val) => !isReadOnly && handleQuickAssignPM(val)}
+                placeholder={isReadOnly ? (resolvedPmValue || 'No PM Assigned') : 'Assign Project Manager...'}
                 searchPlaceholder="Search in-house team..."
+                disabled={isReadOnly}
               />
             </div>
 
-            <div className="flex flex-col justify-end">
+            <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={() => setShowHistoryDrawer(true)}
+                className="px-4 py-3 text-xs font-black text-slate-700 bg-white hover:bg-slate-50 border border-[#EAE5DA] rounded-2xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer h-[42px] whitespace-nowrap"
+              >
+                <History className="w-4 h-4 text-amber-600" />
+                <span>Audit History</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setShowShareModal(true)}
                 className="px-5 py-3 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-2xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer h-[42px] whitespace-nowrap"
               >
                 <Share2 className="w-4 h-4" />
-                Share Client Portal & PIN
+                <span>Share PIN</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* ── CLIENT WORKSPACE TABS NAVIGATION ── */}
+        {/* ── CLIENT WORKSPACE TABS NAVIGATION (FILTERED BY RBAC CLIENT_MODULES) ── */}
         <div className="flex border-b border-[#EAE5DA] bg-[#FAF8F2] p-1.5 rounded-2xl gap-1 overflow-x-auto shadow-2xs">
-          {[
-            { id: 'overview', label: 'Overview & Profile', icon: User },
-            { id: 'quotations', label: 'Quotations & Versions', icon: FileText },
-            { id: 'events', label: 'Events & Bookings', icon: Calendar },
-            { id: 'moodboard', label: 'Mood Board ✨', icon: Sparkles },
-            { id: 'tasks', label: 'Tasks & Workflow', icon: CheckSquare },
-            { id: 'post_production', label: 'Post-Production', icon: Film },
-            { id: 'finance', label: 'Finance & Invoices', icon: DollarSign },
-          ].map(tab => {
+          {visibleTabs.map(tab => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
             return (
@@ -2811,9 +2881,10 @@ export default function ClientWorkspaceDetailPage() {
                     <label className="font-bold text-slate-700 block mb-1">Client / Couple Name</label>
                     <input
                       type="text"
+                      disabled={isReadOnly}
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 disabled:bg-slate-50 disabled:text-slate-600"
                     />
                   </div>
 
@@ -2822,9 +2893,10 @@ export default function ClientWorkspaceDetailPage() {
                       <label className="font-bold text-slate-700 block mb-1">Contact Phone</label>
                       <input
                         type="text"
+                        disabled={isReadOnly}
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                        className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 disabled:bg-slate-50 disabled:text-slate-600"
                       />
                     </div>
 
@@ -2832,10 +2904,11 @@ export default function ClientWorkspaceDetailPage() {
                       <label className="font-bold text-slate-700 block mb-1">Email ID</label>
                       <input
                         type="email"
+                        disabled={isReadOnly}
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="client@gmail.com"
-                        className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-semibold text-slate-900 focus:outline-none"
+                        className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-semibold text-slate-900 focus:outline-none disabled:bg-slate-50 disabled:text-slate-600"
                       />
                     </div>
                   </div>
@@ -2846,9 +2919,10 @@ export default function ClientWorkspaceDetailPage() {
                       <Searchable3DCreamSelect
                         options={eventTypeOptions}
                         value={eventType}
-                        onChange={(val) => setEventType(val)}
+                        onChange={(val) => !isReadOnly && setEventType(val)}
                         placeholder="Select Event Type..."
                         searchPlaceholder="Search event type..."
+                        disabled={isReadOnly}
                       />
                     </div>
 
@@ -2856,9 +2930,10 @@ export default function ClientWorkspaceDetailPage() {
                       <label className="font-bold text-slate-700 block mb-1">Main Event Date</label>
                       <input
                         type="date"
+                        disabled={isReadOnly}
                         value={eventDate}
                         onChange={(e) => setEventDate(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none"
+                        className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none disabled:bg-slate-50 disabled:text-slate-600"
                       />
                     </div>
                   </div>
@@ -2898,10 +2973,11 @@ export default function ClientWorkspaceDetailPage() {
                       <div className="flex gap-2">
                         <input
                           type="url"
+                          disabled={isReadOnly}
                           placeholder="https://chat.whatsapp.com/..."
                           value={extended.whatsapp_group_link}
                           onChange={(e) => setExtended(prev => ({ ...prev, whatsapp_group_link: e.target.value }))}
-                          className="flex-1 px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono text-xs text-slate-900 focus:outline-none"
+                          className="flex-1 px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono text-xs text-slate-900 focus:outline-none disabled:bg-slate-50 disabled:text-slate-600"
                         />
                         {extended.whatsapp_group_link && (
                           <a
@@ -2921,10 +2997,11 @@ export default function ClientWorkspaceDetailPage() {
                         <label className="font-bold text-slate-700 block mb-1">WhatsApp Group ID (JID)</label>
                         <input
                           type="text"
+                          disabled={isReadOnly}
                           placeholder="1203630...@g.us"
                           value={extended.whatsapp_group_id}
                           onChange={(e) => setExtended(prev => ({ ...prev, whatsapp_group_id: e.target.value }))}
-                          className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono text-xs text-slate-900"
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono text-xs text-slate-900 disabled:bg-slate-50 disabled:text-slate-600"
                         />
                       </div>
 
@@ -2932,10 +3009,11 @@ export default function ClientWorkspaceDetailPage() {
                         <label className="font-bold text-slate-700 block mb-1">4-Digit Security PIN</label>
                         <input
                           type="text"
+                          disabled={isReadOnly}
                           maxLength={6}
                           value={extended.portal_pin}
                           onChange={(e) => setExtended(prev => ({ ...prev, portal_pin: e.target.value }))}
-                          className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono font-black text-amber-900 text-sm"
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono font-black text-amber-900 text-sm disabled:bg-slate-50 disabled:text-slate-600"
                         />
                       </div>
                     </div>
@@ -2956,16 +3034,18 @@ export default function ClientWorkspaceDetailPage() {
                   </div>
                 </div>
 
-                <div className="pt-3 flex justify-end">
-                  <button
-                    onClick={handleSaveClientDetails}
-                    disabled={isSaving}
-                    className="px-6 py-2.5 bg-amber-400 hover:bg-amber-500 font-black text-xs text-slate-900 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
-                  >
-                    {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    Save Client Details
-                  </button>
-                </div>
+                {!isReadOnly && (
+                  <div className="pt-3 flex justify-end">
+                    <button
+                      onClick={handleSaveClientDetails}
+                      disabled={isSaving}
+                      className="px-6 py-2.5 bg-amber-400 hover:bg-amber-500 font-black text-xs text-slate-900 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+                    >
+                      {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      Save Client Details
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2987,51 +3067,55 @@ export default function ClientWorkspaceDetailPage() {
                 </div>
 
                 {/* Voice AI Note Button */}
-                <AiMicButton
-                  size="sm"
-                  buttonText="AI Voice"
-                  onInsertComment={(transcribedText) => {
-                    if (transcribedText) {
-                      handleAddStudioComment(transcribedText, true);
-                    }
-                  }}
-                />
+                {!isReadOnly && (
+                  <AiMicButton
+                    size="sm"
+                    buttonText="AI Voice"
+                    onInsertComment={(transcribedText) => {
+                      if (transcribedText) {
+                        handleAddStudioComment(transcribedText, true);
+                      }
+                    }}
+                  />
+                )}
               </div>
 
               {/* Add New Comment Box */}
-              <div className="p-4 bg-[#FAF8F2] rounded-2xl border border-[#EAE5DA] space-y-3 shadow-2xs">
-                <textarea
-                  rows={2}
-                  value={newCommentText}
-                  onChange={(e) => setNewCommentText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddStudioComment();
-                    }
-                  }}
-                  placeholder="Add internal studio note, special instruction, or client update... (Press Ctrl+Enter to submit)"
-                  className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 resize-none"
-                />
+              {!isReadOnly && (
+                <div className="p-4 bg-[#FAF8F2] rounded-2xl border border-[#EAE5DA] space-y-3 shadow-2xs">
+                  <textarea
+                    rows={2}
+                    value={newCommentText}
+                    onChange={(e) => setNewCommentText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddStudioComment();
+                      }
+                    }}
+                    placeholder="Add internal studio note, special instruction, or client update... (Press Ctrl+Enter to submit)"
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 resize-none"
+                  />
 
-                <div className="flex items-center justify-between pt-1">
-                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5 font-medium">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span>Posting as: <strong className="text-slate-800 font-bold">{projectManagerName || 'Studio Team'}</strong></span>
-                    <span className="text-slate-400 text-[10px] hidden sm:inline">(Ctrl + Enter to send)</span>
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      <span>Posting as: <strong className="text-slate-800 font-bold">{projectManagerName || 'Studio Team'}</strong></span>
+                      <span className="text-slate-400 text-[10px] hidden sm:inline">(Ctrl + Enter to send)</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAddStudioComment()}
+                      disabled={isAddingComment || !newCommentText.trim()}
+                      className="px-4 py-2 bg-amber-400 hover:bg-amber-500 disabled:opacity-50 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {isAddingComment ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                      <span>Post Note</span>
+                    </button>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleAddStudioComment()}
-                    disabled={isAddingComment || !newCommentText.trim()}
-                    className="px-4 py-2 bg-amber-400 hover:bg-amber-500 disabled:opacity-50 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    {isAddingComment ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    <span>Post Note</span>
-                  </button>
                 </div>
-              </div>
+              )}
 
               {/* Timeline Stream of Comments */}
               <div className="space-y-3 pt-1">
@@ -3093,14 +3177,16 @@ export default function ClientWorkspaceDetailPage() {
                             >
                               <Copy className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteStudioComment(comment.id)}
-                              className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                              title="Delete Note"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {!isReadOnly && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteStudioComment(comment.id)}
+                                className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                                title="Delete Note"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -3216,18 +3302,20 @@ export default function ClientWorkspaceDetailPage() {
                       {/* Actions */}
                       <div className="flex items-center gap-2.5 ml-auto flex-wrap">
                         {!isFinal ? (
-                          <button
-                            onClick={() => handleSetFinalQuotation(doc)}
-                            disabled={settingFinalId === doc.template_id}
-                            className="px-3.5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
-                          >
-                            {settingFinalId === doc.template_id ? (
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Crown className="w-3.5 h-3.5 text-amber-200" />
-                            )}
-                            Finalize Quotation
-                          </button>
+                          !isReadOnly && (
+                            <button
+                              onClick={() => handleSetFinalQuotation(doc)}
+                              disabled={settingFinalId === doc.template_id}
+                              className="px-3.5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
+                            >
+                              {settingFinalId === doc.template_id ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Crown className="w-3.5 h-3.5 text-amber-200" />
+                              )}
+                              Finalize Quotation
+                            </button>
+                          )
                         ) : (
                           <span className="px-3 py-1.5 text-xs font-black text-emerald-800 bg-emerald-100 border border-emerald-300 rounded-xl flex items-center gap-1.5">
                             <CheckCheck className="w-4 h-4 text-emerald-600" /> Approved Final
@@ -3248,13 +3336,15 @@ export default function ClientWorkspaceDetailPage() {
                         </button>
 
                         {/* Edit in Builder */}
-                        <Link
-                          href={`/workspace/quotations/builder/templet/${doc.template_id}`}
-                          className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-900 transition text-xs font-black flex items-center gap-1.5 shadow-2xs"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                          Edit Builder
-                        </Link>
+                        {!isReadOnly && (
+                          <Link
+                            href={`/workspace/quotations/builder/templet/${doc.template_id}`}
+                            className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-900 transition text-xs font-black flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            Edit Builder
+                          </Link>
+                        )}
                       </div>
                     </div>
                   );
@@ -3284,15 +3374,17 @@ export default function ClientWorkspaceDetailPage() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowAddEventModal(true)}
-                  className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  + Add Ceremony / Event
-                </button>
-              </div>
+              {!isReadOnly && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowAddEventModal(true)}
+                    className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    + Add Ceremony / Event
+                  </button>
+                </div>
+              )}
             </div>
 
             {displayedEvents.length === 0 ? (
@@ -3369,7 +3461,7 @@ export default function ClientWorkspaceDetailPage() {
                             </div>
                           </div>
 
-                          {ev.source === 'manual' && (
+                          {!isReadOnly && ev.source === 'manual' && (
                             <button
                               type="button"
                               onClick={() => handleDeleteEvent(ev.id)}
@@ -3478,30 +3570,32 @@ export default function ClientWorkspaceDetailPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={handleGeneratePipeline}
-                    disabled={isSyncingPipeline}
-                    className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {isSyncingPipeline ? (
-                      <RefreshCw className="w-4 h-4 animate-spin text-slate-900" />
-                    ) : (
-                      <Sparkles className="w-4 h-4 text-slate-900" />
-                    )}
-                    <span>⚡ Auto-Generate Post-Production Pipeline</span>
-                  </button>
+                {!isReadOnly && (
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleGeneratePipeline}
+                      disabled={isSyncingPipeline}
+                      className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {isSyncingPipeline ? (
+                        <RefreshCw className="w-4 h-4 animate-spin text-slate-900" />
+                      ) : (
+                        <Sparkles className="w-4 h-4 text-slate-900" />
+                      )}
+                      <span>⚡ Auto-Generate Post-Production Pipeline</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowClientTaskModal(true)}
-                    className="px-4 py-2 text-xs font-black text-slate-900 bg-white hover:bg-amber-50 border border-[#EAE5DA] rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4 text-amber-600" />
-                    <span>+ New Task / Note</span>
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowClientTaskModal(true)}
+                      className="px-4 py-2 text-xs font-black text-slate-900 bg-white hover:bg-amber-50 border border-[#EAE5DA] rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4 text-amber-600" />
+                      <span>+ New Task / Note</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Summary Metrics Bar */}
@@ -3577,25 +3671,27 @@ export default function ClientWorkspaceDetailPage() {
                       Auto-generate the standard 7-stage wedding post-production pipeline or add custom tasks for this client.
                     </p>
                   </div>
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleGeneratePipeline}
-                      disabled={isSyncingPipeline}
-                      className="w-full sm:w-auto px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      <span>⚡ Auto-Generate Pipeline</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowClientTaskModal(true)}
-                      className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-slate-50 border border-[#EAE5DA] text-slate-700 font-bold text-xs rounded-xl shadow-2xs transition flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>+ Custom Task</span>
-                    </button>
-                  </div>
+                  {!isReadOnly && (
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleGeneratePipeline}
+                        disabled={isSyncingPipeline}
+                        className="w-full sm:w-auto px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>⚡ Auto-Generate Pipeline</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowClientTaskModal(true)}
+                        className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-slate-50 border border-[#EAE5DA] text-slate-700 font-bold text-xs rounded-xl shadow-2xs transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>+ Custom Task</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -3648,14 +3744,16 @@ export default function ClientWorkspaceDetailPage() {
                                 </span>
                               )}
 
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteClientTask(task.id)}
-                                className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
-                                title="Delete Task"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {!isReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteClientTask(task.id)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                  title="Delete Task"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -3663,8 +3761,11 @@ export default function ClientWorkspaceDetailPage() {
                           <div className="flex items-start gap-3">
                             <button
                               type="button"
-                              onClick={() => handleToggleClientTask(task.id, task.status)}
-                              className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition cursor-pointer ${
+                              disabled={isReadOnly}
+                              onClick={() => !isReadOnly && handleToggleClientTask(task.id, task.status)}
+                              className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition ${
+                                isReadOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                              } ${
                                 isDone
                                   ? 'bg-emerald-500 border-emerald-500 text-white'
                                   : 'border-slate-300 hover:border-amber-500 bg-white'
@@ -3705,13 +3806,14 @@ export default function ClientWorkspaceDetailPage() {
                                 {checklist.map((ci: any) => (
                                   <label
                                     key={ci.id}
-                                    className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none group"
+                                    className={`flex items-center gap-2 text-xs text-slate-700 select-none group ${isReadOnly ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                   >
                                     <input
                                       type="checkbox"
+                                      disabled={isReadOnly}
                                       checked={!!ci.is_completed}
-                                      onChange={(e) => handleToggleClientChecklistItem(task.id, ci.id, e.target.checked)}
-                                      className="rounded text-amber-500 focus:ring-amber-400 w-3.5 h-3.5 border-slate-300 cursor-pointer"
+                                      onChange={(e) => !isReadOnly && handleToggleClientChecklistItem(task.id, ci.id, e.target.checked)}
+                                      className={`rounded text-amber-500 focus:ring-amber-400 w-3.5 h-3.5 border-slate-300 ${isReadOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                                     />
                                     <span className={`text-[11px] group-hover:text-slate-900 ${
                                       ci.is_completed ? 'line-through text-slate-400' : ''
@@ -3789,6 +3891,10 @@ export default function ClientWorkspaceDetailPage() {
                   quotations={quotationDocs}
                   eventTypes={eventTypes.map(t => ({ name: t }))}
                   isExpanded={true}
+                  isReadOnly={isReadOnly}
+                  isAssignedView={clientsAccess === 'ASSIGNED_VIEW'}
+                  isAllView={clientsAccess === 'ALL_VIEW'}
+                  canManage={!isReadOnly}
                   onToggleExpand={() => {}}
                   onUpdateProject={handleUpdatePostProdProject}
                   onOpenComments={(itemId, title) => {
@@ -3872,6 +3978,7 @@ export default function ClientWorkspaceDetailPage() {
               <ClientFinanceCard
                 record={effectiveFinanceRecord}
                 isExpanded={isFinanceExpanded}
+                isReadOnly={isReadOnly}
                 onToggle={() => setIsFinanceExpanded(prev => !prev)}
                 todayStr={new Date().toISOString().split('T')[0]}
                 teamMembersList={inHouseTeamMembers.map(m => m.name)}
@@ -3927,13 +4034,15 @@ export default function ClientWorkspaceDetailPage() {
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
                   Create an event moodboard (Pre-Wedding, Wedding, Reception, etc.) to collaborate with the couple on outfits, locations, and pose inspiration.
                 </p>
-                <button
-                  onClick={() => setShowAddMoodboardModal(true)}
-                  className="px-6 py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black text-xs rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer inline-flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>+ Add Event Moodboard</span>
-                </button>
+                {!isReadOnly && (
+                  <button
+                    onClick={() => setShowAddMoodboardModal(true)}
+                    className="px-6 py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black text-xs rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer inline-flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Add Event Moodboard</span>
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-6">
@@ -3973,13 +4082,15 @@ export default function ClientWorkspaceDetailPage() {
                     );
                   })}
 
-                  <button
-                    onClick={() => setShowAddMoodboardModal(true)}
-                    className="px-3.5 py-2.5 rounded-2xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-dashed border-amber-300 text-xs font-black flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-2xs"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Add Event Moodboard</span>
-                  </button>
+                  {!isReadOnly && (
+                    <button
+                      onClick={() => setShowAddMoodboardModal(true)}
+                      className="px-3.5 py-2.5 rounded-2xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-dashed border-amber-300 text-xs font-black flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Add Event Moodboard</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* ── CURRENT MOODBOARD HEADER & SHARE LINKS ── */}
@@ -4040,7 +4151,7 @@ export default function ClientWorkspaceDetailPage() {
                       </a>
 
                       {/* Delete Moodboard Button */}
-                      {moodboards.length > 1 && (
+                      {!isReadOnly && moodboards.length > 1 && (
                         <button
                           onClick={() => handleDeleteMoodboard(currentMoodboard.id)}
                           disabled={isDeletingMb}
@@ -4072,9 +4183,9 @@ export default function ClientWorkspaceDetailPage() {
                       <span className="text-xs font-bold text-slate-600">Review Status:</span>
                       <select
                         value={currentMoodboard.status || 'DRAFT'}
-                        disabled={updatingMbStatus}
+                        disabled={isReadOnly || updatingMbStatus}
                         onChange={(e) => handleUpdateMoodboardStatus(e.target.value)}
-                        className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                        className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none cursor-pointer disabled:bg-slate-50 disabled:text-slate-500"
                       >
                         <option value="DRAFT">Draft (Client Can Edit)</option>
                         <option value="IN_REVIEW">In Review (Crew Checking)</option>
@@ -4108,17 +4219,19 @@ export default function ClientWorkspaceDetailPage() {
                             </span>
                           </h3>
 
-                          <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl shadow-2xs transition">
-                            <Upload className="w-3.5 h-3.5 text-amber-600" />
-                            <span>{uploadingMbPhoto === 'couple' ? 'Uploading...' : 'Studio Upload'}</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              disabled={uploadingMbPhoto === 'couple'}
-                              onChange={(e) => handleStudioUploadMbPhoto(e, 'couple')}
-                            />
-                          </label>
+                          {!isReadOnly && (
+                            <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl shadow-2xs transition">
+                              <Upload className="w-3.5 h-3.5 text-amber-600" />
+                              <span>{uploadingMbPhoto === 'couple' ? 'Uploading...' : 'Studio Upload'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={uploadingMbPhoto === 'couple'}
+                                onChange={(e) => handleStudioUploadMbPhoto(e, 'couple')}
+                              />
+                            </label>
+                          )}
                         </div>
 
                         {Array.isArray(currentMoodboard.couple_photos) && currentMoodboard.couple_photos.length > 0 ? (
@@ -4482,17 +4595,19 @@ export default function ClientWorkspaceDetailPage() {
                             </span>
                           </h3>
 
-                          <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl shadow-2xs transition">
-                            <Upload className="w-3.5 h-3.5 text-amber-600" />
-                            <span>{uploadingMbPhoto === 'couple' ? 'Uploading...' : 'Studio Upload'}</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              disabled={uploadingMbPhoto === 'couple'}
-                              onChange={(e) => handleStudioUploadMbPhoto(e, 'couple')}
-                            />
-                          </label>
+                          {!isReadOnly && (
+                            <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl shadow-2xs transition">
+                              <Upload className="w-3.5 h-3.5 text-amber-600" />
+                              <span>{uploadingMbPhoto === 'couple' ? 'Uploading...' : 'Studio Upload'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={uploadingMbPhoto === 'couple'}
+                                onChange={(e) => handleStudioUploadMbPhoto(e, 'couple')}
+                              />
+                            </label>
+                          )}
                         </div>
 
                         {Array.isArray(currentMoodboard.couple_photos) && currentMoodboard.couple_photos.length > 0 ? (
@@ -5733,6 +5848,14 @@ export default function ClientWorkspaceDetailPage() {
           onSave={handleSavePricingEdit}
         />
       )}
+
+      {/* Date-wise Client Audit & Activity History Drawer */}
+      <ClientHistoryDrawer
+        isOpen={showHistoryDrawer}
+        onClose={() => setShowHistoryDrawer(false)}
+        clientId={client?.id || clientIdOrCode}
+        clientName={client?.name || 'Client'}
+      />
 
     </div>
   );

@@ -13,6 +13,8 @@ interface PunchDetailsModalProps {
   onClose: () => void;
   dayData: any | null;
   liveWorkFormatted?: string;
+  onPunchIn?: () => void;
+  onPunchOut?: () => void;
 }
 
 export function formatTime12h(isoStr?: string | null): string {
@@ -38,6 +40,8 @@ export default function PunchDetailsModal({
   onClose,
   dayData,
   liveWorkFormatted,
+  onPunchIn,
+  onPunchOut,
 }: PunchDetailsModalProps) {
   const [zoomPhoto, setZoomPhoto] = useState<string | null>(null);
 
@@ -367,15 +371,45 @@ export default function PunchDetailsModal({
                     </div>
                   </div>
                 ) : (
-                  <div className="p-3 rounded-xl bg-zinc-50 text-center">
+                  <div className="p-3.5 rounded-xl bg-zinc-50 border border-zinc-200/80 text-center space-y-2">
                     {isActiveNow ? (
-                      <p className="text-xs font-bold text-emerald-700">
-                        🟢 Staff member is currently working. Punch out will be recorded at end of shift.
-                      </p>
+                      <div>
+                        <p className="text-xs font-bold text-emerald-700">
+                          🟢 Staff member is currently working. Punch out will be recorded at end of shift.
+                        </p>
+                        {onPunchOut && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onPunchOut();
+                            }}
+                            className="mt-2.5 w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white text-xs font-black transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>Punch Out Now</span>
+                          </button>
+                        )}
+                      </div>
                     ) : (
-                      <p className="text-xs font-medium text-rose-600">
-                        ⚠️ No check-out recorded for this shift (Missed punch-out).
-                      </p>
+                      <div>
+                        <p className="text-xs font-medium text-rose-600">
+                          ⚠️ No check-out recorded for this shift (Missed punch-out).
+                        </p>
+                        {isToday && onPunchIn && !isPunched && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onPunchIn();
+                            }}
+                            className="mt-2.5 w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white text-xs font-black transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            <LogIn className="w-3.5 h-3.5" />
+                            <span>Punch In Now</span>
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}

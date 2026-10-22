@@ -52,6 +52,8 @@ export async function GET(req: NextRequest) {
         team_manager_access: 'ALL_MANAGE',
         post_production_access: 'ALL_MANAGE',
         finance_access: 'MANAGE',
+        clients_access: 'ALL_MANAGE',
+        client_modules_access: ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'],
       },
       avatarUrl: profile?.avatar_url || profile?.logo_url || user.user_metadata?.avatar_url || '',
       ownerEmail: uEmail,
@@ -130,31 +132,34 @@ export async function GET(req: NextRequest) {
         } catch (_) {}
 
         const legacyPerm = mem.member_permissions?.[0] || mem.member_permissions;
+        let clientsAccess = studioPerm?.clients_access || legacyPerm?.clients_access || 'NONE';
+        let clientModulesAccess = studioPerm?.client_modules_access || legacyPerm?.client_modules_access || null;
+        if (studioPerm?.partner_access_code) {
+          try {
+            const parsed = JSON.parse(studioPerm.partner_access_code);
+            if (parsed.clients_access) clientsAccess = parsed.clients_access;
+            if (Array.isArray(parsed.client_modules_access)) clientModulesAccess = parsed.client_modules_access;
+          } catch (_) {}
+        }
+
         const memberPerms = {
           leads_access: studioPerm?.leads_access || legacyPerm?.leads_access || 'NONE',
           quotations_access: studioPerm?.quotations_access || legacyPerm?.quotations_access || 'NONE',
           team_manager_access: studioPerm?.team_manager_access || legacyPerm?.team_manager_access || 'NONE',
           post_production_access: studioPerm?.post_production_access || legacyPerm?.post_production_access || 'NONE',
           finance_access: studioPerm?.finance_access || legacyPerm?.finance_access || 'NONE',
+          clients_access: clientsAccess,
+          client_modules_access: clientModulesAccess,
         };
 
-        const primType = mem.primary_type || (Array.isArray(mem.member_types) && mem.member_types[0]) || 'IN_HOUSE';
-        const isInHouseMem = ['in_house', 'in-house', 'inhouse'].includes(String(primType).toLowerCase()) ||
-          (Array.isArray(mem.member_types) && mem.member_types.some((t: any) => String(t).toLowerCase().includes('house')));
+        const primType = mem.primary_type || (Array.isArray(mem.member_types) && mem.member_types[0]) || 'FREELANCER';
+        const isInHouseMem = Boolean(
+          ['in_house', 'in-house', 'inhouse'].includes(String(primType).toLowerCase()) ||
+          (Array.isArray(mem.member_types) && mem.member_types.some((t: any) => String(t).toLowerCase().includes('house')))
+        );
 
-        let hasAtt = isInHouseMem;
-        if (!hasAtt) {
-          try {
-            const { data: linkRow } = await supabaseAdmin
-              .from('attendance_member_links')
-              .select('id')
-              .eq('member_id', mem.id)
-              .eq('is_active', true)
-              .limit(1)
-              .maybeSingle();
-            if (linkRow) hasAtt = true;
-          } catch (_) {}
-        }
+        // Attendance is strictly visible ONLY for in-house members added by this studio owner
+        const hasAtt = isInHouseMem;
 
         workspaceList.push({
           workspaceId: mem.workspace_id,
@@ -164,7 +169,7 @@ export async function GET(req: NextRequest) {
           isOwner: false,
           memberId: mem.id,
           roles: mem.roles || [mem.primary_role || 'FREELANCER'],
-          member_types: mem.member_types || ['IN_HOUSE'],
+          member_types: mem.member_types || (isInHouseMem ? ['IN_HOUSE'] : ['FREELANCER']),
           primary_type: primType,
           has_attendance: hasAtt,
           permissions: memberPerms,

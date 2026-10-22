@@ -213,7 +213,23 @@ export async function GET(req: NextRequest) {
       link = newLink;
     }
 
-    const reqOrigin = req.nextUrl.origin || process.env.NEXT_PUBLIC_SITE_URL || 'https://studio.filmifyweddings.com';
+    // Resolve true public origin (handling NGINX reverse-proxy headers to eliminate internal localhost:3000)
+    let host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
+    let proto = req.headers.get('x-forwarded-proto') || 'https';
+    if (proto.includes(',')) proto = proto.split(',')[0].trim();
+
+    let reqOrigin = '';
+    if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
+      reqOrigin = `${proto}://${host}`;
+    } else if (process.env.NEXT_PUBLIC_SITE_URL && !process.env.NEXT_PUBLIC_SITE_URL.includes('localhost')) {
+      reqOrigin = process.env.NEXT_PUBLIC_SITE_URL;
+    } else if (req.nextUrl.origin && !req.nextUrl.origin.includes('localhost')) {
+      reqOrigin = req.nextUrl.origin;
+    } else {
+      reqOrigin = 'https://studio.filmifyweddings.com';
+    }
+    reqOrigin = reqOrigin.replace(/\/+$/, '');
+
     const directUrl = `${reqOrigin}/attendance/${link?.secure_token}`;
 
     // 3. Fetch today's record across all candidate alias IDs

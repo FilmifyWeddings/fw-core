@@ -9,9 +9,10 @@ import {
   Film, Edit3, Trash2, CheckCircle2, Clock, AlertCircle, ArrowRight, X, 
   Sparkles, Check, ChevronRight, RefreshCw, FolderPlus, MessageCircle,
   Share2, Key, Tag, Layers, ExternalLink, ChevronDown, CreditCard, ShieldCheck,
-  CheckSquare, Square, Upload
+  CheckSquare, Square, Upload, Lock
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { 
   ClientInsiderModal, parseClientExtended, serializeClientExtended 
 } from '@/components/clients/client-insider-modal';
@@ -47,6 +48,11 @@ let memCachedTeamMembers: WorkspaceMemberOption[] = [];
 
 export default function ClientsPage() {
   const router = useRouter();
+  const { isOwner, permissions, activeWorkspace, userEmail, userId, userName } = useWorkspace();
+  const clientsAccess = isOwner ? 'ALL_MANAGE' : (permissions?.clients_access || 'NONE');
+  const isReadOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ALL_VIEW');
+  const isAssignedOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT');
+
   // Lazy cache initialization for instant loading (SSR-safe to avoid Next.js hydration mismatch)
   const [clients, setClients] = useState<WorkspaceClient[]>(() => memCachedClients);
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>('');
@@ -923,13 +929,18 @@ export default function ClientsPage() {
     ];
   }, [clients]);
 
-  const statusFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => [
-    { value: 'all', label: 'All Statuses' },
-    { value: 'active', label: 'Active', badge: 'Live' },
-    { value: 'completed', label: 'Done', badge: 'Done' },
-    { value: 'archived', label: 'Archived' },
-    { value: 'trash', label: 'Trash 🗑️', badge: 'Trash' },
-  ], []);
+  const statusFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
+    const opts = [
+      { value: 'all', label: 'All Statuses' },
+      { value: 'active', label: 'Active', badge: 'Live' },
+      { value: 'completed', label: 'Done', badge: 'Done' },
+      { value: 'archived', label: 'Archived' },
+    ];
+    if (isOwner || clientsAccess === 'ALL_MANAGE') {
+      opts.push({ value: 'trash', label: 'Trash 🗑️', badge: 'Trash' });
+    }
+    return opts;
+  }, [isOwner, clientsAccess]);
 
   const eventTypeFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     return [
@@ -956,6 +967,39 @@ export default function ClientsPage() {
       );
 
       if (isClientTrashed) return false;
+
+      // Granular RBAC: If ASSIGNED_VIEW or ASSIGNED_EDIT, restrict strictly to assigned projects
+      if (isAssignedOnly) {
+        const myMemberId = String(activeWorkspace?.memberId || '').toLowerCase();
+        const myUserId = String(userId || '').toLowerCase();
+        const myEmail = String(userEmail || '').toLowerCase();
+        const myName = String(userName || '').toLowerCase();
+
+        const cPmId = String(client.project_manager_id || ext.project_manager_id || '').toLowerCase();
+        const cPmEmail = String(client.project_manager_email || ext.project_manager_email || '').toLowerCase();
+        const cPmName = String(client.project_manager_name || ext.project_manager_name || '').toLowerCase();
+
+        const isDirectPm = 
+          (cPmId && (cPmId === myMemberId || cPmId === myUserId)) ||
+          (cPmEmail && myEmail && cPmEmail === myEmail) ||
+          (cPmName && myName && cPmName === myName);
+
+        if (!isDirectPm) {
+          let isAssignedInEvents = false;
+          const clientEvs = (client as any).events || (ext as any).events;
+          if (Array.isArray(clientEvs)) {
+            isAssignedInEvents = clientEvs.some((ev: any) => {
+              const crew = ev.crew || ev.team || [];
+              return Array.isArray(crew) && crew.some((c: any) => {
+                const cId = String(c.member_id || c.id || c.user_id || '').toLowerCase();
+                const cEmail = String(c.email || '').toLowerCase();
+                return (myMemberId && cId === myMemberId) || (myUserId && cId === myUserId) || (myEmail && cEmail === myEmail);
+              });
+            });
+          }
+          if (!isAssignedInEvents) return false;
+        }
+      }
 
       const matchesSearch = 
         !searchQuery ||
@@ -1003,6 +1047,7 @@ export default function ClientsPage() {
 
   // Scoped Trashed Clients count (updates with PM & Search filter)
   const scopedTrashedClientsCount = useMemo(() => {
+    if (isAssignedOnly || isReadOnly) return 0;
     return (clients || []).filter(client => {
       const ext = parseClientExtended(client);
       const pmName = (client.project_manager_name || ext.project_manager_name || '').trim();
@@ -1134,6 +1179,28 @@ export default function ClientsPage() {
   }, 0);
   const pendingBalanceTotal = Math.max(0, totalInvoicesCount - cashRevenueTotal);
 
+  if (!loading && !isOwner && clientsAccess === 'NONE') {
+    return (
+      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center p-6 text-center font-sans">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-[#EAE5DA] shadow-xl space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto">
+            <Lock className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-black text-slate-900">Access Restricted</h2>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            You do not have permission to view the Clients Directory for this workspace. Please contact your studio administrator to grant Client Directory access.
+          </p>
+          <button
+            onClick={() => router.push('/assigned-shoots')}
+            className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+          >
+            Go to Assigned Shoots
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-4 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100 selection:text-amber-900">
       <div className="w-full space-y-6">
@@ -1156,24 +1223,26 @@ export default function ClientsPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsExcelMigrationModalOpen(true)}
-              className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-black flex items-center gap-2 shadow-2xs transition cursor-pointer"
-              title="Import Legacy Excel / CSV Spreadsheet"
-            >
-              <Upload className="w-4 h-4 text-emerald-700" />
-              <span>Import Excel / CSV</span>
-            </button>
+          {!isReadOnly && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsExcelMigrationModalOpen(true)}
+                className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-black flex items-center gap-2 shadow-2xs transition cursor-pointer"
+                title="Import Legacy Excel / CSV Spreadsheet"
+              >
+                <Upload className="w-4 h-4 text-emerald-700" />
+                <span>Import Excel / CSV</span>
+              </button>
 
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="px-4 py-2.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-sm hover:brightness-105 transition active:scale-95 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Add New Client</span>
-            </button>
-          </div>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="px-4 py-2.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-sm hover:brightness-105 transition active:scale-95 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Add New Client</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
@@ -1240,31 +1309,33 @@ export default function ClientsPage() {
             </div>
           </div>
 
-          {/* Trashed Clients */}
-          <div 
-            onClick={() => setStatusFilter(statusFilter === 'trash' ? 'all' : 'trash')}
-            className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex items-center justify-between cursor-pointer transition ${
-              statusFilter === 'trash' 
-                ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-400/20' 
-                : trashedClientsCount > 0 
-                  ? 'bg-rose-50/40 hover:bg-rose-50/80 border-rose-200' 
-                  : 'bg-[#FFFDF9] hover:bg-slate-50/80 border-[#EAE5DA]'
-            }`}
-          >
-            <div className="space-y-1">
-              <span className={`text-[11px] font-bold uppercase tracking-wider ${trashedClientsCount > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                Trash Directory
-              </span>
-              <h3 suppressHydrationWarning className={`text-2xl font-black tracking-tight ${trashedClientsCount > 0 ? 'text-rose-700' : 'text-slate-500'}`}>
-                {trashedClientsCount}
-              </h3>
+          {/* Trashed Clients (Owner/Manage Only) */}
+          {!isReadOnly && !isAssignedOnly && (
+            <div 
+              onClick={() => setStatusFilter(statusFilter === 'trash' ? 'all' : 'trash')}
+              className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex items-center justify-between cursor-pointer transition ${
+                statusFilter === 'trash' 
+                  ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-400/20' 
+                  : trashedClientsCount > 0 
+                    ? 'bg-rose-50/40 hover:bg-rose-50/80 border-rose-200' 
+                    : 'bg-[#FFFDF9] hover:bg-slate-50/80 border-[#EAE5DA]'
+              }`}
+            >
+              <div className="space-y-1">
+                <span className={`text-[11px] font-bold uppercase tracking-wider ${trashedClientsCount > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                  Trash Directory
+                </span>
+                <h3 suppressHydrationWarning className={`text-2xl font-black tracking-tight ${trashedClientsCount > 0 ? 'text-rose-700' : 'text-slate-500'}`}>
+                  {trashedClientsCount}
+                </h3>
+              </div>
+              <div className={`w-11 h-11 rounded-xl border flex items-center justify-center ${
+                trashedClientsCount > 0 ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-slate-100 text-slate-400 border-slate-200'
+              }`}>
+                <Trash2 className="w-5 h-5" />
+              </div>
             </div>
-            <div className={`w-11 h-11 rounded-xl border flex items-center justify-center ${
-              trashedClientsCount > 0 ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-slate-100 text-slate-400 border-slate-200'
-            }`}>
-              <Trash2 className="w-5 h-5" />
-            </div>
-          </div>
+          )}
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
@@ -1323,27 +1394,29 @@ export default function ClientsPage() {
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setStatusFilter('trash')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                statusFilter === 'trash'
-                  ? 'bg-rose-600 text-white shadow-xs'
-                  : trashedClientsCount > 0
-                    ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300'
-                    : 'bg-white hover:bg-slate-100 text-slate-500 border border-[#EAE5DA]'
-              }`}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Trash</span>
-              {trashedClientsCount > 0 && (
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                  statusFilter === 'trash' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-800'
-                }`}>
-                  {trashedClientsCount}
-                </span>
-              )}
-            </button>
+            {!isReadOnly && !isAssignedOnly && (
+              <button
+                type="button"
+                onClick={() => setStatusFilter('trash')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === 'trash'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : trashedClientsCount > 0
+                      ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300'
+                      : 'bg-white hover:bg-slate-100 text-slate-500 border border-[#EAE5DA]'
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Trash</span>
+                {trashedClientsCount > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    statusFilter === 'trash' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-800'
+                  }`}>
+                    {trashedClientsCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </div>
 

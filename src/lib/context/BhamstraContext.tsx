@@ -9,6 +9,8 @@ export interface MemberPermissions {
   team_manager_access: 'NONE' | 'ASSIGNED_OWN_ROLE' | 'ASSIGNED_FULL_CREW' | 'ASSIGNED_ONLY_VIEW' | 'ASSIGNED_FULL_TEAM_VIEW' | 'ALL_VIEW' | 'ALL_MANAGE' | 'VIEW_ASSIGNED' | 'MANAGE_ALL';
   post_production_access: 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ASSIGNED_ONLY' | 'ALL_VIEW' | 'ALL_MANAGE' | 'FULL_ACCESS';
   finance_access: 'NONE' | 'VIEW' | 'VIEW_ONLY' | 'MANAGE';
+  clients_access?: 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ALL_VIEW' | 'ALL_MANAGE' | string;
+  client_modules_access?: string[];
 }
 
 export interface WorkspaceOption {
@@ -64,6 +66,8 @@ export const DEFAULT_OWNER_PERMISSIONS: MemberPermissions = {
   team_manager_access: 'ALL_MANAGE',
   post_production_access: 'ALL_MANAGE',
   finance_access: 'MANAGE',
+  clients_access: 'ALL_MANAGE',
+  client_modules_access: ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'],
 };
 
 export const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
@@ -72,6 +76,8 @@ export const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
   team_manager_access: 'NONE',
   post_production_access: 'NONE',
   finance_access: 'NONE',
+  clients_access: 'NONE',
+  client_modules_access: ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'],
 };
 
 export const ALL_STUDIOS_WORKSPACE: WorkspaceOption = {
@@ -86,6 +92,8 @@ export const ALL_STUDIOS_WORKSPACE: WorkspaceOption = {
     team_manager_access: 'ASSIGNED_OWN_ROLE',
     post_production_access: 'ASSIGNED_VIEW',
     finance_access: 'NONE',
+    clients_access: 'ASSIGNED_VIEW',
+    client_modules_access: ['overview', 'events', 'tasks', 'post_production'],
   },
 };
 

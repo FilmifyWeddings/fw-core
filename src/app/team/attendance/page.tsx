@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { SidebarLayout } from '@/components/sidebar-layout';
 import { supabase } from '@/lib/supabase';
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { formatMinutesToHumanReadable, analyzeAttendanceRecordTiming } from '@/lib/attendance/time-calculations';
 import PunchDetailsModal, { formatTime12h } from '@/components/attendance/PunchDetailsModal';
+import SelfiePunchModal from '@/app/workspace/attendance/components/SelfiePunchModal';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 
 export default function TeamAttendancePage() {
@@ -38,6 +39,8 @@ export default function TeamAttendancePage() {
   // Modals & Popups
   const [selectedDayRecord, setSelectedDayRecord] = useState<any | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showPunchModal, setShowPunchModal] = useState(false);
+  const [punchActionType, setPunchActionType] = useState<'check_in' | 'check_out'>('check_in');
 
   // Live Timer
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -317,13 +320,38 @@ export default function TeamAttendancePage() {
     };
   }, [monthlyHistory, selectedMonth, member, shifts, currentTime, companyHolidays, recentLeaves]);
 
-  const handleCopyLink = () => {
-    if (!directUrl && secureToken) {
-      const url = `${window.location.origin}/attendance/${secureToken}`;
-      navigator.clipboard.writeText(url);
-    } else if (directUrl) {
-      navigator.clipboard.writeText(directUrl);
+  const reloadSession = useCallback(async (tokenToUse?: string) => {
+    const token = tokenToUse || secureToken;
+    if (!token) return;
+    try {
+      const sessionRes = await fetch(`/api/public/attendance/session?token=${encodeURIComponent(token)}`);
+      const sessionData = await sessionRes.json();
+      if (sessionRes.ok) {
+        setTodayRecord(sessionData.todayRecord || null);
+        setShifts(sessionData.shifts || []);
+        setLocations(sessionData.locations || []);
+        setMonthlyHistory(sessionData.monthlyHistory || []);
+        setCompanyHolidays(sessionData.companyHolidays || []);
+        setRecentLeaves(sessionData.recentLeaves || []);
+      }
+    } catch (e) {
+      console.warn('Session refresh error:', e);
     }
+  }, [secureToken]);
+
+  // Derive guaranteed non-localhost direct URL
+  const effectiveDirectUrl = useMemo(() => {
+    if (typeof window !== 'undefined' && secureToken) {
+      return `${window.location.origin}/attendance/${secureToken}`;
+    }
+    if (directUrl && typeof window !== 'undefined' && directUrl.includes('localhost') && !window.location.origin.includes('localhost')) {
+      return directUrl.replace(/https?:\/\/[^\/]+/, window.location.origin);
+    }
+    return directUrl || (secureToken ? `/attendance/${secureToken}` : '#');
+  }, [directUrl, secureToken]);
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(effectiveDirectUrl);
     setLinkCopied(true);
     setTimeout(() => setLinkCopied(false), 2500);
   };
@@ -352,39 +380,6 @@ export default function TeamAttendancePage() {
               Manage your daily shift check-ins, view live hours, overtime, and monthly attendance records.
             </p>
           </div>
-
-          {/* Quick Direct Link Action */}
-          {secureToken && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="px-3.5 py-2 rounded-xl bg-white border border-[#EBE7DF] hover:border-amber-400 text-zinc-800 text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
-              >
-                {linkCopied ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-600" />
-                    <span className="text-emerald-700">Link Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4 text-amber-700" />
-                    <span>Copy 1-Click Link</span>
-                  </>
-                )}
-              </button>
-
-              <a
-                href={directUrl || `/attendance/${secureToken}`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-              >
-                <span>Open Direct View</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </div>
-          )}
         </div>
 
         {/* 1-Click Add-to-Home-Screen Shortcut Card */}
@@ -495,20 +490,44 @@ export default function TeamAttendancePage() {
             </div>
             <div>
               <h4 className="text-base font-black text-white">
-                {isTodayClockedIn ? 'Punch Out & End Shift' : 'Punch In with Selfie'}
+                {isTodayClockedIn ? 'Punch Out & End Shift' : isTodayCompleted ? 'Shift Completed' : 'Punch In with Selfie'}
               </h4>
               <p className="text-xs text-zinc-400 mt-0.5">
-                {isTodayClockedIn ? 'Ready to clock out? Open punch portal.' : 'Open personal selfie camera & geo-punch portal.'}
+                {isTodayClockedIn 
+                  ? 'Ready to clock out? Punch out directly with selfie & GPS.' 
+                  : isTodayCompleted 
+                  ? 'Your attendance has been recorded for today.' 
+                  : 'Start your workday with instant selfie verification & GPS.'}
               </p>
             </div>
 
-            <div className="mt-4 pt-2">
+            <div className="mt-4 pt-2 space-y-2">
+              {!isTodayCompleted && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPunchActionType(isTodayClockedIn ? 'check_out' : 'check_in');
+                    setShowPunchModal(true);
+                  }}
+                  className={`w-full py-2.5 rounded-xl text-white text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer ${
+                    isTodayClockedIn 
+                      ? 'bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800' 
+                      : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800'
+                  }`}
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>{isTodayClockedIn ? 'Punch Out Directly' : 'Punch In Directly'}</span>
+                </button>
+              )}
+
               <a
-                href={directUrl || `/attendance/${secureToken}`}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"
+                href={effectiveDirectUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/90 text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <span>{isTodayClockedIn ? 'Open Punch Out Portal' : 'Open Punch In Portal'}</span>
-                <ChevronRight className="w-4 h-4" />
+                <span>Open Punch Portal Link</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-70" />
               </a>
             </div>
           </div>
@@ -777,7 +796,29 @@ export default function TeamAttendancePage() {
           }}
           dayData={selectedDayRecord}
           liveWorkFormatted={liveClockedInTimer || undefined}
+          onPunchIn={() => {
+            setPunchActionType('check_in');
+            setShowPunchModal(true);
+          }}
+          onPunchOut={() => {
+            setPunchActionType('check_out');
+            setShowPunchModal(true);
+          }}
         />
+
+        {/* Live In-Page Selfie Punch Modal */}
+        {showPunchModal && member && (
+          <SelfiePunchModal
+            isOpen={showPunchModal}
+            onClose={() => setShowPunchModal(false)}
+            member={member}
+            actionType={punchActionType}
+            onSuccess={() => {
+              setShowPunchModal(false);
+              reloadSession();
+            }}
+          />
+        )}
 
       </div>
     </SidebarLayout>

@@ -531,6 +531,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     },
   ] : [
     // PARTNER / FREELANCER WORKSPACE RESTRICTED NAVIGATION
+    // Clients Directory (Controlled by clients_access RBAC)
+    ...(permissions?.clients_access && permissions.clients_access !== 'NONE' ? [{
+      id: 'clients',
+      name: (permissions.clients_access === 'ALL_VIEW' || permissions.clients_access === 'ALL_MANAGE') ? 'Clients Directory' : 'Assigned Clients',
+      path: '/workspace/clients',
+      icon: Users,
+      iconBg: 'bg-[#F3E8FF] text-[#7E22CE]',
+    }] : []),
     // 1. Leads
     ...(permissions?.leads_access && permissions.leads_access !== 'NONE' ? [{
       id: 'leads',
@@ -593,12 +601,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: IndianRupee,
       iconBg: 'bg-[#FEF9C3] text-[#A16207]',
     }] : []),
-    // 6. Smart Attendance (Only if In-House staff or explicitly granted attendance access)
+    // 6. Smart Attendance (STRICTLY only for In-House staff under this studio owner; hidden for freelancers)
     ...(((activeWorkspace?.primary_type && ['in_house', 'in-house', 'inhouse'].includes(activeWorkspace.primary_type.toLowerCase())) ||
-        (Array.isArray(activeWorkspace?.member_types) && activeWorkspace.member_types.some(t => String(t).toLowerCase().includes('house'))) ||
-        (activeWorkspace as any)?.has_attendance === true ||
-        (permissions as any)?.attendance_access === 'VIEW' ||
-        (permissions as any)?.attendance_access === 'MANAGE') ? [{
+        (Array.isArray(activeWorkspace?.member_types) && activeWorkspace.member_types.some(t => String(t).toLowerCase().includes('house')))) ? [{
       id: 'team-attendance',
       name: 'Smart Attendance',
       path: '/team/attendance',

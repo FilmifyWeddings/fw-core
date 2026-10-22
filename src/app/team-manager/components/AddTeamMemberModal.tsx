@@ -15,7 +15,7 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import { saveWorkspaceMemberRate } from '@/lib/team-finance-sync';
 import { fetchWorkspaceCrewRoles, saveWorkspaceCrewRole } from '@/lib/workspace-settings';
-import { getMemberStudioPermissions, saveMemberStudioPermissions } from '@/lib/permissions/rbacRules';
+import { getMemberStudioPermissions, saveMemberStudioPermissions, CLIENT_SUB_MODULES, ALL_CLIENT_MODULE_KEYS } from '@/lib/permissions/rbacRules';
 
 interface AddTeamMemberModalProps {
   memberToEdit?: any | null;
@@ -282,6 +282,8 @@ export default function AddTeamMemberModal({
   const [quotationsAccess, setQuotationsAccess] = useState<string>('NONE');
   const [postProductionAccess, setPostProductionAccess] = useState<string>('NONE');
   const [financeAccess, setFinanceAccess] = useState<string>('NONE');
+  const [clientsAccess, setClientsAccess] = useState<string>('NONE');
+  const [clientModulesAccess, setClientModulesAccess] = useState<string[]>(ALL_CLIENT_MODULE_KEYS);
 
   // In-memory instant duplicate verification from Central Workspace Context (0ms, 0 network calls)
   useEffect(() => {
@@ -325,11 +327,26 @@ export default function AddTeamMemberModal({
         return s;
       };
 
+      let initialClientsAccess = perms.clients_access && perms.clients_access !== 'NONE' ? perms.clients_access : 'NONE';
+      let initialClientModules = Array.isArray(perms.client_modules_access) && perms.client_modules_access.length > 0 
+        ? perms.client_modules_access 
+        : ALL_CLIENT_MODULE_KEYS;
+
+      if (perms.partner_access_code) {
+        try {
+          const p = JSON.parse(perms.partner_access_code);
+          if (p.clients_access) initialClientsAccess = p.clients_access;
+          if (Array.isArray(p.client_modules_access)) initialClientModules = p.client_modules_access;
+        } catch (_) {}
+      }
+
       setLeadsAccess(perms.leads_access && perms.leads_access !== 'NONE' ? perms.leads_access : 'NONE');
       setTeamManagerAccess(normalizeTeamAccess(perms.team_manager_access));
       setQuotationsAccess(perms.quotations_access && perms.quotations_access !== 'NONE' ? perms.quotations_access : 'NONE');
       setPostProductionAccess(normalizePostAccess(perms.post_production_access));
       setFinanceAccess(perms.finance_access && perms.finance_access !== 'NONE' ? perms.finance_access : 'NONE');
+      setClientsAccess(initialClientsAccess);
+      setClientModulesAccess(initialClientModules);
       setIsRegisteredUser(true);
 
       const ownerId = workspaceId || userId;
@@ -341,6 +358,8 @@ export default function AddTeamMemberModal({
             setQuotationsAccess(sp.quotations_access && sp.quotations_access !== 'NONE' ? sp.quotations_access : 'NONE');
             setPostProductionAccess(normalizePostAccess(sp.post_production_access));
             setFinanceAccess(sp.finance_access && sp.finance_access !== 'NONE' ? sp.finance_access : 'NONE');
+            if (sp.clients_access) setClientsAccess(sp.clients_access);
+            if (Array.isArray(sp.client_modules_access)) setClientModulesAccess(sp.client_modules_access);
           }
         }).catch(() => {});
       }
@@ -360,6 +379,8 @@ export default function AddTeamMemberModal({
       setQuotationsAccess('NONE');
       setPostProductionAccess('NONE');
       setFinanceAccess('NONE');
+      setClientsAccess('NONE');
+      setClientModulesAccess(ALL_CLIENT_MODULE_KEYS);
       setIsRegisteredUser(false);
       setSearchResults([]);
     }
@@ -557,7 +578,9 @@ export default function AddTeamMemberModal({
         team_manager_access: teamManagerAccess,
         quotations_access: quotationsAccess,
         post_production_access: postProductionAccess,
-        finance_access: financeAccess,
+        finance_access: 'NONE',
+        clients_access: clientsAccess,
+        client_modules_access: clientModulesAccess,
       };
 
       // If commercial payout is 0 or empty, save explicitly as 0 (no ghost rates)
@@ -1229,21 +1252,99 @@ export default function AddTeamMemberModal({
                       </select>
                     </div>
 
-                    {/* 5. Finance & Invoices */}
-                    <div className="space-y-1 pt-2 border-t border-zinc-100">
-                      <div className="flex items-center gap-1.5">
-                        <IndianRupee className="w-3.5 h-3.5 text-yellow-600" />
-                        <span className="text-xs font-bold text-zinc-900">Finance &amp; Invoices</span>
+                    {/* 5. Clients Directory & Sub-Modules */}
+                    <div className="space-y-2 pt-2 border-t border-zinc-100">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Users2 className="w-3.5 h-3.5 text-purple-600" />
+                          <span className="text-xs font-bold text-zinc-900">Clients Directory Access</span>
+                        </div>
+                        {(clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT') && (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                            {clientModulesAccess.length} / {CLIENT_SUB_MODULES.length} Sub-Modules
+                          </span>
+                        )}
                       </div>
                       <select
-                        value={financeAccess}
-                        onChange={(e) => setFinanceAccess(e.target.value)}
+                        value={clientsAccess}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setClientsAccess(val);
+                          if ((val === 'ASSIGNED_VIEW' || val === 'ASSIGNED_EDIT') && clientModulesAccess.length === 0) {
+                            setClientModulesAccess(ALL_CLIENT_MODULE_KEYS);
+                          }
+                        }}
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
                         <option value="NONE">❌ No Access (Hidden)</option>
-                        <option value="VIEW">👁️ View Only</option>
-                        <option value="MANAGE">⚡ Full Manage Access</option>
+                        <option value="ASSIGNED_VIEW">👁️ Assign Project Only: View Only</option>
+                        <option value="ASSIGNED_EDIT">✏️ Assign Project Only: View &amp; Edit</option>
+                        <option value="ALL_VIEW">🌐 All Access Only View</option>
+                        <option value="ALL_MANAGE">⚡ All Access Editable</option>
                       </select>
+
+                      {/* Sub-Module Checkbox Popover / Section for Assigned Project Access */}
+                      {(clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT') && (
+                        <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2.5 mt-2 animate-in fade-in duration-200">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black text-amber-950 uppercase tracking-wide">
+                              Allowed Client Sub-Modules
+                            </span>
+                            <div className="flex items-center gap-1.5 text-[10px]">
+                              <button
+                                type="button"
+                                onClick={() => setClientModulesAccess(ALL_CLIENT_MODULE_KEYS)}
+                                className="text-amber-800 hover:text-amber-950 font-bold hover:underline cursor-pointer"
+                              >
+                                Select All
+                              </button>
+                              <span className="text-amber-300">•</span>
+                              <button
+                                type="button"
+                                onClick={() => setClientModulesAccess([])}
+                                className="text-amber-800 hover:text-amber-950 font-bold hover:underline cursor-pointer"
+                              >
+                                Clear All
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            {CLIENT_SUB_MODULES.map((mod) => {
+                              const isChecked = clientModulesAccess.includes(mod.key);
+                              return (
+                                <label
+                                  key={mod.key}
+                                  className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                    isChecked 
+                                      ? 'bg-white border-amber-300 text-zinc-900 shadow-2xs' 
+                                      : 'bg-zinc-50/60 border-zinc-200/80 text-zinc-400 hover:bg-white'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setClientModulesAccess([...clientModulesAccess, mod.key]);
+                                      } else {
+                                        setClientModulesAccess(clientModulesAccess.filter(k => k !== mod.key));
+                                      }
+                                    }}
+                                    className="rounded border-zinc-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
+                                  />
+                                  <span className="truncate">{mod.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[10px] text-amber-900/70 font-medium">
+                            {clientsAccess === 'ASSIGNED_VIEW' 
+                              ? '🔒 Checked modules will be strictly non-editable (view-only).' 
+                              : '✏️ Checked modules can be viewed and edited by this member.'}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
