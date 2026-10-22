@@ -175,50 +175,139 @@ export default function ReviewProjectsPage() {
         </div>
       </div>
 
-      {/* 2. Storage Quota Banner (1 GB Free Trial Limit Enforced) */}
-      {quota && (
-        <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold shrink-0">
-              <HardDrive className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-zinc-800 flex items-center gap-2">
-                <span>Storage Quota: {quota.tier_name}</span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
-                  quota.percentage_used > 85 
-                    ? 'bg-rose-50 text-rose-700 border-rose-200' 
-                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                }`}>
-                  {quota.percentage_used}% used
-                </span>
-                {quota.is_trial && (
-                  <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md">
-                    1 GB Free Trial Limit
-                  </span>
-                )}
-              </div>
-              <div className="text-[11px] text-zinc-400">
-                {quota.formatted_used} used of {quota.formatted_total} on Backblaze B2 Storage
-              </div>
-            </div>
-          </div>
+      {/* 2. Luxury 3D Storage Quota Card (Projects Count, Storage Filled, Storage Remaining) */}
+      {quota && (() => {
+        const availableBytes = Number(quota.available_bytes) || 0;
+        const formattedRemaining = availableBytes >= 1024 * 1024 * 1024
+          ? `${(availableBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+          : `${Math.max(0, availableBytes / (1024 * 1024)).toFixed(1)} MB`;
+        
+        const isNearFull = quota.percentage_used >= 85;
 
-          <div className="w-full sm:w-64 space-y-1">
-            <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
-              <div 
-                style={{ width: `${quota.percentage_used}%` }}
-                className={`h-full rounded-full transition-all duration-300 ${
-                  quota.percentage_used > 85 ? 'bg-red-500' : 'bg-amber-500'
-                }`}
-              />
+        return (
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#121620] via-[#1A2232] to-[#0B0E14] text-white p-5 sm:p-6 shadow-2xl border border-white/10 select-none transition-all duration-300">
+            {/* Ambient Background 3D Glow Orbs */}
+            <div className="absolute -right-16 -top-16 w-56 h-56 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -left-16 -bottom-16 w-56 h-56 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Top Bar: Brand, Tier & B2 Indicator */}
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 shadow-lg shadow-amber-500/25 flex items-center justify-center text-zinc-950 font-black shrink-0">
+                  <HardDrive className="w-5 h-5 text-zinc-950 stroke-[2.2]" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold tracking-tight text-white">
+                      Storage Allocation & Cloud Review Quota
+                    </h2>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Backblaze B2 Active
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400">
+                    High-speed enterprise object storage with automated 1080p compression
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <div className={`px-3 py-1 rounded-xl border text-xs font-bold flex items-center gap-1.5 shadow-inner ${
+                  quota.is_trial
+                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                    : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                }`}>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{quota.tier_name}</span>
+                </div>
+              </div>
             </div>
-            <div className="text-[10px] text-right text-zinc-400">
-              {quota.available_bytes > 0 ? `${(quota.available_bytes / (1024*1024)).toFixed(0)} MB free space` : 'Storage full'}
+
+            {/* Middle: 3D Metric Tiles */}
+            <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-5 pb-5">
+              
+              {/* Tile 1: Projects Uploaded */}
+              <div className="rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 p-4 transition-all duration-200 shadow-inner group">
+                <div className="flex items-center justify-between text-zinc-400 text-xs font-semibold mb-2">
+                  <span>Projects Uploaded</span>
+                  <div className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-400 flex items-center justify-center">
+                    <Film className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-white tracking-tight">
+                  {projects.length}
+                  <span className="text-xs font-semibold text-zinc-400 ml-1.5 font-normal">Active {projects.length === 1 ? 'Project' : 'Projects'}</span>
+                </div>
+                <div className="text-[11px] text-zinc-400 mt-1">
+                  Cloud Proofing Workflows
+                </div>
+              </div>
+
+              {/* Tile 2: Storage Filled */}
+              <div className="rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 p-4 transition-all duration-200 shadow-inner group">
+                <div className="flex items-center justify-between text-zinc-400 text-xs font-semibold mb-2">
+                  <span>Storage Used</span>
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center">
+                    <HardDrive className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-amber-400 tracking-tight">
+                  {quota.formatted_used}
+                  <span className="text-xs font-semibold text-zinc-400 ml-1.5 font-normal">of {quota.formatted_total}</span>
+                </div>
+                <div className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${isNearFull ? 'bg-rose-500 animate-ping' : 'bg-amber-400'}`} />
+                  <span>{quota.percentage_used}% storage footprint consumed</span>
+                </div>
+              </div>
+
+              {/* Tile 3: Storage Remaining */}
+              <div className="rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 p-4 transition-all duration-200 shadow-inner group">
+                <div className="flex items-center justify-between text-zinc-400 text-xs font-semibold mb-2">
+                  <span>Storage Remaining</span>
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-emerald-400 tracking-tight">
+                  {formattedRemaining}
+                  <span className="text-xs font-semibold text-zinc-400 ml-1.5 font-normal">Free Space</span>
+                </div>
+                <div className="text-[11px] text-zinc-400 mt-1">
+                  {availableBytes > 0 ? 'Ready for new high-res video cuts' : 'Quota limit reached — archive or delete cuts'}
+                </div>
+              </div>
+
             </div>
+
+            {/* Bottom: 3D Layered Progress Track */}
+            <div className="relative z-10 space-y-2 pt-1">
+              <div className="flex items-center justify-between text-xs font-bold text-zinc-300">
+                <span className="text-zinc-400">Cloud Storage Capacity</span>
+                <span className={isNearFull ? 'text-rose-400 font-extrabold' : 'text-amber-400'}>
+                  {quota.percentage_used}% Allocated
+                </span>
+              </div>
+              
+              <div className="w-full h-3 rounded-full bg-black/50 border border-white/10 p-0.5 shadow-inner overflow-hidden">
+                <div 
+                  style={{ width: `${Math.max(2, quota.percentage_used)}%` }}
+                  className={`h-full rounded-full transition-all duration-500 relative overflow-hidden ${
+                    isNearFull 
+                      ? 'bg-gradient-to-r from-orange-500 to-rose-600 shadow-[0_0_12px_rgba(244,63,94,0.6)]' 
+                      : 'bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 shadow-[0_0_12px_rgba(245,158,11,0.5)]'
+                  }`}
+                >
+                  <div className="absolute inset-0 bg-white/20 opacity-40 animate-pulse" />
+                </div>
+              </div>
+            </div>
+
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 3. Search & Filter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

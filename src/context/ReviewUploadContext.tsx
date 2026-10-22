@@ -255,23 +255,38 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         throw new Error(registerData.error || 'Failed to save video record to database');
       }
 
-      // Step E: Trigger Background Cloud Optimization & Raw Purge
-      fetch('/api/review/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          storage_key: storageKey,
-          version_id: registerData.version?.id,
-          project_id: projectId,
-          workspace_id: workspaceId,
-          original_file_size_bytes: file.size,
-        }),
-      }).catch((optErr) => console.log('[Review Optimize Trigger Note]:', optErr));
+      // Step E: Synchronous Cloud Optimization & Raw Purge
+      updateTask(taskId, { 
+        status: 'optimizing', 
+        progress: 98, 
+        speed: 'Optimizing & compressing video for web...' 
+      });
+
+      let compressionMsg = '✓ Upload Complete';
+      try {
+        const optRes = await fetch('/api/review/optimize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            storage_key: storageKey,
+            version_id: registerData.version?.id,
+            project_id: projectId,
+            workspace_id: workspaceId,
+            original_file_size_bytes: file.size,
+          }),
+        });
+        const optData = await optRes.json();
+        if (optData.optimized && optData.saved_percentage > 0) {
+          compressionMsg = `✓ Uploaded & Compressed (${optData.saved_percentage}% saved)`;
+        }
+      } catch (optErr) {
+        console.warn('[Review Optimize Note]:', optErr);
+      }
 
       updateTask(taskId, { 
         status: 'completed', 
         progress: 100, 
-        speed: '✓ Upload Complete',
+        speed: compressionMsg,
         xhr: undefined 
       });
 
@@ -380,23 +395,38 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         throw new Error(versionData.error || 'Failed to save version revision');
       }
 
-      // Step E: Trigger Background Cloud Optimization & Raw Purge
-      fetch('/api/review/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          storage_key: storageKey,
-          version_id: versionData.version?.id,
-          project_id: projectId,
-          workspace_id: workspaceId,
-          original_file_size_bytes: file.size,
-        }),
-      }).catch(() => {});
+      // Step E: Synchronous Cloud Optimization & Raw Purge
+      updateTask(taskId, { 
+        status: 'optimizing', 
+        progress: 98, 
+        speed: 'Optimizing & compressing revision for web...' 
+      });
+
+      let revisionMsg = '✓ Revision Complete';
+      try {
+        const optRes = await fetch('/api/review/optimize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            storage_key: storageKey,
+            version_id: versionData.version?.id,
+            project_id: projectId,
+            workspace_id: workspaceId,
+            original_file_size_bytes: file.size,
+          }),
+        });
+        const optData = await optRes.json();
+        if (optData.optimized && optData.saved_percentage > 0) {
+          revisionMsg = `✓ Revision Compressed (${optData.saved_percentage}% saved)`;
+        }
+      } catch (optErr) {
+        console.warn('[Review Optimize Note]:', optErr);
+      }
 
       updateTask(taskId, { 
         status: 'completed', 
         progress: 100, 
-        speed: '✓ Revision Complete',
+        speed: revisionMsg,
         xhr: undefined 
       });
 

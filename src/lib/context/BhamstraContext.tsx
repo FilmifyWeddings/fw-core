@@ -278,30 +278,45 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
       refreshContext(true);
     };
 
-    // Realtime Permission Revocation & Role Updates
-    const channel = supabase
-      .channel('sc_permissions_live_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_member_permissions' }, () => {
-        refreshContext(true);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_permissions' }, () => {
-        refreshContext(true);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, () => {
-        refreshContext(true);
-      })
-      .subscribe();
+    // Realtime Permission Revocation & Role Updates with Unique Channel to Prevent Duplicate Subscription Error
+    let channel: any = null;
+    try {
+      const channelName = `sc_perm_${Math.random().toString(36).slice(2, 9)}`;
+      channel = supabase
+        .channel(channelName)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_member_permissions' }, () => {
+          refreshContext(true);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'member_permissions' }, () => {
+          refreshContext(true);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, () => {
+          refreshContext(true);
+        });
+
+      channel.subscribe((status: string) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[BhamstraContext] Realtime channel warning: subscription degraded');
+        }
+      });
+    } catch (rtErr) {
+      console.warn('[BhamstraContext] Realtime channel subscription safe note:', rtErr);
+    }
 
     if (typeof window !== 'undefined') {
       window.addEventListener('sc_profile_updated', handleProfileUpdated);
       return () => {
         window.removeEventListener('sc_profile_updated', handleProfileUpdated);
-        supabase.removeChannel(channel);
+        if (channel) {
+          try { supabase.removeChannel(channel); } catch (_) {}
+        }
       };
     }
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        try { supabase.removeChannel(channel); } catch (_) {}
+      }
     };
   }, [refreshContext]);
 

@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const { 
       video_id, project_id, workspace_id, source_type,
       video_url, original_file_url, storage_key, youtube_url,
-      duration_seconds, resolution, file_size_bytes, changelog_notes, version_label
+      duration_seconds, resolution, file_size_bytes, changelog_notes, changelogNotes, version_label
     } = body;
 
     if (!video_id || !project_id) {
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       duration_seconds: Number(duration_seconds) || 0,
       resolution: resolution || (isYouTube ? '1080p' : 'HD'),
       file_size_bytes: Number(file_size_bytes) || 0,
-      changelog_notes: changelogNotes?.trim() || `Version ${nextVerNum} revision`,
+      changelog_notes: (changelog_notes || changelogNotes || '').trim() || `Version ${nextVerNum} revision`,
       status: 'in_review',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -178,11 +178,20 @@ export async function DELETE(req: NextRequest) {
     const { video_id, project_id, storage_key, file_size_bytes, workspace_id } = version;
 
     // 2. Permanently purge media from Backblaze B2 storage (all versions and delete markers)
-    if (storage_key) {
-      console.log(`[Review Version Purge] Purging video object from Backblaze B2: ${storage_key}...`);
-      await deleteReviewObject(storage_key);
+    let keyToPurge = storage_key;
+    if (!keyToPurge && (version.original_file_url || version.video_url)) {
+      const url = version.original_file_url || version.video_url || '';
+      const match = url.match(/[?&]key=([^&#]+)/) || url.match(/\/file\/[^\/]+\/(.+)$/);
+      if (match) {
+        try { keyToPurge = decodeURIComponent(match[1]); } catch (_) {}
+      }
+    }
 
-      const storyboardKey = `${storage_key.replace(/\.[^.]+$/, '')}_storyboard.json`;
+    if (keyToPurge) {
+      console.log(`[Review Version Purge] Purging video object from Backblaze B2: ${keyToPurge}...`);
+      await deleteReviewObject(keyToPurge);
+
+      const storyboardKey = `${keyToPurge.replace(/\.[^.]+$/, '')}_storyboard.json`;
       await deleteReviewObject(storyboardKey);
     }
 
