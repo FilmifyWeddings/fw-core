@@ -283,6 +283,38 @@ export default function PostProductionCard({
     const allDone = updated.length > 0 && updated.every(d => (d.status || '').toLowerCase().includes('done'));
     const newStatus = allDone ? 'completed' : 'active';
 
+    if (targetItem && fields.status !== undefined && fields.status !== targetItem.status) {
+      logAudit({
+        actionType: 'status_changed',
+        title: `Updated ${targetItem.title} status`,
+        deliverableId: itemId,
+        deliverableTitle: targetItem.title,
+        category: targetItem.category,
+        segment: targetItem.segment,
+        oldValue: targetItem.status || 'None',
+        newValue: fields.status || 'None',
+        details: `Status changed from "${targetItem.status || 'None'}" to "${fields.status || 'None'}"`
+      });
+    }
+
+    if (targetItem && (fields.due_date !== undefined || fields.deadline !== undefined)) {
+      const nextDate = fields.due_date || fields.deadline;
+      const prevDate = targetItem.due_date || targetItem.deadline;
+      if (nextDate !== prevDate) {
+        logAudit({
+          actionType: 'due_date_changed',
+          title: `Updated ${targetItem.title} due date`,
+          deliverableId: itemId,
+          deliverableTitle: targetItem.title,
+          category: targetItem.category,
+          segment: targetItem.segment,
+          oldValue: prevDate || 'None',
+          newValue: nextDate || 'None',
+          details: `Due date changed from "${prevDate || 'None'}" to "${nextDate || 'None'}"`
+        });
+      }
+    }
+
     if (targetItem && fields.assigned_to !== undefined && fields.assigned_to !== targetItem.assigned_to) {
       logAudit({
         actionType: 'assignee_changed',
@@ -439,6 +471,20 @@ export default function PostProductionCard({
     }
   };
 
+  // Check if current user is the Project Manager of this project card
+  const isCardPM = useMemo(() => {
+    const uid = currentUser?.id;
+    const mid = currentMemberId;
+    const uname = currentUser?.name?.toLowerCase().trim();
+    const pmId = project.project_manager_id;
+    const pmName = (localPM || project.project_manager_name || '').toLowerCase().trim();
+
+    return Boolean(
+      (pmId && (pmId === uid || pmId === mid)) ||
+      (pmName && uname && pmName === uname)
+    );
+  }, [currentUser, currentMemberId, project.project_manager_id, project.project_manager_name, localPM]);
+
   // Check if a deliverable is assigned to current member
   const isDeliverableAssignedToMe = (d: PostProductionDeliverable) => {
     const uid = currentUser?.id;
@@ -451,17 +497,19 @@ export default function PostProductionCard({
     return Boolean(idMatch || midMatch || nameMatch);
   };
 
-  // For ASSIGNED_VIEW: Strictly filter deliverables to ONLY those assigned to this member
+  // For ASSIGNED_VIEW: Strictly filter deliverables to ONLY those assigned to this member.
+  // Exception: If this user is the designated Project Manager (PM) for this card, they see all deliverables!
   const effectiveDeliverables = useMemo(() => {
-    if (isAssignedView) {
+    if (isAssignedView && !isCardPM) {
       return deliverables.filter(isDeliverableAssignedToMe);
     }
     return deliverables;
-  }, [deliverables, isAssignedView, currentUser, currentMemberId]);
+  }, [deliverables, isAssignedView, isCardPM, currentUser, currentMemberId]);
 
-  // For ASSIGNED_VIEW: Strictly hide segments that have NO deliverables assigned to this member
+  // For ASSIGNED_VIEW: Strictly hide segments that have NO deliverables assigned to this member.
+  // Exception: If PM, all configured segments are visible.
   const effectiveSegments = useMemo(() => {
-    if (isAssignedView) {
+    if (isAssignedView && !isCardPM) {
       const segsWithAssigned = new Set<string>();
       effectiveDeliverables.forEach(d => {
         segsWithAssigned.add((d.segment || 'Wedding').trim());
@@ -469,7 +517,7 @@ export default function PostProductionCard({
       return Array.from(segsWithAssigned);
     }
     return enabledSegments;
-  }, [isAssignedView, effectiveDeliverables, enabledSegments]);
+  }, [isAssignedView, isCardPM, effectiveDeliverables, enabledSegments]);
 
   // Segments to render in the body
   const segmentsToRender = useMemo(() => {
@@ -585,21 +633,19 @@ export default function PostProductionCard({
             />
           </div>
 
-          {/* Change History Button - Full Manage Only */}
-          {canManage && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowHistoryDrawer(true);
-              }}
-              className="px-3 py-2 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:border-amber-400 transition cursor-pointer shadow-2xs flex items-center gap-1.5"
-              title="View Card History & Audit Log"
-            >
-              <History className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <span className="hidden sm:inline text-xs font-bold">History</span>
-            </button>
-          )}
+          {/* Change History Button - Accessible to Studio Owner & Team Members */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowHistoryDrawer(true);
+            }}
+            className="px-3 py-2 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:border-amber-400 transition cursor-pointer shadow-2xs flex items-center gap-1.5"
+            title="View Card History & Audit Log"
+          >
+            <History className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <span className="hidden sm:inline text-xs font-bold">History</span>
+          </button>
 
           {/* Expand/Collapse Toggle */}
           <button
@@ -689,7 +735,7 @@ export default function PostProductionCard({
                     <span className="truncate max-w-[200px] sm:max-w-[280px] text-emerald-950 dark:text-emerald-200 font-extrabold">
                       {project.quotation_title}
                     </span>
-                    {onResyncQuotation && (
+                    {onResyncQuotation && canManage && !isReadOnly && !isAllView && (
                       <button
                         type="button"
                         title="Re-sync deliverables from this final quotation"
@@ -723,7 +769,7 @@ export default function PostProductionCard({
                     All Segments
                   </button>
 
-                  {enabledSegments.map(seg => {
+                  {effectiveSegments.map(seg => {
                     const isSelected = activeSegmentTab === seg;
                     const getSegIcon = (s: string) => {
                       const low = s.toLowerCase();
@@ -895,7 +941,7 @@ export default function PostProductionCard({
             ) : (
               <div className="space-y-6">
                 {segmentsToRender.map(segName => {
-                  const segDeliverables = deliverables.filter(d => {
+                  const segDeliverables = effectiveDeliverables.filter(d => {
                     const dSeg = (d.segment || 'Wedding').trim().toLowerCase();
                     const targetSeg = segName.trim().toLowerCase();
                     if (targetSeg === 'wedding') {

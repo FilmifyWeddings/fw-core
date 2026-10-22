@@ -336,6 +336,11 @@ export default function DeliverableCategorySection({
 
   const totalToAddCount = selectedPresets.size + ((customSelected || customTitle.trim()) && customTitle.trim() ? 1 : 0);
 
+  // If this member has assigned-only access and there are no assigned deliverables in this category, hide it completely
+  if (isAssignedView && items.length === 0) {
+    return null;
+  }
+
   return (
     <div className={`w-full ${config.containerBg} rounded-2xl border ${config.containerBorder} p-4 space-y-3 shadow-xs transition-colors`}>
       {/* ── Category Header ── */}

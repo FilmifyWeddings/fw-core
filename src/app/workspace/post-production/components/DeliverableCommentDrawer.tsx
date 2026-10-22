@@ -22,6 +22,7 @@ interface DeliverableCommentDrawerProps {
   canManage?: boolean;
   isAllView?: boolean;
   isAssignedView?: boolean;
+  isReadOnly?: boolean;
   currentUser?: { id?: string; name?: string; role?: string };
   onUpdateDriveLink?: (deliverableId: string, driveLink: string) => void;
   onCommentCountChange?: (deliverableId: string, count: number) => void;
@@ -45,13 +46,42 @@ export default function DeliverableCommentDrawer({
   canManage = true,
   isAllView = false,
   isAssignedView = false,
+  isReadOnly: propIsReadOnly,
   currentUser,
   onUpdateDriveLink,
   onCommentCountChange,
   onUpdateDeliverable,
 }: DeliverableCommentDrawerProps) {
+  const isReadOnly = propIsReadOnly !== undefined ? propIsReadOnly : isAllView;
   // Comments Tab First by default or guided by initialTab
   const [activeTab, setActiveTab] = useState<'comments' | 'links'>(initialTab);
+
+  // Background audit logger for post-production comments and links
+  const logAudit = async (actionType: string, title: string, details?: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      fetch('/api/workspace/post-production/history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          projectId: deliverable?.project_id,
+          deliverableId: deliverable?.id,
+          deliverableTitle: deliverable?.title,
+          category: deliverable?.category,
+          segment: deliverable?.segment,
+          actorName: currentUser?.name || session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Team Member',
+          actorRole: currentUser?.role || 'Team Member',
+          actionType,
+          title,
+          details
+        })
+      }).catch(() => {});
+    } catch (_) {}
+  };
 
   useEffect(() => {
     if (isOpen && initialTab) {
@@ -214,6 +244,8 @@ export default function DeliverableCommentDrawer({
         commentText: commentItem.comment_text,
         userId,
       }).catch(() => {});
+
+      logAudit('comment_added', `Added note to "${deliverable.title}"`, commentItem.comment_text);
     } finally {
       setIsSubmittingComment(false);
     }
@@ -221,6 +253,7 @@ export default function DeliverableCommentDrawer({
 
   const handleDeleteComment = (commentId: string) => {
     if (!deliverable) return;
+    const targetComment = comments.find(c => c.id === commentId);
     const updatedComments = comments.filter(c => c.id !== commentId);
     setComments(updatedComments);
 
@@ -234,6 +267,8 @@ export default function DeliverableCommentDrawer({
     if (onCommentCountChange) {
       onCommentCountChange(deliverable.id, updatedComments.length);
     }
+
+    logAudit('comment_deleted', `Deleted note from "${deliverable.title}"`, targetComment?.comment_text);
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -272,10 +307,13 @@ export default function DeliverableCommentDrawer({
     } else if (onUpdateDriveLink) {
       onUpdateDriveLink(deliverable.id, primaryUrl);
     }
+
+    logAudit('link_added', `Added link to "${deliverable.title}"`, `${label}: ${formatted}`);
   };
 
   const handleDeleteLink = (linkId: string) => {
     if (!deliverable) return;
+    const targetLink = driveLinks.find(l => l.id === linkId);
     const updatedLinks = driveLinks.filter(l => l.id !== linkId);
     setDriveLinks(updatedLinks);
 
@@ -289,6 +327,8 @@ export default function DeliverableCommentDrawer({
     } else if (onUpdateDriveLink) {
       onUpdateDriveLink(deliverable.id, primaryUrl);
     }
+
+    logAudit('link_deleted', `Removed link from "${deliverable.title}"`, targetLink?.title || targetLink?.url);
   };
 
   const handleCopyLink = (linkId: string, url: string) => {
@@ -464,7 +504,7 @@ export default function DeliverableCommentDrawer({
                                 minute: '2-digit',
                               })}
                             </span>
-                            {(canManage || (isAssignedView && (
+                            {(canManage || (!isReadOnly && isAssignedView && (
                               (currentUser?.id && cm.user_id === currentUser.id) ||
                               (currentUser?.name && cm.author_name?.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
                             ))) && (
@@ -526,7 +566,7 @@ export default function DeliverableCommentDrawer({
                       Add multiple links for raw footage, selection galleries, album proofs, or final videos.
                     </p>
                   </div>
-                  {!isAllView && !isAddingLink && (
+                  {!isReadOnly && !isAddingLink && (
                     <button
                       type="button"
                       onClick={() => setIsAddingLink(true)}
@@ -642,7 +682,7 @@ export default function DeliverableCommentDrawer({
                     <p className="text-[11px] text-slate-400 dark:text-stone-500 max-w-xs mx-auto">
                       Attach Google Drive folders, WeTransfer drops, or final video review links for your team and clients.
                     </p>
-                    {!isAllView && (
+                    {!isReadOnly && (
                       <button
                         type="button"
                         onClick={() => setIsAddingLink(true)}
@@ -701,7 +741,7 @@ export default function DeliverableCommentDrawer({
                             )}
                           </button>
 
-                          {(canManage || (isAssignedView && (
+                          {(canManage || (!isReadOnly && isAssignedView && (
                             (item as any).created_by_id === currentUser?.id ||
                             (currentUser?.name && (item as any).created_by_name?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()) ||
                             (item as any).is_session_added
@@ -725,7 +765,7 @@ export default function DeliverableCommentDrawer({
           </div>
 
           {/* Footer - Only shown for Comments Tab (Hidden for View Only) */}
-          {activeTab === 'comments' && !isAllView && (
+          {activeTab === 'comments' && !isReadOnly && (
             <div className="p-4 border-t border-[#EAE5DA] dark:border-stone-800 bg-[#FFFDF9] dark:bg-[#181614] space-y-2.5">
               {/* Reminder Scheduling Popover */}
               <AnimatePresence>

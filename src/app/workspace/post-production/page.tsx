@@ -25,6 +25,8 @@ export interface PostProductionTeamMember {
   role?: string;
   isInHouse?: boolean;
   hasPMAccess?: boolean;
+  user_id?: string;
+  email?: string;
 }
 
 // Module-level in-memory cache for instant 0ms transitions
@@ -39,8 +41,10 @@ export default function PostProductionPage() {
   const ppAccess = isOwner ? 'ALL_MANAGE' : (permissions?.post_production_access || 'NONE');
   const canManagePostProduction = isOwner || ppAccess === 'ALL_MANAGE' || ppAccess === 'FULL_ACCESS';
   const isAllView = !isOwner && ppAccess === 'ALL_VIEW';
-  const isAssignedOnly = !isOwner && (ppAccess === 'ASSIGNED_VIEW' || ppAccess === 'ASSIGNED_ONLY');
-  const isReadOnly = !canManagePostProduction;
+  const isAssignedView = !isOwner && (ppAccess === 'ASSIGNED_VIEW' || ppAccess === 'ASSIGNED_ONLY');
+  const isAssignedEdit = !isOwner && ppAccess === 'ASSIGNED_EDIT';
+  const isAssignedOnly = isAssignedView || isAssignedEdit;
+  const isReadOnly = !isOwner && (isAllView || isAssignedView);
 
   const [projects, setProjects] = useState<PostProductionProjectData[]>(() => {
     if (memCachedPostProdProjects.length > 0) return memCachedPostProdProjects;
@@ -90,6 +94,22 @@ export default function PostProductionPage() {
   // Active Comment / Activity Drawer state
   const [activeDrawerDeliverable, setActiveDrawerDeliverable] = useState<PostProductionDeliverable | null>(null);
   const [drawerInitialTab, setDrawerInitialTab] = useState<'comments' | 'links'>('comments');
+
+  // Safety: If user has assigned-only access, they must never see or stay on the Trash tab
+  useEffect(() => {
+    if (isAssignedOnly && postProdTab === 'trash') {
+      setPostProdTab('active');
+    }
+  }, [isAssignedOnly, postProdTab]);
+
+  const effectiveMemberId = useMemo(() => {
+    if (activeWorkspace?.memberId) return activeWorkspace.memberId;
+    const match = teamMembers.find(m => 
+      (userId && (m.user_id === userId || m.id === userId)) ||
+      (userName && m.name && m.name.toLowerCase().trim() === userName.toLowerCase().trim())
+    );
+    return match?.id || userId || undefined;
+  }, [activeWorkspace?.memberId, teamMembers, userId, userName]);
 
   useEffect(() => {
     setMounted(true);
@@ -461,12 +481,12 @@ export default function PostProductionPage() {
 
       const configByProjectId = new Map<string, any>();
       if (configData) {
-        configData.forEach(c => configByProjectId.set(c.project_id, c));
+        configData.forEach((c: any) => configByProjectId.set(c.project_id, c));
       }
 
       const delivsByProjectId = new Map<string, any[]>();
       if (ppDeliverables) {
-        ppDeliverables.forEach(d => {
+        ppDeliverables.forEach((d: any) => {
           const list = delivsByProjectId.get(d.project_id) || [];
           list.push(d);
           delivsByProjectId.set(d.project_id, list);
@@ -475,7 +495,7 @@ export default function PostProductionPage() {
 
       const pppMap = new Map<string, any>();
       if (pppData) {
-        pppData.forEach(p => {
+        pppData.forEach((p: any) => {
           if (p.client_id) pppMap.set(p.client_id, p);
           if (p.id) pppMap.set(p.id, p);
         });
@@ -517,7 +537,7 @@ export default function PostProductionPage() {
         const isCardTrash = isClientTrash || isPppTrash;
 
         const matchedFwProject = (fwProjects || []).find(
-          fp => fp.client_name?.toLowerCase() === client.name?.toLowerCase() || fp.id === client.id
+          (fp: any) => fp.client_name?.toLowerCase() === client.name?.toLowerCase() || fp.id === client.id
         );
 
         // Load deliverables: prioritize post_production_deliverables, then post_production_projects JSON, or initialize empty
@@ -672,7 +692,7 @@ export default function PostProductionPage() {
 
             // Persist decoupled auto-sync in background to permanently clean up database
             persistDeliverablesDecoupled({
-              workspaceId,
+              workspaceId: workspaceId || effectiveWsId || 'ws_default',
               clientId: client.id,
               projectId: matchedFwProject?.id,
               deliverables: projectDeliverables,
@@ -786,21 +806,48 @@ export default function PostProductionPage() {
         }
       }
 
-      // Filter by Assigned Only if user only has ASSIGNED_VIEW / ASSIGNED_ONLY permission
+      // Filter by Assigned Only if user has ASSIGNED_VIEW / ASSIGNED_EDIT / ASSIGNED_ONLY permission
       let displayCards = cards;
       if (isAssignedOnly) {
+        // Collect all IDs and Name variations representing the current user
+        const myMemberRecord = members.find(m => 
+          (activeWorkspace?.memberId && m.id === activeWorkspace.memberId) ||
+          (userId && (m.user_id === userId || m.id === userId)) ||
+          (userName && m.name && m.name.toLowerCase().trim() === userName.toLowerCase().trim())
+        );
+
+        const currentMemberId = activeWorkspace?.memberId || myMemberRecord?.id;
+        const currentMemberName = myMemberRecord?.name || userName;
+
+        const userIdsToMatch = new Set([
+          userId,
+          currentMemberId,
+          myMemberRecord?.id,
+          myMemberRecord?.user_id
+        ].filter(Boolean) as string[]);
+
+        const userNamesToMatch = new Set([
+          userName?.toLowerCase().trim(),
+          currentMemberName?.toLowerCase().trim()
+        ].filter(Boolean) as string[]);
+
         displayCards = cards.filter(c => {
-          const pmMatch = (
-            (userId && c.project_manager_id === userId) ||
-            (userName && c.project_manager_name && c.project_manager_name.toLowerCase().trim() === userName.toLowerCase().trim())
+          // If current user is the Project Manager, the project card MUST be visible!
+          const isPmMatch = Boolean(
+            (c.project_manager_id && userIdsToMatch.has(c.project_manager_id)) ||
+            (c.project_manager_name && userNamesToMatch.has(c.project_manager_name.toLowerCase().trim()))
           );
-          if (pmMatch) return true;
-          const deliverableMatch = (c.deliverables || []).some(d => {
-            const idMatch = userId && (d.assigned_member_id === userId || (d as any).assigned_to_id === userId);
-            const nameMatch = userName && d.assigned_to && d.assigned_to.toLowerCase().trim() === userName.toLowerCase().trim();
+          if (isPmMatch) return true;
+
+          // Check if current user is assigned to any deliverable in this project
+          const hasDeliverableMatch = (c.deliverables || []).some(d => {
+            const dMemberId = d.assigned_member_id || (d as any).assigned_to_id;
+            const dAssigneeName = d.assigned_to?.toLowerCase().trim();
+            const idMatch = dMemberId && userIdsToMatch.has(dMemberId);
+            const nameMatch = dAssigneeName && userNamesToMatch.has(dAssigneeName);
             return Boolean(idMatch || nameMatch);
           });
-          return deliverableMatch;
+          return hasDeliverableMatch;
         });
       }
 
@@ -1179,6 +1226,7 @@ export default function PostProductionPage() {
     return projects.filter(p => {
       // 0. Active vs Trash Tab
       const isTrash = p.overall_status === 'trash' || (p as any).is_trash === true;
+      if (isAssignedOnly && isTrash) return false;
       if (postProdTab === 'trash') {
         if (!isTrash) return false;
       } else {
@@ -1725,48 +1773,50 @@ export default function PostProductionPage() {
               />
             </div>
 
-            {/* Active vs Trash Segmented Switcher */}
-            <div className="flex items-center bg-[#F4EFE6] dark:bg-stone-900/90 p-1 rounded-xl border border-[#E2D9CC] dark:border-stone-800 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] self-stretch sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setPostProdTab('active')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
-                  postProdTab === 'active'
-                    ? 'bg-white dark:bg-stone-800 text-slate-900 dark:text-stone-100 shadow-xs border border-[#DDD5C7] dark:border-stone-700'
-                    : 'text-slate-600 dark:text-stone-400 hover:text-slate-900'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5 text-amber-600" />
-                <span>Active Projects</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  postProdTab === 'active' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-slate-200/60 dark:bg-stone-800 text-slate-600 dark:text-stone-400'
-                }`}>
-                  {mounted ? activeProjectsCount : 0}
-                </span>
-              </button>
-
-              {canManagePostProduction && (
+            {/* Active vs Trash Segmented Switcher (Strictly hidden for assigned-only users) */}
+            {!isAssignedOnly && (
+              <div className="flex items-center bg-[#F4EFE6] dark:bg-stone-900/90 p-1 rounded-xl border border-[#E2D9CC] dark:border-stone-800 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] self-stretch sm:self-auto">
                 <button
                   type="button"
-                  onClick={() => setPostProdTab('trash')}
+                  onClick={() => setPostProdTab('active')}
                   className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
-                    postProdTab === 'trash'
-                      ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 shadow-xs border border-rose-300 dark:border-rose-800'
-                      : 'text-slate-600 dark:text-stone-400 hover:text-rose-600'
+                    postProdTab === 'active'
+                      ? 'bg-white dark:bg-stone-800 text-slate-900 dark:text-stone-100 shadow-xs border border-[#DDD5C7] dark:border-stone-700'
+                      : 'text-slate-600 dark:text-stone-400 hover:text-slate-900'
                   }`}
                 >
-                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                  <span>Trash</span>
-                  {mounted && trashedProjectsCount > 0 && (
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                      postProdTab === 'trash' ? 'bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200' : 'bg-rose-100 text-rose-700'
-                    }`}>
-                      {trashedProjectsCount}
-                    </span>
-                  )}
+                  <Layers className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Active Projects</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    postProdTab === 'active' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-slate-200/60 dark:bg-stone-800 text-slate-600 dark:text-stone-400'
+                  }`}>
+                    {mounted ? activeProjectsCount : 0}
+                  </span>
                 </button>
-              )}
-            </div>
+
+                {canManagePostProduction && (
+                  <button
+                    type="button"
+                    onClick={() => setPostProdTab('trash')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                      postProdTab === 'trash'
+                        ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 shadow-xs border border-rose-300 dark:border-rose-800'
+                        : 'text-slate-600 dark:text-stone-400 hover:text-rose-600'
+                    }`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Trash</span>
+                    {mounted && trashedProjectsCount > 0 && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                        postProdTab === 'trash' ? 'bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200' : 'bg-rose-100 text-rose-700'
+                      }`}>
+                        {trashedProjectsCount}
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto justify-end">
@@ -1845,13 +1895,13 @@ export default function PostProductionPage() {
                 isAllView={isAllView}
                 isAssignedView={isAssignedOnly}
                 isReadOnly={isReadOnly}
-                currentMemberId={activeWorkspace?.memberId}
+                currentMemberId={effectiveMemberId}
                 currentUser={{ id: userId || undefined, name: userName || undefined, role: userRole || undefined }}
                 onToggleExpand={() => toggleCardExpansion(project.id)}
                 onUpdateProject={handleUpdateProject}
                 onOpenComments={handleOpenComments}
                 onOpenDrive={handleOpenDrive}
-                onResyncQuotation={() => handleResyncQuotation(project.id, project.client_id)}
+                onResyncQuotation={canManagePostProduction && !isReadOnly && !isAllView ? () => handleResyncQuotation(project.id, project.client_id) : undefined}
                 onDeleteProject={(id) => handleUpdateProject(id, { overall_status: 'trash' as any })}
                 onRestoreProject={handleRestoreProject}
                 onPermanentDeleteProject={handlePermanentDeleteProject}
@@ -1894,6 +1944,7 @@ export default function PostProductionPage() {
           canManage={canManagePostProduction}
           isAllView={isAllView}
           isAssignedView={isAssignedOnly}
+          isReadOnly={isReadOnly}
           currentUser={{ id: userId || undefined, name: userName || undefined, role: userRole || undefined }}
           onUpdateDriveLink={handleUpdateDriveLink}
           onCommentCountChange={handleCommentCountChange}

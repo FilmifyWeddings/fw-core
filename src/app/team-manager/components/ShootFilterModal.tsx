@@ -41,6 +41,7 @@ export interface ShootFilterModalProps {
   isAllStudios?: boolean;
   isPartnerPortal?: boolean;
   isOwner?: boolean;
+  teamManagerAccess?: string;
   totalFilteredCount: number;
 }
 
@@ -102,9 +103,15 @@ export default function ShootFilterModal({
   isAllStudios = false,
   isPartnerPortal = false,
   isOwner = true,
+  teamManagerAccess,
   totalFilteredCount,
 }: ShootFilterModalProps) {
   const [openDropdown, setOpenDropdown] = useState<FilterDropdownKey>('none');
+
+  // Enterprise RBAC: Team member selection and crew assignment status filters are restricted
+  // to Studio Owner and users with ALL_MANAGE or ALL_VIEW access.
+  // Users with assigned-sub-event access (ASSIGNED_SUB_EVENT_CALL_TIME / ASSIGNED_SUB_EVENT_CREW) cannot filter by team member or crew assignment status.
+  const canViewAllFilters = isOwner || teamManagerAccess === 'ALL_MANAGE' || teamManagerAccess === 'ALL_VIEW';
 
   const [draft, setDraft] = useState<UnifiedFilterState>({
     ...filters,
@@ -251,11 +258,18 @@ export default function ShootFilterModal({
   if (!isOpen) return null;
 
   const handleApply = () => {
+    const finalDraft = { ...draft };
+    if (!canViewAllFilters) {
+      finalDraft.memberId = 'all';
+      finalDraft.memberIds = [];
+      finalDraft.assignmentStatus = 'all';
+      finalDraft.assignmentStatuses = [];
+    }
     onApplyFilters({
-      ...draft,
-      memberId: draft.memberIds && draft.memberIds.length > 0 ? draft.memberIds[0] : 'all',
-      pmId: draft.pmIds && draft.pmIds.length > 0 ? draft.pmIds[0] : 'all',
-      assignmentStatus: draft.assignmentStatuses && draft.assignmentStatuses.length > 0 ? (draft.assignmentStatuses[0] as any) : 'all',
+      ...finalDraft,
+      memberId: finalDraft.memberIds && finalDraft.memberIds.length > 0 ? finalDraft.memberIds[0] : 'all',
+      pmId: finalDraft.pmIds && finalDraft.pmIds.length > 0 ? finalDraft.pmIds[0] : 'all',
+      assignmentStatus: finalDraft.assignmentStatuses && finalDraft.assignmentStatuses.length > 0 ? (finalDraft.assignmentStatuses[0] as any) : 'all',
     });
     onClose();
   };
@@ -407,26 +421,28 @@ export default function ShootFilterModal({
               />
             </div>
 
-            {/* 5. Filter by Team Member Multi-select */}
-            <div className={`space-y-1.5 relative ${openDropdown === 'member' ? 'z-[80]' : 'z-[13]'}`}>
-              <MultiSelect3DCreamDropdown
-                label="Filter by Team Member"
-                icon={<Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
-                selectedValues={draft.memberIds || (draft.memberId && draft.memberId !== 'all' ? [draft.memberId] : [])}
-                onChange={(vals) => setDraft(prev => ({ 
-                  ...prev, 
-                  memberIds: vals, 
-                  memberId: vals[0] || 'all' 
-                }))}
-                options={memberMultiOptions}
-                placeholder="All Team Members"
-                searchPlaceholder="🔍 Search team members..."
-                searchable={true}
-                isOpen={openDropdown === 'member'}
-                onToggle={(open) => setOpenDropdown(open ? 'member' : 'none')}
-                onClose={() => setOpenDropdown('none')}
-              />
-            </div>
+            {/* 5. Filter by Team Member Multi-select (Restricted to Studio Owner / ALL_MANAGE / ALL_VIEW) */}
+            {canViewAllFilters && (
+              <div className={`space-y-1.5 relative ${openDropdown === 'member' ? 'z-[80]' : 'z-[13]'}`}>
+                <MultiSelect3DCreamDropdown
+                  label="Filter by Team Member"
+                  icon={<Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
+                  selectedValues={draft.memberIds || (draft.memberId && draft.memberId !== 'all' ? [draft.memberId] : [])}
+                  onChange={(vals) => setDraft(prev => ({ 
+                    ...prev, 
+                    memberIds: vals, 
+                    memberId: vals[0] || 'all' 
+                  }))}
+                  options={memberMultiOptions}
+                  placeholder="All Team Members"
+                  searchPlaceholder="🔍 Search team members..."
+                  searchable={true}
+                  isOpen={openDropdown === 'member'}
+                  onToggle={(open) => setOpenDropdown(open ? 'member' : 'none')}
+                  onClose={() => setOpenDropdown('none')}
+                />
+              </div>
+            )}
 
             {/* 6. Project Manager (PM) Multi-select */}
             {showPmFilter && (
@@ -451,25 +467,27 @@ export default function ShootFilterModal({
               </div>
             )}
 
-            {/* 7. Crew Assignment Status Multi-select */}
-            <div className={`space-y-1.5 relative ${openDropdown === 'status' ? 'z-[80]' : 'z-[11]'}`}>
-              <MultiSelect3DCreamDropdown
-                label="Crew Assignment Status"
-                icon={<Users className="w-3.5 h-3.5 text-slate-600 dark:text-stone-400" />}
-                selectedValues={draft.assignmentStatuses || (draft.assignmentStatus && draft.assignmentStatus !== 'all' ? [draft.assignmentStatus] : [])}
-                onChange={(vals) => setDraft(prev => ({ 
-                  ...prev, 
-                  assignmentStatuses: vals, 
-                  assignmentStatus: (vals[0] as any) || 'all' 
-                }))}
-                options={assignmentStatusOptions}
-                placeholder="All Assignment Statuses"
-                searchable={false}
-                isOpen={openDropdown === 'status'}
-                onToggle={(open) => setOpenDropdown(open ? 'status' : 'none')}
-                onClose={() => setOpenDropdown('none')}
-              />
-            </div>
+            {/* 7. Crew Assignment Status Multi-select (Restricted to Studio Owner / ALL_MANAGE / ALL_VIEW) */}
+            {canViewAllFilters && (
+              <div className={`space-y-1.5 relative ${openDropdown === 'status' ? 'z-[80]' : 'z-[11]'}`}>
+                <MultiSelect3DCreamDropdown
+                  label="Crew Assignment Status"
+                  icon={<Users className="w-3.5 h-3.5 text-slate-600 dark:text-stone-400" />}
+                  selectedValues={draft.assignmentStatuses || (draft.assignmentStatus && draft.assignmentStatus !== 'all' ? [draft.assignmentStatus] : [])}
+                  onChange={(vals) => setDraft(prev => ({ 
+                    ...prev, 
+                    assignmentStatuses: vals, 
+                    assignmentStatus: (vals[0] as any) || 'all' 
+                  }))}
+                  options={assignmentStatusOptions}
+                  placeholder="All Assignment Statuses"
+                  searchable={false}
+                  isOpen={openDropdown === 'status'}
+                  onToggle={(open) => setOpenDropdown(open ? 'status' : 'none')}
+                  onClose={() => setOpenDropdown('none')}
+                />
+              </div>
+            )}
 
             {/* 8. Crew Roles Multi-select */}
             <div className={`space-y-1.5 relative ${openDropdown === 'role' ? 'z-[80]' : 'z-[10]'}`}>

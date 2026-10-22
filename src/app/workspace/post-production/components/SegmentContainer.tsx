@@ -326,6 +326,12 @@ export default function SegmentContainer({
               seenTitles.add(k);
               return true;
             });
+
+            // For assigned users: strictly hide any categories where they have 0 assigned deliverables
+            if (isAssignedView && catDeliverables.length === 0) {
+              return null;
+            }
+
             return (
               <DeliverableCategorySection
                 key={`${segmentName}_${cat}`}

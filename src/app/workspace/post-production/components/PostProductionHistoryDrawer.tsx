@@ -110,10 +110,10 @@ export default function PostProductionHistoryDrawer({
     }
   };
 
-  const formatLogDate = (dateStr: string) => {
+  const formatLogDate = (dateStr: string): { day: string; time: string } => {
     try {
       const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return dateStr;
+      if (isNaN(d.getTime())) return { day: dateStr, time: '' };
       const day = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
       const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
       return { day, time };

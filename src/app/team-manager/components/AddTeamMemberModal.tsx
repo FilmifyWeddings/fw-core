@@ -320,7 +320,8 @@ export default function AddTeamMemberModal({
       const normalizePostAccess = (val?: string) => {
         if (!val) return 'NONE';
         const s = String(val).trim().toUpperCase();
-        if (['NONE', 'HIDDEN', 'FALSE', '0', 'ASSIGNED_ONLY'].includes(s)) return 'NONE';
+        if (['NONE', 'HIDDEN', 'FALSE', '0'].includes(s)) return 'NONE';
+        if (s === 'ASSIGNED_ONLY') return 'ASSIGNED_VIEW';
         return s;
       };
 
@@ -1221,7 +1222,8 @@ export default function AddTeamMemberModal({
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
                         <option value="NONE">❌ No Access (Hidden)</option>
-                        <option value="ASSIGNED_VIEW">🎬 Assigned Projects Only (View &amp; Upload)</option>
+                        <option value="ASSIGNED_VIEW">👁️ Assign Project Only: View Only</option>
+                        <option value="ASSIGNED_EDIT">✏️ Assign Project Only: View &amp; Edit</option>
                         <option value="ALL_VIEW">🌐 All Projects (View Only)</option>
                         <option value="ALL_MANAGE">⚡ Full Manage Access</option>
                       </select>

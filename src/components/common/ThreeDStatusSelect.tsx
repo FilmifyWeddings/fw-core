@@ -18,6 +18,7 @@ interface ThreeDStatusSelectProps {
   onChange: (statusName: string) => void;
   className?: string;
   size?: 'sm' | 'md';
+  disabled?: boolean;
 }
 
 const STATUS_PALETTE = [
@@ -39,6 +40,7 @@ export default function ThreeDStatusSelect({
   onChange,
   className = '',
   size = 'sm',
+  disabled = false,
 }: ThreeDStatusSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [allStatuses, setAllStatuses] = useState<PostProductionStatusSetting[]>(() => {
@@ -333,11 +335,15 @@ export default function ThreeDStatusSelect({
       <button
         ref={triggerRef}
         type="button"
+        disabled={disabled}
         onClick={(e) => {
+          if (disabled) return;
           e.stopPropagation();
           setIsOpen(prev => !prev);
         }}
-        className={`inline-flex items-center gap-1.5 rounded-full font-black tracking-tight transition cursor-pointer select-none shadow-2xs hover:shadow-xs border ${
+        className={`inline-flex items-center gap-1.5 rounded-full font-black tracking-tight transition select-none shadow-2xs hover:shadow-xs border ${
+          disabled ? 'opacity-65 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
+        } ${
           size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-xs'
         }`}
         style={{

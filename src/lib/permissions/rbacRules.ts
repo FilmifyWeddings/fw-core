@@ -1,9 +1,9 @@
 import { supabase } from '@/lib/supabase';
 
 export type LeadsAccessLevel = 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ALL_VIEW' | 'ALL_MANAGE';
-export type TeamManagerAccessLevel = 'NONE' | 'ASSIGNED_OWN_ROLE' | 'ASSIGNED_FULL_CREW' | 'ALL_VIEW' | 'ALL_MANAGE';
+export type TeamManagerAccessLevel = 'NONE' | 'ASSIGNED_OWN_ROLE' | 'ASSIGNED_FULL_CREW' | 'ASSIGNED_SUB_EVENT_CALL_TIME' | 'ASSIGNED_SUB_EVENT_CREW' | 'ALL_VIEW' | 'ALL_MANAGE';
 export type QuotationsAccessLevel = 'NONE' | 'VIEW' | 'MANAGE';
-export type PostProductionAccessLevel = 'NONE' | 'ASSIGNED_VIEW' | 'ALL_VIEW' | 'ALL_MANAGE';
+export type PostProductionAccessLevel = 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ASSIGNED_ONLY' | 'ALL_VIEW' | 'ALL_MANAGE' | 'FULL_ACCESS';
 export type FinanceAccessLevel = 'NONE' | 'VIEW' | 'MANAGE';
 
 export interface StudioMemberPermissions {
@@ -159,6 +159,30 @@ export function isSelfRoleOnly(access?: string): boolean {
 
 export function canManageAllShoots(access?: string): boolean {
   return access === 'ALL_MANAGE' || access === 'MANAGE_ALL';
+}
+
+export function canViewAllShootFilters(access?: string, isOwner?: boolean): boolean {
+  if (isOwner) return true;
+  return access === 'ALL_MANAGE' || access === 'ALL_VIEW';
+}
+
+export function canAccessPostProduction(access?: string): boolean {
+  return Boolean(access && access !== 'NONE');
+}
+
+export function isPostProductionReadOnly(access?: string, isOwner?: boolean): boolean {
+  if (isOwner) return false;
+  return access === 'ALL_VIEW' || access === 'ASSIGNED_VIEW';
+}
+
+export function isAssignedPostProductionOnly(access?: string, isOwner?: boolean): boolean {
+  if (isOwner) return false;
+  return access === 'ASSIGNED_VIEW' || access === 'ASSIGNED_EDIT' || access === 'ASSIGNED_ONLY';
+}
+
+export function canManageAllPostProduction(access?: string, isOwner?: boolean): boolean {
+  if (isOwner) return true;
+  return access === 'ALL_MANAGE' || access === 'FULL_ACCESS';
 }
 
 /**

@@ -10,6 +10,8 @@ export interface DeliverableAttachedLink {
   id: string;
   title: string;
   url: string;
+  created_by_id?: string;
+  created_by_name?: string;
 }
 
 interface AttachLinksModalProps {
@@ -19,6 +21,8 @@ interface AttachLinksModalProps {
   subtitle?: string;
   initialLinks?: DeliverableAttachedLink[];
   isReadOnly?: boolean;
+  canManage?: boolean;
+  currentUser?: { id?: string; name?: string; role?: string };
   onSave: (links: DeliverableAttachedLink[]) => Promise<void> | void;
 }
 
@@ -29,6 +33,8 @@ export default function AttachLinksModal({
   subtitle,
   initialLinks = [],
   isReadOnly = false,
+  canManage = true,
+  currentUser,
   onSave,
 }: AttachLinksModalProps) {
   const [links, setLinks] = useState<DeliverableAttachedLink[]>([]);
@@ -53,6 +59,8 @@ export default function AttachLinksModal({
         id: `link_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         title: presetTitle || '',
         url: '',
+        created_by_id: currentUser?.id,
+        created_by_name: currentUser?.name,
       }
     ]);
   };
@@ -176,7 +184,11 @@ export default function AttachLinksModal({
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
                         )}
-                        {!isReadOnly && (
+                        {!isReadOnly && (canManage || (
+                          !link.created_by_id ||
+                          link.created_by_id === currentUser?.id ||
+                          (currentUser?.name && link.created_by_name?.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
+                        )) && (
                           <button
                             type="button"
                             onClick={() => handleRemoveLink(link.id)}

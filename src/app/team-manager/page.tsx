@@ -1340,7 +1340,7 @@ export default function TeamManagerPage() {
               projectId,
               oldName: targetProj.client_name,
               newName: couplingName,
-              workspaceId: activeWorkspace?.id || (targetProj as any)?.workspace_id,
+              workspaceId: activeWorkspace?.workspaceId || (targetProj as any)?.workspace_id,
             }),
           }).catch(console.error);
 
@@ -4416,6 +4416,7 @@ export default function TeamManagerPage() {
         isAllStudios={activeWorkspace?.workspaceId === 'all' || workspaceId === 'all'}
         isPartnerPortal={!isOwner}
         isOwner={isOwner}
+        teamManagerAccess={tmAccess}
         totalFilteredCount={filteredProjects.length}
       />
 

@@ -7,7 +7,7 @@ export interface MemberPermissions {
   leads_access: 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ALL_VIEW' | 'ALL_MANAGE' | 'ALL_EDIT' | 'ASSIGNED_ONLY' | 'VIEW_ALL' | 'FULL_EDIT';
   quotations_access: 'NONE' | 'VIEW' | 'VIEW_ONLY' | 'MANAGE';
   team_manager_access: 'NONE' | 'ASSIGNED_OWN_ROLE' | 'ASSIGNED_FULL_CREW' | 'ASSIGNED_ONLY_VIEW' | 'ASSIGNED_FULL_TEAM_VIEW' | 'ALL_VIEW' | 'ALL_MANAGE' | 'VIEW_ASSIGNED' | 'MANAGE_ALL';
-  post_production_access: 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_ONLY' | 'ALL_VIEW' | 'ALL_MANAGE' | 'FULL_ACCESS';
+  post_production_access: 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ASSIGNED_ONLY' | 'ALL_VIEW' | 'ALL_MANAGE' | 'FULL_ACCESS';
   finance_access: 'NONE' | 'VIEW' | 'VIEW_ONLY' | 'MANAGE';
 }
 

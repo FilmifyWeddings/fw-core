@@ -64,7 +64,8 @@ export default function DeliverableRowItem({
   onOpenComments,
   onOpenDrive,
 }: DeliverableRowItemProps) {
-  const canManage = propCanManage !== undefined ? propCanManage : !isReadOnly;
+  const canManage = Boolean(propCanManage);
+  const canEditStatusAndDate = !isReadOnly && (canManage || isAssignedView);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(item.title);
 
@@ -416,21 +417,21 @@ export default function DeliverableRowItem({
         <div className="w-48 sm:w-52 shrink-0 flex items-center gap-1.5">
           <div 
             onClick={() => {
-              if (!isAllView && (canManage || isAssignedView)) {
+              if (canEditStatusAndDate) {
                 datePickerRef.current?.showPicker?.() || datePickerRef.current?.focus();
               }
             }}
-            className={`relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs ${!isAllView && (canManage || isAssignedView) ? 'cursor-pointer hover:border-amber-400' : 'cursor-default'} transition flex-1 min-w-0`}
-            title={!isAllView && (canManage || isAssignedView) ? 'Click to select due date' : undefined}
+            className={`relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs ${canEditStatusAndDate ? 'cursor-pointer hover:border-amber-400' : 'cursor-default'} transition flex-1 min-w-0`}
+            title={canEditStatusAndDate ? 'Click to select due date' : undefined}
           >
             <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 pointer-events-none" />
             <input
               ref={datePickerRef}
               type="date"
-              disabled={isAllView || (!canManage && !isAssignedView)}
+              disabled={!canEditStatusAndDate}
               value={dueDateStr}
               onChange={(e) => {
-                if (isAllView || (!canManage && !isAssignedView)) return;
+                if (!canEditStatusAndDate) return;
                 const dateVal = e.target.value;
                 if (onUpdateItemFields) {
                   onUpdateItemFields(item.id, { due_date: dateVal, deadline: dateVal });
@@ -439,7 +440,7 @@ export default function DeliverableRowItem({
                   onUpdateItem(item.id, 'deadline', dateVal);
                 }
               }}
-              className={`bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none ${!isAllView && (canManage || isAssignedView) ? 'cursor-pointer' : 'cursor-default'} w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full ${!isAllView && (canManage || isAssignedView) ? '[&::-webkit-calendar-picker-indicator]:cursor-pointer' : ''}`}
+              className={`bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none ${canEditStatusAndDate ? 'cursor-pointer' : 'cursor-default'} w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full ${canEditStatusAndDate ? '[&::-webkit-calendar-picker-indicator]:cursor-pointer' : ''}`}
             />
           </div>
 
@@ -456,9 +457,9 @@ export default function DeliverableRowItem({
             currentStatus={currentStatus}
             statuses={ppStatuses}
             workspaceId={workspaceId || 'ws_default'}
-            disabled={isAllView || (!canManage && !isAssignedView)}
+            disabled={!canEditStatusAndDate}
             onChange={(val) => {
-              if (isAllView || (!canManage && !isAssignedView)) return;
+              if (!canEditStatusAndDate) return;
               if (onUpdateItemFields) {
                 onUpdateItemFields(item.id, { status: val });
               } else {
@@ -635,11 +636,15 @@ export default function DeliverableRowItem({
         onClose={() => setIsAttachLinksModalOpen(false)}
         title={item.title}
         subtitle={clientName}
-        isReadOnly={isAllView}
+        isReadOnly={isReadOnly}
+        canManage={canManage}
+        currentUser={currentUser}
         initialLinks={(item.drive_links || []).map((l: any, i: number) => ({
           id: l.id || `lnk_${i}`,
           title: l.title || l.label || 'Link',
           url: l.url || '',
+          created_by_id: l.created_by_id,
+          created_by_name: l.created_by_name,
         }))}
         onSave={(links: DeliverableAttachedLink[]) => {
           const firstUrl = links[0]?.url || '';
