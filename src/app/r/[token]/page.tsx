@@ -320,9 +320,16 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
         {/* Active Version Pills */}
         <div className="flex items-center gap-2">
           {activeVersion && (
-            <span className="text-xs font-bold text-zinc-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
-              Revision {activeVersion.version_label || `V${activeVersion.version_number}`}
-            </span>
+            <div className="flex items-center gap-2">
+              {activeVersion.file_size_bytes > 0 && activeVersion.source_type === 'upload' && (
+                <span className="text-[11px] font-medium text-zinc-500 bg-zinc-100 px-2.5 py-1 rounded-xl border border-zinc-200">
+                  Master: {(activeVersion.file_size_bytes / (1024 * 1024)).toFixed(1)} MB
+                </span>
+              )}
+              <span className="text-xs font-bold text-zinc-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                Revision {activeVersion.version_label || `V${activeVersion.version_number}`}
+              </span>
+            </div>
           )}
         </div>
       </div>
@@ -336,6 +343,7 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
             <VideoPlayer
               sourceType={activeVersion.source_type}
               videoUrl={activeVersion.video_url}
+              storageKey={activeVersion.storage_key}
               youtubeVideoId={activeVersion.youtube_video_id}
               comments={comments}
               activeCommentId={activeCommentId}

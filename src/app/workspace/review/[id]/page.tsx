@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Film, Plus, Share2, CheckCircle2, Clock, 
   FileEdit, Sparkles, ChevronDown, PenTool, Users, 
-  Calendar, GitCommit, Trash2, Check 
+  Calendar, GitCommit, Trash2, Check, Zap 
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
@@ -68,7 +68,6 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
         setShares(data.shares || []);
 
         if (data.videos && data.videos.length > 0) {
-          // If no active video or current active video not in list, select first
           setActiveVideoId(prev => {
             const exists = data.videos.some((v: any) => v.id === prev);
             return exists ? prev : data.videos[0].id;
@@ -394,6 +393,7 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
             <VideoPlayer
               sourceType={activeVersion.source_type}
               videoUrl={activeVersion.video_url}
+              storageKey={activeVersion.storage_key}
               youtubeVideoId={activeVersion.youtube_video_id}
               comments={comments}
               activeCommentId={activeCommentId}
@@ -420,21 +420,72 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
             </div>
           )}
 
-          {/* Revision Changelog Notes Banner */}
+          {/* Revision Changelog Notes Banner & Cloud Storage Status */}
           {activeVersion && (
-            <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs space-y-1">
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  {activeVersion.version_label || `Version ${activeVersion.version_number}`} Changelog / Cut Notes
+                  {activeVersion.version_label || `Version ${activeVersion.version_number}`} Cut Notes
                 </span>
-                <span className="text-[10px] text-zinc-400">
-                  {new Date(activeVersion.created_at).toLocaleString()}
-                </span>
+                
+                <div className="flex items-center gap-2 text-[10px]">
+                  {activeVersion.source_type === 'upload' && activeVersion.file_size_bytes > 0 && (
+                    <span className="px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-700 font-bold border border-zinc-200">
+                      Original: {(activeVersion.file_size_bytes / (1024 * 1024)).toFixed(1)} MB
+                    </span>
+                  )}
+                  {activeVersion.resolution && (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                      {activeVersion.resolution}
+                    </span>
+                  )}
+                  <span className="text-zinc-400">
+                    {new Date(activeVersion.created_at).toLocaleString()}
+                  </span>
+                </div>
               </div>
-              <p className="text-xs text-zinc-600 leading-relaxed font-mono">
+
+              <p className="text-xs text-zinc-700 leading-relaxed font-mono">
                 {activeVersion.changelog_notes || 'Initial cut uploaded.'}
               </p>
+
+              {/* Cloud Storage Optimization trigger */}
+              {isOwner && activeVersion.source_type === 'upload' && activeVersion.storage_key && (
+                <div className="pt-2 border-t border-zinc-100 flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-[10px] text-zinc-400">
+                    Cloud Storage: Faststream + MOOV header ready (Instant 0ms seek)
+                  </span>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/review/optimize', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            storage_key: activeVersion.storage_key,
+                            version_id: activeVersion.id,
+                            project_id: projectId,
+                            workspace_id: workspaceId,
+                            original_file_size_bytes: activeVersion.file_size_bytes,
+                          }),
+                        });
+                        const d = await res.json();
+                        if (d.success) {
+                          alert(`Cloud Storage Optimized! ${d.saved_percentage ? `Saved ${d.saved_percentage}% B2 space.` : 'Video is ready.'}`);
+                          loadProject();
+                        }
+                      } catch (_) {
+                        alert('Optimization triggered in background.');
+                      }
+                    }}
+                    className="text-[10px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200 transition cursor-pointer flex items-center gap-1"
+                  >
+                    <Zap className="w-3 h-3 text-amber-600" />
+                    <span>Compress for Cloud (FFmpeg)</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

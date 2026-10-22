@@ -79,6 +79,52 @@ export async function ensureReviewCors(bucketName = REVIEW_BUCKET_NAME): Promise
 }
 
 /**
+ * Direct PutObject to Backblaze B2 (Buffer / String / JSON)
+ */
+export async function putReviewObject(
+  key: string,
+  body: Buffer | Uint8Array | string,
+  contentType: string,
+  bucketName = REVIEW_BUCKET_NAME
+): Promise<boolean> {
+  if (!B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY) return false;
+  try {
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    });
+    await reviewB2Client.send(command);
+    return true;
+  } catch (err) {
+    console.error('[Review Storage] PutObject failed for key:', key, err);
+    return false;
+  }
+}
+
+/**
+ * Fetch an object directly from Backblaze B2 as a string
+ */
+export async function getReviewObject(
+  key: string,
+  bucketName = REVIEW_BUCKET_NAME
+): Promise<string | null> {
+  if (!B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY) return null;
+  try {
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    });
+    const res = await reviewB2Client.send(command);
+    if (!res.Body) return null;
+    return await res.Body.transformToString();
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
  * Generate Presigned Upload URL for direct client-to-B2 browser upload (PUT)
  * Direct upload prevents VPS memory bottlenecks and delivers 10x faster speeds.
  */
@@ -159,7 +205,6 @@ export async function deleteReviewObjects(keys: string[], bucketName = REVIEW_BU
     return true;
   } catch (err) {
     console.error('[Review Storage] Batch delete failed:', err);
-    // Fallback: delete sequentially
     for (const k of keys) {
       await deleteReviewObject(k, bucketName);
     }

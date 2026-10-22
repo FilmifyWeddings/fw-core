@@ -6,10 +6,17 @@ import {
   RotateCcw, RotateCw, ChevronLeft, ChevronRight, PenTool, 
   Trash2, Undo, Check, Sparkles, AlertCircle 
 } from 'lucide-react';
+import { 
+  StoryboardFrame, 
+  getCachedStoryboard, 
+  cacheStoryboard, 
+  findNearestStoryboardFrame 
+} from '@/lib/review/storyboard';
 
 interface VideoPlayerProps {
   sourceType: 'upload' | 'youtube';
   videoUrl: string;
+  storageKey?: string | null;
   youtubeVideoId?: string | null;
   comments?: Array<{
     id: string;
@@ -45,6 +52,7 @@ export function formatTimecode(seconds: number): string {
 export default function VideoPlayer({
   sourceType,
   videoUrl,
+  storageKey,
   youtubeVideoId,
   comments = [],
   activeCommentId,
@@ -74,18 +82,74 @@ export default function VideoPlayer({
   const [isHoveringTimeline, setIsHoveringTimeline] = useState(false);
   const [hoverTime, setHoverTime] = useState(0);
   const [hoverX, setHoverX] = useState(0);
+  const [hoverFrame, setHoverFrame] = useState<string | null>(null);
+
+  // Storyboard frames for 0ms millisecond hover preview (like YouTube)
+  const [storyboard, setStoryboard] = useState<StoryboardFrame[]>([]);
 
   // Scrubber preview seek throttling refs
   const isSeekingPreviewRef = useRef(false);
   const pendingPreviewSeekRef = useRef<number | null>(null);
 
   // Drawing state
-  const [drawColor, setDrawColor] = useState('#F59E0B'); // Default gold/amber
+  const [drawColor, setDrawColor] = useState('#F59E0B');
   const [drawTool, setDrawTool] = useState<'pen' | 'arrow' | 'rect'>('pen');
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawingPoints, setDrawingPoints] = useState<any[]>([]);
 
-  // 1. YouTube Player Integration
+  // 1. Load Pre-extracted Storyboard for 0ms Hover Thumbnails
+  useEffect(() => {
+    if (sourceType !== 'upload') return;
+
+    const cacheKey = storageKey || videoUrl;
+    const cached = getCachedStoryboard(cacheKey);
+
+    if (cached && cached.length > 0) {
+      setStoryboard(cached);
+      return;
+    }
+
+    if (storageKey) {
+      fetch(`/api/review/storyboard?key=${encodeURIComponent(storageKey)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.frames) && data.frames.length > 0) {
+            setStoryboard(data.frames);
+            cacheStoryboard(storageKey, data.frames);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [sourceType, storageKey, videoUrl]);
+
+  // Progressive frame capture during playback as fallback
+  const lastCaptureTimeRef = useRef(0);
+  const handleProgressiveCapture = useCallback(() => {
+    if (!videoRef.current || sourceType !== 'upload' || storyboard.length >= 25) return;
+    const v = videoRef.current;
+    const now = v.currentTime;
+    if (Math.abs(now - lastCaptureTimeRef.current) >= 2) {
+      lastCaptureTimeRef.current = now;
+      try {
+        const offscreen = document.createElement('canvas');
+        offscreen.width = 160;
+        offscreen.height = 90;
+        const ctx = offscreen.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(v, 0, 0, 160, 90);
+          const dataUrl = offscreen.toDataURL('image/jpeg', 0.5);
+          setStoryboard(prev => {
+            const next = [...prev, { time: now, dataUrl }];
+            const key = storageKey || videoUrl;
+            if (key) cacheStoryboard(key, next);
+            return next;
+          });
+        }
+      } catch (_) {}
+    }
+  }, [sourceType, storyboard.length, storageKey, videoUrl]);
+
+  // 2. YouTube Player Integration
   useEffect(() => {
     if (sourceType !== 'youtube' || !youtubeVideoId) return;
 
@@ -154,7 +218,7 @@ export default function VideoPlayer({
     };
   }, [sourceType, youtubeVideoId]);
 
-  // 2. Seek video when driven from outside (e.g. clicking a comment or scrubbing)
+  // Seek video
   const seekTo = useCallback((seconds: number) => {
     if (sourceType === 'youtube') {
       if (ytPlayerRef.current && ytPlayerRef.current.seekTo) {
@@ -188,7 +252,7 @@ export default function VideoPlayer({
     }
   }, [sourceType, isPlaying]);
 
-  // Frame Stepping (1 frame at 24fps = ~0.0416 seconds)
+  // Frame Stepping
   const stepFrame = (frames: number) => {
     const delta = frames * (1 / 24);
     const newTime = Math.max(0, Math.min(duration, currentTime + delta));
@@ -238,7 +302,7 @@ export default function VideoPlayer({
     }
   };
 
-  // 3. Drawing Layer: Strictly Bound to Timecode (Frame.io grade)
+  // 3. Drawing Layer: Strictly Bound to Timecode
   const redrawCanvas = useCallback((pointsToDraw: any[]) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -250,10 +314,8 @@ export default function VideoPlayer({
     let annotationData: any = null;
 
     if (isDrawMode) {
-      // User is actively annotating on the currently paused frame
       annotationData = currentAnnotation;
     } else {
-      // Check if current video frame matches a comment's timecode within threshold
       const matchingComment = comments.find(c => {
         if (!c.has_annotation || !c.annotation_data) return false;
         if (activeCommentId && c.id === activeCommentId) {
@@ -305,7 +367,6 @@ export default function VideoPlayer({
     }
   }, [activeCommentId, comments, currentAnnotation, currentTime, drawColor, isDrawMode]);
 
-  // Adjust canvas size to match container
   useEffect(() => {
     const handleResize = () => {
       if (!canvasRef.current || !containerRef.current) return;
@@ -318,7 +379,6 @@ export default function VideoPlayer({
     return () => window.removeEventListener('resize', handleResize);
   }, [redrawCanvas, drawingPoints]);
 
-  // Re-draw canvas whenever timecode updates or active comment changes
   useEffect(() => {
     redrawCanvas(drawingPoints);
   }, [currentTime, activeCommentId, currentAnnotation, redrawCanvas, drawingPoints, isDrawMode]);
@@ -368,7 +428,7 @@ export default function VideoPlayer({
     }
   };
 
-  // 4. Instant Hover Scrubbing Thumbnail Logic (Throttled & Non-blocking)
+  // 4. Instant Hover Scrubbing Thumbnail Logic (0ms Lookup via Storyboard)
   const drawPreviewFrame = useCallback(() => {
     const v = previewVideoRef.current;
     const c = previewCanvasRef.current;
@@ -427,6 +487,7 @@ export default function VideoPlayer({
           onTimeUpdate={() => {
             if (videoRef.current) {
               onTimeUpdate(videoRef.current.currentTime);
+              handleProgressiveCapture();
             }
           }}
           onLoadedMetadata={() => {
@@ -445,7 +506,7 @@ export default function VideoPlayer({
         />
       )}
 
-      {/* Off-screen Preloaded Video for Instant Scrub Thumbnail Rendering */}
+      {/* Off-screen Preloaded Video for Instant Scrub Thumbnail Rendering Fallback */}
       {sourceType === 'upload' && videoUrl && (
         <video
           ref={previewVideoRef}
@@ -560,9 +621,21 @@ export default function VideoPlayer({
             setHoverX(e.clientX - rect.left);
             setIsHoveringTimeline(true);
 
-            requestHoverSeek(targetHoverTime);
+            // 0ms Millisecond Storyboard Lookup (YouTube / Frame.io Grade)
+            if (storyboard.length > 0) {
+              const nearestImg = findNearestStoryboardFrame(targetHoverTime, storyboard);
+              if (nearestImg) {
+                setHoverFrame(nearestImg);
+              }
+            } else {
+              setHoverFrame(null);
+              requestHoverSeek(targetHoverTime);
+            }
           }}
-          onMouseLeave={() => setIsHoveringTimeline(false)}
+          onMouseLeave={() => {
+            setIsHoveringTimeline(false);
+            setHoverFrame(null);
+          }}
         >
           {/* Progress fill */}
           <div 
@@ -579,7 +652,13 @@ export default function VideoPlayer({
               className="absolute -top-28 -translate-x-1/2 flex flex-col items-center pointer-events-none z-40 transition-transform duration-75"
             >
               <div className="w-28 h-16 bg-zinc-950 rounded-xl overflow-hidden border border-white/20 shadow-2xl relative flex items-center justify-center">
-                {sourceType === 'upload' ? (
+                {hoverFrame ? (
+                  <img
+                    src={hoverFrame}
+                    alt="Frame preview"
+                    className="w-full h-full object-cover animate-in fade-in duration-75"
+                  />
+                ) : sourceType === 'upload' ? (
                   <canvas
                     ref={previewCanvasRef}
                     width={112}

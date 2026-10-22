@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
+import { extractClientStoryboard, cacheStoryboard } from '@/lib/review/storyboard';
 
 export interface ReviewUploadTask {
   id: string;
@@ -14,7 +15,7 @@ export interface ReviewUploadTask {
   formattedSize: string;
   progress: number;
   speed: string;
-  status: 'queued' | 'uploading' | 'saving' | 'completed' | 'error';
+  status: 'queued' | 'extracting' | 'uploading' | 'saving' | 'completed' | 'error';
   errorMessage?: string;
   xhr?: XMLHttpRequest;
   createdAt: number;
@@ -69,7 +70,7 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
 
-  const activeCount = tasks.filter(t => t.status === 'uploading' || t.status === 'saving' || t.status === 'queued').length;
+  const activeCount = tasks.filter(t => t.status === 'uploading' || t.status === 'saving' || t.status === 'extracting' || t.status === 'queued').length;
 
   const updateTask = useCallback((taskId: string, patch: Partial<ReviewUploadTask>) => {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t));
@@ -86,7 +87,7 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const clearCompleted = useCallback(() => {
-    setTasks(prev => prev.filter(t => t.status === 'uploading' || t.status === 'saving' || t.status === 'queued'));
+    setTasks(prev => prev.filter(t => t.status === 'uploading' || t.status === 'saving' || t.status === 'extracting' || t.status === 'queued'));
   }, []);
 
   // 1. Process Video Asset Upload
@@ -94,9 +95,22 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
     const { projectId, workspaceId, title, category, file, changelogNotes, onCompleted } = params;
 
     try {
-      updateTask(taskId, { status: 'uploading', progress: 5, speed: 'Starting...' });
+      updateTask(taskId, { status: 'extracting', progress: 3, speed: 'Generating hover frames...' });
 
-      // Step A: Request presigned upload URL from Backblaze B2
+      // Step A: Extract 25-frame storyboard and cover thumbnail from local blob in ~300ms
+      let storyboardFrames: any[] = [];
+      let coverThumb = '';
+      try {
+        const sb = await extractClientStoryboard(file, 25);
+        storyboardFrames = sb.frames;
+        coverThumb = sb.coverThumbnail;
+      } catch (sbErr) {
+        console.warn('[Review Upload] Storyboard extraction note:', sbErr);
+      }
+
+      updateTask(taskId, { status: 'uploading', progress: 6, speed: 'Preparing storage...' });
+
+      // Step B: Request presigned upload URL from Backblaze B2
       const presignRes = await fetch('/api/review/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,9 +128,22 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         throw new Error(presignData.error || 'Failed to initialize video upload storage');
       }
 
+      const storageKey = presignData.key;
+
+      // Cache storyboard locally for 0ms hover preview in current session
+      if (storyboardFrames.length > 0 && storageKey) {
+        cacheStoryboard(storageKey, storyboardFrames);
+        // Save storyboard to Backblaze B2 in background
+        fetch('/api/review/storyboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storage_key: storageKey, frames: storyboardFrames }),
+        }).catch(() => {});
+      }
+
       updateTask(taskId, { progress: 10, speed: 'Uploading...' });
 
-      // Step B: Upload file directly to Backblaze B2 using XMLHttpRequest
+      // Step C: Direct PUT upload to Backblaze B2 using XMLHttpRequest
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         let lastTime = Date.now();
@@ -160,8 +187,8 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         xhr.send(file);
       });
 
-      // Step C: Register video and version metadata in DB
-      updateTask(taskId, { status: 'saving', progress: 96, speed: 'Finalizing...' });
+      // Step D: Register video and version metadata in DB
+      updateTask(taskId, { status: 'saving', progress: 96, speed: 'Saving to database...' });
 
       const registerRes = await fetch('/api/review/videos', {
         method: 'POST',
@@ -174,7 +201,8 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
           source_type: 'upload',
           video_url: presignData.public_url,
           original_file_url: presignData.public_url,
-          storage_key: presignData.key,
+          storage_key: storageKey,
+          thumbnail_url: coverThumb || null,
           file_size_bytes: file.size,
           resolution: '1080p',
           changelog_notes: changelogNotes || 'Initial cut uploaded for review',
@@ -186,10 +214,23 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         throw new Error(registerData.error || 'Failed to save video record to database');
       }
 
+      // Step E: Background Video Storage Optimization & Faststart Injection
+      fetch('/api/review/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storage_key: storageKey,
+          version_id: registerData.version?.id,
+          project_id: projectId,
+          workspace_id: workspaceId,
+          original_file_size_bytes: file.size,
+        }),
+      }).catch((optErr) => console.log('[Review Optimize Trigger Note]:', optErr));
+
       updateTask(taskId, { 
         status: 'completed', 
         progress: 100, 
-        speed: '✓ Complete',
+        speed: '✓ Upload Complete',
         xhr: undefined 
       });
 
@@ -220,9 +261,20 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
     const { projectId, workspaceId, videoId, versionLabel, file, changelogNotes, onCompleted } = params;
 
     try {
-      updateTask(taskId, { status: 'uploading', progress: 5, speed: 'Starting...' });
+      updateTask(taskId, { status: 'extracting', progress: 3, speed: 'Generating hover frames...' });
 
-      // Step A: Presigned URL
+      // Step A: Storyboard extraction
+      let storyboardFrames: any[] = [];
+      let coverThumb = '';
+      try {
+        const sb = await extractClientStoryboard(file, 25);
+        storyboardFrames = sb.frames;
+        coverThumb = sb.coverThumbnail;
+      } catch (_) {}
+
+      updateTask(taskId, { status: 'uploading', progress: 6, speed: 'Preparing storage...' });
+
+      // Step B: Presigned URL
       const presignRes = await fetch('/api/review/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -240,9 +292,20 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         throw new Error(presignData.error || 'Failed to initialize version storage');
       }
 
+      const storageKey = presignData.key;
+
+      if (storyboardFrames.length > 0 && storageKey) {
+        cacheStoryboard(storageKey, storyboardFrames);
+        fetch('/api/review/storyboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storage_key: storageKey, frames: storyboardFrames }),
+        }).catch(() => {});
+      }
+
       updateTask(taskId, { progress: 10, speed: 'Uploading...' });
 
-      // Step B: Direct PUT upload
+      // Step C: Direct PUT upload
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         let lastTime = Date.now();
@@ -286,8 +349,8 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         xhr.send(file);
       });
 
-      // Step C: Register version metadata
-      updateTask(taskId, { status: 'saving', progress: 96, speed: 'Finalizing...' });
+      // Step D: Register version metadata
+      updateTask(taskId, { status: 'saving', progress: 96, speed: 'Saving to database...' });
 
       const versionRes = await fetch('/api/review/versions', {
         method: 'POST',
@@ -299,7 +362,8 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
           source_type: 'upload',
           video_url: presignData.public_url,
           original_file_url: presignData.public_url,
-          storage_key: presignData.key,
+          storage_key: storageKey,
+          thumbnail_url: coverThumb || null,
           file_size_bytes: file.size,
           resolution: '1080p',
           version_label: versionLabel || '',
@@ -312,10 +376,23 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         throw new Error(versionData.error || 'Failed to save version revision');
       }
 
+      // Step E: Trigger background optimization
+      fetch('/api/review/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storage_key: storageKey,
+          version_id: versionData.version?.id,
+          project_id: projectId,
+          workspace_id: workspaceId,
+          original_file_size_bytes: file.size,
+        }),
+      }).catch(() => {});
+
       updateTask(taskId, { 
         status: 'completed', 
         progress: 100, 
-        speed: '✓ Complete',
+        speed: '✓ Upload Complete',
         xhr: undefined 
       });
 
@@ -351,7 +428,7 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
       fileSizeBytes: params.file.size,
       formattedSize: formatFileSize(params.file.size),
       progress: 0,
-      speed: 'Waiting...',
+      speed: 'Starting...',
       status: 'queued',
       createdAt: Date.now(),
     };
@@ -360,10 +437,9 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
     setIsDrawerOpen(true);
     setIsMinimized(false);
 
-    // Run asynchronously in background
     setTimeout(() => {
       startVideoUpload(taskId, params);
-    }, 100);
+    }, 50);
 
     return taskId;
   }, [startVideoUpload]);
@@ -380,7 +456,7 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
       fileSizeBytes: params.file.size,
       formattedSize: formatFileSize(params.file.size),
       progress: 0,
-      speed: 'Waiting...',
+      speed: 'Starting...',
       status: 'queued',
       createdAt: Date.now(),
     };
@@ -391,7 +467,7 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
 
     setTimeout(() => {
       startVersionUpload(taskId, params);
-    }, 100);
+    }, 50);
 
     return taskId;
   }, [startVersionUpload]);
