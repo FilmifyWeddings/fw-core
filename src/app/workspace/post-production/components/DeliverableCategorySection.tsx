@@ -61,7 +61,11 @@ interface DeliverableCategorySectionProps {
   teamMembers: { id: string; name: string; role?: string; default_daily_rate?: number; daily_rate?: number; email?: string }[];
   clientName?: string;
   workspaceId?: string;
+  canManage?: boolean;
+  isAllView?: boolean;
+  isAssignedView?: boolean;
   isReadOnly?: boolean;
+  currentUser?: any;
   onAddItem: (segment: string, category: string, title: string, specs?: string) => void;
   onAddMultipleItems?: (items: Partial<PostProductionDeliverable>[]) => void;
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
@@ -79,7 +83,11 @@ export default function DeliverableCategorySection({
   teamMembers,
   clientName,
   workspaceId,
+  canManage: propCanManage,
+  isAllView = false,
+  isAssignedView = false,
   isReadOnly = false,
+  currentUser,
   onAddItem,
   onAddMultipleItems,
   onUpdateItem,
@@ -93,6 +101,7 @@ export default function DeliverableCategorySection({
   const [customTitle, setCustomTitle] = useState('');
   const [customSpecs, setCustomSpecs] = useState('');
   const [customSelected, setCustomSelected] = useState(false);
+  const canManage = propCanManage !== undefined ? propCanManage : !isReadOnly;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
   const [presetSpecs, setPresetSpecs] = useState<Record<string, string>>({});
@@ -353,7 +362,7 @@ export default function DeliverableCategorySection({
         {/* Header Action Buttons & 3D Creamy Multi-Select Dropdown Popover */}
         <div className="flex items-center gap-2 self-end sm:self-auto">
           {/* Add Deliverable Dropdown Trigger & Popover */}
-          {!isReadOnly && (
+          {canManage && (
             <div className="relative" ref={dropdownRef}>
             <button
               type="button"
@@ -617,7 +626,7 @@ export default function DeliverableCategorySection({
           )}
 
           {/* Remove Category button */}
-          {!isReadOnly && onRemoveCategory && (
+          {canManage && onRemoveCategory && (
             <button
               type="button"
               onClick={() => setShowDeleteCatConfirm(true)}
@@ -636,7 +645,7 @@ export default function DeliverableCategorySection({
           <p className="text-xs text-slate-500 dark:text-stone-400 font-medium">
             No {category.toLowerCase()} deliverables currently set for {segment}.
           </p>
-          {!isReadOnly && (
+          {canManage && (
             <div className="flex items-center justify-center gap-3">
               <button
                 type="button"
@@ -670,7 +679,11 @@ export default function DeliverableCategorySection({
               teamMembers={filteredTeamMembers}
               clientName={clientName}
               workspaceId={workspaceId}
+              canManage={canManage}
+              isAllView={isAllView}
+              isAssignedView={isAssignedView}
               isReadOnly={isReadOnly}
+              currentUser={currentUser}
               onUpdateItem={onUpdateItem}
               onUpdateItemFields={onUpdateItemFields}
               onDeleteItem={onDeleteItem}

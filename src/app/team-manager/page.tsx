@@ -2067,16 +2067,18 @@ export default function TeamManagerPage() {
                 </button>
               )}
 
-              {/* All History Button (Desktop) */}
-              <button
-                type="button"
-                onClick={() => setIsAllHistoryOpen(true)}
-                className="hidden sm:flex bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold h-7.5 px-3 rounded-xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition-all"
-                title="All Team Manager History"
-              >
-                <History className="w-3.5 h-3.5 text-slate-600" />
-                <span>History</span>
-              </button>
+              {/* All History Button (Desktop) - Full Manage Only */}
+              {canManageTeam && (
+                <button
+                  type="button"
+                  onClick={() => setIsAllHistoryOpen(true)}
+                  className="hidden sm:flex bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold h-7.5 px-3 rounded-xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition-all"
+                  title="All Team Manager History"
+                >
+                  <History className="w-3.5 h-3.5 text-slate-600" />
+                  <span>History</span>
+                </button>
+              )}
 
               {/* Unified Filter Button */}
               <button
@@ -2128,15 +2130,17 @@ export default function TeamManagerPage() {
                 className="w-full h-8 pl-7.5 pr-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 placeholder:text-[11px] focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
               />
             </div>
-            <button 
-              type="button"
-              onClick={() => setIsAllHistoryOpen(true)}
-              className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
-              title="All History"
-            >
-              <History className="w-3.5 h-3.5 text-slate-500"/>
-              <span className="hidden sm:inline">History</span>
-            </button>
+            {canManageTeam && (
+              <button 
+                type="button"
+                onClick={() => setIsAllHistoryOpen(true)}
+                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+                title="All History"
+              >
+                <History className="w-3.5 h-3.5 text-slate-500"/>
+                <span className="hidden sm:inline">History</span>
+              </button>
+            )}
             <button 
               type="button"
               onClick={() => setIsUnifiedFilterOpen(!isUnifiedFilterOpen)}
@@ -2858,19 +2862,21 @@ export default function TeamManagerPage() {
                             );
                           })()}
 
-                            {/* Standalone History Icon Button */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                setSelectedProjectForHistory(project);
-                              }}
-                              className="p-1.5 rounded-lg bg-neutral-100/90 hover:bg-amber-100/80 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 transition-all cursor-pointer shadow-sm"
-                              title="View Project Change History"
-                            >
-                              <History className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                            </button>
+                            {/* Standalone History Icon Button - Full Manage Only */}
+                            {canManageTeam && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  setSelectedProjectForHistory(project);
+                                }}
+                                className="p-1.5 rounded-lg bg-neutral-100/90 hover:bg-amber-100/80 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 transition-all cursor-pointer shadow-sm"
+                                title="View Project Change History"
+                              >
+                                <History className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                              </button>
+                            )}
 
                             {!isTmReadOnly && (
                               <button 
@@ -3769,10 +3775,10 @@ export default function TeamManagerPage() {
               setInitialDateForModal(initialDate || '');
               setIsAddProjectOpen(true);
             }}
-            onOpenHistory={(project, subEvent) => {
+            onOpenHistory={canManageTeam ? (project, subEvent) => {
               setSelectedProjectForHistory(project);
               setSelectedSubEventForHistory(subEvent || null);
-            }}
+            } : undefined}
             isTmReadOnly={isTmReadOnly}
             isSelfRoleOnly={isSelfRoleOnly}
             currentMemberId={currentMember?.id || activeWorkspace?.memberId || null}

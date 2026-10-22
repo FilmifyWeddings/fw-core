@@ -19,6 +19,10 @@ interface DeliverableCommentDrawerProps {
   onClose: () => void;
   deliverable: PostProductionDeliverable | null;
   initialTab?: 'comments' | 'links';
+  canManage?: boolean;
+  isAllView?: boolean;
+  isAssignedView?: boolean;
+  currentUser?: { id?: string; name?: string; role?: string };
   onUpdateDriveLink?: (deliverableId: string, driveLink: string) => void;
   onCommentCountChange?: (deliverableId: string, count: number) => void;
   onUpdateDeliverable?: (deliverableId: string, updates: Partial<PostProductionDeliverable>) => void;
@@ -38,6 +42,10 @@ export default function DeliverableCommentDrawer({
   onClose,
   deliverable,
   initialTab = 'comments',
+  canManage = true,
+  isAllView = false,
+  isAssignedView = false,
+  currentUser,
   onUpdateDriveLink,
   onCommentCountChange,
   onUpdateDeliverable,
@@ -243,7 +251,10 @@ export default function DeliverableCommentDrawer({
       title: label,
       label,
       url: formatted,
-    };
+      created_by_id: currentUser?.id,
+      created_by_name: currentUser?.name,
+      is_session_added: true,
+    } as any;
 
     const updatedLinks = [...driveLinks, newEntry];
     setDriveLinks(updatedLinks);
@@ -453,14 +464,19 @@ export default function DeliverableCommentDrawer({
                                 minute: '2-digit',
                               })}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteComment(cm.id)}
-                              className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition cursor-pointer p-0.5"
-                              title="Delete note"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {(canManage || (isAssignedView && (
+                              (currentUser?.id && cm.user_id === currentUser.id) ||
+                              (currentUser?.name && cm.author_name?.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
+                            ))) && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteComment(cm.id)}
+                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition cursor-pointer p-0.5"
+                                title="Delete note"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -510,7 +526,7 @@ export default function DeliverableCommentDrawer({
                       Add multiple links for raw footage, selection galleries, album proofs, or final videos.
                     </p>
                   </div>
-                  {!isAddingLink && (
+                  {!isAllView && !isAddingLink && (
                     <button
                       type="button"
                       onClick={() => setIsAddingLink(true)}
@@ -626,14 +642,16 @@ export default function DeliverableCommentDrawer({
                     <p className="text-[11px] text-slate-400 dark:text-stone-500 max-w-xs mx-auto">
                       Attach Google Drive folders, WeTransfer drops, or final video review links for your team and clients.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => setIsAddingLink(true)}
-                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800 rounded-xl hover:bg-sky-100 transition cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add First Link</span>
-                    </button>
+                    {!isAllView && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingLink(true)}
+                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800 rounded-xl hover:bg-sky-100 transition cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add First Link</span>
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-2.5">
@@ -683,14 +701,20 @@ export default function DeliverableCommentDrawer({
                             )}
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteLink(item.id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
-                            title="Remove link"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {(canManage || (isAssignedView && (
+                            (item as any).created_by_id === currentUser?.id ||
+                            (currentUser?.name && (item as any).created_by_name?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()) ||
+                            (item as any).is_session_added
+                          ))) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteLink(item.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
+                              title="Remove link"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -700,8 +724,8 @@ export default function DeliverableCommentDrawer({
             )}
           </div>
 
-          {/* Footer - Only shown for Comments Tab */}
-          {activeTab === 'comments' && (
+          {/* Footer - Only shown for Comments Tab (Hidden for View Only) */}
+          {activeTab === 'comments' && !isAllView && (
             <div className="p-4 border-t border-[#EAE5DA] dark:border-stone-800 bg-[#FFFDF9] dark:bg-[#181614] space-y-2.5">
               {/* Reminder Scheduling Popover */}
               <AnimatePresence>

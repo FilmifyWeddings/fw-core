@@ -37,8 +37,10 @@ export default function PostProductionPage() {
   const { workspaceId, userName, userRole, isOwner, permissions, userId } = useWorkspace();
 
   const ppAccess = isOwner ? 'ALL_MANAGE' : (permissions?.post_production_access || 'NONE');
-  const isReadOnly = !isOwner && (ppAccess === 'ASSIGNED_VIEW' || ppAccess === 'ASSIGNED_ONLY' || ppAccess === 'ALL_VIEW');
+  const canManagePostProduction = isOwner || ppAccess === 'ALL_MANAGE' || ppAccess === 'FULL_ACCESS';
+  const isAllView = !isOwner && ppAccess === 'ALL_VIEW';
   const isAssignedOnly = !isOwner && (ppAccess === 'ASSIGNED_VIEW' || ppAccess === 'ASSIGNED_ONLY');
+  const isReadOnly = !canManagePostProduction;
 
   const [projects, setProjects] = useState<PostProductionProjectData[]>(() => {
     if (memCachedPostProdProjects.length > 0) return memCachedPostProdProjects;
@@ -192,8 +194,24 @@ export default function PostProductionPage() {
         return;
       }
 
-      // 1. Launch all 11 Supabase queries simultaneously in parallel for instant sub-second response
+      // 1. Launch backend API fetch + parallel queries for instant sub-second response
       const members: PostProductionTeamMember[] = [];
+      const token = session?.access_token;
+
+      let apiData: any = null;
+      try {
+        const apiRes = await fetch(`/api/workspace/post-production?workspace_id=${effectiveWsId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (apiRes.ok) {
+          const json = await apiRes.json();
+          if (json.success) {
+            apiData = json;
+          }
+        }
+      } catch (apiErr) {
+        console.warn('[PostProduction] API fallback to direct Supabase queries:', apiErr);
+      }
 
       // Query 1: Team Members
       let fwQuery = supabase
@@ -204,7 +222,6 @@ export default function PostProductionPage() {
       }
 
       // Query 2: Workspace members API
-      const token = session?.access_token;
       const wsMembersPromise = fetch(`/api/workspace/members?workspace_id=${effectiveWsId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       }).then(r => r.json()).catch(() => ({}));
@@ -389,9 +406,11 @@ export default function PostProductionPage() {
       const qList = Array.from(mergedMap.values());
       setQuotations(qList);
 
-      // Process Clients & Leads
-      const clientList: any[] = clientRes?.data ? [...clientRes.data] : [];
-      const leadsData = leadsRes?.data;
+      // Process Clients & Leads (with API data enrichment to bypass member RLS restrictions)
+      const clientList: any[] = (apiData?.clients && apiData.clients.length > 0)
+        ? [...apiData.clients]
+        : (clientRes?.data ? [...clientRes.data] : []);
+      const leadsData = (apiData?.leads && apiData.leads.length > 0) ? apiData.leads : leadsRes?.data;
       if (leadsData) {
         for (const lead of leadsData) {
           const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
@@ -434,11 +453,11 @@ export default function PostProductionPage() {
       }
       setClients(clientList);
 
-      // FW Projects & Deliverables
-      const fwProjects = fwProjectsRes?.data;
-      const pppData = pppRes?.data;
-      const ppDeliverables = ppDelivRes?.data;
-      const configData = configRes?.data;
+      // FW Projects & Deliverables (with API data enrichment)
+      const fwProjects = (apiData?.fwProjects && apiData.fwProjects.length > 0) ? apiData.fwProjects : fwProjectsRes?.data;
+      const pppData = (apiData?.postProductionProjects && apiData.postProductionProjects.length > 0) ? apiData.postProductionProjects : pppRes?.data;
+      const ppDeliverables = (apiData?.deliverables && apiData.deliverables.length > 0) ? apiData.deliverables : ppDelivRes?.data;
+      const configData = (apiData?.configs && apiData.configs.length > 0) ? apiData.configs : configRes?.data;
 
       const configByProjectId = new Map<string, any>();
       if (configData) {
@@ -736,9 +755,14 @@ export default function PostProductionPage() {
               };
             });
 
-            // Resolve real client name so it NEVER falls back to "Project Client"
+            // Resolve real client name across clients, leads, fwProjects, and couple_names
             const matchedClientRec = clientList.find(c => c.id === p.client_id || c.lead_id === p.client_id);
-            const resolvedClientName = matchedClientRec?.name || p.couple_names || (p.client_name && p.client_name !== 'Project Client' ? p.client_name : 'Wedding Client');
+            const matchedLeadRec = leadsData?.find((l: any) => l.id === p.client_id || (l as any).client_id === p.client_id);
+            const matchedLeadName = matchedLeadRec ? (matchedLeadRec.raw_payload?.couple_name || matchedLeadRec.couple_names || matchedLeadRec.client_name || matchedLeadRec.name) : null;
+            const matchedFw = fwProjects?.find((fp: any) => fp.id === p.client_id || fp.lead_id === p.client_id);
+            const matchedFwName = matchedFw?.client_name;
+
+            const resolvedClientName = matchedClientRec?.name || matchedLeadName || matchedFwName || p.couple_names || (p.client_name && p.client_name !== 'Project Client' && p.client_name !== 'Wedding Client' ? p.client_name : null) || 'Client Project';
 
             cards.push({
               id: p.id || `proj_${p.client_id}`,
@@ -1587,13 +1611,15 @@ export default function PostProductionPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link
-              href="/workspace/clients"
-              className="px-4 py-2 text-xs font-bold text-slate-700 dark:text-stone-300 bg-amber-50/60 dark:bg-stone-800 hover:bg-amber-100/80 border border-amber-200/80 dark:border-stone-700 rounded-xl transition flex items-center gap-2 shadow-2xs"
-            >
-              <User className="w-4 h-4 text-amber-700 dark:text-amber-400" />
-              Client Directory
-            </Link>
+            {canManagePostProduction && (
+              <Link
+                href="/workspace/clients"
+                className="px-4 py-2 text-xs font-bold text-slate-700 dark:text-stone-300 bg-amber-50/60 dark:bg-stone-800 hover:bg-amber-100/80 border border-amber-200/80 dark:border-stone-700 rounded-xl transition flex items-center gap-2 shadow-2xs"
+              >
+                <User className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+                Client Directory
+              </Link>
+            )}
             <button
               type="button"
               onClick={fetchPostProductionData}
@@ -1719,25 +1745,27 @@ export default function PostProductionPage() {
                 </span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setPostProdTab('trash')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
-                  postProdTab === 'trash'
-                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 shadow-xs border border-rose-300 dark:border-rose-800'
-                    : 'text-slate-600 dark:text-stone-400 hover:text-rose-600'
-                }`}
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                <span>Trash</span>
-                {mounted && trashedProjectsCount > 0 && (
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                    postProdTab === 'trash' ? 'bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200' : 'bg-rose-100 text-rose-700'
-                  }`}>
-                    {trashedProjectsCount}
-                  </span>
-                )}
-              </button>
+              {canManagePostProduction && (
+                <button
+                  type="button"
+                  onClick={() => setPostProdTab('trash')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                    postProdTab === 'trash'
+                      ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 shadow-xs border border-rose-300 dark:border-rose-800'
+                      : 'text-slate-600 dark:text-stone-400 hover:text-rose-600'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                  <span>Trash</span>
+                  {mounted && trashedProjectsCount > 0 && (
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                      postProdTab === 'trash' ? 'bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200' : 'bg-rose-100 text-rose-700'
+                    }`}>
+                      {trashedProjectsCount}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
@@ -1813,7 +1841,11 @@ export default function PostProductionPage() {
                 eventTypes={eventTypes}
                 isExpanded={expandedCards.has(project.id)}
                 isHighlighted={highlightedCardId === project.id}
+                canManage={canManagePostProduction}
+                isAllView={isAllView}
+                isAssignedView={isAssignedOnly}
                 isReadOnly={isReadOnly}
+                currentMemberId={activeWorkspace?.memberId}
                 currentUser={{ id: userId || undefined, name: userName || undefined, role: userRole || undefined }}
                 onToggleExpand={() => toggleCardExpansion(project.id)}
                 onUpdateProject={handleUpdateProject}
@@ -1859,6 +1891,10 @@ export default function PostProductionPage() {
           onClose={() => setActiveDrawerDeliverable(null)}
           deliverable={activeDrawerDeliverable}
           initialTab={drawerInitialTab}
+          canManage={canManagePostProduction}
+          isAllView={isAllView}
+          isAssignedView={isAssignedOnly}
+          currentUser={{ id: userId || undefined, name: userName || undefined, role: userRole || undefined }}
           onUpdateDriveLink={handleUpdateDriveLink}
           onCommentCountChange={handleCommentCountChange}
           onUpdateDeliverable={handleUpdateDeliverable}

@@ -95,19 +95,21 @@ export const TeamManagerProjectCard: React.FC<TeamManagerProjectCardProps> = ({
 
   return (
     <div className="flex items-center gap-2">
-      {/* Standalone History Icon Button */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          onOpenHistory?.(project);
-        }}
-        className="p-1.5 rounded-lg bg-neutral-100/90 hover:bg-amber-100/80 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 transition-all cursor-pointer shadow-sm"
-        title="View Project Change History"
-      >
-        <History className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-      </button>
+      {/* Standalone History Icon Button - Only if onOpenHistory provided and not read-only */}
+      {!isTmReadOnly && onOpenHistory && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onOpenHistory?.(project);
+          }}
+          className="p-1.5 rounded-lg bg-neutral-100/90 hover:bg-amber-100/80 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 transition-all cursor-pointer shadow-sm"
+          title="View Project Change History"
+        >
+          <History className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+        </button>
+      )}
 
       {/* Edit Project Button */}
       {!isTmReadOnly && onEditProject && (

@@ -18,6 +18,7 @@ interface AttachLinksModalProps {
   title: string;
   subtitle?: string;
   initialLinks?: DeliverableAttachedLink[];
+  isReadOnly?: boolean;
   onSave: (links: DeliverableAttachedLink[]) => Promise<void> | void;
 }
 
@@ -27,6 +28,7 @@ export default function AttachLinksModal({
   title,
   subtitle,
   initialLinks = [],
+  isReadOnly = false,
   onSave,
 }: AttachLinksModalProps) {
   const [links, setLinks] = useState<DeliverableAttachedLink[]>([]);
@@ -131,13 +133,15 @@ export default function AttachLinksModal({
               {links.length === 0 ? (
                 <div className="p-6 text-center rounded-2xl border-2 border-dashed border-stone-200 bg-white space-y-2">
                   <p className="text-xs text-stone-500 font-medium">No links attached yet.</p>
-                  <button
-                    type="button"
-                    onClick={() => handleAddLink()}
-                    className="px-3 py-1.5 bg-amber-50 text-amber-900 border border-amber-300 rounded-xl text-xs font-bold hover:bg-amber-100 cursor-pointer"
-                  >
-                    + Add First Link
-                  </button>
+                  {!isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => handleAddLink()}
+                      className="px-3 py-1.5 bg-amber-50 text-amber-900 border border-amber-300 rounded-xl text-xs font-bold hover:bg-amber-100 cursor-pointer"
+                    >
+                      + Add First Link
+                    </button>
+                  )}
                 </div>
               ) : (
                 links.map((link, idx) => (
@@ -152,10 +156,11 @@ export default function AttachLinksModal({
                         </span>
                         <input
                           type="text"
+                          disabled={isReadOnly}
                           placeholder="Link Title (e.g. YouTube Draft, Google Drive Raw)..."
                           value={link.title}
                           onChange={(e) => handleUpdateLink(link.id, 'title', e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-extrabold text-stone-900 focus:bg-white focus:outline-none focus:border-amber-500 shadow-2xs"
+                          className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-extrabold text-stone-900 focus:bg-white focus:outline-none focus:border-amber-500 shadow-2xs disabled:opacity-75 disabled:cursor-not-allowed"
                         />
                       </div>
 
@@ -171,24 +176,27 @@ export default function AttachLinksModal({
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveLink(link.id)}
-                          className="p-1.5 rounded-lg bg-stone-100 text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                          title="Remove link"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {!isReadOnly && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLink(link.id)}
+                            className="p-1.5 rounded-lg bg-stone-100 text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                            title="Remove link"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
                     <div>
                       <input
                         type="url"
+                        disabled={isReadOnly}
                         placeholder="https://drive.google.com/... or https://youtube.com/..."
                         value={link.url}
                         onChange={(e) => handleUpdateLink(link.id, 'url', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-medium text-stone-800 focus:bg-white focus:outline-none focus:border-amber-500 shadow-2xs"
+                        className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-medium text-stone-800 focus:bg-white focus:outline-none focus:border-amber-500 shadow-2xs disabled:opacity-75 disabled:cursor-not-allowed"
                       />
                     </div>
                   </div>
@@ -196,7 +204,7 @@ export default function AttachLinksModal({
               )}
             </div>
 
-            {links.length > 0 && (
+            {!isReadOnly && links.length > 0 && (
               <button
                 type="button"
                 onClick={() => handleAddLink()}
@@ -218,15 +226,25 @@ export default function AttachLinksModal({
               Cancel
             </button>
 
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving}
-              className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              <Check className="w-4 h-4 stroke-[3]" />
-              <span>{isSaving ? 'Saving...' : 'Save Links'}</span>
-            </button>
+            {!isReadOnly ? (
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>{isSaving ? 'Saving...' : 'Save Links'}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer"
+              >
+                Close
+              </button>
+            )}
           </div>
         </motion.div>
       </div>

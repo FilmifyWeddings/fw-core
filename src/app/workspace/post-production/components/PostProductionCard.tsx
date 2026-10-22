@@ -43,7 +43,11 @@ interface PostProductionCardProps {
   eventTypes?: { id?: string; name: string; category?: string }[];
   isExpanded: boolean;
   isHighlighted?: boolean;
+  canManage?: boolean;
+  isAllView?: boolean;
+  isAssignedView?: boolean;
   isReadOnly?: boolean;
+  currentMemberId?: string | null;
   currentUser?: { id?: string; name?: string; role?: string };
   onToggleExpand: () => void;
   onUpdateProject: (projectId: string, updated: Partial<PostProductionProjectData>) => void;
@@ -62,7 +66,11 @@ export default function PostProductionCard({
   eventTypes,
   isExpanded,
   isHighlighted = false,
+  canManage: propCanManage,
+  isAllView = false,
+  isAssignedView = false,
   isReadOnly = false,
+  currentMemberId,
   currentUser,
   onToggleExpand,
   onUpdateProject,
@@ -80,6 +88,7 @@ export default function PostProductionCard({
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showPMAssignModal, setShowPMAssignModal] = useState(false);
   const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
+  const canManage = propCanManage !== undefined ? propCanManage : !isReadOnly;
   const [localPM, setLocalPM] = useState<string | null>(project.project_manager_name || null);
 
   useEffect(() => {
@@ -430,13 +439,46 @@ export default function PostProductionCard({
     }
   };
 
+  // Check if a deliverable is assigned to current member
+  const isDeliverableAssignedToMe = (d: PostProductionDeliverable) => {
+    const uid = currentUser?.id;
+    const mid = currentMemberId;
+    const uname = currentUser?.name?.toLowerCase().trim();
+
+    const idMatch = uid && (d.assigned_member_id === uid || (d as any).assigned_to_id === uid);
+    const midMatch = mid && (d.assigned_member_id === mid || (d as any).assigned_to_id === mid);
+    const nameMatch = uname && d.assigned_to && d.assigned_to.toLowerCase().trim() === uname;
+    return Boolean(idMatch || midMatch || nameMatch);
+  };
+
+  // For ASSIGNED_VIEW: Strictly filter deliverables to ONLY those assigned to this member
+  const effectiveDeliverables = useMemo(() => {
+    if (isAssignedView) {
+      return deliverables.filter(isDeliverableAssignedToMe);
+    }
+    return deliverables;
+  }, [deliverables, isAssignedView, currentUser, currentMemberId]);
+
+  // For ASSIGNED_VIEW: Strictly hide segments that have NO deliverables assigned to this member
+  const effectiveSegments = useMemo(() => {
+    if (isAssignedView) {
+      const segsWithAssigned = new Set<string>();
+      effectiveDeliverables.forEach(d => {
+        segsWithAssigned.add((d.segment || 'Wedding').trim());
+      });
+      return Array.from(segsWithAssigned);
+    }
+    return enabledSegments;
+  }, [isAssignedView, effectiveDeliverables, enabledSegments]);
+
   // Segments to render in the body
   const segmentsToRender = useMemo(() => {
+    const base = effectiveSegments;
     if (activeSegmentTab === 'All') {
-      return enabledSegments;
+      return base;
     }
-    return enabledSegments.filter(s => s === activeSegmentTab);
-  }, [enabledSegments, activeSegmentTab]);
+    return base.filter(s => s === activeSegmentTab);
+  }, [activeSegmentTab, effectiveSegments]);
 
   return (
     <div 
@@ -543,19 +585,21 @@ export default function PostProductionCard({
             />
           </div>
 
-          {/* Change History Button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowHistoryDrawer(true);
-            }}
-            className="px-3 py-2 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:border-amber-400 transition cursor-pointer shadow-2xs flex items-center gap-1.5"
-            title="View Card History & Audit Log"
-          >
-            <History className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            <span className="hidden sm:inline text-xs font-bold">History</span>
-          </button>
+          {/* Change History Button - Full Manage Only */}
+          {canManage && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowHistoryDrawer(true);
+              }}
+              className="px-3 py-2 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:border-amber-400 transition cursor-pointer shadow-2xs flex items-center gap-1.5"
+              title="View Card History & Audit Log"
+            >
+              <History className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span className="hidden sm:inline text-xs font-bold">History</span>
+            </button>
+          )}
 
           {/* Expand/Collapse Toggle */}
           <button
@@ -597,7 +641,7 @@ export default function PostProductionCard({
               )}
             </div>
           ) : (
-            !isReadOnly && (
+            canManage && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -711,8 +755,8 @@ export default function PostProductionCard({
                           {segIcon} {seg}
                         </span>
 
-                        {/* Subtle ✕ close trigger */}
-                        {!isReadOnly && enabledSegments.length > 1 && (
+                        {/* Subtle ✕ close trigger - Full Manage Only */}
+                        {canManage && enabledSegments.length > 1 && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -730,8 +774,8 @@ export default function PostProductionCard({
                   })}
                 </div>
 
-                {/* + Add Custom Segment Searchable 3D Popover Trigger */}
-                {!isReadOnly && (
+                {/* + Add Custom Segment Searchable 3D Popover Trigger - Full Manage Only */}
+                {canManage && (
                   <div className="relative">
                     <button
                       type="button"
@@ -871,14 +915,18 @@ export default function PostProductionCard({
                       clientName={project.client_name}
                       workspaceId={project.workspace_id}
                       disabledCategories={disabledCats}
+                      canManage={canManage}
+                      isAllView={isAllView}
+                      isAssignedView={isAssignedView}
                       isReadOnly={isReadOnly}
+                      currentUser={currentUser}
                       onUpdateItem={handleUpdateItem}
                       onUpdateItemFields={handleUpdateItemFields}
                       onDeleteItem={handleDeleteItem}
                       onAddItem={handleAddItem}
                       onRemoveCategory={handleRemoveCategory}
                       onAddCategory={handleAddCategory}
-                      onRemoveSegment={handleRemoveSegment}
+                      onRemoveSegment={canManage ? handleRemoveSegment : undefined}
                       onOpenComments={onOpenComments}
                       onOpenDrive={onOpenDrive}
                     />

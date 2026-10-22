@@ -19,6 +19,9 @@ export interface WorkspaceOption {
   isOwner: boolean;
   memberId?: string;
   roles?: string[];
+  member_types?: string[];
+  primary_type?: string;
+  has_attendance?: boolean;
   permissions?: MemberPermissions;
   avatarUrl?: string;
   ownerEmail?: string;

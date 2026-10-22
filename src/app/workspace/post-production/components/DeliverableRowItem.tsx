@@ -19,7 +19,11 @@ interface DeliverableRowItemProps {
   teamMembers: { id: string; name: string; role?: string; default_daily_rate?: number; daily_rate?: number; email?: string }[];
   clientName?: string;
   workspaceId?: string;
+  canManage?: boolean;
+  isAllView?: boolean;
+  isAssignedView?: boolean;
   isReadOnly?: boolean;
+  currentUser?: any;
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
   onUpdateItemFields?: (itemId: string, fields: Partial<PostProductionDeliverable>) => void;
   onDeleteItem: (itemId: string) => void;
@@ -49,13 +53,18 @@ export default function DeliverableRowItem({
   teamMembers,
   clientName,
   workspaceId,
+  canManage: propCanManage,
+  isAllView = false,
+  isAssignedView = false,
   isReadOnly = false,
+  currentUser,
   onUpdateItem,
   onUpdateItemFields,
   onDeleteItem,
   onOpenComments,
   onOpenDrive,
 }: DeliverableRowItemProps) {
+  const canManage = propCanManage !== undefined ? propCanManage : !isReadOnly;
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(item.title);
 
@@ -253,9 +262,9 @@ export default function DeliverableRowItem({
           ) : (
             <div className="flex items-center gap-2 group min-w-0 flex-wrap">
               <span
-                onClick={() => !isReadOnly && setIsEditingTitle(true)}
-                className={`text-xs font-black text-slate-800 dark:text-stone-100 truncate ${!isReadOnly ? 'cursor-pointer hover:text-amber-700 dark:hover:text-amber-400' : 'cursor-default'} transition`}
-                title={!isReadOnly ? 'Click to edit deliverable title' : undefined}
+                onClick={() => canManage && setIsEditingTitle(true)}
+                className={`text-xs font-black text-slate-800 dark:text-stone-100 truncate ${canManage ? 'cursor-pointer hover:text-amber-700 dark:hover:text-amber-400' : 'cursor-default'} transition`}
+                title={canManage ? 'Click to edit deliverable title' : undefined}
               >
                 {item.title}
               </span>
@@ -293,19 +302,19 @@ export default function DeliverableRowItem({
                   {(item.specs || item.count) ? (
                     <span
                       onClick={() => {
-                        if (!isReadOnly) {
+                        if (canManage) {
                           setSpecInput(String(item.specs ?? item.count ?? ''));
                           setIsEditingSpec(true);
                         }
                       }}
-                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100/70 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 shadow-2xs ${!isReadOnly ? 'hover:bg-amber-200/80 hover:border-amber-400 cursor-pointer' : 'cursor-default'} transition shrink-0 flex items-center gap-1 group/spec`}
-                      title={!isReadOnly ? 'Click to edit specs / count (e.g. 25 Mins, 500 Photos, 40 Pages)' : undefined}
+                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100/70 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 shadow-2xs ${canManage ? 'hover:bg-amber-200/80 hover:border-amber-400 cursor-pointer' : 'cursor-default'} transition shrink-0 flex items-center gap-1 group/spec`}
+                      title={canManage ? 'Click to edit specs / count (e.g. 25 Mins, 500 Photos, 40 Pages)' : undefined}
                     >
                       <span>{item.specs || item.count}</span>
-                      {!isReadOnly && <Edit3 className="w-2.5 h-2.5 opacity-50 group-hover/spec:opacity-100 transition" />}
+                      {canManage && <Edit3 className="w-2.5 h-2.5 opacity-50 group-hover/spec:opacity-100 transition" />}
                     </span>
                   ) : (
-                    !isReadOnly && (
+                    canManage && (
                       <button
                         type="button"
                         onClick={() => {
@@ -323,7 +332,7 @@ export default function DeliverableRowItem({
                 </div>
               )}
 
-              {!isReadOnly && (
+              {canManage && (
                 <button
                   type="button"
                   onClick={() => setIsEditingTitle(true)}
@@ -364,9 +373,9 @@ export default function DeliverableRowItem({
         <div className="w-44 sm:w-52 shrink-0">
           <Searchable3DCreamSelect
             value={currentAssignee}
-            disabled={isReadOnly}
+            disabled={!canManage}
             onChange={(val) => {
-              if (isReadOnly) return;
+              if (!canManage) return;
               if (val === 'unassigned') {
                 if (onUpdateItemFields) {
                   onUpdateItemFields(item.id, { 
@@ -396,7 +405,7 @@ export default function DeliverableRowItem({
               }
             }}
             options={teamMemberOptions}
-            searchable={!isReadOnly}
+            searchable={canManage}
             usePortal={true}
             searchPlaceholder="🔍 Search editor..."
             placeholder="+ Assign Editor"
@@ -407,21 +416,21 @@ export default function DeliverableRowItem({
         <div className="w-48 sm:w-52 shrink-0 flex items-center gap-1.5">
           <div 
             onClick={() => {
-              if (!isReadOnly) {
+              if (!isAllView && (canManage || isAssignedView)) {
                 datePickerRef.current?.showPicker?.() || datePickerRef.current?.focus();
               }
             }}
-            className={`relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs ${!isReadOnly ? 'cursor-pointer hover:border-amber-400' : 'cursor-default'} transition flex-1 min-w-0`}
-            title={!isReadOnly ? 'Click to select due date' : undefined}
+            className={`relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs ${!isAllView && (canManage || isAssignedView) ? 'cursor-pointer hover:border-amber-400' : 'cursor-default'} transition flex-1 min-w-0`}
+            title={!isAllView && (canManage || isAssignedView) ? 'Click to select due date' : undefined}
           >
             <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 pointer-events-none" />
             <input
               ref={datePickerRef}
               type="date"
-              disabled={isReadOnly}
+              disabled={isAllView || (!canManage && !isAssignedView)}
               value={dueDateStr}
               onChange={(e) => {
-                if (isReadOnly) return;
+                if (isAllView || (!canManage && !isAssignedView)) return;
                 const dateVal = e.target.value;
                 if (onUpdateItemFields) {
                   onUpdateItemFields(item.id, { due_date: dateVal, deadline: dateVal });
@@ -430,7 +439,7 @@ export default function DeliverableRowItem({
                   onUpdateItem(item.id, 'deadline', dateVal);
                 }
               }}
-              className={`bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none ${!isReadOnly ? 'cursor-pointer' : 'cursor-default'} w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full ${!isReadOnly ? '[&::-webkit-calendar-picker-indicator]:cursor-pointer' : ''}`}
+              className={`bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none ${!isAllView && (canManage || isAssignedView) ? 'cursor-pointer' : 'cursor-default'} w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full ${!isAllView && (canManage || isAssignedView) ? '[&::-webkit-calendar-picker-indicator]:cursor-pointer' : ''}`}
             />
           </div>
 
@@ -447,9 +456,9 @@ export default function DeliverableRowItem({
             currentStatus={currentStatus}
             statuses={ppStatuses}
             workspaceId={workspaceId || 'ws_default'}
-            disabled={isReadOnly}
+            disabled={isAllView || (!canManage && !isAssignedView)}
             onChange={(val) => {
-              if (isReadOnly) return;
+              if (isAllView || (!canManage && !isAssignedView)) return;
               if (onUpdateItemFields) {
                 onUpdateItemFields(item.id, { status: val });
               } else {
@@ -507,8 +516,8 @@ export default function DeliverableRowItem({
             )}
           </button>
 
-          {/* Edit Title Button */}
-          {!isReadOnly && (
+          {/* Edit Title Button - Full Manage Only */}
+          {canManage && (
             <button
               type="button"
               onClick={() => setIsEditingTitle(true)}
@@ -519,8 +528,8 @@ export default function DeliverableRowItem({
             </button>
           )}
 
-          {/* Edit Commercials Fee Button */}
-          {!isReadOnly && (item.assigned_member_id || item.assigned_to) && (
+          {/* Edit Commercials Fee Button - Full Manage Only */}
+          {canManage && (item.assigned_member_id || item.assigned_to) && (
             <button
               type="button"
               onClick={() => setIsAssignModalOpen(true)}
@@ -531,8 +540,8 @@ export default function DeliverableRowItem({
             </button>
           )}
 
-          {/* Delete Item with 3D confirmation dialog */}
-          {!isReadOnly && (
+          {/* Delete Item with 3D confirmation dialog - Full Manage Only */}
+          {canManage && (
             <button
               type="button"
               onClick={() => setShowDeleteConfirm(true)}
@@ -626,6 +635,7 @@ export default function DeliverableRowItem({
         onClose={() => setIsAttachLinksModalOpen(false)}
         title={item.title}
         subtitle={clientName}
+        isReadOnly={isAllView}
         initialLinks={(item.drive_links || []).map((l: any, i: number) => ({
           id: l.id || `lnk_${i}`,
           title: l.title || l.label || 'Link',

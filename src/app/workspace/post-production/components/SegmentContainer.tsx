@@ -27,7 +27,11 @@ interface SegmentContainerProps {
   clientName?: string;
   workspaceId?: string;
   disabledCategories?: string[];
+  canManage?: boolean;
+  isAllView?: boolean;
+  isAssignedView?: boolean;
   isReadOnly?: boolean;
+  currentUser?: any;
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
   onUpdateItemFields?: (itemId: string, fields: Partial<PostProductionDeliverable>) => void;
   onDeleteItem: (itemId: string) => void;
@@ -48,7 +52,11 @@ export default function SegmentContainer({
   clientName,
   workspaceId,
   disabledCategories = [],
+  canManage: propCanManage,
+  isAllView = false,
+  isAssignedView = false,
   isReadOnly = false,
+  currentUser,
   onUpdateItem,
   onUpdateItemFields,
   onDeleteItem,
@@ -63,6 +71,7 @@ export default function SegmentContainer({
   const [showAddCatPopover, setShowAddCatPopover] = useState(false);
   const [customCatInput, setCustomCatInput] = useState('');
   const [isAddingCustomCat, setIsAddingCustomCat] = useState(false);
+  const canManage = propCanManage !== undefined ? propCanManage : !isReadOnly;
   const [showDeleteSegConfirm, setShowDeleteSegConfirm] = useState(false);
   const [studioCategories, setStudioCategories] = useState<string[]>(DEFAULT_CATEGORIES);
 
@@ -242,7 +251,7 @@ export default function SegmentContainer({
           onClick={(e) => e.stopPropagation()}
           className="flex items-center gap-2 self-end sm:self-auto"
         >
-          {onRemoveSegment && (
+          {canManage && onRemoveSegment && (
             <button
               type="button"
               onClick={() => setShowDeleteSegConfirm(true)}
@@ -326,7 +335,11 @@ export default function SegmentContainer({
                 teamMembers={teamMembers}
                 clientName={clientName}
                 workspaceId={workspaceId}
+                canManage={canManage}
+                isAllView={isAllView}
+                isAssignedView={isAssignedView}
                 isReadOnly={isReadOnly}
+                currentUser={currentUser}
                 onUpdateItem={onUpdateItem}
                 onUpdateItemFields={onUpdateItemFields}
                 onDeleteItem={onDeleteItem}

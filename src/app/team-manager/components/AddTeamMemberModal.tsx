@@ -1153,7 +1153,7 @@ export default function AddTeamMemberModal({
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   <div>
                     <p className="text-xs font-bold text-zinc-900">Permissions & Access</p>
-                    <p className="text-[10px] text-zinc-500">Configure Leads, Shoot Cards, Quotations, and Finance access</p>
+                    <p className="text-[10px] text-zinc-500">Configure Leads, Shoot Cards, Post-Production, and Finance access</p>
                   </div>
                 </div>
                 {showPermissions ? (
@@ -1209,24 +1209,7 @@ export default function AddTeamMemberModal({
                       </select>
                     </div>
 
-                    {/* 3. Quotations & Pricing */}
-                    <div className="space-y-1 pt-2 border-t border-zinc-100">
-                      <div className="flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-amber-600" />
-                        <span className="text-xs font-bold text-zinc-900">Quotations &amp; Pricing Proposals</span>
-                      </div>
-                      <select
-                        value={quotationsAccess}
-                        onChange={(e) => setQuotationsAccess(e.target.value)}
-                        className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
-                      >
-                        <option value="NONE">❌ No Access (Hidden)</option>
-                        <option value="VIEW">👁️ View Only</option>
-                        <option value="MANAGE">⚡ Full Manage</option>
-                      </select>
-                    </div>
-
-                    {/* 4. Post-Production / Deliverables */}
+                    {/* 3. Post-Production / Deliverables */}
                     <div className="space-y-1 pt-2 border-t border-zinc-100">
                       <div className="flex items-center gap-1.5">
                         <Film className="w-3.5 h-3.5 text-rose-600" />

@@ -12,9 +12,11 @@ import {
 } from 'lucide-react';
 import { formatMinutesToHumanReadable, analyzeAttendanceRecordTiming } from '@/lib/attendance/time-calculations';
 import PunchDetailsModal, { formatTime12h } from '@/components/attendance/PunchDetailsModal';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 
 export default function TeamAttendancePage() {
   const router = useRouter();
+  const { workspaceId, activeWorkspace } = useWorkspace();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,7 +53,12 @@ export default function TeamAttendancePage() {
         setLoading(true);
         setError(null);
 
-        const res = await fetch('/api/team/attendance/me');
+        const targetWs = activeWorkspace?.workspaceId || workspaceId;
+        const url = targetWs && targetWs !== 'all' 
+          ? `/api/team/attendance/me?workspace_id=${encodeURIComponent(targetWs)}` 
+          : '/api/team/attendance/me';
+
+        const res = await fetch(url);
         const data = await res.json();
 
         if (!res.ok || !data.success) {
@@ -85,7 +92,7 @@ export default function TeamAttendancePage() {
     }
 
     loadAttendanceProfile();
-  }, []);
+  }, [workspaceId, activeWorkspace?.workspaceId]);
 
   // Live Clocked-In Timer for Today
   const liveClockedInTimer = useMemo(() => {

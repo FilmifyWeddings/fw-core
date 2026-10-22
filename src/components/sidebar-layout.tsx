@@ -584,15 +584,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         iconBg: 'bg-[#EDE9FE] text-[#7C3AED]',
       }
     ] : []),
-    // 5. Team & Partners (Only for full manage)
-    ...(permissions?.team_manager_access === 'ALL_MANAGE' || permissions?.team_manager_access === 'MANAGE_ALL' ? [{
-      id: 'team',
-      name: 'Team & Partners',
-      path: '/workspace/team',
-      icon: Users2,
-      iconBg: 'bg-[#EDE9FE] text-[#6366F1]',
-    }] : []),
-    // 6. Finance
+    // 5. Finance
     ...(permissions?.finance_access && permissions.finance_access !== 'NONE' ? [{
       id: 'finance',
       name: 'Finance & Payments',
@@ -600,14 +592,18 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: IndianRupee,
       iconBg: 'bg-[#FEF9C3] text-[#A16207]',
     }] : []),
-    // 7. Smart Attendance (For team members & crew)
-    {
+    // 6. Smart Attendance (Only if In-House staff or explicitly granted attendance access)
+    ...(((activeWorkspace?.primary_type && ['in_house', 'in-house', 'inhouse'].includes(activeWorkspace.primary_type.toLowerCase())) ||
+        (Array.isArray(activeWorkspace?.member_types) && activeWorkspace.member_types.some(t => String(t).toLowerCase().includes('house'))) ||
+        (activeWorkspace as any)?.has_attendance === true ||
+        (permissions as any)?.attendance_access === 'VIEW' ||
+        (permissions as any)?.attendance_access === 'MANAGE') ? [{
       id: 'team-attendance',
       name: 'Smart Attendance',
       path: '/team/attendance',
       icon: Clock,
       iconBg: 'bg-[#DCFCE7] text-[#15803D]',
-    },
+    }] : []),
     {
       id: 'support',
       name: 'Help & Support',

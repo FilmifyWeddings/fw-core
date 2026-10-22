@@ -138,6 +138,24 @@ export async function GET(req: NextRequest) {
           finance_access: studioPerm?.finance_access || legacyPerm?.finance_access || 'NONE',
         };
 
+        const primType = mem.primary_type || (Array.isArray(mem.member_types) && mem.member_types[0]) || 'IN_HOUSE';
+        const isInHouseMem = ['in_house', 'in-house', 'inhouse'].includes(String(primType).toLowerCase()) ||
+          (Array.isArray(mem.member_types) && mem.member_types.some((t: any) => String(t).toLowerCase().includes('house')));
+
+        let hasAtt = isInHouseMem;
+        if (!hasAtt) {
+          try {
+            const { data: linkRow } = await supabaseAdmin
+              .from('attendance_member_links')
+              .select('id')
+              .eq('member_id', mem.id)
+              .eq('is_active', true)
+              .limit(1)
+              .maybeSingle();
+            if (linkRow) hasAtt = true;
+          } catch (_) {}
+        }
+
         workspaceList.push({
           workspaceId: mem.workspace_id,
           studioName: partnerStudioName,
@@ -147,6 +165,8 @@ export async function GET(req: NextRequest) {
           memberId: mem.id,
           roles: mem.roles || [mem.primary_role || 'FREELANCER'],
           member_types: mem.member_types || ['IN_HOUSE'],
+          primary_type: primType,
+          has_attendance: hasAtt,
           permissions: memberPerms,
           avatarUrl: mem.avatar_url || wsData?.logo_url || '',
           ownerEmail: '',
