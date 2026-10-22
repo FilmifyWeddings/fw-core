@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Film, Plus, Share2, CheckCircle2, Clock, 
   FileEdit, Sparkles, ChevronDown, PenTool, Users, 
-  Calendar, GitCommit, Trash2, Check, Zap 
+  Calendar, GitCommit, Trash2, Check 
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
@@ -450,42 +450,7 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
                 {activeVersion.changelog_notes || 'Initial cut uploaded.'}
               </p>
 
-              {/* Cloud Storage Optimization trigger */}
-              {isOwner && activeVersion.source_type === 'upload' && activeVersion.storage_key && (
-                <div className="pt-2 border-t border-zinc-100 flex items-center justify-between flex-wrap gap-2">
-                  <span className="text-[10px] text-zinc-400">
-                    Cloud Storage: Faststream + MOOV header ready (Instant 0ms seek)
-                  </span>
-                  <button
-                    onClick={async () => {
-                      try {
-                        const res = await fetch('/api/review/optimize', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            storage_key: activeVersion.storage_key,
-                            version_id: activeVersion.id,
-                            project_id: projectId,
-                            workspace_id: workspaceId,
-                            original_file_size_bytes: activeVersion.file_size_bytes,
-                          }),
-                        });
-                        const d = await res.json();
-                        if (d.success) {
-                          alert(`Cloud Storage Optimized! ${d.saved_percentage ? `Saved ${d.saved_percentage}% B2 space.` : 'Video is ready.'}`);
-                          loadProject();
-                        }
-                      } catch (_) {
-                        alert('Optimization triggered in background.');
-                      }
-                    }}
-                    className="text-[10px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200 transition cursor-pointer flex items-center gap-1"
-                  >
-                    <Zap className="w-3 h-3 text-amber-600" />
-                    <span>Compress for Cloud (FFmpeg)</span>
-                  </button>
-                </div>
-              )}
+              
             </div>
           )}
         </div>
@@ -544,6 +509,9 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
         project={project}
         shares={shares}
         workspaceId={workspaceId || ''}
+        videos={videos}
+        versions={versions}
+        activeVersionId={activeVersionId}
         onShareCreated={(newShare) => setShares(prev => [newShare, ...prev])}
       />
 

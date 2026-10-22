@@ -27,6 +27,9 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
   const [requiresPasscode, setRequiresPasscode] = useState(false);
   const [passcode, setPasscode] = useState('');
   const [passcodeError, setPasscodeError] = useState('');
+  const [isNameModalOpen, setIsNameModalOpen] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [pendingCommentData, setPendingCommentData] = useState<any>(null);
 
   // Active selections
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
@@ -87,7 +90,21 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
         setClientName(data.project.client_name);
       }
 
-      if (data.videos && data.videos.length > 0) {
+      // Version targeting: check if link specifies ?v=version_id
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const targetVersionId = urlParams ? urlParams.get('v') : null;
+
+      if (targetVersionId && data.versions && data.versions.length > 0) {
+        const matchedVer = data.versions.find((ver: any) => ver.id === targetVersionId);
+        if (matchedVer) {
+          setActiveVideoId(matchedVer.video_id);
+          setActiveVersionId(matchedVer.id);
+        } else if (data.videos && data.videos.length > 0) {
+          const firstVid = data.videos[0];
+          setActiveVideoId(firstVid.id);
+          setActiveVersionId(firstVid.current_version_id || null);
+        }
+      } else if (data.videos && data.videos.length > 0) {
         const firstVid = data.videos[0];
         setActiveVideoId(firstVid.id);
         setActiveVersionId(firstVid.current_version_id || null);
@@ -121,53 +138,74 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
 
   const currentVideoVersions = versions.filter(v => v.video_id === activeVideoId);
 
-  // Client add comment
-  const handleClientAddComment = async ({
-    content,
-    timestamp_seconds,
-    parent_comment_id,
-  }: {
+  // Execute comment post with verified author name
+  const postCommentWithAuthor = async (
+    payload: { content: string; timestamp_seconds: number; parent_comment_id?: string | null },
+    author: string
+  ) => {
+    if (!activeVersion) return;
+    try {
+      const res = await fetch('/api/review/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          version_id: activeVersion.id,
+          video_id: activeVideo?.id || null,
+          project_id: project?.id,
+          parent_comment_id: payload.parent_comment_id || null,
+          timestamp_seconds: payload.timestamp_seconds,
+          author_name: author,
+          author_email: clientEmail.trim() || null,
+          author_role: 'client',
+          content: payload.content,
+          is_internal: false,
+          has_annotation: Boolean(currentAnnotation),
+          annotation_data: currentAnnotation || {},
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setComments(prev => [...prev, data.comment]);
+        setCurrentAnnotation(null);
+        setIsDrawMode(false);
+      }
+    } catch (_) {}
+  };
+
+  // Client add comment - triggers luxury modal if name not provided
+  const handleClientAddComment = async (payload: {
     content: string;
     timestamp_seconds: number;
     parent_comment_id?: string | null;
   }) => {
     if (!activeVersion) return;
 
-    let author = clientName.trim();
+    const author = clientName.trim();
     if (!author) {
-      const input = prompt('Please enter your name to post feedback:');
-      if (!input?.trim()) return;
-      author = input.trim();
-      setClientName(author);
-      try {
-        localStorage.setItem('studiocore_review_client_name', author);
-      } catch (_) {}
+      setPendingCommentData(payload);
+      setNameInput('');
+      setIsNameModalOpen(true);
+      return;
     }
 
-    const res = await fetch('/api/review/comments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        version_id: activeVersion.id,
-        video_id: activeVideo?.id || null,
-        project_id: project?.id,
-        parent_comment_id: parent_comment_id || null,
-        timestamp_seconds,
-        author_name: author,
-        author_email: clientEmail.trim() || null,
-        author_role: 'client',
-        content,
-        is_internal: false,
-        has_annotation: Boolean(currentAnnotation),
-        annotation_data: currentAnnotation || {},
-      }),
-    });
+    await postCommentWithAuthor(payload, author);
+  };
 
-    const data = await res.json();
-    if (data.success) {
-      setComments(prev => [...prev, data.comment]);
-      setCurrentAnnotation(null);
-      setIsDrawMode(false);
+  const handleSaveClientName = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nameInput.trim()) return;
+    const finalName = nameInput.trim();
+    setClientName(finalName);
+    try {
+      localStorage.setItem('studiocore_review_client_name', finalName);
+    } catch (_) {}
+    setIsNameModalOpen(false);
+
+    if (pendingCommentData) {
+      const data = pendingCommentData;
+      setPendingCommentData(null);
+      postCommentWithAuthor(data, finalName);
     }
   };
 
@@ -389,6 +427,58 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
           />
         </div>
       </main>
+
+      {/* Luxury Client Name Collection Modal */}
+      {isNameModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-sm bg-white rounded-3xl border border-[#E7E2D8] p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200 font-sans select-none">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-zinc-900">Your Reviewer Name</h3>
+                  <p className="text-[11px] text-zinc-400">Identify yourself for video feedback</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsNameModalOpen(false);
+                  setPendingCommentData(null);
+                }}
+                className="p-1 rounded-xl text-zinc-400 hover:text-zinc-700 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Please enter your name so the video editor knows who left this revision note.
+            </p>
+
+            <form onSubmit={handleSaveClientName} className="space-y-3">
+              <input
+                type="text"
+                required
+                autoFocus
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="e.g. Rahul Sharma"
+                className="w-full px-4 py-2.5 rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-800 placeholder:font-normal focus:outline-hidden focus:border-amber-500 shadow-2xs"
+              />
+
+              <button
+                type="submit"
+                disabled={!nameInput.trim()}
+                className="w-full py-2.5 rounded-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition shadow-2xs"
+              >
+                Continue & Post Feedback
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Approval Modal */}
       <ApprovalModal

@@ -49,6 +49,35 @@ export async function GET(req: NextRequest) {
           p.client_name?.toLowerCase().includes(term)
         );
       }
+
+      // Automatically enrich projects missing thumbnails with video frame thumbnails
+      const missingThumbIds = filtered.filter(p => !p.cover_thumbnail_url).map(p => p.id);
+      if (missingThumbIds.length > 0) {
+        try {
+          const { data: verThumbs } = await supabaseAdmin
+            .from('review_video_versions')
+            .select('project_id, thumbnail_url')
+            .in('project_id', missingThumbIds)
+            .not('thumbnail_url', 'is', null)
+            .order('created_at', { ascending: true });
+
+          if (verThumbs && verThumbs.length > 0) {
+            const thumbMap: Record<string, string> = {};
+            for (const vt of verThumbs) {
+              if (vt.project_id && vt.thumbnail_url && !thumbMap[vt.project_id]) {
+                thumbMap[vt.project_id] = vt.thumbnail_url;
+              }
+            }
+            filtered = filtered.map(p => {
+              if (!p.cover_thumbnail_url && thumbMap[p.id]) {
+                return { ...p, cover_thumbnail_url: thumbMap[p.id] };
+              }
+              return p;
+            });
+          }
+        } catch (_) {}
+      }
+
       return NextResponse.json({ success: true, projects: filtered });
     }
   } catch (err) {

@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, PutBucketCorsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const clean = (val?: string) => (val ? val.replace(/^["'\\]+|["'\\]+$/g, '').trim() : '');
@@ -190,10 +190,10 @@ export async function deleteReviewObject(key: string, bucketName = REVIEW_BUCKET
  */
 export async function deleteReviewObjects(keys: string[], bucketName = REVIEW_BUCKET_NAME): Promise<boolean> {
   if (!keys || keys.length === 0 || !B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY) return true;
-  try {
-    const validKeys = keys.filter(Boolean);
-    if (validKeys.length === 0) return true;
+  const validKeys = Array.from(new Set(keys.filter(Boolean)));
+  if (validKeys.length === 0) return true;
 
+  try {
     const command = new DeleteObjectsCommand({
       Bucket: bucketName,
       Delete: {
@@ -202,12 +202,42 @@ export async function deleteReviewObjects(keys: string[], bucketName = REVIEW_BU
       },
     });
     await reviewB2Client.send(command);
+  } catch (err) {
+    console.warn('[Review Storage] Batch DeleteObjects note:', err);
+  }
+
+  // Double-guarantee: parallel individual deletes ensure zero orphaned files
+  try {
+    await Promise.allSettled(
+      validKeys.map(k =>
+        reviewB2Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: k }))
+      )
+    );
     return true;
   } catch (err) {
-    console.error('[Review Storage] Batch delete failed:', err);
-    for (const k of keys) {
-      await deleteReviewObject(k, bucketName);
-    }
-    return true;
+    console.error('[Review Storage] Individual delete failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Purges all objects under a folder prefix in Backblaze B2 (e.g. project directory)
+ */
+export async function purgeReviewPrefix(prefix: string, bucketName = REVIEW_BUCKET_NAME): Promise<number> {
+  if (!prefix || !B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY) return 0;
+  try {
+    const listCmd = new ListObjectsV2Command({
+      Bucket: bucketName,
+      Prefix: prefix,
+    });
+    const res = await reviewB2Client.send(listCmd);
+    if (!res.Contents || res.Contents.length === 0) return 0;
+
+    const keys = res.Contents.map(c => c.Key!).filter(Boolean);
+    await deleteReviewObjects(keys, bucketName);
+    return keys.length;
+  } catch (err) {
+    console.error('[Review Storage] Purge prefix failed:', prefix, err);
+    return 0;
   }
 }

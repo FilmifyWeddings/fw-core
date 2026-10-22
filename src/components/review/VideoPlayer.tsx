@@ -231,7 +231,24 @@ export default function VideoPlayer({
         onTimeUpdate(seconds);
       }
     }
+    setDrawingPoints([]);
   }, [sourceType, onTimeUpdate]);
+
+  // Synchronize incoming currentTime prop from external triggers (e.g. clicking a comment timestamp)
+  useEffect(() => {
+    if (sourceType === 'youtube') {
+      if (ytPlayerRef.current && ytPlayerRef.current.getCurrentTime && ytPlayerRef.current.seekTo) {
+        const curr = ytPlayerRef.current.getCurrentTime();
+        if (Math.abs(curr - currentTime) > 0.3) {
+          ytPlayerRef.current.seekTo(currentTime, true);
+        }
+      }
+    } else if (videoRef.current) {
+      if (Math.abs(videoRef.current.currentTime - currentTime) > 0.25) {
+        videoRef.current.currentTime = currentTime;
+      }
+    }
+  }, [currentTime, sourceType]);
 
   // Toggle Play / Pause
   const togglePlay = useCallback(() => {
@@ -313,15 +330,18 @@ export default function VideoPlayer({
 
     let annotationData: any = null;
 
-    if (isDrawMode) {
-      annotationData = currentAnnotation;
+    if (isDrawMode && currentAnnotation) {
+      const drawnAt = currentAnnotation.timestamp_seconds ?? currentTime;
+      if (Math.abs(currentTime - drawnAt) <= 0.3) {
+        annotationData = currentAnnotation;
+      }
     } else {
       const matchingComment = comments.find(c => {
         if (!c.has_annotation || !c.annotation_data) return false;
         if (activeCommentId && c.id === activeCommentId) {
-          return Math.abs(currentTime - c.timestamp_seconds) <= 0.8;
+          return Math.abs(currentTime - c.timestamp_seconds) <= 0.4;
         }
-        return Math.abs(currentTime - c.timestamp_seconds) <= 0.5;
+        return Math.abs(currentTime - c.timestamp_seconds) <= 0.3;
       });
 
       if (matchingComment) {
@@ -414,6 +434,7 @@ export default function VideoPlayer({
         tool: drawTool,
         color: drawColor,
         points: drawingPoints,
+        timestamp_seconds: currentTime,
       });
     }
   };
@@ -500,6 +521,12 @@ export default function VideoPlayer({
           onPlay={() => {
             setIsPlaying(true);
             setIsDrawMode(false);
+            setDrawingPoints([]);
+            const canvas = canvasRef.current;
+            if (canvas) {
+              const ctx = canvas.getContext('2d');
+              ctx?.clearRect(0, 0, canvas.width, canvas.height);
+            }
           }}
           onPause={() => setIsPlaying(false)}
           playsInline

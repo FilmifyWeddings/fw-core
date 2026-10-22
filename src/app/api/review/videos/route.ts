@@ -1,3 +1,4 @@
+import { deleteReviewObjects } from '@/lib/review/reviewStorage';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { writeReviewCache, deleteReviewCache, listReviewCache, readReviewCache } from '@/lib/review/reviewCache';
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     const { 
       project_id, workspace_id, title, category, source_type,
       video_url, original_file_url, storage_key, youtube_url,
-      duration_seconds, resolution, file_size_bytes, changelog_notes
+      duration_seconds, resolution, file_size_bytes, changelog_notes, thumbnail_url
     } = body;
 
     if (!project_id || !title?.trim()) {
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
 
     const resolvedThumbnail = isYouTube 
       ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` 
-      : null;
+      : (thumbnail_url || null);
 
     // 1. Create Video Version 1
     const newVersion = {
@@ -132,7 +133,7 @@ export async function POST(req: NextRequest) {
           .from('review_projects')
           .update({ cover_thumbnail_url: resolvedThumbnail, updated_at: new Date().toISOString() })
           .eq('id', project_id)
-          .is('cover_thumbnail_url', null);
+          ;
       }
 
       // Update storage quota used_bytes for uploads
@@ -154,6 +155,59 @@ export async function POST(req: NextRequest) {
       video: newVideo,
       version: newVersion,
     });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/review/videos
+ * Deletes a video asset, all its revisions, and purges all media files from Backblaze B2
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'id parameter is required' }, { status: 400 });
+    }
+
+    const storageKeys: string[] = [];
+
+    // Find all versions of this video
+    const { data: versions } = await supabaseAdmin
+      .from('review_video_versions')
+      .select('id, storage_key, project_id, workspace_id')
+      .eq('video_id', id);
+
+    if (versions && versions.length > 0) {
+      for (const ver of versions) {
+        if (ver.storage_key) {
+          storageKeys.push(ver.storage_key);
+          storageKeys.push(`${ver.storage_key.replace(/\.[^.]+$/, '')}_storyboard.json`);
+        }
+      }
+    }
+
+    // Purge files from Backblaze B2 immediately
+    if (storageKeys.length > 0) {
+      await deleteReviewObjects(storageKeys);
+    }
+
+    // Delete from DB (cascade deletes comments and versions)
+    await supabaseAdmin.from('review_comments').delete().eq('video_id', id);
+    await supabaseAdmin.from('review_video_versions').delete().eq('video_id', id);
+    await supabaseAdmin.from('review_videos').delete().eq('id', id);
+
+    deleteReviewCache('review_videos', id);
+    if (versions) {
+      for (const v of versions) {
+        deleteReviewCache('review_video_versions', v.id);
+      }
+    }
+
+    return NextResponse.json({ success: true, message: 'Video deleted and storage purged' });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

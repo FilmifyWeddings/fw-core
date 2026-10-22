@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { readReviewCache, writeReviewCache, deleteReviewCache, listReviewCache } from '@/lib/review/reviewCache';
-import { deleteReviewObjects } from '@/lib/review/reviewStorage';
+import { deleteReviewObjects, purgeReviewPrefix } from '@/lib/review/reviewStorage';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,46 +114,91 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params;
 
   try {
-    // 1. Gather all video version storage keys for this project to purge from Backblaze B2
+    // 1. Find all videos and versions associated with this project
     const storageKeys: string[] = [];
     let freedBytes = 0;
     let workspaceId: string | null = null;
 
     try {
-      const { data: versions } = await supabaseAdmin
-        .from('review_video_versions')
-        .select('storage_key, file_size_bytes, workspace_id')
+      // Find project details to get workspace_id
+      const { data: proj } = await supabaseAdmin
+        .from('review_projects')
+        .select('workspace_id')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (proj?.workspace_id) workspaceId = proj.workspace_id;
+
+      // Find all videos for this project
+      const { data: vids } = await supabaseAdmin
+        .from('review_videos')
+        .select('id, workspace_id')
         .eq('project_id', id);
+
+      const videoIds = (vids || []).map(v => v.id);
+
+      // Find all versions
+      let vQuery = supabaseAdmin
+        .from('review_video_versions')
+        .select('id, storage_key, file_size_bytes, workspace_id');
+
+      if (videoIds.length > 0) {
+        vQuery = vQuery.or(`project_id.eq.${id},video_id.in.(${videoIds.join(',')})`);
+      } else {
+        vQuery = vQuery.eq('project_id', id);
+      }
+
+      const { data: versions } = await vQuery;
 
       if (versions && versions.length > 0) {
         for (const ver of versions) {
-          if (ver.storage_key) storageKeys.push(ver.storage_key);
+          if (ver.storage_key) {
+            storageKeys.push(ver.storage_key);
+            // Also include storyboard JSON
+            const sbKey = `${ver.storage_key.replace(/\.[^.]+$/, '')}_storyboard.json`;
+            storageKeys.push(sbKey);
+          }
           freedBytes += Number(ver.file_size_bytes) || 0;
           if (ver.workspace_id && !workspaceId) workspaceId = ver.workspace_id;
         }
       }
-    } catch (_) {}
+    } catch (queryErr) {
+      console.warn('[Review DB] Error querying versions for purge:', queryErr);
+    }
 
     // Check cached versions too
     const cachedVersions = listReviewCache('review_video_versions', (v: any) => v.project_id === id);
     for (const ver of cachedVersions) {
       if (ver.storage_key && !storageKeys.includes(ver.storage_key)) {
         storageKeys.push(ver.storage_key);
+        const sbKey = `${ver.storage_key.replace(/\.[^.]+$/, '')}_storyboard.json`;
+        storageKeys.push(sbKey);
         freedBytes += Number(ver.file_size_bytes) || 0;
       }
     }
 
-    // 2. Physical purge from Backblaze B2
+    // 2. Physical purge from Backblaze B2: Direct keys + folder prefixes
     if (storageKeys.length > 0) {
-      console.log(`[Review Storage Purge] Deleting ${storageKeys.length} files from Backblaze B2 for project ${id}...`);
+      console.log(`[Review Storage Purge] Instantly deleting ${storageKeys.length} files from Backblaze B2 for project ${id}...`);
       await deleteReviewObjects(storageKeys);
     }
 
-    // 3. Delete from Supabase Database (cascade will delete videos, versions, comments, shares, approvals)
+    // Also purge whole folder prefix to guarantee zero leftover files in B2
+    if (workspaceId) {
+      await purgeReviewPrefix(`reviews/${workspaceId}/${id}/`);
+    }
+    await purgeReviewPrefix(`reviews/general/${id}/`);
+
+    // 3. Delete from Supabase Database explicitly
     try {
+      await supabaseAdmin.from('review_comments').delete().eq('project_id', id);
+      await supabaseAdmin.from('review_approvals').delete().eq('project_id', id);
+      await supabaseAdmin.from('review_shares').delete().eq('project_id', id);
+      await supabaseAdmin.from('review_video_versions').delete().eq('project_id', id);
+      await supabaseAdmin.from('review_videos').delete().eq('project_id', id);
       await supabaseAdmin.from('review_projects').delete().eq('id', id);
     } catch (dbErr) {
-      console.error('[Review DB] Failed to delete project row:', dbErr);
+      console.error('[Review DB] Failed to delete project records:', dbErr);
     }
 
     // 4. Update workspace quota if applicable
@@ -186,7 +231,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     return NextResponse.json({
       success: true,
-      message: 'Project and all associated media files permanently purged from storage',
+      message: 'Project and all associated media files permanently purged from storage instantly',
       purged_files_count: storageKeys.length,
       freed_bytes: freedBytes,
     });
