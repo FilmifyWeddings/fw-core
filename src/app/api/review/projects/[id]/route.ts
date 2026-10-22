@@ -59,9 +59,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     console.warn('[Review API] Single project fetch fallback:', err);
   }
 
-  // Fallback cache
-  const cachedProjects = readReviewCache('review_projects');
-  const project = cachedProjects[id];
+  // Fallback to local cache
+  const projects = readReviewCache('review_projects');
+  const project = projects[id];
 
   if (!project) {
     return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
@@ -77,27 +77,42 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     videos,
     versions,
     shares,
-    is_fallback: true,
   });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+
   try {
     const body = await req.json();
-    const updateData = {
-      ...body,
-      updated_at: new Date().toISOString(),
-    };
+    const { name, client_name, client_email, status, cover_image_url } = body;
 
+    const patch: any = { updated_at: new Date().toISOString() };
+    if (name !== undefined) patch.name = name.trim();
+    if (client_name !== undefined) patch.client_name = client_name?.trim() || null;
+    if (client_email !== undefined) patch.client_email = client_email?.trim() || null;
+    if (status !== undefined) patch.status = status;
+    if (cover_image_url !== undefined) patch.cover_image_url = cover_image_url;
+
+    // Cache update
     const projects = readReviewCache('review_projects');
     if (projects[id]) {
-      projects[id] = { ...projects[id], ...updateData };
+      Object.assign(projects[id], patch);
       writeReviewCache('review_projects', id, projects[id]);
     }
 
+    // Supabase DB update
     try {
-      await supabaseAdmin.from('review_projects').update(updateData).eq('id', id);
+      const { data, error } = await supabaseAdmin
+        .from('review_projects')
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (!error && data) {
+        return NextResponse.json({ success: true, project: data });
+      }
     } catch (_) {}
 
     return NextResponse.json({ success: true, project: projects[id] });
@@ -106,15 +121,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 }
 
-/**
- * DELETE /api/review/projects/[id]
- * Permanently deletes the project, all database records, AND purges all stored video files from Backblaze B2!
- */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   try {
-    // 1. Find all videos and versions associated with this project
+    // 1. Collect all storage keys to delete from Backblaze B2
     const storageKeys: string[] = [];
     let freedBytes = 0;
     let workspaceId: string | null = null;
@@ -177,17 +188,26 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       }
     }
 
-    // 2. Physical purge from Backblaze B2: Direct keys + folder prefixes
+    // 2. Physical purge from Backblaze B2: Direct keys + folder prefixes (permanent versioned purge)
     if (storageKeys.length > 0) {
       console.log(`[Review Storage Purge] Instantly deleting ${storageKeys.length} files from Backblaze B2 for project ${id}...`);
       await deleteReviewObjects(storageKeys);
     }
 
-    // Also purge whole folder prefix to guarantee zero leftover files in B2
-    if (workspaceId) {
-      await purgeReviewPrefix(`reviews/${workspaceId}/${id}/`);
+    // Also purge whole folder prefixes to guarantee zero leftover files or delete markers in B2
+    const prefixes = new Set<string>();
+    if (workspaceId) prefixes.add(`reviews/${workspaceId}/${id}/`);
+    prefixes.add(`reviews/general/${id}/`);
+    storageKeys.forEach(k => {
+      const lastSlash = k.lastIndexOf('/');
+      if (lastSlash !== -1) {
+        prefixes.add(k.substring(0, lastSlash + 1));
+      }
+    });
+
+    for (const prefix of prefixes) {
+      await purgeReviewPrefix(prefix);
     }
-    await purgeReviewPrefix(`reviews/general/${id}/`);
 
     // 3. Delete from Supabase Database explicitly
     try {

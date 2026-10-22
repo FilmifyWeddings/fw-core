@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
       key,
       upload_url: uploadUrl,
       public_url: publicUrl,
+      content_type: contentType,
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

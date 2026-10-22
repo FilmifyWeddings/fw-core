@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
-import { extractClientStoryboard, cacheStoryboard } from '@/lib/review/storyboard';
+import { extractClientStoryboard, extractFastThumbnail, cacheStoryboard } from '@/lib/review/storyboard';
 
 export interface ReviewUploadTask {
   id: string;
@@ -90,25 +90,102 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
     setTasks(prev => prev.filter(t => t.status === 'uploading' || t.status === 'saving' || t.status === 'extracting' || t.status === 'queued'));
   }, []);
 
+  /**
+   * Resilient XHR Upload with Exponential Backoff Retry
+   * Automatically handles transient Backblaze B2 500/503 errors and network fluctuations.
+   */
+  const performUploadWithRetry = useCallback(async (
+    taskId: string,
+    uploadUrl: string,
+    file: File,
+    contentType: string,
+    maxRetries = 3
+  ): Promise<void> => {
+    let attempt = 0;
+    while (attempt < maxRetries) {
+      attempt++;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          let lastTime = Date.now();
+          let lastLoaded = 0;
+
+          xhr.open('PUT', uploadUrl, true);
+          xhr.setRequestHeader('Content-Type', contentType);
+
+          xhr.upload.onprogress = (evt) => {
+            if (evt.lengthComputable) {
+              const now = Date.now();
+              const timeDiff = (now - lastTime) / 1000;
+              if (timeDiff >= 0.4) {
+                const bytesDiff = evt.loaded - lastLoaded;
+                const bytesPerSec = bytesDiff / Math.max(0.1, timeDiff);
+                const speedText = bytesPerSec > 1024 * 1024 
+                  ? `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`
+                  : `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
+
+                lastTime = now;
+                lastLoaded = evt.loaded;
+
+                const percent = Math.min(95, Math.round(10 + (evt.loaded / evt.total) * 85));
+                updateTask(taskId, { progress: percent, speed: speedText });
+              }
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              // B2 returns 500 or 503 during momentary load
+              const isRetryable = xhr.status >= 500;
+              const err = new Error(`Storage returned status ${xhr.status}`);
+              (err as any).isRetryable = isRetryable;
+              reject(err);
+            }
+          };
+
+          xhr.onerror = () => {
+            const err = new Error('Network connection dropped during storage upload');
+            (err as any).isRetryable = true;
+            reject(err);
+          };
+
+          xhr.onabort = () => reject(new Error('Upload cancelled'));
+
+          updateTask(taskId, { xhr });
+          xhr.send(file);
+        });
+
+        // Completed successfully!
+        return;
+      } catch (err: any) {
+        if (err.message === 'Upload cancelled' || !err.isRetryable || attempt >= maxRetries) {
+          throw err;
+        }
+        console.warn(`[Review Upload] Retrying upload attempt ${attempt + 1}/${maxRetries} after error:`, err.message);
+        updateTask(taskId, { speed: `Reconnecting (Attempt ${attempt + 1}/${maxRetries})...` });
+        await new Promise(r => setTimeout(r, attempt * 1200));
+      }
+    }
+  }, [updateTask]);
+
   // 1. Process Video Asset Upload
   const startVideoUpload = useCallback(async (taskId: string, params: EnqueueVideoParams) => {
     const { projectId, workspaceId, title, category, file, changelogNotes, onCompleted } = params;
 
     try {
-      updateTask(taskId, { status: 'extracting', progress: 3, speed: 'Generating hover frames...' });
+      updateTask(taskId, { status: 'extracting', progress: 3, speed: 'Preparing video stream...' });
 
-      // Step A: Extract 25-frame storyboard and cover thumbnail from local blob in ~300ms
-      let storyboardFrames: any[] = [];
+      // Step A: Fast cover thumbnail extraction (~30-50ms) so upload begins without waiting!
       let coverThumb = '';
       try {
-        const sb = await extractClientStoryboard(file, 25);
-        storyboardFrames = sb.frames;
-        coverThumb = sb.coverThumbnail;
-      } catch (sbErr) {
-        console.warn('[Review Upload] Storyboard extraction note:', sbErr);
+        coverThumb = await extractFastThumbnail(file);
+      } catch (thErr) {
+        console.warn('[Review Upload] Fast thumbnail extraction note:', thErr);
       }
 
-      updateTask(taskId, { status: 'uploading', progress: 6, speed: 'Preparing storage...' });
+      updateTask(taskId, { status: 'uploading', progress: 6, speed: 'Preparing cloud storage...' });
 
       // Step B: Request presigned upload URL from Backblaze B2
       const presignRes = await fetch('/api/review/upload', {
@@ -129,63 +206,27 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
       }
 
       const storageKey = presignData.key;
+      const targetContentType = presignData.content_type || file.type || 'video/mp4';
 
-      // Cache storyboard locally for 0ms hover preview in current session
-      if (storyboardFrames.length > 0 && storageKey) {
-        cacheStoryboard(storageKey, storyboardFrames);
-        // Save storyboard to Backblaze B2 in background
-        fetch('/api/review/storyboard', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storage_key: storageKey, frames: storyboardFrames }),
-        }).catch(() => {});
-      }
-
-      updateTask(taskId, { progress: 10, speed: 'Uploading...' });
-
-      // Step C: Direct PUT upload to Backblaze B2 using XMLHttpRequest
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        let lastTime = Date.now();
-        let lastLoaded = 0;
-
-        xhr.open('PUT', presignData.upload_url, true);
-        xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-
-        xhr.upload.onprogress = (evt) => {
-          if (evt.lengthComputable) {
-            const now = Date.now();
-            const timeDiff = (now - lastTime) / 1000;
-            if (timeDiff >= 0.5) {
-              const bytesDiff = evt.loaded - lastLoaded;
-              const bytesPerSec = bytesDiff / timeDiff;
-              const speedText = bytesPerSec > 1024 * 1024 
-                ? `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`
-                : `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
-
-              lastTime = now;
-              lastLoaded = evt.loaded;
-
-              const percent = Math.min(95, Math.round(10 + (evt.loaded / evt.total) * 85));
-              updateTask(taskId, { progress: percent, speed: speedText });
-            }
+      // Background Step: Asynchronously extract remaining hover scrub frames without blocking upload
+      (async () => {
+        try {
+          const sb = await extractClientStoryboard(file, 20);
+          if (sb.frames.length > 0 && storageKey) {
+            cacheStoryboard(storageKey, sb.frames);
+            fetch('/api/review/storyboard', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ storage_key: storageKey, frames: sb.frames }),
+            }).catch(() => {});
           }
-        };
+        } catch (_) {}
+      })();
 
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`Storage rejected upload with status ${xhr.status}`));
-          }
-        };
+      updateTask(taskId, { progress: 10, speed: 'Uploading to Cloud...' });
 
-        xhr.onerror = () => reject(new Error('Network connection error during Backblaze B2 upload. Please check your connection.'));
-        xhr.onabort = () => reject(new Error('Upload cancelled'));
-
-        updateTask(taskId, { xhr });
-        xhr.send(file);
-      });
+      // Step C: Direct PUT upload with automatic retry on status 500 / network hiccup
+      await performUploadWithRetry(taskId, presignData.upload_url, file, targetContentType);
 
       // Step D: Register video and version metadata in DB
       updateTask(taskId, { status: 'saving', progress: 96, speed: 'Saving to database...' });
@@ -214,7 +255,7 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         throw new Error(registerData.error || 'Failed to save video record to database');
       }
 
-      // Step E: Background Video Storage Optimization & Faststart Injection
+      // Step E: Trigger Background Cloud Optimization & Raw Purge
       fetch('/api/review/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -254,25 +295,22 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         xhr: undefined
       });
     }
-  }, [updateTask]);
+  }, [updateTask, performUploadWithRetry]);
 
   // 2. Process Video Version Revision Upload
   const startVersionUpload = useCallback(async (taskId: string, params: EnqueueVersionParams) => {
     const { projectId, workspaceId, videoId, versionLabel, file, changelogNotes, onCompleted } = params;
 
     try {
-      updateTask(taskId, { status: 'extracting', progress: 3, speed: 'Generating hover frames...' });
+      updateTask(taskId, { status: 'extracting', progress: 3, speed: 'Preparing video revision...' });
 
-      // Step A: Storyboard extraction
-      let storyboardFrames: any[] = [];
+      // Step A: Fast cover thumbnail extraction (~30-50ms)
       let coverThumb = '';
       try {
-        const sb = await extractClientStoryboard(file, 25);
-        storyboardFrames = sb.frames;
-        coverThumb = sb.coverThumbnail;
+        coverThumb = await extractFastThumbnail(file);
       } catch (_) {}
 
-      updateTask(taskId, { status: 'uploading', progress: 6, speed: 'Preparing storage...' });
+      updateTask(taskId, { status: 'uploading', progress: 6, speed: 'Preparing cloud storage...' });
 
       // Step B: Presigned URL
       const presignRes = await fetch('/api/review/upload', {
@@ -293,64 +331,30 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
       }
 
       const storageKey = presignData.key;
+      const targetContentType = presignData.content_type || file.type || 'video/mp4';
 
-      if (storyboardFrames.length > 0 && storageKey) {
-        cacheStoryboard(storageKey, storyboardFrames);
-        fetch('/api/review/storyboard', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storage_key: storageKey, frames: storyboardFrames }),
-        }).catch(() => {});
-      }
-
-      updateTask(taskId, { progress: 10, speed: 'Uploading...' });
-
-      // Step C: Direct PUT upload
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        let lastTime = Date.now();
-        let lastLoaded = 0;
-
-        xhr.open('PUT', presignData.upload_url, true);
-        xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-
-        xhr.upload.onprogress = (evt) => {
-          if (evt.lengthComputable) {
-            const now = Date.now();
-            const timeDiff = (now - lastTime) / 1000;
-            if (timeDiff >= 0.5) {
-              const bytesDiff = evt.loaded - lastLoaded;
-              const bytesPerSec = bytesDiff / timeDiff;
-              const speedText = bytesPerSec > 1024 * 1024 
-                ? `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`
-                : `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
-
-              lastTime = now;
-              lastLoaded = evt.loaded;
-
-              const percent = Math.min(95, Math.round(10 + (evt.loaded / evt.total) * 85));
-              updateTask(taskId, { progress: percent, speed: speedText });
-            }
+      // Background Step: Asynchronously extract remaining hover scrub frames
+      (async () => {
+        try {
+          const sb = await extractClientStoryboard(file, 20);
+          if (sb.frames.length > 0 && storageKey) {
+            cacheStoryboard(storageKey, sb.frames);
+            fetch('/api/review/storyboard', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ storage_key: storageKey, frames: sb.frames }),
+            }).catch(() => {});
           }
-        };
+        } catch (_) {}
+      })();
 
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`Storage rejected upload with status ${xhr.status}`));
-          }
-        };
+      updateTask(taskId, { progress: 10, speed: 'Uploading revision...' });
 
-        xhr.onerror = () => reject(new Error('Network error during version upload'));
-        xhr.onabort = () => reject(new Error('Upload cancelled'));
-
-        updateTask(taskId, { xhr });
-        xhr.send(file);
-      });
+      // Step C: Direct PUT upload with automatic retry on 500 / network error
+      await performUploadWithRetry(taskId, presignData.upload_url, file, targetContentType);
 
       // Step D: Register version metadata
-      updateTask(taskId, { status: 'saving', progress: 96, speed: 'Saving to database...' });
+      updateTask(taskId, { status: 'saving', progress: 96, speed: 'Saving revision cut...' });
 
       const versionRes = await fetch('/api/review/versions', {
         method: 'POST',
@@ -376,7 +380,7 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         throw new Error(versionData.error || 'Failed to save version revision');
       }
 
-      // Step E: Trigger background optimization
+      // Step E: Trigger Background Cloud Optimization & Raw Purge
       fetch('/api/review/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -392,7 +396,7 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
       updateTask(taskId, { 
         status: 'completed', 
         progress: 100, 
-        speed: '✓ Upload Complete',
+        speed: '✓ Revision Complete',
         xhr: undefined 
       });
 
@@ -415,7 +419,7 @@ export function ReviewUploadProvider({ children }: { children: React.ReactNode }
         xhr: undefined
       });
     }
-  }, [updateTask]);
+  }, [updateTask, performUploadWithRetry]);
 
   const enqueueVideoUpload = useCallback((params: EnqueueVideoParams) => {
     const taskId = `vup_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;

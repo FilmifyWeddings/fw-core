@@ -1,4 +1,13 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, PutBucketCorsCommand } from '@aws-sdk/client-s3';
+import { 
+  S3Client, 
+  PutObjectCommand, 
+  GetObjectCommand, 
+  DeleteObjectCommand, 
+  DeleteObjectsCommand, 
+  ListObjectsV2Command, 
+  ListObjectVersionsCommand, 
+  PutBucketCorsCommand 
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const clean = (val?: string) => (val ? val.replace(/^["'\\]+|["'\\]+$/g, '').trim() : '');
@@ -168,25 +177,56 @@ export async function getReviewPresignedDownloadUrl(
 }
 
 /**
- * Delete a single video object from Backblaze B2 storage
+ * Permanently purge a single video object and all its historical versions and delete markers from Backblaze B2
+ * In Backblaze B2, if bucket versioning is enabled, standard DeleteObject only sets a DeleteMarker.
+ * To physically and permanently reclaim disk space, every VersionId must be explicitly deleted.
  */
 export async function deleteReviewObject(key: string, bucketName = REVIEW_BUCKET_NAME): Promise<boolean> {
   if (!key || !B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY) return true;
   try {
-    const command = new DeleteObjectCommand({
+    // 1. List all versions and delete markers for this exact key
+    const versionsCmd = new ListObjectVersionsCommand({
       Bucket: bucketName,
-      Key: key,
+      Prefix: key,
     });
-    await reviewB2Client.send(command);
+    const res = await reviewB2Client.send(versionsCmd);
+
+    const toDelete: { Key: string; VersionId: string }[] = [];
+    if (res.Versions) {
+      res.Versions.filter(v => v.Key === key).forEach(v => {
+        if (v.Key && v.VersionId) toDelete.push({ Key: v.Key, VersionId: v.VersionId });
+      });
+    }
+    if (res.DeleteMarkers) {
+      res.DeleteMarkers.filter(dm => dm.Key === key).forEach(dm => {
+        if (dm.Key && dm.VersionId) toDelete.push({ Key: dm.Key, VersionId: dm.VersionId });
+      });
+    }
+
+    if (toDelete.length > 0) {
+      await reviewB2Client.send(new DeleteObjectsCommand({
+        Bucket: bucketName,
+        Delete: {
+          Objects: toDelete,
+          Quiet: true,
+        },
+      }));
+    } else {
+      // Fallback: standard delete
+      await reviewB2Client.send(new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+      }));
+    }
     return true;
   } catch (err) {
-    console.error('[Review Storage] Delete failed for key:', key, err);
+    console.error('[Review Storage] Permanent delete failed for key:', key, err);
     return false;
   }
 }
 
 /**
- * Batch delete multiple video objects from Backblaze B2 storage (e.g. on project deletion)
+ * Batch delete multiple video objects and all their B2 versions from Backblaze B2 storage
  */
 export async function deleteReviewObjects(keys: string[], bucketName = REVIEW_BUCKET_NAME): Promise<boolean> {
   if (!keys || keys.length === 0 || !B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY) return true;
@@ -194,50 +234,107 @@ export async function deleteReviewObjects(keys: string[], bucketName = REVIEW_BU
   if (validKeys.length === 0) return true;
 
   try {
-    const command = new DeleteObjectsCommand({
-      Bucket: bucketName,
-      Delete: {
-        Objects: validKeys.map(k => ({ Key: k })),
-        Quiet: true,
-      },
-    });
-    await reviewB2Client.send(command);
-  } catch (err) {
-    console.warn('[Review Storage] Batch DeleteObjects note:', err);
-  }
-
-  // Double-guarantee: parallel individual deletes ensure zero orphaned files
-  try {
-    await Promise.allSettled(
-      validKeys.map(k =>
-        reviewB2Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: k }))
-      )
-    );
+    for (const key of validKeys) {
+      await deleteReviewObject(key, bucketName);
+    }
     return true;
   } catch (err) {
-    console.error('[Review Storage] Individual delete failed:', err);
+    console.error('[Review Storage] Batch delete failed:', err);
     return false;
   }
 }
 
 /**
- * Purges all objects under a folder prefix in Backblaze B2 (e.g. project directory)
+ * Purges all objects, historical versions, and delete markers under a folder prefix in Backblaze B2 (e.g. project directory)
+ * Guarantees 0 remaining orphaned bytes in Backblaze B2 when projects are deleted.
  */
 export async function purgeReviewPrefix(prefix: string, bucketName = REVIEW_BUCKET_NAME): Promise<number> {
   if (!prefix || !B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY) return 0;
   try {
-    const listCmd = new ListObjectsV2Command({
-      Bucket: bucketName,
-      Prefix: prefix,
-    });
-    const res = await reviewB2Client.send(listCmd);
-    if (!res.Contents || res.Contents.length === 0) return 0;
+    let keyMarker: string | undefined = undefined;
+    let versionIdMarker: string | undefined = undefined;
+    let deletedCount = 0;
 
-    const keys = res.Contents.map(c => c.Key!).filter(Boolean);
-    await deleteReviewObjects(keys, bucketName);
-    return keys.length;
+    do {
+      const listCmd = new ListObjectVersionsCommand({
+        Bucket: bucketName,
+        Prefix: prefix,
+        KeyMarker: keyMarker,
+        VersionIdMarker: versionIdMarker,
+      });
+      const res = await reviewB2Client.send(listCmd);
+
+      const toDelete: { Key: string; VersionId: string }[] = [];
+      if (res.Versions) {
+        res.Versions.forEach(v => {
+          if (v.Key && v.VersionId) toDelete.push({ Key: v.Key, VersionId: v.VersionId });
+        });
+      }
+      if (res.DeleteMarkers) {
+        res.DeleteMarkers.forEach(dm => {
+          if (dm.Key && dm.VersionId) toDelete.push({ Key: dm.Key, VersionId: dm.VersionId });
+        });
+      }
+
+      if (toDelete.length > 0) {
+        await reviewB2Client.send(new DeleteObjectsCommand({
+          Bucket: bucketName,
+          Delete: {
+            Objects: toDelete,
+            Quiet: true,
+          },
+        }));
+        deletedCount += toDelete.length;
+      }
+
+      if (res.IsTruncated) {
+        keyMarker = res.NextKeyMarker;
+        versionIdMarker = res.NextVersionIdMarker;
+      } else {
+        break;
+      }
+    } while (keyMarker);
+
+    return deletedCount;
   } catch (err) {
     console.error('[Review Storage] Purge prefix failed:', prefix, err);
+    return 0;
+  }
+}
+
+/**
+ * Purges older non-current versions of a specific key after optimization/compression
+ * Leaves ONLY the latest (compressed) file version active in Backblaze B2.
+ */
+export async function purgeNonCurrentVersions(key: string, bucketName = REVIEW_BUCKET_NAME): Promise<number> {
+  if (!key || !B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY) return 0;
+  try {
+    const listCmd = new ListObjectVersionsCommand({
+      Bucket: bucketName,
+      Prefix: key,
+    });
+    const res = await reviewB2Client.send(listCmd);
+
+    const toDelete: { Key: string; VersionId: string }[] = [];
+    if (res.Versions) {
+      res.Versions.filter(v => v.Key === key && !v.IsLatest).forEach(v => {
+        if (v.Key && v.VersionId) toDelete.push({ Key: v.Key, VersionId: v.VersionId });
+      });
+    }
+
+    if (toDelete.length > 0) {
+      await reviewB2Client.send(new DeleteObjectsCommand({
+        Bucket: bucketName,
+        Delete: {
+          Objects: toDelete,
+          Quiet: true,
+        },
+      }));
+      return toDelete.length;
+    }
+    return 0;
+  } catch (err) {
+    console.warn('[Review Storage] Purge non-current versions note:', err);
     return 0;
   }
 }

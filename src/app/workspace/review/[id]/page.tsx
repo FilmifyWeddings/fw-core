@@ -17,6 +17,7 @@ import NewVersionModal from '@/components/review/NewVersionModal';
 import ShareModal from '@/components/review/ShareModal';
 import ApprovalModal from '@/components/review/ApprovalModal';
 import DeleteProjectModal from '@/components/review/DeleteProjectModal';
+import DeleteVersionModal from '@/components/review/DeleteVersionModal';
 
 function isValidUUID(val?: string | null): boolean {
   if (!val) return false;
@@ -54,6 +55,7 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [versionToDelete, setVersionToDelete] = useState<any | null>(null);
 
   // Load project details
   const loadProject = async () => {
@@ -353,20 +355,37 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
                 const isChanges = ver.status === 'changes_requested';
 
                 return (
-                  <button
+                  <div
                     key={ver.id}
-                    onClick={() => setActiveVersionId(ver.id)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
                       isCurrent
                         ? 'bg-white text-zinc-900 shadow-2xs border border-[#E7E2D8]'
                         : 'text-zinc-500 hover:text-zinc-800'
                     }`}
                   >
-                    <span>{ver.version_label || `V${ver.version_number}`}</span>
-                    <span className={`w-1.5 h-1.5 rounded-full ${
-                      isApproved ? 'bg-emerald-500' : isChanges ? 'bg-amber-500' : 'bg-blue-400'
-                    }`} />
-                  </button>
+                    <button
+                      onClick={() => setActiveVersionId(ver.id)}
+                      className="flex items-center gap-1.5 cursor-pointer focus:outline-none"
+                    >
+                      <span>{ver.version_label || `V${ver.version_number}`}</span>
+                      <span className={`w-1.5 h-1.5 rounded-full ${
+                        isApproved ? 'bg-emerald-500' : isChanges ? 'bg-amber-500' : 'bg-blue-400'
+                      }`} />
+                    </button>
+
+                    {isCurrent && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setVersionToDelete(ver);
+                        }}
+                        title={`Delete ${ver.version_label || 'V' + ver.version_number} and purge media from storage`}
+                        className="ml-1 p-0.5 rounded text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -379,6 +398,18 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
               <GitCommit className="w-3 h-3 text-amber-600" />
               <span>+ New Cut</span>
             </button>
+
+            {/* "Delete Cut" button */}
+            {activeVersion && (
+              <button
+                onClick={() => setVersionToDelete(activeVersion)}
+                title={`Delete ${activeVersion.version_label || 'V' + activeVersion.version_number} and purge media from Backblaze B2`}
+                className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-rose-50 border border-[#E7E2D8] hover:border-rose-300 text-rose-600 text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow-2xs"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Delete Cut</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -535,6 +566,20 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
         onClose={() => setIsDeleteModalOpen(false)}
         onDeleted={() => {
           router.push('/workspace/video-review');
+        }}
+      />
+
+      <DeleteVersionModal
+        isOpen={Boolean(versionToDelete)}
+        version={versionToDelete}
+        videoTitle={activeVideo?.title}
+        onClose={() => setVersionToDelete(null)}
+        onDeleted={(deletedId, nextActiveId) => {
+          setVersions(prev => prev.filter(v => v.id !== deletedId));
+          setActiveVersionId(nextActiveId);
+          if (nextActiveId) {
+            loadComments(nextActiveId);
+          }
         }}
       />
     </div>

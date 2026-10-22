@@ -15,10 +15,63 @@ export interface StoryboardResult {
 }
 
 /**
- * Extract 25-30 thumbnail frames directly from local File blob in the browser.
- * Extremely fast (~300-500ms total) because reads from local memory without network latency.
+ * Super-fast cover thumbnail extraction (~30-50ms)
+ * Captures 1 frame immediately so video upload can start without any delay.
  */
-export async function extractClientStoryboard(file: File, frameCount = 25): Promise<StoryboardResult> {
+export async function extractFastThumbnail(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') return resolve('');
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.src = url;
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 180;
+    const ctx = canvas.getContext('2d');
+
+    const cleanup = () => {
+      URL.revokeObjectURL(url);
+    };
+
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve('');
+    }, 1200);
+
+    video.onloadedmetadata = () => {
+      video.currentTime = Math.min(0.5, (video.duration || 1) * 0.1);
+    };
+
+    video.onseeked = () => {
+      clearTimeout(timeout);
+      if (ctx) {
+        try {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          cleanup();
+          return resolve(dataUrl);
+        } catch (_) {}
+      }
+      cleanup();
+      resolve('');
+    };
+
+    video.onerror = () => {
+      clearTimeout(timeout);
+      cleanup();
+      resolve('');
+    };
+  });
+}
+
+/**
+ * Extract thumbnail frames directly from local File blob in the browser.
+ */
+export async function extractClientStoryboard(file: File, frameCount = 20): Promise<StoryboardResult> {
   return new Promise((resolve) => {
     if (typeof window === 'undefined') {
       return resolve({ coverThumbnail: '', frames: [], duration: 0 });
@@ -43,7 +96,6 @@ export async function extractClientStoryboard(file: File, frameCount = 25): Prom
       URL.revokeObjectURL(url);
     };
 
-    // Safety timeout: If browser cannot decode in 5 seconds, resolve gracefully with whatever frames gathered
     const timeout = setTimeout(() => {
       cleanup();
       resolve({
@@ -51,7 +103,7 @@ export async function extractClientStoryboard(file: File, frameCount = 25): Prom
         frames,
         duration: video.duration || 0,
       });
-    }, 5000);
+    }, 4000);
 
     video.onloadedmetadata = async () => {
       const duration = video.duration || 1;
@@ -89,7 +141,7 @@ export async function extractClientStoryboard(file: File, frameCount = 25): Prom
           seekTimeout = setTimeout(() => {
             video.removeEventListener('seeked', onSeeked);
             resSeek();
-          }, 300);
+          }, 250);
 
           video.addEventListener('seeked', onSeeked);
           video.currentTime = t;
@@ -98,7 +150,6 @@ export async function extractClientStoryboard(file: File, frameCount = 25): Prom
 
       clearTimeout(timeout);
       cleanup();
-
       resolve({
         coverThumbnail: coverThumbnail || frames[0]?.dataUrl || '',
         frames,
@@ -114,26 +165,31 @@ export async function extractClientStoryboard(file: File, frameCount = 25): Prom
   });
 }
 
-/**
- * In-memory & SessionStorage fast cache for instant 0ms hover frame lookups
- */
+// Global in-memory cache for loaded storyboards
 const inMemoryStoryboardCache: Record<string, StoryboardFrame[]> = {};
 
+/**
+ * Cache storyboard in memory + sessionStorage
+ */
 export function cacheStoryboard(key: string, frames: StoryboardFrame[]) {
   if (!key || !frames || frames.length === 0) return;
   inMemoryStoryboardCache[key] = frames;
-  if (typeof window !== 'undefined') {
-    try {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
       sessionStorage.setItem(`sc_sb_${key}`, JSON.stringify(frames));
-    } catch (_) {}
-  }
+    }
+  } catch (_) {}
 }
 
+/**
+ * Retrieve storyboard from memory or sessionStorage
+ */
 export function getCachedStoryboard(key: string): StoryboardFrame[] | null {
   if (!key) return null;
-  if (inMemoryStoryboardCache[key]) return inMemoryStoryboardCache[key];
-
-  if (typeof window !== 'undefined') {
+  if (inMemoryStoryboardCache[key]) {
+    return inMemoryStoryboardCache[key];
+  }
+  if (typeof window !== 'undefined' && window.sessionStorage) {
     try {
       const stored = sessionStorage.getItem(`sc_sb_${key}`);
       if (stored) {

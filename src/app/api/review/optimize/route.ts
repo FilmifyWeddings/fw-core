@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import { 
   getReviewPresignedDownloadUrl, 
   putReviewObject, 
+  purgeNonCurrentVersions,
   REVIEW_BUCKET_NAME 
 } from '@/lib/review/reviewStorage';
 
@@ -39,7 +40,8 @@ async function isFfmpegAvailable(): Promise<boolean> {
  * - Compresses heavy 4K / high-bitrate master exports to pristine, visually lossless 1080p (CRF 24)
  * - Injects +faststart MOOV atom for instantaneous 0ms web streaming and zero-lag scrubbing
  * - Saves 75% - 90% Backblaze B2 cloud storage space
- * - Preserves original file size display in UI for client transparency
+ * - Permanently purges older uncompressed raw versions from Backblaze B2 so storage footprint drops immediately
+ * - Updates database record with accurate compressed size
  */
 export async function POST(req: NextRequest) {
   let tempInputPath: string | null = null;
@@ -97,13 +99,13 @@ export async function POST(req: NextRequest) {
 
     // 3. Execute pristine high-efficiency compression:
     // - Downscale to 1080p if > 1920
-    // - CRF 24 (visually lossless for web review, ~85% smaller)
-    // - Preset veryfast
+    // - CRF 24 (visually lossless for web review, ~80% smaller)
+    // - Preset veryfast with auto threads
     // - Injects +faststart MOOV atom for 0ms web playback
     // - Audio AAC 160kbps stereo
     const isLinux = process.platform === 'linux';
     const nicePrefix = isLinux ? 'nice -n 19 ' : '';
-    const ffmpegCmd = `${nicePrefix}ffmpeg -i "${tempInputPath}" -threads 1 -vf "scale='min(1920,iw)':-2" -c:v libx264 -crf 24 -preset veryfast -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 160k -y "${tempOutputPath}"`;
+    const ffmpegCmd = `${nicePrefix}ffmpeg -i "${tempInputPath}" -threads 0 -vf "scale='min(1920,iw)':-2" -c:v libx264 -crf 24 -preset veryfast -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 160k -y "${tempOutputPath}"`;
 
     await execAsync(ffmpegCmd);
 
@@ -116,19 +118,23 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Review Optimize] Optimization finished! Raw: ${(rawSizeBytes / (1024 * 1024)).toFixed(1)} MB -> Optimized: ${(optSizeBytes / (1024 * 1024)).toFixed(1)} MB (${Math.round((1 - optSizeBytes / rawSizeBytes) * 100)}% space saved)`);
 
-    // 4. If optimized file is smaller, upload back to Backblaze B2 replacing raw file
+    // 4. If optimized file is smaller, upload back to Backblaze B2 and purge raw versions
     if (optSizeBytes < rawSizeBytes) {
       const optBuffer = fs.readFileSync(tempOutputPath);
       await putReviewObject(storage_key, optBuffer, 'video/mp4');
 
+      // Crucial: Permanently wipe all older raw non-current versions of this key from Backblaze B2!
+      await purgeNonCurrentVersions(storage_key);
+
       const freedBytes = rawSizeBytes - optSizeBytes;
 
-      // 5. Update database record - keep original file_size_bytes for client display transparency
+      // 5. Update database record with true optimized size
       if (version_id) {
         await supabaseAdmin
           .from('review_video_versions')
           .update({
             resolution: '1080p (Cloud Optimized)',
+            file_size_bytes: optSizeBytes,
             updated_at: new Date().toISOString(),
           })
           .eq('id', version_id);

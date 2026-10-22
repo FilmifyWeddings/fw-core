@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { writeReviewCache, readReviewCache, listReviewCache } from '@/lib/review/reviewCache';
+import { writeReviewCache, readReviewCache, listReviewCache, deleteReviewCache } from '@/lib/review/reviewCache';
+import { deleteReviewObject } from '@/lib/review/reviewStorage';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
       duration_seconds: Number(duration_seconds) || 0,
       resolution: resolution || (isYouTube ? '1080p' : 'HD'),
       file_size_bytes: Number(file_size_bytes) || 0,
-      changelog_notes: changelog_notes?.trim() || `Version ${nextVerNum} revision`,
+      changelog_notes: changelogNotes?.trim() || `Version ${nextVerNum} revision`,
       status: 'in_review',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -129,6 +130,152 @@ export async function POST(req: NextRequest) {
       version: newVersion,
     });
   } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/review/versions
+ * Permanently deletes a single version revision, its associated comments, approvals,
+ * and physically purges the video file from Backblaze B2 storage immediately.
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    let id = searchParams.get('id') || searchParams.get('version_id');
+
+    if (!id) {
+      try {
+        const body = await req.json();
+        id = body?.id || body?.version_id;
+      } catch (_) {}
+    }
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'Version id parameter is required' }, { status: 400 });
+    }
+
+    // 1. Fetch the version from Supabase or Cache
+    let version: any = null;
+    try {
+      const { data } = await supabaseAdmin
+        .from('review_video_versions')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (data) version = data;
+    } catch (_) {}
+
+    if (!version) {
+      const cached = readReviewCache('review_video_versions');
+      version = cached[id];
+    }
+
+    if (!version) {
+      return NextResponse.json({ success: false, error: 'Version record not found' }, { status: 404 });
+    }
+
+    const { video_id, project_id, storage_key, file_size_bytes, workspace_id } = version;
+
+    // 2. Permanently purge media from Backblaze B2 storage (all versions and delete markers)
+    if (storage_key) {
+      console.log(`[Review Version Purge] Purging video object from Backblaze B2: ${storage_key}...`);
+      await deleteReviewObject(storage_key);
+
+      const storyboardKey = `${storage_key.replace(/\.[^.]+$/, '')}_storyboard.json`;
+      await deleteReviewObject(storyboardKey);
+    }
+
+    // 3. Delete comments & annotations for this version
+    try {
+      await supabaseAdmin.from('review_comments').delete().eq('version_id', id);
+    } catch (err) {
+      console.warn('[Review DB] Comments purge note:', err);
+    }
+
+    // 4. Delete approvals for this version
+    try {
+      await supabaseAdmin.from('review_approvals').delete().eq('version_id', id);
+    } catch (err) {
+      console.warn('[Review DB] Approvals purge note:', err);
+    }
+
+    // 5. Delete the version record from review_video_versions
+    try {
+      await supabaseAdmin.from('review_video_versions').delete().eq('id', id);
+    } catch (err) {
+      console.error('[Review DB] Failed to delete version record:', err);
+    }
+    deleteReviewCache('review_video_versions', id);
+
+    // 6. Find remaining versions for this video to re-assign current_version_id
+    let remainingVersions: any[] = [];
+    try {
+      const { data: rem } = await supabaseAdmin
+        .from('review_video_versions')
+        .select('*')
+        .eq('video_id', video_id)
+        .order('version_number', { ascending: false });
+
+      if (rem) remainingVersions = rem;
+    } catch (_) {}
+
+    if (remainingVersions.length === 0) {
+      remainingVersions = listReviewCache('review_video_versions', (v: any) => v.video_id === video_id)
+        .filter((v: any) => v.id !== id);
+    }
+
+    const nextCurrentVersionId = remainingVersions.length > 0 ? remainingVersions[0].id : null;
+
+    // 7. Update parent video current_version_id
+    try {
+      await supabaseAdmin
+        .from('review_videos')
+        .update({
+          current_version_id: nextCurrentVersionId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', video_id);
+
+      const videos = readReviewCache('review_videos');
+      if (videos[video_id]) {
+        videos[video_id].current_version_id = nextCurrentVersionId;
+        videos[video_id].updated_at = new Date().toISOString();
+        writeReviewCache('review_videos', video_id, videos[video_id]);
+      }
+    } catch (vidErr) {
+      console.error('[Review DB] Failed to update video current version:', vidErr);
+    }
+
+    // 8. Deduct freed bytes from workspace quota
+    if (workspace_id && Number(file_size_bytes) > 0) {
+      try {
+        const { data: q } = await supabaseAdmin
+          .from('review_storage_quotas')
+          .select('used_bytes')
+          .eq('workspace_id', workspace_id)
+          .maybeSingle();
+
+        if (q) {
+          const newUsed = Math.max(0, (Number(q.used_bytes) || 0) - Number(file_size_bytes));
+          await supabaseAdmin
+            .from('review_storage_quotas')
+            .update({ used_bytes: newUsed, updated_at: new Date().toISOString() })
+            .eq('workspace_id', workspace_id);
+        }
+      } catch (_) {}
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Version cut, comments, and media permanently purged from storage',
+      deleted_version_id: id,
+      next_active_version_id: nextCurrentVersionId,
+      remaining_versions: remainingVersions,
+    });
+
+  } catch (err: any) {
+    console.error('[Review Version Delete Exception]:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
