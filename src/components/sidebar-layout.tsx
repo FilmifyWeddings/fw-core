@@ -33,7 +33,8 @@ export const StudioCoreBrandIcon = ({ className = "w-8 h-8", isCollapsed = false
 
 export function SidebarLayout({ children }: SidebarLayoutProps) {
   const router = useRouter();
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  const pathname = rawPathname || '';
   const searchParams = useSearchParams();
   const { isOwner, userRole, permissions, availableWorkspaces, activeWorkspace } = useWorkspace();
   const hasFetchedRef = useRef(false);

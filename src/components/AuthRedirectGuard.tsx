@@ -11,7 +11,8 @@ import { clearUserWorkspaceCaches } from '@/lib/storage-safety';
  * 2. Auto-heals broken/corrupted Supabase SSR cookie chunks when session is absent or signed out
  */
 export function AuthRedirectGuard() {
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  const pathname = rawPathname || '';
   const router = useRouter();
 
   // Auto-healing: Clean cookies and workspace storage caches on explicit user SIGN_OUT event

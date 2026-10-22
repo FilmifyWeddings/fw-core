@@ -11,7 +11,8 @@ import { ReviewUploadDrawer } from '@/components/review/ReviewUploadDrawer';
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  const pathname = rawPathname || '';
   const { isOwner, activeWorkspace, loading } = useWorkspace();
 
   useEffect(() => {
@@ -20,14 +21,15 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     // Strict Partner / Crew Member Lockdown
     if (!isOwner) {
       // Normal studio dashboard /workspace or owner-only routes must be completely inaccessible to non-owners
+      const currentPath = pathname || '';
       const isOwnerOnlyWorkspaceRoute = 
-        pathname === '/workspace' || 
-        pathname === '/workspace/' ||
-        pathname.startsWith('/workspace/team') ||
-        pathname.startsWith('/workspace/finance') ||
-        pathname.startsWith('/workspace/settings') ||
-        pathname.startsWith('/workspace/integrations') ||
-        pathname.startsWith('/workspace/clients');
+        currentPath === '/workspace' || 
+        currentPath === '/workspace/' ||
+        currentPath.startsWith('/workspace/team') ||
+        currentPath.startsWith('/workspace/finance') ||
+        currentPath.startsWith('/workspace/settings') ||
+        currentPath.startsWith('/workspace/integrations') ||
+        currentPath.startsWith('/workspace/clients');
 
       if (isOwnerOnlyWorkspaceRoute) {
         const studioCode = activeWorkspace?.studioSlug || activeWorkspace?.workspaceId || '';
@@ -41,14 +43,15 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
 
   // If non-owner on a restricted route, show loader while redirecting
   if (!loading && !isOwner) {
+    const currentPath = pathname || '';
     const isOwnerOnlyWorkspaceRoute = 
-      pathname === '/workspace' || 
-      pathname === '/workspace/' ||
-      pathname.startsWith('/workspace/team') ||
-      pathname.startsWith('/workspace/finance') ||
-      pathname.startsWith('/workspace/settings') ||
-      pathname.startsWith('/workspace/integrations') ||
-      pathname.startsWith('/workspace/clients');
+      currentPath === '/workspace' || 
+      currentPath === '/workspace/' ||
+      currentPath.startsWith('/workspace/team') ||
+      currentPath.startsWith('/workspace/finance') ||
+      currentPath.startsWith('/workspace/settings') ||
+      currentPath.startsWith('/workspace/integrations') ||
+      currentPath.startsWith('/workspace/clients');
 
     if (isOwnerOnlyWorkspaceRoute) {
       return <StudioCoreLiquidLoader label="Redirecting to your workspace..." />;
