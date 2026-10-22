@@ -184,31 +184,41 @@ export default function CommentsPanel({
                 key={comment.id}
                 onClick={() => onSelectComment(comment)}
                 className={`pt-3.5 first:pt-0 group/comment cursor-pointer transition-all rounded-2xl p-2.5 ${
-                  isActive ? 'bg-amber-50/60 ring-1 ring-amber-300/80' : 'hover:bg-zinc-50'
+                  isActive 
+                    ? 'bg-amber-50/70 ring-1 ring-amber-300/80 shadow-2xs' 
+                    : comment.is_resolved 
+                    ? 'bg-emerald-50/20 hover:bg-emerald-50/40 border border-emerald-100/50' 
+                    : 'hover:bg-zinc-50 border border-transparent'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2.5">
                   
                   {/* Timestamp Pill & Resolve Checkbox */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggleResolve(comment.id, !comment.is_resolved);
                       }}
-                      className="text-zinc-300 hover:text-amber-600 cursor-pointer transition"
+                      className="cursor-pointer transition"
                       title={comment.is_resolved ? 'Mark Unresolved' : 'Mark Resolved'}
                     >
                       {comment.is_resolved ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 fill-emerald-100" />
                       ) : (
-                        <Circle className="w-4 h-4 text-zinc-300 hover:text-amber-500" />
+                        <Circle className="w-4 h-4 text-zinc-300 hover:text-emerald-600" />
                       )}
                     </button>
 
                     <span className="font-mono text-[11px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
                       {formatTimecode(comment.timestamp_seconds)}
                     </span>
+
+                    {comment.is_resolved && (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1 border border-emerald-200">
+                        <Check className="w-3 h-3 text-emerald-600" /> Resolved
+                      </span>
+                    )}
 
                     {comment.has_annotation && (
                       <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-md flex items-center gap-1 border border-purple-200">
@@ -223,7 +233,7 @@ export default function CommentsPanel({
                     )}
                   </div>
 
-                  {/* Delete button (optional) */}
+                  {/* Delete button */}
                   {onDeleteComment && (
                     <button
                       onClick={(e) => {
@@ -237,9 +247,9 @@ export default function CommentsPanel({
                   )}
                 </div>
 
-                {/* Comment Body */}
-                <div className="mt-2 text-xs text-zinc-800 leading-relaxed pl-6">
-                  <p className={comment.is_resolved ? 'line-through text-zinc-400' : ''}>
+                {/* Comment Body - No strikethrough, clean and readable! */}
+                <div className="mt-2 text-xs leading-relaxed pl-6">
+                  <p className={comment.is_resolved ? 'text-zinc-600' : 'text-zinc-900 font-medium'}>
                     {comment.content}
                   </p>
                 </div>

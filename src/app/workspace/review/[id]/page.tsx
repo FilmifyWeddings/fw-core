@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Film, Plus, Share2, CheckCircle2, Clock, 
-  FileEdit, AlertCircle, Sparkles, ChevronDown, Download, 
-  PenTool, Users, Calendar, GitCommit, ExternalLink, Trash2 
+  FileEdit, Sparkles, ChevronDown, PenTool, Users, 
+  Calendar, GitCommit, Trash2, Check 
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
@@ -68,9 +68,15 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
         setShares(data.shares || []);
 
         if (data.videos && data.videos.length > 0) {
-          const firstVid = data.videos[0];
-          setActiveVideoId(firstVid.id);
-          setActiveVersionId(firstVid.current_version_id || null);
+          // If no active video or current active video not in list, select first
+          setActiveVideoId(prev => {
+            const exists = data.videos.some((v: any) => v.id === prev);
+            return exists ? prev : data.videos[0].id;
+          });
+          setActiveVersionId(prev => {
+            const exists = data.versions.some((ver: any) => ver.id === prev);
+            return exists ? prev : (data.videos[0].current_version_id || null);
+          });
         }
       }
     } catch (_) {
@@ -81,6 +87,19 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
 
   useEffect(() => {
     loadProject();
+  }, [projectId]);
+
+  // Reactive listener for background drawer upload completion
+  useEffect(() => {
+    const handleVideoUploaded = (e: any) => {
+      const detail = e.detail;
+      if (detail?.projectId === projectId) {
+        loadProject();
+      }
+    };
+
+    window.addEventListener('studiocore-review-video-ready', handleVideoUploaded);
+    return () => window.removeEventListener('studiocore-review-video-ready', handleVideoUploaded);
   }, [projectId]);
 
   // Load comments for active version
@@ -211,7 +230,7 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
               <h1 className="font-bold text-base text-zinc-900 truncate">
                 {project.name}
               </h1>
-              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                 project.status === 'approved' 
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                   : project.status === 'changes_requested'
@@ -240,14 +259,26 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
           {/* Approval Sign-off Trigger */}
           <button
             onClick={() => setIsApprovalModalOpen(true)}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer ${
-              activeVersion?.status === 'approved'
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+              activeVersion?.status === 'approved' || project?.status === 'approved'
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                : activeVersion?.status === 'changes_requested' || project?.status === 'changes_requested'
+                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
                 : 'bg-white text-zinc-700 border-[#E7E2D8] hover:border-amber-400'
             }`}
           >
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{activeVersion?.status === 'approved' ? 'Approved' : 'Sign-off / Status'}</span>
+            <CheckCircle2 className={`w-3.5 h-3.5 ${
+              (activeVersion?.status === 'approved' || project?.status === 'approved') 
+                ? 'text-emerald-600' 
+                : 'text-zinc-400'
+            }`} />
+            <span>
+              {activeVersion?.status === 'approved' || project?.status === 'approved'
+                ? 'Approved' 
+                : activeVersion?.status === 'changes_requested' || project?.status === 'changes_requested'
+                ? 'Changes Needed'
+                : 'Sign-off / Status'}
+            </span>
           </button>
 
           {/* Share Review Link */}
@@ -280,7 +311,7 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
         </div>
       </header>
 
-      {/* 2. Video Switcher Tabs & Version Bar */}
+      {/* 2. Video Switcher Tabs & Modern Version Bar */}
       <div className="bg-white border-b border-[#E7E2D8] px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
         
         {/* Video selector horizontal tabs */}
@@ -311,45 +342,44 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
           )}
         </div>
 
-        {/* Version Selector for Active Video */}
+        {/* Modern Version Switcher Pills for Active Video */}
         {activeVideo && (
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center gap-1.5 bg-[#FAF9F5] border border-[#E7E2D8] rounded-xl px-2.5 py-1">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Version:</span>
-              <select
-                value={activeVersionId || ''}
-                onChange={(e) => setActiveVersionId(e.target.value)}
-                className="bg-transparent text-xs font-bold text-zinc-800 outline-hidden cursor-pointer"
-              >
-                {currentVideoVersions.map(ver => (
-                  <option key={ver.id} value={ver.id}>
-                    {ver.version_label || `V${ver.version_number}`} ({ver.source_type === 'youtube' ? 'YouTube' : ver.resolution || 'Video'})
-                  </option>
-                ))}
-              </select>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Cuts / Revisions:</span>
+            
+            <div className="flex items-center gap-1 bg-[#FAF9F5] p-1 rounded-xl border border-[#E7E2D8]">
+              {currentVideoVersions.map(ver => {
+                const isCurrent = ver.id === activeVersionId;
+                const isApproved = ver.status === 'approved';
+                const isChanges = ver.status === 'changes_requested';
+
+                return (
+                  <button
+                    key={ver.id}
+                    onClick={() => setActiveVersionId(ver.id)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                      isCurrent
+                        ? 'bg-white text-zinc-900 shadow-2xs border border-[#E7E2D8]'
+                        : 'text-zinc-500 hover:text-zinc-800'
+                    }`}
+                  >
+                    <span>{ver.version_label || `V${ver.version_number}`}</span>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      isApproved ? 'bg-emerald-500' : isChanges ? 'bg-amber-500' : 'bg-blue-400'
+                    }`} />
+                  </button>
+                );
+              })}
             </div>
 
             {/* "+ New Version" button */}
             <button
               onClick={() => setIsNewVersionModalOpen(true)}
-              className="px-2.5 py-1 rounded-xl bg-white border border-[#E7E2D8] hover:border-amber-400 text-zinc-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow-2xs"
+              className="px-3 py-1.5 rounded-xl bg-white border border-[#E7E2D8] hover:border-amber-400 text-zinc-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow-2xs"
             >
               <GitCommit className="w-3 h-3 text-amber-600" />
-              <span>+ New Revision</span>
+              <span>+ New Cut</span>
             </button>
-
-            {/* Download Original button (if uploaded file) */}
-            {activeVersion?.original_file_url && activeVersion.source_type === 'upload' && (
-              <a
-                href={activeVersion.original_file_url}
-                target="_blank"
-                download
-                className="p-1.5 rounded-xl border border-[#E7E2D8] hover:bg-zinc-50 text-zinc-600 transition"
-                title="Download Master Original Video"
-              >
-                <Download className="w-3.5 h-3.5" />
-              </a>
-            )}
           </div>
         )}
       </div>
@@ -414,14 +444,18 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
           <CommentsPanel
             comments={comments}
             currentTime={currentTime}
-            onSeek={(t) => setCurrentTime(t)}
+            activeCommentId={activeCommentId}
+            onSelectComment={(comment) => {
+              setActiveCommentId(comment.id);
+              setCurrentTime(comment.timestamp_seconds);
+            }}
             onAddComment={handleAddComment}
             onToggleResolve={handleToggleResolve}
             onDeleteComment={handleDeleteComment}
             isDrawMode={isDrawMode}
-            onToggleDraw={() => setIsDrawMode(!isDrawMode)}
-            activeCommentId={activeCommentId}
-            onSelectComment={(id) => setActiveCommentId(id)}
+            setIsDrawMode={setIsDrawMode}
+            hasCurrentAnnotation={Boolean(currentAnnotation)}
+            currentUserRole={isOwner ? 'owner' : 'editor'}
           />
         </div>
       </main>
@@ -432,6 +466,7 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
         onClose={() => setIsAddVideoModalOpen(false)}
         projectId={projectId}
         workspaceId={workspaceId || ''}
+        projectTitle={project.name}
         onVideoAdded={(newVid, newVer) => {
           setVideos(prev => [...prev, newVid]);
           setVersions(prev => [...prev, newVer]);
@@ -443,10 +478,9 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
       <NewVersionModal
         isOpen={isNewVersionModalOpen}
         onClose={() => setIsNewVersionModalOpen(false)}
-        videoId={activeVideo?.id || ''}
+        video={activeVideo}
         projectId={projectId}
         workspaceId={workspaceId || ''}
-        currentVersionNumber={currentVideoVersions.length}
         onVersionAdded={(newVer) => {
           setVersions(prev => [...prev, newVer]);
           setActiveVersionId(newVer.id);
@@ -465,11 +499,11 @@ export default function ReviewStudioPage({ params }: { params: Promise<{ id: str
       <ApprovalModal
         isOpen={isApprovalModalOpen}
         onClose={() => setIsApprovalModalOpen(false)}
-        projectId={projectId}
-        videoId={activeVideo?.id || ''}
-        versionId={activeVersion?.id || ''}
+        project={project}
+        video={activeVideo}
+        version={activeVersion}
         workspaceId={workspaceId || ''}
-        currentStatus={activeVersion?.status || 'in_review'}
+        currentStatus={activeVersion?.status || project?.status || 'in_review'}
         onStatusUpdated={(status) => {
           setVersions(prev => prev.map(v => v.id === activeVersion?.id ? { ...v, status } : v));
           setProject((prev: any) => ({ ...prev, status }));

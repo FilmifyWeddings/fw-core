@@ -76,6 +76,20 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
+    // Sequential order_index calculation (PostgreSQL INT32-safe)
+    let nextOrder = 1;
+    try {
+      const { count } = await supabaseAdmin
+        .from('review_videos')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', project_id);
+      if (typeof count === 'number' && !isNaN(count)) {
+        nextOrder = count + 1;
+      }
+    } catch (_) {
+      nextOrder = Math.floor(Date.now() / 1000) % 1000000;
+    }
+
     // 2. Create Video Asset
     const newVideo = {
       id: videoId,
@@ -85,7 +99,7 @@ export async function POST(req: NextRequest) {
       category: category || 'Highlight Film',
       current_version_id: versionId,
       status: 'in_review',
-      order_index: Date.now(),
+      order_index: nextOrder,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -103,8 +117,16 @@ export async function POST(req: NextRequest) {
 
     // Supabase DB persistent insert
     try {
-      await supabaseAdmin.from('review_videos').insert(newVideo);
-      await supabaseAdmin.from('review_video_versions').insert(newVersion);
+      const { error: vErr } = await supabaseAdmin.from('review_videos').insert(newVideo);
+      if (vErr) {
+        console.error('[Review DB] Video insert error:', vErr);
+      }
+
+      const { error: verErr } = await supabaseAdmin.from('review_video_versions').insert(newVersion);
+      if (verErr) {
+        console.error('[Review DB] Version insert error:', verErr);
+      }
+
       if (resolvedThumbnail) {
         await supabaseAdmin
           .from('review_projects')
@@ -124,7 +146,7 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (dbErr) {
-      console.error('[Review DB] Video insert error:', dbErr);
+      console.error('[Review DB] Video insert exception:', dbErr);
     }
 
     return NextResponse.json({

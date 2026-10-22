@@ -97,11 +97,18 @@ export async function POST(req: NextRequest) {
 
     // Supabase DB persistent insert
     try {
-      await supabaseAdmin.from('review_video_versions').insert(newVersion);
-      await supabaseAdmin
+      const { error: verErr } = await supabaseAdmin.from('review_video_versions').insert(newVersion);
+      if (verErr) {
+        console.error('[Review DB] Version insert error:', verErr);
+      }
+
+      const { error: vidErr } = await supabaseAdmin
         .from('review_videos')
         .update({ current_version_id: versionId, updated_at: new Date().toISOString() })
         .eq('id', video_id);
+      if (vidErr) {
+        console.error('[Review DB] Video current_version update error:', vidErr);
+      }
 
       // Quota update for uploads
       if (validWsId && !isYouTube && Number(file_size_bytes) > 0) {
@@ -114,7 +121,7 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (dbErr) {
-      console.error('[Review DB] Version insert error:', dbErr);
+      console.error('[Review DB] Version insert exception:', dbErr);
     }
 
     return NextResponse.json({

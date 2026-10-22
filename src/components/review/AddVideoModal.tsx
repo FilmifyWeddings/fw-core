@@ -5,6 +5,7 @@ import {
   X, Upload, Film, FileVideo, CheckCircle2, 
   AlertCircle, Sparkles, Loader2 
 } from 'lucide-react';
+import { useReviewUpload } from '@/context/ReviewUploadContext';
 
 const YouTubeIcon = ({ className = "w-4 h-4 text-red-600" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -17,6 +18,7 @@ interface AddVideoModalProps {
   onClose: () => void;
   projectId: string;
   workspaceId: string;
+  projectTitle?: string;
   onVideoAdded: (video: any, version: any) => void;
 }
 
@@ -36,8 +38,11 @@ export default function AddVideoModal({
   onClose,
   projectId,
   workspaceId,
+  projectTitle,
   onVideoAdded,
 }: AddVideoModalProps) {
+  const { enqueueVideoUpload } = useReviewUpload();
+
   const [activeTab, setActiveTab] = useState<'upload' | 'youtube'>('upload');
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Highlight Film');
@@ -49,8 +54,7 @@ export default function AddVideoModal({
 
   // Upload State
   const [file, setFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   if (!isOpen) return null;
@@ -97,7 +101,7 @@ export default function AddVideoModal({
       }
 
       try {
-        setIsUploading(true);
+        setIsSubmitting(true);
         const res = await fetch('/api/review/videos', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -120,99 +124,30 @@ export default function AddVideoModal({
       } catch (err: any) {
         setErrorMessage(err.message || 'Something went wrong');
       } finally {
-        setIsUploading(false);
+        setIsSubmitting(false);
       }
     } else {
-      // Upload Tab
+      // Upload Tab - Enqueue in Background Drawer
       if (!file) {
         setErrorMessage('Please choose a video file to upload');
         return;
       }
 
-      try {
-        setIsUploading(true);
-        setUploadProgress(10);
+      enqueueVideoUpload({
+        projectId,
+        workspaceId,
+        projectTitle,
+        title: title.trim(),
+        category,
+        file,
+        changelogNotes,
+        onCompleted: (newVid, newVer) => {
+          onVideoAdded(newVid, newVer);
+        },
+      });
 
-        // 1. Request presigned upload URL
-        const presignRes = await fetch('/api/review/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: file.name,
-            content_type: file.type || 'video/mp4',
-            file_size_bytes: file.size,
-            workspace_id: workspaceId,
-            project_id: projectId,
-          }),
-        });
-
-        const presignData = await presignRes.json();
-        if (!presignData.success) throw new Error(presignData.error || 'Upload request failed');
-
-        setUploadProgress(30);
-
-        // 2. Direct upload to storage bucket via PUT with auto-retry
-        const doPutUpload = (targetUrl: string) => new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', targetUrl, true);
-          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-
-          xhr.upload.onprogress = (evt) => {
-            if (evt.lengthComputable) {
-              const percent = Math.round(30 + (evt.loaded / evt.total) * 60);
-              setUploadProgress(percent);
-            }
-          };
-
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) resolve();
-            else reject(new Error(`Upload rejected with status ${xhr.status}: ${xhr.statusText}`));
-          };
-          xhr.onerror = () => reject(new Error('Network error during video upload. Please check your internet connection or Backblaze bucket configuration.'));
-          xhr.send(file);
-        });
-
-        if (presignData.upload_url.startsWith('http')) {
-          try {
-            await doPutUpload(presignData.upload_url);
-          } catch (firstErr) {
-            console.warn('[Video Upload] First upload attempt failed, retrying once...', firstErr);
-            await new Promise(r => setTimeout(r, 800));
-            await doPutUpload(presignData.upload_url);
-          }
-        }
-
-        setUploadProgress(95);
-
-        // 3. Register video record in StudioCore Review
-        const registerRes = await fetch('/api/review/videos', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: projectId,
-            workspace_id: workspaceId,
-            title: title.trim(),
-            category,
-            source_type: 'upload',
-            video_url: presignData.public_url || URL.createObjectURL(file),
-            original_file_url: presignData.public_url || null,
-            storage_key: presignData.key || null,
-            file_size_bytes: file.size,
-            changelog_notes: changelogNotes,
-          }),
-        });
-
-        const regData = await registerRes.json();
-        if (!regData.success) throw new Error(regData.error || 'Failed to register video');
-
-        setUploadProgress(100);
-        onVideoAdded(regData.video, regData.version);
-        onClose();
-      } catch (err: any) {
-        setErrorMessage(err.message || 'Failed to upload video');
-      } finally {
-        setIsUploading(false);
-      }
+      // Modal closes immediately so user can continue their work freely!
+      onClose();
     }
   };
 
@@ -295,24 +230,9 @@ export default function AddVideoModal({
                   {file ? file.name : 'Choose or Drag & Drop Video File'}
                 </p>
                 <p className="text-[10px] text-zinc-400 mt-0.5">
-                  {file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : 'MP4, MOV, WebM (Original quality preserved)'}
+                  {file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : 'MP4, MOV, WebM (Runs in background upload drawer)'}
                 </p>
               </div>
-
-              {isUploading && (
-                <div className="space-y-1.5 pt-1">
-                  <div className="flex items-center justify-between text-xs text-zinc-600 font-bold">
-                    <span>Uploading...</span>
-                    <span>{uploadProgress}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
-                    <div 
-                      style={{ width: `${uploadProgress}%` }}
-                      className="h-full bg-amber-500 transition-all duration-300 rounded-full"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -391,7 +311,7 @@ export default function AddVideoModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={isUploading}
+              disabled={isSubmitting}
               className="px-4 py-2 rounded-full border border-[#E7E2D8] text-zinc-600 hover:bg-zinc-50 font-bold text-xs cursor-pointer transition"
             >
               Cancel
@@ -399,11 +319,11 @@ export default function AddVideoModal({
 
             <button
               type="submit"
-              disabled={isUploading}
+              disabled={isSubmitting}
               className="px-5 py-2 rounded-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 cursor-pointer transition shadow-2xs"
             >
-              {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-              <span>{isUploading ? 'Processing...' : 'Add Video to Project'}</span>
+              {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+              <span>{isSubmitting ? 'Adding...' : activeTab === 'upload' ? 'Upload in Background' : 'Add Video to Project'}</span>
             </button>
           </div>
         </form>

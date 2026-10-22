@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, use } from 'react';
 import { 
-  Film, CheckCircle2, FileEdit, Download, Lock, Key, 
+  Film, CheckCircle2, FileEdit, Lock, Key, 
   MessageSquare, ExternalLink, AlertCircle, Sparkles, 
   Clock, Check, Play, User 
 } from 'lucide-react';
@@ -150,11 +150,11 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
       body: JSON.stringify({
         version_id: activeVersion.id,
         video_id: activeVideo?.id || null,
-        project_id: project.id,
+        project_id: project?.id,
         parent_comment_id: parent_comment_id || null,
         timestamp_seconds,
         author_name: author,
-        author_email: clientEmail,
+        author_email: clientEmail.trim() || null,
         author_role: 'client',
         content,
         is_internal: false,
@@ -183,27 +183,25 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#FAF9F5] flex items-center justify-center p-6">
-        <StudioCoreLiquidLoader label="Opening Video Review Portal..." />
-      </div>
-    );
-  }
-
-  // Passcode Protection Screen
+  // Passcode Gate Screen
   if (requiresPasscode) {
     return (
-      <div className="min-h-screen bg-[#FAF9F5] flex items-center justify-center p-4">
-        <div className="w-full max-w-sm bg-white rounded-3xl border border-[#E7E2D8] p-6 shadow-xl text-center space-y-4">
+      <div className="min-h-screen bg-[#FAF9F5] flex items-center justify-center p-6 select-none font-sans">
+        <div className="w-full max-w-sm bg-white rounded-3xl border border-[#E7E2D8] p-8 shadow-2xl space-y-5 text-center">
           <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
             <Lock className="w-6 h-6" />
           </div>
 
-          <div className="space-y-1">
-            <h2 className="font-bold text-base text-zinc-900">Protected Video Review</h2>
-            <p className="text-xs text-zinc-400">Please enter the security PIN provided by your studio.</p>
+          <div>
+            <h2 className="font-bold text-lg text-zinc-900">Protected Video Review</h2>
+            <p className="text-xs text-zinc-500 mt-1">This proofing link is protected by a studio passcode.</p>
           </div>
+
+          {passcodeError && (
+            <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs">
+              {passcodeError}
+            </div>
+          )}
 
           <form onSubmit={(e) => {
             e.preventDefault();
@@ -213,20 +211,18 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
               type="password"
               value={passcode}
               onChange={(e) => setPasscode(e.target.value)}
-              placeholder="Enter PIN passcode"
-              className="w-full px-4 py-2.5 rounded-xl border border-[#E7E2D8] text-center text-sm font-mono tracking-widest text-zinc-900 focus:outline-hidden focus:border-amber-500"
+              placeholder="Enter passcode..."
+              className="w-full text-center px-4 py-2.5 rounded-xl border border-[#E7E2D8] text-sm text-zinc-800 tracking-widest focus:outline-hidden focus:border-amber-500"
               autoFocus
+              required
             />
-
-            {passcodeError && (
-              <p className="text-xs text-red-600 font-medium">{passcodeError}</p>
-            )}
 
             <button
               type="submit"
-              className="w-full py-2.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-2xs cursor-pointer transition"
+              disabled={isLoading || !passcode}
+              className="w-full py-2.5 rounded-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition shadow-2xs"
             >
-              Unlock Project
+              Unlock Review Studio
             </button>
           </form>
         </div>
@@ -321,24 +317,12 @@ export default function ClientReviewPage({ params }: { params: Promise<{ token: 
           ))}
         </div>
 
-        {/* Active Version & Download */}
-        <div className="flex items-center gap-3">
+        {/* Active Version Pills */}
+        <div className="flex items-center gap-2">
           {activeVersion && (
             <span className="text-xs font-bold text-zinc-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
               Revision {activeVersion.version_label || `V${activeVersion.version_number}`}
             </span>
-          )}
-
-          {shareData?.allow_downloads && activeVersion?.original_file_url && activeVersion.source_type === 'upload' && (
-            <a
-              href={activeVersion.original_file_url}
-              target="_blank"
-              download
-              className="px-3 py-1 rounded-xl border border-[#E7E2D8] hover:bg-zinc-50 text-zinc-700 text-xs font-bold flex items-center gap-1.5 transition"
-            >
-              <Download className="w-3.5 h-3.5 text-zinc-500" />
-              <span>Download Master</span>
-            </a>
           )}
         </div>
       </div>

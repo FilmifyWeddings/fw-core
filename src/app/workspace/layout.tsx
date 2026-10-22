@@ -6,6 +6,8 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { UploadQueueProvider } from '@/context/UploadQueueContext';
 import { UploadManagerDrawer } from '@/components/gallery/UploadManagerDrawer';
+import { ReviewUploadProvider } from '@/context/ReviewUploadContext';
+import { ReviewUploadDrawer } from '@/components/review/ReviewUploadDrawer';
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -55,8 +57,11 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
 
   return (
     <UploadQueueProvider>
-      {children}
-      <UploadManagerDrawer />
+      <ReviewUploadProvider>
+        {children}
+        <UploadManagerDrawer />
+        <ReviewUploadDrawer />
+      </ReviewUploadProvider>
     </UploadQueueProvider>
   );
 }

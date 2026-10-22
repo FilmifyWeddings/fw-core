@@ -59,7 +59,9 @@ export default function VideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const ytIntervalRef = useRef<any>(null);
 
@@ -73,6 +75,10 @@ export default function VideoPlayer({
   const [hoverTime, setHoverTime] = useState(0);
   const [hoverX, setHoverX] = useState(0);
 
+  // Scrubber preview seek throttling refs
+  const isSeekingPreviewRef = useRef(false);
+  const pendingPreviewSeekRef = useRef<number | null>(null);
+
   // Drawing state
   const [drawColor, setDrawColor] = useState('#F59E0B'); // Default gold/amber
   const [drawTool, setDrawTool] = useState<'pen' | 'arrow' | 'rect'>('pen');
@@ -83,7 +89,6 @@ export default function VideoPlayer({
   useEffect(() => {
     if (sourceType !== 'youtube' || !youtubeVideoId) return;
 
-    // Load YouTube IFrame API script if not present
     if (!(window as any).YT) {
       const tag = document.createElement('script');
       tag.src = 'https://www.youtube.com/iframe_api';
@@ -149,7 +154,7 @@ export default function VideoPlayer({
     };
   }, [sourceType, youtubeVideoId]);
 
-  // 2. Seek video when currentTime is driven from outside (e.g. clicking a comment)
+  // 2. Seek video when driven from outside (e.g. clicking a comment or scrubbing)
   const seekTo = useCallback((seconds: number) => {
     if (sourceType === 'youtube') {
       if (ytPlayerRef.current && ytPlayerRef.current.seekTo) {
@@ -190,10 +195,9 @@ export default function VideoPlayer({
     seekTo(newTime);
   };
 
-  // Keyboard Shortcuts (Space, J/K/L, Left/Right, C, M)
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if typing in an input/textarea
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
 
@@ -223,7 +227,6 @@ export default function VideoPlayer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [togglePlay, currentTime, duration, seekTo]);
 
-  // Fullscreen toggle
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
     if (!document.fullscreenElement) {
@@ -235,7 +238,7 @@ export default function VideoPlayer({
     }
   };
 
-  // 3. Canvas Drawing Layer Logic
+  // 3. Drawing Layer: Strictly Bound to Timecode (Frame.io grade)
   const redrawCanvas = useCallback((pointsToDraw: any[]) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -244,9 +247,25 @@ export default function VideoPlayer({
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // If an active comment has stored annotation data, draw it
-    const activeComment = comments.find(c => c.id === activeCommentId);
-    const annotationData = currentAnnotation || (activeComment?.has_annotation ? activeComment.annotation_data : null);
+    let annotationData: any = null;
+
+    if (isDrawMode) {
+      // User is actively annotating on the currently paused frame
+      annotationData = currentAnnotation;
+    } else {
+      // Check if current video frame matches a comment's timecode within threshold
+      const matchingComment = comments.find(c => {
+        if (!c.has_annotation || !c.annotation_data) return false;
+        if (activeCommentId && c.id === activeCommentId) {
+          return Math.abs(currentTime - c.timestamp_seconds) <= 0.8;
+        }
+        return Math.abs(currentTime - c.timestamp_seconds) <= 0.5;
+      });
+
+      if (matchingComment) {
+        annotationData = matchingComment.annotation_data;
+      }
+    }
 
     const points = pointsToDraw.length > 0 ? pointsToDraw : (annotationData?.points || []);
     if (!points || points.length === 0) return;
@@ -264,7 +283,6 @@ export default function VideoPlayer({
       ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
 
-      // Draw arrow head
       const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
       ctx.beginPath();
       ctx.moveTo(p2.x, p2.y);
@@ -278,7 +296,6 @@ export default function VideoPlayer({
       ctx.beginPath();
       ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
     } else {
-      // Freehand pen
       ctx.beginPath();
       points.forEach((p, idx) => {
         if (idx === 0) ctx.moveTo(p.x, p.y);
@@ -286,7 +303,7 @@ export default function VideoPlayer({
       });
       ctx.stroke();
     }
-  }, [activeCommentId, comments, currentAnnotation, drawColor]);
+  }, [activeCommentId, comments, currentAnnotation, currentTime, drawColor, isDrawMode]);
 
   // Adjust canvas size to match container
   useEffect(() => {
@@ -301,9 +318,10 @@ export default function VideoPlayer({
     return () => window.removeEventListener('resize', handleResize);
   }, [redrawCanvas, drawingPoints]);
 
+  // Re-draw canvas whenever timecode updates or active comment changes
   useEffect(() => {
     redrawCanvas(drawingPoints);
-  }, [activeCommentId, currentAnnotation, redrawCanvas, drawingPoints]);
+  }, [currentTime, activeCommentId, currentAnnotation, redrawCanvas, drawingPoints, isDrawMode]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawMode) return;
@@ -350,12 +368,56 @@ export default function VideoPlayer({
     }
   };
 
+  // 4. Instant Hover Scrubbing Thumbnail Logic (Throttled & Non-blocking)
+  const drawPreviewFrame = useCallback(() => {
+    const v = previewVideoRef.current;
+    const c = previewCanvasRef.current;
+    if (!v || !c || v.readyState < 2) return;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      try {
+        ctx.drawImage(v, 0, 0, c.width, c.height);
+      } catch (_) {}
+    }
+  }, []);
+
+  const requestHoverSeek = useCallback((targetTime: number) => {
+    if (!previewVideoRef.current || sourceType !== 'upload') return;
+    
+    if (isSeekingPreviewRef.current || previewVideoRef.current.seeking) {
+      pendingPreviewSeekRef.current = targetTime;
+      return;
+    }
+
+    isSeekingPreviewRef.current = true;
+    try {
+      if ('fastSeek' in previewVideoRef.current && typeof (previewVideoRef.current as any).fastSeek === 'function') {
+        (previewVideoRef.current as any).fastSeek(targetTime);
+      } else {
+        previewVideoRef.current.currentTime = targetTime;
+      }
+    } catch (_) {
+      isSeekingPreviewRef.current = false;
+    }
+  }, [sourceType]);
+
+  const handlePreviewSeeked = useCallback(() => {
+    isSeekingPreviewRef.current = false;
+    drawPreviewFrame();
+
+    if (pendingPreviewSeekRef.current !== null) {
+      const nextTime = pendingPreviewSeekRef.current;
+      pendingPreviewSeekRef.current = null;
+      requestHoverSeek(nextTime);
+    }
+  }, [drawPreviewFrame, requestHoverSeek]);
+
   return (
     <div 
       ref={containerRef} 
       className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl select-none group border border-white/10"
     >
-      {/* 1. HTML5 Video Player */}
+      {/* 1. Main HTML5 Video Player */}
       {sourceType === 'upload' && (
         <video
           ref={videoRef}
@@ -383,14 +445,28 @@ export default function VideoPlayer({
         />
       )}
 
-      {/* 2. YouTube IFrame Player Container (Branding Cloaked & Scaled) */}
+      {/* Off-screen Preloaded Video for Instant Scrub Thumbnail Rendering */}
+      {sourceType === 'upload' && videoUrl && (
+        <video
+          ref={previewVideoRef}
+          src={videoUrl}
+          className="hidden"
+          muted
+          playsInline
+          preload="auto"
+          crossOrigin="anonymous"
+          onSeeked={handlePreviewSeeked}
+          onLoadedData={drawPreviewFrame}
+        />
+      )}
+
+      {/* 2. YouTube IFrame Player Container */}
       {sourceType === 'youtube' && (
         <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black select-none">
           <div 
             id={`yt-review-player-${youtubeVideoId}`} 
             className="w-[104%] h-[116%] pointer-events-none scale-[1.08] transform origin-center" 
           />
-          {/* Overlay to intercept clicks for custom StudioCore control bar */}
           <div 
             onClick={togglePlay} 
             className="absolute inset-0 cursor-pointer bg-transparent z-10" 
@@ -407,7 +483,7 @@ export default function VideoPlayer({
         className={`absolute inset-0 z-20 ${isDrawMode ? 'cursor-crosshair pointer-events-auto' : 'pointer-events-none'}`}
       />
 
-      {/* 4. Active Drawing Toolbar (When draw mode is ON) */}
+      {/* 4. Active Drawing Toolbar */}
       {isDrawMode && (
         <div className="absolute top-4 left-4 z-30 bg-zinc-900/90 backdrop-blur-md border border-white/15 px-3 py-2 rounded-2xl flex items-center gap-2.5 shadow-xl animate-in fade-in duration-200">
           <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
@@ -469,6 +545,7 @@ export default function VideoPlayer({
         
         {/* Timeline Scrubber Bar with Comment Marker Dots */}
         <div 
+          ref={timelineRef}
           className="relative w-full h-2.5 bg-white/20 rounded-full cursor-pointer group/timeline mb-3.5 select-none"
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
@@ -477,15 +554,13 @@ export default function VideoPlayer({
           }}
           onMouseMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
-            const pos = (e.clientX - rect.left) / rect.width;
-            const targetHoverTime = Math.max(0, Math.min(duration, pos * duration));
+            const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const targetHoverTime = pos * duration;
             setHoverTime(targetHoverTime);
             setHoverX(e.clientX - rect.left);
             setIsHoveringTimeline(true);
 
-            if (previewVideoRef.current && sourceType === 'upload' && isFinite(targetHoverTime)) {
-              previewVideoRef.current.currentTime = targetHoverTime;
-            }
+            requestHoverSeek(targetHoverTime);
           }}
           onMouseLeave={() => setIsHoveringTimeline(false)}
         >
@@ -495,20 +570,21 @@ export default function VideoPlayer({
             className="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-full"
           />
 
-          {/* Hover Scrub Preview Thumbnail Card (YouTube & Frame.io Style) */}
+          {/* Hover Scrub Preview Thumbnail Card */}
           {isHoveringTimeline && (
             <div 
-              style={{ left: `${hoverX}px` }}
-              className="absolute -top-28 -translate-x-1/2 flex flex-col items-center pointer-events-none z-40"
+              style={{ 
+                left: `${Math.max(64, Math.min((timelineRef.current?.clientWidth || 400) - 64, hoverX))}px` 
+              }}
+              className="absolute -top-28 -translate-x-1/2 flex flex-col items-center pointer-events-none z-40 transition-transform duration-75"
             >
               <div className="w-28 h-16 bg-zinc-950 rounded-xl overflow-hidden border border-white/20 shadow-2xl relative flex items-center justify-center">
                 {sourceType === 'upload' ? (
-                  <video
-                    ref={previewVideoRef}
-                    src={videoUrl}
+                  <canvas
+                    ref={previewCanvasRef}
+                    width={112}
+                    height={64}
                     className="w-full h-full object-cover"
-                    muted
-                    preload="metadata"
                   />
                 ) : (
                   <img

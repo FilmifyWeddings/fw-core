@@ -40,11 +40,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         .eq('project_id', id)
         .order('created_at', { ascending: false });
 
+      // Merge with fallback cache if DB has 0 videos but cache has them
+      const cachedVideos = listReviewCache('review_videos', (v: any) => v.project_id === id);
+      const cachedVersions = listReviewCache('review_video_versions', (v: any) => v.project_id === id);
+
+      const finalVideos = (videos && videos.length > 0) ? videos : cachedVideos;
+      const finalVersions = (versions && versions.length > 0) ? versions : cachedVersions;
+
       return NextResponse.json({
         success: true,
         project,
-        videos: videos || [],
-        versions: versions || [],
+        videos: finalVideos,
+        versions: finalVersions,
         shares: shares || [],
       });
     }

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Upload, CheckCircle2, AlertCircle, Loader2, GitCommit } from 'lucide-react';
+import { X, Upload, CheckCircle2, AlertCircle, Loader2, GitCommit, FileVideo } from 'lucide-react';
+import { useReviewUpload } from '@/context/ReviewUploadContext';
 
 const YouTubeIcon = ({ className = "w-3.5 h-3.5 text-red-600" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -26,13 +27,14 @@ export default function NewVersionModal({
   workspaceId,
   onVersionAdded,
 }: NewVersionModalProps) {
+  const { enqueueVersionUpload } = useReviewUpload();
+
   const [sourceType, setSourceType] = useState<'upload' | 'youtube'>(video?.source_type || 'upload');
   const [versionLabel, setVersionLabel] = useState('');
   const [changelogNotes, setChangelogNotes] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   if (!isOpen || !video) return null;
@@ -47,16 +49,14 @@ export default function NewVersionModal({
     setErrorMessage('');
 
     try {
-      setIsUploading(true);
-
       if (sourceType === 'youtube') {
         const ytId = extractYouTubeId(youtubeUrl);
         if (!ytId) {
           setErrorMessage('Please enter a valid YouTube video URL');
-          setIsUploading(false);
           return;
         }
 
+        setIsSubmitting(true);
         const res = await fetch('/api/review/versions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -78,91 +78,36 @@ export default function NewVersionModal({
       } else {
         if (!file) {
           setErrorMessage('Please choose a video file');
-          setIsUploading(false);
           return;
         }
 
-        setUploadProgress(15);
-        const presignRes = await fetch('/api/review/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: file.name,
-            content_type: file.type || 'video/mp4',
-            file_size_bytes: file.size,
-            workspace_id: workspaceId,
-            project_id: projectId,
-          }),
+        // Enqueue version upload in the floating drawer
+        enqueueVersionUpload({
+          projectId,
+          workspaceId,
+          videoId: video.id,
+          videoTitle: video.title,
+          versionLabel: versionLabel.trim() || undefined,
+          file,
+          changelogNotes,
+          onCompleted: (newVer) => {
+            onVersionAdded(newVer);
+          },
         });
 
-        const presignData = await presignRes.json();
-        if (!presignData.success) throw new Error(presignData.error || 'Upload initialization failed');
-
-        setUploadProgress(40);
-
-        // Direct upload to storage bucket via PUT with auto-retry
-        const doPutUpload = (targetUrl: string) => new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', targetUrl, true);
-          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-
-          xhr.upload.onprogress = (evt) => {
-            if (evt.lengthComputable) {
-              const percent = Math.round(40 + (evt.loaded / evt.total) * 50);
-              setUploadProgress(percent);
-            }
-          };
-          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed with status ${xhr.status}`)));
-          xhr.onerror = () => reject(new Error('Network error during version upload'));
-          xhr.send(file);
-        });
-
-        if (presignData.upload_url.startsWith('http')) {
-          try {
-            await doPutUpload(presignData.upload_url);
-          } catch (firstErr) {
-            console.warn('[Version Upload] First upload attempt failed, retrying once...', firstErr);
-            await new Promise(r => setTimeout(r, 800));
-            await doPutUpload(presignData.upload_url);
-          }
-        }
-
-        setUploadProgress(95);
-
-        const versionRes = await fetch('/api/review/versions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            video_id: video.id,
-            project_id: projectId,
-            workspace_id: workspaceId,
-            source_type: 'upload',
-            video_url: presignData.public_url || URL.createObjectURL(file),
-            original_file_url: presignData.public_url || null,
-            storage_key: presignData.key || null,
-            file_size_bytes: file.size,
-            version_label: versionLabel,
-            changelog_notes: changelogNotes,
-          }),
-        });
-
-        const verData = await versionRes.json();
-        if (!verData.success) throw new Error(verData.error || 'Failed to register version');
-
-        setUploadProgress(100);
-        onVersionAdded(verData.version);
+        // Close modal immediately so the user can work in background!
         onClose();
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to add revision');
+      setErrorMessage(err.message || 'Failed to process new version');
     } finally {
-      setIsUploading(false);
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white rounded-3xl border border-[#E7E2D8] shadow-2xl overflow-hidden select-none">
+      <div className="relative w-full max-w-lg bg-white rounded-3xl border border-[#E7E2D8] shadow-2xl overflow-hidden select-none">
         
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-[#E7E2D8] bg-[#FAF9F5]">
@@ -171,14 +116,48 @@ export default function NewVersionModal({
               <GitCommit className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-bold text-base text-zinc-900">Upload New Revision</h2>
-              <p className="text-xs text-zinc-400">For {video.title}</p>
+              <h2 className="font-bold text-base text-zinc-900">Upload New Revision Cut</h2>
+              <p className="text-xs text-zinc-400">Target Video: {video?.title || 'Video'}</p>
             </div>
           </div>
 
-          <button onClick={onClose} className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 transition cursor-pointer">
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
+          >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Source Mode Tabs */}
+        <div className="p-5 pb-0">
+          <div className="grid grid-cols-2 gap-2 p-1.5 bg-[#FAF9F5] rounded-2xl border border-[#E7E2D8]">
+            <button
+              type="button"
+              onClick={() => setSourceType('upload')}
+              className={`py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                sourceType === 'upload' 
+                  ? 'bg-white text-zinc-900 shadow-2xs border border-[#E7E2D8]' 
+                  : 'text-zinc-500 hover:text-zinc-800'
+              }`}
+            >
+              <Upload className="w-4 h-4 text-amber-600" />
+              <span>Video File Upload</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSourceType('youtube')}
+              className={`py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                sourceType === 'youtube' 
+                  ? 'bg-white text-zinc-900 shadow-2xs border border-[#E7E2D8]' 
+                  : 'text-zinc-500 hover:text-zinc-800'
+              }`}
+            >
+              <YouTubeIcon />
+              <span>YouTube Link</span>
+            </button>
+          </div>
         </div>
 
         {/* Form */}
@@ -190,48 +169,36 @@ export default function NewVersionModal({
             </div>
           )}
 
-          {/* Source Selector */}
-          <div className="grid grid-cols-2 gap-2 p-1 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8]">
-            <button
-              type="button"
-              onClick={() => setSourceType('upload')}
-              className={`py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                sourceType === 'upload' ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-500'
-              }`}
-            >
-              <Upload className="w-3.5 h-3.5 text-amber-600" />
-              <span>Upload Video</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSourceType('youtube')}
-              className={`py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                sourceType === 'youtube' ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-500'
-              }`}
-            >
-              <YouTubeIcon />
-              <span>YouTube URL</span>
-            </button>
-          </div>
-
-          {sourceType === 'upload' ? (
-            <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">New Video File</label>
-              <input
-                type="file"
-                accept="video/mp4,video/quicktime,video/webm"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="w-full text-xs text-zinc-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer"
-              />
-              {isUploading && (
-                <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden mt-2">
-                  <div style={{ width: `${uploadProgress}%` }} className="h-full bg-amber-500 transition-all duration-200" />
-                </div>
-              )}
+          {/* TAB 1: Upload */}
+          {sourceType === 'upload' && (
+            <div className="space-y-3">
+              <div className="border-2 border-dashed border-[#E7E2D8] hover:border-amber-400 rounded-2xl p-6 text-center cursor-pointer transition bg-[#FAF9F5] relative group">
+                <input
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/webm,video/x-m4v"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      setFile(e.target.files[0]);
+                      setErrorMessage('');
+                    }
+                  }}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+                <FileVideo className="w-8 h-8 text-amber-600 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                <p className="text-xs font-bold text-zinc-800">
+                  {file ? file.name : 'Choose or Drag & Drop Revision Cut Video'}
+                </p>
+                <p className="text-[10px] text-zinc-400 mt-0.5">
+                  {file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : 'MP4, MOV, WebM (Runs in background upload drawer)'}
+                </p>
+              </div>
             </div>
-          ) : (
+          )}
+
+          {/* TAB 2: YouTube */}
+          {sourceType === 'youtube' && (
             <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">YouTube URL</label>
+              <label className="block text-xs font-bold text-zinc-700 mb-1">New YouTube URL</label>
               <input
                 type="url"
                 value={youtubeUrl}
@@ -242,45 +209,48 @@ export default function NewVersionModal({
             </div>
           )}
 
+          {/* Version Label */}
           <div>
             <label className="block text-xs font-bold text-zinc-700 mb-1">Version Label (Optional)</label>
             <input
               type="text"
               value={versionLabel}
               onChange={(e) => setVersionLabel(e.target.value)}
-              placeholder="e.g. V2 (Audio Fixed), V3 Final Grade"
+              placeholder="e.g. V2 - Color Graded or Cut 2"
               className="w-full px-3.5 py-2 rounded-xl border border-[#E7E2D8] text-xs text-zinc-800 focus:outline-hidden focus:border-amber-500"
             />
           </div>
 
+          {/* Changelog Notes */}
           <div>
-            <label className="block text-xs font-bold text-zinc-700 mb-1">What changed in this revision?</label>
+            <label className="block text-xs font-bold text-zinc-700 mb-1">Changelog Notes (What changed?)</label>
             <textarea
               rows={2}
               value={changelogNotes}
               onChange={(e) => setChangelogNotes(e.target.value)}
-              placeholder="e.g. Trimmed scene at 02:15, adjusted color contrast on bride close-up"
+              placeholder="e.g. Swapped bride entrance music and corrected color grade at 01:23"
               className="w-full px-3.5 py-2 rounded-xl border border-[#E7E2D8] text-xs text-zinc-800 focus:outline-hidden focus:border-amber-500"
-              required
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E7E2D8]">
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#E7E2D8]">
             <button
               type="button"
               onClick={onClose}
-              disabled={isUploading}
-              className="px-4 py-2 rounded-full border border-[#E7E2D8] text-zinc-600 font-bold text-xs"
+              disabled={isSubmitting}
+              className="px-4 py-2 rounded-full border border-[#E7E2D8] text-zinc-600 hover:bg-zinc-50 font-bold text-xs cursor-pointer transition"
             >
               Cancel
             </button>
+
             <button
               type="submit"
-              disabled={isUploading}
-              className="px-5 py-2 rounded-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5"
+              disabled={isSubmitting}
+              className="px-5 py-2 rounded-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 cursor-pointer transition shadow-2xs"
             >
-              {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-              <span>{isUploading ? 'Uploading...' : 'Save Revision'}</span>
+              {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+              <span>{isSubmitting ? 'Adding...' : sourceType === 'upload' ? 'Upload in Background' : 'Add New Cut'}</span>
             </button>
           </div>
         </form>
