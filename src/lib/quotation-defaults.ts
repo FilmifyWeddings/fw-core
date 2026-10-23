@@ -44,7 +44,7 @@ export const DEFAULT_AIRY_PROPOSAL = {
     eventType: 'Wedding Photography & Films',
     weddingDate: 'December 14, 2026',
     locationName: 'Udaipur, Rajasthan',
-    brandName: 'STUDIOCORE WEDDINGS',
+    brandName: '',
     sideOption: 'A Wedding Story',
     photoUrl: '',
     brandLogoUrl: '',
@@ -57,10 +57,10 @@ export const DEFAULT_AIRY_PROPOSAL = {
     imagePosition: 'bottom',
   },
   aboutUs: {
-    kicker: 'WHO WE ARE',
-    heading: 'Preserving Emotions & Creating Timeless Visual Legacies',
+    kicker: 'INTRODUCTION',
+    heading: 'ABOUT US',
     text: 'We are a dedicated team of visual artists crafting heartfelt wedding films and editorial photographs that feel as timeless as your love.',
-    signature: '— StudioCore Photography Crew',
+    signature: '',
     photo: '',
     photoHeight: 320,
     photoWidth: 100,
@@ -70,11 +70,11 @@ export const DEFAULT_AIRY_PROPOSAL = {
   },
   shootDetails: {
     visible: true,
-    kicker: 'CHAPTER ONE',
-    heading: 'Pre-Wedding Creative Session',
+    kicker: 'PRE-WEDDING',
+    heading: 'Pre-Wedding Shoot',
     daysText: '1 Full Day Creative Session',
     crewText: '1x Candid Photographer\n1x Cinematographer\n1x Drone Specialist',
-    deliverablesHeading: 'Curated Session Deliverables',
+    deliverablesHeading: 'Deliverables',
     deliverablesText: '1x 60-Sec Instagram Cinematic Teaser\n40+ Color-Graded High-Resolution Master Portraits\nFull High-Resolution Digital Master Gallery Link',
     showExclusionsNote: true,
     photo: '',
@@ -148,8 +148,8 @@ export const DEFAULT_AIRY_PROPOSAL = {
     ]
   },
   deliverablesPage: {
-    kicker: 'FINAL OUTPUTS',
-    heading: 'Curated Deliverables & Keepsakes',
+    kicker: 'WHAT WE DELIVER',
+    heading: 'DELIVERABLES',
     selectedItems: [
       'All Unedited High-Resolution RAW Photos (Delivered within 7 days via Hard Drive/Cloud)',
       '350+ Signature Master Color-Graded & Retouched Photographs',
@@ -172,7 +172,7 @@ export const DEFAULT_AIRY_PROPOSAL = {
     ]
   },
   specialValueAdditions: {
-    kicker: 'COMPLIMENTARY GIFTS',
+    kicker: 'SPECIAL VALUE ADDITIONS',
     heading: 'Special Value Additions',
     selectedItems: [
       'Complimentary 4K Drone Aerial Coverage across all Wedding Functions',
@@ -189,8 +189,8 @@ export const DEFAULT_AIRY_PROPOSAL = {
     note: ''
   },
   pricingPage: {
-    kicker: 'INVESTMENT SUMMARY',
-    heading: 'Commercial Proposal & Package Investment',
+    kicker: 'INVESTMENT & BREAKDOWN',
+    heading: 'PRICING DETAILS',
     basePrice: 285000,
     discountAmount: 0,
     gstPct: 0,
@@ -228,20 +228,20 @@ export const DEFAULT_AIRY_PROPOSAL = {
       'Travel, lodging, and local transit for outstation crew to be provided by client.',
       'Delivery timeline: RAW files within 7 days; Teaser within 20 days; Full Deliverables within 6-8 weeks.',
       'Client approvals on photo selection for albums required within 30 days of receiving gallery.',
-      'StudioCore reserves rights to display wedding media on official creative portfolio and social channels.'
+      'Studio reserves rights to display wedding media on official creative portfolio and social channels.'
     ]
   },
   thankYouPage: {
     kicker: 'GRATITUDE',
     heading: 'Thank You For Choosing Us',
     text: 'We are truly thrilled and honored to be a part of your once-in-a-lifetime journey. Let us create magic together!',
-    contactPerson: 'Sushant Sharma',
-    phone: '+91 98765 43210',
-    email: 'hello@studiocore.in',
-    website: 'www.studiocore.in',
-    social: '@filmifyweddings',
-    instagramHandle: '@filmifyweddings',
-    instagramUrl: 'https://instagram.com/filmifyweddings',
+    contactPerson: '',
+    phone: '',
+    email: '',
+    website: '',
+    social: '',
+    instagramHandle: '',
+    instagramUrl: '',
     photo: '',
     photoHeight: 360,
     photoWidth: 75,
@@ -816,10 +816,10 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     locationName,
     weddingDate,
     sideOption: coverSrc.sideOption || d.cover?.sideOption || 'A Wedding Story',
-    brandName: coverSrc.brandName || d.cover?.brandName || 'STUDIOCORE WEDDINGS',
+    brandName: d.cover?.brandName || coverSrc.brandName || '',
     brandLogoUrl: coverSrc.brandLogoUrl || d.cover?.brandLogoUrl || '',
     brandLogoSize: coverSrc.brandLogoSize || d.cover?.brandLogoSize || 80,
-    photoUrl: coverSrc.photoUrl !== undefined ? coverSrc.photoUrl : (d.cover?.photoUrl || ''),
+    photoUrl: coverSrc.photoUrl ? coverSrc.photoUrl : (d.cover?.photoUrl || ''),
     photoHeight: coverSrc.photoHeight ?? d.cover?.photoHeight ?? 360,
     photoWidth: coverSrc.photoWidth ?? d.cover?.photoWidth ?? 75,
     photoFocalY: coverSrc.photoFocalY ?? d.cover?.photoFocalY ?? 50,
@@ -833,11 +833,11 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   const aboutUs = {
     ...(d.aboutUs || {}),
     ...aboutSrc,
-    kicker: aboutSrc.kicker || d.aboutUs?.kicker || 'WHO WE ARE',
-    heading: aboutSrc.heading || d.aboutUs?.heading || 'Preserving Emotions & Creating Timeless Visual Legacies',
-    text: aboutSrc.text || d.aboutUs?.text || 'We are a dedicated team of visual artists crafting heartfelt wedding films and editorial photographs that feel as timeless as your love.',
-    signature: aboutSrc.signature || d.aboutUs?.signature || '— StudioCore Photography Crew',
-    photo: aboutSrc.photo !== undefined ? aboutSrc.photo : (d.aboutUs?.photo || ''),
+    kicker: d.aboutUs?.kicker || aboutSrc.kicker || 'INTRODUCTION',
+    heading: d.aboutUs?.heading || aboutSrc.heading || 'ABOUT US',
+    text: (d.aboutUs?.text && d.aboutUs.text.trim().length > 15) ? d.aboutUs.text : (aboutSrc.text || d.aboutUs?.text || ''),
+    signature: d.aboutUs?.signature || aboutSrc.signature || '',
+    photo: aboutSrc.photo ? aboutSrc.photo : (d.aboutUs?.photo || ''),
   };
 
   // 5. Normalize Pre-Wedding Shoot Details
@@ -850,14 +850,14 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     ...(d.shootDetails || {}),
     ...shootSrc,
     visible: shootVisible,
-    kicker: shootSrc.kicker || d.shootDetails?.kicker || 'CHAPTER ONE',
-    heading: shootSrc.heading || d.shootDetails?.heading || 'Pre-Wedding Creative Session',
+    kicker: d.shootDetails?.kicker || shootSrc.kicker || 'PRE-WEDDING',
+    heading: d.shootDetails?.heading || shootSrc.heading || 'Pre-Wedding Shoot',
     daysText: shootSrc.daysText || d.shootDetails?.daysText || '1 Full Day Creative Session',
     crewText: shootSrc.crewText !== undefined ? shootSrc.crewText : (d.shootDetails?.crewText || ''),
-    deliverablesHeading: shootSrc.deliverablesHeading || d.shootDetails?.deliverablesHeading || 'Curated Session Deliverables',
+    deliverablesHeading: d.shootDetails?.deliverablesHeading || shootSrc.deliverablesHeading || 'Deliverables',
     deliverablesText: shootSrc.deliverablesText !== undefined ? shootSrc.deliverablesText : (d.shootDetails?.deliverablesText || ''),
     showExclusionsNote: shootSrc.showExclusionsNote !== undefined ? Boolean(shootSrc.showExclusionsNote) : true,
-    photo: shootSrc.photo !== undefined ? shootSrc.photo : (d.shootDetails?.photo || ''),
+    photo: shootSrc.photo ? shootSrc.photo : (d.shootDetails?.photo || ''),
   };
 
   // 6. Normalize Deliverables Page
@@ -880,8 +880,8 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   const deliverablesPage = {
     ...(d.deliverablesPage || {}),
     ...delivSrc,
-    kicker: delivSrc.kicker || d.deliverablesPage?.kicker || 'FINAL OUTPUTS',
-    heading: delivSrc.heading || d.deliverablesPage?.heading || 'Curated Deliverables & Keepsakes',
+    kicker: d.deliverablesPage?.kicker || delivSrc.kicker || 'WHAT WE DELIVER',
+    heading: d.deliverablesPage?.heading || delivSrc.heading || 'DELIVERABLES',
     selectedItems: delivItems,
     availableOptions: combinedOptions
   };
@@ -901,7 +901,7 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   const specialValueAdditions = {
     ...(d.specialValueAdditions || {}),
     ...valAddSrc,
-    kicker: valAddSrc.kicker || d.specialValueAdditions?.kicker || 'COMPLIMENTARY GIFTS',
+    kicker: d.specialValueAdditions?.kicker || valAddSrc.kicker || 'SPECIAL VALUE ADDITIONS',
     heading: valAddSrc.heading || d.specialValueAdditions?.heading || 'Special Value Additions',
     selectedItems: valAddItems,
     availableOptions: valCombinedOptions,
@@ -933,8 +933,8 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   const pricingPage = {
     ...(d.pricingPage || {}),
     ...pricingSrc,
-    kicker: pricingSrc.kicker || d.pricingPage?.kicker || 'INVESTMENT SUMMARY',
-    heading: pricingSrc.heading || d.pricingPage?.heading || 'Commercial Proposal & Package Investment',
+    kicker: d.pricingPage?.kicker || pricingSrc.kicker || 'INVESTMENT & BREAKDOWN',
+    heading: d.pricingPage?.heading || pricingSrc.heading || 'PRICING DETAILS',
     basePrice,
     discountAmount,
     gstPct,
@@ -986,14 +986,19 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   const thankYouPage = {
     ...(d.thankYouPage || {}),
     ...thankSrc,
-    contactPerson: thankSrc.contactPerson || thankSrc.signature || d.thankYouPage?.contactPerson || 'Studio Owner',
+    kicker: d.thankYouPage?.kicker || thankSrc.kicker || 'GRATITUDE',
+    heading: d.thankYouPage?.heading || thankSrc.heading || 'THANK YOU',
+    brandName: d.thankYouPage?.brandName || thankSrc.brandName || d.cover?.brandName || '',
+    contactPerson: d.thankYouPage?.contactPerson || thankSrc.contactPerson || '',
     phone: thankSrc.phone || d.thankYouPage?.phone || '',
     email: thankSrc.email || d.thankYouPage?.email || '',
     website: thankSrc.website || d.thankYouPage?.website || '',
     social: thankSrc.social || thankSrc.instagramHandle || thankSrc.instagram || d.thankYouPage?.social || '',
     instagramHandle: thankSrc.instagramHandle || thankSrc.instagram || thankSrc.social || d.thankYouPage?.instagramHandle || '',
     instagramUrl: thankSrc.instagramUrl || thankSrc.instagram_url || d.thankYouPage?.instagramUrl || '',
-    photo: thankSrc.photo !== undefined ? thankSrc.photo : (d.thankYouPage?.photo || ''),
+    photo: thankSrc.photo ? thankSrc.photo : (d.thankYouPage?.photo || ''),
+    signature: d.thankYouPage?.signature || thankSrc.signature || '',
+    subHeading: d.thankYouPage?.subHeading || thankSrc.subHeading || '',
   };
 
   // 11. Normalize Terms Page
@@ -1069,12 +1074,12 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   return {
     ...d,
     ...loaded,
-    look: loaded.look || d.look || 'cyprus-sand-dune',
-    theme: loaded.theme || d.theme || d.look || 'cyprus-sand-dune',
-    primaryFont: loaded.primaryFont || d.primaryFont || 'Cormorant Garamond',
-    secondaryFont: loaded.secondaryFont || d.secondaryFont || 'Plus Jakarta Sans',
-    designName: loaded.designName || d.designName || 'Minimalist Airy Proposal',
-    colorPalette: loaded.colorPalette || d.colorPalette,
+    look: d.look || loaded.look || 'cyprus-sand-dune',
+    theme: d.theme || d.look || loaded.theme || 'cyprus-sand-dune',
+    primaryFont: d.primaryFont || loaded.primaryFont || 'Cormorant Garamond',
+    secondaryFont: d.secondaryFont || loaded.secondaryFont || 'Plus Jakarta Sans',
+    designName: d.designName || loaded.designName || 'Minimalist Airy Proposal',
+    colorPalette: d.colorPalette || loaded.colorPalette,
     cover,
     aboutUs,
     shootDetails,

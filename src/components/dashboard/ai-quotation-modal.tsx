@@ -76,6 +76,9 @@ export function AiQuotationModal({
   const [missingInfo, setMissingInfo] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<any[]>([]);
 
+  const activeTemplateObj = availableTemplates?.find(t => t.id === (activeTemplateId || selectedTemplateId)) || availableTemplates?.[0];
+  const baseTemplateDoc = activeTemplateObj?.content_json || currentDocumentData || null;
+
   if (!isOpen) return null;
 
   const effectiveLead: any = lead || {
@@ -300,8 +303,8 @@ LEAD & CLIENT CONTEXT:
         body: JSON.stringify({
           leadId: effectiveLead.id,
           quotationId: quotationId || null,
-          explicitTemplateId: activeTemplateId || selectedTemplateId || null,
-          currentDocument: currentDocumentData || null,
+          explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
+          currentDocument: baseTemplateDoc || currentDocumentData || null,
           additionalNotes: additionalNotes.trim()
         })
       });
@@ -351,7 +354,7 @@ LEAD & CLIENT CONTEXT:
           body: JSON.stringify({
             leadId: effectiveLead.id,
             clientName: docToApply?.cover?.coupleName || effectiveLead.name,
-            explicitTemplateId: activeTemplateId || selectedTemplateId || undefined,
+            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || undefined,
             initialDocument: docToApply
           })
         });
@@ -479,7 +482,7 @@ LEAD & CLIENT CONTEXT:
       const token = session?.access_token || '';
 
       const notes = additionalNotes.trim();
-      const clientParsedDoc = tryParsePastedAiJson(notes, currentDocumentData);
+      const clientParsedDoc = tryParsePastedAiJson(notes, baseTemplateDoc || currentDocumentData);
 
       // FAST PATH 1: If user pasted valid JSON directly from ChatGPT, map and apply in 0ms!
       if (clientParsedDoc) {
@@ -499,7 +502,7 @@ LEAD & CLIENT CONTEXT:
           body: JSON.stringify({
             leadId: effectiveLead.id,
             clientName: effectiveLead.raw_payload?.couple_name || effectiveLead.raw_payload?.couple_names || (effectiveLead as any).couple_names || effectiveLead.client_name || effectiveLead.name,
-            explicitTemplateId: activeTemplateId || selectedTemplateId || undefined,
+            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || undefined,
             additionalNotes: notes || undefined
           })
         });

@@ -1273,6 +1273,7 @@ export function LeadQuotationModal({
         quotationId={aiTargetQuotationId}
         selectedTemplateId={selectedTemplateId || currentSelectedTemplate?.id}
         availableTemplates={availableTemplates}
+        currentDocumentData={currentSelectedTemplate?.content_json}
         onApplied={(updatedDoc, targetQId) => {
           setAiModalOpen(false);
           const openingCouple = updatedDoc?.cover?.coupleName || lead?.raw_payload?.couple_name || lead?.client_name || lead?.name || 'Quotation';

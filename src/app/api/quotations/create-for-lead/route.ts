@@ -164,6 +164,56 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // STRICT GUARANTEE: Never overwrite template branding, photos, or custom headings with dummy placeholders
+    if (templateDoc.cover?.brandName) clonedDoc.cover.brandName = templateDoc.cover.brandName;
+    if (templateDoc.cover?.brandLogoUrl) clonedDoc.cover.brandLogoUrl = templateDoc.cover.brandLogoUrl;
+    if (templateDoc.cover?.photoUrl && !clonedDoc.cover.photoUrl) clonedDoc.cover.photoUrl = templateDoc.cover.photoUrl;
+
+    if (!clonedDoc.aboutUs) clonedDoc.aboutUs = {};
+    if (templateDoc.aboutUs?.photo && !clonedDoc.aboutUs.photo) clonedDoc.aboutUs.photo = templateDoc.aboutUs.photo;
+    if (templateDoc.aboutUs?.signature) clonedDoc.aboutUs.signature = templateDoc.aboutUs.signature;
+    if (templateDoc.aboutUs?.kicker) clonedDoc.aboutUs.kicker = templateDoc.aboutUs.kicker;
+    if (templateDoc.aboutUs?.heading) clonedDoc.aboutUs.heading = templateDoc.aboutUs.heading;
+    if (templateDoc.aboutUs?.text && (!clonedDoc.aboutUs.text || clonedDoc.aboutUs.text.length < 15)) {
+      clonedDoc.aboutUs.text = templateDoc.aboutUs.text;
+    }
+
+    if (!clonedDoc.shootDetails) clonedDoc.shootDetails = {};
+    if (templateDoc.shootDetails?.photo && !clonedDoc.shootDetails.photo) clonedDoc.shootDetails.photo = templateDoc.shootDetails.photo;
+    if (templateDoc.shootDetails?.kicker) clonedDoc.shootDetails.kicker = templateDoc.shootDetails.kicker;
+    if (templateDoc.shootDetails?.heading) clonedDoc.shootDetails.heading = templateDoc.shootDetails.heading;
+
+    if (!clonedDoc.deliverablesPage) clonedDoc.deliverablesPage = {};
+    if (templateDoc.deliverablesPage?.kicker) clonedDoc.deliverablesPage.kicker = templateDoc.deliverablesPage.kicker;
+    if (templateDoc.deliverablesPage?.heading) clonedDoc.deliverablesPage.heading = templateDoc.deliverablesPage.heading;
+    if (templateDoc.deliverablesPage?.photo && !clonedDoc.deliverablesPage.photo) clonedDoc.deliverablesPage.photo = templateDoc.deliverablesPage.photo;
+
+    if (!clonedDoc.thankYouPage) clonedDoc.thankYouPage = {};
+    if (templateDoc.thankYouPage?.brandName) clonedDoc.thankYouPage.brandName = templateDoc.thankYouPage.brandName;
+    if (templateDoc.thankYouPage?.photo && !clonedDoc.thankYouPage.photo) clonedDoc.thankYouPage.photo = templateDoc.thankYouPage.photo;
+    if (templateDoc.thankYouPage?.phone) clonedDoc.thankYouPage.phone = templateDoc.thankYouPage.phone;
+    if (templateDoc.thankYouPage?.contactNumber) clonedDoc.thankYouPage.contactNumber = templateDoc.thankYouPage.contactNumber;
+    if (templateDoc.thankYouPage?.email) clonedDoc.thankYouPage.email = templateDoc.thankYouPage.email;
+    if (templateDoc.thankYouPage?.website) clonedDoc.thankYouPage.website = templateDoc.thankYouPage.website;
+    if (templateDoc.thankYouPage?.signature) clonedDoc.thankYouPage.signature = templateDoc.thankYouPage.signature;
+    if (templateDoc.thankYouPage?.kicker) clonedDoc.thankYouPage.kicker = templateDoc.thankYouPage.kicker;
+    if (templateDoc.thankYouPage?.heading) clonedDoc.thankYouPage.heading = templateDoc.thankYouPage.heading;
+    if (templateDoc.thankYouPage?.subHeading) clonedDoc.thankYouPage.subHeading = templateDoc.thankYouPage.subHeading;
+
+    // Preserve layout framing & photo dimensions strictly from template
+    ['cover', 'aboutUs', 'shootDetails', 'deliverablesPage', 'thankYouPage'].forEach((pageKey) => {
+      const tPage = (templateDoc as any)?.[pageKey];
+      const cPage = (clonedDoc as any)?.[pageKey];
+      if (tPage && cPage) {
+        if (tPage.frameShape) cPage.frameShape = tPage.frameShape;
+        if (tPage.photoHeight !== undefined) cPage.photoHeight = tPage.photoHeight;
+        if (tPage.photoWidth !== undefined) cPage.photoWidth = tPage.photoWidth;
+        if (tPage.photoFocalY !== undefined) cPage.photoFocalY = tPage.photoFocalY;
+        if (tPage.bgOpacity !== undefined) cPage.bgOpacity = tPage.bgOpacity;
+        if (tPage.imagePosition) cPage.imagePosition = tPage.imagePosition;
+      }
+    });
+
     const eventType = clonedDoc.cover?.eventType || 'Wedding';
     const quotationTitle = `${effectiveCoupleName} - ${eventType} Quotation`;
     clonedDoc.designName = quotationTitle;
