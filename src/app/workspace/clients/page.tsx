@@ -337,7 +337,11 @@ export default function ClientsPage() {
             paidAmt = quoteFin.paid || 0;
           }
 
-          const newClientPayload = {
+          const leadPmId = bookedLead.project_manager_id || bookedLead.raw_payload?.project_manager_id || null;
+          const rawLeadPm = bookedLead.project_manager_name || bookedLead.raw_payload?.project_manager_name || bookedLead.raw_payload?.lead_owner || null;
+          const validLeadPm = (rawLeadPm && rawLeadPm.toLowerCase() !== 'unassigned') ? rawLeadPm : null;
+
+          const newClientPayload: any = {
             user_id: workspaceId,
             workspace_id: workspaceId,
             lead_id: bookedLead.id,
@@ -349,11 +353,16 @@ export default function ClientsPage() {
             total_package_amount: packageAmt,
             paid_amount: paidAmt,
             status: paidAmt >= packageAmt && packageAmt > 0 ? 'completed' : 'active',
+            project_manager_id: leadPmId,
+            project_manager_name: validLeadPm,
+            handled_by: validLeadPm,
             notes: serializeClientExtended({
               client_code: `CL-${Math.floor(1000 + Math.random() * 9000)}`,
               whatsapp_group_link: bookedLead.whatsapp_group_id ? `https://chat.whatsapp.com/${bookedLead.whatsapp_group_id}` : '',
               portal_token: `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`,
               portal_pin: '123456',
+              project_manager_id: leadPmId || '',
+              project_manager_name: validLeadPm || '',
               plain_notes: `Auto-synced from Booked CRM Lead (${clientName})`,
               events: bookedLead.event_date ? [
                 {
@@ -901,7 +910,7 @@ export default function ClientsPage() {
     const normalizedMap = new Map<string, { displayName: string; ids: Set<string> }>();
     (clients || []).forEach((c: any) => {
       const ext = parseClientExtended(c);
-      const rawName = (c.project_manager_name || ext.project_manager_name || '').trim();
+      const rawName = (c.project_manager_name || ext.project_manager_name || c.handled_by || '').trim();
       const rawId = (c.project_manager_id || ext.project_manager_id || '').trim();
       if (!rawName) return;
       const normKey = rawName.toLowerCase();
@@ -910,6 +919,12 @@ export default function ClientsPage() {
       }
       if (rawId) {
         normalizedMap.get(normKey)!.ids.add(rawId);
+      }
+    });
+
+    (teamMembers || []).forEach((tm: any) => {
+      if (tm.name && !normalizedMap.has(tm.name.toLowerCase())) {
+        normalizedMap.set(tm.name.toLowerCase(), { displayName: tm.name, ids: new Set([tm.id]) });
       }
     });
 
@@ -929,7 +944,7 @@ export default function ClientsPage() {
         badge: 'Active PM',
       })),
     ];
-  }, [clients]);
+  }, [clients, teamMembers]);
 
   const statusFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     const opts = [
@@ -1018,8 +1033,12 @@ export default function ClientsPage() {
         pmFilter === 'all'
           ? true
           : pmFilter === 'unassigned'
-          ? !pmId && !pmName
-          : (pmName.toLowerCase() === pmFilter.toLowerCase() || pmId === pmFilter);
+          ? (!pmId && !pmName && !(client as any).handled_by)
+          : (
+              (pmName && pmName.toLowerCase() === pmFilter.toLowerCase()) ||
+              (pmId && pmId.toLowerCase() === pmFilter.toLowerCase()) ||
+              ((client as any).handled_by && String((client as any).handled_by).toLowerCase() === pmFilter.toLowerCase())
+            );
 
       let matchesDate = true;
       if (dateScopeMode !== 'all') {
@@ -1079,8 +1098,12 @@ export default function ClientsPage() {
         pmFilter === 'all'
           ? true
           : pmFilter === 'unassigned'
-          ? !pmId && !pmName
-          : (pmName.toLowerCase() === pmFilter.toLowerCase() || pmId === pmFilter);
+          ? (!pmId && !pmName && !(client as any).handled_by)
+          : (
+              (pmName && pmName.toLowerCase() === pmFilter.toLowerCase()) ||
+              (pmId && pmId.toLowerCase() === pmFilter.toLowerCase()) ||
+              ((client as any).handled_by && String((client as any).handled_by).toLowerCase() === pmFilter.toLowerCase())
+            );
 
       return matchesSearch && matchesEventType && matchesPm;
     }).length;

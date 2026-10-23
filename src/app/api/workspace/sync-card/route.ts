@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
             project_manager_name: pmName || null,
             project_manager_email: pmEmail || null,
             project_manager_phone: pmPhone || null,
+            handled_by: pmName || null,
             ...(updatedNotes ? { notes: updatedNotes } : {}),
             updated_at: nowIso
           })

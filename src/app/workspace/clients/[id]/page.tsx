@@ -1185,34 +1185,61 @@ export default function ClientWorkspaceDetailPage() {
     });
 
     try {
-      // 2. Fetch current client to preserve notes and custom_data
+      // 2. Fetch current client to preserve notes, events and custom_data
       const { data: currentClient } = await supabase
         .from('workspace_clients')
-        .select('notes, custom_data')
+        .select('*')
         .eq('id', clientId)
         .maybeSingle();
 
-      const existingNotes = currentClient?.notes || '';
-      let newNotes = existingNotes;
-      if (newNotes.includes('handled_by:')) {
-        newNotes = newNotes.replace(/handled_by:\s*[^\n\r,]+/i, `handled_by: ${cleanMemberName}`);
-      } else {
-        newNotes = newNotes ? `${newNotes}\nhandled_by: ${cleanMemberName}` : `handled_by: ${cleanMemberName}`;
-      }
+      const ext = parseClientExtended(currentClient || { id: clientId } as any);
+      const matchedMember = (teamMembers || []).find((m: any) => 
+        (m.name && m.name.trim().toLowerCase() === cleanMemberName.trim().toLowerCase()) ||
+        (m.email && m.email.trim().toLowerCase() === cleanMemberName.trim().toLowerCase())
+      );
+
+      const pmId = matchedMember?.id || ext.project_manager_id || null;
+      const pmEmail = matchedMember?.email || ext.project_manager_email || null;
+      const pmPhone = matchedMember?.phone || ext.project_manager_phone || null;
+
+      const updatedExt = {
+        ...ext,
+        project_manager_name: cleanMemberName,
+        project_manager_id: pmId || '',
+        project_manager_email: pmEmail || '',
+        project_manager_phone: pmPhone || '',
+      };
+      const cleanSerializedNotes = serializeClientExtended(updatedExt);
 
       const existingCustom = (currentClient?.custom_data as any) || {};
-      const updatedCustom = { ...existingCustom, handled_by: cleanMemberName };
+      const updatedCustom = { ...existingCustom, handled_by: cleanMemberName, project_manager_name: cleanMemberName, project_manager_id: pmId };
 
       // 3. Update workspace_clients
       await supabase
         .from('workspace_clients')
         .update({
           handled_by: cleanMemberName,
+          project_manager_name: cleanMemberName,
+          project_manager_id: pmId,
+          project_manager_email: pmEmail,
+          project_manager_phone: pmPhone,
           custom_data: updatedCustom,
-          notes: newNotes,
+          notes: cleanSerializedNotes,
           updated_at: new Date().toISOString()
         })
         .eq('id', clientId);
+
+      // Concurrently dual-sync to fw_projects
+      try {
+        await supabase
+          .from('fw_projects')
+          .update({
+            project_manager_id: pmId,
+            project_manager_name: cleanMemberName,
+            updated_at: new Date().toISOString()
+          })
+          .or(`client_id.eq.${clientId},client_name.ilike.%${currentClient?.name || ''}%`);
+      } catch (_) {}
 
       // 4. Update client_finance_records
       await supabase

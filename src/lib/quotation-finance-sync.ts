@@ -1329,7 +1329,7 @@ export async function syncBookedLeadOrFinalQuotation({
       if (workspaceClientId) {
         const { data: clientById } = await supabaseClient
           .from('workspace_clients')
-          .select('id, name')
+          .select('id, name, notes, project_manager_id, project_manager_name, project_manager_email, project_manager_phone, handled_by, client_code, portal_token, portal_pin')
           .eq('id', workspaceClientId)
           .maybeSingle();
         if (clientById) existingWsClient = clientById;
@@ -1338,7 +1338,7 @@ export async function syncBookedLeadOrFinalQuotation({
       if (!existingWsClient) {
         const { data: existingWsClients } = await supabaseClient
           .from('workspace_clients')
-          .select('id, name')
+          .select('id, name, notes, project_manager_id, project_manager_name, project_manager_email, project_manager_phone, handled_by, client_code, portal_token, portal_pin')
           .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
           .order('created_at', { ascending: true });
 
@@ -1348,7 +1348,7 @@ export async function syncBookedLeadOrFinalQuotation({
       if (!existingWsClient && coupleName) {
         const { data: clientByName } = await supabaseClient
           .from('workspace_clients')
-          .select('id, name')
+          .select('id, name, notes, project_manager_id, project_manager_name, project_manager_email, project_manager_phone, handled_by, client_code, portal_token, portal_pin')
           .eq('workspace_id', workspaceId)
           .ilike('name', coupleName.trim())
           .maybeSingle();

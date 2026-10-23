@@ -81,39 +81,62 @@ export function parseClientExtended(client: WorkspaceClient): ClientExtendedData
   let plain_notes = client.notes || '';
   let studio_comments: StudioCommentItem[] = [];
 
-  if (client.notes && client.notes.startsWith('{') && client.notes.endsWith('}')) {
-    try {
-      const parsed = JSON.parse(client.notes);
-      if (parsed.client_code) client_code = parsed.client_code;
-      if (parsed.whatsapp_group_link) whatsapp_group_link = parsed.whatsapp_group_link;
-      if (parsed.whatsapp_group_id) whatsapp_group_id = parsed.whatsapp_group_id;
-      if (parsed.portal_token) portal_token = parsed.portal_token;
-      if (parsed.portal_pin) portal_pin = parsed.portal_pin;
-      if (parsed.portal_enabled !== undefined) portal_enabled = parsed.portal_enabled;
-      if (parsed.project_manager_id) project_manager_id = parsed.project_manager_id;
-      if (parsed.project_manager_name) project_manager_name = parsed.project_manager_name;
-      if (parsed.project_manager_email) project_manager_email = parsed.project_manager_email;
-      if (parsed.project_manager_phone) project_manager_phone = parsed.project_manager_phone;
-      if (Array.isArray(parsed.events) && parsed.events.length > 0) events = parsed.events;
-      if (parsed.notes !== undefined) plain_notes = parsed.notes;
-      if (Array.isArray(parsed.studio_comments)) {
-        studio_comments = parsed.studio_comments;
-      } else if (plain_notes && typeof plain_notes === 'string' && plain_notes.trim()) {
-        studio_comments = [{
-          id: `note_${Date.now()}`,
-          text: plain_notes.trim(),
-          created_at: client.created_at || new Date().toISOString(),
-          author_name: 'Studio Team'
-        }];
-      }
-    } catch (_) {}
-  } else if (client.notes && typeof client.notes === 'string' && client.notes.trim()) {
+  const rawNotes = (client.notes || '').trim();
+  let parsed: any = null;
+
+  if (rawNotes) {
+    const fBrace = rawNotes.indexOf('{');
+    const lBrace = rawNotes.lastIndexOf('}');
+    if (fBrace !== -1 && lBrace !== -1 && lBrace > fBrace) {
+      try {
+        parsed = JSON.parse(rawNotes.substring(fBrace, lBrace + 1));
+      } catch (_) {}
+    }
+  }
+
+  if (parsed) {
+    if (parsed.client_code) client_code = parsed.client_code;
+    if (parsed.whatsapp_group_link) whatsapp_group_link = parsed.whatsapp_group_link;
+    if (parsed.whatsapp_group_id) whatsapp_group_id = parsed.whatsapp_group_id;
+    if (parsed.portal_token) portal_token = parsed.portal_token;
+    if (parsed.portal_pin) portal_pin = parsed.portal_pin;
+    if (parsed.portal_enabled !== undefined) portal_enabled = parsed.portal_enabled;
+    if (!project_manager_id && parsed.project_manager_id) project_manager_id = parsed.project_manager_id;
+    if (!project_manager_name && parsed.project_manager_name) project_manager_name = parsed.project_manager_name;
+    if (!project_manager_email && parsed.project_manager_email) project_manager_email = parsed.project_manager_email;
+    if (!project_manager_phone && parsed.project_manager_phone) project_manager_phone = parsed.project_manager_phone;
+    if (Array.isArray(parsed.events) && parsed.events.length > 0) events = parsed.events;
+    if (parsed.notes !== undefined) plain_notes = parsed.notes;
+    else if (parsed.plain_notes !== undefined) plain_notes = parsed.plain_notes;
+    if (Array.isArray(parsed.studio_comments)) {
+      studio_comments = parsed.studio_comments;
+    } else if (plain_notes && typeof plain_notes === 'string' && plain_notes.trim()) {
+      studio_comments = [{
+        id: `note_${Date.now()}`,
+        text: plain_notes.trim(),
+        created_at: client.created_at || new Date().toISOString(),
+        author_name: 'Studio Team'
+      }];
+    }
+  } else if (rawNotes) {
     studio_comments = [{
       id: `note_${Date.now()}`,
-      text: client.notes.trim(),
+      text: rawNotes.replace(/handled_by:\s*[^\n\r,]+/gi, '').trim(),
       created_at: client.created_at || new Date().toISOString(),
       author_name: 'Studio Team'
     }];
+  }
+
+  // Robust Fallback: If PM name is still empty, check handled_by or regex
+  if (!project_manager_name) {
+    const hbMatch = rawNotes.match(/handled_by:\s*([^\n\r,]+)/i);
+    if (hbMatch && hbMatch[1].trim()) {
+      project_manager_name = hbMatch[1].trim();
+    } else if ((client as any).handled_by) {
+      project_manager_name = String((client as any).handled_by).trim();
+    } else if ((client as any).custom_data?.handled_by) {
+      project_manager_name = String((client as any).custom_data.handled_by).trim();
+    }
   }
 
   return {
@@ -128,7 +151,7 @@ export function parseClientExtended(client: WorkspaceClient): ClientExtendedData
     project_manager_email,
     project_manager_phone,
     events,
-    plain_notes,
+    plain_notes: plain_notes.replace(/handled_by:\s*[^\n\r,]+/gi, '').trim(),
     studio_comments
   };
 }

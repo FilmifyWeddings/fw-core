@@ -38,7 +38,7 @@ export async function fetchWorkspaceTeamMembers(workspaceId?: string): Promise<W
       const { data: directMembers } = await supabase
         .from('fw_team_members')
         .select('*')
-        .or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
+        .eq('user_id', effectiveWsId);
       if (directMembers && directMembers.length > 0) {
         members = directMembers;
       }

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation, normalizeToIsoDate } from '@/lib/quotation-finance-sync';
+import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
 import { LeadQuotationModal } from '@/components/dashboard/lead-quotation-modal';
 import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
@@ -1471,40 +1472,68 @@ export default function FinancePage() {
 
     setClients(prev => prev.map(c => {
       if (c.id === clientId) {
-        return { ...c, handled_by: memberName } as any;
+        return { ...c, handled_by: memberName, project_manager_name: memberName } as any;
       }
       return c;
     }));
 
     try {
-      // 1. Fetch current client to preserve custom_data and notes
+      // 1. Fetch current client to preserve notes, events and custom_data
       const { data: currentClient } = await supabase
         .from('workspace_clients')
-        .select('notes, custom_data')
+        .select('*')
         .eq('id', clientId)
         .maybeSingle();
 
-      const existingNotes = currentClient?.notes || '';
-      let newNotes = existingNotes;
-      if (newNotes.includes('handled_by:')) {
-        newNotes = newNotes.replace(/handled_by:\s*[^\n\r,]+/i, `handled_by: ${memberName}`);
-      } else {
-        newNotes = newNotes ? `${newNotes}\nhandled_by: ${memberName}` : `handled_by: ${memberName}`;
-      }
+      const ext = parseClientExtended(currentClient || { id: clientId } as any);
+      const matchedMember = (workspaceMembers || []).find((m: any) => 
+        (m.name && m.name.trim().toLowerCase() === memberName.trim().toLowerCase()) ||
+        (m.email && m.email.trim().toLowerCase() === memberName.trim().toLowerCase())
+      );
+
+      const pmId = matchedMember?.id || ext.project_manager_id || null;
+      const pmEmail = matchedMember?.email || ext.project_manager_email || null;
+      const pmPhone = matchedMember?.phone || ext.project_manager_phone || null;
+
+      const updatedExt = {
+        ...ext,
+        project_manager_name: memberName,
+        project_manager_id: pmId || '',
+        project_manager_email: pmEmail || '',
+        project_manager_phone: pmPhone || '',
+      };
+      const cleanSerializedNotes = serializeClientExtended(updatedExt);
 
       const existingCustom = (currentClient?.custom_data as any) || {};
-      const updatedCustom = { ...existingCustom, handled_by: memberName };
+      const updatedCustom = { ...existingCustom, handled_by: memberName, project_manager_name: memberName, project_manager_id: pmId };
 
-      // Update workspace_clients with handled_by column + custom_data + notes fallback
+      // Update workspace_clients with handled_by column + project_manager_* + custom_data + clean notes JSON
       await supabase
         .from('workspace_clients')
         .update({
           handled_by: memberName,
+          project_manager_name: memberName,
+          project_manager_id: pmId,
+          project_manager_email: pmEmail,
+          project_manager_phone: pmPhone,
           custom_data: updatedCustom,
-          notes: newNotes,
+          notes: cleanSerializedNotes,
           updated_at: new Date().toISOString()
         })
         .eq('id', clientId);
+
+      // Concurrently dual-sync to fw_projects
+      try {
+        const targetClient = clients.find(c => c.id === clientId) || currentClient;
+        await supabase
+          .from('fw_projects')
+          .update({
+            project_manager_id: pmId,
+            project_manager_name: memberName,
+            updated_at: new Date().toISOString()
+          })
+          .or(`client_id.eq.${clientId},client_name.ilike.%${targetClient?.name || ''}%`);
+      } catch (_) {}
 
       // Also update client_finance_records
       await supabase

@@ -98,7 +98,7 @@ export async function POST(
     if (workspaceClientId) {
       const { data: existingClient } = await supabaseAdmin
         .from('workspace_clients')
-        .select('id, notes')
+        .select('id, notes, project_manager_id, project_manager_name, project_manager_email, project_manager_phone, handled_by, client_code, portal_token, portal_pin')
         .eq('id', workspaceClientId)
         .maybeSingle();
       if (!existingClient) workspaceClientId = null;
@@ -107,7 +107,7 @@ export async function POST(
     if (!workspaceClientId) {
       const { data: clientsByLeadId } = await supabaseAdmin
         .from('workspace_clients')
-        .select('id, notes, total_package_amount, paid_amount')
+        .select('id, notes, total_package_amount, paid_amount, project_manager_id, project_manager_name, project_manager_email, project_manager_phone, handled_by, client_code, portal_token, portal_pin')
         .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
         .order('created_at', { ascending: false });
       if (clientsByLeadId && clientsByLeadId.length > 0) {
@@ -121,7 +121,7 @@ export async function POST(
       if (leadPhone && leadPhone.length >= 7) {
         const { data: clientByPhone } = await supabaseAdmin
           .from('workspace_clients')
-          .select('id, total_package_amount, paid_amount')
+          .select('id, total_package_amount, paid_amount, notes, project_manager_id, project_manager_name, project_manager_email, project_manager_phone, handled_by, client_code, portal_token, portal_pin')
           .ilike('phone', `%${leadPhone}%`)
           .limit(1);
         if (clientByPhone && clientByPhone.length > 0) {
@@ -144,16 +144,44 @@ export async function POST(
       }
     }
 
+    const existingMatchedClient = (workspaceClientId && typeof existingClient !== 'undefined' && existingClient) 
+      ? existingClient 
+      : (typeof clientsByLeadId !== 'undefined' && clientsByLeadId && clientsByLeadId.length > 0 ? clientsByLeadId[0] : null);
+
+    let existingNotesJson: any = {};
+    if (existingMatchedClient?.notes) {
+      try {
+        const rawN = String(existingMatchedClient.notes).trim();
+        const fBrace = rawN.indexOf('{');
+        const lBrace = rawN.lastIndexOf('}');
+        if (fBrace !== -1 && lBrace !== -1 && lBrace > fBrace) {
+          existingNotesJson = JSON.parse(rawN.substring(fBrace, lBrace + 1));
+        } else if (typeof existingMatchedClient.notes === 'object') {
+          existingNotesJson = existingMatchedClient.notes;
+        }
+      } catch (_) {}
+    }
+
+    const resolvedPmId = existingMatchedClient?.project_manager_id || existingNotesJson.project_manager_id || null;
+    const resolvedPmName = existingMatchedClient?.project_manager_name || existingNotesJson.project_manager_name || existingMatchedClient?.handled_by || null;
+    const resolvedPmEmail = existingMatchedClient?.project_manager_email || existingNotesJson.project_manager_email || null;
+    const resolvedPmPhone = existingMatchedClient?.project_manager_phone || existingNotesJson.project_manager_phone || null;
+
     const extendedNotesPayload = JSON.stringify({
-      client_code: `CL-${Math.floor(1000 + Math.random() * 9000)}`,
-      whatsapp_group_link: lead.whatsapp_group_id ? `https://chat.whatsapp.com/${lead.whatsapp_group_id}` : '',
-      whatsapp_group_id: lead.whatsapp_group_id || '',
-      portal_token: `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`,
-      portal_pin: '1234',
-      portal_enabled: true,
-      plain_notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
-      notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
-      events: [] // STRICTLY EMPTY: No demo events!
+      client_code: existingMatchedClient?.client_code || existingNotesJson.client_code || `CL-${Math.floor(1000 + Math.random() * 9000)}`,
+      whatsapp_group_link: existingNotesJson.whatsapp_group_link || (lead.whatsapp_group_id ? `https://chat.whatsapp.com/${lead.whatsapp_group_id}` : ''),
+      whatsapp_group_id: existingNotesJson.whatsapp_group_id || lead.whatsapp_group_id || '',
+      portal_token: existingMatchedClient?.portal_token || existingNotesJson.portal_token || `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`,
+      portal_pin: existingMatchedClient?.portal_pin || existingNotesJson.portal_pin || '1234',
+      portal_enabled: existingNotesJson.portal_enabled ?? true,
+      project_manager_id: resolvedPmId || '',
+      project_manager_name: resolvedPmName || '',
+      project_manager_email: resolvedPmEmail || '',
+      project_manager_phone: resolvedPmPhone || '',
+      plain_notes: existingNotesJson.plain_notes || `Auto-synced from Booked CRM Lead (${coupleName})`,
+      notes: existingNotesJson.notes || `Auto-synced from Booked CRM Lead (${coupleName})`,
+      events: Array.isArray(existingNotesJson.events) ? existingNotesJson.events : [],
+      studio_comments: Array.isArray(existingNotesJson.studio_comments) ? existingNotesJson.studio_comments : []
     });
 
     const clientPayload: any = {
@@ -173,6 +201,20 @@ export async function POST(
       notes: extendedNotesPayload,
       updated_at: nowIso
     };
+
+    if (resolvedPmName) {
+      clientPayload.project_manager_name = resolvedPmName;
+      clientPayload.handled_by = resolvedPmName;
+    }
+    if (resolvedPmId) {
+      clientPayload.project_manager_id = resolvedPmId;
+    }
+    if (resolvedPmEmail) {
+      clientPayload.project_manager_email = resolvedPmEmail;
+    }
+    if (resolvedPmPhone) {
+      clientPayload.project_manager_phone = resolvedPmPhone;
+    }
 
     if (workspaceClientId) {
       await supabaseAdmin
