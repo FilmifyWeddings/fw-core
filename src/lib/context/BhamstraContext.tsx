@@ -20,6 +20,9 @@ export interface WorkspaceOption {
   userRole: 'OWNER' | 'MANAGER' | 'FREELANCER' | 'PHOTOGRAPHER' | 'CINEMATOGRAPHER' | 'EDITOR' | 'ALBUM_LAB' | string;
   isOwner: boolean;
   memberId?: string;
+  memberName?: string;
+  memberEmail?: string;
+  memberPhone?: string;
   roles?: string[];
   member_types?: string[];
   primary_type?: string;
@@ -177,7 +180,7 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
 
       setUserId(uId);
       setUserEmail(uEmail || null);
-      setUserName(cachedName || metaName || null);
+      setUserName(cachedName || metaName || activeWorkspace?.memberName || null);
 
       // 1. Fetch user's own profile safely (Safe column selection)
       let profile: any = null;
@@ -264,6 +267,9 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
       setIsOwner(active.isOwner);
       setUserRole(active.userRole);
       setPermissions(active.permissions || (active.isOwner ? DEFAULT_OWNER_PERMISSIONS : DEFAULT_MEMBER_PERMISSIONS));
+      if (active.memberName && (!profile?.full_name || profile?.full_name.trim() === '')) {
+        setUserName(active.memberName);
+      }
 
       // 4. Update Workspace Config
       setWorkspaceConfig({

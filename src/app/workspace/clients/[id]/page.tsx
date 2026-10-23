@@ -84,18 +84,19 @@ export default function ClientWorkspaceDetailPage() {
   const { userName, isOwner, userEmail, userId, permissions, activeWorkspace, workspaceId: currentWsId } = useWorkspace();
 
   // Client Directory RBAC & Sub-Module Visibility
-  const clientsAccess = isOwner ? 'ALL_MANAGE' : (permissions?.clients_access || 'NONE');
+  const clientsAccess = isOwner ? 'ALL_MANAGE' : (permissions?.clients_access || (activeWorkspace?.permissions as any)?.clients_access || 'NONE');
   const isReadOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ALL_VIEW');
-  const rawModules = permissions?.client_modules_access;
+  const isAssignedOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT');
+  const rawModules = permissions?.client_modules_access || (activeWorkspace?.permissions as any)?.client_modules_access;
   const allowedModules = useMemo(() => {
-    if (isOwner || clientsAccess === 'ALL_MANAGE' || clientsAccess === 'ALL_VIEW') {
+    if (isOwner) {
       return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
     }
     if (Array.isArray(rawModules) && rawModules.length > 0) {
       return rawModules;
     }
     return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
-  }, [isOwner, clientsAccess, rawModules]);
+  }, [isOwner, rawModules]);
 
   // Client Audit History Drawer State
   const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
@@ -1547,6 +1548,7 @@ export default function ClientWorkspaceDetailPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
+      const effectiveWsId = activeWorkspace?.workspaceId || currentWsId || workspaceId;
 
       // 1. Try finding client by id
       let { data: foundClient } = await supabase
@@ -1558,8 +1560,8 @@ export default function ClientWorkspaceDetailPage() {
       // If not found by id, search all clients for matching client_code in notes
       if (!foundClient) {
         let query = supabase.from('workspace_clients').select('*');
-        if (workspaceId !== 'ws_demo') {
-          query = query.eq('workspace_id', workspaceId);
+        if (effectiveWsId !== 'ws_demo') {
+          query = query.or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
         }
         const { data: allClients } = await query;
         if (allClients) {
@@ -3285,27 +3287,29 @@ export default function ClientWorkspaceDetailPage() {
               </div>
             </div>
 
-            {/* ─── 🗑️ DANGER ZONE: SAFE DELETE CLIENT ─── */}
-            <div className="bg-rose-50/50 rounded-3xl border border-rose-200/80 p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <h4 className="text-xs font-black text-rose-900 flex items-center gap-1.5">
-                  <Trash2 className="w-4 h-4 text-rose-600" />
-                  Danger Zone: Delete Client Workspace
-                </h4>
-                <p className="text-[11px] text-rose-700 font-medium max-w-lg">
-                  Permanently delete <strong className="font-black text-rose-950">{name || client.name}</strong> and remove all associated finance cards, milestone schedules, quotations, deliverables, and invoices.
-                </p>
-              </div>
+            {/* ─── 🗑️ DANGER ZONE: SAFE DELETE CLIENT (OWNER ONLY) ─── */}
+            {isOwner && (
+              <div className="bg-rose-50/50 rounded-3xl border border-rose-200/80 p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-black text-rose-900 flex items-center gap-1.5">
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                    Danger Zone: Delete Client Workspace
+                  </h4>
+                  <p className="text-[11px] text-rose-700 font-medium max-w-lg">
+                    Permanently delete <strong className="font-black text-rose-950">{name || client.name}</strong> and remove all associated finance cards, milestone schedules, quotations, deliverables, and invoices.
+                  </p>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => setShowDeleteModal(true)}
-                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer shrink-0"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Delete Client</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(true)}
+                  className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Client</span>
+                </button>
+              </div>
+            )}
           </motion.div>
         )}
 

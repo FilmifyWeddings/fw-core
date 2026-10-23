@@ -11,6 +11,7 @@ import {
   FileText, Download, Printer, RefreshCw, Key, MessageCircle, Link2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import AiMicButton from '@/components/AiMicButton';
 import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import type { 
@@ -181,7 +182,40 @@ export function ClientInsiderModal({
   onClientUpdate,
   onClientDelete
 }: ClientInsiderModalProps) {
+  const { isOwner, permissions, activeWorkspace } = useWorkspace();
+  const clientsAccess = isOwner ? 'ALL_MANAGE' : (permissions?.clients_access || (activeWorkspace?.permissions as any)?.clients_access || 'NONE');
+  const isReadOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ALL_VIEW');
+  const isAssignedOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT');
+  const rawModules = permissions?.client_modules_access || (activeWorkspace?.permissions as any)?.client_modules_access;
+  const allowedModules = useMemo(() => {
+    if (isOwner) {
+      return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
+    }
+    if (Array.isArray(rawModules) && rawModules.length > 0) {
+      return rawModules;
+    }
+    return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
+  }, [isOwner, rawModules]);
+
+  const allModalTabs = useMemo(() => [
+    { id: 'overview', label: 'Overview & Details', icon: User },
+    { id: 'quotations', label: 'Quotations & Versions', icon: FileText },
+    { id: 'events', label: 'Events & Bookings', icon: Calendar },
+    { id: 'post_production', label: 'Post-Production Checklist', icon: Film },
+    { id: 'finance', label: 'Finance & Payments', icon: DollarSign },
+  ], []);
+
+  const visibleModalTabs = useMemo(() => {
+    return allModalTabs.filter(t => allowedModules.includes(t.id));
+  }, [allModalTabs, allowedModules]);
+
   const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'events' | 'post_production' | 'finance'>('overview');
+
+  useEffect(() => {
+    if (visibleModalTabs.length > 0 && !visibleModalTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleModalTabs[0].id as any);
+    }
+  }, [visibleModalTabs, activeTab]);
   
   // Extended fields state
   const [extended, setExtended] = useState<ClientExtendedData>({
@@ -589,13 +623,7 @@ export function ClientInsiderModal({
             NAVIGATION TABS
         ───────────────────────────────────────────────────────────── */}
         <div className="flex border-b border-[#EAE5DA] bg-[#FAF8F2] px-4 gap-2 shrink-0 overflow-x-auto">
-          {[
-            { id: 'overview', label: 'Overview & Details', icon: User },
-            { id: 'quotations', label: 'Quotations & Versions', icon: FileText },
-            { id: 'events', label: 'Events & Bookings', icon: Calendar },
-            { id: 'post_production', label: 'Post-Production Checklist', icon: Film },
-            { id: 'finance', label: 'Finance & Payments', icon: DollarSign },
-          ].map(tab => {
+          {visibleModalTabs.map(tab => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
             return (

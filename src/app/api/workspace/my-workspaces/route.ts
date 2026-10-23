@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
         let partnerStudioName = 'Partner Studio';
         const { data: wsData } = await supabaseAdmin
           .from('workspaces')
-          .select('id, name, logo_url')
+          .select('id, name, logo_url, owner_id, slug')
           .eq('id', mem.workspace_id)
           .maybeSingle();
 
@@ -172,6 +172,9 @@ export async function GET(req: NextRequest) {
           userRole: mem.primary_role || 'FREELANCER',
           isOwner: false,
           memberId: mem.id,
+          memberName: mem.name || '',
+          memberEmail: mem.email || '',
+          memberPhone: mem.phone || '',
           roles: mem.roles || [mem.primary_role || 'FREELANCER'],
           member_types: mem.member_types || (isInHouseMem ? ['IN_HOUSE'] : ['FREELANCER']),
           primary_type: primType,

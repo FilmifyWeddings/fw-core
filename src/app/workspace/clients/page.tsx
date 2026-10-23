@@ -48,7 +48,7 @@ let memCachedTeamMembers: WorkspaceMemberOption[] = [];
 
 export default function ClientsPage() {
   const router = useRouter();
-  const { isOwner, permissions, activeWorkspace, userEmail, userId, userName, loading: wsLoading } = useWorkspace();
+  const { isOwner, permissions, activeWorkspace, userEmail, userId, userName, loading: wsLoading, workspaceId: contextWsId } = useWorkspace();
   const clientsAccess = isOwner 
     ? 'ALL_MANAGE' 
     : (permissions?.clients_access || (activeWorkspace?.permissions as any)?.clients_access || 'NONE');
@@ -62,6 +62,9 @@ export default function ClientsPage() {
   const [quoteFinanceMap, setQuoteFinanceMap] = useState<Map<string, { total: number; paid: number; due: number }>>(new Map());
   const [isExcelMigrationModalOpen, setIsExcelMigrationModalOpen] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [apiProjects, setApiProjects] = useState<any[]>([]);
+  const [apiAssignments, setApiAssignments] = useState<any[]>([]);
+  const [apiPostProjects, setApiPostProjects] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>(() => memCachedTeamMembers);
   const [loading, setLoading] = useState(() => memCachedClients.length === 0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -182,109 +185,143 @@ export default function ClientsPage() {
   const fetchClientsAndSyncBookedLeads = async (silent: boolean = false) => {
     if (!silent && clients.length === 0) setLoading(true);
     try {
-      // 1. Fetch user session
+      // 1. Fetch user session & determine authoritative effective studio workspace ID
       const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
-      if (session?.user?.id) {
-        setCurrentWorkspaceId(session.user.id);
+      const token = session?.access_token || '';
+      const effectiveWsId = activeWorkspace?.workspaceId || contextWsId || session?.user?.id || 'ws_demo';
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        setCurrentWorkspaceId(effectiveWsId);
       }
 
-      // 2. Fetch clients table scoped to current user workspace
-      let clientQuery = supabase
-        .from('workspace_clients')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (workspaceId && workspaceId !== 'ws_demo') {
-        clientQuery = clientQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
-      }
-
-      const { data: clientData } = await clientQuery;
-      let existingClientList: WorkspaceClient[] = clientData || [];
-
-      // Fetch client finance records for overdue calculation
-      let finQuery = supabase.from('client_finance_records').select('*');
-      if (workspaceId && workspaceId !== 'ws_demo') {
-        finQuery = finQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
-      }
-      const { data: finData } = await finQuery;
+      let existingClientList: WorkspaceClient[] = [];
       const fMap = new Map<string, ClientFinanceRecord>();
-      if (finData) {
-        finData.forEach(f => {
-          if (f.client_id) fMap.set(f.client_id, f);
-        });
-      }
-      setFinanceRecordsMap(fMap);
-
-      // Fetch quotation documents to reactively populate financial package totals if finance records are not yet settled
       const qFinMap = new Map<string, { total: number; paid: number; due: number }>();
-      try {
-        const { data: qDocs } = await supabase
-          .from('quotation_documents')
-          .select('id, template_id, lead_id, content_json');
+      let leadList: Lead[] = [];
+      let apiSuccess = false;
 
-        if (qDocs && qDocs.length > 0) {
-          for (const doc of qDocs) {
-            const isFinal = Boolean(doc.content_json?.is_final);
-            if (isFinal && doc.content_json) {
-              const fin = extractFinancialsFromQuotation(doc.content_json);
-              const data = {
-                total: fin.final_total_amount || 0,
-                paid: fin.received_amount || 0,
-                due: fin.pending_amount || 0
-              };
-              if (doc.lead_id) qFinMap.set(doc.lead_id, data);
-              if (doc.template_id) qFinMap.set(doc.template_id, data);
-              const couple = extractCoupleNameFromQuotation(doc.content_json, '');
-              if (couple) {
-                qFinMap.set(couple.toLowerCase().trim(), data);
-                qFinMap.set(couple.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim(), data);
+      // 2. Fetch authoritative workspace clients from enterprise API route (bypasses RLS for invited members)
+      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+        try {
+          const res = await fetch(`/api/workspace/clients?workspace_id=${effectiveWsId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+          });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success) {
+              apiSuccess = true;
+              existingClientList = json.clients || [];
+              if (Array.isArray(json.financeRecords)) {
+                json.financeRecords.forEach((f: any) => {
+                  if (f.client_id) fMap.set(f.client_id, f);
+                });
+              }
+              if (Array.isArray(json.leads)) {
+                leadList = json.leads;
+                setLeads(leadList);
+              }
+              if (Array.isArray(json.projects)) {
+                setApiProjects(json.projects);
+              }
+              if (Array.isArray(json.assignments)) {
+                setApiAssignments(json.assignments);
+              }
+              if (Array.isArray(json.postProjects)) {
+                setApiPostProjects(json.postProjects);
+              }
+              if (Array.isArray(json.teamMembers) && json.teamMembers.length > 0) {
+                setTeamMembers(json.teamMembers);
+                memCachedTeamMembers = json.teamMembers;
+              }
+
+              // Parse quotation docs
+              if (Array.isArray(json.quotationDocs)) {
+                for (const doc of json.quotationDocs) {
+                  const isFinal = Boolean(doc.content_json?.is_final);
+                  if (isFinal && doc.content_json) {
+                    const fin = extractFinancialsFromQuotation(doc.content_json);
+                    const data = {
+                      total: fin.final_total_amount || 0,
+                      paid: fin.received_amount || 0,
+                      due: fin.pending_amount || 0
+                    };
+                    if (doc.lead_id) qFinMap.set(doc.lead_id, data);
+                    if (doc.template_id) qFinMap.set(doc.template_id, data);
+                    const couple = extractCoupleNameFromQuotation(doc.content_json, '');
+                    if (couple) {
+                      qFinMap.set(couple.toLowerCase().trim(), data);
+                      qFinMap.set(couple.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim(), data);
+                    }
+                  }
+                }
+              }
+
+              // Parse quotations
+              if (Array.isArray(json.quotations)) {
+                for (const q of json.quotations) {
+                  const tot = Number(q.financials?.total_amount || (q as any).total_amount || 0);
+                  const paid = Number(q.financials?.received_amount || 0);
+                  const due = Math.max(0, tot - paid);
+                  if (tot > 0) {
+                    const data = { total: tot, paid, due };
+                    if (q.client_id) qFinMap.set(q.client_id, data);
+                    if (q.quotation_number) qFinMap.set(q.quotation_number, data);
+                    const qName = q.couple_names || q.client_name;
+                    if (qName) {
+                      qFinMap.set(String(qName).toLowerCase().trim(), data);
+                      qFinMap.set(String(qName).toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim(), data);
+                    }
+                  }
+                }
               }
             }
           }
+        } catch (apiErr) {
+          console.warn('[ClientsPage] API fetch error, falling back to direct query:', apiErr);
         }
-      } catch (_) {}
-
-      try {
-        const { data: qRows } = await supabase
-          .from('quotations')
-          .select('id, quotation_number, client_id, client_name, couple_names, status, is_final, financials, content_json')
-          .or('is_final.eq.true,status.in.(accepted,final)');
-
-        if (qRows && qRows.length > 0) {
-          for (const q of qRows) {
-            const tot = Number(q.financials?.total_amount || (q as any).total_amount || 0);
-            const paid = Number(q.financials?.received_amount || 0);
-            const due = Math.max(0, tot - paid);
-            if (tot > 0) {
-              const data = { total: tot, paid, due };
-              if (q.client_id) qFinMap.set(q.client_id, data);
-              if (q.quotation_number) qFinMap.set(q.quotation_number, data);
-              const qName = q.couple_names || q.client_name;
-              if (qName) {
-                qFinMap.set(String(qName).toLowerCase().trim(), data);
-                qFinMap.set(String(qName).toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim(), data);
-              }
-            }
-          }
-        }
-      } catch (_) {}
-      setQuoteFinanceMap(qFinMap);
-
-      // 3. Fetch all leads scoped to current workspace to check for booked leads
-      let leadsQuery = supabase
-        .from('leads')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (workspaceId && workspaceId !== 'ws_demo') {
-        leadsQuery = leadsQuery.eq('workspace_id', workspaceId);
       }
 
-      const { data: leadsData } = await leadsQuery;
-      const leadList: Lead[] = leadsData || [];
-      setLeads(leadList);
+      // Fallback to direct client-side queries if API endpoint fails
+      if (!apiSuccess) {
+        let clientQuery = supabase
+          .from('workspace_clients')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+          clientQuery = clientQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+        }
+
+        const { data: clientData } = await clientQuery;
+        existingClientList = clientData || [];
+
+        let finQuery = supabase.from('client_finance_records').select('*');
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+          finQuery = finQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+        }
+        const { data: finData } = await finQuery;
+        if (finData) {
+          finData.forEach(f => {
+            if (f.client_id) fMap.set(f.client_id, f);
+          });
+        }
+
+        let leadsQuery = supabase
+          .from('leads')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
+          leadsQuery = leadsQuery.eq('workspace_id', effectiveWsId);
+        }
+
+        const { data: leadsData } = await leadsQuery;
+        leadList = leadsData || [];
+        setLeads(leadList);
+      }
+
+      setFinanceRecordsMap(fMap);
+      setQuoteFinanceMap(qFinMap);
 
       // 4. Auto-Sync: For every lead with status 'booked' / 'Booked' that is NOT yet in workspace_clients, create a client record!
       const bookedLeads = leadList.filter(l => {
@@ -432,9 +469,11 @@ export default function ClientsPage() {
 
       // Fetch team members for PM assignment
       try {
-        const members = await fetchWorkspaceTeamMembers(workspaceId);
-        setTeamMembers(members);
-        memCachedTeamMembers = members;
+        const members = await fetchWorkspaceTeamMembers(effectiveWsId);
+        if (members && members.length > 0) {
+          setTeamMembers(members);
+          memCachedTeamMembers = members;
+        }
       } catch (memErr) {
         console.warn('Could not load team members:', memErr);
       }
@@ -992,34 +1031,126 @@ export default function ClientsPage() {
 
       // Granular RBAC: If ASSIGNED_VIEW or ASSIGNED_EDIT, restrict strictly to assigned projects
       if (isAssignedOnly) {
-        const myMemberId = String(activeWorkspace?.memberId || '').toLowerCase();
-        const myUserId = String(userId || '').toLowerCase();
-        const myEmail = String(userEmail || '').toLowerCase();
-        const myName = String(userName || '').toLowerCase();
+        const myMemberId = String(activeWorkspace?.memberId || '').toLowerCase().trim();
+        const myUserId = String(userId || '').toLowerCase().trim();
+        const myEmail = String(userEmail || (activeWorkspace as any)?.memberEmail || '').toLowerCase().trim();
+        const myName = String(userName || (activeWorkspace as any)?.memberName || '').toLowerCase().trim();
+        const myPhone = String((activeWorkspace as any)?.memberPhone || '').replace(/\D/g, '').slice(-10);
 
-        const cPmId = String(client.project_manager_id || ext.project_manager_id || '').toLowerCase();
-        const cPmEmail = String(client.project_manager_email || ext.project_manager_email || '').toLowerCase();
-        const cPmName = String(client.project_manager_name || ext.project_manager_name || '').toLowerCase();
+        const isNameMatch = (cand?: string | null) => {
+          if (!cand || !myName) return false;
+          const c = cand.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+          const m = myName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+          if (!c || !m) return false;
+          if (c === m || c.includes(m) || m.includes(c)) return true;
+          const cParts = c.split(' ').filter(Boolean);
+          const mParts = m.split(' ').filter(Boolean);
+          return cParts.some(cp => mParts.some(mp => cp.length > 2 && cp === mp));
+        };
+
+        const cPmId = String(client.project_manager_id || ext.project_manager_id || '').toLowerCase().trim();
+        const cPmEmail = String(client.project_manager_email || ext.project_manager_email || '').toLowerCase().trim();
+        const cPmName = String(client.project_manager_name || ext.project_manager_name || '');
 
         const isDirectPm = 
           (cPmId && (cPmId === myMemberId || cPmId === myUserId)) ||
           (cPmEmail && myEmail && cPmEmail === myEmail) ||
-          (cPmName && myName && cPmName === myName);
+          isNameMatch(cPmName);
 
         if (!isDirectPm) {
-          let isAssignedInEvents = false;
-          const clientEvs = (client as any).events || (ext as any).events;
-          if (Array.isArray(clientEvs)) {
-            isAssignedInEvents = clientEvs.some((ev: any) => {
-              const crew = ev.crew || ev.team || [];
-              return Array.isArray(crew) && crew.some((c: any) => {
-                const cId = String(c.member_id || c.id || c.user_id || '').toLowerCase();
-                const cEmail = String(c.email || '').toLowerCase();
-                return (myMemberId && cId === myMemberId) || (myUserId && cId === myUserId) || (myEmail && cEmail === myEmail);
-              });
+          const cNameNorm = (client.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+
+          // 1. Direct PM or crew in fw_projects
+          let isAssignedInProjects = false;
+          if (Array.isArray(apiProjects) && apiProjects.length > 0) {
+            isAssignedInProjects = apiProjects.some(p => {
+              const pMatchesClient = 
+                (p.client_id && p.client_id === client.id) ||
+                (p.lead_id && client.lead_id && p.lead_id === client.lead_id) ||
+                (p.client_name && cNameNorm && p.client_name.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim() === cNameNorm);
+
+              if (!pMatchesClient) return false;
+              const pPmId = String(p.project_manager_id || '').toLowerCase().trim();
+              if (pPmId && (pPmId === myMemberId || pPmId === myUserId)) return true;
+              if (isNameMatch(p.project_manager_name)) return true;
+              return false;
             });
           }
-          if (!isAssignedInEvents) return false;
+
+          // 2. Crew in fw_assignments
+          let isAssignedInAssignments = false;
+          if (!isAssignedInProjects && Array.isArray(apiAssignments) && apiAssignments.length > 0) {
+            isAssignedInAssignments = apiAssignments.some(a => {
+              const aMemberId = String(a.assigned_member_id || '').toLowerCase().trim();
+              const aMemberName = String(a.assigned_member_name || '');
+              const aMemberPhone = a.assigned_member_phone ? String(a.assigned_member_phone).replace(/\D/g, '').slice(-10) : '';
+
+              const isMe = 
+                (aMemberId && (aMemberId === myMemberId || aMemberId === myUserId)) ||
+                (myPhone && aMemberPhone && myPhone === aMemberPhone) ||
+                isNameMatch(aMemberName);
+
+              if (!isMe) return false;
+
+              const aClientNorm = (a.client_name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+              if (aClientNorm && cNameNorm && (aClientNorm === cNameNorm || aClientNorm.includes(cNameNorm) || cNameNorm.includes(aClientNorm))) {
+                return true;
+              }
+
+              if (a.project_id && Array.isArray(apiProjects)) {
+                const linkedP = apiProjects.find(p => p.id === a.project_id);
+                if (linkedP) {
+                  if (linkedP.client_id && linkedP.client_id === client.id) return true;
+                  if (linkedP.lead_id && client.lead_id && linkedP.lead_id === client.lead_id) return true;
+                  const pNameNorm = (linkedP.client_name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+                  if (pNameNorm && cNameNorm && (pNameNorm === cNameNorm || pNameNorm.includes(cNameNorm) || cNameNorm.includes(pNameNorm))) return true;
+                }
+              }
+
+              return false;
+            });
+          }
+
+          // 3. Sub-events embedded in client notes
+          let isAssignedInEvents = false;
+          if (!isAssignedInProjects && !isAssignedInAssignments) {
+            const clientEvs = (client as any).events || (ext as any).events;
+            if (Array.isArray(clientEvs)) {
+              isAssignedInEvents = clientEvs.some((ev: any) => {
+                const crew = ev.crew || ev.team || [];
+                return Array.isArray(crew) && crew.some((c: any) => {
+                  const cId = String(c.member_id || c.id || c.user_id || '').toLowerCase().trim();
+                  const cEmail = String(c.email || '').toLowerCase().trim();
+                  return (myMemberId && cId === myMemberId) || 
+                         (myUserId && cId === myUserId) || 
+                         (myEmail && cEmail === myEmail) || 
+                         isNameMatch(c.name);
+                });
+              });
+            }
+          }
+
+          // 4. Post-Production Projects
+          let isAssignedInPost = false;
+          if (!isAssignedInProjects && !isAssignedInAssignments && !isAssignedInEvents && Array.isArray(apiPostProjects)) {
+            isAssignedInPost = apiPostProjects.some(pp => {
+              if (pp.client_id !== client.id) return false;
+              const ppPmId = String(pp.project_manager_id || '').toLowerCase().trim();
+              if (ppPmId && (ppPmId === myMemberId || ppPmId === myUserId)) return true;
+              if (isNameMatch(pp.project_manager_name)) return true;
+              if (Array.isArray(pp.deliverables)) {
+                return pp.deliverables.some((d: any) => {
+                  const dCrew = d.crew || d.editor || d.assigned_to;
+                  return isNameMatch(typeof dCrew === 'string' ? dCrew : dCrew?.name);
+                });
+              }
+              return false;
+            });
+          }
+
+          if (!isAssignedInProjects && !isAssignedInAssignments && !isAssignedInEvents && !isAssignedInPost) {
+            return false;
+          }
         }
       }
 
@@ -1251,7 +1382,7 @@ export default function ClientsPage() {
             </p>
           </div>
 
-          {!isReadOnly && (
+          {isOwner && (
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsExcelMigrationModalOpen(true)}
@@ -1716,7 +1847,9 @@ export default function ClientsPage() {
             <div>
               <h3 className="text-base font-bold text-slate-900">No Clients Found</h3>
               <p className="text-xs text-slate-600 max-w-md mx-auto mt-1">
-                Mark any lead as &quot;Booked&quot; in the CRM or click &quot;+ Add New Client&quot; above to create a client workspace.
+                {isOwner 
+                  ? 'Mark any lead as "Booked" in the CRM or click "+ Add New Client" above to create a client workspace.'
+                  : 'No clients are currently assigned to you in this workspace.'}
               </p>
             </div>
           </div>
@@ -1839,6 +1972,7 @@ export default function ClientsPage() {
                     <div
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (isReadOnly) return;
                         const clientExt = parseClientExtended(client);
                         setQuickAssignClient({
                           ...client,
@@ -1911,30 +2045,34 @@ export default function ClientsPage() {
 
                     {/* Soft Delete / Restore Action */}
                     {isClientTrashed ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRestoreClient(client);
-                        }}
-                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs border border-emerald-500 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0"
-                        title="Restore Client back to Active Directory"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5 text-white" />
-                        <span>Restore Client</span>
-                      </button>
+                      (!isReadOnly && !isAssignedOnly && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRestoreClient(client);
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs border border-emerald-500 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0"
+                          title="Restore Client back to Active Directory"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-white" />
+                          <span>Restore Client</span>
+                        </button>
+                      ))
                     ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setClientToDelete(client);
-                        }}
-                        className="w-8 h-8 rounded-xl bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer shadow-2xs shrink-0"
-                        title="Move to Trash"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      (!isReadOnly && !isAssignedOnly && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setClientToDelete(client);
+                          }}
+                          className="w-8 h-8 rounded-xl bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer shadow-2xs shrink-0"
+                          title="Move to Trash"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      ))
                     )}
 
                     {/* Open Arrow */}
