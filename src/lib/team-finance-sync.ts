@@ -151,13 +151,30 @@ export async function fetchWorkspaceMemberRatesMap(workspaceId: string): Promise
   const ratesMap: Record<string, any> = {};
 
   try {
-    const { data, error } = await supabase
-      .from('workspace_team_member_rates')
-      .select('team_member_id, default_daily_rate, payout_frequency')
-      .eq('workspace_id', workspaceId);
+    let rawData: any[] | null = null;
+    let queryErr: any = null;
 
-    if (!error && data && Array.isArray(data)) {
-      data.forEach((r: any) => {
+    try {
+      const res = await supabase
+        .from('workspace_team_member_rates')
+        .select('team_member_id, default_daily_rate, payout_frequency')
+        .eq('workspace_id', workspaceId);
+      rawData = res.data;
+      queryErr = res.error;
+    } catch (_) {}
+
+    if (queryErr || !rawData) {
+      const res2 = await supabase
+        .from('workspace_team_member_rates')
+        .select('team_member_id, default_daily_rate')
+        .eq('workspace_id', workspaceId);
+      if (!res2.error && res2.data) {
+        rawData = res2.data;
+      }
+    }
+
+    if (rawData && Array.isArray(rawData)) {
+      rawData.forEach((r: any) => {
         if (r.team_member_id) {
           ratesMap[r.team_member_id] = {
             rate: Number(r.default_daily_rate) || 0,
@@ -200,26 +217,43 @@ export async function saveWorkspaceMemberRate(
       .maybeSingle();
 
     if (existingRate?.id) {
-      await supabase
+      const updatePayload: any = {
+        default_daily_rate: numRate,
+        payout_frequency: payoutFrequency,
+        currency: currency || 'INR',
+        updated_at: new Date().toISOString()
+      };
+      const { error: upErr } = await supabase
         .from('workspace_team_member_rates')
-        .update({
-          default_daily_rate: numRate,
-          payout_frequency: payoutFrequency,
-          currency: currency || 'INR',
-          updated_at: new Date().toISOString()
-        })
+        .update(updatePayload)
         .eq('id', existingRate.id);
+
+      if (upErr && (upErr.message?.includes('payout_frequency') || upErr.code === '42703')) {
+        delete updatePayload.payout_frequency;
+        await supabase
+          .from('workspace_team_member_rates')
+          .update(updatePayload)
+          .eq('id', existingRate.id);
+      }
     } else {
-      await supabase
+      const insertPayload: any = {
+        workspace_id: workspaceId,
+        team_member_id: memberId,
+        default_daily_rate: numRate,
+        payout_frequency: payoutFrequency,
+        currency: currency || 'INR',
+        updated_at: new Date().toISOString()
+      };
+      const { error: inErr } = await supabase
         .from('workspace_team_member_rates')
-        .insert([{
-          workspace_id: workspaceId,
-          team_member_id: memberId,
-          default_daily_rate: numRate,
-          payout_frequency: payoutFrequency,
-          currency: currency || 'INR',
-          updated_at: new Date().toISOString()
-        }]);
+        .insert([insertPayload]);
+
+      if (inErr && (inErr.message?.includes('payout_frequency') || inErr.code === '42703')) {
+        delete insertPayload.payout_frequency;
+        await supabase
+          .from('workspace_team_member_rates')
+          .insert([insertPayload]);
+      }
     }
   } catch (err) {
     console.warn('[team-finance-sync] saveWorkspaceMemberRate error:', err);
@@ -919,7 +953,8 @@ export async function saveOrUpdateEventPayout(
   const status: 'PENDING' | 'PARTIAL' | 'PAID' = balance === 0 && agreed > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING';
   const paymentStatusDb = status === 'PAID' ? 'completed' : status === 'PARTIAL' ? 'partial' : 'pending';
 
-  const payoutId = payoutData.id || `payout_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const isUuid = (val: any) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  const payoutId = isUuid(payoutData.id) ? payoutData.id! : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-4000-8000-' + Date.now().toString(16).padStart(12, '0'));
   const paymentDate = payoutData.payment_date || payoutData.event_date || new Date().toISOString().split('T')[0];
   const paymentMethod = payoutData.payment_method || 'UPI/Bank Transfer';
 
@@ -1665,8 +1700,11 @@ export async function saveSalaryRecord(
   const paid = Number(salaryData.paid_amount) || 0;
   const status: 'PENDING' | 'PAID' = paid >= net && net > 0 ? 'PAID' : 'PENDING';
 
+  const isUuid = (val: any) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  const salaryId = isUuid(salaryData.id) ? salaryData.id! : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-4000-8000-' + Date.now().toString(16).padStart(12, '0'));
+
   const payload: TeamSalaryRecord = {
-    id: salaryData.id || `sal_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+    id: salaryId,
     workspace_id: workspaceId,
     member_id: salaryData.member_id,
     member_name: salaryData.member_name,

@@ -686,7 +686,7 @@ export default function LeadsPage() {
           localStorage.removeItem('leads_workspace_stages');
         } catch (_) {}
 
-        // Load Layout Configurations safely from LocalStorage
+        // 1. Load Layout Configurations optimistically from LocalStorage for 0ms render
         try {
           const localPrefs = localStorage.getItem(`leads_table_preferences_${targetUserId}`) || 
                              localStorage.getItem('leads_table_preferences') || 
@@ -696,6 +696,23 @@ export default function LeadsPage() {
             if (parsed && typeof parsed === 'object') {
               setPreferences(parsed);
             }
+          }
+        } catch (_) {}
+
+        // 2. Fetch from Supabase user_table_preferences to ensure cross-device synchronization
+        try {
+          const { data: prefRow } = await supabase
+            .from('user_table_preferences')
+            .select('preferences')
+            .eq('user_id', targetUserId)
+            .eq('table_key', 'leads_table')
+            .maybeSingle();
+
+          if (prefRow?.preferences && typeof prefRow.preferences === 'object') {
+            setPreferences(prefRow.preferences);
+            try {
+              localStorage.setItem(`leads_table_preferences_${targetUserId}`, JSON.stringify(prefRow.preferences));
+            } catch (_) {}
           }
         } catch (_) {}
       }
@@ -1613,7 +1630,7 @@ export default function LeadsPage() {
     }
   };
 
-  const handlePreferencesChange = (newPrefs: any) => {
+  const handlePreferencesChange = async (newPrefs: any) => {
     setPreferences(newPrefs);
     if (userId) {
       try {
@@ -1621,6 +1638,20 @@ export default function LeadsPage() {
         localStorage.setItem('leads_table_preferences', JSON.stringify(newPrefs));
       } catch (err) {
         console.warn("Preferences save error:", err);
+      }
+
+      // Persist to Supabase backend for multi-device sync
+      try {
+        await supabase
+          .from('user_table_preferences')
+          .upsert({
+            user_id: userId,
+            table_key: 'leads_table',
+            preferences: newPrefs,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id,table_key' });
+      } catch (dbErr) {
+        console.warn("Backend user_table_preferences sync notice:", dbErr);
       }
     }
   };

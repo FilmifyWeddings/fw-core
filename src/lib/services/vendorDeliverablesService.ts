@@ -1,5 +1,10 @@
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 
+// Safely resolves the appropriate Supabase client:
+// On client (browser), always use supabase (authenticated with user session / anon key).
+// On server, fallback to supabaseAdmin || supabase.
+const getDbClient = () => (typeof window !== 'undefined' ? supabase : (getDbClient() || supabase));
+
 export type AssignmentCategory = 
   | 'all' 
   | 'shoot' 
@@ -218,7 +223,7 @@ export async function fetchVendorAlbumOrders(
   vendorName?: string
 ): Promise<VendorAlbumOrder[]> {
   try {
-    let query = supabaseAdmin
+    let query = getDbClient()
       .from('partner_album_orders')
       .select('*');
 
@@ -244,7 +249,7 @@ export async function fetchVendorAlbumOrders(
 
     // AUTO-SYNC 1: Check post_production_deliverables for ALL categories (Videos, Photos, Albums, Printing)
     try {
-      let delivQuery = supabaseAdmin
+      let delivQuery = getDbClient()
         .from('post_production_deliverables')
         .select('*');
 
@@ -260,14 +265,14 @@ export async function fetchVendorAlbumOrders(
         const projectClientMap = new Map<string, string>();
 
         if (projectIds.length > 0) {
-          const { data: projects } = await supabaseAdmin
+          const { data: projects } = await getDbClient()
             .from('post_production_projects')
             .select('id, client_id')
             .in('id', projectIds);
 
           const clientIds = [...new Set((projects || []).map((p: any) => p.client_id).filter(Boolean))];
           if (clientIds.length > 0) {
-            const { data: clients } = await supabaseAdmin
+            const { data: clients } = await getDbClient()
               .from('workspace_clients')
               .select('id, name')
               .in('id', clientIds);
@@ -363,7 +368,7 @@ export async function fetchVendorAlbumOrders(
 
             // Attempt save to DB in background
             try {
-              await supabaseAdmin.from('partner_album_orders').upsert(newOrder);
+              await getDbClient().from('partner_album_orders').upsert(newOrder);
             } catch (_) {}
             orderList.push(newOrder);
           }
@@ -375,13 +380,13 @@ export async function fetchVendorAlbumOrders(
 
     // AUTO-SYNC 1.2: Also check post_production_projects JSON deliverables
     try {
-      const { data: allProjects } = await supabaseAdmin
+      const { data: allProjects } = await getDbClient()
         .from('post_production_projects')
         .select('id, client_id, deliverables');
 
       if (allProjects && allProjects.length > 0) {
         const clientIds = [...new Set(allProjects.map((p: any) => p.client_id).filter(Boolean))];
-        const { data: clients } = await supabaseAdmin
+        const { data: clients } = await getDbClient()
           .from('workspace_clients')
           .select('id, name')
           .in('id', clientIds);
@@ -481,7 +486,7 @@ export async function fetchVendorAlbumOrders(
 
     // AUTO-SYNC 2: Check fw_assignments and crew_assignments_finance for Shoots assigned to this member
     try {
-      const { data: assignments } = await supabaseAdmin
+      const { data: assignments } = await getDbClient()
         .from('fw_assignments')
         .select('*')
         .eq('assigned_member_id', vendorId);
@@ -493,10 +498,10 @@ export async function fetchVendorAlbumOrders(
 
         const [subEventsRes, projectsRes] = await Promise.all([
           subEventIds.length > 0
-            ? supabaseAdmin.from('fw_sub_events').select('id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h, start_time, end_time').in('id', subEventIds)
+            ? getDbClient().from('fw_sub_events').select('id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h, start_time, end_time').in('id', subEventIds)
             : Promise.resolve({ data: [] }),
           projectIds.length > 0
-            ? supabaseAdmin.from('fw_projects').select('id, client_name, main_date, main_venue').in('id', projectIds)
+            ? getDbClient().from('fw_projects').select('id, client_name, main_date, main_venue').in('id', projectIds)
             : Promise.resolve({ data: [] })
         ]);
 
@@ -591,7 +596,7 @@ export async function fetchVendorAlbumOrders(
             };
 
             try {
-              await supabaseAdmin.from('partner_album_orders').upsert(shootOrder);
+              await getDbClient().from('partner_album_orders').upsert(shootOrder);
             } catch (err) {
               console.warn('[vendorDeliverablesService] Upsert shoot error:', err);
             }
@@ -606,7 +611,7 @@ export async function fetchVendorAlbumOrders(
 
     // AUTO-SYNC 3: Check team_event_payouts for any shoot payouts recorded for this member
     try {
-      const { data: payouts } = await supabaseAdmin
+      const { data: payouts } = await getDbClient()
         .from('team_event_payouts')
         .select('*')
         .eq('member_id', vendorId);
@@ -682,7 +687,7 @@ export async function fetchVendorAlbumOrders(
             };
 
             try {
-              await supabaseAdmin.from('partner_album_orders').upsert(shootOrder);
+              await getDbClient().from('partner_album_orders').upsert(shootOrder);
             } catch (err) {
               console.warn('[vendorDeliverablesService] Upsert shoot payout error:', err);
             }
@@ -774,12 +779,12 @@ export async function saveVendorAlbumOrder(
   };
 
   try {
-    await supabaseAdmin.from('partner_album_orders').upsert(payload);
+    await getDbClient().from('partner_album_orders').upsert(payload);
 
     // BI-DIRECTIONAL SYNC: If deliverable_id exists, sync back to post_production_deliverables
     const effectiveDelivId = payload.deliverable_id || (payload.id?.startsWith('order_deliv_') ? payload.id.replace('order_', '') : (payload.id?.startsWith('deliv_') ? payload.id : ''));
     if (effectiveDelivId) {
-      await supabaseAdmin
+      await getDbClient()
         .from('post_production_deliverables')
         .update({
           title: payload.item_title || payload.album_type,
@@ -800,7 +805,7 @@ export async function saveVendorAlbumOrder(
 
     // BI-DIRECTIONAL SYNC: If assignment_id exists, sync amounts to fw_assignments
     if (payload.assignment_id) {
-      await supabaseAdmin
+      await getDbClient()
         .from('fw_assignments')
         .update({
           agreed_amount: payload.total_amount,
@@ -816,7 +821,7 @@ export async function saveVendorAlbumOrder(
 
     // BI-DIRECTIONAL SYNC: If payout_id exists, sync amounts to team_event_payouts
     if (payload.payout_id) {
-      await supabaseAdmin
+      await getDbClient()
         .from('team_event_payouts')
         .update({
           agreed_amount: payload.total_amount,
@@ -852,7 +857,7 @@ export async function saveVendorAlbumOrder(
  */
 export async function deleteVendorAlbumOrder(orderId: string): Promise<boolean> {
   try {
-    const { error } = await supabaseAdmin
+    const { error } = await getDbClient()
       .from('partner_album_orders')
       .delete()
       .or(`id.eq.${orderId},deliverable_id.eq.${orderId}`);
@@ -864,7 +869,7 @@ export async function deleteVendorAlbumOrder(orderId: string): Promise<boolean> 
     const delivId = orderId.startsWith('order_deliv_') ? orderId.replace('order_', '') : (orderId.startsWith('deliv_') ? orderId : '');
     if (delivId) {
       try {
-        await supabaseAdmin.from('post_production_deliverables').delete().eq('id', delivId);
+        await getDbClient().from('post_production_deliverables').delete().eq('id', delivId);
       } catch (_) {}
     }
 
@@ -897,7 +902,7 @@ export async function addVendorOrderComment(
   }
 ): Promise<VendorAlbumOrder | null> {
   try {
-    let { data: order } = await supabaseAdmin
+    let { data: order } = await getDbClient()
       .from('partner_album_orders')
       .select('*')
       .eq('id', orderId)
@@ -906,7 +911,7 @@ export async function addVendorOrderComment(
     const cleanDelivId = orderId.replace('order_', '');
 
     if (!order) {
-      const { data: byDeliv } = await supabaseAdmin
+      const { data: byDeliv } = await getDbClient()
         .from('partner_album_orders')
         .select('*')
         .or(`deliverable_id.eq.${orderId},deliverable_id.eq.${cleanDelivId},id.eq.order_${cleanDelivId},id.eq.deliv_${cleanDelivId}`)
@@ -916,7 +921,7 @@ export async function addVendorOrderComment(
 
     if (!order) {
       // Check post_production_deliverables if this order originates from a deliverable
-      const { data: ppDeliv } = await supabaseAdmin
+      const { data: ppDeliv } = await getDbClient()
         .from('post_production_deliverables')
         .select('*')
         .or(`id.eq.${orderId},id.eq.${cleanDelivId}`)
@@ -955,7 +960,7 @@ export async function addVendorOrderComment(
         order_date: new Date().toISOString().split('T')[0],
         comments: Array.isArray(ppDeliv?.comments) ? ppDeliv.comments : []
       };
-      const { data: inserted } = await supabaseAdmin
+      const { data: inserted } = await getDbClient()
         .from('partner_album_orders')
         .insert(placeholder)
         .select()
@@ -979,7 +984,7 @@ export async function addVendorOrderComment(
 
     const updatedComments = [...existingComments, newComment];
 
-    const { data: updated, error } = await supabaseAdmin
+    const { data: updated, error } = await getDbClient()
       .from('partner_album_orders')
       .update({
         comments: updatedComments,
@@ -998,7 +1003,7 @@ export async function addVendorOrderComment(
         const catTag = orderCat === 'video_editing' ? 'Video Editing' : orderCat === 'photo_editing' ? 'Photo Editing' : orderCat === 'shoot' ? 'Shoot' : orderCat === 'album_printing' ? 'Album Printing' : 'Album';
         const taskName = order.event_name || order.item_title || order.album_type || 'Task';
         const remTitle = `[${catTag}] Reminder for ${order.client_name} (${taskName}): ${comment.text}`;
-        await supabaseAdmin.from('post_production_reminders').insert([{
+        await getDbClient().from('post_production_reminders').insert([{
           workspace_id: order.workspace_id || comment.workspace_id || 'ws_default',
           deliverable_id: order.deliverable_id || order.id,
           project_id: order.project_id || comment.project_id || null,
@@ -1013,7 +1018,7 @@ export async function addVendorOrderComment(
     const effectiveDelivId = order.deliverable_id || (order.id?.startsWith('order_deliv_') ? order.id.replace('order_', '') : (order.id?.startsWith('deliv_') ? order.id : ''));
     if (effectiveDelivId) {
       try {
-        await supabaseAdmin
+        await getDbClient()
           .from('post_production_deliverables')
           .update({
             comments: updatedComments,
@@ -1027,7 +1032,7 @@ export async function addVendorOrderComment(
     // Sync to post_production_projects deliverables array
     if (order.project_id) {
       try {
-        const { data: proj } = await supabaseAdmin
+        const { data: proj } = await getDbClient()
           .from('post_production_projects')
           .select('id, deliverables')
           .eq('id', order.project_id)
@@ -1042,7 +1047,7 @@ export async function addVendorOrderComment(
             return d;
           });
           if (changed) {
-            await supabaseAdmin
+            await getDbClient()
               .from('post_production_projects')
               .update({ deliverables: updatedList, updated_at: new Date().toISOString() })
               .eq('id', proj.id);

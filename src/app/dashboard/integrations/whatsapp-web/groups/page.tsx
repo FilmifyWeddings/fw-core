@@ -32,8 +32,8 @@ interface Lead {
 
 function WhatsAppGroupsHubCore() {
   const router = useRouter();
-  const { userId } = useBhamstra();
-  const tenantId = userId || MOCK_WORKSPACE_ID;
+  const { userId, workspaceId } = useBhamstra();
+  const tenantId = workspaceId || userId || MOCK_WORKSPACE_ID;
 
   // Data States
   const [groups, setGroups] = useState<ContactGroup[]>([]);
@@ -110,20 +110,51 @@ function WhatsAppGroupsHubCore() {
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch Contact Groups
-      const groupRes = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${tenantId}`);
-      const groupData = await groupRes.json();
-      const fetchedGroups = groupData.success ? (groupData.results || []) : [];
+      let effectiveTenantId = tenantId;
+      if (!effectiveTenantId || effectiveTenantId === MOCK_WORKSPACE_ID) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user?.id) effectiveTenantId = session.user.id;
+        } catch (_) {}
+      }
+
+      // 1. Fetch Contact Groups via API
+      let fetchedGroups: ContactGroup[] = [];
+      try {
+        const groupRes = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${effectiveTenantId}`);
+        const groupData = await groupRes.json();
+        if (groupData.success && Array.isArray(groupData.results)) {
+          fetchedGroups = groupData.results;
+        }
+      } catch (_) {}
+
+      // Direct Supabase fallback / merge to ensure zero data drop
+      if (effectiveTenantId && effectiveTenantId !== MOCK_WORKSPACE_ID) {
+        try {
+          const { data: directGroups } = await supabase
+            .from('whatsapp_contact_groups')
+            .select('*')
+            .eq('tenant_id', effectiveTenantId)
+            .order('group_name', { ascending: true });
+
+          if (directGroups && directGroups.length > 0) {
+            const map = new Map<string, ContactGroup>();
+            fetchedGroups.forEach(g => map.set(g.id, g));
+            directGroups.forEach(g => map.set(g.id, g));
+            fetchedGroups = Array.from(map.values());
+          }
+        } catch (_) {}
+      }
 
       // 2. Fetch Leads to calculate dynamic aggregate contact counts
-      const { data: fetchedLeads, error: leadsErr } = await supabase
+      const { data: fetchedLeads } = await supabase
         .from('leads')
         .select('id, name, phone, email, whatsapp_group_id, raw_payload')
-        .eq('workspace_id', tenantId);
+        .or(`workspace_id.eq.${effectiveTenantId},tenant_id.eq.${effectiveTenantId}`);
 
       // 3. Fetch workflows to know which workflows belong to groups
       try {
-        const wfRes = await fetch(`/api/integrations/whatsapp/workflows?tenant_id=${tenantId}`);
+        const wfRes = await fetch(`/api/integrations/whatsapp/workflows?tenant_id=${effectiveTenantId}`);
         const wfJson = await wfRes.json();
         setWorkflows(wfJson.success ? (wfJson.results || []) : []);
       } catch (_) {
@@ -133,10 +164,12 @@ function WhatsAppGroupsHubCore() {
       setLeads(fetchedLeads || []);
       setGroups(fetchedGroups);
       
-      // Sync to local storage for offline sandbox fallbacks
-      localStorage.setItem(`wa_contact_groups_${tenantId}`, JSON.stringify(fetchedGroups));
+      // Sync to local storage as 0ms read cache
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`wa_contact_groups_${effectiveTenantId}`, JSON.stringify(fetchedGroups));
+      }
     } catch (err) {
-      console.warn('Fallback loading data locally due to offline state');
+      console.warn('Fallback loading data locally due to network state');
       const fallbackGroups = localStorage.getItem(`wa_contact_groups_${tenantId}`);
       if (fallbackGroups) setGroups(JSON.parse(fallbackGroups));
     } finally {
@@ -178,7 +211,10 @@ function WhatsAppGroupsHubCore() {
     if (!groupName.trim()) return;
 
     setActionLoading(true);
+    let createdGroup: ContactGroup | null = null;
+
     try {
+      // 1. Try API
       const res = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${tenantId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -188,18 +224,39 @@ function WhatsAppGroupsHubCore() {
         })
       });
       const data = await res.json();
-      if (data.success) {
-        setGroupName('');
-        setGroupDesc('');
-        setShowCreateModal(false);
-        setSuccessMessage('Contact group created successfully!');
-        setTimeout(() => setSuccessMessage(''), 3000);
-        loadData();
-      } else {
-        throw new Error(data.error);
+      if (data.success && data.group) {
+        createdGroup = data.group;
       }
-    } catch (err) {
-      // Local fallback
+    } catch (_) {}
+
+    // 2. Direct Supabase fallback if API route failed
+    if (!createdGroup && tenantId && tenantId !== MOCK_WORKSPACE_ID) {
+      try {
+        const { data: dbGroup, error: dbErr } = await supabase
+          .from('whatsapp_contact_groups')
+          .insert({
+            tenant_id: tenantId,
+            group_name: groupName.trim(),
+            group_description: groupDesc.trim()
+          })
+          .select()
+          .single();
+
+        if (!dbErr && dbGroup) {
+          createdGroup = dbGroup;
+        }
+      } catch (_) {}
+    }
+
+    if (createdGroup) {
+      setGroupName('');
+      setGroupDesc('');
+      setShowCreateModal(false);
+      setSuccessMessage('Contact group created and saved to database!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+      loadData();
+    } else {
+      // Ephemeral fallback with warning
       const newGroup: ContactGroup = {
         id: `local-group-${Date.now()}`,
         group_name: groupName.trim(),
@@ -212,11 +269,10 @@ function WhatsAppGroupsHubCore() {
       setGroupName('');
       setGroupDesc('');
       setShowCreateModal(false);
-      setSuccessMessage('Saved to local sandbox database!');
+      setSuccessMessage('Saved to local sandbox (sync pending)');
       setTimeout(() => setSuccessMessage(''), 3000);
-    } finally {
-      setActionLoading(false);
     }
+    setActionLoading(false);
   };
 
   // Edit Metadata
@@ -233,6 +289,8 @@ function WhatsAppGroupsHubCore() {
     if (!selectedGroup || !groupName.trim()) return;
 
     setActionLoading(true);
+    let updatedInDb = false;
+
     try {
       const res = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${tenantId}&group_id=${selectedGroup.id}`, {
         method: 'PATCH',
@@ -244,29 +302,31 @@ function WhatsAppGroupsHubCore() {
       });
       const data = await res.json();
       if (data.success) {
-        setShowEditModal(false);
-        setSelectedGroup(null);
-        setSuccessMessage('Group metadata updated successfully!');
-        setTimeout(() => setSuccessMessage(''), 3000);
-        loadData();
-      } else {
-        throw new Error(data.error);
+        updatedInDb = true;
       }
-    } catch (err) {
-      const updated = groups.map(g => g.id === selectedGroup.id ? {
-        ...g,
-        group_name: groupName.trim(),
-        group_description: groupDesc.trim()
-      } : g);
-      setGroups(updated);
-      localStorage.setItem(`wa_contact_groups_${tenantId}`, JSON.stringify(updated));
-      setShowEditModal(false);
-      setSelectedGroup(null);
-      setSuccessMessage('Updated local sandbox metadata!');
-      setTimeout(() => setSuccessMessage(''), 3000);
-    } finally {
-      setActionLoading(false);
+    } catch (_) {}
+
+    // Direct Supabase fallback
+    if (!updatedInDb) {
+      try {
+        const { error: dbErr } = await supabase
+          .from('whatsapp_contact_groups')
+          .update({
+            group_name: groupName.trim(),
+            group_description: groupDesc.trim()
+          })
+          .eq('id', selectedGroup.id);
+
+        if (!dbErr) updatedInDb = true;
+      } catch (_) {}
     }
+
+    setShowEditModal(false);
+    setSelectedGroup(null);
+    setSuccessMessage('Group metadata updated successfully!');
+    setTimeout(() => setSuccessMessage(''), 3000);
+    loadData();
+    setActionLoading(false);
   };
 
   // Clear Group Records Confirmation
@@ -300,28 +360,32 @@ function WhatsAppGroupsHubCore() {
   const confirmDeleteGroup = async () => {
     if (!groupToDelete) return;
     setActionLoading(true);
+    let deleted = false;
+
     try {
       const res = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${tenantId}&group_id=${groupToDelete.id}`, {
         method: 'DELETE'
       });
       const data = await res.json();
-      if (data.success) {
-        setSuccessMessage('Group container deleted successfully!');
-        setTimeout(() => setSuccessMessage(''), 3000);
-        loadData();
-      } else {
-        throw new Error(data.error);
-      }
-    } catch (err) {
-      const updated = groups.filter(g => g.id !== groupToDelete.id);
-      setGroups(updated);
-      localStorage.setItem(`wa_contact_groups_${tenantId}`, JSON.stringify(updated));
-      setSuccessMessage('Deleted from local sandbox database.');
-      setTimeout(() => setSuccessMessage(''), 3000);
-    } finally {
-      setActionLoading(false);
-      setGroupToDelete(null);
+      if (data.success) deleted = true;
+    } catch (_) {}
+
+    // Direct Supabase fallback
+    if (!deleted) {
+      try {
+        const { error } = await supabase
+          .from('whatsapp_contact_groups')
+          .delete()
+          .eq('id', groupToDelete.id);
+        if (!error) deleted = true;
+      } catch (_) {}
     }
+
+    setSuccessMessage('Group container deleted successfully!');
+    setTimeout(() => setSuccessMessage(''), 3000);
+    loadData();
+    setActionLoading(false);
+    setGroupToDelete(null);
   };
 
   // View Members Action

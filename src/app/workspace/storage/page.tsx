@@ -873,24 +873,34 @@ export default function StorageHubPage() {
     if (!targetProject) return;
 
     const currentIds = getProjectAssignedDiskIds(targetProject);
-    const nextIds = currentIds.includes(diskId)
-      ? currentIds.filter(id => id !== diskId)
-      : [...currentIds, diskId];
+    const isAdding = !currentIds.includes(diskId);
+    const nextIds = isAdding
+      ? [...currentIds, diskId]
+      : currentIds.filter(id => id !== diskId);
 
-    const primaryDisk = disks.find(d => nextIds.includes(d.id));
-
-    // Update disk references on folders if applicable
-    const updatedDisks = (targetProject.assigned_disks || []).map(f => {
-      if ((!f.disk_id || f.disk_id === diskId) && primaryDisk) {
-        return { 
-          ...f, 
-          disk_id: primaryDisk.id, 
-          disk_name: primaryDisk.disk_name, 
-          drive_type: primaryDisk.disk_type 
-        };
+    // Ensure assigned_disks array properly contains the disk allocation item
+    let updatedDisks = [...(targetProject.assigned_disks || [])];
+    if (isAdding) {
+      const diskObj = disks.find(d => d.id === diskId);
+      if (diskObj && !updatedDisks.some(d => d.disk_id === diskId)) {
+        updatedDisks.push({
+          id: `disk_assign_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          disk_id: diskObj.id,
+          disk_name: diskObj.disk_name,
+          drive_type: diskObj.disk_type || 'EXTERNAL_SSD',
+          label: `${targetProject.client_name} Footage`,
+          folder_name: targetProject.client_name,
+          folder_path: `${diskObj.drive_letter ? diskObj.drive_letter + ':/' : ''}${targetProject.client_name}`,
+          role: 'Raw Dump',
+          total_size_gb: 0,
+          file_count: 0,
+          photo_count: 0,
+          video_count: 0,
+        });
       }
-      return f;
-    });
+    } else {
+      updatedDisks = updatedDisks.filter(d => d.disk_id !== diskId);
+    }
 
     // Update notes safely to persist multi-assigned disk IDs
     let newNotes = targetProject.notes || '';
@@ -908,13 +918,26 @@ export default function StorageHubPage() {
     } : p));
 
     try {
-      await fetch('/api/storage/projects', {
+      const res = await fetch('/api/storage/projects', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: projectId, notes: newNotes, assigned_disks: updatedDisks })
       });
+      if (!res.ok) throw new Error('API PATCH failed');
     } catch (err) {
-      console.warn('Failed to update assigned disks:', err);
+      console.warn('API PATCH failed, persisting directly to Supabase:', err);
+      try {
+        await supabase
+          .from('storage_project_assets')
+          .update({
+            notes: newNotes,
+            assigned_disks: updatedDisks,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', projectId);
+      } catch (dbErr) {
+        console.error('Direct Supabase update failed:', dbErr);
+      }
     }
   };
 

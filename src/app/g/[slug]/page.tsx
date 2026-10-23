@@ -744,6 +744,19 @@ function GuestSlugGalleryContent() {
     } catch (_) {}
   }, [selectedForAlbum, gallery?.id, isSelectionMode]);
 
+  // Real-time debounced auto-sync to backend (guaranteed persistence across devices/tabs)
+  useEffect(() => {
+    if (!gallery?.id || !isSelectionMode) return;
+    const effectiveEmail = selectorEmail || guestSavedSession?.email || (gallery as any)?.client_email || 'guest@gallery.local';
+    const effectiveName = selectorName || guestSavedSession?.name || 'Guest Client';
+
+    const timer = setTimeout(() => {
+      syncSelectionToBackend(selectedForAlbum, effectiveName, effectiveEmail);
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [selectedForAlbum, gallery?.id, isSelectionMode, selectorEmail, selectorName, guestSavedSession, syncSelectionToBackend]);
+
   const displayedPhotos = useMemo(() => {
     let list = isPrivilegedMode && isUnlocked
       ? displayedPrivilegedPhotos
