@@ -59,6 +59,7 @@ import {
   getRoleShortCode 
 } from '@/lib/workspace-settings';
 import CrewRolesSettings from '@/app/workspace/settings/components/CrewRolesSettings';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import PostProductionSettingsTab from '@/app/workspace/settings/components/PostProductionSettingsTab';
 
 function InstagramIcon({ className = "w-4 h-4" }: { className?: string }) {
@@ -321,12 +322,14 @@ const SETTINGS_NAV_ITEMS: {
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { workspaceId: contextWsId, userId } = useWorkspace();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [navSearch, setNavSearch] = useState('');
   const [loading, setLoading] = useState(() => !memCachedHasLoadedSettings);
   const [saving, setSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState('');
+  const effectiveWsId = workspaceId || contextWsId || userId || '';
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
 
   // Profile Settings States
@@ -1247,16 +1250,45 @@ export default function SettingsPage() {
   // Live 2-way sync: Refresh event types on any cross-module update
   useEffect(() => {
     const handleEventsUpdated = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const wId = session?.user?.id || workspaceId;
-      if (wId) {
-        const ev = await fetchWorkspaceEventTypes(wId);
-        if (ev && ev.length > 0) setEventTypes(ev);
+      const targetWs = effectiveWsId || workspaceId;
+      if (targetWs) {
+        const ev = await fetchWorkspaceEventTypes(targetWs);
+        if (ev && ev.length > 0) {
+          setEventTypes(ev);
+          memCachedEventTypes = ev;
+        }
       }
     };
     window.addEventListener('workspace_event_types_updated', handleEventsUpdated);
     return () => window.removeEventListener('workspace_event_types_updated', handleEventsUpdated);
-  }, [workspaceId]);
+  }, [effectiveWsId, workspaceId]);
+
+  // Realtime multi-device synchronization via Supabase Realtime Channel
+  useEffect(() => {
+    const targetWs = effectiveWsId || workspaceId;
+    if (!targetWs) return;
+
+    const channel = supabase.channel(`studio_settings_sync_${targetWs}`)
+      .on('broadcast', { event: 'events_changed' }, async () => {
+        const ev = await fetchWorkspaceEventTypes(targetWs);
+        if (ev && ev.length > 0) {
+          setEventTypes(ev);
+          memCachedEventTypes = ev;
+        }
+      })
+      .on('broadcast', { event: 'roles_changed' }, async () => {
+        const cr = await fetchWorkspaceCrewRoles(targetWs);
+        if (cr && cr.length > 0) {
+          setCrewRoles(cr);
+          memCachedCrewRoles = cr;
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [effectiveWsId, workspaceId]);
 
   // Save Settings Handler
   const handleSaveSettings = async () => {
@@ -2265,7 +2297,7 @@ export default function SettingsPage() {
                       <Sparkles className="w-5 h-5" />
                     </div>
                     <div>
-                      <h2 className="text-lg font-extrabold text-amber-950">Functions & Wedding Events Settings</h2>
+                      <h2 className="text-lg font-extrabold text-amber-950">Functions &amp; Wedding Events Settings</h2>
                       <p className="text-xs font-medium text-zinc-500">
                         Manage standardized wedding event names. Synced automatically across Quotations and Team Manager.
                       </p>
@@ -2298,12 +2330,22 @@ export default function SettingsPage() {
                       onKeyDown={async e => {
                         if (e.key === 'Enter' && newEventName.trim()) {
                           const clean = newEventName.trim();
-                          const created = await saveWorkspaceEventType(workspaceId, clean, 'General');
-                          if (created) {
-                            setEventTypes(prev => [...prev.filter(ev => ev.name.toLowerCase() !== clean.toLowerCase()), created]);
-                            setNewEventName('');
-                            setSaveToast(`Function "${clean}" added & synced!`);
-                            setTimeout(() => setSaveToast(null), 3000);
+                          if (eventTypes.some(ev => ev.name.toLowerCase() === clean.toLowerCase())) {
+                            alert(`The function "${clean}" already exists in your workspace.`);
+                            return;
+                          }
+                          const targetWs = effectiveWsId || workspaceId;
+                          try {
+                            const created = await saveWorkspaceEventType(targetWs, clean, 'General');
+                            if (created) {
+                              setEventTypes(prev => [...prev.filter(ev => ev.name.toLowerCase() !== clean.toLowerCase()), created]);
+                              memCachedEventTypes = [...memCachedEventTypes.filter(ev => ev.name.toLowerCase() !== clean.toLowerCase()), created];
+                              setNewEventName('');
+                              setSaveToast(`Function "${clean}" added & synced live!`);
+                              setTimeout(() => setSaveToast(null), 3000);
+                            }
+                          } catch (err: any) {
+                            alert(err.message || 'Failed to add function');
                           }
                         }
                       }}
@@ -2314,12 +2356,22 @@ export default function SettingsPage() {
                       onClick={async () => {
                         if (!newEventName.trim()) return;
                         const clean = newEventName.trim();
-                        const created = await saveWorkspaceEventType(workspaceId, clean, 'General');
-                        if (created) {
-                          setEventTypes(prev => [...prev.filter(ev => ev.name.toLowerCase() !== clean.toLowerCase()), created]);
-                          setNewEventName('');
-                          setSaveToast(`Function "${clean}" added & synced!`);
-                          setTimeout(() => setSaveToast(null), 3000);
+                        if (eventTypes.some(ev => ev.name.toLowerCase() === clean.toLowerCase())) {
+                          alert(`The function "${clean}" already exists in your workspace.`);
+                          return;
+                        }
+                        const targetWs = effectiveWsId || workspaceId;
+                        try {
+                          const created = await saveWorkspaceEventType(targetWs, clean, 'General');
+                          if (created) {
+                            setEventTypes(prev => [...prev.filter(ev => ev.name.toLowerCase() !== clean.toLowerCase()), created]);
+                            memCachedEventTypes = [...memCachedEventTypes.filter(ev => ev.name.toLowerCase() !== clean.toLowerCase()), created];
+                            setNewEventName('');
+                            setSaveToast(`Function "${clean}" added & synced live!`);
+                            setTimeout(() => setSaveToast(null), 3000);
+                          }
+                        } catch (err: any) {
+                          alert(err.message || 'Failed to add function');
                         }
                       }}
                       className="w-full sm:w-auto px-6 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-extrabold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
@@ -2330,7 +2382,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Event Types List */}
+                {/* Event Types List (Clean View, Subtitle Removed) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
                   {eventTypes
                     .filter(e => e.name.toLowerCase().includes(eventSearch.toLowerCase()))
@@ -2339,15 +2391,14 @@ export default function SettingsPage() {
                         key={item.id}
                         className="flex items-center justify-between p-3.5 bg-white border border-amber-200/90 rounded-xl shadow-2xs hover:border-slate-300 transition group"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <span className="text-xs font-black text-amber-950 block truncate">{item.name}</span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.category || 'General'}</span>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
                           {item.is_default && (
                             <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 bg-amber-50 text-zinc-500 rounded-md">
                               Default
@@ -2368,8 +2419,10 @@ export default function SettingsPage() {
                             type="button"
                             onClick={async () => {
                               if (!confirm(`Delete function "${item.name}"?`)) return;
-                              await deleteWorkspaceEventType(item.id, workspaceId, item.name);
+                              const targetWs = effectiveWsId || workspaceId;
+                              await deleteWorkspaceEventType(item.id, targetWs, item.name);
                               setEventTypes(prev => prev.filter(e => e.id !== item.id && e.name.toLowerCase() !== item.name.toLowerCase()));
+                              memCachedEventTypes = memCachedEventTypes.filter(e => e.id !== item.id && e.name.toLowerCase() !== item.name.toLowerCase());
                               setSaveToast(`Function "${item.name}" removed`);
                               setTimeout(() => setSaveToast(null), 3000);
                             }}
@@ -2414,11 +2467,21 @@ export default function SettingsPage() {
                           onClick={async () => {
                             if (!editFunctionName.trim()) return;
                             const clean = editFunctionName.trim();
-                            const updated = await updateWorkspaceEventType(editingFunction.id, clean, editingFunction.category, workspaceId);
-                            if (updated) {
-                              setEventTypes(prev => prev.map(ev => ev.id === editingFunction.id ? { ...ev, name: clean } : ev));
-                              setSaveToast(`Function updated to "${clean}"!`);
-                              setTimeout(() => setSaveToast(null), 3000);
+                            if (eventTypes.some(ev => ev.id !== editingFunction.id && ev.name.toLowerCase() === clean.toLowerCase())) {
+                              alert(`Another function named "${clean}" already exists.`);
+                              return;
+                            }
+                            const targetWs = effectiveWsId || workspaceId;
+                            try {
+                              const updated = await updateWorkspaceEventType(editingFunction.id, clean, editingFunction.category, targetWs);
+                              if (updated) {
+                                setEventTypes(prev => prev.map(ev => ev.id === editingFunction.id ? { ...ev, name: clean } : ev));
+                                memCachedEventTypes = memCachedEventTypes.map(ev => ev.id === editingFunction.id ? { ...ev, name: clean } : ev);
+                                setSaveToast(`Function updated to "${clean}"!`);
+                                setTimeout(() => setSaveToast(null), 3000);
+                              }
+                            } catch (err: any) {
+                              alert(err.message || 'Failed to update function');
                             }
                             setEditingFunction(null);
                           }}
@@ -2436,13 +2499,16 @@ export default function SettingsPage() {
             {/* 1.6 CREW ROLES & SHORT CODES SETTINGS */}
             {activeTab === 'crew_roles' && (
               <CrewRolesSettings
-                workspaceId={workspaceId}
+                workspaceId={effectiveWsId || workspaceId}
                 crewRoles={crewRoles}
                 loading={loadingCrewRoles}
-                onRolesChange={setCrewRoles}
+                onRolesChange={(newRoles) => {
+                  setCrewRoles(newRoles);
+                  memCachedCrewRoles = newRoles;
+                }}
                 onShowToast={(msg) => {
                   setSaveToast(msg);
-                  setTimeout(() => setSaveToast(null), 3000);
+                  setTimeout(() => setSaveToast(null), 3500);
                 }}
               />
             )}

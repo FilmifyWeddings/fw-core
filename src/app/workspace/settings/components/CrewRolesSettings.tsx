@@ -49,6 +49,10 @@ export default function CrewRolesSettings({
       onShowToast(`Crew Role "${cleanName}" already exists!`);
       return;
     }
+    if (crewRoles.some(r => r.short_code.toUpperCase() === cleanCode)) {
+      onShowToast(`Short code "${cleanCode}" is already in use by role "${crewRoles.find(r => r.short_code.toUpperCase() === cleanCode)?.name}"!`);
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -59,6 +63,8 @@ export default function CrewRolesSettings({
         setNewRoleCode('');
         onShowToast(`Crew Role "${cleanName} (${cleanCode})" added & synced!`);
       }
+    } catch (err: any) {
+      onShowToast(err.message || 'Failed to add role');
     } finally {
       setIsSubmitting(false);
     }
@@ -70,12 +76,29 @@ export default function CrewRolesSettings({
     const cleanName = editRoleName.trim();
     const cleanCode = (editRoleCode.trim() || getRoleShortCode(cleanName)).toUpperCase();
 
+    if (editingCrewRole.is_default || isCoreDefaultRole(editingCrewRole.name)) {
+      onShowToast(`"${editingCrewRole.name}" is a core permanent studio role and cannot be modified.`);
+      setEditingCrewRole(null);
+      return;
+    }
+
+    if (crewRoles.some(r => r.id !== editingCrewRole.id && r.name.toLowerCase() === cleanName.toLowerCase())) {
+      onShowToast(`Another crew role named "${cleanName}" already exists!`);
+      return;
+    }
+    if (crewRoles.some(r => r.id !== editingCrewRole.id && r.short_code.toUpperCase() === cleanCode)) {
+      onShowToast(`Short code "${cleanCode}" is already in use by role "${crewRoles.find(r => r.id !== editingCrewRole.id && r.short_code.toUpperCase() === cleanCode)?.name}"!`);
+      return;
+    }
+
     try {
-      const updated = await updateWorkspaceCrewRole(editingCrewRole.id, cleanName, cleanCode, editingCrewRole.category);
+      const updated = await updateWorkspaceCrewRole(editingCrewRole.id, cleanName, cleanCode, editingCrewRole.category, workspaceId);
       if (updated) {
         onRolesChange(crewRoles.map(r => r.id === editingCrewRole.id ? updated : r));
         onShowToast(`Role updated to "${cleanName} (${cleanCode})"`);
       }
+    } catch (err: any) {
+      onShowToast(err.message || 'Failed to update role');
     } finally {
       setEditingCrewRole(null);
     }
@@ -83,26 +106,60 @@ export default function CrewRolesSettings({
 
   // Handle Delete Role
   const handleDeleteRole = async (item: WorkspaceCrewRole) => {
-    if (item.is_default || item.name.toLowerCase() === 'sales person') {
-      onShowToast(`"${item.name}" is a core default studio role and cannot be deleted.`);
+    if (item.is_default || isCoreDefaultRole(item.name)) {
+      onShowToast(`"${item.name}" is a core permanent studio role and cannot be deleted.`);
       return;
     }
 
     if (!confirm(`Delete crew role "${item.name}"?`)) return;
 
-    const success = await deleteWorkspaceCrewRole(item.id, workspaceId);
-    if (success) {
-      onRolesChange(crewRoles.filter(r => r.id !== item.id));
-      onShowToast(`Crew role "${item.name}" removed`);
+    try {
+      const success = await deleteWorkspaceCrewRole(item.id, workspaceId);
+      if (success) {
+        onRolesChange(crewRoles.filter(r => r.id !== item.id));
+        onShowToast(`Crew role "${item.name}" removed`);
+      }
+    } catch (err: any) {
+      onShowToast(err.message || 'Failed to delete role');
     }
   };
 
-  // Filtered unique list
-  const filteredRoles = Array.from(new Map(crewRoles.map(r => [r.name.toLowerCase().trim(), r])).values())
-    .filter(r => 
-      r.name.toLowerCase().includes(roleSearch.toLowerCase()) || 
-      r.short_code.toLowerCase().includes(roleSearch.toLowerCase())
-    );
+  // Core Default Lineup in exact requested order
+  const CORE_LINEUP_ORDER = [
+    'sales person',
+    'team manager',
+    'traditional photographer',
+    'traditional videographer',
+    'candid photographer',
+    'cinematographer',
+    'family photographer',
+    'assistant',
+  ];
+
+  const uniqueRolesMap = new Map<string, WorkspaceCrewRole>();
+  for (const r of crewRoles) {
+    const k = r.name.toLowerCase().trim();
+    if (!uniqueRolesMap.has(k)) {
+      uniqueRolesMap.set(k, r);
+    }
+  }
+
+  const sortedRoles = Array.from(uniqueRolesMap.values()).sort((a, b) => {
+    const aName = a.name.toLowerCase().trim();
+    const bName = b.name.toLowerCase().trim();
+    const aIdx = CORE_LINEUP_ORDER.indexOf(aName);
+    const bIdx = CORE_LINEUP_ORDER.indexOf(bName);
+
+    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+    if (aIdx !== -1) return -1;
+    if (bIdx !== -1) return 1;
+    return (a.display_order || 0) - (b.display_order || 0);
+  });
+
+  const filteredRoles = sortedRoles.filter(r => 
+    r.name.toLowerCase().includes(roleSearch.toLowerCase()) || 
+    r.short_code.toLowerCase().includes(roleSearch.toLowerCase())
+  );
 
   return (
     <div className="bg-[#FFFDF9] dark:bg-[#181614] border border-[#EAE5DA] dark:border-stone-800 rounded-2xl p-6 shadow-xs space-y-6">
@@ -184,54 +241,30 @@ export default function CrewRolesSettings({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
           {filteredRoles.map((item) => {
-            const isSalesPerson = item.name.toLowerCase() === 'sales person' || item.short_code.toUpperCase() === 'SP';
-            const isDefault = item.is_default || isSalesPerson;
+            const isSalesPerson = item.name.toLowerCase().trim() === 'sales person' || item.short_code.toUpperCase() === 'SP';
+            const isDefault = Boolean(item.is_default || isCoreDefaultRole(item.name));
 
             return (
               <div
                 key={item.id}
-                className={`flex items-center justify-between p-3.5 rounded-xl border shadow-2xs transition group ${
+                className={`relative flex items-center p-3.5 pr-20 rounded-xl border shadow-2xs transition group min-h-[68px] ${
                   isSalesPerson
                     ? 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/80 hover:border-amber-400'
                     : 'bg-white dark:bg-stone-900 border-[#EAE5DA] dark:border-stone-800 hover:border-amber-300 dark:hover:border-stone-700'
                 }`}
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shrink-0 border ${
-                      isSalesPerson
-                        ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800 shadow-xs'
-                        : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
-                    }`}
-                  >
-                    {item.short_code}
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-xs font-black text-slate-900 dark:text-stone-100 block truncate flex items-center gap-1.5">
-                      {item.name}
-                      {isSalesPerson && (
-                        <span className="text-[9px] font-black bg-amber-500 text-white px-1.5 py-0.2 rounded-md uppercase tracking-wider">
-                          CRM
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-400 dark:text-stone-500 uppercase tracking-wider">
-                      {item.category || (isSalesPerson ? 'Sales' : 'Crew')}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
+                {/* Top-Right Badge or Action Buttons */}
+                <div className="absolute top-2.5 right-2.5 shrink-0">
                   {isDefault ? (
                     <span
                       title="Core default role (Permanent)"
-                      className="px-2 py-0.5 text-[9px] font-black uppercase rounded-md bg-stone-100 dark:bg-stone-800 text-slate-500 dark:text-stone-400 border border-stone-200 dark:border-stone-700 flex items-center gap-1"
+                      className="px-2 py-0.5 text-[8.5px] font-black uppercase rounded-md bg-stone-100 dark:bg-stone-800 text-slate-500 dark:text-stone-400 border border-stone-200 dark:border-stone-700 flex items-center gap-1 shadow-2xs"
                     >
                       <Lock className="w-2.5 h-2.5" />
                       <span>Default</span>
                     </span>
                   ) : (
-                    <>
+                    <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => {
@@ -252,8 +285,26 @@ export default function CrewRolesSettings({
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
-                    </>
+                    </div>
                   )}
+                </div>
+
+                {/* Role Code & Full Name (Full Width, No Subtitle, No Truncation) */}
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div
+                    className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shrink-0 border ${
+                      isSalesPerson
+                        ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800 shadow-xs'
+                        : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+                    }`}
+                  >
+                    {item.short_code}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs font-black text-slate-900 dark:text-stone-100 block leading-tight break-words">
+                      {item.name}
+                    </span>
+                  </div>
                 </div>
               </div>
             );

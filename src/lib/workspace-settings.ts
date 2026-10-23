@@ -94,18 +94,43 @@ export const DEFAULT_EVENT_TYPES: WorkspaceEventType[] = [
 
 export const DEFAULT_CREW_ROLES: WorkspaceCrewRole[] = [
   { id: 'def_role_sp', name: 'Sales Person', short_code: 'SP', category: 'Sales', is_default: true, display_order: 1 },
-  { id: 'def_role_1', name: 'Team Manager', short_code: 'TM', category: 'Management', is_default: true, display_order: 2 },
-  { id: 'def_role_2', name: 'Traditional Photographer', short_code: 'TP', category: 'Photography', is_default: true, display_order: 3 },
-  { id: 'def_role_3', name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography', is_default: true, display_order: 4 },
-  { id: 'def_role_4', name: 'Candid Photographer', short_code: 'CP', category: 'Photography', is_default: true, display_order: 5 },
-  { id: 'def_role_5', name: 'Cinematographer', short_code: 'CV', category: 'Cinematography', is_default: true, display_order: 6 },
-  { id: 'def_role_6', name: 'Assistant', short_code: 'AS', category: 'Assistance', is_default: true, display_order: 7 },
-  { id: 'def_role_7', name: 'Drone Pilot', short_code: 'DP', category: 'Drone', is_default: true, display_order: 8 },
-  { id: 'def_role_8', name: 'Family Photographer', short_code: 'FP', category: 'Photography', is_default: true, display_order: 9 },
-  { id: 'def_role_9', name: 'Reels Creator', short_code: 'RC', category: 'Social Media', is_default: true, display_order: 10 },
-  { id: 'def_role_sc', name: 'Semi Cinematic', short_code: 'SC', category: 'Cinematography', is_default: true, display_order: 11 },
-  { id: 'def_role_ss', name: 'Semi Standard', short_code: 'SS', category: 'Cinematography', is_default: true, display_order: 12 },
+  { id: 'def_role_tm', name: 'Team Manager', short_code: 'TM', category: 'Management', is_default: true, display_order: 2 },
+  { id: 'def_role_tp', name: 'Traditional Photographer', short_code: 'TP', category: 'Photography', is_default: true, display_order: 3 },
+  { id: 'def_role_tv', name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography', is_default: true, display_order: 4 },
+  { id: 'def_role_cp', name: 'Candid Photographer', short_code: 'CP', category: 'Photography', is_default: true, display_order: 5 },
+  { id: 'def_role_cv', name: 'Cinematographer', short_code: 'CV', category: 'Cinematography', is_default: true, display_order: 6 },
+  { id: 'def_role_fp', name: 'Family Photographer', short_code: 'FP', category: 'Photography', is_default: true, display_order: 7 },
+  { id: 'def_role_as', name: 'Assistant', short_code: 'AS', category: 'Assistance', is_default: true, display_order: 8 },
 ];
+
+export const CORE_DEFAULT_ROLE_NAMES = [
+  'sales person',
+  'team manager',
+  'traditional photographer',
+  'traditional videographer',
+  'candid photographer',
+  'cinematographer',
+  'family photographer',
+  'assistant',
+];
+
+export function isCoreDefaultRole(roleName?: string | null): boolean {
+  if (!roleName) return false;
+  const clean = roleName.trim().toLowerCase();
+  return CORE_DEFAULT_ROLE_NAMES.includes(clean);
+}
+
+export function broadcastSettingsChange(wsId?: string, eventName: 'events_changed' | 'roles_changed' = 'events_changed') {
+  if (typeof window === 'undefined' || !wsId) return;
+  try {
+    const channel = supabase.channel('studio_settings_sync_' + wsId);
+    channel.send({
+      type: 'broadcast',
+      event: eventName,
+      payload: { timestamp: Date.now(), workspace_id: wsId }
+    }).catch(() => {});
+  } catch (_) {}
+}
 
 export const DEFAULT_QUOTATION_DELIVERABLES: WorkspaceQuotationDeliverable[] = [
   { id: 'deliv_1', title: '1 Teaser Video (1-2 Min)', category: 'Video', is_default: true, display_order: 1 },
@@ -474,6 +499,20 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
     if (isUuid(wsId)) {
+      // 0. Primary: Call dedicated server API route (bypasses browser RLS and handles auto-seeding)
+      try {
+        const res = await fetch(`/api/workspace/events?workspace_id=${wsId}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.events) && json.events.length > 0) {
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(json.events));
+            }
+            return json.events;
+          }
+        }
+      } catch (_) {}
+
       // 1. Try RPC first if available
       try {
         const { data: rpcData, error: rpcErr } = await supabase.rpc('get_workspace_event_types', {
@@ -485,8 +524,6 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
             localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(rpcData));
           }
           return rpcData;
-        } else if (rpcErr) {
-          console.warn('[WorkspaceSettings] RPC get_workspace_event_types note:', rpcErr.message);
         }
       } catch (_) {}
 
@@ -498,39 +535,11 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
         .order('display_order', { ascending: true })
         .order('name', { ascending: true });
 
-      if (error) {
-        console.error('[WorkspaceSettings] Supabase error fetching workspace_event_types:', error.message);
-      } else if (data) {
-        if (data.length > 0) {
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(data));
-          }
-          return data;
-        } else {
-          // Brand new workspace: Seed defaults into DB so they can be edited or deleted freely
-          const defaultInserts = DEFAULT_EVENT_TYPES.map((def, idx) => ({
-            workspace_id: wsId,
-            name: def.name,
-            category: def.category || 'Main Wedding',
-            is_default: true,
-            display_order: idx,
-            updated_at: new Date().toISOString()
-          }));
-          try {
-            const { data: seeded, error: seedErr } = await supabase
-              .from('workspace_event_types')
-              .insert(defaultInserts)
-              .select('*');
-            if (seedErr) {
-              console.warn('[WorkspaceSettings] Seed defaults note:', seedErr.message);
-            } else if (seeded && seeded.length > 0) {
-              if (typeof window !== 'undefined') {
-                localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(seeded));
-              }
-              return seeded;
-            }
-          } catch (_) {}
+      if (!error && data && data.length > 0) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(data));
         }
+        return data;
       }
     }
   } catch (err: any) {
@@ -578,44 +587,46 @@ export async function saveWorkspaceEventType(
   };
 
   try {
-    const payload: any = {
-      name: cleanName,
-      category: category || 'General',
-      is_default: false,
-      display_order: targetOrder,
-      updated_at: new Date().toISOString()
-    };
+    if (wsId) {
+      // 1. Try server API route
+      const res = await fetch('/api/workspace/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: wsId,
+          name: cleanName,
+          category,
+          display_order: targetOrder
+        })
+      });
 
-    if (isUuid(wsId)) {
-      payload.workspace_id = wsId;
-    }
-
-    const { data, error } = await supabase
-      .from('workspace_event_types')
-      .insert([payload])
-      .select()
-      .single();
-
-    if (!error && data) {
-      savedItem = data;
-    } else if (error) {
-      console.warn('[WorkspaceSettings] Supabase insert note (fallback check):', error.message);
-      if (isUuid(wsId)) {
-        const { data: existing } = await supabase
-          .from('workspace_event_types')
-          .select('*')
-          .eq('workspace_id', wsId)
-          .eq('name', cleanName)
-          .single();
-
-        if (existing) savedItem = existing;
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.event) {
+          savedItem = json.event;
+        }
+      } else if (res.status === 409) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `The function "${cleanName}" already exists.`);
+      } else {
+        const payload: any = {
+          name: cleanName,
+          category: category || 'General',
+          is_default: false,
+          display_order: targetOrder,
+          updated_at: new Date().toISOString()
+        };
+        if (isUuid(wsId)) payload.workspace_id = wsId;
+        const { data } = await supabase.from('workspace_event_types').insert([payload]).select().single();
+        if (data) savedItem = data;
       }
     }
   } catch (err: any) {
+    if (err?.message?.includes('already exists')) throw err;
     console.error('[WorkspaceSettings] Error saving workspace_event_type:', err?.message || err);
   }
 
-  // Update local cache
+  // Update local cache & dispatch realtime broadcast
   if (typeof window !== 'undefined' && wsId) {
     try {
       const local = localStorage.getItem(`wg_custom_event_types_${wsId}`);
@@ -625,6 +636,7 @@ export async function saveWorkspaceEventType(
       localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(filtered));
     } catch (_) {}
     window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+    broadcastSettingsChange(wsId, 'events_changed');
   }
 
   return savedItem;
@@ -654,27 +666,42 @@ export async function updateWorkspaceEventType(
 
   try {
     if (wsId) {
-      let query = supabase
-        .from('workspace_event_types')
-        .update({
+      const res = await fetch('/api/workspace/events', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: idOrName,
+          name: cleanNewName,
+          category,
+          workspace_id: wsId,
+          display_order: displayOrder
+        })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.event) updatedItem = json.event;
+      } else if (res.status === 409) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `Another function named "${cleanNewName}" already exists.`);
+      } else {
+        let query = supabase.from('workspace_event_types').update({
           name: cleanNewName,
           category,
           ...(typeof displayOrder === 'number' ? { display_order: displayOrder } : {}),
           updated_at: new Date().toISOString()
         });
-
-      if (idOrName.length > 20 && !idOrName.startsWith('def_') && !idOrName.startsWith('ev_')) {
-        query = query.eq('id', idOrName);
-      } else {
-        query = query.eq('workspace_id', wsId).eq('name', idOrName);
-      }
-
-      const { data, error } = await query.select().single();
-      if (!error && data) {
-        updatedItem = data;
+        if (idOrName.length > 20 && !idOrName.startsWith('def_') && !idOrName.startsWith('ev_')) {
+          query = query.eq('id', idOrName);
+        } else {
+          query = query.eq('workspace_id', wsId).eq('name', idOrName);
+        }
+        const { data } = await query.select().single();
+        if (data) updatedItem = data;
       }
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.message?.includes('already exists')) throw err;
     console.warn('[WorkspaceSettings] Error updating workspace_event_type:', err);
   }
 
@@ -694,6 +721,7 @@ export async function updateWorkspaceEventType(
       }
     } catch (_) {}
     window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+    broadcastSettingsChange(wsId, 'events_changed');
   }
 
   return updatedItem;
@@ -707,12 +735,17 @@ export async function deleteWorkspaceEventType(
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
     if (wsId) {
+      try {
+        await fetch(`/api/workspace/events?id=${id}&workspace_id=${wsId}&name=${encodeURIComponent(name || '')}`, {
+          method: 'DELETE'
+        });
+      } catch (_) {}
+
+      // Fallback
       if (id && id.length > 20 && !id.startsWith('def_') && !id.startsWith('ev_')) {
         await supabase.from('workspace_event_types').delete().eq('id', id);
       } else if (name) {
         await supabase.from('workspace_event_types').delete().eq('workspace_id', wsId).eq('name', name);
-      } else {
-        await supabase.from('workspace_event_types').delete().or(`id.eq.${id},name.eq.${name || ''}`);
       }
 
       if (typeof window !== 'undefined') {
@@ -727,6 +760,7 @@ export async function deleteWorkspaceEventType(
           }
         } catch (_) {}
         window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+        broadcastSettingsChange(wsId, 'events_changed');
       }
     }
     return true;
@@ -736,9 +770,6 @@ export async function deleteWorkspaceEventType(
   }
 }
 
-/**
- * Batch update and persist entire event list in exact order
- */
 export async function saveAllWorkspaceEventTypes(
   workspaceId: string | undefined,
   events: string[]
@@ -793,7 +824,18 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string, userId?: str
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
     if (wsId) {
-      // 1. Primary: Call DB RPC Function to get or auto-seed defaults per-workspace
+      // 0. Primary: Call dedicated server API route
+      try {
+        const res = await fetch(`/api/workspace/crew-roles?workspace_id=${wsId}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.roles) && json.roles.length > 0) {
+            return deduplicateCrewRoles(json.roles);
+          }
+        }
+      } catch (_) {}
+
+      // 1. Primary DB RPC Function
       try {
         const { data: rpcData, error: rpcErr } = await supabase.rpc('get_workspace_crew_roles', {
           target_ws_id: wsId,
@@ -816,94 +858,93 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string, userId?: str
         return deduplicateCrewRoles(data);
       }
 
-      // 3. If brand new workspace with 0 roles in DB, seed the default roles directly with harmonized codes
-      const defaultSeed = [
-        { name: 'Sales Person', short_code: 'SP', category: 'Sales' },
-        { name: 'Team Manager', short_code: 'TM', category: 'Management' },
-        { name: 'Candid Photographer', short_code: 'CP', category: 'Photography' },
-        { name: 'Cinematographer', short_code: 'CV', category: 'Cinematography' },
-        { name: 'Traditional Photographer', short_code: 'TP', category: 'Photography' },
-        { name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography' },
-        { name: 'Assistant', short_code: 'AS', category: 'Assistance' },
-        { name: 'Drone Pilot', short_code: 'DP', category: 'Drone' },
-        { name: 'Family Photographer', short_code: 'FP', category: 'Photography' },
-        { name: 'Semi Cinematic', short_code: 'SC', category: 'Cinematography' },
-        { name: 'Semi Standard', short_code: 'SS', category: 'Cinematography' },
-      ];
-
-      const seedPayload = defaultSeed.map((role) => ({
-        workspace_id: wsId,
-        created_by: userId || wsId,
-        name: role.name,
-        short_code: role.short_code,
-        is_customized: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }));
-
-      const { data: seeded, error: seedErr } = await supabase
-        .from('master_crew_roles')
-        .insert(seedPayload)
-        .select();
-
-      if (!seedErr && seeded && seeded.length > 0) {
-        return deduplicateCrewRoles(seeded);
-      }
+      return DEFAULT_CREW_ROLES;
     }
   } catch (err) {
     console.warn('[WorkspaceSettings] Error fetching master_crew_roles:', err);
   }
 
-  // If no DB result or while loading, return empty array (DO NOT override with static fallback)
-  return [];
+  return DEFAULT_CREW_ROLES;
 }
 
 /**
- * Deduplicate crew roles array by lowercase name preserving first occurrence
+ * Deduplicate crew roles array and ensure the 8 core default roles appear in exact requested lineup
  */
 function deduplicateCrewRoles(roles: any[]): WorkspaceCrewRole[] {
   const seen = new Set<string>();
   const unique: WorkspaceCrewRole[] = [];
+
   for (const d of roles) {
     const key = (d.name || '').trim().toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
+
+    const isCore = isCoreDefaultRole(d.name);
     const isSalesPerson = key === 'sales person';
+
     unique.push({
       id: d.id,
       workspace_id: d.workspace_id,
       name: d.name,
       short_code: (d.short_code || getRoleShortCode(d.name)).toUpperCase(),
-      category: d.category || (isSalesPerson ? 'Sales' : 'Photography'),
-      is_default: Boolean(isSalesPerson || d.is_default || !d.is_customized),
+      category: d.category || (isSalesPerson ? 'Sales' : 'Crew'),
+      is_default: Boolean(isCore || isSalesPerson || d.is_default || !d.is_customized),
       display_order: d.display_order || unique.length + 1
     });
   }
 
-  // Ensure 'Sales Person' is always present in workspace crew roles list
-  if (!unique.some(r => r.name.toLowerCase() === 'sales person')) {
-    unique.unshift({
-      id: 'def_role_sp',
-      workspace_id: roles[0]?.workspace_id,
-      name: 'Sales Person',
-      short_code: 'SP',
-      category: 'Sales',
-      is_default: true,
-      display_order: 1,
-    });
-  }
+  // Ensure all 8 core default roles exist in the array
+  const CORE_LINEUP = [
+    { name: 'Sales Person', short_code: 'SP', category: 'Sales' },
+    { name: 'Team Manager', short_code: 'TM', category: 'Management' },
+    { name: 'Traditional Photographer', short_code: 'TP', category: 'Photography' },
+    { name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography' },
+    { name: 'Candid Photographer', short_code: 'CP', category: 'Photography' },
+    { name: 'Cinematographer', short_code: 'CV', category: 'Cinematography' },
+    { name: 'Family Photographer', short_code: 'FP', category: 'Photography' },
+    { name: 'Assistant', short_code: 'AS', category: 'Assistance' },
+  ];
+
+  CORE_LINEUP.forEach((core, idx) => {
+    const exists = unique.some(r => r.name.toLowerCase().trim() === core.name.toLowerCase());
+    if (!exists) {
+      unique.push({
+        id: `def_role_${core.short_code.toLowerCase()}`,
+        workspace_id: roles[0]?.workspace_id,
+        name: core.name,
+        short_code: core.short_code,
+        category: core.category,
+        is_default: true,
+        display_order: idx + 1,
+      });
+    }
+  });
+
+  // Sort: 8 core default roles in exact lineup order, followed by custom roles
+  const coreOrder = CORE_LINEUP.map(c => c.name.toLowerCase());
+  unique.sort((a, b) => {
+    const aLower = (a.name || '').trim().toLowerCase();
+    const bLower = (b.name || '').trim().toLowerCase();
+    const aIdx = coreOrder.indexOf(aLower);
+    const bIdx = coreOrder.indexOf(bLower);
+
+    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+    if (aIdx !== -1) return -1;
+    if (bIdx !== -1) return 1;
+    return (a.display_order || 0) - (b.display_order || 0);
+  });
 
   return unique;
 }
 
 /**
- * Save new crew role strictly for current workspace (IDEMPOTENT: Never duplicates existing role)
+ * Save new crew role strictly for current workspace
  */
 export async function saveWorkspaceCrewRole(
   workspaceId?: string,
   name?: string,
   shortCode?: string,
-  category = 'Photography',
+  category = 'Crew',
   userId?: string
 ): Promise<WorkspaceCrewRole | null> {
   const cleanName = (name || '').trim();
@@ -913,27 +954,40 @@ export async function saveWorkspaceCrewRole(
 
   try {
     if (wsId) {
-      // 1. Idempotency Check: Return existing role if already present for this workspace
-      const { data: existing } = await supabase
-        .from('master_crew_roles')
-        .select('id, workspace_id, name, short_code, is_customized, is_default')
-        .eq('workspace_id', wsId)
-        .ilike('name', cleanName)
-        .limit(1)
-        .maybeSingle();
+      // 1. Try server API route
+      const res = await fetch('/api/workspace/crew-roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: wsId,
+          name: cleanName,
+          short_code: cleanCode,
+          category
+        })
+      });
 
-      if (existing) {
-        return {
-          id: existing.id,
-          workspace_id: existing.workspace_id,
-          name: existing.name || cleanName,
-          short_code: (existing.short_code || cleanCode).toUpperCase(),
-          category,
-          is_default: existing.is_default || !existing.is_customized
-        };
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.role) {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+            broadcastSettingsChange(wsId, 'roles_changed');
+          }
+          return {
+            id: json.role.id,
+            workspace_id: json.role.workspace_id,
+            name: json.role.name,
+            short_code: json.role.short_code,
+            category: json.role.category || category,
+            is_default: false
+          };
+        }
+      } else if (res.status === 409) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `Crew role "${cleanName}" already exists.`);
       }
 
-      // 2. Insert new record
+      // Fallback direct insert
       const { data: masterData, error } = await supabase
         .from('master_crew_roles')
         .insert([{
@@ -951,6 +1005,7 @@ export async function saveWorkspaceCrewRole(
       if (!error && masterData) {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+          broadcastSettingsChange(wsId, 'roles_changed');
         }
         return {
           id: masterData.id,
@@ -962,12 +1017,14 @@ export async function saveWorkspaceCrewRole(
         };
       }
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.message?.includes('already exists') || err?.message?.includes('already in use')) throw err;
     console.warn('[WorkspaceSettings] Error saving master_crew_roles:', err);
   }
 
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && wsId) {
     window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+    broadcastSettingsChange(wsId, 'roles_changed');
   }
   return { id: `role_${Date.now()}`, workspace_id: wsId, name: cleanName, short_code: cleanCode, category, is_default: false };
 }
@@ -979,7 +1036,7 @@ export async function updateWorkspaceCrewRole(
   id: string,
   name: string,
   shortCode: string,
-  category = 'Photography',
+  category = 'Crew',
   workspaceId?: string
 ): Promise<WorkspaceCrewRole | null> {
   const cleanName = name.trim();
@@ -988,22 +1045,59 @@ export async function updateWorkspaceCrewRole(
   const wsId = await resolveWorkspaceId(workspaceId);
 
   try {
+    if (wsId) {
+      const res = await fetch('/api/workspace/crew-roles', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          name: cleanName,
+          short_code: cleanCode,
+          workspace_id: wsId,
+          category
+        })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.role) {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+            broadcastSettingsChange(wsId, 'roles_changed');
+          }
+          return {
+            id: json.role.id,
+            workspace_id: json.role.workspace_id,
+            name: json.role.name,
+            short_code: json.role.short_code,
+            category: json.role.category || category,
+            is_default: json.role.is_default || false
+          };
+        }
+      } else if (res.status === 409 || res.status === 403) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `Could not update crew role "${cleanName}".`);
+      }
+    }
+
+    // Direct fallback
     const cleanPayload = {
       name: cleanName,
       short_code: cleanCode,
       updated_at: new Date().toISOString()
     };
 
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('master_crew_roles')
       .update(cleanPayload)
       .eq('id', id)
       .select()
       .single();
 
-    if (!error && data) {
-      if (typeof window !== 'undefined') {
+    if (data) {
+      if (typeof window !== 'undefined' && wsId) {
         window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+        broadcastSettingsChange(wsId, 'roles_changed');
       }
       return {
         id: data.id,
@@ -1014,15 +1108,14 @@ export async function updateWorkspaceCrewRole(
         is_default: data.is_default || false
       };
     }
-    if (error) {
-      console.error('[WorkspaceSettings] Error updating master_crew_roles in database:', error);
-    }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.message?.includes('already exists') || err?.message?.includes('already in use') || err?.message?.includes('cannot be modified')) throw err;
     console.warn('[WorkspaceSettings] Error updating master_crew_roles:', err);
   }
 
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && wsId) {
     window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+    broadcastSettingsChange(wsId, 'roles_changed');
   }
   return { id, workspace_id: wsId, name: cleanName, short_code: cleanCode, category, is_default: false };
 }
@@ -1034,29 +1127,35 @@ export async function deleteWorkspaceCrewRole(
   id: string,
   workspaceId?: string
 ): Promise<boolean> {
+  const wsId = await resolveWorkspaceId(workspaceId);
   try {
-    const { error } = await supabase
+    if (wsId) {
+      const res = await fetch(`/api/workspace/crew-roles?id=${id}&workspace_id=${wsId}`, {
+        method: 'DELETE'
+      });
+      if (res.status === 403) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || 'Core default role cannot be deleted.');
+      }
+    }
+
+    await supabase
       .from('master_crew_roles')
       .delete()
       .eq('id', id);
 
-    if (error) {
-      console.error('[WorkspaceSettings] Error deleting master_crew_roles:', error);
-    }
-
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && wsId) {
       window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+      broadcastSettingsChange(wsId, 'roles_changed');
     }
     return true;
-  } catch (err) {
-    console.warn('[WorkspaceSettings] Error deleting master_crew_roles:', err);
+  } catch (err: any) {
+    if (err?.message?.includes('cannot be deleted')) throw err;
+    console.error('[WorkspaceSettings] Error deleting master_crew_roles:', err);
     return false;
   }
 }
 
-/**
- * 2-Way Sync helper to rename/update a crew role by previous name or ID from Quotation Builder
- */
 export async function syncQuotationCrewRole(
   workspaceId?: string,
   oldName?: string,
