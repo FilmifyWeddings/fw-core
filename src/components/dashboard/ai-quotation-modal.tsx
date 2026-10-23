@@ -16,7 +16,8 @@ import {
   resolvePrimaryCoverLocation, 
   sanitizeAndParseJson,
   formatQuotationDate,
-  normalizeQuotationData
+  normalizeQuotationData,
+  DEFAULT_AIRY_PROPOSAL
 } from '@/lib/quotation-defaults';
 
 interface AiQuotationModalProps {
