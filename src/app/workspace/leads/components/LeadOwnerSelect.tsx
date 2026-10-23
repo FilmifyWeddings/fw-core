@@ -204,16 +204,13 @@ export default function LeadOwnerSelect({
   const currentOwner = (value || 'Unassigned').trim();
   const isUnassigned = currentOwner.toLowerCase() === 'unassigned' || !currentOwner;
 
-  // Prioritize Sales Persons, but keep all active workspace team members selectable
+  // Strictly filter to Sales Persons only (plus currently assigned owner so legacy assignment is preserved)
   const salesTeamMembers = useMemo(() => {
     const list = consolidatedMembers || [];
-    return [...list].sort((a, b) => {
-      const aSales = isMemberSalesPerson(a) ? 1 : 0;
-      const bSales = isMemberSalesPerson(b) ? 1 : 0;
-      if (aSales !== bSales) return bSales - aSales;
-      return a.name.localeCompare(b.name);
-    });
-  }, [consolidatedMembers]);
+    return list
+      .filter(m => isMemberSalesPerson(m) || (!isUnassigned && m.name.toLowerCase() === currentOwner.toLowerCase()))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [consolidatedMembers, isUnassigned, currentOwner]);
 
   // Selected Member Details (if assigned to a sales person)
   const selectedMember = useMemo(() => {

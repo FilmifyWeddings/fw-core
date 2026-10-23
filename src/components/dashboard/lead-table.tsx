@@ -21,6 +21,7 @@ import { CRMDropdown, getDynamicBadgeStyle } from './crm-dropdown';
 import { LeadQuotationModal } from './lead-quotation-modal';
 import { prefetchStudioTemplates } from './quotation-template-selector';
 import LeadOwnerSelect from '@/app/workspace/leads/components/LeadOwnerSelect';
+import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
 import { LeadWelcomeSequenceModal } from './LeadWelcomeSequenceModal';
 import { LeadExecutionTimelineModal } from './LeadExecutionTimelineModal';
 import { WorkflowExecutionTimelineModal } from '@/components/integrations/WorkflowExecutionTimelineModal';
@@ -5245,12 +5246,11 @@ export function LeadTable({
                       <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
                         Mobile Number <span className="text-red-500">*</span>
                       </label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. +919876543210"
+                      <PhoneInputWithCountry
+                        required
+                        placeholder="98765 43210"
                         value={manualLeadPhone}
-                        onChange={(e) => setManualLeadPhone(e.target.value)}
-                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs placeholder-slate-400 font-mono"
+                        onChange={(val) => setManualLeadPhone(val)}
                       />
                     </div>
                     <div className="space-y-1">

@@ -70,43 +70,70 @@ export async function POST(req: NextRequest) {
       }
 
       // 1A. Update Client Directory (`workspace_clients`)
-      if (targetClient && targetModules.clientDirectory) {
-        let updatedNotes = targetClient.notes;
-        try {
-          const ext = parseClientExtended(targetClient);
-          const updatedExt = {
-            ...ext,
-            project_manager_id: pmId || '',
-            project_manager_name: pmName || '',
-            project_manager_email: pmEmail || '',
-            project_manager_phone: pmPhone || '',
-          };
-          updatedNotes = serializeClientExtended(updatedExt);
-        } catch (_) {}
+      if (targetClient) {
+        if (targetModules.clientDirectory) {
+          let updatedNotes = targetClient.notes;
+          try {
+            const ext = parseClientExtended(targetClient);
+            const updatedExt = {
+              ...ext,
+              project_manager_id: pmId || '',
+              project_manager_name: pmName || '',
+              project_manager_email: pmEmail || '',
+              project_manager_phone: pmPhone || '',
+            };
+            updatedNotes = serializeClientExtended(updatedExt);
+          } catch (_) {}
 
-        const safePmId = (pmId && isValidUUID(pmId)) ? pmId : null;
+          const safePmId = (pmId && isValidUUID(pmId)) ? pmId : null;
 
-        const { error: updateErr } = await supabaseAdmin
-          .from('workspace_clients')
-          .update({
-            project_manager_id: safePmId,
-            project_manager_name: pmName || null,
-            project_manager_email: pmEmail || null,
-            project_manager_phone: pmPhone || null,
-            handled_by: pmName || null,
-            ...(updatedNotes ? { notes: updatedNotes } : {}),
-            updated_at: nowIso
-          })
-          .eq('id', targetClient.id);
-
-        if (updateErr) {
-          console.warn('[sync-card] Primary update on workspace_clients failed (likely FK constraint), running fallback without project_manager_id column:', updateErr.message);
-          await supabaseAdmin
+          const { error: updateErr } = await supabaseAdmin
             .from('workspace_clients')
             .update({
+              project_manager_id: safePmId,
               project_manager_name: pmName || null,
               project_manager_email: pmEmail || null,
               project_manager_phone: pmPhone || null,
+              ...(updatedNotes ? { notes: updatedNotes } : {}),
+              updated_at: nowIso
+            })
+            .eq('id', targetClient.id);
+
+          if (updateErr) {
+            console.warn('[sync-card] Primary update on workspace_clients failed (likely FK constraint), running fallback without project_manager_id column:', updateErr.message);
+            await supabaseAdmin
+              .from('workspace_clients')
+              .update({
+                project_manager_name: pmName || null,
+                project_manager_email: pmEmail || null,
+                project_manager_phone: pmPhone || null,
+                ...(updatedNotes ? { notes: updatedNotes } : {}),
+                updated_at: nowIso
+              })
+              .eq('id', targetClient.id);
+          }
+        } else {
+          // Explicitly unassigned from Client Directory
+          let updatedNotes = targetClient.notes;
+          try {
+            const ext = parseClientExtended(targetClient);
+            const updatedExt = {
+              ...ext,
+              project_manager_id: '',
+              project_manager_name: '',
+              project_manager_email: '',
+              project_manager_phone: '',
+            };
+            updatedNotes = serializeClientExtended(updatedExt);
+          } catch (_) {}
+
+          await supabaseAdmin
+            .from('workspace_clients')
+            .update({
+              project_manager_id: null,
+              project_manager_name: null,
+              project_manager_email: null,
+              project_manager_phone: null,
               ...(updatedNotes ? { notes: updatedNotes } : {}),
               updated_at: nowIso
             })
@@ -115,25 +142,25 @@ export async function POST(req: NextRequest) {
       }
 
       // 1B. Update Bookings & Events (`fw_projects`)
-      if (targetModules.bookingsEvents) {
-        let pQuery = supabaseAdmin.from('fw_projects').update({
-          project_manager_id: pmId || null,
-          project_manager_name: pmName || null,
-          updated_at: nowIso
-        });
+      const targetPmId = targetModules.bookingsEvents ? (pmId || null) : null;
+      const targetPmName = targetModules.bookingsEvents ? (pmName || null) : null;
+      let pQuery = supabaseAdmin.from('fw_projects').update({
+        project_manager_id: targetPmId,
+        project_manager_name: targetPmName,
+        updated_at: nowIso
+      });
 
-        if (projectId) {
-          await pQuery.eq('id', projectId);
-        } else if (targetClient?.id) {
-          await pQuery.or(`client_id.eq.${targetClient.id},client_name.ilike.%${targetClient.name.trim()}%`);
-        } else if (oldName || newName) {
-          const targetName = (newName || oldName || '').trim();
-          await pQuery.ilike('client_name', `%${targetName}%`);
-        }
+      if (projectId) {
+        await pQuery.eq('id', projectId);
+      } else if (targetClient?.id) {
+        await pQuery.or(`client_id.eq.${targetClient.id},client_name.ilike.%${targetClient.name.trim()}%`);
+      } else if (oldName || newName) {
+        const targetName = (newName || oldName || '').trim();
+        await pQuery.ilike('client_name', `%${targetName}%`);
       }
 
       // 1C. Update Post-Production (`post_production_projects`)
-      if (targetModules.postProduction && (targetClient?.id || projectId)) {
+      if (targetClient?.id || projectId) {
         const targetId = targetClient?.id || projectId;
         const { data: existingPPP } = await supabaseAdmin
           .from('post_production_projects')
@@ -145,8 +172,8 @@ export async function POST(req: NextRequest) {
           await supabaseAdmin
             .from('post_production_projects')
             .update({
-              project_manager_id: pmId || null,
-              project_manager_name: pmName || null,
+              project_manager_id: targetModules.postProduction ? (pmId || null) : null,
+              project_manager_name: targetModules.postProduction ? (pmName || null) : null,
               updated_at: nowIso
             })
             .eq('id', existingPPP.id);

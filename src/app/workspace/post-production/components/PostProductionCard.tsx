@@ -151,15 +151,32 @@ export default function PostProductionCard({
   })();
 
   // PM Options with wide display and role tags
-  // PM Options: Clean luxury display with Profile Avatar and Full Name ONLY
+  // PM Options: Strictly In-House team members with Unassign PM toggle
   const pmOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
-    // Sort team members alphabetically
-    const sortedMembers = [...teamMembers].sort((a, b) => a.name.localeCompare(b.name));
+    const isCurrentlyAssigned = Boolean(localPM && localPM !== 'unassigned');
+    const inHouseMembers = teamMembers.filter((m: any) => {
+      if (m.isInHouse !== undefined) return m.isInHouse;
+      const typeStr = (m.primary_type || m.type || '').toUpperCase();
+      const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
+      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || m.is_inhouse === true;
+    });
+
+    const uniqueMap = new Map<string, { id: string; name: string }>();
+    inHouseMembers.forEach(m => {
+      const normKey = m.name.toLowerCase().trim();
+      if (!uniqueMap.has(normKey)) {
+        uniqueMap.set(normKey, { id: m.id, name: m.name });
+      }
+    });
+
+    const sortedMembers = Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 
     const list: Searchable3DCreamSelectOption[] = [
       {
         value: 'unassigned',
-        label: 'Assign PM',
+        label: isCurrentlyAssigned ? 'Unassign PM' : 'Assign PM',
+        badge: isCurrentlyAssigned ? 'Clear' : undefined,
+        badgeClassName: 'bg-rose-100 text-rose-700 border border-rose-200',
       },
       ...sortedMembers.map(m => {
         const initials = m.name
@@ -646,7 +663,7 @@ export default function PostProductionCard({
               searchable={!isReadOnly}
               usePortal={true}
               searchPlaceholder="🔍 Search PM..."
-              placeholder="Assign PM"
+              placeholder={localPM && localPM !== "unassigned" ? "Change PM" : "Assign PM"}
             />
           </div>
 

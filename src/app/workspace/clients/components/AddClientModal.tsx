@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserPlus, X, Check, Users, Sparkles } from 'lucide-react';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
+import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
 import type { Lead } from '@/types';
 import type { WorkspaceMemberOption } from '@/lib/team-helpers';
 import { safeParseCurrencyOrBudget } from '@/lib/budget-helpers';
@@ -276,13 +277,11 @@ export default function AddClientModal({
               <label className="text-[11px] font-bold text-slate-700 dark:text-stone-300 uppercase tracking-wider block">
                 Mobile Phone *
               </label>
-              <input
-                type="text"
+              <PhoneInputWithCountry
                 required
-                placeholder="e.g. +91 98765 43210"
+                placeholder="98765 43210"
                 value={formData.phone}
-                onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
-                className="w-full px-3.5 py-2.5 bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl text-slate-900 dark:text-stone-100 font-mono font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-all shadow-2xs"
+                onChange={(val) => setFormData((prev) => ({ ...prev, phone: val }))}
               />
             </div>
           </div>

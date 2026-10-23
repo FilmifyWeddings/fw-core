@@ -351,24 +351,41 @@ export default function PostProductionPage() {
       if (fwData && fwData.length > 0) {
         fwData.forEach((f: any) => {
           const cleanName = f.name?.trim();
-          if (cleanName && !members.some(existing => existing.name.toLowerCase() === cleanName.toLowerCase())) {
+          if (cleanName) {
+            const normName = cleanName.toLowerCase();
             const isInHouse = (
               f.primary_type?.toLowerCase() === 'in-house' || 
               f.primary_type?.toLowerCase() === 'in_house' || 
-              (Array.isArray(f.member_types) && f.member_types.some((t: any) => String(t).toUpperCase() === 'IN_HOUSE'))
+              (Array.isArray(f.member_types) && f.member_types.some((t: any) => String(t).toUpperCase().includes('HOUSE')))
             );
             const roleStr = f.primary_role || '';
             const hasPMAccess = (
               isInHouse ||
               /manager|lead|head|director|owner|producer|supervisor/i.test(roleStr)
             );
-            members.push({
-              id: f.id,
-              name: cleanName,
-              role: f.primary_role,
-              isInHouse,
-              hasPMAccess,
-            });
+
+            // Deduplicate: Check existing by normalized name, email, or id
+            const existingIdx = members.findIndex(existing => 
+              existing.id === f.id ||
+              (existing.email && f.email && existing.email.toLowerCase() === f.email.toLowerCase()) ||
+              existing.name.toLowerCase() === normName ||
+              (normName.startsWith('sushant') && existing.name.toLowerCase().startsWith('sushant'))
+            );
+
+            if (existingIdx === -1) {
+              members.push({
+                id: f.id,
+                name: cleanName,
+                role: f.primary_role,
+                isInHouse,
+                hasPMAccess,
+                email: f.email || undefined,
+              });
+            } else {
+              // Update with better role / in-house status
+              if (isInHouse) members[existingIdx].isInHouse = true;
+              if (hasPMAccess) members[existingIdx].hasPMAccess = true;
+            }
           }
         });
       }
@@ -376,28 +393,63 @@ export default function PostProductionPage() {
       if (jsonMembers?.success && Array.isArray(jsonMembers.members)) {
         jsonMembers.members.forEach((m: any) => {
           const cleanName = m.name?.trim();
-          if (cleanName && !members.some(existing => existing.name.toLowerCase() === cleanName.toLowerCase())) {
+          if (cleanName) {
+            const normName = cleanName.toLowerCase();
+            const isInHouse = (
+              m.isInHouse === true ||
+              m.primary_type?.toLowerCase() === 'in-house' || 
+              m.primary_type?.toLowerCase() === 'in_house' || 
+              (Array.isArray(m.member_types) && m.member_types.some((t: any) => String(t).toUpperCase().includes('HOUSE'))) ||
+              m.member_type?.toLowerCase() === 'in-house' ||
+              m.member_type?.toLowerCase() === 'in_house'
+            );
             const isLead = /owner|admin|manager|lead/i.test(m.role || '');
-            members.push({
-              id: m.id || m.user_id,
-              name: cleanName,
-              role: m.role || (isLead ? 'Studio Manager' : 'Member'),
-              isInHouse: true,
-              hasPMAccess: true,
-            });
+            const hasPMAccess = isInHouse || isLead;
+
+            const existingIdx = members.findIndex(existing => 
+              existing.id === (m.id || m.user_id) ||
+              (existing.email && m.email && existing.email.toLowerCase() === m.email.toLowerCase()) ||
+              existing.name.toLowerCase() === normName ||
+              (normName.startsWith('sushant') && existing.name.toLowerCase().startsWith('sushant'))
+            );
+
+            if (existingIdx === -1) {
+              members.push({
+                id: m.id || m.user_id,
+                name: cleanName,
+                role: m.role || (isLead ? 'Studio Manager' : 'Member'),
+                isInHouse,
+                hasPMAccess,
+                email: m.email || undefined,
+              });
+            } else {
+              if (isInHouse) members[existingIdx].isInHouse = true;
+              if (hasPMAccess) members[existingIdx].hasPMAccess = true;
+            }
           }
         });
       }
 
       const ownerName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Studio Owner';
-      if (!members.some(m => m.name.toLowerCase() === ownerName.toLowerCase())) {
+      const ownerEmail = session?.user?.email?.toLowerCase();
+      const existingOwnerIdx = members.findIndex(m => 
+        m.name.toLowerCase() === ownerName.toLowerCase() ||
+        (ownerEmail && m.email && m.email.toLowerCase() === ownerEmail) ||
+        (ownerName.toLowerCase().startsWith('sushant') && m.name.toLowerCase().startsWith('sushant'))
+      );
+
+      if (existingOwnerIdx === -1) {
         members.unshift({
           id: effectiveWsId,
           name: ownerName,
           role: 'Owner / Lead',
           isInHouse: true,
           hasPMAccess: true,
+          email: ownerEmail || undefined,
         });
+      } else {
+        members[existingOwnerIdx].isInHouse = true;
+        members[existingOwnerIdx].hasPMAccess = true;
       }
       setTeamMembers(members);
       memCachedPostProdTeamMembers = members;
@@ -586,11 +638,11 @@ export default function PostProductionPage() {
         }
         projectDeliverables = uniqueDelivs;
 
-        // Extract project manager from client notes JSON, client columns, or handled_by
-        let extractedPMName: string | null = null;
-        let extractedPMId: string | null = null;
+        // Extract project manager from client columns or client notes JSON (PM ONLY, NEVER handled_by)
+        let extractedPMName: string | null = (client.project_manager_name || '').trim() || null;
+        let extractedPMId: string | null = (client.project_manager_id || '').trim() || null;
 
-        if (client.notes) {
+        if (!extractedPMName && client.notes) {
           try {
             const rawNotes = client.notes;
             if (typeof rawNotes === 'string' && rawNotes.trim().startsWith('{')) {
@@ -601,21 +653,9 @@ export default function PostProductionPage() {
               if (parsed.project_manager_id) {
                 extractedPMId = String(parsed.project_manager_id).trim();
               }
-              if (!extractedPMName && parsed.notes && typeof parsed.notes === 'string') {
-                const hbMatch = parsed.notes.match(/handled_by:\s*([^;,\n]+)/i);
-                if (hbMatch) extractedPMName = hbMatch[1].trim();
-              }
-            } else if (typeof rawNotes === 'string') {
-              const hbMatch = rawNotes.match(/handled_by:\s*([^;,\n]+)/i);
-              if (hbMatch) extractedPMName = hbMatch[1].trim();
             }
           } catch (_) {}
         }
-
-        if (!extractedPMName && client.handled_by) {
-          extractedPMName = client.handled_by.trim();
-        }
-
         // Match against team members by id or name
         let matchedPMName = extractedPMName;
         let matchedPMId: string | null = extractedPMId;
@@ -1395,30 +1435,33 @@ export default function PostProductionPage() {
     return c;
   }, [filters]);
 
-  // Derived PM Options from active projects
+  // Derived PM Options strictly from In-House team members
   const pmOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
-    const pmSet = new Set<string>();
-    projects.forEach(p => {
-      if (p.project_manager_name && p.project_manager_name !== 'unassigned') {
-        pmSet.add(p.project_manager_name);
+    const inHouseMembers = teamMembers.filter(m => m.isInHouse);
+    const uniqueMap = new Map<string, { id: string; name: string }>();
+
+    inHouseMembers.forEach(m => {
+      const normKey = m.name.toLowerCase().trim();
+      if (!uniqueMap.has(normKey)) {
+        uniqueMap.set(normKey, { id: m.id, name: m.name });
       }
     });
 
     return [
-      { value: 'all', label: 'All Project Managers' },
+      { value: 'all', label: 'All Production Managers' },
       {
         value: 'unassigned',
         label: 'Unassigned (No PM)',
         badge: 'None',
         badgeClassName: 'bg-rose-100 text-rose-700 border border-rose-200',
       },
-      ...Array.from(pmSet).map(pm => ({
-        value: pm,
-        label: pm,
-        badge: 'Active PM',
+      ...Array.from(uniqueMap.values()).map(pm => ({
+        value: pm.name,
+        label: pm.name,
+        badge: 'In-House PM',
       })),
     ];
-  }, [projects]);
+  }, [teamMembers]);
 
   // Jump to project card from Overdue Modal
   const handleSelectOverdueItem = (projectId: string) => {

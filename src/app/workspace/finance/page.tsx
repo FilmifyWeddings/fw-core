@@ -1472,68 +1472,31 @@ export default function FinancePage() {
 
     setClients(prev => prev.map(c => {
       if (c.id === clientId) {
-        return { ...c, handled_by: memberName, project_manager_name: memberName } as any;
+        return { ...c, handled_by: memberName } as any;
       }
       return c;
     }));
 
     try {
-      // 1. Fetch current client to preserve notes, events and custom_data
+      // 1. Fetch current client to preserve custom_data
       const { data: currentClient } = await supabase
         .from('workspace_clients')
         .select('*')
         .eq('id', clientId)
         .maybeSingle();
 
-      const ext = parseClientExtended(currentClient || { id: clientId } as any);
-      const matchedMember = (workspaceMembers || []).find((m: any) => 
-        (m.name && m.name.trim().toLowerCase() === memberName.trim().toLowerCase()) ||
-        (m.email && m.email.trim().toLowerCase() === memberName.trim().toLowerCase())
-      );
-
-      const pmId = matchedMember?.id || ext.project_manager_id || null;
-      const pmEmail = matchedMember?.email || ext.project_manager_email || null;
-      const pmPhone = matchedMember?.phone || ext.project_manager_phone || null;
-
-      const updatedExt = {
-        ...ext,
-        project_manager_name: memberName,
-        project_manager_id: pmId || '',
-        project_manager_email: pmEmail || '',
-        project_manager_phone: pmPhone || '',
-      };
-      const cleanSerializedNotes = serializeClientExtended(updatedExt);
-
       const existingCustom = (currentClient?.custom_data as any) || {};
-      const updatedCustom = { ...existingCustom, handled_by: memberName, project_manager_name: memberName, project_manager_id: pmId };
+      const updatedCustom = { ...existingCustom, handled_by: memberName };
 
-      // Update workspace_clients with handled_by column + project_manager_* + custom_data + clean notes JSON
+      // Update workspace_clients with handled_by ONLY (strictly isolated from project_manager_*)
       await supabase
         .from('workspace_clients')
         .update({
           handled_by: memberName,
-          project_manager_name: memberName,
-          project_manager_id: pmId,
-          project_manager_email: pmEmail,
-          project_manager_phone: pmPhone,
           custom_data: updatedCustom,
-          notes: cleanSerializedNotes,
           updated_at: new Date().toISOString()
         })
         .eq('id', clientId);
-
-      // Concurrently dual-sync to fw_projects
-      try {
-        const targetClient = clients.find(c => c.id === clientId) || currentClient;
-        await supabase
-          .from('fw_projects')
-          .update({
-            project_manager_id: pmId,
-            project_manager_name: memberName,
-            updated_at: new Date().toISOString()
-          })
-          .or(`client_id.eq.${clientId},client_name.ilike.%${targetClient?.name || ''}%`);
-      } catch (_) {}
 
       // Also update client_finance_records
       await supabase
@@ -2514,42 +2477,52 @@ export default function FinancePage() {
           || (rec as any)?.firstStepDate;
         const firstStepDate = parseToIsoDate(rawFirstDate);
 
-        // When "This Month" filter is selected without other sub-filters:
-        // STRICT RULE: Inspect ONLY Step 1 of the payment schedule!
-        const isOnlyThisMonthFilter = dateRangePreset === 'this_month' && statusFilter === 'all' && revenueTypeFilter === 'ALL';
+        const hasMatchingPaid = milestones.some((m, idx) => {
+          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+          if (!isPaid) return false;
+          const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+          if (!isInRange(pDate)) return false;
+          if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
+          if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
+          return true;
+        });
 
-        if (isOnlyThisMonthFilter) {
-          matchesDate = Boolean(firstStepDate && isInRange(firstStepDate));
-        } else {
-          const hasMatchingPaid = milestones.some((m, idx) => {
-            const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
-            if (!isPaid) return false;
-            const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
-            if (!isInRange(pDate)) return false;
-            if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
-            if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
-            return true;
-          });
-
-          const hasMatchingPending = milestones.some(m => {
-            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
-            if (isCompleted) return false;
-            if (statusFilter === 'overdue_only') {
-              const dNorm = parseToIsoDate(m.due_date);
-              return dNorm && dNorm < todayStr && isInRange(dNorm);
-            }
-            return isInRange(m.due_date);
-          });
-
-          const hasMatchingContractBooking = isInRange(firstStepDate) || isInRange(rec.created_at);
-
-          if (statusFilter === 'received' || revenueTypeFilter !== 'ALL') {
-            matchesDate = hasMatchingPaid;
-          } else if (statusFilter === 'pending' || statusFilter === 'overdue_only') {
-            matchesDate = hasMatchingPending || (!milestones.some(m => m.due_date) && hasMatchingContractBooking && Number(rec.pending_amount) > 0);
-          } else {
-            matchesDate = hasMatchingContractBooking || hasMatchingPaid || hasMatchingPending;
+        const hasMatchingPending = milestones.some(m => {
+          const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
+          if (isCompleted) return false;
+          if (statusFilter === 'overdue_only') {
+            const dNorm = parseToIsoDate(m.due_date);
+            return dNorm && dNorm < todayStr && isInRange(dNorm);
           }
+          return isInRange(m.due_date);
+        });
+
+        const hasMatchingContractBooking = isInRange(firstStepDate) || isInRange(rec.created_at);
+
+        if (statusFilter === 'paid') {
+          // Full Paid: Filter cards where the LAST payment date / final milestone completion falls within the selected date range
+          const paidMilestones = milestones.filter(m => 
+            m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date
+          );
+          let lastPaidDate = '';
+          if (paidMilestones.length > 0) {
+            const lastM = paidMilestones[paidMilestones.length - 1];
+            lastPaidDate = parseToIsoDate(lastM.paid_date || (lastM as any).paidDate || (lastM as any).payment_date || lastM.due_date);
+          }
+          if (!lastPaidDate && milestones.length > 0) {
+            const lastM = milestones[milestones.length - 1];
+            lastPaidDate = parseToIsoDate(lastM.due_date || lastM.paid_date);
+          }
+          if (!lastPaidDate) {
+            lastPaidDate = parseToIsoDate(rec.updated_at || rec.created_at);
+          }
+          matchesDate = Boolean(lastPaidDate && isInRange(lastPaidDate));
+        } else if (statusFilter === 'received' || revenueTypeFilter !== 'ALL') {
+          matchesDate = hasMatchingPaid;
+        } else if (statusFilter === 'pending' || statusFilter === 'overdue_only') {
+          matchesDate = hasMatchingPending || (!milestones.some(m => m.due_date) && hasMatchingContractBooking && Number(rec.pending_amount) > 0);
+        } else {
+          matchesDate = hasMatchingContractBooking || hasMatchingPaid || hasMatchingPending;
         }
       }
 
@@ -2637,6 +2610,25 @@ export default function FinancePage() {
     }
     return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.received_amount) || 0), 0));
   }, [filteredRecords, statusFilter, revenueTypeFilter, isDateActive, startDate, endDate]);
+
+  const receivedPaymentsCount = useMemo(() => {
+    let count = 0;
+    filteredRecords.forEach(r => {
+      (r.milestones || []).forEach((m, idx) => {
+        const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+        if (!isPaid) return;
+        const pDate = (m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date || '').split('T')[0];
+        if (isDateActive && (startDate || endDate)) {
+          if (startDate && pDate < startDate) return;
+          if (endDate && pDate > endDate) return;
+        }
+        if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return;
+        if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return;
+        count++;
+      });
+    });
+    return count;
+  }, [filteredRecords, isDateActive, startDate, endDate, revenueTypeFilter]);
 
   const totalPending = useMemo(() => {
     if (isDateActive && (startDate || endDate)) {
@@ -3418,6 +3410,33 @@ export default function FinancePage() {
             </div>
           )}
           
+                    {statusFilter === 'paid' && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-50 border border-purple-300 text-purple-950 text-xs font-bold shadow-xs">
+              <span className="flex h-2 w-2 relative">
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+              </span>
+              <span>
+                Status:{' '}
+                <span className="font-extrabold text-purple-900">
+                  Full Paid
+                </span>
+                {(startDate || endDate) && (
+                  <>
+                    {' '}(<span className="font-mono text-purple-800 font-bold">{startDate || 'Start'} ➔ {endDate || 'End'}</span>)
+                  </>
+                )}
+                {' '}— <span className="text-purple-700 font-black">₹{totalReceived.toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'})
+              </span>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className="ml-1.5 px-2 py-0.5 rounded-lg bg-purple-200/80 hover:bg-purple-300 text-purple-900 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
+              >
+                <span>Clear Filter</span>
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
           {statusFilter === 'received' && (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs font-bold shadow-xs">
                 <span className="flex h-2 w-2 relative">
@@ -3433,7 +3452,7 @@ export default function FinancePage() {
                       {' '}(<span className="font-mono text-emerald-800 font-bold">{startDate || 'Start'} ➔ {endDate || 'End'}</span>)
                     </>
                   )}
-                  {' '}— <span className="text-emerald-700 font-black">₹{totalReceived.toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'})
+                  {' '}— <span className="text-emerald-700 font-black">₹{totalReceived.toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'} • {receivedPaymentsCount} {receivedPaymentsCount === 1 ? 'payment received' : 'payments received'})
                 </span>
                 <button
                   type="button"

@@ -907,24 +907,29 @@ export default function ClientsPage() {
 
   // 3D Cream Filter Dropdown Options (Deduplicated by PM name, linking all IDs)
   const pmFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
+    const inHouseSet = new Set((inHouseTeamMembers || []).map(m => m.name.toLowerCase().trim()));
     const normalizedMap = new Map<string, { displayName: string; ids: Set<string> }>();
+
     (clients || []).forEach((c: any) => {
       const ext = parseClientExtended(c);
-      const rawName = (c.project_manager_name || ext.project_manager_name || c.handled_by || '').trim();
+      const rawName = (c.project_manager_name || ext.project_manager_name || '').trim();
       const rawId = (c.project_manager_id || ext.project_manager_id || '').trim();
       if (!rawName) return;
       const normKey = rawName.toLowerCase();
-      if (!normalizedMap.has(normKey)) {
-        normalizedMap.set(normKey, { displayName: rawName, ids: new Set<string>() });
-      }
-      if (rawId) {
-        normalizedMap.get(normKey)!.ids.add(rawId);
+      // Only include if in-house member or explicitly assigned PM
+      if (inHouseSet.size === 0 || inHouseSet.has(normKey)) {
+        if (!normalizedMap.has(normKey)) {
+          normalizedMap.set(normKey, { displayName: rawName, ids: new Set<string>() });
+        }
+        if (rawId) {
+          normalizedMap.get(normKey)!.ids.add(rawId);
+        }
       }
     });
 
-    (teamMembers || []).forEach((tm: any) => {
-      if (tm.name && !normalizedMap.has(tm.name.toLowerCase())) {
-        normalizedMap.set(tm.name.toLowerCase(), { displayName: tm.name, ids: new Set([tm.id]) });
+    (inHouseTeamMembers || []).forEach((tm: any) => {
+      if (tm.name && !normalizedMap.has(tm.name.toLowerCase().trim())) {
+        normalizedMap.set(tm.name.toLowerCase().trim(), { displayName: tm.name, ids: new Set([tm.id]) });
       }
     });
 
@@ -941,10 +946,10 @@ export default function ClientsPage() {
       ...uniquePMs.map(pm => ({
         value: pm.displayName.toLowerCase(),
         label: pm.displayName,
-        badge: 'Active PM',
+        badge: 'In-House PM',
       })),
     ];
-  }, [clients, teamMembers]);
+  }, [clients, inHouseTeamMembers]);
 
   const statusFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     const opts = [
@@ -1033,11 +1038,10 @@ export default function ClientsPage() {
         pmFilter === 'all'
           ? true
           : pmFilter === 'unassigned'
-          ? (!pmId && !pmName && !(client as any).handled_by)
+          ? (!pmId && !pmName)
           : (
               (pmName && pmName.toLowerCase() === pmFilter.toLowerCase()) ||
-              (pmId && pmId.toLowerCase() === pmFilter.toLowerCase()) ||
-              ((client as any).handled_by && String((client as any).handled_by).toLowerCase() === pmFilter.toLowerCase())
+              (pmId && pmId.toLowerCase() === pmFilter.toLowerCase())
             );
 
       let matchesDate = true;
@@ -1098,11 +1102,10 @@ export default function ClientsPage() {
         pmFilter === 'all'
           ? true
           : pmFilter === 'unassigned'
-          ? (!pmId && !pmName && !(client as any).handled_by)
+          ? (!pmId && !pmName)
           : (
               (pmName && pmName.toLowerCase() === pmFilter.toLowerCase()) ||
-              (pmId && pmId.toLowerCase() === pmFilter.toLowerCase()) ||
-              ((client as any).handled_by && String((client as any).handled_by).toLowerCase() === pmFilter.toLowerCase())
+              (pmId && pmId.toLowerCase() === pmFilter.toLowerCase())
             );
 
       return matchesSearch && matchesEventType && matchesPm;

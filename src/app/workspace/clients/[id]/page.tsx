@@ -922,7 +922,7 @@ export default function ClientWorkspaceDetailPage() {
     return { weekday: 'DATE', day: 'NOT', monthYear: 'FIX', valid: false };
   };
 
-  // ClientFinanceCard Milestones Handlers
+  // ClientFinanceCard Milestones Handlers (Bi-directional Real-Time Sync)
   const handleMilestoneChange = async (recordId: string, milestoneId: string, field: string, value: any) => {
     if (!financeRecord || !client) return;
     const updatedMilestones = (financeRecord.milestones || []).map(m => {
@@ -953,13 +953,36 @@ export default function ClientWorkspaceDetailPage() {
     setClient(prev => prev ? ({ ...prev, paid_amount: totalReceived }) : null);
 
     try {
-      await supabase.from('client_finance_records').update({
-        milestones: updatedMilestones,
-        received_amount: totalReceived,
-        pending_amount: newPending,
-        payment_status: newPaymentStatus,
-        updated_at: new Date().toISOString()
-      }).eq('client_id', client.id);
+      const { data: updatedRows } = await supabase
+        .from('client_finance_records')
+        .update({
+          milestones: updatedMilestones,
+          received_amount: totalReceived,
+          pending_amount: newPending,
+          payment_status: newPaymentStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('client_id', client.id)
+        .select();
+
+      if (!updatedRows || updatedRows.length === 0) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const wsId = session?.user?.id || client.workspace_id;
+        await supabase
+          .from('client_finance_records')
+          .upsert({
+            ...(financeRecord || {}),
+            client_id: client.id,
+            workspace_id: wsId,
+            user_id: wsId,
+            final_total_amount: totalPkg,
+            milestones: updatedMilestones,
+            received_amount: totalReceived,
+            pending_amount: newPending,
+            payment_status: newPaymentStatus,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'client_id' });
+      }
 
       await supabase.from('workspace_clients').update({
         paid_amount: totalReceived,
@@ -968,7 +991,9 @@ export default function ClientWorkspaceDetailPage() {
 
       if (typeof window !== 'undefined') {
         localStorage.setItem('finance_updated', Date.now().toString());
+        localStorage.setItem('sc_booking_sync_event', Date.now().toString());
         window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
+        window.dispatchEvent(new CustomEvent('client_updated', { detail: { clientId: client.id } }));
       }
     } catch (err) {
       console.error('Error updating milestone:', err);
@@ -996,13 +1021,36 @@ export default function ClientWorkspaceDetailPage() {
 
     setFinanceRecord(updatedRecord);
     try {
-      await supabase.from('client_finance_records').update({
-        milestones: updatedMilestones,
-        received_amount: totalReceived,
-        pending_amount: newPending,
-        payment_status: newPaymentStatus,
-        updated_at: new Date().toISOString()
-      }).eq('client_id', client.id);
+      const { data: updatedRows } = await supabase
+        .from('client_finance_records')
+        .update({
+          milestones: updatedMilestones,
+          received_amount: totalReceived,
+          pending_amount: newPending,
+          payment_status: newPaymentStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('client_id', client.id)
+        .select();
+
+      if (!updatedRows || updatedRows.length === 0) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const wsId = session?.user?.id || client.workspace_id;
+        await supabase
+          .from('client_finance_records')
+          .upsert({
+            ...(financeRecord || {}),
+            client_id: client.id,
+            workspace_id: wsId,
+            user_id: wsId,
+            final_total_amount: totalPkg,
+            milestones: updatedMilestones,
+            received_amount: totalReceived,
+            pending_amount: newPending,
+            payment_status: newPaymentStatus,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'client_id' });
+      }
 
       await supabase.from('workspace_clients').update({
         paid_amount: totalReceived,
@@ -1011,7 +1059,9 @@ export default function ClientWorkspaceDetailPage() {
 
       if (typeof window !== 'undefined') {
         localStorage.setItem('finance_updated', Date.now().toString());
+        localStorage.setItem('sc_booking_sync_event', Date.now().toString());
         window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
+        window.dispatchEvent(new CustomEvent('client_updated', { detail: { clientId: client.id } }));
       }
     } catch (err) {
       console.error('Error deleting milestone:', err);
@@ -1030,16 +1080,38 @@ export default function ClientWorkspaceDetailPage() {
       status: 'pending'
     };
     const updatedMilestones = [...existing, newMs];
+    const totalPkg = financeRecord.final_total_amount || client.total_package_amount || 0;
     const updatedRecord: ClientFinanceRecord = { ...financeRecord, milestones: updatedMilestones };
     setFinanceRecord(updatedRecord);
     try {
-      await supabase.from('client_finance_records').update({
-        milestones: updatedMilestones,
-        updated_at: new Date().toISOString()
-      }).eq('client_id', client.id);
+      const { data: updatedRows } = await supabase
+        .from('client_finance_records')
+        .update({
+          milestones: updatedMilestones,
+          updated_at: new Date().toISOString()
+        })
+        .eq('client_id', client.id)
+        .select();
+
+      if (!updatedRows || updatedRows.length === 0) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const wsId = session?.user?.id || client.workspace_id;
+        await supabase
+          .from('client_finance_records')
+          .upsert({
+            ...(financeRecord || {}),
+            client_id: client.id,
+            workspace_id: wsId,
+            user_id: wsId,
+            final_total_amount: totalPkg,
+            milestones: updatedMilestones,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'client_id' });
+      }
 
       if (typeof window !== 'undefined') {
         localStorage.setItem('finance_updated', Date.now().toString());
+        localStorage.setItem('sc_booking_sync_event', Date.now().toString());
         window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
       }
     } catch (err) {
@@ -1073,7 +1145,7 @@ export default function ClientWorkspaceDetailPage() {
     const numAmt = Math.round(parseFloat(completePaymentFormData.amount) || 0);
     const isComp = completePaymentFormData.status === 'completed';
 
-    if (financeRecord) {
+    if (financeRecord && client) {
       const updatedMilestones = [...(financeRecord.milestones || [])];
       const mIndex = updatedMilestones.findIndex(m => m.id === milestone.id);
 
@@ -1123,24 +1195,47 @@ export default function ClientWorkspaceDetailPage() {
         setClient(prev => prev ? ({ ...prev, paid_amount: totalReceived }) : null);
 
         try {
-          await supabase.from('client_finance_records').update({
-            milestones: updatedMilestones,
-            received_amount: totalReceived,
-            pending_amount: newPending,
-            payment_status: newPaymentStatus,
-            updated_at: new Date().toISOString()
-          }).eq('id', updatedRecord.id);
-
-          if (client) {
-            await supabase.from('workspace_clients').update({
-              paid_amount: totalReceived,
+          const { data: updatedRows } = await supabase
+            .from('client_finance_records')
+            .update({
+              milestones: updatedMilestones,
+              received_amount: totalReceived,
+              pending_amount: newPending,
+              payment_status: newPaymentStatus,
               updated_at: new Date().toISOString()
-            }).eq('id', client.id);
+            })
+            .eq('client_id', client.id)
+            .select();
+
+          if (!updatedRows || updatedRows.length === 0) {
+            const { data: { session } } = await supabase.auth.getSession();
+            const wsId = session?.user?.id || client.workspace_id;
+            await supabase
+              .from('client_finance_records')
+              .upsert({
+                ...(financeRecord || {}),
+                client_id: client.id,
+                workspace_id: wsId,
+                user_id: wsId,
+                final_total_amount: totalPkg,
+                milestones: updatedMilestones,
+                received_amount: totalReceived,
+                pending_amount: newPending,
+                payment_status: newPaymentStatus,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'client_id' });
           }
+
+          await supabase.from('workspace_clients').update({
+            paid_amount: totalReceived,
+            updated_at: new Date().toISOString()
+          }).eq('id', client.id);
 
           if (typeof window !== 'undefined') {
             localStorage.setItem('finance_updated', Date.now().toString());
+            localStorage.setItem('sc_booking_sync_event', Date.now().toString());
             window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client?.id } }));
+            window.dispatchEvent(new CustomEvent('client_updated', { detail: { clientId: client?.id } }));
           }
         } catch (err) {
           console.error('Error updating payment completion in DB:', err);
@@ -1185,63 +1280,27 @@ export default function ClientWorkspaceDetailPage() {
     });
 
     try {
-      // 2. Fetch current client to preserve notes, events and custom_data
+      // 2. Fetch current client to preserve custom_data
       const { data: currentClient } = await supabase
         .from('workspace_clients')
         .select('*')
         .eq('id', clientId)
         .maybeSingle();
 
-      const ext = parseClientExtended(currentClient || { id: clientId } as any);
-      const matchedMember = (teamMembers || []).find((m: any) => 
-        (m.name && m.name.trim().toLowerCase() === cleanMemberName.trim().toLowerCase()) ||
-        (m.email && m.email.trim().toLowerCase() === cleanMemberName.trim().toLowerCase())
-      );
-
-      const pmId = matchedMember?.id || ext.project_manager_id || null;
-      const pmEmail = matchedMember?.email || ext.project_manager_email || null;
-      const pmPhone = matchedMember?.phone || ext.project_manager_phone || null;
-
-      const updatedExt = {
-        ...ext,
-        project_manager_name: cleanMemberName,
-        project_manager_id: pmId || '',
-        project_manager_email: pmEmail || '',
-        project_manager_phone: pmPhone || '',
-      };
-      const cleanSerializedNotes = serializeClientExtended(updatedExt);
-
       const existingCustom = (currentClient?.custom_data as any) || {};
-      const updatedCustom = { ...existingCustom, handled_by: cleanMemberName, project_manager_name: cleanMemberName, project_manager_id: pmId };
+      const updatedCustom = { ...existingCustom, handled_by: cleanMemberName };
 
-      // 3. Update workspace_clients
+      // Update workspace_clients with handled_by ONLY (strictly isolated from project_manager_*)
       await supabase
         .from('workspace_clients')
         .update({
           handled_by: cleanMemberName,
-          project_manager_name: cleanMemberName,
-          project_manager_id: pmId,
-          project_manager_email: pmEmail,
-          project_manager_phone: pmPhone,
           custom_data: updatedCustom,
-          notes: cleanSerializedNotes,
           updated_at: new Date().toISOString()
         })
         .eq('id', clientId);
 
-      // Concurrently dual-sync to fw_projects
-      try {
-        await supabase
-          .from('fw_projects')
-          .update({
-            project_manager_id: pmId,
-            project_manager_name: cleanMemberName,
-            updated_at: new Date().toISOString()
-          })
-          .or(`client_id.eq.${clientId},client_name.ilike.%${currentClient?.name || ''}%`);
-      } catch (_) {}
-
-      // 4. Update client_finance_records
+      // Also update client_finance_records
       await supabase
         .from('client_finance_records')
         .update({
@@ -1250,7 +1309,6 @@ export default function ClientWorkspaceDetailPage() {
         })
         .eq('client_id', clientId);
 
-      // 5. Broadcast finance_updated
       if (typeof window !== 'undefined') {
         localStorage.setItem('finance_updated', Date.now().toString());
         window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId } }));
