@@ -105,6 +105,7 @@ export const DEFAULT_CREW_ROLES: WorkspaceCrewRole[] = [
 
 export const CORE_DEFAULT_ROLE_NAMES = [
   'sales person',
+  'salesperson',
   'team manager',
   'traditional photographer',
   'traditional videographer',

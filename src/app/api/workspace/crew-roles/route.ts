@@ -37,7 +37,6 @@ export async function GET(req: NextRequest) {
       short_code: role.short_code,
       is_customized: false,
       is_default: true,
-      display_order: idx + 1,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }));

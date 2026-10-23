@@ -2,14 +2,15 @@
 
 import React, { useState } from 'react';
 import { 
-  Users, Plus, Pencil, Trash2, Loader2, Sparkles, Shield, Lock, Check
+  Users, Plus, Pencil, Trash2, Loader2, Sparkles, Lock, X
 } from 'lucide-react';
 import { 
   WorkspaceCrewRole, 
   getRoleShortCode, 
   saveWorkspaceCrewRole, 
   updateWorkspaceCrewRole, 
-  deleteWorkspaceCrewRole 
+  deleteWorkspaceCrewRole,
+  isCoreDefaultRole 
 } from '@/lib/workspace-settings';
 
 interface CrewRolesSettingsProps {
@@ -19,6 +20,28 @@ interface CrewRolesSettingsProps {
   onRolesChange: (roles: WorkspaceCrewRole[]) => void;
   onShowToast: (message: string) => void;
 }
+
+// Defensive helper for default roles
+const checkIsCoreDefault = (roleName?: string | null): boolean => {
+  if (!roleName) return false;
+  try {
+    if (typeof isCoreDefaultRole === 'function') {
+      return isCoreDefaultRole(roleName);
+    }
+  } catch (_) {}
+  const clean = roleName.trim().toLowerCase();
+  return [
+    'sales person',
+    'salesperson',
+    'team manager',
+    'traditional photographer',
+    'traditional videographer',
+    'candid photographer',
+    'cinematographer',
+    'family photographer',
+    'assistant',
+  ].includes(clean);
+};
 
 export default function CrewRolesSettings({
   workspaceId,
@@ -76,7 +99,7 @@ export default function CrewRolesSettings({
     const cleanName = editRoleName.trim();
     const cleanCode = (editRoleCode.trim() || getRoleShortCode(cleanName)).toUpperCase();
 
-    if (editingCrewRole.is_default || isCoreDefaultRole(editingCrewRole.name)) {
+    if (editingCrewRole.is_default || checkIsCoreDefault(editingCrewRole.name)) {
       onShowToast(`"${editingCrewRole.name}" is a core permanent studio role and cannot be modified.`);
       setEditingCrewRole(null);
       return;
@@ -106,7 +129,7 @@ export default function CrewRolesSettings({
 
   // Handle Delete Role
   const handleDeleteRole = async (item: WorkspaceCrewRole) => {
-    if (item.is_default || isCoreDefaultRole(item.name)) {
+    if (item.is_default || checkIsCoreDefault(item.name)) {
       onShowToast(`"${item.name}" is a core permanent studio role and cannot be deleted.`);
       return;
     }
@@ -125,16 +148,18 @@ export default function CrewRolesSettings({
   };
 
   // Core Default Lineup in exact requested order
-  const CORE_LINEUP_ORDER = [
-    'sales person',
-    'team manager',
-    'traditional photographer',
-    'traditional videographer',
-    'candid photographer',
-    'cinematographer',
-    'family photographer',
-    'assistant',
-  ];
+  const getLineupIndex = (name: string): number => {
+    const clean = name.toLowerCase().trim();
+    if (clean === 'sales person' || clean === 'salesperson') return 0;
+    if (clean === 'team manager') return 1;
+    if (clean === 'traditional photographer') return 2;
+    if (clean === 'traditional videographer') return 3;
+    if (clean === 'candid photographer') return 4;
+    if (clean === 'cinematographer') return 5;
+    if (clean === 'family photographer') return 6;
+    if (clean === 'assistant') return 7;
+    return -1;
+  };
 
   const uniqueRolesMap = new Map<string, WorkspaceCrewRole>();
   for (const r of crewRoles) {
@@ -145,10 +170,8 @@ export default function CrewRolesSettings({
   }
 
   const sortedRoles = Array.from(uniqueRolesMap.values()).sort((a, b) => {
-    const aName = a.name.toLowerCase().trim();
-    const bName = b.name.toLowerCase().trim();
-    const aIdx = CORE_LINEUP_ORDER.indexOf(aName);
-    const bIdx = CORE_LINEUP_ORDER.indexOf(bName);
+    const aIdx = getLineupIndex(a.name);
+    const bIdx = getLineupIndex(b.name);
 
     if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
     if (aIdx !== -1) return -1;
@@ -174,7 +197,7 @@ export default function CrewRolesSettings({
               Crew Roles &amp; Short Codes Settings
             </h2>
             <p className="text-xs font-medium text-slate-500 dark:text-stone-400">
-              Configure crew roles with short codes (SP, TM, TP, CP, CV, DP) for compact roster cards &amp; lead owners.
+              Configure crew roles with standardized short codes (SP, TM, TP, TV, CP, CV, FP, AS) for shoot rosters &amp; lead owners.
             </p>
           </div>
         </div>
@@ -200,7 +223,7 @@ export default function CrewRolesSettings({
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <input
             type="text"
-            placeholder="Full Role Name (e.g. Sales Person, Drone Pilot)..."
+            placeholder="Full Role Name (e.g. Drone Pilot, Jimmy Jib Operator)..."
             value={newRoleName}
             onChange={e => {
               setNewRoleName(e.target.value);
@@ -211,7 +234,7 @@ export default function CrewRolesSettings({
           <div className="relative">
             <input
               type="text"
-              placeholder="Short Code (e.g. SP)..."
+              placeholder="Short Code (e.g. DP)..."
               value={newRoleCode}
               onChange={e => setNewRoleCode(e.target.value.toUpperCase())}
               className="w-full px-3.5 py-2 bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 rounded-xl text-xs font-black text-amber-700 dark:text-amber-400 uppercase placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30 shadow-2xs"
@@ -228,7 +251,7 @@ export default function CrewRolesSettings({
         </div>
       </form>
 
-      {/* Crew Roles List */}
+      {/* Crew Roles List - Divided into 2 spacious columns with single-line role names */}
       {loading && crewRoles.length === 0 ? (
         <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
           <Loader2 className="w-5 h-5 animate-spin text-amber-600" />
@@ -239,32 +262,53 @@ export default function CrewRolesSettings({
           No crew roles matching search. Click &quot;+ Add Role&quot; above to create a crew role.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2">
           {filteredRoles.map((item) => {
-            const isSalesPerson = item.name.toLowerCase().trim() === 'sales person' || item.short_code.toUpperCase() === 'SP';
-            const isDefault = Boolean(item.is_default || isCoreDefaultRole(item.name));
+            const isSalesPerson = item.name.toLowerCase().trim() === 'sales person' || item.name.toLowerCase().trim() === 'salesperson' || item.short_code.toUpperCase() === 'SP';
+            const isDefault = Boolean(item.is_default || checkIsCoreDefault(item.name));
 
             return (
               <div
                 key={item.id}
-                className={`relative flex items-center p-3.5 pr-20 rounded-xl border shadow-2xs transition group min-h-[68px] ${
+                className={`relative flex items-center justify-between p-3.5 sm:p-4 rounded-xl border shadow-2xs transition group min-h-[64px] ${
                   isSalesPerson
-                    ? 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/80 hover:border-amber-400'
+                    ? 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/80 hover:border-amber-400'
                     : 'bg-white dark:bg-stone-900 border-[#EAE5DA] dark:border-stone-800 hover:border-amber-300 dark:hover:border-stone-700'
                 }`}
               >
-                {/* Top-Right Badge or Action Buttons */}
-                <div className="absolute top-2.5 right-2.5 shrink-0">
+                {/* Left: Code Box + Full Name on ONE single line */}
+                <div className="flex items-center gap-3 min-w-0 flex-1 mr-3">
+                  <div
+                    className={`w-9 h-9 rounded-lg font-black text-xs flex items-center justify-center shrink-0 border shadow-2xs ${
+                      isSalesPerson
+                        ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                        : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+                    }`}
+                  >
+                    {item.short_code}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span 
+                      className="text-xs sm:text-[13px] font-black text-slate-900 dark:text-stone-100 block truncate whitespace-nowrap tracking-tight"
+                      title={item.name}
+                    >
+                      {item.name}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right: Default badge OR Action Buttons */}
+                <div className="shrink-0 flex items-center">
                   {isDefault ? (
                     <span
-                      title="Core default role (Permanent)"
-                      className="px-2 py-0.5 text-[8.5px] font-black uppercase rounded-md bg-stone-100 dark:bg-stone-800 text-slate-500 dark:text-stone-400 border border-stone-200 dark:border-stone-700 flex items-center gap-1 shadow-2xs"
+                      title="Core default studio role (Permanent)"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[9.5px] font-black uppercase tracking-wider rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800/60 shadow-2xs"
                     >
-                      <Lock className="w-2.5 h-2.5" />
+                      <Lock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
                       <span>Default</span>
                     </span>
                   ) : (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -272,7 +316,7 @@ export default function CrewRolesSettings({
                           setEditRoleName(item.name);
                           setEditRoleCode(item.short_code);
                         }}
-                        className="p-1.5 text-slate-400 hover:text-amber-700 dark:hover:text-amber-400 transition rounded-lg hover:bg-amber-50 dark:hover:bg-stone-800 cursor-pointer"
+                        className="p-1.5 text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200/80 dark:border-indigo-800/60 rounded-lg transition cursor-pointer shadow-2xs"
                         title="Edit Role & Code"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -280,31 +324,13 @@ export default function CrewRolesSettings({
                       <button
                         type="button"
                         onClick={() => handleDeleteRole(item)}
-                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition rounded-lg cursor-pointer border border-rose-200/60 shadow-2xs"
+                        className="p-1.5 text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border border-rose-200/80 dark:border-rose-800/60 rounded-lg transition cursor-pointer shadow-2xs"
                         title={`Delete ${item.name}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   )}
-                </div>
-
-                {/* Role Code & Full Name (Full Width, No Subtitle, No Truncation) */}
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div
-                    className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shrink-0 border ${
-                      isSalesPerson
-                        ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800 shadow-xs'
-                        : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
-                    }`}
-                  >
-                    {item.short_code}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs font-black text-slate-900 dark:text-stone-100 block leading-tight break-words">
-                      {item.name}
-                    </span>
-                  </div>
                 </div>
               </div>
             );
@@ -314,16 +340,16 @@ export default function CrewRolesSettings({
 
       {/* Edit Crew Role Modal */}
       {editingCrewRole && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[100010] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-[#FFFDF9] dark:bg-[#181614] rounded-2xl p-5 max-w-sm w-full border border-[#EAE5DA] dark:border-stone-800 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-[#EAE5DA] dark:border-stone-800 pb-2">
               <h3 className="text-sm font-black text-slate-900 dark:text-stone-100">Edit Crew Role</h3>
               <button
                 type="button"
                 onClick={() => setEditingCrewRole(null)}
-                className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
               >
-                Cancel
+                <X className="w-4 h-4" />
               </button>
             </div>
             <div className="space-y-3">
@@ -335,7 +361,7 @@ export default function CrewRolesSettings({
                   type="text"
                   value={editRoleName}
                   onChange={e => setEditRoleName(e.target.value)}
-                  className="w-full px-3 py-2 bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl text-xs font-bold text-slate-900 dark:text-stone-100 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl text-xs font-bold text-slate-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
                 />
               </div>
               <div>
@@ -346,7 +372,7 @@ export default function CrewRolesSettings({
                   type="text"
                   value={editRoleCode}
                   onChange={e => setEditRoleCode(e.target.value.toUpperCase())}
-                  className="w-full px-3 py-2 bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl text-xs font-black text-amber-700 dark:text-amber-400 uppercase focus:outline-none"
+                  className="w-full px-3 py-2 bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl text-xs font-black text-amber-700 dark:text-amber-400 uppercase focus:outline-none focus:ring-2 focus:ring-amber-500/30"
                 />
               </div>
             </div>
