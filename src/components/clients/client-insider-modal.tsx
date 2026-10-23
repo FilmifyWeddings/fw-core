@@ -191,8 +191,12 @@ export function ClientInsiderModal({
     if (isOwner) {
       return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
     }
-    if (Array.isArray(rawModules) && rawModules.length > 0) {
-      return rawModules;
+    let list: any = rawModules;
+    if (typeof list === 'string') {
+      try { list = JSON.parse(list); } catch (_) {}
+    }
+    if (Array.isArray(list)) {
+      return list;
     }
     return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
   }, [isOwner, rawModules]);

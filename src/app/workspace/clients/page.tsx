@@ -41,32 +41,44 @@ const DEFAULT_EVENT_TYPES = [
   'Maternity & Baby Shower'
 ];
 
-// Module-level in-memory cache for instant 0ms millisecond transitions
-let memCachedClients: WorkspaceClient[] = [];
-let memCachedFinanceRecordsMap = new Map<string, ClientFinanceRecord>();
-let memCachedTeamMembers: WorkspaceMemberOption[] = [];
+// Module-level in-memory cache scoped by workspace ID for instant 0ms millisecond transitions without cross-workspace bleed
+const memCachedClientsByWorkspace = new Map<string, WorkspaceClient[]>();
+const memCachedFinanceByWorkspace = new Map<string, Map<string, ClientFinanceRecord>>();
+const memCachedQuoteFinanceByWorkspace = new Map<string, Map<string, { total: number; paid: number; due: number }>>();
+const memCachedTeamByWorkspace = new Map<string, WorkspaceMemberOption[]>();
 
 export default function ClientsPage() {
   const router = useRouter();
   const { isOwner, permissions, activeWorkspace, userEmail, userId, userName, loading: wsLoading, workspaceId: contextWsId } = useWorkspace();
+  const effectiveWsId = activeWorkspace?.workspaceId || contextWsId || userId || '';
+
   const clientsAccess = isOwner 
     ? 'ALL_MANAGE' 
     : (permissions?.clients_access || (activeWorkspace?.permissions as any)?.clients_access || 'NONE');
   const isReadOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ALL_VIEW');
   const isAssignedOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT');
 
-  // Lazy cache initialization for instant loading (SSR-safe to avoid Next.js hydration mismatch)
-  const [clients, setClients] = useState<WorkspaceClient[]>(() => memCachedClients);
-  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>('');
-  const [financeRecordsMap, setFinanceRecordsMap] = useState<Map<string, ClientFinanceRecord>>(() => memCachedFinanceRecordsMap);
-  const [quoteFinanceMap, setQuoteFinanceMap] = useState<Map<string, { total: number; paid: number; due: number }>>(new Map());
+  // Workspace-scoped states (SSR-safe, initialized from cache for effectiveWsId)
+  const [clients, setClients] = useState<WorkspaceClient[]>(() => {
+    return effectiveWsId ? (memCachedClientsByWorkspace.get(effectiveWsId) || []) : [];
+  });
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(effectiveWsId);
+  const [financeRecordsMap, setFinanceRecordsMap] = useState<Map<string, ClientFinanceRecord>>(() => {
+    return effectiveWsId ? (memCachedFinanceByWorkspace.get(effectiveWsId) || new Map()) : new Map();
+  });
+  const [quoteFinanceMap, setQuoteFinanceMap] = useState<Map<string, { total: number; paid: number; due: number }>>(() => {
+    return effectiveWsId ? (memCachedQuoteFinanceByWorkspace.get(effectiveWsId) || new Map()) : new Map();
+  });
   const [isExcelMigrationModalOpen, setIsExcelMigrationModalOpen] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [apiProjects, setApiProjects] = useState<any[]>([]);
-  const [apiAssignments, setApiAssignments] = useState<any[]>([]);
-  const [apiPostProjects, setApiPostProjects] = useState<any[]>([]);
-  const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>(() => memCachedTeamMembers);
-  const [loading, setLoading] = useState(() => memCachedClients.length === 0);
+  const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>(() => {
+    return effectiveWsId ? (memCachedTeamByWorkspace.get(effectiveWsId) || []) : [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (!effectiveWsId) return true;
+    const cached = memCachedClientsByWorkspace.get(effectiveWsId);
+    return !cached || cached.length === 0;
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'archived' | 'trash'>('all');
   const [clientToDelete, setClientToDelete] = useState<WorkspaceClient | null>(null);
@@ -75,22 +87,6 @@ export default function ClientsPage() {
   const [pmFilter, setPmFilter] = useState<string>('all');
   const [quickAssignClient, setQuickAssignClient] = useState<WorkspaceClient | null>(null);
   const [quickPmSearch, setQuickPmSearch] = useState<string>('');
-
-  // Hydrate local cache safely on client mount without triggering SSR mismatch
-  useEffect(() => {
-    if (memCachedClients.length === 0 && typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('sc_cached_clients');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedClients = parsed;
-            setClients(parsed);
-          }
-        }
-      } catch (_) {}
-    }
-  }, []);
 
   // Filter team members strictly to In-House only for Project Manager selection
   const inHouseTeamMembers = useMemo(() => {
@@ -146,16 +142,67 @@ export default function ClientsPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch clients, team members & auto-sync booked leads from Supabase
+  // Synchronize workspace cache and fetch fresh authoritative clients whenever effectiveWsId changes
   useEffect(() => {
-    fetchClientsAndSyncBookedLeads();
+    if (!effectiveWsId || effectiveWsId === 'ws_demo') return;
 
-    const handleDataRefresh = () => {
-      memCachedClients = [];
+    setCurrentWorkspaceId(effectiveWsId);
+
+    // 1. Immediately hydrate this workspace's cache to eliminate cross-workspace flash/lag
+    const cachedClients = memCachedClientsByWorkspace.get(effectiveWsId);
+    if (cachedClients && cachedClients.length > 0) {
+      setClients(cachedClients);
+      if (memCachedFinanceByWorkspace.has(effectiveWsId)) {
+        setFinanceRecordsMap(memCachedFinanceByWorkspace.get(effectiveWsId)!);
+      }
+      if (memCachedQuoteFinanceByWorkspace.has(effectiveWsId)) {
+        setQuoteFinanceMap(memCachedQuoteFinanceByWorkspace.get(effectiveWsId)!);
+      }
+      if (memCachedTeamByWorkspace.has(effectiveWsId)) {
+        setTeamMembers(memCachedTeamByWorkspace.get(effectiveWsId)!);
+      }
+      setLoading(false);
+    } else if (typeof window !== 'undefined') {
       try {
-        localStorage.removeItem('sc_cached_clients');
-      } catch (_) {}
-      fetchClientsAndSyncBookedLeads(true);
+        const stored = localStorage.getItem(`sc_cached_clients_${effectiveWsId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedClientsByWorkspace.set(effectiveWsId, parsed);
+            setClients(parsed);
+            setLoading(false);
+          } else {
+            // No valid cache for this workspace: clear immediately so previous workspace cards NEVER flash!
+            setClients([]);
+            setLoading(true);
+          }
+        } else {
+          setClients([]);
+          setLoading(true);
+        }
+      } catch (_) {
+        setClients([]);
+        setLoading(true);
+      }
+    } else {
+      setClients([]);
+      setLoading(true);
+    }
+
+    // 2. Fetch fresh clients from API for this specific workspace
+    fetchClientsAndSyncBookedLeads(false, effectiveWsId);
+  }, [effectiveWsId]);
+
+  // Event listeners for cache invalidation & storage sync
+  useEffect(() => {
+    const handleDataRefresh = () => {
+      if (effectiveWsId) {
+        memCachedClientsByWorkspace.delete(effectiveWsId);
+        try {
+          localStorage.removeItem(`sc_cached_clients_${effectiveWsId}`);
+        } catch (_) {}
+        fetchClientsAndSyncBookedLeads(true, effectiveWsId);
+      }
     };
     window.addEventListener('quotation_finalized', handleDataRefresh);
     window.addEventListener('finance_updated', handleDataRefresh);
@@ -165,7 +212,7 @@ export default function ClientsPage() {
     window.addEventListener('team_events_updated', handleDataRefresh);
 
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'sc_booking_sync_event' || e.key === 'sc_cached_clients' || e.key === 'client_created') {
+      if (e.key === `sc_cached_clients_${effectiveWsId}` || e.key === 'sc_booking_sync_event' || e.key === 'client_created') {
         handleDataRefresh();
       }
     };
@@ -180,18 +227,21 @@ export default function ClientsPage() {
       window.removeEventListener('team_events_updated', handleDataRefresh);
       window.removeEventListener('storage', handleStorage);
     };
-  }, []);
+  }, [effectiveWsId]);
 
-  const fetchClientsAndSyncBookedLeads = async (silent: boolean = false) => {
-    if (!silent && clients.length === 0) setLoading(true);
+  const fetchClientsAndSyncBookedLeads = async (silent: boolean = false, targetWsId?: string) => {
+    const wsIdToFetch = targetWsId || effectiveWsId;
+    if (!wsIdToFetch || wsIdToFetch === 'ws_demo') return;
+
+    if (!silent) {
+      const hasCached = (memCachedClientsByWorkspace.get(wsIdToFetch)?.length || 0) > 0;
+      if (!hasCached) setLoading(true);
+    }
     try {
-      // 1. Fetch user session & determine authoritative effective studio workspace ID
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
-      const effectiveWsId = activeWorkspace?.workspaceId || contextWsId || session?.user?.id || 'ws_demo';
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        setCurrentWorkspaceId(effectiveWsId);
-      }
+
+      setCurrentWorkspaceId(wsIdToFetch);
 
       let existingClientList: WorkspaceClient[] = [];
       const fMap = new Map<string, ClientFinanceRecord>();
@@ -199,104 +249,71 @@ export default function ClientsPage() {
       let leadList: Lead[] = [];
       let apiSuccess = false;
 
-      // 2. Fetch authoritative workspace clients from enterprise API route (bypasses RLS for invited members)
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        try {
-          const res = await fetch(`/api/workspace/clients?workspace_id=${effectiveWsId}`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {}
-          });
-          if (res.ok) {
-            const json = await res.json();
-            if (json.success) {
-              apiSuccess = true;
-              existingClientList = json.clients || [];
-              if (Array.isArray(json.financeRecords)) {
-                json.financeRecords.forEach((f: any) => {
-                  if (f.client_id) fMap.set(f.client_id, f);
-                });
-              }
-              if (Array.isArray(json.leads)) {
-                leadList = json.leads;
-                setLeads(leadList);
-              }
-              if (Array.isArray(json.projects)) {
-                setApiProjects(json.projects);
-              }
-              if (Array.isArray(json.assignments)) {
-                setApiAssignments(json.assignments);
-              }
-              if (Array.isArray(json.postProjects)) {
-                setApiPostProjects(json.postProjects);
-              }
-              if (Array.isArray(json.teamMembers) && json.teamMembers.length > 0) {
-                setTeamMembers(json.teamMembers);
-                memCachedTeamMembers = json.teamMembers;
-              }
+      // 1. Fetch authoritative workspace clients from enterprise API route (bypasses RLS for invited members)
+      try {
+        const res = await fetch(`/api/workspace/clients?workspace_id=${encodeURIComponent(wsIdToFetch)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success) {
+            apiSuccess = true;
+            existingClientList = json.clients || [];
+            if (Array.isArray(json.financeRecords)) {
+              json.financeRecords.forEach((f: any) => {
+                if (f.client_id) fMap.set(f.client_id, f);
+              });
+            }
+            if (Array.isArray(json.leads)) {
+              leadList = json.leads;
+              setLeads(leadList);
+            }
+            if (Array.isArray(json.teamMembers) && json.teamMembers.length > 0) {
+              setTeamMembers(json.teamMembers);
+              memCachedTeamByWorkspace.set(wsIdToFetch, json.teamMembers);
+            }
 
-              // Parse quotation docs
-              if (Array.isArray(json.quotationDocs)) {
-                for (const doc of json.quotationDocs) {
-                  const isFinal = Boolean(doc.content_json?.is_final);
-                  if (isFinal && doc.content_json) {
-                    const fin = extractFinancialsFromQuotation(doc.content_json);
-                    const data = {
-                      total: fin.final_total_amount || 0,
-                      paid: fin.received_amount || 0,
-                      due: fin.pending_amount || 0
-                    };
-                    if (doc.lead_id) qFinMap.set(doc.lead_id, data);
-                    if (doc.template_id) qFinMap.set(doc.template_id, data);
-                    const couple = extractCoupleNameFromQuotation(doc.content_json, '');
-                    if (couple) {
-                      qFinMap.set(couple.toLowerCase().trim(), data);
-                      qFinMap.set(couple.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim(), data);
-                    }
-                  }
-                }
-              }
-
-              // Parse quotations
-              if (Array.isArray(json.quotations)) {
-                for (const q of json.quotations) {
-                  const tot = Number(q.financials?.total_amount || (q as any).total_amount || 0);
-                  const paid = Number(q.financials?.received_amount || 0);
-                  const due = Math.max(0, tot - paid);
-                  if (tot > 0) {
-                    const data = { total: tot, paid, due };
-                    if (q.client_id) qFinMap.set(q.client_id, data);
-                    if (q.quotation_number) qFinMap.set(q.quotation_number, data);
-                    const qName = q.couple_names || q.client_name;
-                    if (qName) {
-                      qFinMap.set(String(qName).toLowerCase().trim(), data);
-                      qFinMap.set(String(qName).toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim(), data);
-                    }
+            // Parse quotations for financials
+            if (Array.isArray(json.quotations)) {
+              for (const q of json.quotations) {
+                const tot = Number(q.financials?.total_amount || (q as any).total_amount || 0);
+                const paid = Number(q.financials?.received_amount || 0);
+                const due = Math.max(0, tot - paid);
+                if (tot > 0) {
+                  const data = { total: tot, paid, due };
+                  if (q.client_id) qFinMap.set(q.client_id, data);
+                  if (q.quotation_number) qFinMap.set(q.quotation_number, data);
+                  const qName = q.couple_names || q.client_name;
+                  if (qName) {
+                    qFinMap.set(String(qName).toLowerCase().trim(), data);
+                    qFinMap.set(String(qName).toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim(), data);
                   }
                 }
               }
             }
           }
-        } catch (apiErr) {
-          console.warn('[ClientsPage] API fetch error, falling back to direct query:', apiErr);
         }
+      } catch (apiErr) {
+        console.warn('[ClientsPage] API fetch error, falling back to direct query:', apiErr);
       }
 
-      // Fallback to direct client-side queries if API endpoint fails
+      // 2. Direct client fallback if API route failed
       if (!apiSuccess) {
         let clientQuery = supabase
           .from('workspace_clients')
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-          clientQuery = clientQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+        if (wsIdToFetch && wsIdToFetch !== 'ws_demo') {
+          clientQuery = clientQuery.or(`user_id.eq.${wsIdToFetch},workspace_id.eq.${wsIdToFetch}`);
         }
 
         const { data: clientData } = await clientQuery;
         existingClientList = clientData || [];
 
         let finQuery = supabase.from('client_finance_records').select('*');
-        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-          finQuery = finQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+        if (wsIdToFetch && wsIdToFetch !== 'ws_demo') {
+          finQuery = finQuery.or(`user_id.eq.${wsIdToFetch},workspace_id.eq.${wsIdToFetch}`);
         }
         const { data: finData } = await finQuery;
         if (finData) {
@@ -307,12 +324,12 @@ export default function ClientsPage() {
 
         let leadsQuery = supabase
           .from('leads')
-          .select('*')
+          .select('id, name, full_name, phone, phone_number, email, event_date, status, raw_payload, final_quotation_id, client_id, workspace_id, notes')
           .order('created_at', { ascending: false })
           .limit(100);
 
-        if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-          leadsQuery = leadsQuery.eq('workspace_id', effectiveWsId);
+        if (wsIdToFetch && wsIdToFetch !== 'ws_demo') {
+          leadsQuery = leadsQuery.eq('workspace_id', wsIdToFetch);
         }
 
         const { data: leadsData } = await leadsQuery;
@@ -323,9 +340,9 @@ export default function ClientsPage() {
       setFinanceRecordsMap(fMap);
       setQuoteFinanceMap(qFinMap);
 
-      // 4. Auto-Sync: For every lead with status 'booked' / 'Booked' that is NOT yet in workspace_clients, create a client record!
+      // 3. Auto-Sync: For every lead with status 'booked' / 'Booked' that is NOT yet in workspace_clients, create a client record!
       const bookedLeads = leadList.filter(l => {
-        const stage = (l.status || l.stage || '').toLowerCase();
+        const stage = (l.status || (l as any).stage || '').toLowerCase();
         return stage === 'booked' || stage === 'closed' || stage === 'converted';
       });
 
@@ -336,7 +353,7 @@ export default function ClientsPage() {
 
       for (const bookedLead of bookedLeads) {
         const leadPhoneDigits = bookedLead.phone ? bookedLead.phone.replace(/\D/g, '').slice(-10) : '';
-        const clientName = bookedLead.raw_payload?.couple_name || (bookedLead as any).couple_names || bookedLead.client_name || bookedLead.name || 'Booked Client';
+        const clientName = bookedLead.raw_payload?.couple_name || (bookedLead as any).couple_names || (bookedLead as any).client_name || bookedLead.name || 'Booked Client';
         const nameClean = clientName.toLowerCase().trim();
 
         const alreadyLinked = 
@@ -360,7 +377,6 @@ export default function ClientsPage() {
         }
 
         if (!alreadyLinked && bookedLead.name) {
-          // Parse amount safely from lead raw payload or final quotation
           let packageAmt = 0;
           let paidAmt = 0;
           if (bookedLead.raw_payload) {
@@ -374,18 +390,18 @@ export default function ClientsPage() {
             paidAmt = quoteFin.paid || 0;
           }
 
-          const leadPmId = bookedLead.project_manager_id || bookedLead.raw_payload?.project_manager_id || null;
-          const rawLeadPm = bookedLead.project_manager_name || bookedLead.raw_payload?.project_manager_name || bookedLead.raw_payload?.lead_owner || null;
+          const leadPmId = (bookedLead as any).project_manager_id || bookedLead.raw_payload?.project_manager_id || null;
+          const rawLeadPm = (bookedLead as any).project_manager_name || bookedLead.raw_payload?.project_manager_name || bookedLead.raw_payload?.lead_owner || null;
           const validLeadPm = (rawLeadPm && rawLeadPm.toLowerCase() !== 'unassigned') ? rawLeadPm : null;
 
           const newClientPayload: any = {
-            user_id: workspaceId,
-            workspace_id: workspaceId,
+            user_id: wsIdToFetch,
+            workspace_id: wsIdToFetch,
             lead_id: bookedLead.id,
             name: clientName,
             phone: bookedLead.phone || '',
             email: bookedLead.email || null,
-            event_type: bookedLead.event_type || 'Wedding Photography',
+            event_type: (bookedLead as any).event_type || 'Wedding Photography',
             event_date: bookedLead.event_date || null,
             total_package_amount: packageAmt,
             paid_amount: paidAmt,
@@ -404,7 +420,7 @@ export default function ClientsPage() {
               events: bookedLead.event_date ? [
                 {
                   id: `ev_${Date.now()}`,
-                  name: bookedLead.event_type || 'Wedding Event',
+                  name: (bookedLead as any).event_type || 'Wedding Event',
                   date: bookedLead.event_date,
                   time_start: '',
                   time_end: '',
@@ -467,23 +483,27 @@ export default function ClientsPage() {
       }
       existingClientList = dedupedClients;
 
-      // Fetch team members for PM assignment
-      try {
-        const members = await fetchWorkspaceTeamMembers(effectiveWsId);
-        if (members && members.length > 0) {
-          setTeamMembers(members);
-          memCachedTeamMembers = members;
+      // Fetch team members fallback if not populated by API
+      if (teamMembers.length === 0) {
+        try {
+          const members = await fetchWorkspaceTeamMembers(wsIdToFetch);
+          if (members && members.length > 0) {
+            setTeamMembers(members);
+            memCachedTeamByWorkspace.set(wsIdToFetch, members);
+          }
+        } catch (memErr) {
+          console.warn('Could not load team members:', memErr);
         }
-      } catch (memErr) {
-        console.warn('Could not load team members:', memErr);
       }
 
       setClients(existingClientList);
-      memCachedClients = existingClientList;
-      memCachedFinanceRecordsMap = fMap;
+      memCachedClientsByWorkspace.set(wsIdToFetch, existingClientList);
+      memCachedFinanceByWorkspace.set(wsIdToFetch, fMap);
+      memCachedQuoteFinanceByWorkspace.set(wsIdToFetch, qFinMap);
+
       if (typeof window !== 'undefined') {
         try {
-          localStorage.setItem('sc_cached_clients', JSON.stringify(existingClientList));
+          localStorage.setItem(`sc_cached_clients_${wsIdToFetch}`, JSON.stringify(existingClientList));
         } catch (_) {}
       }
     } catch (err) {
@@ -518,11 +538,14 @@ export default function ClientsPage() {
       // Optimistically update UI
       setClients((prev) => {
         const next = prev.map((c) => (c.id === targetClient.id ? { ...c, ...updatedFields } : c));
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('sc_cached_clients', JSON.stringify(next));
-            localStorage.setItem('sc_booking_sync_event', Date.now().toString());
-          } catch (_) {}
+        if (effectiveWsId) {
+          memCachedClientsByWorkspace.set(effectiveWsId, next);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(`sc_cached_clients_${effectiveWsId}`, JSON.stringify(next));
+              localStorage.setItem('sc_booking_sync_event', Date.now().toString());
+            } catch (_) {}
+          }
         }
         return next;
       });
@@ -836,20 +859,24 @@ export default function ClientsPage() {
         return c;
       }));
 
-      memCachedClients = memCachedClients.map(c => {
-        if (c.id === clientId) {
-          return {
-            ...c,
-            status: 'trash' as any,
-            is_deleted: true,
-            notes: (c.notes || '') + ' [status:trash]'
-          };
-        }
-        return c;
-      });
-      try {
-        localStorage.setItem('sc_cached_clients', JSON.stringify(memCachedClients));
-      } catch (_) {}
+      if (effectiveWsId) {
+        const currentList = memCachedClientsByWorkspace.get(effectiveWsId) || [];
+        const updatedList = currentList.map(c => {
+          if (c.id === clientId) {
+            return {
+              ...c,
+              status: 'trash' as any,
+              is_deleted: true,
+              notes: (c.notes || '') + ' [status:trash]'
+            };
+          }
+          return c;
+        });
+        memCachedClientsByWorkspace.set(effectiveWsId, updatedList);
+        try {
+          localStorage.setItem(`sc_cached_clients_${effectiveWsId}`, JSON.stringify(updatedList));
+        } catch (_) {}
+      }
 
       window.dispatchEvent(new CustomEvent('client_updated'));
       window.dispatchEvent(new CustomEvent('finance_updated'));
@@ -920,20 +947,24 @@ export default function ClientsPage() {
         return c;
       }));
 
-      memCachedClients = memCachedClients.map(c => {
-        if (c.id === clientId) {
-          return {
-            ...c,
-            status: 'active' as any,
-            is_deleted: false,
-            notes: cleanNotes
-          };
-        }
-        return c;
-      });
-      try {
-        localStorage.setItem('sc_cached_clients', JSON.stringify(memCachedClients));
-      } catch (_) {}
+      if (effectiveWsId) {
+        const currentList = memCachedClientsByWorkspace.get(effectiveWsId) || [];
+        const updatedList = currentList.map(c => {
+          if (c.id === clientId) {
+            return {
+              ...c,
+              status: 'active' as any,
+              is_deleted: false,
+              notes: cleanNotes
+            };
+          }
+          return c;
+        });
+        memCachedClientsByWorkspace.set(effectiveWsId, updatedList);
+        try {
+          localStorage.setItem(`sc_cached_clients_${effectiveWsId}`, JSON.stringify(updatedList));
+        } catch (_) {}
+      }
 
       window.dispatchEvent(new CustomEvent('client_updated'));
       window.dispatchEvent(new CustomEvent('finance_updated'));
@@ -1029,7 +1060,7 @@ export default function ClientsPage() {
 
       if (isClientTrashed) return false;
 
-      // Granular RBAC: If ASSIGNED_VIEW or ASSIGNED_EDIT, restrict strictly to assigned projects
+      // Granular RBAC: If ASSIGNED_VIEW or ASSIGNED_EDIT, strictly restrict to clients where user is assigned as Project Manager (PM)
       if (isAssignedOnly) {
         const myMemberId = String(activeWorkspace?.memberId || '').toLowerCase().trim();
         const myUserId = String(userId || '').toLowerCase().trim();
@@ -1048,110 +1079,45 @@ export default function ClientsPage() {
           return cParts.some(cp => mParts.some(mp => cp.length > 2 && cp === mp));
         };
 
+        // Collect all possible candidate IDs for myself in this workspace
+        const myCandidateIds = new Set<string>();
+        if (myMemberId) myCandidateIds.add(myMemberId);
+        if (myUserId) myCandidateIds.add(myUserId);
+
+        if (Array.isArray(teamMembers) && teamMembers.length > 0) {
+          teamMembers.forEach(m => {
+            const mId = String(m.id || '').toLowerCase().trim();
+            const mAuth = String((m as any).auth_user_id || '').toLowerCase().trim();
+            const mEmail = String(m.email || '').toLowerCase().trim();
+            const mPhone = String(m.phone || '').replace(/\D/g, '').slice(-10);
+            const mName = String(m.name || '');
+
+            const isMe = 
+              (mId && (mId === myMemberId || mId === myUserId)) ||
+              (mAuth && (mAuth === myUserId || mAuth === myMemberId)) ||
+              (myEmail && mEmail && mEmail === myEmail) ||
+              (myPhone && mPhone && mPhone === myPhone) ||
+              isNameMatch(mName);
+
+            if (isMe) {
+              if (mId) myCandidateIds.add(mId);
+              if (mAuth) myCandidateIds.add(mAuth);
+            }
+          });
+        }
+
         const cPmId = String(client.project_manager_id || ext.project_manager_id || '').toLowerCase().trim();
         const cPmEmail = String(client.project_manager_email || ext.project_manager_email || '').toLowerCase().trim();
         const cPmName = String(client.project_manager_name || ext.project_manager_name || '');
+        const handledBy = String((client as any).handled_by || (client as any).custom_data?.handled_by || '');
 
-        const isDirectPm = 
-          (cPmId && (cPmId === myMemberId || cPmId === myUserId)) ||
+        const isClientPM = 
+          (cPmId && (myCandidateIds.has(cPmId) || cPmId === myMemberId || cPmId === myUserId)) ||
           (cPmEmail && myEmail && cPmEmail === myEmail) ||
-          isNameMatch(cPmName);
+          isNameMatch(cPmName) ||
+          (handledBy && isNameMatch(handledBy));
 
-        if (!isDirectPm) {
-          const cNameNorm = (client.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
-
-          // 1. Direct PM or crew in fw_projects
-          let isAssignedInProjects = false;
-          if (Array.isArray(apiProjects) && apiProjects.length > 0) {
-            isAssignedInProjects = apiProjects.some(p => {
-              const pMatchesClient = 
-                (p.client_id && p.client_id === client.id) ||
-                (p.lead_id && client.lead_id && p.lead_id === client.lead_id) ||
-                (p.client_name && cNameNorm && p.client_name.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim() === cNameNorm);
-
-              if (!pMatchesClient) return false;
-              const pPmId = String(p.project_manager_id || '').toLowerCase().trim();
-              if (pPmId && (pPmId === myMemberId || pPmId === myUserId)) return true;
-              if (isNameMatch(p.project_manager_name)) return true;
-              return false;
-            });
-          }
-
-          // 2. Crew in fw_assignments
-          let isAssignedInAssignments = false;
-          if (!isAssignedInProjects && Array.isArray(apiAssignments) && apiAssignments.length > 0) {
-            isAssignedInAssignments = apiAssignments.some(a => {
-              const aMemberId = String(a.assigned_member_id || '').toLowerCase().trim();
-              const aMemberName = String(a.assigned_member_name || '');
-              const aMemberPhone = a.assigned_member_phone ? String(a.assigned_member_phone).replace(/\D/g, '').slice(-10) : '';
-
-              const isMe = 
-                (aMemberId && (aMemberId === myMemberId || aMemberId === myUserId)) ||
-                (myPhone && aMemberPhone && myPhone === aMemberPhone) ||
-                isNameMatch(aMemberName);
-
-              if (!isMe) return false;
-
-              const aClientNorm = (a.client_name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
-              if (aClientNorm && cNameNorm && (aClientNorm === cNameNorm || aClientNorm.includes(cNameNorm) || cNameNorm.includes(aClientNorm))) {
-                return true;
-              }
-
-              if (a.project_id && Array.isArray(apiProjects)) {
-                const linkedP = apiProjects.find(p => p.id === a.project_id);
-                if (linkedP) {
-                  if (linkedP.client_id && linkedP.client_id === client.id) return true;
-                  if (linkedP.lead_id && client.lead_id && linkedP.lead_id === client.lead_id) return true;
-                  const pNameNorm = (linkedP.client_name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
-                  if (pNameNorm && cNameNorm && (pNameNorm === cNameNorm || pNameNorm.includes(cNameNorm) || cNameNorm.includes(pNameNorm))) return true;
-                }
-              }
-
-              return false;
-            });
-          }
-
-          // 3. Sub-events embedded in client notes
-          let isAssignedInEvents = false;
-          if (!isAssignedInProjects && !isAssignedInAssignments) {
-            const clientEvs = (client as any).events || (ext as any).events;
-            if (Array.isArray(clientEvs)) {
-              isAssignedInEvents = clientEvs.some((ev: any) => {
-                const crew = ev.crew || ev.team || [];
-                return Array.isArray(crew) && crew.some((c: any) => {
-                  const cId = String(c.member_id || c.id || c.user_id || '').toLowerCase().trim();
-                  const cEmail = String(c.email || '').toLowerCase().trim();
-                  return (myMemberId && cId === myMemberId) || 
-                         (myUserId && cId === myUserId) || 
-                         (myEmail && cEmail === myEmail) || 
-                         isNameMatch(c.name);
-                });
-              });
-            }
-          }
-
-          // 4. Post-Production Projects
-          let isAssignedInPost = false;
-          if (!isAssignedInProjects && !isAssignedInAssignments && !isAssignedInEvents && Array.isArray(apiPostProjects)) {
-            isAssignedInPost = apiPostProjects.some(pp => {
-              if (pp.client_id !== client.id) return false;
-              const ppPmId = String(pp.project_manager_id || '').toLowerCase().trim();
-              if (ppPmId && (ppPmId === myMemberId || ppPmId === myUserId)) return true;
-              if (isNameMatch(pp.project_manager_name)) return true;
-              if (Array.isArray(pp.deliverables)) {
-                return pp.deliverables.some((d: any) => {
-                  const dCrew = d.crew || d.editor || d.assigned_to;
-                  return isNameMatch(typeof dCrew === 'string' ? dCrew : dCrew?.name);
-                });
-              }
-              return false;
-            });
-          }
-
-          if (!isAssignedInProjects && !isAssignedInAssignments && !isAssignedInEvents && !isAssignedInPost) {
-            return false;
-          }
-        }
+        if (!isClientPM) return false;
       }
 
       const matchesSearch = 
@@ -1199,7 +1165,7 @@ export default function ClientsPage() {
 
       return matchesSearch && matchesEventType && matchesPm && matchesDate;
     });
-  }, [clients, searchQuery, eventTypeFilter, pmFilter, dateScopeMode, dateScopeYear, dateScopeMonth, dateScopeStartDate, dateScopeEndDate]);
+  }, [clients, searchQuery, eventTypeFilter, pmFilter, dateScopeMode, dateScopeYear, dateScopeMonth, dateScopeStartDate, dateScopeEndDate, isAssignedOnly, activeWorkspace, userId, userEmail, userName, teamMembers]);
 
   // Scoped Trashed Clients count (updates with PM & Search filter)
   const scopedTrashedClientsCount = useMemo(() => {

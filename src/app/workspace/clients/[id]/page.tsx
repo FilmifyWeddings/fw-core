@@ -92,8 +92,12 @@ export default function ClientWorkspaceDetailPage() {
     if (isOwner) {
       return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
     }
-    if (Array.isArray(rawModules) && rawModules.length > 0) {
-      return rawModules;
+    let list: any = rawModules;
+    if (typeof list === 'string') {
+      try { list = JSON.parse(list); } catch (_) {}
+    }
+    if (Array.isArray(list)) {
+      return list;
     }
     return ['overview', 'quotations', 'events', 'moodboard', 'tasks', 'post_production', 'finance'];
   }, [isOwner, rawModules]);
@@ -1581,6 +1585,43 @@ export default function ClientWorkspaceDetailPage() {
 
       setClient(foundClient);
       const ext = parseClientExtended(foundClient);
+
+      // Strict Granular RBAC Check: If ASSIGNED_VIEW or ASSIGNED_EDIT, restrict to PM only
+      if (isAssignedOnly) {
+        const myMemberId = String(activeWorkspace?.memberId || '').toLowerCase().trim();
+        const myUserId = String(userId || '').toLowerCase().trim();
+        const myEmail = String(userEmail || (activeWorkspace as any)?.memberEmail || '').toLowerCase().trim();
+        const myName = String(userName || (activeWorkspace as any)?.memberName || '').toLowerCase().trim();
+
+        const isNameMatch = (cand?: string | null) => {
+          if (!cand || !myName) return false;
+          const c = cand.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+          const m = myName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+          if (!c || !m) return false;
+          if (c === m || c.includes(m) || m.includes(c)) return true;
+          const cParts = c.split(' ').filter(Boolean);
+          const mParts = m.split(' ').filter(Boolean);
+          return cParts.some(cp => mParts.some(mp => cp.length > 2 && cp === mp));
+        };
+
+        const cPmId = String(foundClient.project_manager_id || ext.project_manager_id || '').toLowerCase().trim();
+        const cPmEmail = String(foundClient.project_manager_email || ext.project_manager_email || '').toLowerCase().trim();
+        const cPmName = String(foundClient.project_manager_name || ext.project_manager_name || '');
+        const handledBy = String((foundClient as any).handled_by || (foundClient as any).custom_data?.handled_by || '');
+
+        const isClientPM = 
+          (cPmId && (cPmId === myMemberId || cPmId === myUserId)) ||
+          (cPmEmail && myEmail && cPmEmail === myEmail) ||
+          isNameMatch(cPmName) ||
+          (handledBy && isNameMatch(handledBy));
+
+        if (!isClientPM) {
+          setErrorMsg('Access Restricted: You are only permitted to view clients where you are assigned as the Project Manager.');
+          setLoading(false);
+          return;
+        }
+      }
+
       setExtended(ext);
       setName(foundClient.name || '');
       setPhone(foundClient.phone || '');
@@ -2953,7 +2994,7 @@ export default function ClientWorkspaceDetailPage() {
         {/* ─────────────────────────────────────────────────────────────
             TAB 1: OVERVIEW & PROFILE
         ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'overview' && (
+        {activeTab === 'overview' && allowedModules.includes('overview') && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Basic Contact Info Card */}
@@ -3316,7 +3357,7 @@ export default function ClientWorkspaceDetailPage() {
         {/* ─────────────────────────────────────────────────────────────
             TAB 2: QUOTATIONS & VERSIONS (TWO-WAY SYNCED WITH LEADS CRM)
         ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'quotations' && (
+        {activeTab === 'quotations' && allowedModules.includes('quotations') && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
             <div className="flex items-center justify-between">
               <div>
@@ -3446,7 +3487,7 @@ export default function ClientWorkspaceDetailPage() {
         {/* ─────────────────────────────────────────────────────────────
             TAB 3: EVENTS & BOOKINGS (MULTI-DAY ITINERARY CARDS)
         ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'events' && (
+        {activeTab === 'events' && allowedModules.includes('events') && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -3628,7 +3669,7 @@ export default function ClientWorkspaceDetailPage() {
         {/* ─────────────────────────────────────────────────────────────
             TAB: TASKS & WORKFLOW (LUXURY CREAM APPLE NOTES / GOOGLE KEEP)
         ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'tasks' && (() => {
+        {activeTab === 'tasks' && allowedModules.includes('tasks') && (() => {
           const now = new Date();
           now.setHours(0, 0, 0, 0);
 
@@ -3943,7 +3984,7 @@ export default function ClientWorkspaceDetailPage() {
         {/* ─────────────────────────────────────────────────────────────
             TAB 4: POST-PRODUCTION CHECKLIST (FULL FEATURE ENGINE)
         ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'post_production' && (
+        {activeTab === 'post_production' && allowedModules.includes('post_production') && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
@@ -4029,7 +4070,7 @@ export default function ClientWorkspaceDetailPage() {
         {/* ─────────────────────────────────────────────────────────────
             TAB 5: FINANCE & INVOICES (STANDARD WORKSPACE COMPONENT)
         ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'finance' && (
+        {activeTab === 'finance' && allowedModules.includes('finance') && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -4108,7 +4149,7 @@ export default function ClientWorkspaceDetailPage() {
         {/* ─────────────────────────────────────────────────────────────
             TAB 6: CLIENT MOOD BOARD & WEDDING PREP PORTAL (MULTI-EVENT)
         ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'moodboard' && (
+        {activeTab === 'moodboard' && allowedModules.includes('moodboard') && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             {loadingMoodboard ? (
               <div className="p-16 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] flex flex-col items-center justify-center text-center">
@@ -5163,6 +5204,19 @@ export default function ClientWorkspaceDetailPage() {
               </div>
             )}
           </motion.div>
+        )}
+
+        {/* Fallback Banner for Restricted Sub-Module */}
+        {!allowedModules.includes(activeTab) && (
+          <div className="bg-white p-12 rounded-3xl border border-[#EAE5DA] text-center space-y-4 max-w-lg mx-auto shadow-sm my-8">
+            <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
+              <Lock className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-black text-slate-900">Sub-Module Access Restricted</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              You do not have permission to view or manage this sub-module. Please contact your studio owner to adjust your Client Directory module access permissions.
+            </p>
+          </div>
         )}
 
       </div>
