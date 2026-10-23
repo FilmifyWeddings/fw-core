@@ -130,12 +130,6 @@ export default function ClientWorkspaceDetailPage() {
     }
   }, [visibleTabs, activeTab]);
 
-  // Auto-fetch quotation versions on tab open if list is empty
-  useEffect(() => {
-    if (activeTab === 'quotations' && client && quotationDocs.length === 0 && !loadingQuotes) {
-      fetchLeadQuotationVersions(client);
-    }
-  }, [activeTab, client, quotationDocs.length, loadingQuotes]);
 
   // ── Tab: Tasks & Post-Production State ──
   const [clientTasks, setClientTasks] = useState<any[]>([]);
@@ -1796,6 +1790,13 @@ export default function ClientWorkspaceDetailPage() {
       setLoadingQuotes(false);
     }
   };
+
+  // Auto-fetch quotation versions on tab open if list is empty
+  useEffect(() => {
+    if (activeTab === 'quotations' && client && quotationDocs.length === 0 && !loadingQuotes) {
+      fetchLeadQuotationVersions(client);
+    }
+  }, [activeTab, client, quotationDocs.length, loadingQuotes]);
 
   // ─────────────────────────────────────────────────────────────
   // 2. SET FINAL QUOTATION (TWO-WAY SYNC WITH LEADS CRM)

@@ -93,11 +93,22 @@ export function GoogleContactSyncModal({
 
   if (!isOpen || !lead) return null;
 
-  // Handle Sync Contact
+  // Handle Sync Contact with Instant 0ms Optimistic Confirmation
   const handleSync = async () => {
     if (isSyncing || !lead) return;
     setIsSyncing(true);
     setErrorMessage(null);
+
+    // ⚡ 0ms Optimistic UI: Immediately update lead status & show success checkmark!
+    setSyncSuccess(true);
+    if (onSyncSuccess) {
+      onSyncSuccess(lead.id);
+    }
+
+    // Auto-close modal after 450ms so the user is never stuck waiting
+    const autoCloseTimer = setTimeout(() => {
+      onClose();
+    }, 450);
 
     try {
       const res = await fetch('/api/integrations/google-contacts', {
@@ -113,15 +124,18 @@ export function GoogleContactSyncModal({
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setSyncSuccess(true);
-        if (onSyncSuccess) {
+        if (onSyncSuccess && data.contactId) {
           onSyncSuccess(lead.id, data.contactId);
         }
       } else {
+        clearTimeout(autoCloseTimer);
+        setSyncSuccess(false);
         setErrorMessage(data.error || data.message || 'Failed to sync contact with Google.');
       }
     } catch (err: any) {
       console.error('Sync lead error:', err);
+      clearTimeout(autoCloseTimer);
+      setSyncSuccess(false);
       setErrorMessage(err.message || 'Network error occurred during sync.');
     } finally {
       setIsSyncing(false);
@@ -356,10 +370,19 @@ export function GoogleContactSyncModal({
                   </button>
                   <button
                     onClick={handleSync}
-                    disabled={isSyncing}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md disabled:opacity-50 cursor-pointer"
+                    disabled={isSyncing || syncSuccess}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer ${
+                      syncSuccess
+                        ? 'bg-emerald-600 text-white cursor-default'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'
+                    }`}
                   >
-                    {isSyncing ? (
+                    {syncSuccess ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Synced to Google ✓
+                      </>
+                    ) : isSyncing ? (
                       <>
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                         Re-syncing...
@@ -483,15 +506,15 @@ export function GoogleContactSyncModal({
                         : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'
                     }`}
                   >
-                    {isSyncing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Syncing Contact...
-                      </>
-                    ) : syncSuccess ? (
+                    {syncSuccess ? (
                       <>
                         <CheckCircle2 className="w-4 h-4" />
                         Synced to Google ✓
+                      </>
+                    ) : isSyncing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Syncing Contact...
                       </>
                     ) : (
                       <>
