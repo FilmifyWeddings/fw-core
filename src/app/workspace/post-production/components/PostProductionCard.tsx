@@ -47,6 +47,7 @@ interface PostProductionCardProps {
   isAllView?: boolean;
   isAssignedView?: boolean;
   isReadOnly?: boolean;
+  isOwner?: boolean;
   currentMemberId?: string | null;
   currentUser?: { id?: string; name?: string; role?: string };
   onToggleExpand: () => void;
@@ -70,6 +71,7 @@ export default function PostProductionCard({
   isAllView = false,
   isAssignedView = false,
   isReadOnly = false,
+  isOwner = false,
   currentMemberId,
   currentUser,
   onToggleExpand,
@@ -89,6 +91,9 @@ export default function PostProductionCard({
   const [showPMAssignModal, setShowPMAssignModal] = useState(false);
   const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
   const canManage = propCanManage !== undefined ? propCanManage : !isReadOnly;
+  // History button: STRICTLY hidden for ASSIGNED_VIEW and ASSIGNED_EDIT.
+  // ONLY visible for Studio Owner, ALL_VIEW (All Projects View Only), and ALL_MANAGE (Full Manage Access).
+  const canViewHistory = isOwner || (!isAssignedView && (canManage || isAllView));
   const [localPM, setLocalPM] = useState<string | null>(project.project_manager_name || null);
 
   useEffect(() => {
@@ -206,6 +211,22 @@ export default function PostProductionCard({
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
+          project_id: project.id,
+          workspace_id: project.workspace_id,
+          client_id: project.client_id,
+          actor_id: session?.user?.id,
+          actor_name: currentUser?.name || session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Team Member',
+          actor_role: currentUser?.role || 'Editor / Manager',
+          action_type: params.actionType,
+          deliverable_id: params.deliverableId,
+          deliverable_title: params.deliverableTitle,
+          category: params.category,
+          segment: params.segment,
+          title: params.title,
+          old_value: params.oldValue,
+          new_value: params.newValue,
+          details: params.details,
+          // camelCase redundancy for backward/forward compatibility
           projectId: project.id,
           workspaceId: project.workspace_id,
           clientId: project.client_id,
@@ -214,12 +235,8 @@ export default function PostProductionCard({
           actionType: params.actionType,
           deliverableId: params.deliverableId,
           deliverableTitle: params.deliverableTitle,
-          category: params.category,
-          segment: params.segment,
-          title: params.title,
           oldValue: params.oldValue,
-          newValue: params.newValue,
-          details: params.details
+          newValue: params.newValue
         })
       }).catch(() => {});
     } catch (_) {}
@@ -633,19 +650,21 @@ export default function PostProductionCard({
             />
           </div>
 
-          {/* Change History Button - Accessible to Studio Owner & Team Members */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowHistoryDrawer(true);
-            }}
-            className="px-3 py-2 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:border-amber-400 transition cursor-pointer shadow-2xs flex items-center gap-1.5"
-            title="View Card History & Audit Log"
-          >
-            <History className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            <span className="hidden sm:inline text-xs font-bold">History</span>
-          </button>
+          {/* Change History Button - STRICTLY for Studio Owner, All Projects View Only, and Full Manage Access */}
+          {canViewHistory && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowHistoryDrawer(true);
+              }}
+              className="px-3 py-2 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:border-amber-400 transition cursor-pointer shadow-2xs flex items-center gap-1.5"
+              title="View Card History & Audit Log"
+            >
+              <History className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span className="hidden sm:inline text-xs font-bold">History</span>
+            </button>
+          )}
 
           {/* Expand/Collapse Toggle */}
           <button

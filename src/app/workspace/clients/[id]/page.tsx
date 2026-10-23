@@ -3892,7 +3892,8 @@ export default function ClientWorkspaceDetailPage() {
                   eventTypes={eventTypes.map(t => ({ name: t }))}
                   isExpanded={true}
                   isReadOnly={isReadOnly}
-                  isAssignedView={clientsAccess === 'ASSIGNED_VIEW'}
+                  isOwner={isOwner}
+                  isAssignedView={clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT'}
                   isAllView={clientsAccess === 'ALL_VIEW'}
                   canManage={!isReadOnly}
                   onToggleExpand={() => {}}

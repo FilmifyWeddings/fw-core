@@ -1895,6 +1895,7 @@ export default function PostProductionPage() {
                 isAllView={isAllView}
                 isAssignedView={isAssignedOnly}
                 isReadOnly={isReadOnly}
+                isOwner={isOwner}
                 currentMemberId={effectiveMemberId}
                 currentUser={{ id: userId || undefined, name: userName || undefined, role: userRole || undefined }}
                 onToggleExpand={() => toggleCardExpansion(project.id)}

@@ -583,16 +583,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
       }
     ] : []),
-    // 4.1 Video Review (Only for Post-Production Full Manage or explicitly granted review access)
-    ...(permissions?.post_production_access === 'ALL_MANAGE' || (permissions as any)?.video_review_access === 'ALL_MANAGE' || (permissions as any)?.video_review_access === true ? [
-      {
-        id: 'review',
-        name: 'Video Review',
-        path: '/workspace/video-review',
-        icon: PlaySquare,
-        iconBg: 'bg-[#EDE9FE] text-[#7C3AED]',
-      }
-    ] : []),
     // 5. Finance
     ...(permissions?.finance_access && permissions.finance_access !== 'NONE' ? [{
       id: 'finance',
@@ -650,7 +640,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     },
   ];
 
-  const menuItems = appMode === 'gallery' ? galleryMenuItems : baseMenuItems;
+  const menuItems = (isOwner && appMode === 'gallery') ? galleryMenuItems : baseMenuItems;
 
   const isStandalonePage = 
     pathname === '/' ||
@@ -748,8 +738,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           <WorkspaceSwitcher isCollapsed={collapsed} />
         </div>
 
-        {/* Animated Round Capsule Mode Switcher (CRM <-> Gallery) */}
-        {!collapsed ? (
+        {/* Animated Round Capsule Mode Switcher (CRM <-> Gallery) - STRICTLY for Studio Owner Only */}
+        {isOwner && (!collapsed ? (
           <div className="px-3 py-2 shrink-0">
             <div className="relative p-1 rounded-full bg-[#F3EFE7] border border-[#E4DEC3] flex items-center shadow-inner">
               <button
@@ -811,7 +801,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               </span>
             </button>
           </div>
-        )}
+        ))}
 
         {/* Navigation Items */}
         <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1 menu-scrollbar">
@@ -1065,52 +1055,54 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 <WorkspaceSwitcher isCollapsed={false} />
               </div>
 
-              {/* Mobile Animated Capsule Mode Switcher */}
-              <div className="px-3 py-2 shrink-0">
-                <div className="relative p-1 rounded-full bg-[#F3EFE7] border border-[#E4DEC3] flex items-center shadow-inner">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleSwitchAppMode('crm');
-                      setMobileDrawerOpen(false);
-                    }}
-                    className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-black transition-colors duration-200 cursor-pointer select-none ${
-                      appMode === 'crm' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-800'
-                    }`}
-                  >
-                    {appMode === 'crm' && (
-                      <motion.div
-                        layoutId="mobileModePill"
-                        transition={{ type: 'spring', stiffness: 500, damping: 38 }}
-                        className="absolute inset-0 bg-white rounded-full shadow-xs border border-[#E7E2D8]"
-                      />
-                    )}
-                    <Briefcase className={`relative z-10 w-3.5 h-3.5 ${appMode === 'crm' ? 'text-amber-600' : 'text-zinc-400'}`} />
-                    <span className="relative z-10">CRM</span>
-                  </button>
+              {/* Mobile Animated Capsule Mode Switcher - STRICTLY for Studio Owner Only */}
+              {isOwner && (
+                <div className="px-3 py-2 shrink-0">
+                  <div className="relative p-1 rounded-full bg-[#F3EFE7] border border-[#E4DEC3] flex items-center shadow-inner">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSwitchAppMode('crm');
+                        setMobileDrawerOpen(false);
+                      }}
+                      className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-black transition-colors duration-200 cursor-pointer select-none ${
+                        appMode === 'crm' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-800'
+                      }`}
+                    >
+                      {appMode === 'crm' && (
+                        <motion.div
+                          layoutId="mobileModePill"
+                          transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                          className="absolute inset-0 bg-white rounded-full shadow-xs border border-[#E7E2D8]"
+                        />
+                      )}
+                      <Briefcase className={`relative z-10 w-3.5 h-3.5 ${appMode === 'crm' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                      <span className="relative z-10">CRM</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleSwitchAppMode('gallery');
-                      setMobileDrawerOpen(false);
-                    }}
-                    className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-black transition-colors duration-200 cursor-pointer select-none ${
-                      appMode === 'gallery' ? 'text-amber-950' : 'text-zinc-500 hover:text-zinc-800'
-                    }`}
-                  >
-                    {appMode === 'gallery' && (
-                      <motion.div
-                        layoutId="mobileModePill"
-                        transition={{ type: 'spring', stiffness: 500, damping: 38 }}
-                        className="absolute inset-0 bg-white rounded-full shadow-xs border border-amber-300/80"
-                      />
-                    )}
-                    <Images className={`relative z-10 w-3.5 h-3.5 ${appMode === 'gallery' ? 'text-amber-600' : 'text-zinc-400'}`} />
-                    <span className="relative z-10">Gallery</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSwitchAppMode('gallery');
+                        setMobileDrawerOpen(false);
+                      }}
+                      className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-black transition-colors duration-200 cursor-pointer select-none ${
+                        appMode === 'gallery' ? 'text-amber-950' : 'text-zinc-500 hover:text-zinc-800'
+                      }`}
+                    >
+                      {appMode === 'gallery' && (
+                        <motion.div
+                          layoutId="mobileModePill"
+                          transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                          className="absolute inset-0 bg-white rounded-full shadow-xs border border-amber-300/80"
+                        />
+                      )}
+                      <Images className={`relative z-10 w-3.5 h-3.5 ${appMode === 'gallery' ? 'text-amber-600' : 'text-zinc-400'}`} />
+                      <span className="relative z-10">Gallery</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex-1 overflow-y-auto py-2 px-3 space-y-1 menu-scrollbar">
                 {menuItems.map((item) => {

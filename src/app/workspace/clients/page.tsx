@@ -48,8 +48,10 @@ let memCachedTeamMembers: WorkspaceMemberOption[] = [];
 
 export default function ClientsPage() {
   const router = useRouter();
-  const { isOwner, permissions, activeWorkspace, userEmail, userId, userName } = useWorkspace();
-  const clientsAccess = isOwner ? 'ALL_MANAGE' : (permissions?.clients_access || 'NONE');
+  const { isOwner, permissions, activeWorkspace, userEmail, userId, userName, loading: wsLoading } = useWorkspace();
+  const clientsAccess = isOwner 
+    ? 'ALL_MANAGE' 
+    : (permissions?.clients_access || (activeWorkspace?.permissions as any)?.clients_access || 'NONE');
   const isReadOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ALL_VIEW');
   const isAssignedOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT');
 
@@ -1179,7 +1181,7 @@ export default function ClientsPage() {
   }, 0);
   const pendingBalanceTotal = Math.max(0, totalInvoicesCount - cashRevenueTotal);
 
-  if (!loading && !isOwner && clientsAccess === 'NONE') {
+  if (!loading && !wsLoading && activeWorkspace && !isOwner && clientsAccess === 'NONE') {
     return (
       <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center p-6 text-center font-sans">
         <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-[#EAE5DA] shadow-xl space-y-4">

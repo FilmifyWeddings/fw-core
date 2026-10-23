@@ -122,13 +122,17 @@ export async function GET(req: NextRequest) {
         // Permissions from isolated studio_member_permissions table
         let studioPerm: any = null;
         try {
-          const { data: sp } = await supabaseAdmin
+          const ownerIdsToTry = [mem.workspace_id];
+          if ((wsData as any)?.owner_id && !ownerIdsToTry.includes((wsData as any).owner_id)) {
+            ownerIdsToTry.push((wsData as any).owner_id);
+          }
+          const { data: spList } = await supabaseAdmin
             .from('studio_member_permissions')
             .select('*')
-            .eq('owner_id', mem.workspace_id)
             .eq('member_id', mem.id)
-            .maybeSingle();
-          if (sp) studioPerm = sp;
+            .in('owner_id', ownerIdsToTry)
+            .limit(1);
+          if (spList && spList.length > 0) studioPerm = spList[0];
         } catch (_) {}
 
         const legacyPerm = mem.member_permissions?.[0] || mem.member_permissions;

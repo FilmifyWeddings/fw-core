@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { 
-  ShieldCheck, UserCheck, Users, FileText, Film, DollarSign, Eye, Pencil, Trash2 
+  ShieldCheck, UserCheck, Users, Users2, FileText, Film, DollarSign, Eye, Pencil, Trash2 
 } from 'lucide-react';
 
 interface TeamTableRowProps {

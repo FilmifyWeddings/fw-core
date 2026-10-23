@@ -68,16 +68,24 @@ export default function DeliverableCommentDrawer({
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
+          project_id: deliverable?.project_id,
+          deliverable_id: deliverable?.id,
+          deliverable_title: deliverable?.title,
+          category: deliverable?.category,
+          segment: deliverable?.segment,
+          actor_id: session?.user?.id,
+          actor_name: currentUser?.name || session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Team Member',
+          actor_role: currentUser?.role || 'Team Member',
+          action_type: actionType,
+          title,
+          details,
+          // camelCase redundancy
           projectId: deliverable?.project_id,
           deliverableId: deliverable?.id,
           deliverableTitle: deliverable?.title,
-          category: deliverable?.category,
-          segment: deliverable?.segment,
           actorName: currentUser?.name || session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Team Member',
           actorRole: currentUser?.role || 'Team Member',
-          actionType,
-          title,
-          details
+          actionType
         })
       }).catch(() => {});
     } catch (_) {}

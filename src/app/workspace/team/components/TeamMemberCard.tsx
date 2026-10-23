@@ -7,6 +7,7 @@ import {
   Trash2,
   UserCheck,      // Leads & CRM
   Users,          // Team & Partners
+  Users2,         // Clients Directory
   FileText,       // Quotations & Proposals
   Film,           // Post-Production
   DollarSign,     // Finance & Payments
