@@ -3,7 +3,8 @@ import {
   normalizeQuotationData, 
   consolidateSameDateFunctions, 
   resolvePrimaryCoverLocation, 
-  sanitizeAndParseJson 
+  sanitizeAndParseJson,
+  formatQuotationDate
 } from '@/lib/quotation-defaults';
 import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
 
@@ -527,7 +528,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       const mappedItems = itemsToKeep.map((fn: any) => ({
         ...fn,
         name: fn.name || 'Wedding',
-        date: fn.date || (fn.dateNotFixed ? 'Date Not Fixed' : 'Date Not Fixed'),
+        date: fn.dateNotFixed ? 'Date Not Fixed' : formatQuotationDate(fn.date),
         dateNotFixed: fn.dateNotFixed ?? (!fn.date || fn.date === 'Date Not Fixed'),
         startTime: fn.startTime || '',
         endTime: fn.endTime || '',
@@ -662,7 +663,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       return {
         id: fn.id || `func-ai-${Date.now()}-${idx}`,
         name: fn.name || `Function ${idx + 1}`,
-        date: isNotFixed ? 'Date Not Fixed' : fn.date,
+        date: isNotFixed ? 'Date Not Fixed' : formatQuotationDate(fn.date),
         dateNotFixed: isNotFixed,
         startTime: fn.startTime || '',
         endTime: fn.endTime || '',
@@ -718,8 +719,19 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
 
   // 6. Pricing Page
   if (!doc.pricingPage) doc.pricingPage = {};
-  if (pricingPage.basePrice !== undefined) doc.pricingPage.basePrice = Number(pricingPage.basePrice);
-  doc.pricingPage.discountAmount = pricingPage.discountAmount !== undefined ? Number(pricingPage.discountAmount) : 0;
+  const rawBase = pricingPage.regularPrice ?? pricingPage.regular_price ?? pricingPage.basePrice ?? pricingPage.base_price;
+  if (rawBase !== undefined) doc.pricingPage.basePrice = Number(String(rawBase).replace(/[^\d.-]/g, '')) || 0;
+  let rawDisc = pricingPage.discountAmount ?? pricingPage.discount_amount ?? pricingPage.discount;
+  let discAmt = rawDisc !== undefined ? (Number(String(rawDisc).replace(/[^\d.-]/g, '')) || 0) : 0;
+  const rawBest = pricingPage.bestPrice ?? pricingPage.best_price ?? pricingPage.offerPrice ?? pricingPage.offer_price;
+  if (rawBest !== undefined) {
+    const bestNum = Number(String(rawBest).replace(/[^\d.-]/g, '')) || 0;
+    const baseNum = Number(doc.pricingPage.basePrice || 0);
+    if (bestNum > 0 && baseNum > bestNum && discAmt === 0) {
+      discAmt = baseNum - bestNum;
+    }
+  }
+  doc.pricingPage.discountAmount = discAmt;
   if (pricingPage.gstPct !== undefined) doc.pricingPage.gstPct = Number(pricingPage.gstPct);
   if (pricingPage.travelCharges !== undefined) doc.pricingPage.travelCharges = Number(pricingPage.travelCharges);
   if (pricingPage.accommodationCharges !== undefined) doc.pricingPage.accommodationCharges = Number(pricingPage.accommodationCharges);

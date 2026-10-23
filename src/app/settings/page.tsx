@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageToDataUrl } from '@/lib/image-compression';
+import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
 import { 
   WorkspaceEventType, 
   WorkspaceCrewRole, 
@@ -1928,12 +1929,10 @@ export default function SettingsPage() {
                         <Phone className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                         <span>Studio Phone / WhatsApp</span>
                       </label>
-                      <input
-                        type="text"
+                      <CountryPhoneInput
                         value={profilePhone}
-                        onChange={e => setProfilePhone(e.target.value)}
-                        placeholder="e.g. +91 98765 43210"
-                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                        onChange={(fullPhone) => setProfilePhone(fullPhone)}
+                        placeholder="98765 43210"
                       />
                     </div>
 

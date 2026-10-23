@@ -896,19 +896,12 @@ export default function AddTeamMemberModal({
               <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
                 Mobile Phone <span className="text-red-500">*</span>
               </label>
-              <div className="flex gap-2">
-                <span className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 flex items-center text-xs font-semibold text-slate-600 shrink-0">
-                  IN +91
-                </span>
-                <input
-                  type="tel"
-                  required
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  placeholder="98765 43210"
-                  className="h-9 flex-1 rounded-lg border border-slate-200 px-3 text-xs focus:bg-white focus:border-amber-500 focus:outline-none transition"
-                />
-              </div>
+              <CountryFlagPhoneInput
+                countryCode={countryCode}
+                phoneNumber={phoneNumber}
+                onCountryCodeChange={(code) => setCountryCode(code)}
+                onPhoneNumberChange={(phone) => setPhoneNumber(phone.replace(/\D/g, '').slice(0, 15))}
+              />
             </div>
 
             {/* ── 4. MEMBER TYPE CLASSIFICATION (3D Multi-Select Checkboxes) ── */}

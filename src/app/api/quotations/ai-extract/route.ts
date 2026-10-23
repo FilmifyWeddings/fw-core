@@ -207,7 +207,7 @@ PAGE-BY-PAGE RULES & MAPPING:
 - items: Array of event objects:
   - id: Unique string "func_1", "func_2", etc.
   - name: Function name. Combine multi-events on same date/slot with " + " (e.g. "Haldi + Sangeet").
-  - date: Exact date string if specified, or "Date Not Fixed" with dateNotFixed: true if not specified.
+  - date: CRITICAL DATE FORMAT MANDATE: Every date MUST strictly be formatted as "DD - MMM - YYYY" (e.g. "13 - Dec - 2026", "22 - Feb - 2026"). NEVER output ISO dates like 2026-12-13. If not specified, "Date Not Fixed" with dateNotFixed: true.
   - startTime / endTime: Exact time if specified, else EMPTY string "".
   - location: Venue or city if specified, else EMPTY string "".
   - notes: Special notes if specified, else EMPTY string "".
@@ -225,13 +225,11 @@ PAGE-BY-PAGE RULES & MAPPING:
 - selectedItems: Array of complimentary bonus items. If none, empty array [].
 
 7. PRICING (pricingPage):
-- STRICT PRICING & DISCOUNT LOGIC:
-  * basePrice: Gross total package price before discount (Integer, e.g. 180000). Inspect context (e.g. "₹1,50,000", "2.5L" -> 250000; "90k" -> 90000).
-  * discountAmount:
-    - If user/client explicitly mentioned a discount, offer, or deduction (e.g. "20,000 discount", "offered 15k off", "discount of 10k"), set discountAmount to that exact amount (e.g. 20000).
-    - If NO discount was mentioned in the prompt or conversation, discountAmount MUST STRICTLY BE 0. DO NOT invent or assume any discount!
+- STRICT PRICING & DISCOUNT LOGIC (REGULAR PRICE VS BEST OFFER PRICE):
+  * regularPrice (or basePrice): The gross standard regular package price before discount (Integer, e.g. 180000). Inspect context (e.g. "₹1,50,000", "2.5L" -> 250000; "90k" -> 90000).
+  * bestPrice (or offerPrice): The best offer price given to client (Integer, e.g. 150000).
+  * discountAmount: Difference between regularPrice and bestPrice (e.g. 180000 - 150000 = 30000). If NO discount/offer mentioned, discountAmount MUST STRICTLY BE 0.
   * Net Total Calculation: Net Amount = basePrice - discountAmount + travelCharges + accommodationCharges.
-  * If only a final agreed amount was stated without any discount breakdown, set basePrice to that amount and discountAmount to 0.
 - gstPct, travelCharges, accommodationCharges, additionalCharges: Numbers, default 0 if not mentioned.
 - showExclusionsNote: true.
 

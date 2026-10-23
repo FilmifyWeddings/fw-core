@@ -52,11 +52,14 @@ export default function ClientsPage() {
   const { isOwner, permissions, activeWorkspace, userEmail, userId, userName, loading: wsLoading, workspaceId: contextWsId } = useWorkspace();
   const effectiveWsId = activeWorkspace?.workspaceId || contextWsId || userId || '';
 
-  const clientsAccess = isOwner 
+  const actualIsOwner = Boolean(
+    activeWorkspace ? activeWorkspace.isOwner : isOwner
+  );
+  const clientsAccess = actualIsOwner 
     ? 'ALL_MANAGE' 
     : (permissions?.clients_access || (activeWorkspace?.permissions as any)?.clients_access || 'NONE');
-  const isReadOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ALL_VIEW');
-  const isAssignedOnly = !isOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT');
+  const isReadOnly = !actualIsOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ALL_VIEW');
+  const isAssignedOnly = !actualIsOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT');
 
   // Workspace-scoped states (SSR-safe, initialized from cache for effectiveWsId)
   const [clients, setClients] = useState<WorkspaceClient[]>(() => {
@@ -1047,6 +1050,12 @@ export default function ClientsPage() {
   // Scope clients by PM, Date Scope, Event Type & Search (excluding status filter)
   const scopedNonTrashedClients = useMemo(() => {
     return (clients || []).filter(client => {
+      // STRICT WORKSPACE ISOLATION: Never display clients across workspaces
+      if (effectiveWsId && effectiveWsId !== 'all') {
+        const cWs = client.workspace_id || client.user_id;
+        if (cWs && cWs !== effectiveWsId) return false;
+      }
+
       const ext = parseClientExtended(client);
       const pmName = (client.project_manager_name || ext.project_manager_name || '').trim();
       const pmId = (client.project_manager_id || ext.project_manager_id || '').trim();
@@ -1803,7 +1812,7 @@ export default function ClientsPage() {
         {/* ─────────────────────────────────────────────────────────────
             CLIENT CARDS / TABLE LIST (CLICKABLE FOR 360 WORKSPACE)
         ───────────────────────────────────────────────────────────── */}
-        {loading && clients.length === 0 ? (
+        {(loading && clients.length === 0) || wsLoading || currentWorkspaceId !== effectiveWsId ? (
           <StudioCoreLiquidLoader label="Loading Clients Directory..." fullscreen={false} />
         ) : filteredClients.length === 0 ? (
           <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-dashed border-amber-300/80 text-center space-y-4 shadow-xs">

@@ -10,6 +10,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { compressImageToDataUrl } from '@/lib/image-compression';
+import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
 
 function InstagramIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -433,12 +434,10 @@ export default function StudioProfileEditModal({
                         <Phone className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                         <span>Studio Phone / WhatsApp</span>
                       </label>
-                      <input
-                        type="text"
+                      <CountryPhoneInput
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="e.g. +91 98765 43210"
-                        className="w-full px-4 py-2.5 bg-[#FDFBF7] dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                        onChange={(fullPhone) => setPhone(fullPhone)}
+                        placeholder="98765 43210"
                       />
                     </div>
 

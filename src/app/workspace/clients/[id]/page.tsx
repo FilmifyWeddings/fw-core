@@ -1553,27 +1553,60 @@ export default function ClientWorkspaceDetailPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
       const effectiveWsId = activeWorkspace?.workspaceId || currentWsId || workspaceId;
+      const token = session?.access_token || '';
 
-      // 1. Try finding client by id
-      let { data: foundClient } = await supabase
-        .from('workspace_clients')
-        .select('*')
-        .eq('id', clientIdOrCode)
-        .maybeSingle();
+      // 1. Fetch complete client workspace data through server endpoint (bypasses RLS blockers)
+      let foundClient: any = null;
+      let apiSucceeded = false;
 
-      // If not found by id, search all clients for matching client_code in notes
-      if (!foundClient) {
-        let query = supabase.from('workspace_clients').select('*');
-        if (effectiveWsId !== 'ws_demo') {
-          query = query.or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
+      try {
+        const res = await fetch(`/api/workspace/clients/${encodeURIComponent(clientIdOrCode)}?workspace_id=${encodeURIComponent(effectiveWsId)}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        });
+
+        if (res.ok) {
+          const apiData = await res.json();
+          if (apiData.success && apiData.client) {
+            foundClient = apiData.client;
+            apiSucceeded = true;
+            if (Array.isArray(apiData.quotationDocs)) setQuotationDocs(apiData.quotationDocs);
+            if (apiData.postProductionProject) setPostProductionProject(apiData.postProductionProject);
+            if (apiData.financeRecord) setFinanceRecord(apiData.financeRecord);
+            if (Array.isArray(apiData.moodboards)) setMoodboards(apiData.moodboards);
+            if (Array.isArray(apiData.tasks)) setClientTasks(apiData.tasks);
+            if (Array.isArray(apiData.teamMembers)) setTeamMembers(apiData.teamMembers);
+          }
         }
-        const { data: allClients } = await query;
-        if (allClients) {
-          const match = allClients.find(c => {
-            const ext = parseClientExtended(c);
-            return ext.client_code.toLowerCase() === clientIdOrCode.toLowerCase() || c.id === clientIdOrCode;
-          });
-          if (match) foundClient = match;
+      } catch (apiErr) {
+        console.warn('[fetchClientFullData] API fetch fallback to direct query:', apiErr);
+      }
+
+      // 2. Direct browser fallback query only if API did not succeed
+      if (!foundClient) {
+        const { data: directClient } = await supabase
+          .from('workspace_clients')
+          .select('*')
+          .eq('id', clientIdOrCode)
+          .maybeSingle();
+
+        if (directClient) {
+          foundClient = directClient;
+        } else {
+          let query = supabase.from('workspace_clients').select('*');
+          if (effectiveWsId !== 'ws_demo') {
+            query = query.or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
+          }
+          const { data: allClients } = await query;
+          if (allClients) {
+            const match = allClients.find(c => {
+              const ext = parseClientExtended(c);
+              return ext.client_code.toLowerCase() === clientIdOrCode.toLowerCase() || c.id === clientIdOrCode;
+            });
+            if (match) foundClient = match;
+          }
         }
       }
 
@@ -1654,14 +1687,16 @@ export default function ClientWorkspaceDetailPage() {
         }
       } catch (_) {}
 
-      // Fetch All Tabs Data
-      await Promise.all([
-        fetchLeadQuotationVersions(foundClient),
-        fetchPostProduction(foundClient),
-        fetchFinanceAndSyncMilestones(foundClient),
-        fetchMoodboards(foundClient),
-        fetchClientTasks(foundClient)
-      ]);
+      // If API did not hydrate all sub-modules, fallback to granular fetchers
+      if (!apiSucceeded) {
+        await Promise.all([
+          fetchLeadQuotationVersions(foundClient),
+          fetchPostProduction(foundClient),
+          fetchFinanceAndSyncMilestones(foundClient),
+          fetchMoodboards(foundClient),
+          fetchClientTasks(foundClient)
+        ]);
+      }
 
     } catch (e) {
       console.error('Error fetching client workspace data:', e);
@@ -2376,22 +2411,43 @@ export default function ClientWorkspaceDetailPage() {
         updated_at: new Date().toISOString()
       };
 
-      // 1. Direct update on workspace_clients
-      const { error } = await supabase
-        .from('workspace_clients')
-        .update(updatedFields)
-        .eq('id', client.id);
-
-      if (error) {
-        delete updatedFields.project_manager_id;
-        delete updatedFields.project_manager_name;
-        delete updatedFields.project_manager_email;
-        delete updatedFields.project_manager_phone;
-        await supabase
-          .from('workspace_clients')
-          .update({ ...updatedFields, notes: serializedNotes })
-          .eq('id', client.id);
+      // 1. Server-side API update with supabaseAdmin (safely bypasses RLS for authorized members)
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+        const effectiveWsId = activeWorkspace?.workspaceId || currentWsId || client.workspace_id;
+        await fetch(`/api/workspace/clients/${client.id}?workspace_id=${encodeURIComponent(effectiveWsId)}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            clientUpdate: updatedFields
+          })
+        });
+      } catch (patchErr) {
+        console.warn('Error patching client via API:', patchErr);
       }
+
+      // Fallback direct update on workspace_clients
+      try {
+        const { error } = await supabase
+          .from('workspace_clients')
+          .update(updatedFields)
+          .eq('id', client.id);
+
+        if (error) {
+          delete updatedFields.project_manager_id;
+          delete updatedFields.project_manager_name;
+          delete updatedFields.project_manager_email;
+          delete updatedFields.project_manager_phone;
+          await supabase
+            .from('workspace_clients')
+            .update({ ...updatedFields, notes: serializedNotes })
+            .eq('id', client.id);
+        }
+      } catch (_) {}
 
       // 2. Synchronize Couple Name if changed (instant millisecond 4-way sync)
       const oldCoupleName = client.name?.trim() || '';

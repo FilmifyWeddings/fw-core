@@ -14,7 +14,9 @@ import { QuotationTemplateSelector, StudioTemplateItem } from './quotation-templ
 import { 
   consolidateSameDateFunctions, 
   resolvePrimaryCoverLocation, 
-  sanitizeAndParseJson 
+  sanitizeAndParseJson,
+  formatQuotationDate,
+  normalizeQuotationData
 } from '@/lib/quotation-defaults';
 
 interface AiQuotationModalProps {
@@ -28,31 +30,16 @@ interface AiQuotationModalProps {
   onApplied?: (updatedDoc: any, targetQuotationId: string) => void;
 }
 
-function tryParsePastedAiJson(rawText: string): any | null {
+function tryParsePastedAiJson(rawText: string, baseTemplate?: any): any | null {
   const parsed = sanitizeAndParseJson(rawText);
   if (!parsed || typeof parsed !== 'object') return null;
 
   const root = parsed.quotation || parsed;
   if (root.cover || root.functionsPage || root.pricingPage || root.pages || root.shootDetails) {
-    // ⚡ MANDATE: Consolidate same-date events (e.g. Haldi + Sangeet)
-    if (root.functionsPage?.items && Array.isArray(root.functionsPage.items)) {
-      root.functionsPage.items = consolidateSameDateFunctions(root.functionsPage.items);
-    }
-    // ⚡ MANDATE: Resolve single primary cover location (Wedding first, no multi-venue concatenation)
-    if (root.cover) {
-      root.cover.locationName = resolvePrimaryCoverLocation(
-        root.cover.locationName || '', 
-        root.functionsPage?.items || []
-      );
-    }
-    // ⚡ MANDATE: Ensure proper gross base price and discount amount (0 if not specified)
-    if (root.pricingPage) {
-      if (root.pricingPage.basePrice !== undefined) {
-        root.pricingPage.basePrice = Number(root.pricingPage.basePrice);
-      }
-      root.pricingPage.discountAmount = root.pricingPage.discountAmount !== undefined ? Number(root.pricingPage.discountAmount) : 0;
-    }
-    return root;
+    // Ultra-fast 0ms normalization: formats all dates to "DD - MMM - YYYY", separates regular price vs best price,
+    // consolidates same-date functions, and merges onto the active base template cleanly
+    const normalized = normalizeQuotationData(root, baseTemplate || DEFAULT_AIRY_PROPOSAL);
+    return normalized;
   }
   return null;
 }
@@ -152,7 +139,7 @@ CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi
 - items: Array of event objects:
   - id: Unique string "func_1", "func_2", etc.
   - name: Combined ceremony title (e.g. "Haldi + Sangeet", "Wedding Ceremony", "Reception").
-  - date: Extract the event date or wedding month (e.g. "22 February 2026" or "December 2026"). ONLY set date: "Date Not Fixed" and dateNotFixed: true if NO date, month, or season is mentioned anywhere in context!
+  - date: CRITICAL DATE FORMAT MANDATE: Every date MUST strictly be formatted as "DD - MMM - YYYY" (e.g. "13 - Dec - 2026", "22 - Feb - 2026", "05 - Jan - 2027"). NEVER output ISO dates like 2026-12-13, and NEVER output other formats! ONLY set date: "Date Not Fixed" and dateNotFixed: true if NO date, month, or season is mentioned anywhere in context!
   - dateNotFixed: boolean (false if date or month is known, true only if completely unspecified).
   - startTime / endTime: Exact time if specified (e.g. "09:00 AM" / "02:00 PM"). If NO time specified, keep EMPTY string ""!
   - location: Venue or location for this specific function. If NO location specified, keep EMPTY string ""!
@@ -182,13 +169,14 @@ CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi
 - selectedItems: Array of complimentary/free bonus items (e.g. "Complimentary Drone Coverage", "Complimentary 1 Day Pre-Wedding Teaser", "Complimentary Wooden USB Box"). If none, keep empty array [].
 
 7. PRICING DETAILS (pricingPage):
-- STRICT PRICING & DISCOUNT LOGIC:
-  * basePrice: Gross total package price before discount (Integer, e.g. 180000). Inspect LEAD & CLIENT CONTEXT (e.g. 'budget', 'preferred_budget_range', or notes). Convert it to an integer (e.g. "₹1,50,000" -> 150000; "2.5L" -> 250000; "90k" -> 90000).
-  * discountAmount:
-    - If user/client explicitly mentioned a discount, offer, or deduction (e.g. "20,000 discount", "offered 15k off", "discounted by 10k"), set discountAmount to that exact amount (e.g. 20000).
-    - If NO discount was mentioned in the prompt or conversation, discountAmount MUST STRICTLY BE 0. DO NOT invent or assume any discount!
+- STRICT PRICING & DISCOUNT LOGIC (REGULAR PRICE VS BEST OFFER PRICE):
+  * regularPrice (or basePrice): The gross standard regular package price before any offer/discount (Integer, e.g. 180000). Inspect LEAD & CLIENT CONTEXT (e.g. 'budget', 'preferred_budget_range', or notes).
+  * bestPrice (or offerPrice): The best offer price given to the client (Integer, e.g. 150000).
+  * discountAmount: Difference between regularPrice and bestPrice (e.g. 180000 - 150000 = 30000).
+    - If user mentions: "Regular price 1,80,000, Best offer price 1,50,000" -> regularPrice: 180000, bestPrice: 150000, discountAmount: 30000.
+    - If user explicitly mentions a flat discount (e.g. "20,000 discount" on a 180000 package) -> regularPrice: 180000, discountAmount: 20000, bestPrice: 160000.
+    - If NO discount or offer was mentioned, discountAmount MUST STRICTLY BE 0 and bestPrice equals regularPrice.
   * Net Total Calculation: Net Amount = basePrice - discountAmount + travelCharges + accommodationCharges.
-  * If only a final agreed amount was stated without any discount breakdown (e.g. "package is 1,60,000 final" or "budget 1,50,000"), set basePrice to that amount and discountAmount to 0.
 - gstPct: GST percentage if specified (Number, e.g. 18), else 0.
 - travelCharges: Travel cost if specified (Number), else 0.
 - accommodationCharges: Stay/Hotel cost if specified (Number), else 0.
@@ -233,7 +221,7 @@ NOTE: The values in this schema are structure guides. You MUST populate them wit
       {
         "id": "func-1",
         "name": "Wedding",
-        "date": ${extractedEventDate ? JSON.stringify(extractedEventDate) : '"Date Not Fixed"'},
+        "date": ${extractedEventDate ? JSON.stringify(formatQuotationDate(extractedEventDate)) : '"13 - Dec - 2026"'},
         "dateNotFixed": ${extractedEventDate ? 'false' : 'true'},
         "startTime": "",
         "endTime": "",
@@ -490,7 +478,7 @@ LEAD & CLIENT CONTEXT:
       const token = session?.access_token || '';
 
       const notes = additionalNotes.trim();
-      const clientParsedDoc = tryParsePastedAiJson(notes);
+      const clientParsedDoc = tryParsePastedAiJson(notes, currentDocumentData);
 
       // FAST PATH 1: If user pasted valid JSON directly from ChatGPT, map and apply in 0ms!
       if (clientParsedDoc) {
