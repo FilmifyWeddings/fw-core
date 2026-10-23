@@ -17,7 +17,7 @@ import {
   ClientInsiderModal, parseClientExtended, serializeClientExtended 
 } from '@/components/clients/client-insider-modal';
 import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
-import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import { fetchWorkspaceTeamMembers, isInHouseMember, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
 import AddClientModal, { AddClientFormData } from './components/AddClientModal';
 import { handleAssignClientPM } from './components/ClientRow';
@@ -61,6 +61,23 @@ export default function ClientsPage() {
   const isReadOnly = !actualIsOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ALL_VIEW');
   const isAssignedOnly = !actualIsOwner && (clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT');
 
+  const rawModules = permissions?.client_modules_access || (activeWorkspace?.permissions as any)?.client_modules_access;
+  const parsedClientModules: string[] | null = useMemo(() => {
+    if (!rawModules) return null;
+    let list: any = rawModules;
+    if (typeof list === 'string') {
+      try { list = JSON.parse(list); } catch (_) {}
+    }
+    return Array.isArray(list) ? list : null;
+  }, [rawModules]);
+
+  const hasFinanceAccess = Boolean(
+    actualIsOwner || (
+      (permissions?.finance_access && permissions.finance_access !== 'NONE') &&
+      (!parsedClientModules || parsedClientModules.includes('finance'))
+    )
+  );
+
   // Workspace-scoped states (SSR-safe, initialized from cache for effectiveWsId)
   const [clients, setClients] = useState<WorkspaceClient[]>(() => {
     return effectiveWsId ? (memCachedClientsByWorkspace.get(effectiveWsId) || []) : [];
@@ -93,11 +110,7 @@ export default function ClientsPage() {
 
   // Filter team members strictly to In-House only for Project Manager selection
   const inHouseTeamMembers = useMemo(() => {
-    return teamMembers.filter((m: any) => {
-      const typeStr = (m.primary_type || m.type || '').toUpperCase();
-      const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
-      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || m.is_inhouse === true;
-    });
+    return teamMembers.filter(isInHouseMember);
   }, [teamMembers]);
 
   const filteredQuickMembers = useMemo(() => {
@@ -1985,24 +1998,26 @@ export default function ClientsPage() {
 
                   {/* Col 10-12 (Span 3): Billing Summary + Status Dropdown + Arrow (Aligned Right) */}
                   <div className="lg:col-span-3 flex items-center justify-between lg:justify-end gap-3.5 w-full pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-                    <div className="text-left lg:text-right space-y-0.5">
-                      <span className="font-mono font-black text-sm text-slate-900 block">
-                        ₹{totalPkg.toLocaleString('en-IN')}
-                      </span>
-                      <p className="text-[11px] font-bold">
-                        {isPaidFull ? (
-                          <span className="text-emerald-600 font-extrabold flex items-center gap-1 lg:justify-end">
-                            <Check className="w-3 h-3" /> Paid in Full
-                          </span>
-                        ) : (
-                          <span>
-                            <span className="text-emerald-600 font-extrabold">Paid: ₹{paidAmt.toLocaleString('en-IN')}</span>
-                            <span className="text-stone-400 mx-1.5 font-bold">•</span>
-                            <span className="text-rose-600 font-extrabold">Due: ₹{dueAmount.toLocaleString('en-IN')}</span>
-                          </span>
-                        )}
-                      </p>
-                    </div>
+                    {hasFinanceAccess && (
+                      <div className="text-left lg:text-right space-y-0.5">
+                        <span className="font-mono font-black text-sm text-slate-900 block">
+                          ₹{totalPkg.toLocaleString('en-IN')}
+                        </span>
+                        <p className="text-[11px] font-bold">
+                          {isPaidFull ? (
+                            <span className="text-emerald-600 font-extrabold flex items-center gap-1 lg:justify-end">
+                              <Check className="w-3 h-3" /> Paid in Full
+                            </span>
+                          ) : (
+                            <span>
+                              <span className="text-emerald-600 font-extrabold">Paid: ₹{paidAmt.toLocaleString('en-IN')}</span>
+                              <span className="text-stone-400 mx-1.5 font-bold">•</span>
+                              <span className="text-rose-600 font-extrabold">Due: ₹{dueAmount.toLocaleString('en-IN')}</span>
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    )}
 
                     {/* Trashed Badge or Active/Completed Interactive Dropdown */}
                     {isClientTrashed ? (
@@ -2014,6 +2029,7 @@ export default function ClientsPage() {
                       <ClientStatusDropdown
                         status={client.status}
                         clientId={client.id}
+                        disabled={isReadOnly}
                         onStatusChange={(newStatus) => handleUpdateClientStatus(client.id, newStatus)}
                       />
                     )}

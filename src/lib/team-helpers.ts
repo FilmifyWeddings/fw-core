@@ -12,6 +12,40 @@ export interface WorkspaceMemberOption {
   member_types?: string[];
 }
 
+
+/**
+ * Strict check if a team member is an In-House staff member.
+ * Explicitly rejects Freelancers, External Vendors, and Partners.
+ */
+export function isInHouseMember(m: any): boolean {
+  if (!m) return false;
+  const primaryType = String(m.primary_type || m.type || '').toUpperCase().trim();
+  const typesArr = (Array.isArray(m.member_types) ? m.member_types : []).map((t) => String(t).toUpperCase().trim());
+  
+  if (primaryType === 'FREELANCER' || primaryType === 'PARTNER' || primaryType === 'VENDOR') {
+    return false;
+  }
+  if (
+    primaryType === 'IN_HOUSE' || 
+    primaryType === 'INHOUSE' || 
+    primaryType === 'STAFF' || 
+    primaryType === 'ADMIN' || 
+    primaryType === 'OWNER'
+  ) {
+    return true;
+  }
+  if (typesArr.includes('IN_HOUSE') || typesArr.includes('INHOUSE') || typesArr.includes('STAFF')) {
+    return true;
+  }
+  if (m.is_inhouse === true || m.is_in_house === true) {
+    return true;
+  }
+  if (m.payout_frequency === 'monthly' && primaryType !== 'FREELANCER') {
+    return true;
+  }
+  return false;
+}
+
 export async function fetchWorkspaceTeamMembers(workspaceId?: string): Promise<WorkspaceMemberOption[]> {
   try {
     const { data: { session } } = await supabase.auth.getSession();

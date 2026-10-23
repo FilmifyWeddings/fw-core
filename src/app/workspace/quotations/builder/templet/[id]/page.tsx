@@ -2216,6 +2216,7 @@ function StudioCoreAiryBuilderContent() {
   const tokenParam = searchParams?.get('token') || '';
   const isCleanView = searchParams?.get('mode') === 'clean';
   const isPublicPreview = searchParams?.get('preview') === 'public' || isCleanView || !!tokenParam;
+  const isInternalPreview = searchParams?.get('internal') === 'true' || searchParams?.get('viewer') === 'team';
   const params = useParams();
   const templateId = (params?.id as string) || '';
   const routeId = templateId;
@@ -7687,25 +7688,29 @@ function StudioCoreAiryBuilderContent() {
               <span>{downloadingPdf ? 'Exporting...' : 'Download PDF'}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setShowBudgetModal(true)}
-              disabled={accepted}
-              className="px-4 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-950 dark:text-amber-300 border border-amber-500/40 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50 hover:scale-105 active:scale-95"
-            >
-              <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <span>{budgetRequested ? `Budget: ₹${budgetRequested.toLocaleString('en-IN')}` : 'Discuss Budget'}</span>
-            </button>
+            {!isInternalPreview && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowBudgetModal(true)}
+                  disabled={accepted}
+                  className="px-4 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-950 dark:text-amber-300 border border-amber-500/40 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50 hover:scale-105 active:scale-95"
+                >
+                  <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <span>{budgetRequested ? `Budget: ₹${budgetRequested.toLocaleString('en-IN')}` : 'Discuss Budget'}</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setShowAcceptModal(true)}
-              disabled={accepted}
-              className="px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-60 hover:scale-105 active:scale-95"
-            >
-              <CheckCircle2 className="w-4 h-4 text-white" />
-              <span>{accepted ? '✓ Proposal Accepted' : 'Accept Proposal'}</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAcceptModal(true)}
+                  disabled={accepted}
+                  className="px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-60 hover:scale-105 active:scale-95"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-white" />
+                  <span>{accepted ? '✓ Proposal Accepted' : 'Accept Proposal'}</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -12,7 +12,8 @@ export default function PublicProposalClient({ token, targetId }: PublicProposal
   const router = useRouter();
 
   useEffect(() => {
-    const destination = `/workspace/quotations/builder/templet/${targetId}?preview=public&token=${token}`;
+    const isInternal = typeof window !== 'undefined' && window.location.search.includes('internal=true');
+    const destination = `/workspace/quotations/builder/templet/${targetId}?preview=public&token=${token}${isInternal ? '&internal=true' : ''}`;
     // Immediate client navigation
     router.replace(destination);
   }, [token, targetId, router]);

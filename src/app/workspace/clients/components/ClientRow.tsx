@@ -58,6 +58,8 @@ export const handleAssignClientPM = async (
 
 export interface ClientRowProps {
   client: WorkspaceClient;
+  hasFinanceAccess?: boolean;
+  isReadOnly?: boolean;
   onSelectClient?: (client: WorkspaceClient) => void;
   onOpenQuickAssign?: (client: WorkspaceClient) => void;
   onToggleStatus?: (client: WorkspaceClient) => void;
@@ -68,6 +70,8 @@ export interface ClientRowProps {
 
 export const ClientRow: React.FC<ClientRowProps> = ({
   client,
+  hasFinanceAccess = true,
+  isReadOnly = false,
   onSelectClient,
   onOpenQuickAssign,
   onToggleStatus,
@@ -137,27 +141,30 @@ export const ClientRow: React.FC<ClientRowProps> = ({
 
       {/* Col 10-12: Billing & Status */}
       <div className="lg:col-span-3 flex items-center justify-between lg:justify-end gap-3.5 w-full pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-        <div className="text-left lg:text-right space-y-0.5">
-          <span className="font-mono font-black text-sm text-slate-900 block">
-            ₹{(client.total_package_amount || 0).toLocaleString('en-IN')}
-          </span>
-          <p className="text-[11px] font-bold">
-            {isPaidFull ? (
-              <span className="text-emerald-600 font-extrabold flex items-center gap-1 lg:justify-end">
-                <Check className="w-3 h-3" /> Paid in Full
-              </span>
-            ) : (
-              <span className="text-amber-800">
-                Paid: ₹{(client.paid_amount || 0).toLocaleString('en-IN')} • Due: ₹{dueAmount.toLocaleString('en-IN')}
-              </span>
-            )}
-          </p>
-        </div>
+        {hasFinanceAccess && (
+          <div className="text-left lg:text-right space-y-0.5">
+            <span className="font-mono font-black text-sm text-slate-900 block">
+              ₹{(client.total_package_amount || 0).toLocaleString('en-IN')}
+            </span>
+            <p className="text-[11px] font-bold">
+              {isPaidFull ? (
+                <span className="text-emerald-600 font-extrabold flex items-center gap-1 lg:justify-end">
+                  <Check className="w-3 h-3" /> Paid in Full
+                </span>
+              ) : (
+                <span className="text-amber-800">
+                  Paid: ₹{(client.paid_amount || 0).toLocaleString('en-IN')} • Due: ₹{dueAmount.toLocaleString('en-IN')}
+                </span>
+              )}
+            </p>
+          </div>
+        )}
 
         {/* Active / Completed Status Dropdown */}
         <ClientStatusDropdown
           status={client.status}
           clientId={client.id}
+          disabled={isReadOnly}
           onStatusChange={(newStatus) => {
             if (onStatusChange) {
               onStatusChange(client, newStatus);

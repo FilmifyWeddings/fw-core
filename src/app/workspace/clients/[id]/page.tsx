@@ -32,7 +32,8 @@ import { logClientAudit } from '@/lib/client-audit';
 import { 
   parseClientExtended, serializeClientExtended, type ClientEventItem, type ClientExtendedData, type StudioCommentItem 
 } from '@/components/clients/client-insider-modal';
-import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import { fetchWorkspaceTeamMembers, isInHouseMember, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
 import { extractFinancialsFromQuotation, normalizeToIsoDate, normalizeSubEventTitle } from '@/lib/quotation-finance-sync';
 import type { 
   WorkspaceClient, PostProductionProject, DeliverableItem, ClientFinanceRecord, DeliverableStatus, DeliverableComment, FinanceMilestoneItem
@@ -128,6 +129,13 @@ export default function ClientWorkspaceDetailPage() {
       setActiveTab(visibleTabs[0].id as any);
     }
   }, [visibleTabs, activeTab]);
+
+  // Auto-fetch quotation versions on tab open if list is empty
+  useEffect(() => {
+    if (activeTab === 'quotations' && client && quotationDocs.length === 0 && !loadingQuotes) {
+      fetchLeadQuotationVersions(client);
+    }
+  }, [activeTab, client, quotationDocs.length, loadingQuotes]);
 
   // ── Tab: Tasks & Post-Production State ──
   const [clientTasks, setClientTasks] = useState<any[]>([]);
@@ -244,11 +252,7 @@ export default function ClientWorkspaceDetailPage() {
 
   // ── In-House Team Members for Project Manager Selection ──
   const inHouseTeamMembers = useMemo(() => {
-    return teamMembers.filter((m: any) => {
-      const typeStr = (m.primary_type || m.type || '').toUpperCase();
-      const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
-      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || (!typeStr && typesArr.length === 0);
-    });
+    return teamMembers.filter(isInHouseMember);
   }, [teamMembers]);
 
   const pmOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
@@ -1558,6 +1562,7 @@ export default function ClientWorkspaceDetailPage() {
       // 1. Fetch complete client workspace data through server endpoint (bypasses RLS blockers)
       let foundClient: any = null;
       let apiSucceeded = false;
+    let apiResDataQuotationCount = 0;
 
       try {
         const res = await fetch(`/api/workspace/clients/${encodeURIComponent(clientIdOrCode)}?workspace_id=${encodeURIComponent(effectiveWsId)}`, {
@@ -1572,7 +1577,10 @@ export default function ClientWorkspaceDetailPage() {
           if (apiData.success && apiData.client) {
             foundClient = apiData.client;
             apiSucceeded = true;
-            if (Array.isArray(apiData.quotationDocs)) setQuotationDocs(apiData.quotationDocs);
+            if (Array.isArray(apiData.quotationDocs) && apiData.quotationDocs.length > 0) {
+              setQuotationDocs(apiData.quotationDocs);
+              apiResDataQuotationCount = apiData.quotationDocs.length;
+            }
             if (apiData.postProductionProject) setPostProductionProject(apiData.postProductionProject);
             if (apiData.financeRecord) setFinanceRecord(apiData.financeRecord);
             if (Array.isArray(apiData.moodboards)) setMoodboards(apiData.moodboards);
@@ -1687,10 +1695,14 @@ export default function ClientWorkspaceDetailPage() {
         }
       } catch (_) {}
 
+      // Always ensure quotation versions are fetched if not provided or empty
+      if (!apiSucceeded || !apiResDataQuotationCount) {
+        fetchLeadQuotationVersions(foundClient);
+      }
+
       // If API did not hydrate all sub-modules, fallback to granular fetchers
       if (!apiSucceeded) {
         await Promise.all([
-          fetchLeadQuotationVersions(foundClient),
           fetchPostProduction(foundClient),
           fetchFinanceAndSyncMilestones(foundClient),
           fetchMoodboards(foundClient),
@@ -3075,12 +3087,11 @@ export default function ClientWorkspaceDetailPage() {
                   <div className="grid grid-cols-2 gap-3.5">
                     <div>
                       <label className="font-bold text-slate-700 block mb-1">Contact Phone</label>
-                      <input
-                        type="text"
-                        disabled={isReadOnly}
+                      <PhoneInputWithCountry
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 disabled:bg-slate-50 disabled:text-slate-600"
+                        onChange={(val) => setPhone(val)}
+                        disabled={isReadOnly}
+                        placeholder="98765 43210"
                       />
                     </div>
 
@@ -3512,7 +3523,7 @@ export default function ClientWorkspaceDetailPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            const clientUrl = `/p/quotation/${doc.public_token || doc.template_id}`;
+                            const clientUrl = `/p/quotation/${doc.public_token || doc.template_id}?internal=true`;
                             window.open(clientUrl, '_blank');
                           }}
                           className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA] transition text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
@@ -4079,9 +4090,11 @@ export default function ClientWorkspaceDetailPage() {
                   isExpanded={true}
                   isReadOnly={isReadOnly}
                   isOwner={isOwner}
-                  isAssignedView={clientsAccess === 'ASSIGNED_VIEW' || clientsAccess === 'ASSIGNED_EDIT'}
-                  isAllView={clientsAccess === 'ALL_VIEW'}
+                  isAssignedView={false}
+                  isAllView={true}
                   canManage={!isReadOnly}
+                  currentUser={{ id: userId, name: userName || userEmail || '', role: isOwner ? 'Studio Owner' : 'Team Member' }}
+                  currentMemberId={(activeWorkspace as any)?.memberId || userId || null}
                   onToggleExpand={() => {}}
                   onUpdateProject={handleUpdatePostProdProject}
                   onOpenComments={(itemId, title) => {

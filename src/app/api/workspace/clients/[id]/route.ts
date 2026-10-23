@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 
 export const dynamic = 'force-dynamic';
 
@@ -178,6 +179,87 @@ export async function GET(
       }));
     }
 
+    // Fallback: If quotationDocs is empty and targetLeadId exists, check lead raw_payload
+    if (quotationDocs.length === 0 && targetLeadId) {
+      try {
+        const { data: leadRow } = await supabaseAdmin
+          .from('leads')
+          .select('raw_payload')
+          .eq('id', targetLeadId)
+          .maybeSingle();
+
+        const leadVersions = leadRow?.raw_payload?.quotation_versions || leadRow?.raw_payload?.quotations || [];
+        if (Array.isArray(leadVersions) && leadVersions.length > 0) {
+          quotationDocs = leadVersions.map((d: any, idx: number) => ({
+            id: d.id || `lead_q_${idx + 1}`,
+            template_id: d.template_id || d.id || `lead_q_${idx + 1}`,
+            lead_id: targetLeadId,
+            version: d.version || (idx + 1),
+            version_label: `Version ${d.version || (idx + 1)}`,
+            title: d.title || d.content_json?.heroPage?.coupleNames || `Quotation Version ${d.version || (idx + 1)}`,
+            is_final: Boolean(d.is_final || d.content_json?.is_final === true),
+            updated_at: d.updated_at || d.created_at,
+            created_at: d.created_at,
+            public_token: d.public_token || d.content_json?.public_token,
+            total_amount: d.content_json?.pricingPage?.finalAmount || d.content_json?.pricing?.finalAmount || foundClient.total_package_amount,
+            content_json: d.content_json
+          }));
+        }
+      } catch (_) {}
+    }
+
+    // Hydrate Post Production Project with actual deliverables and enabled_segments
+    let resolvedPostProdProject: any = postProdRes.data || null;
+    const projectTargetIds = [foundClient.id, targetLeadId, resolvedPostProdProject?.id, resolvedPostProdProject?.project_id].filter(Boolean);
+
+    let resolvedDeliverables: any[] = Array.isArray(resolvedPostProdProject?.deliverables) ? resolvedPostProdProject.deliverables : [];
+    if (projectTargetIds.length > 0) {
+      const { data: delivRows } = await supabaseAdmin
+        .from('post_production_deliverables')
+        .select('*')
+        .in('project_id', projectTargetIds)
+        .order('created_at', { ascending: true });
+      if (delivRows && delivRows.length > 0) {
+        resolvedDeliverables = delivRows;
+      }
+    }
+
+    let enabledSegments: string[] = ['Wedding'];
+    if (projectTargetIds.length > 0) {
+      const { data: cfg } = await supabaseAdmin
+        .from('post_production_project_config')
+        .select('enabled_segments')
+        .in('project_id', projectTargetIds)
+        .maybeSingle();
+      if (cfg?.enabled_segments && Array.isArray(cfg.enabled_segments)) {
+        enabledSegments = cfg.enabled_segments;
+      }
+    }
+
+    const finalQuoteDoc = quotationDocs.find((q: any) => q.is_final === true || q.content_json?.is_final === true) || quotationDocs[0];
+    if (resolvedDeliverables.length === 0 && finalQuoteDoc) {
+      try {
+        const parsed = parseQuotationDeliverables(finalQuoteDoc);
+        if (parsed?.deliverables?.length > 0) {
+          resolvedDeliverables = parsed.deliverables;
+          if (parsed.enabledSegments?.length > 0) {
+            enabledSegments = parsed.enabledSegments;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (resolvedPostProdProject || resolvedDeliverables.length > 0) {
+      resolvedPostProdProject = {
+        ...(resolvedPostProdProject || {}),
+        id: resolvedPostProdProject?.id || `pp_${foundClient.id}`,
+        client_id: foundClient.id,
+        workspace_id: foundClient.workspace_id,
+        deliverables: resolvedDeliverables,
+        enabled_segments: enabledSegments,
+      };
+    }
+
     const mappedTeamMembers = (teamMembersRes.data || []).map((m: any) => ({
       id: m.id,
       name: m.name,
@@ -194,7 +276,7 @@ export async function GET(
       success: true,
       client: foundClient,
       quotationDocs,
-      postProductionProject: postProdRes.data || null,
+      postProductionProject: resolvedPostProdProject,
       financeRecord: financeRes.data || null,
       moodboards: moodboardsRes.data || [],
       tasks: tasksRes.data || [],

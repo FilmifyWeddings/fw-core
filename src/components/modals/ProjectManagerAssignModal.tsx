@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
+import { isInHouseMember } from '@/lib/team-helpers';
 
 export interface ProjectManagerAssignClient {
   id: string;
@@ -136,11 +137,7 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
 
   // Strict In-House Filter for Project Manager Assignment
   const inHouseTeamMembers = useMemo(() => {
-    return teamMembers.filter((m: any) => {
-      const typeStr = (m.primary_type || m.type || '').toUpperCase();
-      const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
-      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || m.is_inhouse === true;
-    });
+    return teamMembers.filter(isInHouseMember);
   }, [teamMembers]);
 
   // Filter members list strictly from in-house members

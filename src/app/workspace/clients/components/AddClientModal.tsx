@@ -6,7 +6,7 @@ import { UserPlus, X, Check, Users, Sparkles } from 'lucide-react';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
 import type { Lead } from '@/types';
-import type { WorkspaceMemberOption } from '@/lib/team-helpers';
+import { isInHouseMember, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import { safeParseCurrencyOrBudget } from '@/lib/budget-helpers';
 
 export interface AddClientFormData {
@@ -115,11 +115,7 @@ export default function AddClientModal({
 
   // 3. Project Manager Options (In-House Only, Avatar + Name)
   const inHouseTeamMembers = useMemo(() => {
-    return teamMembers.filter((m: any) => {
-      const typeStr = (m.primary_type || m.type || '').toUpperCase();
-      const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
-      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || (!typeStr && typesArr.length === 0);
-    });
+    return teamMembers.filter(isInHouseMember);
   }, [teamMembers]);
 
   const pmOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
