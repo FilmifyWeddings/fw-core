@@ -57,14 +57,7 @@ ALTER COLUMN id SET DEFAULT gen_random_uuid();
 ALTER TABLE IF EXISTS public.team_event_payouts 
 ALTER COLUMN id SET DEFAULT gen_random_uuid();
 
--- 5. Project Manager ID Text type safety (prevents UUID syntax errors with custom/prefixed PM IDs)
-ALTER TABLE IF EXISTS public.workspace_clients 
-ALTER COLUMN project_manager_id TYPE TEXT USING project_manager_id::text;
-
-ALTER TABLE IF EXISTS public.fw_projects 
-ALTER COLUMN project_manager_id TYPE TEXT USING project_manager_id::text;
-
--- 6. Row-Level Security & Access Policies
+-- 5. Row-Level Security & Access Policies
 ALTER TABLE public.gallery_album_selections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_table_preferences ENABLE ROW LEVEL SECURITY;
 
@@ -97,7 +90,7 @@ BEGIN
     END IF;
 END $$;
 
--- 7. Grant Table Permissions to roles
+-- 6. Grant Table Permissions to roles
 GRANT ALL ON public.gallery_album_selections TO anon, authenticated, service_role;
 GRANT ALL ON public.user_table_preferences TO anon, authenticated, service_role;
 GRANT ALL ON public.workspace_team_member_rates TO anon, authenticated, service_role;
