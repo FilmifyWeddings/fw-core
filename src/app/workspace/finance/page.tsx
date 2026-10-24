@@ -181,7 +181,7 @@ export default function FinancePage() {
   // ─────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'received' | 'pending' | 'partially_paid' | 'paid' | 'overdue_only' | 'trash'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'overall_turnover' | 'received' | 'pending' | 'partially_paid' | 'paid' | 'overdue_only' | 'trash'>('all');
   
   const trashedFinanceCount = useMemo(() => {
     return financeRecords.filter(rec => 
@@ -2267,10 +2267,13 @@ export default function FinancePage() {
   const uniqueCategories = useMemo(() => {
     const cats = new Set<string>();
     clients.forEach(c => {
-      if (c.event_type) cats.add(c.event_type);
+      if (c.event_type && typeof c.event_type === 'string' && c.event_type.trim()) cats.add(c.event_type.trim());
     });
-    return Array.from(cats);
-  }, [clients]);
+    financeRecords.forEach(r => {
+      if (r.client?.event_type && typeof r.client.event_type === 'string' && r.client.event_type.trim()) cats.add(r.client.event_type.trim());
+    });
+    return Array.from(cats).sort();
+  }, [clients, financeRecords]);
 
   const uniqueLocations = useMemo(() => {
     const locs = new Set<string>();
@@ -2278,8 +2281,12 @@ export default function FinancePage() {
       const loc = (c as any).city || (c as any).venue;
       if (loc && typeof loc === 'string' && loc.trim()) locs.add(loc.trim());
     });
-    return Array.from(locs);
-  }, [clients]);
+    financeRecords.forEach(r => {
+      const loc = (r.client as any)?.city || (r.client as any)?.venue;
+      if (loc && typeof loc === 'string' && loc.trim()) locs.add(loc.trim());
+    });
+    return Array.from(locs).sort();
+  }, [clients, financeRecords]);
 
   // Check active filter count
   const activeFiltersCount = useMemo(() => {
@@ -2289,10 +2296,9 @@ export default function FinancePage() {
     if (locationFilter !== 'all') count++;
     if (paymentModeFilter !== 'all') count++;
     if (teamMemberFilter !== 'all') count++;
-    if (revenueTypeFilter !== 'ALL') count++;
     if (dateRangePreset !== 'all' || (startDate && endDate)) count++;
     return count;
-  }, [categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, revenueTypeFilter, dateRangePreset, startDate, endDate]);
+  }, [categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, dateRangePreset, startDate, endDate]);
 
   const resetAllFilters = () => {
     setCategoryFilter('all');
@@ -2305,6 +2311,110 @@ export default function FinancePage() {
     setStartDate('');
     setEndDate('');
     setSearchQuery('');
+  };
+
+  // Helper date & payment parsing functions
+  const parseToIsoDate = (rawDate?: string | null): string => {
+    if (!rawDate) return '';
+    const str = String(rawDate).trim();
+    if (!str || str.toLowerCase() === 'undefined' || str.toLowerCase() === 'null') return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    if (str.includes('T')) return str.split('T')[0];
+
+    const MONTHS: Record<string, string> = {
+      jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+      jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+    };
+
+    const parts = str.split(/[\s\-\/.]+/);
+    if (parts.length === 3) {
+      const p0 = parts[0];
+      const p1 = parts[1].toLowerCase().slice(0, 3);
+      const p2 = parts[2];
+      if (MONTHS[p1]) {
+        const day = p0.padStart(2, '0');
+        const month = MONTHS[p1];
+        const year = p2.length === 2 ? `20${p2}` : p2;
+        return `${year}-${month}-${day}`;
+      }
+      const p0m = p0.toLowerCase().slice(0, 3);
+      if (MONTHS[p0m]) {
+        const month = MONTHS[p0m];
+        const day = p1.padStart(2, '0');
+        const year = p2.length === 2 ? `20${p2}` : p2;
+        return `${year}-${month}-${day}`;
+      }
+      if (p2.length === 4 && !isNaN(Number(p0)) && !isNaN(Number(parts[1]))) {
+        return `${p2}-${parts[1].padStart(2, '0')}-${p0.padStart(2, '0')}`;
+      }
+      if (p2.length === 2 && !isNaN(Number(p0)) && !isNaN(Number(parts[1]))) {
+        return `20${p2}-${parts[1].padStart(2, '0')}-${p0.padStart(2, '0')}`;
+      }
+    }
+
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    return '';
+  };
+
+  const isInRange = (dStr?: string | null): boolean => {
+    if (!dStr) return false;
+    const d = parseToIsoDate(dStr);
+    if (!d) return false;
+    if (startDate && d < startDate) return false;
+    if (endDate && d > endDate) return false;
+    return true;
+  };
+
+  const isMilestonePaid = (m: FinanceMilestoneItem): boolean => {
+    return m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || Boolean((m as any).paidDate) || Boolean((m as any).paid_date);
+  };
+
+  const getFirstStepDate = (r: ClientFinanceRecord): string => {
+    const ms = r.milestones || [];
+    if (ms.length > 0) {
+      const first = ms.find(m => (m as any).step_number === 1 || (m as any).step === 1) || ms[0];
+      const raw = first.paid_date || (first as any).paidDate || (first as any).payment_date || first.due_date || (first as any).dueDate || (first as any).date;
+      const parsed = parseToIsoDate(raw);
+      if (parsed) return parsed;
+    }
+    if ((r as any).firstStepDate) {
+      const parsed = parseToIsoDate((r as any).firstStepDate);
+      if (parsed) return parsed;
+    }
+    if (r.created_at) {
+      return parseToIsoDate(r.created_at);
+    }
+    return '';
+  };
+
+  const getLastStepDate = (r: ClientFinanceRecord): string => {
+    const ms = r.milestones || [];
+    if (ms.length > 0) {
+      const paidMs = ms.filter(m => isMilestonePaid(m));
+      if (paidMs.length > 0) {
+        const lastPaid = paidMs[paidMs.length - 1];
+        const raw = lastPaid.paid_date || (lastPaid as any).paidDate || (lastPaid as any).payment_date || lastPaid.due_date;
+        const parsed = parseToIsoDate(raw);
+        if (parsed) return parsed;
+      }
+      const last = ms[ms.length - 1];
+      const raw = last.paid_date || (last as any).paidDate || (last as any).payment_date || last.due_date;
+      const parsed = parseToIsoDate(raw);
+      if (parsed) return parsed;
+    }
+    return parseToIsoDate(r.updated_at || r.created_at);
+  };
+
+  const normalizePaymentMode = (mode?: string | null): string => {
+    if (!mode) return '';
+    const m = mode.trim().toLowerCase();
+    if (m.includes('upi') || m.includes('gpay') || m.includes('phonepe') || m.includes('paytm')) return 'upi';
+    if (m.includes('bank') || m.includes('neft') || m.includes('imps') || m.includes('rtgs') || m.includes('transfer')) return 'bank transfer';
+    if (m.includes('cash')) return 'cash';
+    if (m.includes('card') || m.includes('credit') || m.includes('debit')) return 'card';
+    if (m.includes('cheque') || m.includes('check')) return 'cheque';
+    return m;
   };
 
   const filteredRecords = useMemo(() => {
@@ -2331,204 +2441,165 @@ export default function FinancePage() {
       const eventType = client?.event_type || '';
       const phone = client?.phone?.toLowerCase() || '';
       const city = ((client as any)?.city || (client as any)?.venue || '').toLowerCase();
-      const handled = (client as any)?.handled_by || (client as any)?.assigned_team_member_name || 'Unassigned';
+      const handled = (client as any)?.handled_by || (client as any)?.assigned_team_member_name || (rec as any)?.handled_by || 'Unassigned';
       const query = searchQuery.toLowerCase().trim();
 
-      // Search Query: Smart multi-token matching (handles combined keywords, phone, event type, city, handled_by, notes)
-      let matchesSearch = true;
+      // Search Query: Smart multi-token matching
       if (query) {
         const queryTokens = query.split(/\s+/).filter(Boolean);
         const searchableText = `${clientName} ${eventType} ${phone} ${city} ${handled} ${rec.notes || ''}`.toLowerCase();
-        if (searchableText.includes(query)) {
-          matchesSearch = true;
-        } else if (queryTokens.length <= 2) {
-          matchesSearch = queryTokens.every(tok => searchableText.includes(tok));
-        } else {
-          const matchedCount = queryTokens.filter(tok => searchableText.includes(tok)).length;
-          matchesSearch = matchedCount >= Math.ceil(queryTokens.length * 0.5) || queryTokens.every(tok => searchableText.includes(tok));
+        if (!searchableText.includes(query)) {
+          if (queryTokens.length <= 2) {
+            if (!queryTokens.every(tok => searchableText.includes(tok))) return false;
+          } else {
+            const matchedCount = queryTokens.filter(tok => searchableText.includes(tok)).length;
+            if (matchedCount < Math.ceil(queryTokens.length * 0.5) && !queryTokens.every(tok => searchableText.includes(tok))) return false;
+          }
         }
       }
 
       // Category
-      const matchesCategory = categoryFilter === 'all' || eventType === categoryFilter;
-
-      // Status Filter
-      let matchesStatus = true;
-      if (statusFilter === 'trash') {
-        matchesStatus = true;
-      } else if (statusFilter === 'overdue_only') {
-        const hasOverdue = (rec.milestones || []).some(m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid');
-        matchesStatus = hasOverdue;
-      } else if (statusFilter === 'pending') {
-        matchesStatus = Number(rec.pending_amount) > 0;
-      } else if (statusFilter === 'paid') {
-        matchesStatus = rec.payment_status === 'paid' || (Number(rec.final_total_amount) > 0 && Number(rec.pending_amount) === 0);
-      } else if (statusFilter === 'partially_paid') {
-        matchesStatus = rec.payment_status === 'partially_paid' || (Number(rec.received_amount) > 0 && Number(rec.pending_amount) > 0);
-      } else if (statusFilter === 'received') {
-        // Payment Received: any client who has recorded payments
-        matchesStatus = Number(rec.received_amount) > 0 || (rec.milestones || []).some(m => m.status === 'completed' || m.status === 'paid' || (m as any).paidDate || (m as any).paid_date);
-      }
-
-      // Revenue Type Filter (New Booking / Advance vs Due Balance / Milestone Clearances)
-      let matchesRevenueType = true;
-      if (revenueTypeFilter !== 'ALL') {
-        const hasMatchingMilestone = (rec.milestones || []).some((m, idx) => {
-          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
-          if (!isPaid) return false;
-          if (revenueTypeFilter === 'NEW_BOOKING') return isAdvanceMilestone(m, idx);
-          if (revenueTypeFilter === 'DUE_BALANCE') return !isAdvanceMilestone(m, idx);
-          return true;
-        });
-        matchesRevenueType = hasMatchingMilestone;
+      if (categoryFilter !== 'all') {
+        if (eventType.toLowerCase() !== categoryFilter.toLowerCase()) return false;
       }
 
       // Location
-      const matchesLocation = locationFilter === 'all' || 
-        ((client as any)?.city && (client as any).city.toLowerCase() === locationFilter.toLowerCase()) || 
-        ((client as any)?.venue && (client as any).venue.toLowerCase() === locationFilter.toLowerCase());
-
-      // Payment Mode
-      let matchesMode = true;
-      if (paymentModeFilter !== 'all') {
-        matchesMode = (rec.milestones || []).some(m => m.payment_mode && m.payment_mode.toLowerCase() === paymentModeFilter.toLowerCase());
+      if (locationFilter !== 'all') {
+        const recCity = ((client as any)?.city || '').toLowerCase();
+        const recVenue = ((client as any)?.venue || '').toLowerCase();
+        const targetLoc = locationFilter.toLowerCase();
+        if (recCity !== targetLoc && recVenue !== targetLoc) return false;
       }
 
-      // 👥 Team Member (Handled By) Filter
-      let matchesTeam = true;
+      // 👥 Team Member Filter
       if (teamMemberFilter !== 'all') {
         if (teamMemberFilter === 'unassigned') {
-          matchesTeam = !handled || handled === 'Unassigned';
+          if (handled && handled.toLowerCase() !== 'unassigned') return false;
         } else {
-          matchesTeam = handled === teamMemberFilter || 
-            ((client as any)?.assigned_team_member_name === teamMemberFilter) ||
-            ((client as any)?.handled_by === teamMemberFilter) ||
-            ((rec as any)?.handled_by === teamMemberFilter);
+          const targetMember = teamMemberFilter.toLowerCase();
+          const hMatch = handled.toLowerCase() === targetMember ||
+            ((client as any)?.assigned_team_member_name?.toLowerCase() === targetMember) ||
+            ((client as any)?.handled_by?.toLowerCase() === targetMember) ||
+            ((rec as any)?.handled_by?.toLowerCase() === targetMember);
+          if (!hMatch) return false;
         }
       }
 
-      // 📅 Unified Milestone-Based Date Range Match:
-      // When "This Month" filter is selected (without additional sub-filters):
-      // STRICT RULE: Inspect ONLY Step 1 of Payment Terms & Schedule (first installment)!
-      let matchesDate = true;
+      const milestones = rec.milestones || [];
       const isDateActive = Boolean(dateRangePreset !== 'all' || startDate || endDate);
-      if (isDateActive) {
-        const parseToIsoDate = (rawDate?: string | null): string => {
-          if (!rawDate) return '';
-          const str = String(rawDate).trim();
-          if (!str || str.toLowerCase() === 'undefined' || str.toLowerCase() === 'null') return '';
-          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-          if (str.includes('T')) return str.split('T')[0];
+      const overdueCutoff = startDate ? startDate : todayStr;
 
-          const MONTHS: Record<string, string> = {
-            jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-            jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
-          };
-
-          const parts = str.split(/[\s\-\/.]+/);
-          if (parts.length === 3) {
-            const p0 = parts[0];
-            const p1 = parts[1].toLowerCase().slice(0, 3);
-            const p2 = parts[2];
-            if (MONTHS[p1]) {
-              const day = p0.padStart(2, '0');
-              const month = MONTHS[p1];
-              const year = p2.length === 2 ? `20${p2}` : p2;
-              return `${year}-${month}-${day}`;
-            }
-            const p0m = p0.toLowerCase().slice(0, 3);
-            if (MONTHS[p0m]) {
-              const month = MONTHS[p0m];
-              const day = p1.padStart(2, '0');
-              const year = p2.length === 2 ? `20${p2}` : p2;
-              return `${year}-${month}-${day}`;
-            }
-            if (p2.length === 4 && !isNaN(Number(p0)) && !isNaN(Number(parts[1]))) {
-              return `${p2}-${parts[1].padStart(2, '0')}-${p0.padStart(2, '0')}`;
-            }
-            if (p2.length === 2 && !isNaN(Number(p0)) && !isNaN(Number(parts[1]))) {
-              return `20${p2}-${parts[1].padStart(2, '0')}-${p0.padStart(2, '0')}`;
-            }
+      // Payment Mode Filter
+      if (paymentModeFilter !== 'all') {
+        const targetMode = normalizePaymentMode(paymentModeFilter);
+        if (statusFilter === 'received') {
+          const matchesMode = milestones.some(m => isMilestonePaid(m) && normalizePaymentMode(m.payment_mode) === targetMode && (!isDateActive || isInRange(m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date)));
+          if (!matchesMode && !isDateActive) {
+            const anyMatch = milestones.some(m => isMilestonePaid(m) && normalizePaymentMode(m.payment_mode) === targetMode) || normalizePaymentMode((rec as any).payment_mode) === targetMode;
+            if (!anyMatch) return false;
+          } else if (!matchesMode) {
+            return false;
           }
-
-          const d = new Date(str);
-          if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-          return '';
-        };
-
-        const isInRange = (dStr?: string | null): boolean => {
-          if (!dStr) return false;
-          const d = parseToIsoDate(dStr);
-          if (!d) return false;
-          if (startDate && d < startDate) return false;
-          if (endDate && d > endDate) return false;
-          return true;
-        };
-
-        const milestones = rec.milestones || [];
-        const firstStep = milestones[0];
-        // 📅 Strictly derive initial contract date from Step 1 of Payment Terms & Schedule (Token / Booking Advance)
-        const rawFirstDate = firstStep?.due_date 
-          || firstStep?.paid_date 
-          || (firstStep as any)?.date 
-          || (firstStep as any)?.dueDate 
-          || (firstStep as any)?.paidDate 
-          || (firstStep as any)?.payment_date
-          || (rec as any)?.firstStepDate;
-        const firstStepDate = parseToIsoDate(rawFirstDate);
-
-        const hasMatchingPaid = milestones.some((m, idx) => {
-          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
-          if (!isPaid) return false;
-          const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
-          if (!isInRange(pDate)) return false;
-          if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
-          if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
-          return true;
-        });
-
-        const hasMatchingPending = milestones.some(m => {
-          const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
-          if (isCompleted) return false;
-          if (statusFilter === 'overdue_only') {
-            const dNorm = parseToIsoDate(m.due_date);
-            return dNorm && dNorm < todayStr && isInRange(dNorm);
-          }
-          return isInRange(m.due_date);
-        });
-
-        const hasMatchingContractBooking = isInRange(firstStepDate) || isInRange(rec.created_at);
-
-        if (statusFilter === 'paid') {
-          // Full Paid: Filter cards where the LAST payment date / final milestone completion falls within the selected date range
-          const paidMilestones = milestones.filter(m => 
-            m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date
-          );
-          let lastPaidDate = '';
-          if (paidMilestones.length > 0) {
-            const lastM = paidMilestones[paidMilestones.length - 1];
-            lastPaidDate = parseToIsoDate(lastM.paid_date || (lastM as any).paidDate || (lastM as any).payment_date || lastM.due_date);
-          }
-          if (!lastPaidDate && milestones.length > 0) {
-            const lastM = milestones[milestones.length - 1];
-            lastPaidDate = parseToIsoDate(lastM.due_date || lastM.paid_date);
-          }
-          if (!lastPaidDate) {
-            lastPaidDate = parseToIsoDate(rec.updated_at || rec.created_at);
-          }
-          matchesDate = Boolean(lastPaidDate && isInRange(lastPaidDate));
-        } else if (statusFilter === 'received' || revenueTypeFilter !== 'ALL') {
-          matchesDate = hasMatchingPaid;
-        } else if (statusFilter === 'pending' || statusFilter === 'overdue_only') {
-          matchesDate = hasMatchingPending || (!milestones.some(m => m.due_date) && hasMatchingContractBooking && Number(rec.pending_amount) > 0);
         } else {
-          matchesDate = hasMatchingContractBooking || hasMatchingPaid || hasMatchingPending;
+          const matchesMode = milestones.some(m => normalizePaymentMode(m.payment_mode) === targetMode) || normalizePaymentMode((rec as any).payment_mode) === targetMode;
+          if (!matchesMode) return false;
         }
       }
 
-      return matchesSearch && matchesCategory && matchesStatus && matchesLocation && matchesMode && matchesTeam && matchesRevenueType && matchesDate;
+      // Status & Date Criteria
+      if (statusFilter === 'trash') {
+        return true;
+      }
+
+      if (statusFilter === 'overall_turnover') {
+        if (isDateActive) {
+          const firstDate = getFirstStepDate(rec);
+          if (!isInRange(firstDate)) return false;
+        }
+        return true;
+      }
+
+      if (statusFilter === 'paid') {
+        const isFullyPaid = rec.payment_status === 'paid' || 
+          (Number(rec.final_total_amount) > 0 && Number(rec.pending_amount) <= 0) ||
+          (milestones.length > 0 && milestones.every(m => isMilestonePaid(m)));
+        if (!isFullyPaid) return false;
+
+        if (isDateActive) {
+          const lastDate = getLastStepDate(rec);
+          if (!isInRange(lastDate)) return false;
+        }
+        return true;
+      }
+
+      if (statusFilter === 'received') {
+        const hasPaidMilestones = milestones.some(m => isMilestonePaid(m));
+        const hasReceivedAmt = Number(rec.received_amount) > 0;
+        if (!hasPaidMilestones && !hasReceivedAmt) return false;
+
+        if (isDateActive) {
+          const hasPaymentInRange = milestones.some(m => {
+            if (!isMilestonePaid(m)) return false;
+            const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+            return isInRange(pDate);
+          });
+          const firstDate = getFirstStepDate(rec);
+          if (!hasPaymentInRange && !(hasReceivedAmt && isInRange(firstDate))) return false;
+        }
+        return true;
+      }
+
+      if (statusFilter === 'pending') {
+        const hasPendingMilestones = milestones.some(m => !isMilestonePaid(m));
+        const hasPendingAmt = Number(rec.pending_amount) > 0;
+        if (!hasPendingMilestones && !hasPendingAmt) return false;
+
+        if (isDateActive) {
+          const hasDueInRange = milestones.some(m => {
+            if (isMilestonePaid(m)) return false;
+            return isInRange(m.due_date);
+          });
+          const firstDate = getFirstStepDate(rec);
+          if (!hasDueInRange && !(hasPendingAmt && isInRange(firstDate))) return false;
+        }
+        return true;
+      }
+
+      if (statusFilter === 'overdue_only') {
+        const hasOverdueMilestones = milestones.some(m => {
+          if (isMilestonePaid(m)) return false;
+          const dNorm = parseToIsoDate(m.due_date);
+          return Boolean(dNorm && dNorm < overdueCutoff);
+        });
+        if (!hasOverdueMilestones) return false;
+        return true;
+      }
+
+      if (statusFilter === 'partially_paid') {
+        const isPartiallyPaid = rec.payment_status === 'partially_paid' || 
+          (Number(rec.received_amount) > 0 && Number(rec.pending_amount) > 0);
+        if (!isPartiallyPaid) return false;
+        if (isDateActive) {
+          const firstDate = getFirstStepDate(rec);
+          const hasPaidInRange = milestones.some(m => isMilestonePaid(m) && isInRange(m.paid_date || (m as any).paidDate || m.due_date));
+          const hasDueInRange = milestones.some(m => !isMilestonePaid(m) && isInRange(m.due_date));
+          if (!isInRange(firstDate) && !hasPaidInRange && !hasDueInRange) return false;
+        }
+        return true;
+      }
+
+      // Default: statusFilter === 'all'
+      if (isDateActive) {
+        const firstDate = getFirstStepDate(rec);
+        const hasBookingInRange = isInRange(firstDate);
+        const hasPaidInRange = milestones.some(m => isMilestonePaid(m) && isInRange(m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date));
+        const hasDueInRange = milestones.some(m => !isMilestonePaid(m) && isInRange(m.due_date));
+        return hasBookingInRange || hasPaidInRange || hasDueInRange;
+      }
+
+      return true;
     });
-  }, [financeRecords, searchQuery, categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, revenueTypeFilter, dateRangePreset, startDate, endDate, todayStr]);
+  }, [financeRecords, searchQuery, categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, dateRangePreset, startDate, endDate, todayStr]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => {
@@ -2551,7 +2622,7 @@ export default function FinancePage() {
         }
       }
       const matchesCategory = categoryFilter === 'all' || exp.category === categoryFilter;
-      const matchesMode = paymentModeFilter === 'all' || exp.payment_mode === paymentModeFilter;
+      const matchesMode = paymentModeFilter === 'all' || normalizePaymentMode(exp.payment_mode) === normalizePaymentMode(paymentModeFilter);
 
       let matchesDate = true;
       const expDate = (exp.payment_date || '').split('T')[0];
@@ -2564,79 +2635,96 @@ export default function FinancePage() {
 
   // 5 Top KPI Metric Cards calculations (Dynamically synchronized directly with filtered cards below)
   const isDateActive = Boolean(dateRangePreset !== 'all' || startDate || endDate);
+  const overdueCutoff = startDate ? startDate : todayStr;
 
+  // 1. GROSS INVOICED
   const totalInvoiced = useMemo(() => {
+    if (statusFilter === 'received' || statusFilter === 'pending' || statusFilter === 'overdue_only' || statusFilter === 'trash') {
+      return null;
+    }
+    if (statusFilter === 'overall_turnover' || statusFilter === 'all') {
+      if (isDateActive) {
+        return Math.round(filteredRecords.reduce((acc, r) => {
+          const firstDate = getFirstStepDate(r);
+          if (isInRange(firstDate)) {
+            return acc + (Number(r.final_total_amount) || 0);
+          }
+          return acc;
+        }, 0));
+      }
+      return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.final_total_amount) || 0), 0));
+    }
     return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.final_total_amount) || 0), 0));
-  }, [filteredRecords]);
+  }, [filteredRecords, statusFilter, isDateActive, startDate, endDate]);
 
+  // 2. CASH RECEIVED
   const totalReceived = useMemo(() => {
-    const isPaymentScope = statusFilter === 'received' || revenueTypeFilter !== 'ALL' || (isDateActive && (startDate || endDate));
-
-    if (isPaymentScope && isDateActive && (startDate || endDate)) {
-      // Sum of only the payments actually collected within the designated date range and matching revenue type
+    if (statusFilter === 'overall_turnover' || statusFilter === 'pending' || statusFilter === 'overdue_only' || statusFilter === 'trash') {
+      return null;
+    }
+    if (statusFilter === 'paid') {
+      return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.received_amount) || Number(r.final_total_amount) || 0), 0));
+    }
+    if (isDateActive) {
       return Math.round(filteredRecords.reduce((acc, r) => {
-        const matchingMilestones = (r.milestones || []).filter((m, idx) => {
-          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
-          if (!isPaid) return false;
+        const matchingMilestones = (r.milestones || []).filter(m => {
+          if (!isMilestonePaid(m)) return false;
           const pDate = (m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date || '').split('T')[0];
           if (!pDate) return false;
           if (startDate && pDate < startDate) return false;
           if (endDate && pDate > endDate) return false;
-          if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
-          if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
           return true;
         });
         const milestonesSum = matchingMilestones.reduce((mSum, m) => mSum + (Number(m.amount) || 0), 0);
         if (milestonesSum > 0) return acc + milestonesSum;
 
-        // Fallback: If milestone paid_date not explicitly set, check firstStepDate / created_at in range
-        const firstDate = (r.firstStepDate || (r.milestones?.[0]?.due_date) || (r.milestones?.[0]?.paid_date) || r.created_at || '').split('T')[0];
-        if (firstDate && (!startDate || firstDate >= startDate) && (!endDate || firstDate <= endDate)) {
+        const firstDate = getFirstStepDate(r);
+        if (isInRange(firstDate)) {
           return acc + (Number(r.received_amount) || 0);
         }
         return acc;
       }, 0));
-    } else if (revenueTypeFilter !== 'ALL') {
-      return Math.round(filteredRecords.reduce((acc, r) => {
-        const matchingMilestones = (r.milestones || []).filter((m, idx) => {
-          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
-          if (!isPaid) return false;
-          if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
-          if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
-          return true;
-        });
-        return acc + matchingMilestones.reduce((mSum, m) => mSum + (Number(m.amount) || 0), 0);
-      }, 0));
     }
     return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.received_amount) || 0), 0));
-  }, [filteredRecords, statusFilter, revenueTypeFilter, isDateActive, startDate, endDate]);
+  }, [filteredRecords, statusFilter, isDateActive, startDate, endDate]);
 
   const receivedPaymentsCount = useMemo(() => {
     let count = 0;
     filteredRecords.forEach(r => {
-      (r.milestones || []).forEach((m, idx) => {
-        const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
-        if (!isPaid) return;
+      (r.milestones || []).forEach(m => {
+        if (!isMilestonePaid(m)) return;
         const pDate = (m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date || '').split('T')[0];
         if (isDateActive && (startDate || endDate)) {
           if (startDate && pDate < startDate) return;
           if (endDate && pDate > endDate) return;
         }
-        if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return;
-        if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return;
         count++;
       });
     });
     return count;
-  }, [filteredRecords, isDateActive, startDate, endDate, revenueTypeFilter]);
+  }, [filteredRecords, isDateActive, startDate, endDate]);
 
+  // 3. PENDING DUE
   const totalPending = useMemo(() => {
-    if (isDateActive && (startDate || endDate)) {
-      // Sum of pending milestones due in this period, plus remaining balance of contracts booked in this period
+    if (statusFilter === 'overall_turnover' || statusFilter === 'received' || statusFilter === 'paid' || statusFilter === 'trash') {
+      return null;
+    }
+    if (statusFilter === 'overdue_only') {
+      return Math.round(filteredRecords.reduce((acc, r) => {
+        const overdueMilestones = (r.milestones || []).filter(m => {
+          if (isMilestonePaid(m)) return false;
+          const dNorm = parseToIsoDate(m.due_date);
+          return Boolean(dNorm && dNorm < overdueCutoff);
+        });
+        const overdueSum = overdueMilestones.reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
+        if (overdueSum > 0) return acc + overdueSum;
+        return acc + (Number(r.pending_amount) || 0);
+      }, 0));
+    }
+    if (isDateActive) {
       const periodPending = filteredRecords.reduce((acc, r) => {
         const matchingPending = (r.milestones || []).filter(m => {
-          const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
-          if (isCompleted) return false;
+          if (isMilestonePaid(m)) return false;
           const dDate = (m.due_date || '').split('T')[0];
           if (!dDate) return false;
           if (startDate && dDate < startDate) return false;
@@ -2646,24 +2734,42 @@ export default function FinancePage() {
         const pendingMilestonesSum = matchingPending.reduce((mSum, m) => mSum + (Number(m.amount) || 0), 0);
         if (pendingMilestonesSum > 0) return acc + pendingMilestonesSum;
 
-        const firstDate = (r.firstStepDate || (r.milestones?.[0]?.due_date) || r.created_at || '').split('T')[0];
-        if (firstDate && (!startDate || firstDate >= startDate) && (!endDate || firstDate <= endDate)) {
+        const firstDate = getFirstStepDate(r);
+        if (isInRange(firstDate)) {
           return acc + (Number(r.pending_amount) || 0);
         }
         return acc;
       }, 0);
       return Math.round(periodPending);
     }
-    return Math.max(0, Math.round(totalInvoiced - totalReceived));
-  }, [filteredRecords, isDateActive, startDate, endDate, totalInvoiced, totalReceived]);
+    return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.pending_amount) || 0), 0));
+  }, [filteredRecords, statusFilter, isDateActive, startDate, endDate, overdueCutoff]);
 
+  // 4. TEAM & EXPENSES
   const totalExpensesAmount = useMemo(() => {
+    if (statusFilter !== 'all') {
+      return null;
+    }
     return Math.round(filteredExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0));
-  }, [filteredExpenses]);
+  }, [filteredExpenses, statusFilter]);
 
-  const netProfit = Math.round(totalReceived - totalExpensesAmount);
-  const profitMargin = totalReceived > 0 ? Math.round((netProfit / totalReceived) * 100) : 100;
-  const realizedPercent = totalInvoiced > 0 ? Math.round((totalReceived / totalInvoiced) * 100) : 0;
+  // 5. NET STUDIO PROFIT
+  const netProfit = useMemo(() => {
+    if (statusFilter !== 'all' || totalReceived === null || totalExpensesAmount === null) {
+      return null;
+    }
+    return Math.round(totalReceived - totalExpensesAmount);
+  }, [statusFilter, totalReceived, totalExpensesAmount]);
+
+  const profitMargin = useMemo(() => {
+    if (netProfit === null || totalReceived === null || totalReceived <= 0) return null;
+    return Math.round((netProfit / totalReceived) * 100);
+  }, [netProfit, totalReceived]);
+
+  const realizedPercent = useMemo(() => {
+    if (totalInvoiced === null || totalReceived === null || totalInvoiced <= 0) return null;
+    return Math.round((totalReceived / totalInvoiced) * 100);
+  }, [totalInvoiced, totalReceived]);
 
   // Overdue calculations
   const overdueMilestonesList = useMemo(() => {
@@ -2788,7 +2894,7 @@ export default function FinancePage() {
               <div className="min-w-0 flex-1">
                 <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Gross Invoiced</span>
                 <p className="text-sm sm:text-2xl font-black text-slate-900 tracking-tight font-sans truncate">
-                  ₹{totalInvoiced.toLocaleString('en-IN')}
+                  {totalInvoiced !== null ? `₹${totalInvoiced.toLocaleString('en-IN')}` : '—'}
                 </p>
               </div>
             </div>
@@ -2814,14 +2920,18 @@ export default function FinancePage() {
               <div className="min-w-0 flex-1">
                 <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Cash Received</span>
                 <p className="text-sm sm:text-2xl font-black text-slate-900 tracking-tight font-sans truncate">
-                  ₹{totalReceived.toLocaleString('en-IN')}
+                  {totalReceived !== null ? `₹${totalReceived.toLocaleString('en-IN')}` : '—'}
                 </p>
               </div>
             </div>
 
             <div className="flex items-end justify-between mt-1 sm:mt-auto">
               <span className="text-[10px] sm:text-[11px] font-bold text-emerald-600 flex items-center gap-0.5 truncate">
-                {realizedPercent}% Realized <CheckCircle2 className="w-3 h-3 hidden sm:inline" />
+                {totalReceived !== null && realizedPercent !== null ? (
+                  <>{realizedPercent}% Realized <CheckCircle2 className="w-3 h-3 hidden sm:inline" /></>
+                ) : (
+                  <span className="text-slate-400 font-medium">—</span>
+                )}
               </span>
 
               {/* Green Sparkline SVG (Desktop Only) */}
@@ -2843,7 +2953,7 @@ export default function FinancePage() {
               <div className="min-w-0 flex-1">
                 <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Pending Due</span>
                 <p className="text-sm sm:text-2xl font-black text-slate-900 tracking-tight font-sans truncate">
-                  ₹{totalPending.toLocaleString('en-IN')}
+                  {totalPending !== null ? `₹${totalPending.toLocaleString('en-IN')}` : '—'}
                 </p>
               </div>
             </div>
@@ -2869,7 +2979,7 @@ export default function FinancePage() {
               <div className="min-w-0 flex-1">
                 <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Team & Ops</span>
                 <p className="text-sm sm:text-2xl font-black text-slate-900 tracking-tight font-sans truncate">
-                  ₹{totalExpensesAmount.toLocaleString('en-IN')}
+                  {totalExpensesAmount !== null ? `₹${totalExpensesAmount.toLocaleString('en-IN')}` : '—'}
                 </p>
               </div>
             </div>
@@ -2895,14 +3005,18 @@ export default function FinancePage() {
               <div>
                 <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-purple-900/70 sm:text-slate-400 block truncate">Net Studio Profit</span>
                 <p className="text-base sm:text-2xl font-black text-purple-950 sm:text-slate-900 tracking-tight font-sans truncate">
-                  ₹{netProfit.toLocaleString('en-IN')}
+                  {netProfit !== null ? `₹${netProfit.toLocaleString('en-IN')}` : '—'}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center sm:items-end justify-between sm:w-full mt-0 sm:mt-auto">
               <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-purple-200/70 sm:bg-transparent text-purple-900 sm:text-purple-600 flex items-center gap-1">
-                {profitMargin}% Margin <CheckCircle2 className="w-3 h-3 hidden sm:inline" />
+                {netProfit !== null && profitMargin !== null ? (
+                  <>{profitMargin}% Margin <CheckCircle2 className="w-3 h-3 hidden sm:inline" /></>
+                ) : (
+                  <span className="text-slate-400 font-medium">—</span>
+                )}
               </span>
 
               {/* Purple Sparkline SVG (Desktop Only) */}
@@ -3383,61 +3497,90 @@ export default function FinancePage() {
 
           </div>
 
-          {/* Active Payment Received & Revenue Type Filter Pills on Top */}
+          {/* Active Payment Status Filter Pills on Top */}
           <div className="flex flex-wrap items-center gap-2 pt-1 pb-0.5">
             {statusFilter === 'trash' && (
-            <div className="w-full bg-rose-50/90 border border-rose-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                  <Trash2 className="w-5 h-5 text-rose-600" />
+              <div className="w-full bg-rose-50/90 border border-rose-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                    <Trash2 className="w-5 h-5 text-rose-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-rose-950 flex items-center gap-2">
+                      Finance Trash ({filteredRecords.length})
+                    </h4>
+                    <p className="text-xs text-rose-700 font-medium">
+                      Soft-deleted finance records. Click <strong>Restore Record</strong> to return them to active ledger.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-black text-rose-950 flex items-center gap-2">
-                    Finance Trash ({filteredRecords.length})
-                  </h4>
-                  <p className="text-xs text-rose-700 font-medium">
-                    Soft-deleted finance records. Click <strong>Restore Record</strong> to return them to active ledger.
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className="px-3.5 py-1.5 bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-xl text-xs font-black transition cursor-pointer self-start sm:self-auto shrink-0 shadow-2xs"
+                >
+                  Exit Trash
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('all')}
-                className="px-3.5 py-1.5 bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-xl text-xs font-black transition cursor-pointer self-start sm:self-auto shrink-0 shadow-2xs"
-              >
-                Exit Trash
-              </button>
-            </div>
-          )}
-          
-                    {statusFilter === 'paid' && (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-50 border border-purple-300 text-purple-950 text-xs font-bold shadow-xs">
-              <span className="flex h-2 w-2 relative">
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
-              </span>
-              <span>
-                Status:{' '}
-                <span className="font-extrabold text-purple-900">
-                  Full Paid
+            )}
+
+            {statusFilter === 'overall_turnover' && (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-bold shadow-xs">
+                <span className="flex h-2 w-2 relative">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                 </span>
-                {(startDate || endDate) && (
-                  <>
-                    {' '}(<span className="font-mono text-purple-800 font-bold">{startDate || 'Start'} ➔ {endDate || 'End'}</span>)
-                  </>
-                )}
-                {' '}— <span className="text-purple-700 font-black">₹{totalReceived.toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'})
-              </span>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('all')}
-                className="ml-1.5 px-2 py-0.5 rounded-lg bg-purple-200/80 hover:bg-purple-300 text-purple-900 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
-              >
-                <span>Clear Filter</span>
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-          {statusFilter === 'received' && (
+                <span>
+                  Status:{' '}
+                  <span className="font-extrabold text-amber-900">
+                    Overall Turnover
+                  </span>
+                  {(startDate || endDate) && (
+                    <>
+                      {' '}(<span className="font-mono text-amber-800 font-bold">{startDate || 'Start'} ➔ {endDate || 'End'}</span>)
+                    </>
+                  )}
+                  {' '}— <span className="text-amber-800 font-black">₹{(totalInvoiced || 0).toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'deal' : 'deals'})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className="ml-1.5 px-2 py-0.5 rounded-lg bg-amber-200/80 hover:bg-amber-300 text-amber-900 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  <span>Clear Filter</span>
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+            
+            {statusFilter === 'paid' && (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-50 border border-purple-300 text-purple-950 text-xs font-bold shadow-xs">
+                <span className="flex h-2 w-2 relative">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+                </span>
+                <span>
+                  Status:{' '}
+                  <span className="font-extrabold text-purple-900">
+                    Full Paid
+                  </span>
+                  {(startDate || endDate) && (
+                    <>
+                      {' '}(<span className="font-mono text-purple-800 font-bold">{startDate || 'Start'} ➔ {endDate || 'End'}</span>)
+                    </>
+                  )}
+                  {' '}— <span className="text-purple-700 font-black">₹{(totalReceived || 0).toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className="ml-1.5 px-2 py-0.5 rounded-lg bg-purple-200/80 hover:bg-purple-300 text-purple-900 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  <span>Clear Filter</span>
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            {statusFilter === 'received' && (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs font-bold shadow-xs">
                 <span className="flex h-2 w-2 relative">
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -3452,7 +3595,7 @@ export default function FinancePage() {
                       {' '}(<span className="font-mono text-emerald-800 font-bold">{startDate || 'Start'} ➔ {endDate || 'End'}</span>)
                     </>
                   )}
-                  {' '}— <span className="text-emerald-700 font-black">₹{totalReceived.toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'} • {receivedPaymentsCount} {receivedPaymentsCount === 1 ? 'payment received' : 'payments received'})
+                  {' '}— <span className="text-emerald-700 font-black">₹{(totalReceived || 0).toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'} • {receivedPaymentsCount} {receivedPaymentsCount === 1 ? 'payment received' : 'payments received'})
                 </span>
                 <button
                   type="button"
@@ -3465,23 +3608,53 @@ export default function FinancePage() {
               </div>
             )}
 
-            {revenueTypeFilter !== 'ALL' && (
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-bold shadow-xs">
+            {statusFilter === 'pending' && (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-50 border border-orange-300 text-orange-950 text-xs font-bold shadow-xs">
                 <span className="flex h-2 w-2 relative">
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
                 </span>
                 <span>
-                  Revenue Type:{' '}
-                  <span className="font-extrabold text-amber-900">
-                    {revenueTypeFilter === 'NEW_BOOKING' ? '✨ New Booking / Advance' : '⚖️ Due Balance / Milestone Clearances'}
+                  Status:{' '}
+                  <span className="font-extrabold text-orange-900">
+                    Pending Due
                   </span>
+                  {(startDate || endDate) && (
+                    <>
+                      {' '}(<span className="font-mono text-orange-800 font-bold">{startDate || 'Start'} ➔ {endDate || 'End'}</span>)
+                    </>
+                  )}
+                  {' '}— <span className="text-orange-700 font-black">₹{(totalPending || 0).toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'})
                 </span>
                 <button
                   type="button"
-                  onClick={() => setRevenueTypeFilter('ALL')}
-                  className="ml-1.5 px-2 py-0.5 rounded-lg bg-amber-200/80 hover:bg-amber-300 text-amber-900 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                  onClick={() => setStatusFilter('all')}
+                  className="ml-1.5 px-2 py-0.5 rounded-lg bg-orange-200/80 hover:bg-orange-300 text-orange-900 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
                 >
-                  <span>Clear</span>
+                  <span>Clear Filter</span>
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            {statusFilter === 'overdue_only' && (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-950 text-xs font-bold shadow-xs">
+                <span className="flex h-2 w-2 relative">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+                <span>
+                  Status:{' '}
+                  <span className="font-extrabold text-rose-900">
+                    Overdue Dues Only
+                  </span>
+                  {' '}(<span className="font-mono text-rose-800 font-bold">Due before {startDate || 'Today'}</span>)
+                  {' '}— <span className="text-rose-700 font-black">₹{(totalPending || 0).toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className="ml-1.5 px-2 py-0.5 rounded-lg bg-rose-200/80 hover:bg-rose-300 text-rose-900 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  <span>Clear Filter</span>
                   <X className="w-3 h-3" />
                 </button>
               </div>

@@ -197,21 +197,29 @@ export function FinanceFiltersModal({
                 </div>
               </div>
 
-              {statusFilter === 'received' ? (
+              {statusFilter === 'overall_turnover' ? (
+                <p className="text-[10px] text-amber-900 font-semibold leading-tight pt-0.5">
+                  ⚡ Matches contract first payment step (Token / Advance booking date) for Overall Turnover.
+                </p>
+              ) : statusFilter === 'received' ? (
                 <p className="text-[10px] text-emerald-800 font-semibold leading-tight pt-0.5">
-                  ⚡ Single unified date range matches milestone payment received dates for &quot;Payment Received&quot; status.
+                  ⚡ Matches milestone payment received dates in selected period for Payment Received.
                 </p>
-              ) : statusFilter === 'pending' || statusFilter === 'overdue_only' ? (
+              ) : statusFilter === 'paid' ? (
+                <p className="text-[10px] text-purple-900 font-semibold leading-tight pt-0.5">
+                  ⚡ Matches final payment milestone completion date in selected period for Fully Paid.
+                </p>
+              ) : statusFilter === 'pending' ? (
                 <p className="text-[10px] text-amber-800 font-semibold leading-tight pt-0.5">
-                  ⚡ Matches milestone pending due dates for &quot;Pending / Overdue&quot; status.
+                  ⚡ Matches unpaid milestone due dates in selected period for Pending Due.
                 </p>
-              ) : statusFilter === 'partially_paid' ? (
-                <p className="text-[10px] text-orange-800 font-semibold leading-tight pt-0.5">
-                  ⚡ Matches milestone payment / due dates for &quot;Partially Paid&quot; status.
+              ) : statusFilter === 'overdue_only' ? (
+                <p className="text-[10px] text-rose-800 font-semibold leading-tight pt-0.5">
+                  ⚡ Matches unpaid milestones due before {startDate || 'today'} for Overdue Dues.
                 </p>
               ) : (
-                <p className="text-[10px] text-amber-900 font-semibold leading-tight pt-0.5">
-                  ⚡ Matches contract first payment step (Token / Advance booking date).
+                <p className="text-[10px] text-slate-600 font-semibold leading-tight pt-0.5">
+                  ⚡ All Status view: Invoices by booking date, collections by payment date, dues by due date.
                 </p>
               )}
             </div>
@@ -242,42 +250,14 @@ export function FinanceFiltersModal({
                 onChange={(e) => setStatusFilter(e.target.value as any)}
                 className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
               >
-                <option value="all">⚡ All Statuses</option>
+                <option value="all">⚡ All Status</option>
+                <option value="overall_turnover">📈 Overall Turnover</option>
                 <option value="received">💰 Payment Received</option>
-                <option value="partially_paid">🌓 Partially Paid</option>
                 <option value="paid">✅ Fully Paid</option>
                 <option value="pending">⏳ Pending Due</option>
                 <option value="overdue_only">⚠️ Overdue Dues Only</option>
                 <option value="trash">🗑️ Trash (Archived / Soft-Deleted)</option>
               </select>
-            </div>
-
-            {/* Revenue Type / Payment Nature Filter */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center justify-between">
-                <span>Revenue Type / Payment Nature</span>
-                {revenueTypeFilter && revenueTypeFilter !== 'ALL' && (
-                  <span className="text-[9px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded-md border border-amber-300">
-                    Active
-                  </span>
-                )}
-              </label>
-              <select
-                value={revenueTypeFilter || 'ALL'}
-                onChange={(e) => setRevenueTypeFilter && setRevenueTypeFilter(e.target.value as any)}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-              >
-                <option value="ALL">💰 All Payments (Default)</option>
-                <option value="NEW_BOOKING">✨ New Booking / Advance</option>
-                <option value="DUE_BALANCE">⚖️ Due Balance / Milestone Clearances</option>
-              </select>
-              {revenueTypeFilter !== 'ALL' && (
-                <p className="text-[10px] text-amber-800 font-medium mt-1 leading-tight">
-                  {revenueTypeFilter === 'NEW_BOOKING'
-                    ? '⚡ Showing only initial booking advance / token payments.'
-                    : '⚡ Showing only subsequent installments & final balance clearances.'}
-                </p>
-              )}
             </div>
 
             {/* Event Category */}
