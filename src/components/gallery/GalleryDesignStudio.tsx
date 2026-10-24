@@ -2188,11 +2188,6 @@ function renderPresetContent(
     case 'editorial_canvas':
       return (
         <div className={`p-6 text-center flex flex-col items-center justify-center space-y-4`}>
-          <div className="w-full flex items-center justify-between text-[9px] font-mono uppercase tracking-widest opacity-60">
-            <span>{studioName}</span>
-            <span>{countLabel}</span>
-          </div>
-
           <h2
             className={`${
               isMobile ? 'text-2xl tracking-[0.15em]' : 'text-5xl tracking-[0.2em]'
@@ -2226,80 +2221,97 @@ function renderPresetContent(
         </div>
       );
 
-    case 'faded_luxe':
+    case 'faded_luxe': {
+      const canvasBg = design.palette.canvasBg || '#FAF9F5';
+      const textColor = design.palette.textColor || '#18181B';
+
       return (
         <div
           className={`relative ${
-            isMobile ? 'h-72' : 'h-96'
-          } w-full flex flex-col justify-between overflow-hidden bg-white text-zinc-900`}
+            isMobile ? 'h-[420px]' : 'h-[480px]'
+          } w-full flex flex-col justify-between overflow-hidden transition-colors duration-500`}
+          style={{ backgroundColor: canvasBg, color: textColor }}
         >
+          {/* Clear Background Photo */}
           {coverPos.url && (
             <img
               src={coverPos.url}
               alt="Misty"
-              className="absolute inset-0 w-full h-full object-cover opacity-35 filter brightness-105"
+              className="absolute inset-0 w-full h-full object-cover opacity-85 sm:opacity-90 filter contrast-[1.02] brightness-[1.02]"
               style={{
                 objectPosition: `${focalX}% ${focalY}%`,
                 transform: `scale(${zoom / 100})`,
               }}
             />
           )}
-          <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-white/40 to-white/95" />
 
-          <div className="relative z-10 px-4 py-3 flex items-center justify-between text-[9px] font-mono uppercase tracking-widest">
-            <span className="font-bold">{studioName}</span>
-            <span>{countLabel}</span>
-          </div>
+          {/* Bottom-Up Gradient Fade (Creamy in Light mode, Black in Dark mode) */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: `linear-gradient(to top, ${canvasBg} 0%, ${canvasBg}E6 28%, ${canvasBg}66 55%, transparent 100%)`,
+            }}
+          />
 
-          <div className="relative z-10 p-4 text-center space-y-2 my-auto">
-            <div className="w-4 h-4 rounded-full border border-zinc-400 mx-auto" />
-            <span className="text-[8px] font-mono uppercase tracking-[0.25em] text-zinc-500 block font-semibold">
+          {/* Top spacing */}
+          <div className="h-4 w-full" />
+
+          {/* Center Content (Circle removed, clean centered typography) */}
+          <div className="relative z-10 p-6 text-center space-y-2 my-auto">
+            <span className="text-[8px] sm:text-[9px] font-mono uppercase tracking-[0.25em] opacity-60 block font-semibold">
               GALLERY BY {studioName.toUpperCase()}
             </span>
             <h2
-              className={`${isMobile ? 'text-2xl' : 'text-4xl'} font-normal uppercase leading-tight`}
+              className={`${isMobile ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-5xl'} font-normal uppercase leading-tight drop-shadow-xs`}
               style={{ fontFamily: headingFont }}
             >
               {coupleName}
             </h2>
-            <span className="text-[10px] text-zinc-600 font-mono tracking-wider block">{eventDateFormatted}</span>
+            <span className="text-[10px] sm:text-xs font-mono tracking-wider opacity-75 block">{eventDateFormatted}</span>
           </div>
 
-          <div className="relative z-10 pb-3 flex flex-col items-center">
-            <ArrowDown className="w-3.5 h-3.5 text-zinc-500 animate-bounce" />
+          {/* Bottom Animated Arrow */}
+          <div className="relative z-10 pb-4 flex flex-col items-center">
+            <ArrowDown className="w-3.5 h-3.5 opacity-60 animate-bounce" />
           </div>
         </div>
       );
+    }
 
     case 'split_atelier':
       return (
         <div
           className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} ${
-            isMobile ? 'min-h-[280px]' : 'min-h-[340px]'
-          } w-full border-b border-black/10`}
+            isMobile ? 'min-h-[440px]' : 'min-h-[480px]'
+          } w-full border-b border-black/10 transition-colors duration-500`}
+          style={{ backgroundColor: design.palette.canvasBg, color: design.palette.textColor }}
         >
-          <div className="p-5 flex flex-col justify-between space-y-3">
-            <div className="flex items-center justify-between text-[8px] font-mono uppercase tracking-widest opacity-60">
-              <span className="font-bold">{studioName}</span>
-              <span>{countLabel}</span>
-            </div>
-
-            <div className="my-auto space-y-1">
-              <span className="text-[8px] font-mono uppercase tracking-[0.25em] opacity-60 block font-bold">
+          <div className="p-6 sm:p-8 flex flex-col justify-between space-y-4">
+            {/* Gallery by {studioName} subtitle */}
+            <div className="pt-2">
+              <span className="text-[8px] sm:text-[9px] font-mono uppercase tracking-[0.25em] opacity-60 block font-bold">
                 GALLERY BY {studioName.toUpperCase()}
               </span>
-              <h2 className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold uppercase`} style={{ fontFamily: headingFont }}>
-                {coupleName}
-              </h2>
-              <span className="text-[9px] font-mono opacity-70 block">{eventDateFormatted}</span>
             </div>
 
-            <div>
+            {/* Vertically centered couple name & date */}
+            <div className="my-auto space-y-2">
+              <h2
+                className={`${isMobile ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'} font-bold uppercase leading-tight`}
+                style={{ fontFamily: headingFont }}
+              >
+                {coupleName}
+              </h2>
+              <span className="text-[10px] font-mono opacity-70 block">{eventDateFormatted}</span>
+            </div>
+
+            {/* Animated scroll down indicator */}
+            <div className="pb-2">
               <ArrowDown className="w-3.5 h-3.5 opacity-60 animate-bounce" />
             </div>
           </div>
 
-          <div className="overflow-hidden bg-zinc-900 min-h-[160px]">
+          <div className="overflow-hidden bg-zinc-900 min-h-[220px] sm:min-h-full">
             {coverPos.url && (
               <img
                 src={coverPos.url}
@@ -2322,12 +2334,12 @@ function renderPresetContent(
             isMobile ? 'h-[460px]' : 'h-[520px]'
           } w-full flex flex-col justify-between items-center overflow-hidden text-center bg-zinc-950 p-4`}
         >
-          {/* Grayscale Wide Panorama Background (From User Photo 2) */}
+          {/* Grayscale Wide Panorama Background with 40% Opacity */}
           {coverPos.url && (
             <img
               src={coverPos.url}
               alt="Monochrome Backdrop"
-              className="absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 brightness-[0.55] transition-transform duration-1000 ease-out"
+              className="absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 opacity-40 transition-transform duration-1000 ease-out"
               style={{
                 objectPosition: `${focalX}% ${focalY}%`,
                 transform: `scale(${zoom / 100})`,
@@ -2336,17 +2348,8 @@ function renderPresetContent(
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/20 to-black/85" />
 
-          {/* Top Studio Brand with Star Constellation */}
-          <div className="relative z-20 w-full pt-1 text-center space-y-0.5">
-            <div className="flex items-center justify-center gap-1.5 text-white/90 text-[9px] font-mono tracking-[0.25em] uppercase">
-              <SparkleStar className="w-2.5 h-2.5 text-amber-300" />
-              <span style={{ fontFamily: headingFont }}>{studioName}</span>
-              <SparkleStar className="w-2.5 h-2.5 text-amber-300" />
-            </div>
-            <span className="text-[7px] text-zinc-400 font-mono tracking-widest uppercase block">
-              FINE ART WEDDING VISUALS
-            </span>
-          </div>
+          {/* Top Spacing (Brand name and fine art visuals removed per user request) */}
+          <div className="h-4 w-full" />
 
           {/* Centerpiece Color Arch Portal Window (From User Photo 2) */}
           <div className="relative z-20 my-auto flex items-center justify-center">
@@ -2381,15 +2384,15 @@ function renderPresetContent(
             </div>
           </div>
 
-          {/* Bottom Romantic Flourish Typography (From User Photo 2) */}
+          {/* Bottom Romantic Flourish Typography (Enlarged font, star icons removed per user request) */}
           <div className="relative z-20 pb-2 space-y-1 text-white">
             <h2
               className={`${
-                isMobile ? 'text-2xl' : 'text-3xl sm:text-4xl'
-              } font-normal tracking-tight text-white capitalize drop-shadow-lg`}
+                isMobile ? 'text-3xl sm:text-4xl' : 'text-4xl sm:text-5xl md:text-6xl'
+              } font-normal tracking-tight text-white uppercase drop-shadow-lg`}
               style={{ fontFamily: headingFont }}
             >
-              ✧ {coupleName} ✧
+              {coupleName}
             </h2>
             <div className="flex items-center justify-center gap-2 text-[9px] font-mono text-zinc-300 tracking-widest">
               <span>{eventDateFormatted}</span>
@@ -2516,12 +2519,20 @@ function renderPresetContent(
           } w-full flex flex-col justify-between items-center overflow-hidden transition-colors duration-500`}
           style={{ backgroundColor: bgColor, color: textColor }}
         >
-          {/* Top Spacing (Studio name, count and Edition D'Art removed per user request) */}
-          <div className="h-2 sm:h-4 w-full" />
+          {/* Top Spacing / Mobile Header Quote (Per user photo: text on top for mobile) */}
+          {isMobile ? (
+            <div className="pt-2 pb-1 text-center">
+              <span className="text-[10px] font-serif uppercase tracking-widest opacity-80 block">
+                Creating your timeless love story
+              </span>
+            </div>
+          ) : (
+            <div className="h-2 sm:h-4 w-full" />
+          )}
 
           {/* Center Visual: Portrait Image flanked by fine art quotes */}
-          <div className="relative z-10 my-auto w-full max-w-4xl flex items-center justify-between sm:justify-around px-2">
-            {/* Left Fine Art Quote */}
+          <div className="relative z-10 my-auto w-full max-w-4xl flex items-center justify-center sm:justify-around px-2">
+            {/* Left Fine Art Quote (Desktop only) */}
             <div className="hidden sm:flex flex-col items-center text-center space-y-1.5 opacity-80 max-w-[140px]">
               <span className="text-[9px] font-serif uppercase tracking-widest leading-relaxed">
                 Creating your timeless love story
@@ -2529,11 +2540,11 @@ function renderPresetContent(
               <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
             </div>
 
-            {/* Centered Vertical Portrait Frame (No heavy shadow per user request) */}
+            {/* Centered Vertical Portrait Frame */}
             <div
               className={`relative ${
-                isMobile ? 'w-44 aspect-[3/4]' : 'w-56 sm:w-64 aspect-[3/4]'
-              } overflow-hidden bg-stone-900 border border-white/20`}
+                isMobile ? 'w-48 aspect-[3/4]' : 'w-56 sm:w-64 aspect-[3/4]'
+              } overflow-hidden bg-stone-900 border border-white/20 shadow-md`}
             >
               {coverPos.url ? (
                 <img
@@ -2549,10 +2560,10 @@ function renderPresetContent(
               ) : (
                 <div className="w-full h-full bg-zinc-800" />
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
             </div>
 
-            {/* Right Fine Art Quote */}
+            {/* Right Fine Art Quote (Desktop only, completely removed on mobile per user request) */}
             <div className="hidden sm:flex flex-col items-center text-center space-y-1.5 opacity-80 max-w-[140px]">
               <span className="text-[9px] font-serif uppercase tracking-widest leading-relaxed">
                 Fine art wedding photography &amp; film
@@ -2561,10 +2572,12 @@ function renderPresetContent(
             </div>
           </div>
 
-          {/* Bottom Massive Haute-Couture Serif Typography (No truncation, properly centered & auto-scaled) */}
-          <div className="relative z-20 w-full text-center -mt-6 sm:-mt-8 px-2 space-y-1">
+          {/* Bottom Massive Haute-Couture Serif Typography - overlapping lower 25-30% of portrait photo */}
+          <div className="relative z-20 w-full text-center -mt-12 sm:-mt-16 px-2 space-y-1">
             <h2
-              className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-serif tracking-[0.1em] uppercase font-normal drop-shadow-md leading-tight text-center max-w-full break-words"
+              className={`${
+                isMobile ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl md:text-5xl'
+              } font-serif tracking-[0.12em] uppercase font-normal drop-shadow-xl leading-tight text-center max-w-full break-words`}
               style={{ fontFamily: headingFont }}
             >
               {coupleName}

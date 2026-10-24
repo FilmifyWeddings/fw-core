@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { parseCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
-import { SparkleStar, WashiTape, HandDrawnOval } from '@/components/gallery/CoverPresetEffects';
+import { SparkleStar, WashiTape, HandDrawnOval, FaceAiFocusIcon } from '@/components/gallery/CoverPresetEffects';
 import {
   Camera,
   Sparkles,
@@ -1140,7 +1140,7 @@ function GuestSlugGalleryContent() {
               <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
                 {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
               </span>
-              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+              <FaceAiFocusIcon className="w-4 h-4 text-amber-300" />
             </button>
           </div>
         </div>
@@ -1357,13 +1357,7 @@ function GuestSlugGalleryContent() {
             className="py-10 sm:py-16 px-4 sm:px-8 text-center flex flex-col items-center justify-center relative min-h-[85vh] transition-colors duration-500"
             style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
           >
-            {/* Top Bar */}
-            <div className="w-full max-w-5xl mx-auto flex items-center justify-between pb-6 text-xs font-mono uppercase tracking-widest opacity-60">
-              <span>{studioName}</span>
-              {totalPhotosCount > 0 && <span>{totalPhotosCount} PHOTOS</span>}
-            </div>
-
-            {/* Oversized High-Fashion Title */}
+            {/* Oversized High-Fashion Title (Studio name and photo count removed per user request) */}
             <div className="space-y-2 max-w-4xl mx-auto animate-in fade-in duration-700">
               <h1
                 className="text-4xl sm:text-7xl lg:text-8xl font-normal tracking-[0.22em] uppercase leading-none"
@@ -1392,84 +1386,85 @@ function GuestSlugGalleryContent() {
             {/* Bottom Subtle Date and Arrow */}
             <div className="pt-8 sm:pt-10 flex flex-col items-center gap-2 text-xs font-mono tracking-widest uppercase opacity-60">
               <span>{formattedDate}</span>
-              <a href="#gallery-content" className="pt-2 hover:opacity-100 transition-opacity" aria-label="Scroll down">
+              <a href="#sub-events-bar" className="pt-2 hover:opacity-100 transition-opacity" aria-label="Scroll down">
                 <ArrowDown className="w-4 h-4 animate-bounce" />
               </a>
             </div>
           </div>
         )}
 
-        {/* PRESET 3: FADED LUXE (Photo 3: KnotsbyAMP Misty Backdrop & Centered Typography) */}
+        {/* PRESET 3: FADED LUXE (KnotsbyAMP Misty Backdrop with Bottom-Up Gradient Fade & Centered Typography) */}
         {(designPreset === 'faded_luxe' || designPreset === 'royal_medallion') && (
-          <div className="relative min-h-[85vh] sm:min-h-[90vh] w-full flex flex-col justify-between overflow-hidden bg-white">
-            {/* Soft High-Key Misty Photo Background */}
+          <div
+            className="relative min-h-[85vh] sm:min-h-[90vh] w-full flex flex-col justify-between overflow-hidden transition-colors duration-500"
+            style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
+          >
+            {/* Clear Background Photo (High clarity, opacity 85-90%) */}
             {effectiveCoverUrl && (
               <img
                 src={effectiveCoverUrl}
                 alt={gallery.title}
-                className="absolute inset-0 w-full h-full object-cover opacity-35 filter brightness-105 contrast-95 transition-transform duration-1000"
+                className="absolute inset-0 w-full h-full object-cover opacity-85 sm:opacity-90 filter contrast-[1.02] brightness-[1.02] transition-transform duration-1000"
                 style={{
                   objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
                 }}
               />
             )}
-            <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-white/40 to-white/95" />
 
-            {/* Top Bar */}
-            <div className="relative z-10 px-6 sm:px-12 py-5 border-b border-black/5 flex items-center justify-between text-zinc-900 text-xs font-mono uppercase tracking-widest">
-              <span className="font-bold">{studioName}</span>
-              <span className="hidden sm:inline font-serif normal-case tracking-normal text-sm opacity-70">
-                {gallery.title}
-              </span>
-              <span>{totalPhotosCount > 0 ? `${totalPhotosCount} PHOTOS` : ''}</span>
-            </div>
+            {/* Bottom-Up Gradient Fade (Creamy in Light mode, Black in Dark mode) */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: `linear-gradient(to top, ${designPalette.canvasBg} 0%, ${designPalette.canvasBg}E6 28%, ${designPalette.canvasBg}66 55%, transparent 100%)`,
+              }}
+            />
 
-            {/* Center Content: Ring indicator, stacked serif title, date */}
-            <div className="relative z-10 px-6 py-12 text-center space-y-4 max-w-2xl mx-auto my-auto animate-in fade-in slide-in-from-bottom-4 duration-1000">
-              <div className="w-5 h-5 rounded-full border-2 border-zinc-400/80 mx-auto" />
-              <span className="text-[11px] font-mono uppercase tracking-[0.28em] text-zinc-500 block font-semibold">
+            {/* Top Spacing (Duplicate studio header, couple name and photo count removed per user request) */}
+            <div className="h-6 sm:h-10 w-full" />
+
+            {/* Center Content: Stacked serif title, date (Circle emblem removed per user request) */}
+            <div className="relative z-10 px-6 py-12 text-center space-y-4 max-w-3xl mx-auto my-auto animate-in fade-in slide-in-from-bottom-4 duration-1000">
+              <span className="text-[11px] font-mono uppercase tracking-[0.28em] opacity-60 block font-semibold">
                 GALLERY BY {studioName.toUpperCase()}
               </span>
               <h1
-                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-zinc-900 uppercase leading-tight"
+                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight uppercase leading-tight drop-shadow-xs"
                 style={{ fontFamily: headingFont }}
               >
                 {gallery.title}
               </h1>
-              <span className="text-xs sm:text-sm text-zinc-600 font-mono tracking-widest block pt-1">
+              <span className="text-xs sm:text-sm font-mono tracking-widest opacity-75 block pt-1">
                 {formattedDate}
               </span>
             </div>
 
             {/* Bottom Delicate Line & Arrow */}
             <div className="relative z-10 pb-8 flex flex-col items-center">
-              <div className="w-px h-8 bg-zinc-300" />
-              <a href="#gallery-content" className="pt-2 text-zinc-500 hover:text-zinc-900 transition-colors" aria-label="Scroll down">
+              <div className="w-px h-8 bg-current opacity-30" />
+              <a href="#sub-events-bar" className="pt-2 opacity-60 hover:opacity-100 transition-colors" aria-label="Scroll down">
                 <ArrowDown className="w-4 h-4 animate-bounce" />
               </a>
             </div>
           </div>
         )}
 
-        {/* PRESET 4: SPLIT ATELIER (Photo 5: Modern Diptych Side-by-Side Canvas) */}
+        {/* PRESET 4: SPLIT ATELIER (Modern Diptych Side-by-Side Canvas with Fixed Standard Height) */}
         {(designPreset === 'split_atelier' || designPreset === 'grand_diptych') && (
           <div
-            className="grid grid-cols-1 lg:grid-cols-2 min-h-[85vh] w-full border-b border-black/10 overflow-hidden transition-colors duration-500"
+            className="grid grid-cols-1 lg:grid-cols-2 min-h-[85vh] lg:h-[88vh] max-h-[92vh] w-full border-b border-black/10 overflow-hidden transition-colors duration-500"
             style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
           >
             {/* Left Content Side */}
-            <div className="p-8 sm:p-16 lg:p-20 flex flex-col justify-between space-y-8 animate-in fade-in slide-in-from-left-6 duration-1000">
-              {/* Top Header */}
-              <div className="flex items-center justify-between text-xs font-mono uppercase tracking-widest opacity-60">
-                <span className="font-bold">{studioName}</span>
-                {totalPhotosCount > 0 && <span>{totalPhotosCount} PHOTOS</span>}
-              </div>
-
-              {/* Center Typography */}
-              <div className="space-y-4 my-auto">
+            <div className="p-8 sm:p-14 lg:p-16 flex flex-col justify-between space-y-6 animate-in fade-in slide-in-from-left-6 duration-1000">
+              {/* Gallery by {studioName} subtitle (Duplicate top bar removed per user request) */}
+              <div className="pt-2">
                 <span className="text-[11px] font-mono uppercase tracking-[0.28em] opacity-60 block font-bold">
                   GALLERY BY {studioName.toUpperCase()}
                 </span>
+              </div>
+
+              {/* Vertically Centered Typography */}
+              <div className="space-y-4 my-auto">
                 <h1
                   className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-wide uppercase leading-tight"
                   style={{ fontFamily: headingFont }}
@@ -1481,21 +1476,21 @@ function GuestSlugGalleryContent() {
                 </span>
               </div>
 
-              {/* Bottom Arrow Indicator */}
+              {/* Bottom Animated Arrow Indicator */}
               <div className="pt-4">
                 <a
-                  href="#gallery-content"
-                  className="inline-flex flex-col items-center gap-1 opacity-60 hover:opacity-100 transition-opacity"
+                  href="#sub-events-bar"
+                  className="inline-flex flex-col items-center gap-1 opacity-60 hover:opacity-100 transition-opacity cursor-pointer group"
                   aria-label="Scroll down"
                 >
                   <div className="w-px h-6 bg-current opacity-40" />
-                  <ArrowDown className="w-4 h-4 animate-bounce" />
+                  <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform animate-bounce" />
                 </a>
               </div>
             </div>
 
-            {/* Right Artwork Side */}
-            <div className="min-h-[420px] lg:min-h-full overflow-hidden relative group animate-in fade-in zoom-in-95 duration-1000">
+            {/* Right Artwork Side (Responsive fixed frame) */}
+            <div className="min-h-[380px] lg:min-h-full overflow-hidden relative group animate-in fade-in zoom-in-95 duration-1000">
               {effectiveCoverUrl ? (
                 <img
                   src={effectiveCoverUrl}
@@ -1515,13 +1510,13 @@ function GuestSlugGalleryContent() {
         {/* PRESET 6: MONOCHROME PORTAL & ARCH DUO (From User Photo 2) */}
         {designPreset === 'monochrome_portal' && (
           <div className="relative min-h-[88vh] sm:min-h-[96vh] w-full flex flex-col justify-between items-center overflow-hidden bg-zinc-950 px-4 py-6 text-center">
-            {/* Grayscale Wide Panorama Background (From User Photo 2) */}
+            {/* Grayscale Wide Panorama Background with 40% Opacity per user request */}
             {cleanCoverUrl && (
               <>
                 <img
                   src={cleanCoverUrl}
                   alt={gallery.title}
-                  className="hidden sm:block absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 brightness-[0.55] transition-transform duration-1000 ease-out"
+                  className="hidden sm:block absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 opacity-40 transition-transform duration-1000 ease-out"
                   style={{
                     objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
                     transform: `scale(${coverPos.desktop.zoom / 100})`,
@@ -1530,7 +1525,7 @@ function GuestSlugGalleryContent() {
                 <img
                   src={cleanCoverUrl}
                   alt={gallery.title}
-                  className="block sm:hidden absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 brightness-[0.55] transition-transform duration-1000 ease-out"
+                  className="block sm:hidden absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 opacity-40 transition-transform duration-1000 ease-out"
                   style={{
                     objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
                     transform: `scale(${coverPos.mobile.zoom / 100})`,
@@ -1540,19 +1535,8 @@ function GuestSlugGalleryContent() {
             )}
             <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/25 to-black/85" />
 
-            {/* Top Studio Brand with Star Orbit Badges */}
-            <div className="relative z-20 w-full max-w-4xl mx-auto pt-2 space-y-1">
-              <div className="flex items-center justify-center gap-2 text-white/90 text-xs font-mono tracking-[0.28em] uppercase">
-                <SparkleStar className="w-3.5 h-3.5 text-amber-300" />
-                <span style={{ fontFamily: headingFont }} className="text-sm sm:text-base font-semibold">
-                  {studioName}
-                </span>
-                <SparkleStar className="w-3.5 h-3.5 text-amber-300" />
-              </div>
-              <span className="text-[10px] sm:text-xs text-zinc-400 font-mono tracking-widest uppercase block">
-                FINE ART WEDDING VISUALS
-              </span>
-            </div>
+            {/* Top Spacing (Brand name and fine art wedding visuals removed per user request) */}
+            <div className="h-6 sm:h-10 w-full" />
 
             {/* Centerpiece Color Arch Portal Window (From User Photo 2) */}
             <div className="relative z-20 my-auto flex items-center justify-center w-full max-w-5xl">
@@ -1598,13 +1582,13 @@ function GuestSlugGalleryContent() {
               </div>
             </div>
 
-            {/* Bottom Romantic Flourish Typography (From User Photo 2) */}
-            <div className="relative z-20 pb-4 space-y-2 text-white max-w-2xl mx-auto">
+            {/* Bottom Romantic Flourish Typography (Enlarged font, star icons removed per user request) */}
+            <div className="relative z-20 pb-4 space-y-2 text-white max-w-3xl mx-auto">
               <h1
-                className="text-3xl sm:text-5xl md:text-6xl font-normal tracking-tight text-white capitalize drop-shadow-xl"
+                className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-normal tracking-tight text-white uppercase drop-shadow-xl"
                 style={{ fontFamily: headingFont }}
               >
-                ✧ {gallery.title} ✧
+                {gallery.title}
               </h1>
               <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-mono text-zinc-300 tracking-widest">
                 <span>{formattedDate}</span>
@@ -1756,12 +1740,19 @@ function GuestSlugGalleryContent() {
               className="relative min-h-[88vh] sm:min-h-[96vh] w-full flex flex-col justify-between items-center overflow-hidden px-4 sm:px-8 py-6 sm:py-10 transition-colors duration-500"
               style={{ backgroundColor: bgColor, color: textColor }}
             >
-              {/* Top Spacing (Studio name, count and Edition D'Art removed per user request) */}
-              <div className="h-4 sm:h-8 w-full" />
+              {/* Top Spacing / Mobile Header Quote (Per user photo: text on top for mobile) */}
+              <div className="w-full text-center">
+                <div className="block md:hidden pt-2 pb-1">
+                  <span className="text-[11px] sm:text-xs font-serif uppercase tracking-widest opacity-80 block">
+                    Creating your timeless love story
+                  </span>
+                </div>
+                <div className="hidden md:block h-4 sm:h-8 w-full" />
+              </div>
 
               {/* Centerpiece: Centered Vertical Portrait Artwork Flanked by Fine Art Quotes */}
-              <div className="relative z-10 my-auto w-full max-w-6xl mx-auto flex items-center justify-between sm:justify-around px-2">
-                {/* Left Fine Art Quote */}
+              <div className="relative z-10 my-auto w-full max-w-6xl mx-auto flex items-center justify-center sm:justify-around px-2">
+                {/* Left Fine Art Quote (Desktop only) */}
                 <div className="hidden md:flex flex-col items-center text-center space-y-2 opacity-80 max-w-[180px] animate-in fade-in slide-in-from-left-4 duration-1000">
                   <span className="text-xs lg:text-sm font-serif uppercase tracking-widest leading-relaxed">
                     Creating your timeless love story
@@ -1770,7 +1761,7 @@ function GuestSlugGalleryContent() {
                 </div>
 
                 {/* Centered Vertical Portrait Frame (No heavy shadow per user request) */}
-                <div className="relative w-64 sm:w-80 md:w-96 aspect-[3/4] overflow-hidden bg-stone-900 border border-white/20 animate-in fade-in zoom-in-95 duration-1000">
+                <div className="relative w-64 sm:w-80 md:w-96 aspect-[3/4] overflow-hidden bg-stone-900 border border-white/20 animate-in fade-in zoom-in-95 duration-1000 shadow-xl">
                   {cleanCoverUrl ? (
                     <>
                       <img
@@ -1798,7 +1789,7 @@ function GuestSlugGalleryContent() {
                   <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
                 </div>
 
-                {/* Right Fine Art Quote */}
+                {/* Right Fine Art Quote (Desktop only, completely removed on mobile per user request) */}
                 <div className="hidden md:flex flex-col items-center text-center space-y-2 opacity-80 max-w-[180px] animate-in fade-in slide-in-from-right-4 duration-1000">
                   <span className="text-xs lg:text-sm font-serif uppercase tracking-widest leading-relaxed">
                     Fine art wedding photography &amp; film
@@ -1807,8 +1798,8 @@ function GuestSlugGalleryContent() {
                 </div>
               </div>
 
-              {/* Bottom Massive Haute-Couture Serif Typography (Overlapping lower section of photo) */}
-              <div className="relative z-20 w-full text-center -mt-8 sm:-mt-14 md:-mt-20 px-2 space-y-2">
+              {/* Bottom Massive Haute-Couture Serif Typography (Overlapping lower 25-30% of portrait photo) */}
+              <div className="relative z-20 w-full text-center -mt-14 sm:-mt-20 md:-mt-24 lg:-mt-28 px-2 space-y-2">
                 <h1
                   className="text-4xl sm:text-7xl md:text-8xl lg:text-9xl font-serif tracking-[0.1em] sm:tracking-[0.16em] uppercase font-normal drop-shadow-2xl leading-none animate-in fade-in slide-in-from-bottom-6 duration-1000"
                   style={{ fontFamily: headingFont }}
@@ -1896,7 +1887,7 @@ function GuestSlugGalleryContent() {
                   color: designPalette.textColor,
                 }}
               >
-                <Sparkles className="w-4 h-4 text-amber-500" />
+                <FaceAiFocusIcon className="w-4 h-4" />
               </button>
             )}
 

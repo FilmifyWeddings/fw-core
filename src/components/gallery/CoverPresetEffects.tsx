@@ -240,3 +240,41 @@ export function HandDrawnOval({
   );
 }
 
+/**
+ * 6. FACE AI FOCUS ICON (From User Photo 4)
+ * Precision SVG camera autofocus bracket icon with outlined smiling face.
+ * Uses currentColor to dynamically inherit palette theme colors.
+ */
+export function FaceAiFocusIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* 4 Camera Autofocus Viewfinder Corners */}
+      <path d="M3 8V5a2 2 0 0 1 2-2h3" />
+      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+      <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+      <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+
+      {/* Head / Face Outline with Hair Curve */}
+      <path d="M7 11c-.3-3.8 2-6.8 5-6.8s5.2 2.8 5.2 6.5c.5.8.5 2-.1 3.2C16 16 14.2 19.5 12 19.5s-4-3.5-5.1-5.7c-.5-.9-.5-2.1.1-2.8Z" />
+
+      {/* Forehead Hair Fringe */}
+      <path d="M14.5 7.5C13.8 9.2 11.8 10.8 7.5 11" />
+
+      {/* Smiling Eyes */}
+      <path d="M8.5 13.2c.3-.9 1.7-.9 2 0" />
+      <path d="M13.5 13.2c.3-.9 1.7-.9 2 0" />
+
+      {/* Open Friendly Smile */}
+      <path d="M10 15.8h4c0 1.8-1.2 2-2 2s-2-.2-2-2Z" />
+    </svg>
+  );
+}
+
