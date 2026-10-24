@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
+import GalleryDesignStudio from '@/components/gallery/GalleryDesignStudio';
 import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
 
 function InstagramIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -91,6 +92,7 @@ interface GallerySettingsData {
   cover_focal_point: { x: number; y: number };
   cover_zoom: number;
   cover_overlay_opacity: number;
+  gallery_design?: any;
 }
 
 const DEFAULT_SETTINGS: GallerySettingsData = {
@@ -745,173 +747,29 @@ export default function GallerySettingsPage() {
           </div>
         )}
 
-        {/* TAB 3: DESIGN & TEMPLATES */}
+        {/* TAB 3: DESIGN & TEMPLATES (GLOBAL STUDIO DEFAULTS) */}
         {activeTab === 'design' && (
-          <div className="space-y-6 max-w-3xl">
-            <div className="space-y-1">
-              <h2 className="text-lg font-black text-zinc-900">Client Portal Design &amp; Aesthetics</h2>
-              <p className="text-xs text-zinc-500 font-medium">
-                Choose visual themes, accent colors, and typography styles for client galleries.
-              </p>
-            </div>
-
-            {/* Template Presets */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-zinc-700">Preset Theme Template</label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  {
-                    id: 'royal_classic',
-                    name: 'Royal Classic',
-                    desc: 'Regal warm gold highlights & timeless serif typography',
-                    badge: 'Most Popular',
-                  },
-                  {
-                    id: 'minimalist_ivory',
-                    name: 'Minimalist Ivory',
-                    desc: 'Clean ivory monochrome with subtle borders and serene whitespace',
-                    badge: 'Modern',
-                  },
-                  {
-                    id: 'cinematic_velvet',
-                    name: 'Cinematic Velvet',
-                    desc: 'High contrast visual drama with warm amber undertones',
-                    badge: 'Dramatic',
-                  },
-                ].map((tpl) => {
-                  const isSelected = settings.template_preset === tpl.id;
-                  return (
-                    <div
-                      key={tpl.id}
-                      onClick={() => setSettings({ ...settings, template_preset: tpl.id as any })}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
-                        isSelected
-                          ? 'bg-amber-50/50 border-amber-500 shadow-xs'
-                          : 'bg-[#FBF9F5] border-[#E7E2D8] hover:border-zinc-300'
-                      }`}
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black text-zinc-900">{tpl.name}</span>
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white border border-[#E7E2D8] text-amber-700">
-                            {tpl.badge}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-zinc-500 font-medium">{tpl.desc}</p>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700">
-                        {isSelected ? <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" /> : <div className="w-3.5 h-3.5 rounded-full border border-zinc-300" />}
-                        <span>{isSelected ? 'Active Template' : 'Select'}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Accent Color Palette */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-zinc-700">Brand Accent Color</label>
-              <div className="flex items-center gap-3 flex-wrap">
-                {[
-                  { name: 'Amber Gold', hex: '#D97706' },
-                  { name: 'Rose Gold', hex: '#E11D48' },
-                  { name: 'Emerald', hex: '#059669' },
-                  { name: 'Sapphire', hex: '#2563EB' },
-                  { name: 'Midnight', hex: '#18181B' },
-                ].map((col) => {
-                  const isSelected = settings.accent_color.toLowerCase() === col.hex.toLowerCase();
-                  return (
-                    <button
-                      key={col.hex}
-                      type="button"
-                      onClick={() => setSettings({ ...settings, accent_color: col.hex })}
-                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                        isSelected ? 'bg-white border-zinc-900 shadow-2xs' : 'bg-[#FBF9F5] border-[#E7E2D8]'
-                      }`}
-                    >
-                      <span className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: col.hex }} />
-                      <span>{col.name}</span>
-                      {isSelected && <Check className="w-3 h-3 text-zinc-900" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Font Pairings */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-zinc-700">Typography Font Pairing</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  { id: 'cormorant_jakarta', title: 'Cormorant + Plus Jakarta Sans', desc: 'Luxury editorial serif paired with modern crisp sans' },
-                  { id: 'playfair_inter', title: 'Playfair Display + Inter', desc: 'Classic romance wedding titles with high-legibility body' },
-                  { id: 'cinzel_outfit', title: 'Cinzel + Outfit', desc: 'Regal Roman capitals for monumental luxury weddings' },
-                  { id: 'syne_inter', title: 'Syne + Inter', desc: 'Artistic contemporary aesthetic for fine art storytellers' },
-                ].map((font) => {
-                  const isSelected = settings.font_pairing === font.id;
-                  return (
-                    <div
-                      key={font.id}
-                      onClick={() => setSettings({ ...settings, font_pairing: font.id as any })}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected ? 'bg-amber-50/50 border-amber-500 shadow-xs' : 'bg-[#FBF9F5] border-[#E7E2D8]'
-                      }`}
-                    >
-                      <span className="text-xs font-black text-zinc-900 block">{font.title}</span>
-                      <span className="text-[11px] text-zinc-400 mt-0.5 block">{font.desc}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Feature Toggles */}
-            <div className="p-5 rounded-3xl bg-[#FBF9F5] border border-[#E7E2D8] space-y-4">
-              <span className="text-xs font-black text-zinc-900 block">Client Experience Toggles</span>
-
-              <div className="space-y-3">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <div>
-                    <span className="text-xs font-bold text-zinc-800 block">Show Studio Branding &amp; Watermark</span>
-                    <span className="text-[11px] text-zinc-400">Display your studio stamp discretely in client photo lightbox</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.show_branding_watermark}
-                    onChange={(e) => setSettings({ ...settings, show_branding_watermark: e.target.checked })}
-                    className="w-4 h-4 accent-amber-600 rounded"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer">
-                  <div>
-                    <span className="text-xs font-bold text-zinc-800 block">Allow Client Favorites &amp; Selections</span>
-                    <span className="text-[11px] text-zinc-400">Enable heart button for album selection lists</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.enable_client_favorites}
-                    onChange={(e) => setSettings({ ...settings, enable_client_favorites: e.target.checked })}
-                    className="w-4 h-4 accent-amber-600 rounded"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer">
-                  <div>
-                    <span className="text-xs font-bold text-zinc-800 block">Default PIN Protection on New Events</span>
-                    <span className="text-[11px] text-zinc-400">Require guests to enter 4-digit PIN before browsing full gallery</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.enable_pin_protection_default}
-                    onChange={(e) => setSettings({ ...settings, enable_pin_protection_default: e.target.checked })}
-                    className="w-4 h-4 accent-amber-600 rounded"
-                  />
-                </label>
-              </div>
-            </div>
+          <div className="w-full -mx-4 sm:-mx-8 -my-6 bg-white rounded-3xl overflow-hidden border border-[#E7E2D8] shadow-xs">
+            <GalleryDesignStudio
+              isGlobalDefault={true}
+              gallery={{
+                title: 'Studio Wedding Archive',
+                event_date: new Date().toISOString(),
+                studio_branding: {
+                  studio_name: settings.studio_name,
+                  logo_url: settings.logo_url,
+                  tagline: settings.tagline,
+                  subtitle: settings.studio_subtitle,
+                },
+                raw_payload: {
+                  design: (settings as any).gallery_design,
+                },
+              }}
+              onSaveSuccess={() => {
+                setSaveSuccess(true);
+                setTimeout(() => setSaveSuccess(false), 3000);
+              }}
+            />
           </div>
         )}
 

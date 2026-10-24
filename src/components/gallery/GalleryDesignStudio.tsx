@@ -1,96 +1,54 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import Link from 'next/link';
 import {
   Sparkles,
+  Check,
+  Smartphone,
+  Monitor,
+  ExternalLink,
+  Save,
   Palette,
   Layout,
   Type,
-  Activity,
-  Image as ImageIcon,
-  Monitor,
-  Smartphone,
-  Check,
-  Save,
-  RefreshCw,
-  Eye,
-  ChevronDown,
-  Upload,
-  ArrowDown,
-  Calendar,
-  Lock,
-  Camera,
-  Heart,
-  Share2,
-  Download,
   Sun,
   Moon,
-  Maximize2,
-  Sliders,
-  Flame,
+  Upload,
+  Image as ImageIcon,
   CheckCircle2,
-  Crown,
-  Search,
-  ExternalLink,
+  AlertCircle,
+  ArrowDown,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
+import { STATIC_CUSTOM_FONTS, registerFontFace } from '@/lib/font-loader';
 
-/* ─────────────────────────────────────────────────────────────
-    TYPES & DATA STRUCTURES
-───────────────────────────────────────────────────────────── */
-
-export type PresetLayoutId =
-  | 'cinematic_bleed'      // Photo 3: KnotsbyAMP full-bleed widescreen hero
-  | 'royal_medallion'     // Photo 4: KnotsbyAMP center circular portrait
-  | 'haute_editorial'     // Photo 5: Terre Verde style top oversized serif + vertical portrait
-  | 'grand_diptych'       // Split screen 50/50 couple story + full photo
-  | 'floating_frame'      // Elevated framed photo with gold border over blur canvas
-  | 'velvet_midnight'     // Dark moody contrast, spotlight framing
-  | 'cathedral_arch'      // Arched palace window frame
-  | 'minimalist_ivory'    // Clean airy whitespace, delicate serif letterspacing
-  | 'parallax_canvas'     // Immersive depth with slow zoom
-  | 'heritage_storybook'  // Double asymmetric overlapping photo frames
-  | 'classic_heirloom'    // Traditional timeless layout with royal ornamental flourish
-  | 'contemporary_vogue'; // Bold modern typography horizontal banner
-
-export type MotionAnimationId =
-  | 'fade_up'
-  | 'cinematic_zoom'
-  | 'curtain_reveal'
-  | 'parallax_float'
-  | 'soft_focus';
+export type PresetId = 'cinematic_hero' | 'editorial_canvas' | 'faded_luxe' | 'split_atelier';
 
 export interface GalleryDesignConfig {
-  preset: PresetLayoutId;
+  preset: PresetId;
   palette: {
-    mode: 'light' | 'dark';
-    presetId: string;
     canvasBg: string;
     textColor: string;
     accentColor: string;
-    subtextColor: string;
-    cardBg: string;
+    subtextColor?: string;
+    cardBg?: string;
   };
   typography: {
     headingFont: string;
     bodyFont: string;
-    fontPairingId?: string;
+    scale?: 'compact' | 'balanced' | 'grand';
   };
-  motion: {
-    animation: MotionAnimationId;
-  };
-  cover: {
-    url: string;
+  cover?: {
+    url?: string;
+    overlayOpacity: number;
     focalPoint: { x: number; y: number };
-    overlayOpacity: number; // 0 to 80
   };
 }
 
 export const DEFAULT_DESIGN_CONFIG: GalleryDesignConfig = {
-  preset: 'cinematic_bleed',
+  preset: 'cinematic_hero',
   palette: {
-    mode: 'light',
-    presetId: 'ivory_charcoal',
     canvasBg: '#FAF9F5',
     textColor: '#18181B',
     accentColor: '#D97706',
@@ -98,140 +56,62 @@ export const DEFAULT_DESIGN_CONFIG: GalleryDesignConfig = {
     cardBg: '#FFFFFF',
   },
   typography: {
-    headingFont: 'Playfair Display',
-    bodyFont: 'Plus Jakarta Sans',
-    fontPairingId: 'playfair_jakarta',
-  },
-  motion: {
-    animation: 'cinematic_zoom',
+    headingFont: "'Playfair Display', Georgia, serif",
+    bodyFont: "'Plus Jakarta Sans', sans-serif",
+    scale: 'balanced',
   },
   cover: {
     url: '',
+    overlayOpacity: 45,
     focalPoint: { x: 50, y: 50 },
-    overlayOpacity: 40,
   },
 };
 
-/* ─────────────────────────────────────────────────────────────
-    PRESET METADATA (12 UNIQUE PRESETS)
-───────────────────────────────────────────────────────────── */
-
-export interface PresetOption {
-  id: PresetLayoutId;
-  title: string;
+// ── 4 EXACT HANDCRAFTED PRESETS (From User Photos 2, 3, 4, 5) ──
+interface PresetItem {
+  id: PresetId;
+  name: string;
   subtitle: string;
+  tag: string;
   description: string;
-  badge: string;
-  animationDefault: MotionAnimationId;
 }
 
-export const PRESET_OPTIONS: PresetOption[] = [
+const PRESETS: PresetItem[] = [
   {
-    id: 'cinematic_bleed',
-    title: 'Cinematic Bleed',
-    subtitle: 'Widescreen Edge-to-Edge Hero',
-    description: 'Breathtaking full-bleed landscape hero with soft contrast overlay, regal serif title, event date badge, and down-scroll navigation.',
-    badge: 'Knots Classic',
-    animationDefault: 'cinematic_zoom',
+    id: 'cinematic_hero',
+    name: 'Cinematic Hero',
+    subtitle: 'Photo 4 Style',
+    tag: 'Celebrity Choice',
+    description: 'Edge-to-edge full-bleed hero with bottom romantic typography and golden vignette.',
   },
   {
-    id: 'royal_medallion',
-    title: 'Royal Medallion',
-    subtitle: 'Centered Circular Emblem',
-    description: 'Iconic luxury circular portrait floating majestically over warm ivory canvas with cursive calligraphy couple name and gold scroll arrow.',
-    badge: 'Celebrity Choice',
-    animationDefault: 'fade_up',
+    id: 'editorial_canvas',
+    name: 'Editorial Canvas',
+    subtitle: 'Photo 2 Terre Verde Style',
+    tag: 'Haute Fashion',
+    description: 'Oversized spaced headline at top with vertical portrait artwork below on warm canvas.',
   },
   {
-    id: 'haute_editorial',
-    title: 'Haute Editorial',
-    subtitle: 'Terre Verde Fashion Vogue',
-    description: 'Ultra-high-fashion oversized headline at the top, vertical portrait artwork framed in warm textured linen canvas with gallery minimalism.',
-    badge: 'High Fashion',
-    animationDefault: 'soft_focus',
+    id: 'faded_luxe',
+    name: 'Faded Luxe',
+    subtitle: 'Photo 3 KnotsbyAMP Style',
+    tag: 'Misty Romance',
+    description: 'Misty soft-focus backdrop with centered ring emblem, stacked title, and gallery badge.',
   },
   {
-    id: 'grand_diptych',
-    title: 'Grand Diptych',
-    subtitle: '50/50 Split Story & Hero',
-    description: 'Balanced dual-column layout with couple story, date and studio badge on left, and a full-height portrait photograph on right.',
-    badge: 'Editorial Story',
-    animationDefault: 'curtain_reveal',
-  },
-  {
-    id: 'floating_frame',
-    title: 'Floating Gallery Frame',
-    subtitle: 'Elevated Picture Shadow Bezel',
-    description: 'Elevated framed photograph with subtle gold bevel ring floating gracefully over a soft ambient blurred background canvas.',
-    badge: 'Fine Art Luxury',
-    animationDefault: 'parallax_float',
-  },
-  {
-    id: 'velvet_midnight',
-    title: 'Velvet Midnight',
-    subtitle: 'Dramatic Noir Spotlight',
-    description: 'Deep obsidian and charcoal backdrop with glowing spotlight focus, royal champagne gold typography, and cinematic mystery.',
-    badge: 'Noir Elegance',
-    animationDefault: 'fade_up',
-  },
-  {
-    id: 'cathedral_arch',
-    title: 'Cathedral Arch',
-    subtitle: 'Palace Window Contour',
-    description: 'Architectural arched window silhouette framing the royal couple, inspired by royal Indian palace heritage architecture.',
-    badge: 'Heritage Palace',
-    animationDefault: 'curtain_reveal',
-  },
-  {
-    id: 'minimalist_ivory',
-    title: 'Minimalist Ivory',
-    subtitle: 'Airy Whitespace & Delicate Serif',
-    description: 'Clean modern gallery aesthetic with generous breathing room, delicate wide letterspacing, and understated contemporary elegance.',
-    badge: 'Pure Minimal',
-    animationDefault: 'fade_up',
-  },
-  {
-    id: 'parallax_canvas',
-    title: 'Parallax Canvas',
-    subtitle: 'Multi-Layer Depth Immersion',
-    description: 'Dynamic multi-plane canvas where typography and imagery glide at different speeds with subtle hover zoom for 3D realism.',
-    badge: '3D Depth',
-    animationDefault: 'cinematic_zoom',
-  },
-  {
-    id: 'heritage_storybook',
-    title: 'Heritage Storybook',
-    subtitle: 'Asymmetric Duo Frames',
-    description: 'Two artistic overlapping photographs presenting bride and groom together with vintage calligraphic details and golden dates.',
-    badge: 'Dual Portraits',
-    animationDefault: 'parallax_float',
-  },
-  {
-    id: 'classic_heirloom',
-    title: 'Classic Heirloom',
-    subtitle: 'Timeless Royal Filigree',
-    description: 'Traditional heritage layout with ornate gold crown motif, delicate filigree divider lines, and centered Cormorant Garamond typography.',
-    badge: 'Timeless Classic',
-    animationDefault: 'fade_up',
-  },
-  {
-    id: 'contemporary_vogue',
-    title: 'Contemporary Vogue',
-    subtitle: 'Bold Wide Horizontal Banner',
-    description: 'Wide horizontal panoramic banner with oversized modern typography, filmic border accents, and high-impact luxury branding.',
-    badge: 'Modern Vogue',
-    animationDefault: 'curtain_reveal',
+    id: 'split_atelier',
+    name: 'Split Atelier',
+    subtitle: 'Photo 5 Diptych Style',
+    tag: 'Modern Asymmetric',
+    description: 'Split canvas with bold left editorial copy and right large framed portrait artwork.',
   },
 ];
 
-/* ─────────────────────────────────────────────────────────────
-    PALETTE OPTIONS (LIGHT & DARK CURATED SWATCHES)
-───────────────────────────────────────────────────────────── */
-
-export interface PaletteOption {
+// ── 20+ LUXURY WEDDING COLOR PALETTES ──
+interface PaletteItem {
   id: string;
   name: string;
-  mode: 'light' | 'dark';
+  category: 'Light Luxury' | 'Dark Regal';
   canvasBg: string;
   textColor: string;
   accentColor: string;
@@ -239,1501 +119,1569 @@ export interface PaletteOption {
   cardBg: string;
 }
 
-export const PALETTE_OPTIONS: PaletteOption[] = [
-  // Light Mode Palettes
-  { id: 'ivory_charcoal', name: 'Warm Ivory', mode: 'light', canvasBg: '#FAF9F5', textColor: '#18181B', accentColor: '#D97706', subtextColor: '#71717A', cardBg: '#FFFFFF' },
-  { id: 'royal_champagne', name: 'Royal Gold', mode: 'light', canvasBg: '#FBF8F1', textColor: '#292524', accentColor: '#B45309', subtextColor: '#78716C', cardBg: '#FFFFFF' },
-  { id: 'imperial_emerald_light', name: 'Imperial Sage', mode: 'light', canvasBg: '#F4F7F4', textColor: '#14291B', accentColor: '#059669', subtextColor: '#4B6354', cardBg: '#FFFFFF' },
-  { id: 'rose_burgundy_light', name: 'Rose Quartz', mode: 'light', canvasBg: '#FDF6F6', textColor: '#3B1219', accentColor: '#BE123C', subtextColor: '#884D58', cardBg: '#FFFFFF' },
-  { id: 'slate_mist_light', name: 'Nordic Slate', mode: 'light', canvasBg: '#F8FAFC', textColor: '#0F172A', accentColor: '#3B82F6', subtextColor: '#64748B', cardBg: '#FFFFFF' },
-  { id: 'terracotta_light', name: 'Warm Linen', mode: 'light', canvasBg: '#F8F5F0', textColor: '#2E1C14', accentColor: '#C2410C', subtextColor: '#7C675B', cardBg: '#FFFFFF' },
-  { id: 'olive_sand_light', name: 'Tuscan Olive', mode: 'light', canvasBg: '#F5F6F2', textColor: '#1E2319', accentColor: '#65A30D', subtextColor: '#57634C', cardBg: '#FFFFFF' },
-  { id: 'pure_white', name: 'All White', mode: 'light', canvasBg: '#FFFFFF', textColor: '#09090B', accentColor: '#71717A', subtextColor: '#71717A', cardBg: '#F4F4F5' },
-
-  // Dark Mode Palettes
-  { id: 'velvet_obsidian', name: 'Velvet Obsidian', mode: 'dark', canvasBg: '#09090B', textColor: '#F4F4F5', accentColor: '#F59E0B', subtextColor: '#A1A1AA', cardBg: '#18181B' },
-  { id: 'midnight_velvet', name: 'Midnight Azure', mode: 'dark', canvasBg: '#0B132B', textColor: '#F8FAFC', accentColor: '#38BDF8', subtextColor: '#94A3B8', cardBg: '#1C2541' },
-  { id: 'deep_espresso', name: 'Deep Espresso', mode: 'dark', canvasBg: '#1C1917', textColor: '#FAF7F5', accentColor: '#FBBF24', subtextColor: '#A8A29E', cardBg: '#292524' },
-  { id: 'imperial_emerald_dark', name: 'Emerald Vault', mode: 'dark', canvasBg: '#061D12', textColor: '#ECFDF5', accentColor: '#10B981', subtextColor: '#6EE7B7', cardBg: '#0A2E1D' },
-  { id: 'burgundy_dark', name: 'Royal Burgundy', mode: 'dark', canvasBg: '#1A070B', textColor: '#FFF1F2', accentColor: '#FB7185', subtextColor: '#FDA4AF', cardBg: '#2B0E14' },
-  { id: 'charcoal_minimal', name: 'Charcoal Minimal', mode: 'dark', canvasBg: '#121212', textColor: '#E4E4E7', accentColor: '#E4E4E7', subtextColor: '#71717A', cardBg: '#1E1E1E' },
+const COLOR_PALETTES: PaletteItem[] = [
+  {
+    id: 'champagne_noir',
+    name: 'Champagne & Noir',
+    category: 'Light Luxury',
+    canvasBg: '#FAF9F5',
+    textColor: '#18181B',
+    accentColor: '#D97706',
+    subtextColor: '#71717A',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'tuscan_cream',
+    name: 'Tuscan Cream',
+    category: 'Light Luxury',
+    canvasBg: '#F4EFEA',
+    textColor: '#1A1918',
+    accentColor: '#B45309',
+    subtextColor: '#78716C',
+    cardBg: '#FAF7F2',
+  },
+  {
+    id: 'royal_ivory',
+    name: 'Royal Ivory',
+    category: 'Light Luxury',
+    canvasBg: '#FAF8F5',
+    textColor: '#262626',
+    accentColor: '#B45309',
+    subtextColor: '#737373',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'french_riviera',
+    name: 'French Riviera',
+    category: 'Light Luxury',
+    canvasBg: '#F8FAFC',
+    textColor: '#0F172A',
+    accentColor: '#0284C7',
+    subtextColor: '#64748B',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'rose_gold_blush',
+    name: 'Rose Gold & Blush',
+    category: 'Light Luxury',
+    canvasBg: '#FDF2F4',
+    textColor: '#27171B',
+    accentColor: '#E11D48',
+    subtextColor: '#881337',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'desert_sand',
+    name: 'Desert Sand',
+    category: 'Light Luxury',
+    canvasBg: '#F7F3EE',
+    textColor: '#292524',
+    accentColor: '#C2410C',
+    subtextColor: '#78716C',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'sage_olive',
+    name: 'Sage & Olive',
+    category: 'Light Luxury',
+    canvasBg: '#F4F7F4',
+    textColor: '#142318',
+    accentColor: '#15803D',
+    subtextColor: '#4B5563',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'lavender_mist',
+    name: 'Lavender Mist',
+    category: 'Light Luxury',
+    canvasBg: '#FAF5FF',
+    textColor: '#1E1B4B',
+    accentColor: '#9333EA',
+    subtextColor: '#6B21A8',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'terracotta_sunset',
+    name: 'Terracotta Sunset',
+    category: 'Light Luxury',
+    canvasBg: '#FAF5F0',
+    textColor: '#271C17',
+    accentColor: '#EA580C',
+    subtextColor: '#78716C',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'vintage_sepia',
+    name: 'Vintage Sepia',
+    category: 'Light Luxury',
+    canvasBg: '#F5EFE6',
+    textColor: '#2B231D',
+    accentColor: '#854D0E',
+    subtextColor: '#713F12',
+    cardBg: '#EFE6D8',
+  },
+  {
+    id: 'pearl_lustre',
+    name: 'Pearl Lustre',
+    category: 'Light Luxury',
+    canvasBg: '#FBFBFB',
+    textColor: '#111827',
+    accentColor: '#6366F1',
+    subtextColor: '#6B7280',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'warm_cashmere',
+    name: 'Warm Cashmere',
+    category: 'Light Luxury',
+    canvasBg: '#F6F2EC',
+    textColor: '#1C1917',
+    accentColor: '#78716C',
+    subtextColor: '#A8A29E',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'aegean_blue',
+    name: 'Aegean Blue',
+    category: 'Light Luxury',
+    canvasBg: '#F0F7FA',
+    textColor: '#082F49',
+    accentColor: '#0284C7',
+    subtextColor: '#0369A1',
+    cardBg: '#FFFFFF',
+  },
+  {
+    id: 'midnight_gold',
+    name: 'Midnight Gold',
+    category: 'Dark Regal',
+    canvasBg: '#0A0A0B',
+    textColor: '#F4F4F5',
+    accentColor: '#F59E0B',
+    subtextColor: '#A1A1AA',
+    cardBg: '#18181B',
+  },
+  {
+    id: 'emerald_gold',
+    name: 'Emerald & Gold',
+    category: 'Dark Regal',
+    canvasBg: '#061E16',
+    textColor: '#F0FDF4',
+    accentColor: '#F59E0B',
+    subtextColor: '#86EFAC',
+    cardBg: '#0B2D21',
+  },
+  {
+    id: 'nordic_slate',
+    name: 'Nordic Slate',
+    category: 'Dark Regal',
+    canvasBg: '#0F172A',
+    textColor: '#F8FAFC',
+    accentColor: '#38BDF8',
+    subtextColor: '#94A3B8',
+    cardBg: '#1E293B',
+  },
+  {
+    id: 'velvet_onyx',
+    name: 'Velvet Onyx',
+    category: 'Dark Regal',
+    canvasBg: '#09090B',
+    textColor: '#FAFAFA',
+    accentColor: '#E4E4E7',
+    subtextColor: '#71717A',
+    cardBg: '#18181B',
+  },
+  {
+    id: 'gothic_noir',
+    name: 'Gothic Noir',
+    category: 'Dark Regal',
+    canvasBg: '#000000',
+    textColor: '#E4E4E7',
+    accentColor: '#A1A1AA',
+    subtextColor: '#71717A',
+    cardBg: '#121214',
+  },
+  {
+    id: 'imperial_crimson',
+    name: 'Imperial Crimson',
+    category: 'Dark Regal',
+    canvasBg: '#18080A',
+    textColor: '#FFF1F2',
+    accentColor: '#E11D48',
+    subtextColor: '#FDA4AF',
+    cardBg: '#240C10',
+  },
+  {
+    id: 'forest_pine',
+    name: 'Forest Pine',
+    category: 'Dark Regal',
+    canvasBg: '#0D1A14',
+    textColor: '#ECFDF5',
+    accentColor: '#10B981',
+    subtextColor: '#6EE7B7',
+    cardBg: '#13261D',
+  },
 ];
 
-/* ─────────────────────────────────────────────────────────────
-    TYPOGRAPHY OPTIONS (MATCHING QUOTATION FONTS)
-───────────────────────────────────────────────────────────── */
-
-export interface FontPairingOption {
-  id: string;
+// ── EXTENSIVE AESTHETIC FONTS (QUOTATION-GRADE CARDS) ──
+interface FontOptionItem {
   name: string;
-  headingFont: string;
-  bodyFont: string;
-  tag: string;
-  previewHeading: string;
+  family: string;
+  category: 'Luxury Serif' | 'Custom Aesthetic' | 'Modern Sans';
+  subFont: string;
 }
 
-export const FONT_PAIRING_OPTIONS: FontPairingOption[] = [
+const FONTS_CATALOG: FontOptionItem[] = [
   {
-    id: 'cormorant_inter',
-    name: 'Cormorant Garamond + Inter',
-    headingFont: 'Cormorant Garamond',
-    bodyFont: 'Inter',
-    tag: 'Royal Heritage',
-    previewHeading: 'Siddhant & Vedika',
+    name: 'Playfair Display',
+    family: "'Playfair Display', Georgia, serif",
+    category: 'Luxury Serif',
+    subFont: "'Plus Jakarta Sans', sans-serif",
   },
   {
-    id: 'playfair_jakarta',
-    name: 'Playfair Display + Plus Jakarta Sans',
-    headingFont: 'Playfair Display',
-    bodyFont: 'Plus Jakarta Sans',
-    tag: 'Editorial Modern',
-    previewHeading: 'Maitri & Aneesh',
+    name: 'Cormorant Garamond',
+    family: "'Cormorant Garamond', Georgia, serif",
+    category: 'Luxury Serif',
+    subFont: "'Inter', sans-serif",
   },
   {
-    id: 'cinzel_outfit',
-    name: 'Cinzel + Outfit',
-    headingFont: 'Cinzel',
-    bodyFont: 'Outfit',
-    tag: 'Imperial Grandeur',
-    previewHeading: 'AARAV & ANANYA',
+    name: 'Cinzel',
+    family: "'Cinzel', Georgia, serif",
+    category: 'Luxury Serif',
+    subFont: "'Cormorant Garamond', Georgia, serif",
   },
   {
-    id: 'greatvibes_montserrat',
-    name: 'Great Vibes + Montserrat',
-    headingFont: 'Great Vibes',
-    bodyFont: 'Montserrat',
-    tag: 'Romantic Script',
-    previewHeading: 'Rohan & Tanya',
+    name: 'Italiana',
+    family: "'Italiana', Georgia, serif",
+    category: 'Luxury Serif',
+    subFont: "'Montserrat', sans-serif",
   },
   {
-    id: 'bodoni_inter',
-    name: 'Bodoni Moda + Inter',
-    headingFont: 'Bodoni Moda',
-    bodyFont: 'Inter',
-    tag: 'Haute Fashion',
-    previewHeading: 'TERRE VERDE',
+    name: 'Bodoni Moda',
+    family: "'Bodoni Moda', Georgia, serif",
+    category: 'Luxury Serif',
+    subFont: "'Outfit', sans-serif",
   },
   {
-    id: 'prata_jakarta',
-    name: 'Prata + Plus Jakarta Sans',
-    headingFont: 'Prata',
-    bodyFont: 'Plus Jakarta Sans',
-    tag: 'Romantic Editorial',
-    previewHeading: 'Kabir & Meera',
+    name: 'Prata',
+    family: "'Prata', Georgia, serif",
+    category: 'Luxury Serif',
+    subFont: "'Plus Jakarta Sans', sans-serif",
   },
   {
-    id: 'italiana_outfit',
-    name: 'Italiana + Outfit',
-    headingFont: 'Italiana',
-    bodyFont: 'Outfit',
-    tag: 'Haute Vogue',
-    previewHeading: 'DEV & ISHA',
+    name: 'Marcellus',
+    family: "'Marcellus', Georgia, serif",
+    category: 'Luxury Serif',
+    subFont: "'Inter', sans-serif",
   },
   {
-    id: 'marcellus_inter',
-    name: 'Marcellus + Inter',
-    headingFont: 'Marcellus',
-    bodyFont: 'Inter',
-    tag: 'Classical Serene',
-    previewHeading: 'Vihaan & Sanjana',
+    name: 'DM Serif Display',
+    family: "'DM Serif Display', Georgia, serif",
+    category: 'Luxury Serif',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Instrument Serif',
+    family: "'Instrument Serif', Georgia, serif",
+    category: 'Luxury Serif',
+    subFont: "'Inter', sans-serif",
+  },
+  {
+    name: 'Great Vibes',
+    family: "'Great Vibes', cursive",
+    category: 'Custom Aesthetic',
+    subFont: "'Playfair Display', serif",
+  },
+  {
+    name: 'Tenor Sans',
+    family: "'Tenor Sans', sans-serif",
+    category: 'Modern Sans',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Plus Jakarta Sans',
+    family: "'Plus Jakarta Sans', sans-serif",
+    category: 'Modern Sans',
+    subFont: "'Inter', sans-serif",
+  },
+  {
+    name: 'Outfit',
+    family: "'Outfit', sans-serif",
+    category: 'Modern Sans',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Montserrat',
+    family: "'Montserrat', sans-serif",
+    category: 'Modern Sans',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Inter',
+    family: "'Inter', sans-serif",
+    category: 'Modern Sans',
+    subFont: "'Inter', sans-serif",
+  },
+  // Custom Aesthetic Fonts from font-loader
+  {
+    name: 'Aligin',
+    family: "'Aligin', sans-serif",
+    category: 'Custom Aesthetic',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Amida',
+    family: "'Amida', sans-serif",
+    category: 'Custom Aesthetic',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Bevola Demo',
+    family: "'Bevola Demo Regular', sans-serif",
+    category: 'Custom Aesthetic',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Soligant',
+    family: "'Soligant', serif",
+    category: 'Custom Aesthetic',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Tan Pearl',
+    family: "'Tan Pearl', serif",
+    category: 'Custom Aesthetic',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'The Baethmy',
+    family: "'The Baethmy', serif",
+    category: 'Custom Aesthetic',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Vigro',
+    family: "'Vigro', serif",
+    category: 'Custom Aesthetic',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Wondershine',
+    family: "'Wondershine', cursive",
+    category: 'Custom Aesthetic',
+    subFont: "'Plus Jakarta Sans', sans-serif",
   },
 ];
-
-/* ─────────────────────────────────────────────────────────────
-    MOTION / ANIMATION OPTIONS
-───────────────────────────────────────────────────────────── */
-
-export interface MotionOption {
-  id: MotionAnimationId;
-  name: string;
-  description: string;
-  badge: string;
-}
-
-export const MOTION_OPTIONS: MotionOption[] = [
-  {
-    id: 'fade_up',
-    name: 'Fade Up Elegance',
-    description: 'Smooth upward emergence with delicate easing on load and scroll',
-    badge: 'Smooth',
-  },
-  {
-    id: 'cinematic_zoom',
-    name: 'Cinematic Zoom (Ken Burns)',
-    description: 'Slow continuous luxury zoom on the hero cover creating cinematic wonder',
-    badge: 'Popular',
-  },
-  {
-    id: 'curtain_reveal',
-    name: 'Curtain Unveil',
-    description: 'Architectural shutter reveal opening gracefully from center to edges',
-    badge: 'Dramatic',
-  },
-  {
-    id: 'parallax_float',
-    name: 'Parallax Depth Float',
-    description: 'Multi-layer depth with 3D floating title and smooth momentum scroll',
-    badge: '3D Depth',
-  },
-  {
-    id: 'soft_focus',
-    name: 'Dreamy Soft Focus',
-    description: 'Gentle dissolve from soft atmospheric blur into crystal sharp clarity',
-    badge: 'Dreamy',
-  },
-];
-
-/* ─────────────────────────────────────────────────────────────
-    PROPS
-───────────────────────────────────────────────────────────── */
 
 interface GalleryDesignStudioProps {
-  gallery: any;
-  onUpdateGallery?: (updated: any) => void;
+  gallery?: any;
   photos?: any[];
+  isGlobalDefault?: boolean;
   isStandalonePage?: boolean;
+  onSaveSuccess?: () => void;
+  onUpdateGallery?: (updated: any) => void;
 }
 
 export default function GalleryDesignStudio({
   gallery,
-  onUpdateGallery,
   photos = [],
+  isGlobalDefault = false,
   isStandalonePage = false,
+  onSaveSuccess,
+  onUpdateGallery,
 }: GalleryDesignStudioProps) {
-  // Navigation Steps
-  type StepId = 'presets' | 'palette' | 'cover' | 'typography' | 'motion';
-  const [activeStep, setActiveStep] = useState<StepId>('presets');
-
-  // Preview Mode: Desktop vs Mobile
+  // Top 3 Tabs: Presets, Palette, Fonts
+  const [activeTab, setActiveTab] = useState<'presets' | 'palette' | 'fonts'>('presets');
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
+  const [paletteMode, setPaletteMode] = useState<'light' | 'dark'>('light');
+  const [fontFilter, setFontFilter] = useState<string>('All');
+  const [saving, setSaving] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [toastNotification, setToastNotification] = useState<{ text: string; type: 'success' | 'error' | 'info' | 'loading' } | null>(null);
 
-  // Design State initialized from gallery.raw_payload?.design
-  const initialConfig = useMemo<GalleryDesignConfig>(() => {
-    const saved = gallery?.raw_payload?.design;
-    if (!saved) {
+  const showToast = (text: string, type: 'success' | 'error' | 'info' | 'loading' = 'success', duration = 3500) => {
+    setToastNotification({ text, type });
+    if (type !== 'loading') {
+      setTimeout(() => {
+        setToastNotification((prev) => (prev?.text === text ? null : prev));
+      }, duration);
+    }
+  };
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize design configuration from gallery raw_payload or fallback
+  const initialDesign: GalleryDesignConfig = useMemo(() => {
+    const raw = gallery?.raw_payload?.design;
+    if (raw) {
+      let presetKey: PresetId = 'cinematic_hero';
+      if (['cinematic_hero', 'editorial_canvas', 'faded_luxe', 'split_atelier'].includes(raw.preset)) {
+        presetKey = raw.preset;
+      } else if (raw.preset === 'cinematic_bleed') {
+        presetKey = 'cinematic_hero';
+      } else if (raw.preset === 'haute_editorial') {
+        presetKey = 'editorial_canvas';
+      } else if (raw.preset === 'royal_medallion') {
+        presetKey = 'faded_luxe';
+      } else if (raw.preset === 'grand_diptych') {
+        presetKey = 'split_atelier';
+      }
+
       return {
         ...DEFAULT_DESIGN_CONFIG,
+        ...raw,
+        preset: presetKey,
+        palette: {
+          ...DEFAULT_DESIGN_CONFIG.palette,
+          ...(raw.palette || {}),
+        },
+        typography: {
+          ...DEFAULT_DESIGN_CONFIG.typography,
+          ...(raw.typography || {}),
+        },
         cover: {
           ...DEFAULT_DESIGN_CONFIG.cover,
-          url: gallery?.cover_url || '',
+          ...(raw.cover || {}),
         },
       };
     }
-    return {
-      preset: saved.preset || DEFAULT_DESIGN_CONFIG.preset,
-      palette: {
-        ...DEFAULT_DESIGN_CONFIG.palette,
-        ...(saved.palette || {}),
-      },
-      typography: {
-        ...DEFAULT_DESIGN_CONFIG.typography,
-        ...(saved.typography || {}),
-      },
-      motion: {
-        ...DEFAULT_DESIGN_CONFIG.motion,
-        ...(saved.motion || {}),
-      },
-      cover: {
-        ...DEFAULT_DESIGN_CONFIG.cover,
-        url: saved.cover?.url || gallery?.cover_url || '',
-        focalPoint: saved.cover?.focalPoint || DEFAULT_DESIGN_CONFIG.cover.focalPoint,
-        overlayOpacity: saved.cover?.overlayOpacity ?? DEFAULT_DESIGN_CONFIG.cover.overlayOpacity,
-      },
-    };
+    return DEFAULT_DESIGN_CONFIG;
   }, [gallery]);
 
-  const [design, setDesign] = useState<GalleryDesignConfig>(initialConfig);
-  const [paletteMode, setPaletteMode] = useState<'light' | 'dark'>(initialConfig.palette.mode || 'light');
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [customPaletteOpen, setCustomPaletteOpen] = useState(false);
-  const [isUploadingCover, setIsUploadingCover] = useState(false);
-  const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const [design, setDesign] = useState<GalleryDesignConfig>(initialDesign);
 
-  // Sync state if gallery prop changes
-  useEffect(() => {
-    setDesign(initialConfig);
-    setPaletteMode(initialConfig.palette.mode || 'light');
-  }, [initialConfig]);
-
-  // Filtered Palettes by mode
-  const currentPalettes = useMemo(() => {
-    return PALETTE_OPTIONS.filter((p) => p.mode === paletteMode);
-  }, [paletteMode]);
-
-  // Selected Cover Photo (fallback to first event photo or placeholder)
-  const effectiveCoverPhoto = design.cover.url || gallery?.cover_url || photos?.[0]?.preview_url || photos?.[0]?.storage_path || 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1600&q=80';
+  // Studio branding details
+  const studioBranding = gallery?.studio_branding;
+  const studioName = studioBranding?.studio_name || 'StudioCore';
+  const studioLogo = studioBranding?.logo_url;
+  const studioSubtitle = studioBranding?.subtitle || studioBranding?.studio_subtitle || studioBranding?.tagline || 'Fine Art Wedding Photography & Films';
   const coupleName = gallery?.title || 'Siddhant & Vedika';
   const eventDateFormatted = gallery?.event_date
     ? new Date(gallery.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    : 'December 18, 2026';
-  const studioName = gallery?.studio_branding?.studio_name || 'Studio Core';
+    : 'October 24, 2026';
 
-  // Apply Palette Preset
-  const handleSelectPalette = (pal: PaletteOption) => {
-    setDesign((prev) => ({
-      ...prev,
-      palette: {
-        ...prev.palette,
-        presetId: pal.id,
-        canvasBg: pal.canvasBg,
-        textColor: pal.textColor,
-        accentColor: pal.accentColor,
-        subtextColor: pal.subtextColor,
-        cardBg: pal.cardBg,
-      },
-    }));
-  };
+  // Effective cover photo URL
+  const effectiveCoverPhoto = useMemo(() => {
+    return design.cover?.url || gallery?.cover_url || (photos.length > 0 ? (photos[0].preview_url || photos[0].thumbnail_url) : '');
+  }, [design.cover?.url, gallery?.cover_url, photos]);
 
-  // Toggle Mode (Light / Dark)
-  const handleToggleMode = (mode: 'light' | 'dark') => {
-    setPaletteMode(mode);
-    const firstMatching = PALETTE_OPTIONS.find((p) => p.mode === mode) || PALETTE_OPTIONS[0];
-    handleSelectPalette(firstMatching);
-  };
+  // Real photos list to display in the live preview
+  const previewPhotos = useMemo(() => {
+    if (photos && photos.length > 0) {
+      return photos.slice(0, 6).map((p) => p.preview_url || p.thumbnail_url || p.url);
+    }
+    return [];
+  }, [photos]);
 
-  // Select Typography Pairing
-  const handleSelectTypography = (pair: FontPairingOption) => {
-    setDesign((prev) => ({
-      ...prev,
-      typography: {
-        headingFont: pair.headingFont,
-        bodyFont: pair.bodyFont,
-        fontPairingId: pair.id,
-      },
-    }));
-  };
+  // Register custom fonts on mount
+  useEffect(() => {
+    STATIC_CUSTOM_FONTS.forEach((f) => registerFontFace(f));
+  }, []);
 
-  // Select Cover Photo from Gallery Photos
-  const handleSelectCoverPhoto = (photoUrl: string) => {
-    setDesign((prev) => ({
-      ...prev,
-      cover: {
-        ...prev.cover,
-        url: photoUrl,
-      },
-    }));
-  };
+  // Update theme mode when palette changes
+  useEffect(() => {
+    const isDark = COLOR_PALETTES.find(
+      (p) => p.canvasBg.toLowerCase() === design.palette.canvasBg.toLowerCase() && p.category === 'Dark Regal'
+    );
+    if (isDark) {
+      setPaletteMode('dark');
+    }
+  }, [design.palette.canvasBg]);
 
-  // Custom Cover Photo File Upload
+  // Handle Cover Photo Upload (with WebP compression and direct back-end persistence)
   const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !gallery?.id) return;
+    if (!file) return;
 
-    setIsUploadingCover(true);
+    setUploadingCover(true);
+    showToast('Converting to lightweight WebP & uploading cover...', 'loading');
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('gallery_id', gallery.id);
+      // 1. Convert to high-quality compressed WebP client-side
+      const webpBlob = await new Promise<Blob>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 2560;
+            const MAX_HEIGHT = 1800;
+            let width = img.width;
+            let height = img.height;
 
-      const res = await fetch('/api/gallery/upload-url', {
+            if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+              if (width / height > MAX_WIDTH / MAX_HEIGHT) {
+                height = Math.round((height * MAX_WIDTH) / width);
+                width = MAX_WIDTH;
+              } else {
+                width = Math.round((width * MAX_HEIGHT) / height);
+                height = MAX_HEIGHT;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject(new Error('Canvas context unavailable'));
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob(
+              (blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('WebP compression failed'));
+              },
+              'image/webp',
+              0.88
+            );
+          };
+          img.onerror = () => reject(new Error('Could not read image file'));
+          img.src = event.target?.result as string;
+        };
+        reader.onerror = () => reject(new Error('File reader failed'));
+        reader.readAsDataURL(file);
+      });
+
+      // 2. Request upload URL from server
+      const filename = `cover_${Date.now()}.webp`;
+      const upRes = await fetch('/api/gallery/upload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          gallery_id: gallery.id,
-          fileName: file.name,
-          contentType: file.type,
-          fileSize: file.size,
+          gallery_id: gallery?.id,
+          filename,
+          content_type: 'image/webp',
+          size_bytes: webpBlob.size,
         }),
       });
 
-      const resJson = await res.json();
-      if (resJson?.uploadUrl) {
-        await fetch(resJson.uploadUrl, {
-          method: 'PUT',
-          headers: { 'Content-Type': file.type },
-          body: file,
-        });
-
-        const finalUrl = resJson.publicUrl || resJson.previewUrl || resJson.storage_path;
-        if (finalUrl) {
-          handleSelectCoverPhoto(finalUrl);
-        }
-      }
-    } catch (err) {
-      console.error('Cover upload failed:', err);
-    } finally {
-      setIsUploadingCover(false);
-    }
-  };
-
-  // Save Design Settings to Backend
-  const handleSaveDesign = async () => {
-    if (!gallery?.id) return;
-    setIsSaving(true);
-    setSaveSuccess(false);
-
-    try {
-      const updatedPayload = {
-        ...(gallery.raw_payload || {}),
-        design: design,
-      };
-
-      const patchBody: Record<string, any> = {
-        id: gallery.id,
-        raw_payload: updatedPayload,
-      };
-
-      // Also sync cover_url if changed
-      if (design.cover.url && design.cover.url !== gallery.cover_url) {
-        patchBody.cover_url = design.cover.url;
+      const upJson = await upRes.json();
+      if (!upJson.success || !upJson.upload_url) {
+        throw new Error(upJson.error || 'Failed to obtain upload authorization');
       }
 
-      const res = await fetch('/api/gallery/events', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patchBody),
+      // 3. Upload binary directly to Cloudflare R2 / Backblaze B2
+      const putRes = await fetch(upJson.upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/webp' },
+        body: webpBlob,
       });
 
-      const json = await res.json();
-      if (!res.ok || json.success === false) {
-        throw new Error(json.error || 'Failed to save design');
+      if (!putRes.ok) {
+        throw new Error('Failed to upload file to cloud storage');
       }
 
-      setSaveSuccess(true);
-      if (onUpdateGallery) {
-        onUpdateGallery({
-          ...gallery,
-          raw_payload: updatedPayload,
-          cover_url: design.cover.url || gallery.cover_url,
+      const newCoverUrl = upJson.public_url || `/api/gallery/image?key=${encodeURIComponent(upJson.file_key)}`;
+
+      // 4. Update local state
+      setDesign((prev) => ({
+        ...prev,
+        cover: {
+          ...(prev.cover || { overlayOpacity: 45, focalPoint: { x: 50, y: 50 } }),
+          url: newCoverUrl,
+        },
+      }));
+
+      // 5. Update backend immediately
+      if (gallery?.id) {
+        await fetch('/api/gallery/events', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: gallery.id,
+            cover_url: newCoverUrl,
+          }),
         });
+        if (onUpdateGallery) {
+          onUpdateGallery({ ...gallery, cover_url: newCoverUrl });
+        }
       }
-      setTimeout(() => setSaveSuccess(false), 3000);
+
+      showToast('Cover photo uploaded & updated successfully!', 'success');
     } catch (err: any) {
-      alert(`Save error: ${err.message}`);
+      console.error('Cover upload error:', err);
+      showToast(`Cover upload failed: ${err.message}`, 'error');
     } finally {
-      setIsSaving(false);
+      setUploadingCover(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const publicGalleryLink = gallery?.slug ? `/g/${gallery.slug}` : `/g/${gallery?.id}`;
+  // Save & Publish Handler (Dual-Mode: Global Default or Event-Specific)
+  const handleSaveAndPublish = async () => {
+    setSaving(true);
+    showToast(
+      isGlobalDefault ? 'Saving global studio gallery design...' : 'Saving event gallery visual presentation...',
+      'loading'
+    );
+
+    try {
+      if (isGlobalDefault) {
+        // Save as studio-wide default gallery design in workspace_settings
+        const res = await fetch('/api/gallery/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            settings: {
+              gallery_design: design,
+            },
+          }),
+        });
+
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Failed to save global design');
+        showToast('Default gallery design saved for all events!', 'success');
+      } else {
+        // Save specifically for this event gallery
+        if (!gallery?.id) throw new Error('Missing Gallery ID');
+
+        const res = await fetch('/api/gallery/events', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: gallery.id,
+            raw_payload: {
+              ...(gallery?.raw_payload || {}),
+              design,
+            },
+            cover_url: design.cover?.url || gallery?.cover_url,
+          }),
+        });
+
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Failed to save event design');
+
+        if (onUpdateGallery) {
+          onUpdateGallery({
+            ...gallery,
+            raw_payload: {
+              ...(gallery?.raw_payload || {}),
+              design,
+            },
+            cover_url: design.cover?.url || gallery?.cover_url,
+          });
+        }
+        showToast('Gallery visual presentation saved & published!', 'success');
+      }
+
+      if (onSaveSuccess) onSaveSuccess();
+    } catch (err: any) {
+      console.error('Save design error:', err);
+      showToast(`Save Error: ${err.message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Filtered fonts catalog
+  const filteredFonts = useMemo(() => {
+    if (fontFilter === 'All') return FONTS_CATALOG;
+    return FONTS_CATALOG.filter((f) => f.category === fontFilter);
+  }, [fontFilter]);
+
+  // Open live client gallery in new tab
+  const handleOpenLivePreview = () => {
+    if (gallery?.slug) {
+      window.open(`/g/${gallery.slug}`, '_blank');
+    } else {
+      showToast('Please save the gallery to generate a public link.', 'info');
+    }
+  };
 
   return (
-    <div className="flex flex-col h-full min-h-[calc(100vh-80px)] bg-[#F8F6F0] text-zinc-900 font-sans">
-      
-      {/* ─────────────────────────────────────────────────────────────
-          1. TOP LUXURY STUDIO HEADER BAR
-      ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-[#E7E2D8] px-4 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30 shadow-2xs">
-        <div className="flex items-center gap-3">
-          {isStandalonePage && (
-            <Link
-              href={`/workspace/gallery/${gallery?.id}`}
-              className="px-3.5 py-1.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 text-xs font-bold border border-[#E7E2D8] transition flex items-center gap-1.5"
-            >
-              <span>← Back to Gallery</span>
-            </Link>
-          )}
+    <div className="w-full bg-[#FAF9F5] text-zinc-900 select-none">
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleCoverUpload}
+        accept="image/*"
+        className="hidden"
+      />
 
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-800 flex items-center justify-center border border-amber-300/40">
-              <Sparkles className="w-3.5 h-3.5 text-amber-700" />
-            </span>
-            <div className="leading-tight">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 block">
-                Visual Experience Studio
-              </span>
-              <h1 className="text-sm sm:text-base font-black text-zinc-900 tracking-tight flex items-center gap-2">
-                <span>{coupleName}</span>
-                <span className="text-[11px] font-normal text-zinc-400">• Design Customizer</span>
+      {/* ── TOP HEADER ACTION BAR ── */}
+      <div className="border-b border-[#E7E2D8] bg-white px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-30 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-2xl bg-amber-500/10 text-amber-700 flex items-center justify-center font-bold">
+            <Palette className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm sm:text-base font-black text-zinc-900 tracking-tight">
+                {isGlobalDefault ? 'Global Gallery Design & Defaults' : `${coupleName} Design Studio`}
               </h1>
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider">
+                {isGlobalDefault ? 'Studio Default' : 'Event Customizer'}
+              </span>
             </div>
+            <p className="text-xs text-zinc-500 font-medium hidden sm:block">
+              {isGlobalDefault
+                ? 'Sets default visual cover layout, color palette & typography for all upcoming events.'
+                : 'Custom visual identity, layout & fonts tailored specifically for this wedding.'}
+            </p>
           </div>
         </div>
 
-        {/* Center: Device View Toggle */}
-        <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#F4F1EA] border border-[#E7E2D8]">
-          <button
-            type="button"
-            onClick={() => setPreviewDevice('desktop')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              previewDevice === 'desktop'
-                ? 'bg-white text-zinc-900 shadow-2xs border border-[#E7E2D8]'
-                : 'text-zinc-500 hover:text-zinc-900'
-            }`}
-          >
-            <Monitor className="w-3.5 h-3.5" />
-            <span>Desktop</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setPreviewDevice('mobile')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              previewDevice === 'mobile'
-                ? 'bg-white text-zinc-900 shadow-2xs border border-[#E7E2D8]'
-                : 'text-zinc-500 hover:text-zinc-900'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Mobile</span>
-          </button>
-        </div>
-
-        {/* Right Action Buttons */}
         <div className="flex items-center gap-2.5">
-          <a
-            href={publicGalleryLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 rounded-xl bg-[#FAF9F5] hover:bg-white text-zinc-700 font-bold text-xs border border-[#E7E2D8] transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <Eye className="w-3.5 h-3.5 text-zinc-500" />
-            <span className="hidden sm:inline">Preview Live</span>
-            <ExternalLink className="w-3 h-3 text-zinc-400" />
-          </a>
+          {!isGlobalDefault && gallery?.slug && (
+            <button
+              type="button"
+              onClick={handleOpenLivePreview}
+              className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-zinc-600" />
+              <span>Preview Live</span>
+            </button>
+          )}
 
           <button
             type="button"
-            onClick={handleSaveDesign}
-            disabled={isSaving}
-            className={`px-5 py-2 rounded-xl font-black text-xs transition-all flex items-center gap-2 shadow-sm cursor-pointer select-none ${
-              saveSuccess
-                ? 'bg-emerald-600 text-white shadow-emerald-600/20'
-                : 'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white shadow-amber-600/20 active:scale-98'
-            }`}
+            onClick={handleSaveAndPublish}
+            disabled={saving}
+            className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-black shadow-md shadow-amber-600/20 flex items-center gap-2 transition-all active:scale-98 cursor-pointer disabled:opacity-60"
           >
-            {isSaving ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : saveSuccess ? (
-              <Check className="w-3.5 h-3.5" />
-            ) : (
-              <Save className="w-3.5 h-3.5" />
-            )}
-            <span>{isSaving ? 'Saving...' : saveSuccess ? 'Published Perfectly!' : 'Save & Publish'}</span>
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            <span>{isGlobalDefault ? 'Save Studio Defaults' : 'Save & Publish'}</span>
           </button>
         </div>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          2. MAIN STUDIO SPLIT VIEW (LEFT CONTROLS + RIGHT PREVIEW)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        
-        {/* ── LEFT CONFIGURATION PANEL (Fixed width on large screens) ── */}
-        <div className="w-full lg:w-[480px] xl:w-[520px] bg-white border-r border-[#E7E2D8] flex flex-col shrink-0 overflow-y-auto">
+      {/* ── 2-COLUMN MAIN STUDIO WORKSPACE ── */}
+      <div className="max-w-[1720px] mx-auto p-4 sm:p-6 lg:p-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
-          {/* Top Step Selector Pills */}
-          <div className="p-3 border-b border-[#E7E2D8] bg-[#FBF9F5] flex items-center gap-1.5 overflow-x-auto menu-scrollbar">
-            {[
-              { id: 'presets' as StepId, label: '1. Presets', icon: Layout },
-              { id: 'palette' as StepId, label: '2. Palette', icon: Palette },
-              { id: 'cover' as StepId, label: '3. Cover', icon: ImageIcon },
-              { id: 'typography' as StepId, label: '4. Fonts', icon: Type },
-              { id: 'motion' as StepId, label: '5. Motion', icon: Activity },
-            ].map((step) => {
-              const isSelected = activeStep === step.id;
-              return (
-                <button
-                  key={step.id}
-                  type="button"
-                  onClick={() => setActiveStep(step.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition cursor-pointer whitespace-nowrap ${
-                    isSelected
-                      ? 'bg-white text-zinc-900 border border-[#E7E2D8] shadow-2xs'
-                      : 'text-zinc-500 hover:text-zinc-900 hover:bg-white/60'
-                  }`}
-                >
-                  <step.icon className={`w-3.5 h-3.5 ${isSelected ? 'text-amber-600' : 'text-zinc-400'}`} />
-                  <span>{step.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* STEP CONTENT CONTAINER */}
-          <div className="p-5 sm:p-6 space-y-6 flex-1 overflow-y-auto">
+          {/* ═════════════════════════════════════════════════════════════
+              LEFT COLUMN: DESIGN CONTROLS (INDEPENDENT SCROLL)
+          ═════════════════════════════════════════════════════════════ */}
+          <div className="lg:col-span-6 xl:col-span-5 overflow-y-auto max-h-[calc(100vh-140px)] pr-2 space-y-6 scrollbar-thin">
             
-            {/* ══════════════════════════════════════════════════════════
-                STEP 1: PRESETS (12 LUXURY COVER TEMPLATES)
-            ══════════════════════════════════════════════════════════ */}
-            {activeStep === 'presets' && (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                <div className="space-y-1">
+            {/* 3 Main Tabs: Presets, Palette, Fonts */}
+            <div className="flex items-center p-1.5 bg-[#F4F1EA] rounded-2xl border border-[#E7E2D8] gap-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('presets')}
+                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  activeTab === 'presets'
+                    ? 'bg-white text-zinc-950 shadow-sm border border-black/5'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                <Layout className="w-3.5 h-3.5 text-amber-600" />
+                <span>1. Presets</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('palette')}
+                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  activeTab === 'palette'
+                    ? 'bg-white text-zinc-950 shadow-sm border border-black/5'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                <Palette className="w-3.5 h-3.5 text-amber-600" />
+                <span>2. Palette</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('fonts')}
+                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  activeTab === 'fonts'
+                    ? 'bg-white text-zinc-950 shadow-sm border border-black/5'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                <Type className="w-3.5 h-3.5 text-amber-600" />
+                <span>3. Fonts</span>
+              </button>
+            </div>
+
+            {/* ─────────────────────────────────────────────────────────
+                TAB 1: 4 HANDCRAFTED PRESETS
+            ───────────────────────────────────────────────────────── */}
+            {activeTab === 'presets' && (
+              <div className="space-y-6">
+                
+                {/* Cover Photo Status & Upload Card */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-xs space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                      Step 1 of 5
-                    </span>
-                    <span className="text-xs text-zinc-400 font-medium">12 Handcrafted Presets</span>
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-amber-600" />
+                      <span className="text-xs font-bold text-zinc-900">Event Cover Photograph</span>
+                    </div>
+                    {effectiveCoverPhoto ? (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                        Cover Ready
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold">
+                        No Cover Set
+                      </span>
+                    )}
                   </div>
-                  <h2 className="text-lg font-black text-zinc-900">Cover Hero Layout Presets</h2>
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Select how the opening cover and couple introduction appears when guests and clients open the gallery.
+
+                  {effectiveCoverPhoto ? (
+                    <div className="flex items-center gap-3 p-2 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8]">
+                      <div className="w-16 h-12 rounded-lg overflow-hidden bg-zinc-900 shrink-0">
+                        <img src={effectiveCoverPhoto} alt="Cover" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0 text-left">
+                        <span className="text-xs font-bold text-zinc-800 truncate block">Active Cover Photo</span>
+                        <span className="text-[10px] text-zinc-400">High-resolution WebP format</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingCover}
+                        className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      >
+                        {uploadingCover ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                        <span>Change</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-amber-300 hover:border-amber-500 rounded-xl p-5 text-center bg-amber-50/40 hover:bg-amber-50/70 transition-all cursor-pointer space-y-1.5"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-700 flex items-center justify-center mx-auto">
+                        <Upload className="w-4 h-4" />
+                      </div>
+                      <p className="text-xs font-bold text-amber-950">Upload Event Cover Photo</p>
+                      <p className="text-[10px] text-amber-700/80">
+                        Automatically compressed to high-efficiency WebP in KB size
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Presets List Header */}
+                <div className="space-y-1">
+                  <h2 className="text-sm font-black text-zinc-900">Cover Hero Layout Presets</h2>
+                  <p className="text-xs text-zinc-500">
+                    Select how the opening cover and couple introduction appears when guests open the gallery.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-                  {PRESET_OPTIONS.map((p) => {
-                    const isSelected = design.preset === p.id;
+                {/* 4 Handcrafted Presets Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {PRESETS.map((preset) => {
+                    const isSelected = design.preset === preset.id;
+
                     return (
                       <div
-                        key={p.id}
-                        onClick={() => {
-                          setDesign((prev) => ({
-                            ...prev,
-                            preset: p.id,
-                            motion: { animation: p.animationDefault },
-                          }));
-                        }}
-                        className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all duration-200 space-y-2.5 relative group ${
+                        key={preset.id}
+                        onClick={() => setDesign((prev) => ({ ...prev, preset: preset.id }))}
+                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between space-y-3 ${
                           isSelected
-                            ? 'border-amber-600 ring-2 ring-amber-400/30 bg-amber-50/20 shadow-xs'
-                            : 'border-[#E7E2D8] bg-white hover:border-zinc-400 hover:shadow-2xs'
+                            ? 'border-amber-600 bg-amber-50/30 shadow-md ring-2 ring-amber-600/20'
+                            : 'border-[#E7E2D8] bg-white hover:border-zinc-400'
                         }`}
                       >
-                        {/* Mini Diagram Visualizer of the Preset Layout */}
-                        <div className="h-24 rounded-xl bg-zinc-900 overflow-hidden relative flex items-center justify-center p-2 border border-black/10">
+                        {/* Mini Visual Diagram Representation */}
+                        <div className="w-full h-32 rounded-xl bg-zinc-950 overflow-hidden relative flex flex-col justify-between p-2.5 text-white">
                           {effectiveCoverPhoto && (
                             <img
                               src={effectiveCoverPhoto}
-                              alt={p.title}
-                              className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500"
+                              alt={preset.name}
+                              className={`absolute inset-0 w-full h-full object-cover transition-opacity ${
+                                preset.id === 'faded_luxe' ? 'opacity-40 filter brightness-110' : 'opacity-70'
+                              }`}
                             />
                           )}
 
-                          {/* Overlay depending on preset */}
-                          {p.id === 'royal_medallion' ? (
-                            <div className="relative z-10 flex flex-col items-center">
-                              <div className="w-10 h-10 rounded-full border-2 border-amber-400 overflow-hidden shadow-lg mb-1">
-                                <img src={effectiveCoverPhoto} alt="Circle" className="w-full h-full object-cover" />
-                              </div>
-                              <span className="text-[8px] font-serif text-white tracking-wider">Cursive Title</span>
-                            </div>
-                          ) : p.id === 'haute_editorial' ? (
-                            <div className="relative z-10 flex flex-col items-center w-full">
-                              <span className="text-[9px] font-black tracking-widest text-white uppercase mb-1">VOGUE TITLE</span>
-                              <div className="w-12 h-14 rounded-sm border border-white/40 overflow-hidden">
-                                <img src={effectiveCoverPhoto} alt="Vertical" className="w-full h-full object-cover" />
-                              </div>
-                            </div>
-                          ) : p.id === 'grand_diptych' ? (
-                            <div className="relative z-10 grid grid-cols-2 gap-1 w-full h-full">
-                              <div className="bg-black/60 rounded flex flex-col justify-center p-1 text-[7px] text-white font-serif">
-                                <span>Story</span>
-                                <span className="text-amber-400 text-[6px]">Date</span>
-                              </div>
-                              <div className="rounded overflow-hidden">
-                                <img src={effectiveCoverPhoto} alt="Right" className="w-full h-full object-cover" />
-                              </div>
-                            </div>
-                          ) : p.id === 'floating_frame' ? (
-                            <div className="relative z-10 w-20 h-14 rounded-lg bg-black/40 border-2 border-amber-400/80 p-0.5 shadow-xl overflow-hidden">
-                              <img src={effectiveCoverPhoto} alt="Frame" className="w-full h-full object-cover rounded-sm" />
-                            </div>
-                          ) : p.id === 'cathedral_arch' ? (
-                            <div className="relative z-10 w-12 h-16 rounded-t-full border-2 border-amber-300 overflow-hidden shadow-lg">
-                              <img src={effectiveCoverPhoto} alt="Arch" className="w-full h-full object-cover" />
-                            </div>
-                          ) : (
-                            <div className="relative z-10 text-center space-y-0.5">
-                              <span className="text-[7px] font-mono uppercase tracking-widest text-amber-300 block">
-                                {eventDateFormatted}
-                              </span>
-                              <span className="text-[10px] font-black text-white block drop-shadow-md">
-                                {coupleName}
-                              </span>
+                          {/* Top Bar Representation */}
+                          <div className="relative z-10 flex items-center justify-between text-[8px] font-mono tracking-widest uppercase opacity-70">
+                            <span>{studioName.slice(0, 10)}</span>
+                            <span>PHOTOS</span>
+                          </div>
+
+                          {/* Center / Layout Representation */}
+                          {preset.id === 'cinematic_hero' && (
+                            <div className="relative z-10 text-center pb-1 space-y-0.5">
+                              <span className="text-[7px] uppercase font-mono tracking-widest text-amber-300">GALLERY BY</span>
+                              <div className="text-[11px] font-serif font-normal capitalize">{coupleName}</div>
+                              <span className="text-[7px] font-mono opacity-60">OCTOBER 24, 2026</span>
                             </div>
                           )}
 
-                          {/* Selected Check Badge */}
+                          {preset.id === 'editorial_canvas' && (
+                            <div className="absolute inset-0 bg-[#F4EFEA] text-zinc-900 p-2 flex flex-col items-center justify-between">
+                              <span className="text-[6px] font-mono uppercase tracking-widest opacity-60">TERRE VERDE</span>
+                              <div className="text-[10px] font-serif tracking-[0.2em] uppercase font-bold">{coupleName}</div>
+                              <div className="w-12 h-16 rounded-xs bg-zinc-800 overflow-hidden shadow-xs">
+                                {effectiveCoverPhoto && <img src={effectiveCoverPhoto} alt="" className="w-full h-full object-cover" />}
+                              </div>
+                              <span className="text-[6px] font-mono opacity-50">OCTOBER 24, 2026</span>
+                            </div>
+                          )}
+
+                          {preset.id === 'faded_luxe' && (
+                            <div className="absolute inset-0 bg-white/70 text-zinc-900 p-2 flex flex-col items-center justify-center space-y-1">
+                              <div className="w-3 h-3 rounded-full border border-zinc-400" />
+                              <span className="text-[6px] font-mono uppercase tracking-widest text-zinc-500">GALLERY BY</span>
+                              <div className="text-[9px] font-serif font-bold uppercase">{coupleName}</div>
+                              <span className="text-[6px] font-mono text-zinc-400">OCTOBER 24, 2026</span>
+                            </div>
+                          )}
+
+                          {preset.id === 'split_atelier' && (
+                            <div className="absolute inset-0 grid grid-cols-2 bg-[#F4EFEA] text-zinc-900">
+                              <div className="p-2 flex flex-col justify-center space-y-0.5">
+                                <span className="text-[5px] font-mono uppercase tracking-widest opacity-60">GALLERY BY</span>
+                                <div className="text-[9px] font-serif font-bold uppercase leading-tight">{coupleName}</div>
+                                <span className="text-[5px] font-mono opacity-50">OCTOBER 24, 2026</span>
+                              </div>
+                              <div className="bg-zinc-800 overflow-hidden">
+                                {effectiveCoverPhoto && <img src={effectiveCoverPhoto} alt="" className="w-full h-full object-cover" />}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Selected Checkmark Badge */}
                           {isSelected && (
-                            <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center shadow-xs">
+                            <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center shadow-md z-20">
                               <Check className="w-3 h-3 stroke-[3]" />
                             </div>
                           )}
                         </div>
 
-                        {/* Preset Titles & Description */}
+                        {/* Title & Metadata */}
                         <div>
-                          <div className="flex items-center justify-between gap-1 mb-0.5">
-                            <span className="text-xs font-black text-zinc-900 block leading-tight">{p.title}</span>
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-[#F4F1EA] text-zinc-600 border border-[#E7E2D8]">
-                              {p.badge}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-zinc-900">{preset.name}</span>
+                            <span className="px-1.5 py-0.5 rounded-sm bg-zinc-100 text-zinc-700 text-[9px] font-mono font-bold">
+                              {preset.tag}
                             </span>
                           </div>
-                          <p className="text-[10.5px] text-zinc-500 line-clamp-2 leading-snug">{p.description}</p>
+                          <p className="text-[11px] text-zinc-500 mt-1 leading-snug">{preset.description}</p>
                         </div>
                       </div>
                     );
                   })}
                 </div>
+
               </div>
             )}
 
-            {/* ══════════════════════════════════════════════════════════
-                STEP 2: PALETTE (COLORS - LIGHT / DARK + SWATCHES)
-            ══════════════════════════════════════════════════════════ */}
-            {activeStep === 'palette' && (
-              <div className="space-y-5 animate-in fade-in duration-200">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                      Step 2 of 5
-                    </span>
-                    <span className="text-xs text-zinc-400 font-medium">Curated Luxury Themes</span>
+            {/* ─────────────────────────────────────────────────────────
+                TAB 2: 20+ LUXURY COLOR PALETTES
+            ───────────────────────────────────────────────────────── */}
+            {activeTab === 'palette' && (
+              <div className="space-y-6">
+                
+                {/* Light vs. Dark Switch */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-black text-zinc-900">Curated Color Palettes</h2>
+                    <p className="text-xs text-zinc-500">Fine-tuned background, typography & accent colors.</p>
                   </div>
-                  <h2 className="text-lg font-black text-zinc-900">Color Palette &amp; Canvas Tone</h2>
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Controls canvas background, display typography color, and accent button highlights.
-                  </p>
-                </div>
 
-                {/* Light vs Dark Mode Switch */}
-                <div className="p-1 rounded-2xl bg-[#F4F1EA] border border-[#E7E2D8] flex items-center">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleMode('light')}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-                      paletteMode === 'light'
-                        ? 'bg-white text-zinc-900 shadow-2xs border border-[#E7E2D8]'
-                        : 'text-zinc-500 hover:text-zinc-900'
-                    }`}
-                  >
-                    <Sun className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Light Mode (Ivory &amp; Pastel)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleToggleMode('dark')}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-                      paletteMode === 'dark'
-                        ? 'bg-zinc-900 text-white shadow-2xs'
-                        : 'text-zinc-500 hover:text-zinc-900'
-                    }`}
-                  >
-                    <Moon className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Dark Mode (Velvet &amp; Noir)</span>
-                  </button>
-                </div>
-
-                {/* Palette Swatches Grid (Split circles as shown in Photo 2) */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {currentPalettes.map((pal) => {
-                    const isSelected = design.palette.presetId === pal.id;
-                    return (
-                      <button
-                        key={pal.id}
-                        type="button"
-                        onClick={() => handleSelectPalette(pal)}
-                        className={`p-3 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-2 relative ${
-                          isSelected
-                            ? 'border-amber-600 ring-2 ring-amber-400/30 bg-white shadow-xs'
-                            : 'border-[#E7E2D8] bg-[#FBF9F5] hover:bg-white hover:border-zinc-300'
-                        }`}
-                      >
-                        {/* Dual-tone split swatch icon (Matching Samaro Photo 2) */}
-                        <div className="w-10 h-10 rounded-full border border-black/10 shadow-xs overflow-hidden relative">
-                          {/* Top Half: Canvas Background */}
-                          <div className="w-full h-1/2" style={{ backgroundColor: pal.canvasBg }} />
-                          {/* Bottom Half: Accent Color */}
-                          <div className="w-full h-1/2" style={{ backgroundColor: pal.accentColor }} />
-                        </div>
-
-                        <span className="text-[11px] font-bold text-zinc-900 leading-tight block">
-                          {pal.name}
-                        </span>
-
-                        {isSelected && (
-                          <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-amber-600 text-white flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5 stroke-[3]" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Custom Palette Toggle & Pickers */}
-                <div className="pt-2 border-t border-[#E7E2D8] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-zinc-900">Custom Brand Colors</span>
+                  <div className="flex items-center p-1 bg-[#F4F1EA] rounded-xl border border-[#E7E2D8] gap-1">
                     <button
                       type="button"
-                      onClick={() => setCustomPaletteOpen(!customPaletteOpen)}
-                      className="text-xs font-bold text-amber-700 hover:text-amber-800 cursor-pointer"
+                      onClick={() => setPaletteMode('light')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition ${
+                        paletteMode === 'light' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500 hover:text-zinc-900'
+                      }`}
                     >
-                      {customPaletteOpen ? 'Collapse' : 'Customize Hex Codes →'}
+                      <Sun className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Light</span>
                     </button>
-                  </div>
-
-                  {customPaletteOpen && (
-                    <div className="p-4 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] grid grid-cols-1 sm:grid-cols-3 gap-3 animate-in fade-in">
-                      {/* Canvas Background */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Canvas Background</label>
-                        <div className="flex items-center gap-2 p-1.5 bg-white rounded-xl border border-[#E7E2D8]">
-                          <input
-                            type="color"
-                            value={design.palette.canvasBg}
-                            onChange={(e) =>
-                              setDesign({
-                                ...design,
-                                palette: { ...design.palette, canvasBg: e.target.value, presetId: 'custom' },
-                              })
-                            }
-                            className="w-7 h-7 rounded-lg border-0 cursor-pointer p-0 bg-transparent"
-                          />
-                          <span className="text-xs font-mono font-bold text-zinc-700 uppercase">{design.palette.canvasBg}</span>
-                        </div>
-                      </div>
-
-                      {/* Heading Text */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Foreground Text</label>
-                        <div className="flex items-center gap-2 p-1.5 bg-white rounded-xl border border-[#E7E2D8]">
-                          <input
-                            type="color"
-                            value={design.palette.textColor}
-                            onChange={(e) =>
-                              setDesign({
-                                ...design,
-                                palette: { ...design.palette, textColor: e.target.value, presetId: 'custom' },
-                              })
-                            }
-                            className="w-7 h-7 rounded-lg border-0 cursor-pointer p-0 bg-transparent"
-                          />
-                          <span className="text-xs font-mono font-bold text-zinc-700 uppercase">{design.palette.textColor}</span>
-                        </div>
-                      </div>
-
-                      {/* Accent / Highlights */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Button / Accent</label>
-                        <div className="flex items-center gap-2 p-1.5 bg-white rounded-xl border border-[#E7E2D8]">
-                          <input
-                            type="color"
-                            value={design.palette.accentColor}
-                            onChange={(e) =>
-                              setDesign({
-                                ...design,
-                                palette: { ...design.palette, accentColor: e.target.value, presetId: 'custom' },
-                              })
-                            }
-                            className="w-7 h-7 rounded-lg border-0 cursor-pointer p-0 bg-transparent"
-                          />
-                          <span className="text-xs font-mono font-bold text-zinc-700 uppercase">{design.palette.accentColor}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ══════════════════════════════════════════════════════════
-                STEP 3: COVER (HERO IMAGE & FRAMING)
-            ══════════════════════════════════════════════════════════ */}
-            {activeStep === 'cover' && (
-              <div className="space-y-5 animate-in fade-in duration-200">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                      Step 3 of 5
-                    </span>
-                    <span className="text-xs text-zinc-400 font-medium">Hero Image &amp; Focal Point</span>
-                  </div>
-                  <h2 className="text-lg font-black text-zinc-900">Hero Header Photograph</h2>
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Pick a photo from your event gallery or upload a dedicated high-resolution cover photo.
-                  </p>
-                </div>
-
-                {/* Current Active Cover Photo Preview */}
-                <div className="relative rounded-2xl overflow-hidden border border-[#E7E2D8] bg-zinc-900 h-44 shadow-xs">
-                  <img
-                    src={effectiveCoverPhoto}
-                    alt="Current Cover"
-                    className="w-full h-full object-cover"
-                    style={{
-                      objectPosition: `${design.cover.focalPoint.x}% ${design.cover.focalPoint.y}%`,
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent flex items-end p-4 justify-between">
-                    <div>
-                      <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 text-white backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20">
-                        Active Cover
-                      </span>
-                      <p className="text-xs font-bold text-white mt-1 drop-shadow-sm">{coupleName}</p>
-                    </div>
-
                     <button
                       type="button"
-                      onClick={() => coverFileInputRef.current?.click()}
-                      disabled={isUploadingCover}
-                      className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md cursor-pointer"
+                      onClick={() => setPaletteMode('dark')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition ${
+                        paletteMode === 'dark' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500 hover:text-zinc-900'
+                      }`}
                     >
-                      {isUploadingCover ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                      <span>{isUploadingCover ? 'Uploading...' : 'Upload New Cover'}</span>
+                      <Moon className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Dark</span>
                     </button>
-                    <input
-                      ref={coverFileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleCoverUpload}
-                      className="hidden"
-                    />
                   </div>
                 </div>
 
-                {/* Focal Point Alignment */}
-                <div className="p-4 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] space-y-2.5">
-                  <span className="text-xs font-black text-zinc-900 block">Focal Point Alignment</span>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { label: 'Top', x: 50, y: 15 },
-                      { label: 'Center', x: 50, y: 50 },
-                      { label: 'Bottom', x: 50, y: 85 },
-                    ].map((focal) => {
-                      const isSelected = design.cover.focalPoint.y === focal.y;
-                      return (
-                        <button
-                          key={focal.label}
-                          type="button"
-                          onClick={() =>
-                            setDesign({
-                              ...design,
-                              cover: { ...design.cover, focalPoint: { x: focal.x, y: focal.y } },
-                            })
-                          }
-                          className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                            isSelected
-                              ? 'bg-amber-600 text-white shadow-2xs'
-                              : 'bg-white border border-[#E7E2D8] text-zinc-700 hover:bg-zinc-50'
-                          }`}
-                        >
-                          {focal.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                {/* Palettes Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {COLOR_PALETTES.filter(
+                    (p) => (paletteMode === 'light' ? p.category === 'Light Luxury' : p.category === 'Dark Regal')
+                  ).map((pal) => {
+                    const isSelected = design.palette.canvasBg.toLowerCase() === pal.canvasBg.toLowerCase();
 
-                {/* Overlay Opacity Slider */}
-                <div className="p-4 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-black text-zinc-900">Contrast Overlay Opacity</span>
-                    <span className="font-mono font-bold text-amber-700">{design.cover.overlayOpacity}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="80"
-                    step="5"
-                    value={design.cover.overlayOpacity}
-                    onChange={(e) =>
-                      setDesign({
-                        ...design,
-                        cover: { ...design.cover, overlayOpacity: Number(e.target.value) },
-                      })
-                    }
-                    className="w-full accent-amber-600 cursor-pointer"
-                  />
-                  <p className="text-[10px] text-zinc-400">
-                    Controls dark vignette density so couple names stay crystal clear regardless of photo lighting.
-                  </p>
-                </div>
-
-                {/* Gallery Photos Selection Strip */}
-                {photos.length > 0 && (
-                  <div className="space-y-2">
-                    <span className="text-xs font-black text-zinc-900 block">
-                      Select Cover from Event Photos ({photos.length} photos)
-                    </span>
-                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-48 overflow-y-auto p-1 menu-scrollbar">
-                      {photos.slice(0, 24).map((p, i) => {
-                        const url = p.preview_url || p.storage_path;
-                        const isChosen = design.cover.url === url;
-                        return (
-                          <button
-                            key={p.id || i}
-                            type="button"
-                            onClick={() => handleSelectCoverPhoto(url)}
-                            className={`aspect-square rounded-xl overflow-hidden border-2 relative cursor-pointer group transition ${
-                              isChosen ? 'border-amber-600 ring-2 ring-amber-400/40 scale-95' : 'border-transparent hover:border-zinc-300'
-                            }`}
-                          >
-                            <img src={url} alt={`Photo ${i}`} className="w-full h-full object-cover" />
-                            {isChosen && (
-                              <div className="absolute inset-0 bg-amber-600/30 flex items-center justify-center">
-                                <Check className="w-4 h-4 text-white stroke-[3]" />
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ══════════════════════════════════════════════════════════
-                STEP 4: TYPOGRAPHY (MATCHING SYSTEM & QUOTATION FONTS)
-            ══════════════════════════════════════════════════════════ */}
-            {activeStep === 'typography' && (
-              <div className="space-y-5 animate-in fade-in duration-200">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                      Step 4 of 5
-                    </span>
-                    <span className="text-xs text-zinc-400 font-medium">Curated Font Pairings</span>
-                  </div>
-                  <h2 className="text-lg font-black text-zinc-900">Luxury Wedding Typography</h2>
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Harmonious combinations from our official quotation fonts to preserve your studio’s signature aesthetic.
-                  </p>
-                </div>
-
-                <div className="space-y-2.5">
-                  {FONT_PAIRING_OPTIONS.map((pair) => {
-                    const isSelected = design.typography.fontPairingId === pair.id;
                     return (
                       <div
-                        key={pair.id}
-                        onClick={() => handleSelectTypography(pair)}
-                        className={`p-3.5 rounded-2xl border text-left cursor-pointer transition flex items-center justify-between gap-4 ${
+                        key={pal.id}
+                        onClick={() =>
+                          setDesign((prev) => ({
+                            ...prev,
+                            palette: {
+                              canvasBg: pal.canvasBg,
+                              textColor: pal.textColor,
+                              accentColor: pal.accentColor,
+                              subtextColor: pal.subtextColor,
+                              cardBg: pal.cardBg,
+                            },
+                          }))
+                        }
+                        className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer relative flex items-center justify-between gap-3 ${
                           isSelected
-                            ? 'border-amber-600 ring-2 ring-amber-400/30 bg-amber-50/20 shadow-xs'
-                            : 'border-[#E7E2D8] bg-white hover:border-zinc-300'
+                            ? 'border-amber-600 bg-amber-50/40 shadow-xs ring-2 ring-amber-600/20'
+                            : 'border-[#E7E2D8] bg-white hover:border-zinc-400'
                         }`}
                       >
-                        <div className="space-y-1">
+                        <div className="flex items-center gap-3">
+                          {/* Color Swatch Tri-dots */}
+                          <div className="flex items-center -space-x-1.5">
+                            <div
+                              className="w-6 h-6 rounded-full border border-black/10 shadow-xs"
+                              style={{ backgroundColor: pal.canvasBg }}
+                            />
+                            <div
+                              className="w-6 h-6 rounded-full border border-black/10 shadow-xs"
+                              style={{ backgroundColor: pal.textColor }}
+                            />
+                            <div
+                              className="w-6 h-6 rounded-full border border-black/10 shadow-xs"
+                              style={{ backgroundColor: pal.accentColor }}
+                            />
+                          </div>
+
+                          <div>
+                            <span className="text-xs font-bold text-zinc-900 block">{pal.name}</span>
+                            <span className="text-[10px] font-mono text-zinc-400">{pal.canvasBg}</span>
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <div className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Custom Hex Color Pickers */}
+                <div className="p-4 rounded-2xl bg-white border border-[#E7E2D8] shadow-xs space-y-3">
+                  <span className="text-xs font-bold text-zinc-900 block">Custom Hex Color Pickers</span>
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* Canvas Background */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                        Background
+                      </label>
+                      <div className="flex items-center gap-2 p-1.5 rounded-xl border border-[#E7E2D8] bg-[#FAF9F5]">
+                        <input
+                          type="color"
+                          value={design.palette.canvasBg}
+                          onChange={(e) =>
+                            setDesign((prev) => ({
+                              ...prev,
+                              palette: { ...prev.palette, canvasBg: e.target.value },
+                            }))
+                          }
+                          className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
+                        />
+                        <span className="text-xs font-mono font-bold">{design.palette.canvasBg}</span>
+                      </div>
+                    </div>
+
+                    {/* Text Color */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                        Text
+                      </label>
+                      <div className="flex items-center gap-2 p-1.5 rounded-xl border border-[#E7E2D8] bg-[#FAF9F5]">
+                        <input
+                          type="color"
+                          value={design.palette.textColor}
+                          onChange={(e) =>
+                            setDesign((prev) => ({
+                              ...prev,
+                              palette: { ...prev.palette, textColor: e.target.value },
+                            }))
+                          }
+                          className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
+                        />
+                        <span className="text-xs font-mono font-bold">{design.palette.textColor}</span>
+                      </div>
+                    </div>
+
+                    {/* Accent Color */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                        Accent
+                      </label>
+                      <div className="flex items-center gap-2 p-1.5 rounded-xl border border-[#E7E2D8] bg-[#FAF9F5]">
+                        <input
+                          type="color"
+                          value={design.palette.accentColor}
+                          onChange={(e) =>
+                            setDesign((prev) => ({
+                              ...prev,
+                              palette: { ...prev.palette, accentColor: e.target.value },
+                            }))
+                          }
+                          className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
+                        />
+                        <span className="text-xs font-mono font-bold">{design.palette.accentColor}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* ─────────────────────────────────────────────────────────
+                TAB 3: AESTHETIC FONTS (QUOTATION-GRADE CARDS)
+            ───────────────────────────────────────────────────────── */}
+            {activeTab === 'fonts' && (
+              <div className="space-y-6">
+                
+                {/* Font Category Filter */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-black text-zinc-900">Aesthetic Typography</h2>
+                    <p className="text-xs text-zinc-500">
+                      High-fashion editorial serif and modern sans-serif fonts.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center p-1 bg-[#F4F1EA] rounded-xl border border-[#E7E2D8] gap-1">
+                    {['All', 'Luxury Serif', 'Custom Aesthetic', 'Modern Sans'].map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setFontFilter(cat)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition ${
+                          fontFilter === cat ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500 hover:text-zinc-900'
+                        }`}
+                      >
+                        {cat === 'Custom Aesthetic' ? 'Custom' : cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Big Aesthetic Font Cards */}
+                <div className="space-y-3">
+                  {filteredFonts.map((font) => {
+                    const isSelected =
+                      design.typography.headingFont.toLowerCase().includes(font.name.toLowerCase()) ||
+                      design.typography.headingFont === font.family;
+
+                    return (
+                      <div
+                        key={font.name}
+                        onClick={() =>
+                          setDesign((prev) => ({
+                            ...prev,
+                            typography: {
+                              ...prev.typography,
+                              headingFont: font.family,
+                              bodyFont: font.subFont,
+                            },
+                          }))
+                        }
+                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative bg-white hover:border-zinc-400 ${
+                          isSelected
+                            ? 'border-amber-600 bg-amber-50/20 shadow-sm ring-2 ring-amber-600/20'
+                            : 'border-[#E7E2D8]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between pb-2 border-b border-black/5">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-zinc-900">{pair.name}</span>
-                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#F4F1EA] text-zinc-600 border border-[#E7E2D8]">
-                              {pair.tag}
+                            <span className="text-xs font-bold text-zinc-900">{font.name}</span>
+                            <span className="px-1.5 py-0.5 rounded-sm bg-zinc-100 text-zinc-600 text-[9px] font-mono">
+                              {font.category}
                             </span>
                           </div>
+
+                          {isSelected && (
+                            <div className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center">
+                              <Check className="w-3 h-3 stroke-[3]" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Large Headline Text Sample */}
+                        <div className="pt-3 pb-1">
                           <p
-                            className="text-lg text-zinc-800 leading-tight"
-                            style={{ fontFamily: pair.headingFont }}
+                            className="text-2xl sm:text-3xl text-zinc-900 truncate leading-snug"
+                            style={{ fontFamily: font.family }}
                           >
                             {coupleName}
                           </p>
-                          <span className="text-[10px] text-zinc-400 font-mono">
-                            Heading: {pair.headingFont} • Body: {pair.bodyFont}
-                          </span>
+                          <p
+                            className="text-xs text-zinc-500 italic mt-0.5"
+                            style={{ fontFamily: font.subFont }}
+                          >
+                            Fine Art Wedding Memories &bull; {eventDateFormatted}
+                          </p>
                         </div>
-
-                        {isSelected && (
-                          <div className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0">
-                            <Check className="w-3 h-3 stroke-[3]" />
-                          </div>
-                        )}
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            )}
 
-            {/* ══════════════════════════════════════════════════════════
-                STEP 5: MOTION & ANIMATIONS
-            ══════════════════════════════════════════════════════════ */}
-            {activeStep === 'motion' && (
-              <div className="space-y-5 animate-in fade-in duration-200">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                      Step 5 of 5
-                    </span>
-                    <span className="text-xs text-zinc-400 font-medium">Entrance &amp; Scroll Motion</span>
-                  </div>
-                  <h2 className="text-lg font-black text-zinc-900">Cinematic Motion &amp; Animation</h2>
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Choose how the hero image and couple titles glide into view when guests open the portal.
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  {MOTION_OPTIONS.map((mot) => {
-                    const isSelected = design.motion.animation === mot.id;
-                    return (
-                      <div
-                        key={mot.id}
-                        onClick={() =>
-                          setDesign({
-                            ...design,
-                            motion: { animation: mot.id },
-                          })
-                        }
-                        className={`p-4 rounded-2xl border text-left cursor-pointer transition flex items-center justify-between gap-3 ${
-                          isSelected
-                            ? 'border-amber-600 ring-2 ring-amber-400/30 bg-amber-50/20 shadow-xs'
-                            : 'border-[#E7E2D8] bg-white hover:border-zinc-300'
-                        }`}
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-zinc-900">{mot.name}</span>
-                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                              {mot.badge}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-zinc-500 leading-snug">{mot.description}</p>
-                        </div>
-
-                        {isSelected && (
-                          <div className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0">
-                            <Check className="w-3 h-3 stroke-[3]" />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
             )}
 
           </div>
 
-          {/* Bottom Save Reminder Bar */}
-          <div className="p-4 bg-white border-t border-[#E7E2D8] flex items-center justify-between gap-2">
-            <span className="text-[11px] text-zinc-400 font-medium">
-              Changes render live on the right.
-            </span>
-            <button
-              type="button"
-              onClick={handleSaveDesign}
-              disabled={isSaving}
-              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              {isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              <span>{isSaving ? 'Saving...' : 'Save Settings'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* ── RIGHT LIVE INTERACTIVE PREVIEW SIMULATOR ── */}
-        <div className="flex-1 bg-[#EBE7DF] p-4 sm:p-8 flex items-center justify-center overflow-y-auto">
-          
-          {/* DESKTOP BROWSER MOCKUP FRAME */}
-          {previewDevice === 'desktop' && (
-            <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-black/10 overflow-hidden flex flex-col transition-all duration-300">
-              
-              {/* Chrome Browser Header Bar */}
-              <div className="bg-[#FAF9F5] border-b border-[#E7E2D8] px-4 py-2.5 flex items-center gap-3">
+          {/* ═════════════════════════════════════════════════════════════
+              RIGHT COLUMN: LIVE DUAL SIMULATOR (STICKY & RESPONSIVE)
+          ═════════════════════════════════════════════════════════════ */}
+          <div className="lg:col-span-6 xl:col-span-7 sticky top-4 self-start">
+            
+            {/* Simulator Header with Embedded Device Toggle */}
+            <div className="bg-[#18181B] text-white rounded-t-3xl px-6 py-3.5 flex items-center justify-between border-t border-x border-zinc-700 shadow-lg">
+              <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-rose-400" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                  <div className="w-3 h-3 rounded-full bg-rose-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-amber-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
                 </div>
-                <div className="flex-1 max-w-md mx-auto bg-white rounded-lg px-3 py-1 border border-[#E7E2D8] text-[10px] font-mono text-zinc-400 text-center truncate">
-                  https://studiocore.in/{gallery?.slug || 'wedding-gallery'}
-                </div>
+                <span className="text-xs font-mono text-zinc-400 hidden sm:inline">
+                  Client Simulator Live Preview
+                </span>
               </div>
 
-              {/* LIVE SIMULATED CLIENT VIEW */}
-              <div
-                className="overflow-y-auto max-h-[640px] select-none"
-                style={{ backgroundColor: design.palette.canvasBg, color: design.palette.textColor }}
-              >
-                {/* 1. Header Bar */}
-                <div className="border-b border-black/10 px-6 py-3 flex items-center justify-between bg-white/40 backdrop-blur-md sticky top-0 z-20">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-amber-600 text-white text-[10px] font-black flex items-center justify-center">
-                      {studioName.charAt(0)}
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold block leading-none">{studioName}</span>
-                      <span className="text-[9px] opacity-60">Photography &amp; Films</span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-black/5 border border-black/10">
-                    Client Portal
-                  </span>
-                </div>
+              {/* Exact Device Switcher inside Preview Bar */}
+              <div className="flex items-center p-1 bg-zinc-800 rounded-xl border border-zinc-700 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPreviewDevice('desktop')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    previewDevice === 'desktop' ? 'bg-zinc-100 text-zinc-950 shadow-xs' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                  <span>Desktop</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewDevice('mobile')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    previewDevice === 'mobile' ? 'bg-zinc-100 text-zinc-950 shadow-xs' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Mobile</span>
+                </button>
+              </div>
+            </div>
 
-                {/* 2. DYNAMIC HERO COVER PRESET RENDERER */}
-                <div className="relative overflow-hidden">
-                  
-                  {/* PRESET 1: CINEMATIC BLEED (Photo 3) */}
-                  {design.preset === 'cinematic_bleed' && (
-                    <div className="relative h-96 w-full flex items-center justify-center text-center overflow-hidden">
-                      <img
-                        src={effectiveCoverPhoto}
-                        alt="Hero"
-                        className={`absolute inset-0 w-full h-full object-cover ${
-                          design.motion.animation === 'cinematic_zoom' ? 'scale-105 transition-transform duration-1000' : ''
-                        }`}
-                        style={{
-                          objectPosition: `${design.cover.focalPoint.x}% ${design.cover.focalPoint.y}%`,
-                        }}
-                      />
-                      <div
-                        className="absolute inset-0 bg-black"
-                        style={{ opacity: design.cover.overlayOpacity / 100 }}
-                      />
-                      <div className="relative z-10 p-6 space-y-2 text-white max-w-lg">
-                        <span className="text-[10px] tracking-widest uppercase font-mono text-amber-300">
-                          {eventDateFormatted}
-                        </span>
-                        <h2
-                          className="text-4xl sm:text-5xl font-normal tracking-tight drop-shadow-md"
-                          style={{ fontFamily: design.typography.headingFont }}
-                        >
-                          {coupleName}
-                        </h2>
-                        <div className="pt-2">
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/20 text-white backdrop-blur-md animate-bounce">
-                            <ArrowDown className="w-3.5 h-3.5" />
-                          </span>
+            {/* Simulator Frame Container */}
+            <div className="bg-[#E7E2D8] border-b border-x border-[#D5CFC3] rounded-b-3xl p-4 sm:p-6 flex items-center justify-center overflow-hidden min-h-[580px]">
+              
+              {/* ── DESKTOP BROWSER FRAME ── */}
+              {previewDevice === 'desktop' && (
+                <div className="w-full bg-white rounded-2xl overflow-hidden shadow-2xl border border-black/10 transition-all duration-300">
+                  {/* Browser Address Bar */}
+                  <div className="bg-zinc-100 px-4 py-2 border-b border-zinc-200 flex items-center justify-between text-[11px] font-mono text-zinc-500">
+                    <div className="truncate max-w-xs">
+                      https://studiocore.in/{gallery?.slug || 'wedding-gallery'}
+                    </div>
+                    <span className="text-[10px] text-zinc-400 font-bold uppercase">Official Guest Portal</span>
+                  </div>
+
+                  {/* Desktop Content Scroll Area */}
+                  <div
+                    className="overflow-y-auto max-h-[620px] select-none transition-colors duration-500"
+                    style={{
+                      backgroundColor: design.palette.canvasBg,
+                      color: design.palette.textColor,
+                      fontFamily: design.typography.bodyFont,
+                    }}
+                  >
+                    {/* 1. Header Bar */}
+                    <div className="border-b border-black/10 px-6 py-3.5 flex items-center justify-between bg-white/70 backdrop-blur-md sticky top-0 z-20">
+                      <div className="flex items-center gap-3">
+                        {studioLogo ? (
+                          <img src={studioLogo} alt={studioName} className="w-7 h-7 rounded-full object-cover ring-1 ring-black/10" />
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-amber-600 text-white text-xs font-black flex items-center justify-center">
+                            {studioName.charAt(0)}
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-xs font-bold block leading-none">{studioName}</span>
+                          <span className="text-[9px] opacity-60 block leading-tight">{studioSubtitle}</span>
                         </div>
                       </div>
-                    </div>
-                  )}
-
-                  {/* PRESET 2: ROYAL MEDALLION (Photo 4) */}
-                  {design.preset === 'royal_medallion' && (
-                    <div className="py-12 px-6 text-center space-y-4 flex flex-col items-center">
-                      <div className="w-36 h-36 rounded-full overflow-hidden ring-4 ring-amber-400/30 shadow-2xl relative">
-                        <img
-                          src={effectiveCoverPhoto}
-                          alt="Medallion"
-                          className="w-full h-full object-cover"
-                          style={{
-                            objectPosition: `${design.cover.focalPoint.x}% ${design.cover.focalPoint.y}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10px] tracking-widest uppercase font-bold opacity-60">
-                          GALLERY BY {studioName.toUpperCase()}
-                        </span>
-                        <h2
-                          className="text-3xl sm:text-4xl font-normal italic tracking-tight"
-                          style={{ fontFamily: design.typography.headingFont, color: design.palette.textColor }}
-                        >
-                          {coupleName}
-                        </h2>
-                        <span className="text-xs font-mono opacity-60 block">{eventDateFormatted}</span>
-                      </div>
-                      <span className="inline-block pt-2 animate-bounce">
-                        <ArrowDown className="w-4 h-4 text-amber-600" />
+                      <span className="text-[10px] font-mono font-bold opacity-60">
+                        {photos.length > 0 ? `${photos.length} PHOTOS` : '114 PHOTOS'}
                       </span>
                     </div>
-                  )}
 
-                  {/* PRESET 3: HAUTE EDITORIAL (Photo 5 Terre Verde Style) */}
-                  {design.preset === 'haute_editorial' && (
-                    <div className="py-10 px-6 text-center space-y-4 flex flex-col items-center">
-                      <h2
-                        className="text-4xl sm:text-5xl font-black tracking-widest uppercase"
-                        style={{ fontFamily: design.typography.headingFont, color: design.palette.textColor }}
-                      >
-                        {coupleName}
-                      </h2>
-                      <div className="w-56 h-72 rounded-sm overflow-hidden shadow-2xl border-4 border-white bg-black">
-                        <img
-                          src={effectiveCoverPhoto}
-                          alt="Vogue Portrait"
-                          className="w-full h-full object-cover"
-                          style={{
-                            objectPosition: `${design.cover.focalPoint.x}% ${design.cover.focalPoint.y}%`,
-                          }}
-                        />
+                    {/* 2. Hero Preset Rendered */}
+                    {renderPresetContent(design, coupleName, eventDateFormatted, studioName, effectiveCoverPhoto, photos.length)}
+
+                    {/* 3. Sub-Events Bar */}
+                    <div
+                      className="px-6 py-3 border-y border-black/10 flex items-center justify-between text-xs font-bold"
+                      style={{ backgroundColor: design.palette.cardBg || '#FFFFFF' }}
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="text-amber-600 border-b-2 border-amber-600 pb-0.5">Highlights</span>
+                        <span className="opacity-50">Sangeet</span>
+                        <span className="opacity-50">Haldi</span>
+                        <span className="opacity-50">Wedding</span>
                       </div>
-                      <span className="text-xs font-mono tracking-widest opacity-60 uppercase">{eventDateFormatted}</span>
+                      <span className="text-[10px] font-mono opacity-50">AI Face Search Enabled</span>
                     </div>
-                  )}
 
-                  {/* PRESET 4: GRAND DIPTYCH (Split 50/50) */}
-                  {design.preset === 'grand_diptych' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 min-h-80 w-full">
-                      <div className="p-8 flex flex-col justify-center space-y-3">
-                        <span className="text-[10px] font-mono tracking-widest uppercase text-amber-600 font-bold">
-                          {eventDateFormatted}
-                        </span>
-                        <h2
-                          className="text-3xl sm:text-4xl font-bold tracking-tight"
-                          style={{ fontFamily: design.typography.headingFont, color: design.palette.textColor }}
-                        >
-                          {coupleName}
-                        </h2>
-                        <p className="text-xs opacity-75 font-serif italic max-w-sm">
-                          Preserving authentic visual poetry, cherished laughter, and timeless celebrations.
-                        </p>
-                      </div>
-                      <div className="h-64 sm:h-auto overflow-hidden">
-                        <img
-                          src={effectiveCoverPhoto}
-                          alt="Diptych"
-                          className="w-full h-full object-cover"
-                          style={{
-                            objectPosition: `${design.cover.focalPoint.x}% ${design.cover.focalPoint.y}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* PRESET 5: FLOATING FRAME */}
-                  {design.preset === 'floating_frame' && (
-                    <div className="relative py-14 px-6 flex items-center justify-center overflow-hidden">
-                      <img
-                        src={effectiveCoverPhoto}
-                        alt="Ambient Blur"
-                        className="absolute inset-0 w-full h-full object-cover blur-xl opacity-30"
-                      />
-                      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white/90 backdrop-blur-md p-4 border border-amber-400/40 shadow-2xl space-y-3 text-center">
-                        <div className="aspect-video rounded-xl overflow-hidden shadow-sm">
-                          <img src={effectiveCoverPhoto} alt="Cover" className="w-full h-full object-cover" />
+                    {/* 4. Real Photos Grid in Preview */}
+                    <div className="p-6">
+                      {previewPhotos.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-3">
+                          {previewPhotos.map((url, idx) => (
+                            <div key={idx} className="aspect-square rounded-xl overflow-hidden shadow-xs bg-black/5">
+                              <img src={url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                            </div>
+                          ))}
                         </div>
-                        <h2 className="text-2xl font-bold text-zinc-900" style={{ fontFamily: design.typography.headingFont }}>
-                          {coupleName}
-                        </h2>
-                        <span className="text-xs font-mono text-zinc-500 block">{eventDateFormatted}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* PRESET 6: VELVET MIDNIGHT */}
-                  {design.preset === 'velvet_midnight' && (
-                    <div className="relative h-96 w-full flex items-center justify-center text-center bg-black overflow-hidden">
-                      <div className="absolute inset-0 bg-radial from-amber-500/20 via-black to-black" />
-                      <div className="relative z-10 space-y-3 p-6 text-white">
-                        <span className="text-[10px] tracking-widest uppercase font-mono text-amber-400">
-                          {eventDateFormatted}
-                        </span>
-                        <h2 className="text-4xl sm:text-5xl font-light tracking-wide text-amber-100" style={{ fontFamily: design.typography.headingFont }}>
-                          {coupleName}
-                        </h2>
-                        <div className="w-32 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent mx-auto" />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* PRESET 7: CATHEDRAL ARCH */}
-                  {design.preset === 'cathedral_arch' && (
-                    <div className="py-12 px-6 flex flex-col items-center text-center space-y-4">
-                      <div className="w-44 h-64 rounded-t-full overflow-hidden border-4 border-amber-500/30 shadow-2xl">
-                        <img src={effectiveCoverPhoto} alt="Arch" className="w-full h-full object-cover" />
-                      </div>
-                      <h2 className="text-3xl font-bold" style={{ fontFamily: design.typography.headingFont, color: design.palette.textColor }}>
-                        {coupleName}
-                      </h2>
-                      <span className="text-xs font-mono opacity-60">{eventDateFormatted}</span>
-                    </div>
-                  )}
-
-                  {/* PRESET 8: MINIMALIST IVORY */}
-                  {design.preset === 'minimalist_ivory' && (
-                    <div className="py-16 px-6 text-center space-y-3">
-                      <span className="text-[10px] tracking-widest uppercase font-mono opacity-50 block">WEDDING CELEBRATION</span>
-                      <h2 className="text-4xl sm:text-5xl font-light tracking-widest uppercase" style={{ fontFamily: design.typography.headingFont, color: design.palette.textColor }}>
-                        {coupleName}
-                      </h2>
-                      <span className="text-xs font-mono opacity-60 block">{eventDateFormatted}</span>
-                    </div>
-                  )}
-
-                  {/* PRESET 9: PARALLAX CANVAS */}
-                  {design.preset === 'parallax_canvas' && (
-                    <div className="relative h-96 w-full flex items-center justify-center text-center overflow-hidden">
-                      <img src={effectiveCoverPhoto} alt="Parallax" className="absolute inset-0 w-full h-full object-cover scale-110" />
-                      <div className="absolute inset-0 bg-black/40" />
-                      <div className="relative z-10 text-white space-y-2">
-                        <span className="text-xs font-mono tracking-widest text-amber-300 uppercase">{eventDateFormatted}</span>
-                        <h2 className="text-4xl sm:text-5xl font-bold" style={{ fontFamily: design.typography.headingFont }}>
-                          {coupleName}
-                        </h2>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* PRESET 10: HERITAGE STORYBOOK */}
-                  {design.preset === 'heritage_storybook' && (
-                    <div className="py-12 px-6 flex flex-col items-center text-center space-y-4">
-                      <div className="flex items-center justify-center -space-x-8">
-                        <div className="w-32 h-44 rounded-xl overflow-hidden border-2 border-white shadow-xl -rotate-6">
-                          <img src={effectiveCoverPhoto} alt="Duo 1" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="grid grid-cols-3 gap-3">
+                          {[1, 2, 3, 4, 5, 6].map((idx) => (
+                            <div
+                              key={idx}
+                              className="aspect-square rounded-xl bg-black/5 border border-black/10 flex flex-col items-center justify-center p-3 text-center"
+                            >
+                              <ImageIcon className="w-5 h-5 opacity-20 mb-1" />
+                              <span className="text-[9px] opacity-40 font-mono">Photo {idx}</span>
+                            </div>
+                          ))}
                         </div>
-                        <div className="w-32 h-44 rounded-xl overflow-hidden border-2 border-white shadow-xl rotate-6 z-10">
-                          <img src={effectiveCoverPhoto} alt="Duo 2" className="w-full h-full object-cover" />
-                        </div>
-                      </div>
-                      <h2 className="text-3xl font-serif italic" style={{ fontFamily: design.typography.headingFont, color: design.palette.textColor }}>
-                        {coupleName}
-                      </h2>
-                      <span className="text-xs font-mono opacity-60">{eventDateFormatted}</span>
+                      )}
                     </div>
-                  )}
 
-                  {/* PRESET 11: CLASSIC HEIRLOOM */}
-                  {design.preset === 'classic_heirloom' && (
-                    <div className="py-12 px-6 text-center space-y-3 flex flex-col items-center">
-                      <Crown className="w-6 h-6 text-amber-600" />
-                      <div className="w-16 h-0.5 bg-amber-400 mx-auto" />
-                      <h2 className="text-3xl sm:text-4xl font-normal tracking-wide" style={{ fontFamily: design.typography.headingFont, color: design.palette.textColor }}>
-                        {coupleName}
-                      </h2>
-                      <span className="text-xs font-mono opacity-60">{eventDateFormatted}</span>
-                      <div className="w-full max-w-sm h-48 rounded-xl overflow-hidden shadow-lg mt-2">
-                        <img src={effectiveCoverPhoto} alt="Heirloom" className="w-full h-full object-cover" />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* PRESET 12: CONTEMPORARY VOGUE */}
-                  {design.preset === 'contemporary_vogue' && (
-                    <div className="relative h-72 w-full flex items-center justify-between p-8 bg-zinc-900 text-white overflow-hidden">
-                      <img src={effectiveCoverPhoto} alt="Banner" className="absolute inset-0 w-full h-full object-cover opacity-50" />
-                      <div className="relative z-10 space-y-1">
-                        <span className="text-[10px] font-mono tracking-widest uppercase bg-white/20 px-2 py-0.5 rounded">
-                          {eventDateFormatted}
-                        </span>
-                        <h2 className="text-4xl font-black uppercase tracking-tight" style={{ fontFamily: design.typography.headingFont }}>
-                          {coupleName}
-                        </h2>
-                      </div>
-                      <div className="relative z-10 hidden sm:block">
-                        <span className="px-4 py-2 rounded-full border border-white/30 text-xs font-bold uppercase tracking-wider">
-                          View Gallery
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. Sub-Events Scene Divider Bar */}
-                <div
-                  className="px-6 py-3 border-y border-black/10 flex items-center justify-between text-xs font-bold"
-                  style={{ backgroundColor: design.palette.cardBg }}
-                >
-                  <div className="flex items-center gap-4">
-                    <span className="text-amber-600 border-b-2 border-amber-600 pb-1">Highlights</span>
-                    <span className="opacity-50">Sangeet</span>
-                    <span className="opacity-50">Haldi</span>
-                    <span className="opacity-50">Wedding</span>
                   </div>
-                  <span className="text-[11px] opacity-60 font-mono">114 Photos</span>
                 </div>
+              )}
 
-                {/* 4. AI Face Search Banner Teaser */}
-                <div className="p-6 text-center space-y-2 border-b border-black/5">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-700 block">
-                    PEOPLE &amp; GUESTS
-                  </span>
-                  <h3 className="text-xl font-normal" style={{ fontFamily: design.typography.headingFont }}>
-                    Find yourself with AI Selfie
-                  </h3>
-                  <div className="pt-2 flex justify-center">
-                    <div className="px-4 py-2 rounded-full bg-amber-600 text-white text-xs font-bold shadow-sm">
-                      Take a Selfie to Match Photos
+              {/* ── MOBILE PHONE FRAME (iPhone 16 Pro Style) ── */}
+              {previewDevice === 'mobile' && (
+                <div className="w-[340px] h-[680px] bg-black rounded-[48px] p-3 shadow-2xl border-4 border-zinc-800 relative flex flex-col transition-all duration-300">
+                  {/* Dynamic Island */}
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 w-24 h-5 bg-black rounded-full z-40 flex items-center justify-center">
+                    <div className="w-2.5 h-2.5 rounded-full bg-zinc-900 border border-zinc-800" />
+                  </div>
+
+                  {/* Mobile Screen Area */}
+                  <div
+                    className="w-full h-full rounded-[38px] overflow-y-auto select-none flex flex-col relative transition-colors duration-500 pt-7 scrollbar-none"
+                    style={{
+                      backgroundColor: design.palette.canvasBg,
+                      color: design.palette.textColor,
+                      fontFamily: design.typography.bodyFont,
+                    }}
+                  >
+                    {/* Mobile Header Bar */}
+                    <div className="border-b border-black/10 px-4 py-2.5 flex items-center justify-between bg-white/70 backdrop-blur-md sticky top-0 z-20">
+                      <div className="flex items-center gap-2">
+                        {studioLogo ? (
+                          <img src={studioLogo} alt={studioName} className="w-5 h-5 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-amber-600 text-white text-[9px] font-black flex items-center justify-center">
+                            {studioName.charAt(0)}
+                          </div>
+                        )}
+                        <span className="text-[11px] font-bold truncate max-w-[120px]">{studioName}</span>
+                      </div>
+                      <span className="text-[9px] font-mono opacity-60">
+                        {photos.length > 0 ? `${photos.length}P` : '114P'}
+                      </span>
+                    </div>
+
+                    {/* Mobile Hero Content */}
+                    {renderPresetContent(design, coupleName, eventDateFormatted, studioName, effectiveCoverPhoto, photos.length, true)}
+
+                    {/* Mobile Photo Grid */}
+                    <div className="p-3">
+                      {previewPhotos.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          {previewPhotos.slice(0, 4).map((url, idx) => (
+                            <div key={idx} className="aspect-square rounded-lg overflow-hidden bg-black/5 shadow-2xs">
+                              <img src={url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          {[1, 2, 3, 4].map((idx) => (
+                            <div key={idx} className="aspect-square rounded-lg bg-black/5 flex items-center justify-center text-[9px] opacity-40">
+                              Photo {idx}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Home Indicator Bar */}
+                    <div className="sticky bottom-1 left-0 right-0 py-2 flex justify-center pointer-events-none">
+                      <div className="w-28 h-1 bg-black/30 rounded-full" />
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* 5. Sample Photo Grid Preview */}
-                <div className="p-6 grid grid-cols-3 gap-3">
-                  {[1, 2, 3, 4, 5, 6].map((idx) => (
-                    <div key={idx} className="aspect-square rounded-xl bg-black/5 overflow-hidden shadow-2xs">
-                      <img
-                        src={`https://images.unsplash.com/photo-${1519741497674 + idx * 1000}?auto=format&fit=crop&w=400&q=80`}
-                        alt="Sample"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-              </div>
             </div>
-          )}
 
-          {/* MOBILE PHONE MOCKUP FRAME (iPhone 16 Pro Style) */}
-          {previewDevice === 'mobile' && (
-            <div className="w-[360px] h-[720px] bg-black rounded-[50px] p-3 shadow-2xl border-4 border-zinc-700 relative flex flex-col transition-all duration-300">
-              
-              {/* Dynamic Island Pill */}
-              <div className="absolute top-5 left-1/2 -translate-x-1/2 w-24 h-6 bg-black rounded-full z-30 flex items-center justify-between px-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-zinc-800" />
-                <div className="w-2.5 h-2.5 rounded-full bg-blue-900/40" />
-              </div>
-
-              {/* Screen Container */}
-              <div
-                className="w-full h-full rounded-[40px] overflow-hidden flex flex-col select-none overflow-y-auto"
-                style={{ backgroundColor: design.palette.canvasBg, color: design.palette.textColor }}
-              >
-                {/* Mobile Status Bar */}
-                <div className="pt-3 px-6 pb-1 flex items-center justify-between text-[11px] font-bold opacity-60">
-                  <span>9:41</span>
-                  <span>5G • 100%</span>
-                </div>
-
-                {/* Mobile Gallery Header */}
-                <div className="px-4 py-2 border-b border-black/10 flex items-center justify-between">
-                  <span className="text-xs font-bold truncate max-w-[150px]">{studioName}</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-black/5">
-                    Mobile View
-                  </span>
-                </div>
-
-                {/* Mobile Hero Render */}
-                <div className="relative overflow-hidden">
-                  {design.preset === 'royal_medallion' ? (
-                    <div className="py-8 px-4 text-center space-y-3 flex flex-col items-center">
-                      <div className="w-28 h-28 rounded-full overflow-hidden ring-4 ring-amber-400/30 shadow-xl">
-                        <img src={effectiveCoverPhoto} alt="Medallion" className="w-full h-full object-cover" />
-                      </div>
-                      <h2 className="text-2xl font-serif italic" style={{ fontFamily: design.typography.headingFont }}>
-                        {coupleName}
-                      </h2>
-                      <span className="text-[10px] font-mono opacity-60">{eventDateFormatted}</span>
-                    </div>
-                  ) : design.preset === 'haute_editorial' ? (
-                    <div className="py-6 px-4 text-center space-y-3 flex flex-col items-center">
-                      <h2 className="text-2xl font-black uppercase tracking-widest" style={{ fontFamily: design.typography.headingFont }}>
-                        {coupleName}
-                      </h2>
-                      <div className="w-40 h-52 rounded-sm overflow-hidden shadow-xl border-2 border-white">
-                        <img src={effectiveCoverPhoto} alt="Editorial" className="w-full h-full object-cover" />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="relative h-64 w-full flex items-center justify-center text-center p-4">
-                      <img src={effectiveCoverPhoto} alt="Cover" className="absolute inset-0 w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40" />
-                      <div className="relative z-10 text-white space-y-1">
-                        <span className="text-[9px] font-mono tracking-widest text-amber-300 uppercase">{eventDateFormatted}</span>
-                        <h2 className="text-2xl font-bold" style={{ fontFamily: design.typography.headingFont }}>
-                          {coupleName}
-                        </h2>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Mobile Sub-Events Bar */}
-                <div className="px-4 py-2 border-y border-black/10 flex items-center gap-3 text-[11px] font-bold overflow-x-auto whitespace-nowrap">
-                  <span className="text-amber-600">Highlights</span>
-                  <span className="opacity-50">Sangeet</span>
-                  <span className="opacity-50">Haldi</span>
-                  <span className="opacity-50">Wedding</span>
-                </div>
-
-                {/* Mobile Sample Photos */}
-                <div className="p-4 grid grid-cols-2 gap-2">
-                  {[1, 2, 3, 4].map((idx) => (
-                    <div key={idx} className="aspect-square rounded-xl bg-black/10 overflow-hidden">
-                      <img
-                        src={`https://images.unsplash.com/photo-${1519741497674 + idx * 1000}?auto=format&fit=crop&w=300&q=80`}
-                        alt="Sample"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          </div>
 
         </div>
       </div>
-
+      {/* Floating Action Toast Notification */}
+      {toastNotification && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-zinc-950 text-white shadow-2xl border border-white/15 animate-in fade-in slide-in-from-bottom-3 duration-300">
+          {toastNotification.type === 'loading' && <Loader2 className="w-4 h-4 animate-spin text-amber-400" />}
+          {toastNotification.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+          {toastNotification.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400" />}
+          {toastNotification.type === 'info' && <Sparkles className="w-4 h-4 text-amber-400" />}
+          <span className="text-xs font-bold tracking-wide">{toastNotification.text}</span>
+        </div>
+      )}
     </div>
   );
+}
+
+// ── SUB-RENDERER FOR THE 4 EXACT PRESET LAYOUTS ──
+function renderPresetContent(
+  design: GalleryDesignConfig,
+  coupleName: string,
+  eventDateFormatted: string,
+  studioName: string,
+  coverPhoto: string,
+  photoCount: number,
+  isMobile: boolean = false
+) {
+  const headingFont = design.typography.headingFont;
+  const countLabel = photoCount > 0 ? `${photoCount} PHOTOS` : '114 PHOTOS';
+
+  switch (design.preset) {
+    case 'cinematic_hero':
+    default:
+      return (
+        <div className={`relative ${isMobile ? 'h-72' : 'h-96'} w-full flex flex-col justify-between overflow-hidden text-center`}>
+          {coverPhoto ? (
+            <img
+              src={coverPhoto}
+              alt="Hero"
+              className="absolute inset-0 w-full h-full object-cover scale-100 transition-transform duration-1000"
+              style={{ objectPosition: `${design.cover?.focalPoint.x || 50}% ${design.cover?.focalPoint.y || 50}%` }}
+            />
+          ) : (
+            <div className="absolute inset-0 bg-zinc-900" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
+
+          {/* Top Bar inside image */}
+          <div className="relative z-10 px-4 py-3 flex items-center justify-between text-white/90 text-[10px] font-mono tracking-widest uppercase">
+            <span style={{ fontFamily: headingFont }}>{studioName}</span>
+            <span>{countLabel}</span>
+          </div>
+
+          {/* Bottom Typography */}
+          <div className="relative z-10 p-4 space-y-1 text-white">
+            <span className="text-[8px] font-mono uppercase tracking-[0.25em] text-amber-200 block font-semibold">
+              GALLERY BY {studioName.toUpperCase()}
+            </span>
+            <h2 className={`${isMobile ? 'text-2xl' : 'text-4xl'} font-normal tracking-tight text-white capitalize`} style={{ fontFamily: headingFont }}>
+              {coupleName}
+            </h2>
+            <span className="text-[10px] text-zinc-300 font-mono tracking-wider block">{eventDateFormatted}</span>
+            <div className="pt-2">
+              <ArrowDown className="w-3.5 h-3.5 mx-auto text-white/70 animate-bounce" />
+            </div>
+          </div>
+        </div>
+      );
+
+    case 'editorial_canvas':
+      return (
+        <div className={`p-6 text-center flex flex-col items-center justify-center space-y-4`}>
+          <div className="w-full flex items-center justify-between text-[9px] font-mono uppercase tracking-widest opacity-60">
+            <span>{studioName}</span>
+            <span>{countLabel}</span>
+          </div>
+
+          <h2
+            className={`${isMobile ? 'text-2xl tracking-[0.15em]' : 'text-5xl tracking-[0.2em]'} font-normal uppercase leading-tight`}
+            style={{ fontFamily: headingFont, color: design.palette.textColor }}
+          >
+            {coupleName}
+          </h2>
+
+          <div className={`${isMobile ? 'w-40 aspect-[3/4]' : 'w-56 aspect-[3/4]'} rounded-xs overflow-hidden shadow-xl border-2 border-white bg-black`}>
+            {coverPhoto && <img src={coverPhoto} alt="Artwork" className="w-full h-full object-cover" />}
+          </div>
+
+          <div className="text-[9px] font-mono tracking-widest uppercase opacity-60">
+            <span>{eventDateFormatted}</span>
+          </div>
+        </div>
+      );
+
+    case 'faded_luxe':
+      return (
+        <div className={`relative ${isMobile ? 'h-72' : 'h-96'} w-full flex flex-col justify-between overflow-hidden bg-white text-zinc-900`}>
+          {coverPhoto && (
+            <img src={coverPhoto} alt="Misty" className="absolute inset-0 w-full h-full object-cover opacity-35 filter brightness-105" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-white/40 to-white/95" />
+
+          <div className="relative z-10 px-4 py-3 flex items-center justify-between text-[9px] font-mono uppercase tracking-widest">
+            <span className="font-bold">{studioName}</span>
+            <span>{countLabel}</span>
+          </div>
+
+          <div className="relative z-10 p-4 text-center space-y-2 my-auto">
+            <div className="w-4 h-4 rounded-full border border-zinc-400 mx-auto" />
+            <span className="text-[8px] font-mono uppercase tracking-[0.25em] text-zinc-500 block font-semibold">
+              GALLERY BY {studioName.toUpperCase()}
+            </span>
+            <h2 className={`${isMobile ? 'text-2xl' : 'text-4xl'} font-normal uppercase leading-tight`} style={{ fontFamily: headingFont }}>
+              {coupleName}
+            </h2>
+            <span className="text-[10px] text-zinc-600 font-mono tracking-wider block">{eventDateFormatted}</span>
+          </div>
+
+          <div className="relative z-10 pb-3 flex flex-col items-center">
+            <ArrowDown className="w-3.5 h-3.5 text-zinc-500 animate-bounce" />
+          </div>
+        </div>
+      );
+
+    case 'split_atelier':
+      return (
+        <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} ${isMobile ? 'min-h-[280px]' : 'min-h-[340px]'} w-full border-b border-black/10`}>
+          <div className="p-5 flex flex-col justify-between space-y-3">
+            <div className="flex items-center justify-between text-[8px] font-mono uppercase tracking-widest opacity-60">
+              <span className="font-bold">{studioName}</span>
+              <span>{countLabel}</span>
+            </div>
+
+            <div className="my-auto space-y-1">
+              <span className="text-[8px] font-mono uppercase tracking-[0.25em] opacity-60 block font-bold">
+                GALLERY BY {studioName.toUpperCase()}
+              </span>
+              <h2 className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold uppercase`} style={{ fontFamily: headingFont }}>
+                {coupleName}
+              </h2>
+              <span className="text-[9px] font-mono opacity-70 block">{eventDateFormatted}</span>
+            </div>
+
+            <div>
+              <ArrowDown className="w-3.5 h-3.5 opacity-60 animate-bounce" />
+            </div>
+          </div>
+
+          <div className="overflow-hidden bg-zinc-900 min-h-[160px]">
+            {coverPhoto && <img src={coverPhoto} alt="Artwork" className="w-full h-full object-cover" />}
+          </div>
+        </div>
+      );
+  }
 }

@@ -45,6 +45,7 @@ export interface GallerySettings {
   cover_focal_point: { x: number; y: number };
   cover_zoom: number;
   cover_overlay_opacity: number;
+  gallery_design?: any;
 }
 
 const DEFAULT_GALLERY_SETTINGS: GallerySettings = {
@@ -146,6 +147,7 @@ export async function GET(req: NextRequest) {
         ...DEFAULT_GALLERY_SETTINGS.cover_focal_point,
         ...(savedGallerySettings?.cover_focal_point || {}),
       },
+      gallery_design: (savedGallerySettings as any)?.gallery_design || wsRow?.config?.gallery_design || null,
     };
 
     return NextResponse.json({ success: true, settings: mergedSettings });
@@ -184,13 +186,17 @@ export async function POST(req: NextRequest) {
       }
     } catch (_) {}
 
-    const updatedConfig = {
+    const updatedConfig: Record<string, any> = {
       ...existingConfig,
       gallery_settings: {
         ...(existingConfig.gallery_settings || {}),
         ...settings,
       },
     };
+
+    if (settings?.gallery_design || body?.gallery_design) {
+      updatedConfig.gallery_design = settings?.gallery_design || body?.gallery_design;
+    }
 
     // 2. Upsert into workspace_settings table
     const { error: upsertErr } = await supabaseAdmin

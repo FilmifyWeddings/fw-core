@@ -55,7 +55,12 @@ async function enrichGalleryBranding(single: any) {
 
       const ws = wsRes.data;
       const prof = profRes.data;
-      const galSettings = wsSettingsRes?.data?.config?.gallery_settings || {};
+      const wsConfig = wsSettingsRes?.data?.config || {};
+      const galSettings = wsConfig?.gallery_settings || {};
+      const eventDesigns = wsConfig?.event_designs || {};
+      const globalDesign = wsConfig?.gallery_design || null;
+      const effectiveDesign = (single.id && eventDesigns[single.id]) || (single as any).raw_payload?.design || globalDesign || null;
+      (single as any)._resolved_design = effectiveDesign;
       const prefs = prof?.leads_table_preferences || {};
       const invoiceCompanyName = prefs?.invoice_company_name;
 
@@ -123,6 +128,10 @@ async function enrichGalleryBranding(single: any) {
 
   return {
     ...single,
+    raw_payload: {
+      ...((single as any).raw_payload || {}),
+      design: (single as any)._resolved_design || null,
+    },
     cover_url: formatCoverUrl(single.cover_url),
     is_face_ai_enabled: resolveIsFaceAiEnabled(single),
     studio_slug: studioSlug,
@@ -132,6 +141,7 @@ async function enrichGalleryBranding(single: any) {
     studio_branding: {
       studio_name: studioDisplayName,
       studio_subtitle: studioTagline,
+      subtitle: studioTagline,
       studio_slug: studioSlug,
       logo_url: studioLogo,
       tagline: studioTagline,
@@ -322,6 +332,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: error.message, galleries: [], events: [] }, { status: 200 });
     }
 
+    // Fetch studio designs from workspace_settings
+    let studioGlobalDesign: any = null;
+    let studioEventDesigns: Record<string, any> = {};
+    if (effectiveWorkspaceId) {
+      try {
+        const { data: wsRow } = await supabaseAdmin
+          .from('workspace_settings')
+          .select('config')
+          .eq('workspace_id', effectiveWorkspaceId)
+          .maybeSingle();
+        if (wsRow?.config) {
+          studioGlobalDesign = wsRow.config.gallery_design || null;
+          studioEventDesigns = wsRow.config.event_designs || {};
+        }
+      } catch (_) {}
+    }
+
     // Calculate aggregated metrics
     const enriched = (galleries || []).map((g) => {
       const photos = g.gallery_photos || [];
@@ -338,8 +365,14 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      const assignedDesign = studioEventDesigns[g.id] || (g as any).raw_payload?.design || studioGlobalDesign || null;
+
       return {
         ...g,
+        raw_payload: {
+          ...((g as any).raw_payload || {}),
+          design: assignedDesign,
+        },
         cover_url: resolvedCover,
         photo_count: totalPhotos,
         total_size_bytes: totalBytes,
@@ -500,6 +533,42 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
+    // 1. Persistent storage of visual design into workspace_settings (fail-safe for schema cache)
+    const incomingDesign = raw_payload?.design || body.design;
+    if (incomingDesign) {
+      try {
+        let wsId = workspace_id || auth.userId;
+        if (!wsId) {
+          const { data: curGal } = await supabaseAdmin.from('event_galleries').select('workspace_id').eq('id', id).maybeSingle();
+          wsId = curGal?.workspace_id;
+        }
+        if (wsId) {
+          const { data: curWs } = await supabaseAdmin
+            .from('workspace_settings')
+            .select('config')
+            .eq('workspace_id', wsId)
+            .maybeSingle();
+
+          const curConfig = curWs?.config || {};
+          const eventDesigns = { ...(curConfig.event_designs || {}) };
+          eventDesigns[id] = incomingDesign;
+
+          await supabaseAdmin
+            .from('workspace_settings')
+            .upsert({
+              workspace_id: wsId,
+              config: {
+                ...curConfig,
+                event_designs: eventDesigns,
+              },
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'workspace_id' });
+        }
+      } catch (wsErr) {
+        console.warn('[PATCH /api/gallery/events] Design persistence warning:', wsErr);
+      }
+    }
+
     const updates: Record<string, any> = {};
     if (title !== undefined) updates.title = title.trim();
     if (event_date !== undefined) updates.event_date = event_date;
@@ -510,7 +579,6 @@ export async function PATCH(req: NextRequest) {
     if (cover_url !== undefined) updates.cover_url = cover_url;
     if (event_type !== undefined) updates.event_type = event_type;
     if (is_face_ai_enabled !== undefined) updates.is_face_ai_enabled = is_face_ai_enabled;
-    if (raw_payload !== undefined) updates.raw_payload = raw_payload;
 
     let { data: updated, error } = await supabaseAdmin
       .from('event_galleries')
@@ -545,6 +613,13 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (error) throw error;
+
+    if (updated) {
+      updated.raw_payload = {
+        ...(updated.raw_payload || {}),
+        design: incomingDesign || updated.raw_payload?.design,
+      };
+    }
 
     // If Face AI was toggled ON, automatically trigger background face indexing for any unindexed photos in this event
     if (is_face_ai_enabled === true && id) {
