@@ -187,3 +187,53 @@ export function SparkleStar({ className = 'w-3.5 h-3.5 text-amber-300' }: { clas
     </svg>
   );
 }
+
+/**
+ * 4. WASHI TAPE (From User Photo 1: Vintage Scrapbook)
+ * Realistic semi-transparent frosted adhesive masking tape with torn edges.
+ */
+export function WashiTape({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={`h-6 sm:h-7 w-24 sm:w-32 bg-amber-50/75 backdrop-blur-[2px] border-y border-amber-200/40 shadow-xs pointer-events-none select-none ${className}`}
+      style={{
+        backgroundImage:
+          'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,0.25) 4px, rgba(255,255,255,0.25) 8px)',
+        clipPath: 'polygon(0% 4%, 3% 0%, 97% 0%, 100% 4%, 99% 96%, 96% 100%, 4% 100%, 0% 96%)',
+      }}
+    />
+  );
+}
+
+/**
+ * 5. HAND-DRAWN OVAL DATE STAMP (From User Photo 1: Vintage Scrapbook)
+ * Authentic hand-sketched looping double oval surrounding the event date.
+ */
+export function HandDrawnOval({
+  className = '',
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`relative inline-flex items-center justify-center px-5 py-2 ${className}`}>
+      <svg
+        viewBox="0 0 220 70"
+        fill="none"
+        preserveAspectRatio="none"
+        className="absolute inset-0 w-full h-full pointer-events-none"
+      >
+        <path
+          d="M 22,35 C 22,14 198,12 198,35 C 198,58 18,60 18,34 C 18,18 180,18 206,32"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className="relative z-10">{children}</span>
+    </div>
+  );
+}
+

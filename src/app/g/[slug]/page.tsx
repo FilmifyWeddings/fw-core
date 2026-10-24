@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { parseCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
-import { SparkleStar } from '@/components/gallery/CoverPresetEffects';
+import { SparkleStar, WashiTape, HandDrawnOval } from '@/components/gallery/CoverPresetEffects';
 import {
   Camera,
   Sparkles,
@@ -1282,6 +1282,8 @@ function GuestSlugGalleryContent() {
           'royal_medallion',
           'grand_diptych',
           'monochrome_portal',
+          'vintage_scrapbook',
+          'grand_maison',
         ].includes(designPreset))) && (
           <div className="relative min-h-[85vh] sm:min-h-[92vh] w-full flex flex-col justify-between overflow-hidden">
             {/* Desktop Hero Image with Auto Cinematic Zoom & Exact Focal Position */}
@@ -1624,6 +1626,234 @@ function GuestSlugGalleryContent() {
             </div>
           </div>
         )}
+
+        {/* PRESET 7: VINTAGE SCRAPBOOK (Photo 1: Tilted Polaroid, Washi Tape, Script Calligraphy & Circled Date) */}
+        {designPreset === 'vintage_scrapbook' && (
+          <div className="relative min-h-[88vh] sm:min-h-[95vh] w-full flex flex-col justify-between overflow-hidden bg-[#FAF7F2] text-zinc-900 px-4 sm:px-8 py-6 sm:py-10">
+            {/* Subtle Paper Grain Effect */}
+            <div
+              className="absolute inset-0 opacity-[0.035] pointer-events-none"
+              style={{
+                backgroundImage: `radial-gradient(#18181b 1px, transparent 1px)`,
+                backgroundSize: '16px 16px',
+              }}
+            />
+
+            {/* Top Header Row */}
+            <div className="relative z-10 w-full max-w-6xl mx-auto flex items-start justify-between">
+              <div className="space-y-0.5">
+                <span className="text-xs sm:text-sm font-mono uppercase tracking-[0.28em] text-zinc-600 font-bold block">
+                  {studioName}
+                </span>
+                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-zinc-400 block">
+                  PHOTOGRAPHY &amp; FILMS
+                </span>
+              </div>
+              <div className="text-right leading-none space-y-0.5">
+                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.25em] text-zinc-400 block font-bold">
+                  OUR
+                </span>
+                <span
+                  className="text-3xl sm:text-5xl font-normal block text-[#8B1E1E]"
+                  style={{ fontFamily: "'Great Vibes', cursive" }}
+                >
+                  Forever
+                </span>
+                <span className="text-[9px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-zinc-600 block font-semibold">
+                  WEDDING CHAPTER
+                </span>
+              </div>
+            </div>
+
+            {/* Centerpiece Scrapbook Collage */}
+            <div className="relative z-10 my-auto w-full max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-around gap-8 sm:gap-12 lg:gap-16 py-6 sm:py-10">
+              {/* Left Side: Romantic Wedding Vows & Circled Date Stamp */}
+              <div className="order-2 lg:order-1 text-center lg:text-left max-w-md space-y-6 animate-in fade-in slide-in-from-left-6 duration-1000">
+                <p className="text-sm sm:text-base md:text-lg text-zinc-600 font-serif leading-relaxed italic">
+                  &ldquo;Every single chapter written with love, laughter, and timeless devotion. A celebration of two hearts becoming one forever.&rdquo;
+                </p>
+
+                {/* Authentic Hand-Drawn Circled Date Stamp (From User Photo 1) */}
+                <div className="flex justify-center lg:justify-start">
+                  <HandDrawnOval className="text-[#8B1E1E]">
+                    <span className="text-base sm:text-lg md:text-xl font-mono tracking-widest text-[#8B1E1E] font-bold">
+                      {formattedDate}
+                    </span>
+                  </HandDrawnOval>
+                </div>
+              </div>
+
+              {/* Right Side: The Tilted Polaroid Photo Card with Washi Tape and Cursive Overlay */}
+              <div className="order-1 lg:order-2 relative animate-in fade-in zoom-in-95 duration-1000">
+                <div className="relative bg-white p-3.5 sm:p-5 pb-10 sm:pb-14 shadow-[0_25px_60px_rgba(0,0,0,0.22)] border border-stone-200/80 transform rotate-2 sm:rotate-3 hover:rotate-0 transition-transform duration-700 w-64 sm:w-80 md:w-96">
+                  {/* Frosted Translucent Washi Tape Across Top-Left Corner */}
+                  <div className="absolute -top-4 sm:-top-5 left-4 sm:left-6 z-30">
+                    <WashiTape className="transform -rotate-12" />
+                  </div>
+
+                  {/* Romantic Hand-lettered Cursive Script Overlay Over Photo Corner */}
+                  <div className="absolute -top-6 sm:-top-8 -left-6 sm:-left-10 z-40 select-none pointer-events-none transform -rotate-6">
+                    <span
+                      className="text-3xl sm:text-5xl text-[#8B1E1E] drop-shadow-sm block whitespace-nowrap"
+                      style={{ fontFamily: "'Great Vibes', cursive" }}
+                    >
+                      te amo siempre
+                    </span>
+                  </div>
+
+                  {/* Polaroid Photo with Focal Point & Auto Scale */}
+                  <div className="w-full aspect-[4/5] bg-stone-900 overflow-hidden relative">
+                    {cleanCoverUrl ? (
+                      <>
+                        <img
+                          src={cleanCoverUrl}
+                          alt={gallery.title}
+                          className="hidden sm:block w-full h-full object-cover transition-transform duration-1000 hover:scale-103"
+                          style={{
+                            objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                            transform: `scale(${coverPos.desktop.zoom / 100})`,
+                          }}
+                        />
+                        <img
+                          src={cleanCoverUrl}
+                          alt={gallery.title}
+                          className="block sm:hidden w-full h-full object-cover transition-transform duration-1000 hover:scale-103"
+                          style={{
+                            objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                            transform: `scale(${coverPos.mobile.zoom / 100})`,
+                          }}
+                        />
+                      </>
+                    ) : (
+                      <div className="w-full h-full bg-stone-200" />
+                    )}
+                  </div>
+
+                  {/* Bottom Polaroid Caption: Couple Title */}
+                  <div className="pt-4 text-center">
+                    <h1
+                      className="text-xl sm:text-3xl text-zinc-800 tracking-wide font-normal capitalize"
+                      style={{ fontFamily: headingFont }}
+                    >
+                      {gallery.title}
+                    </h1>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Attribution & Navigation Scroll Arrow */}
+            <div className="relative z-10 w-full pt-4 flex flex-col items-center justify-center space-y-2 text-center">
+              <div className="flex items-center gap-2 text-[10px] sm:text-xs font-mono uppercase tracking-[0.28em] text-zinc-500">
+                <span>GALLERY BY {studioName.toUpperCase()}</span>
+                {totalPhotosCount > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>{totalPhotosCount} PHOTOS</span>
+                  </>
+                )}
+              </div>
+              <a
+                href="#sub-events-bar"
+                className="inline-flex flex-col items-center gap-1 text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer group"
+              >
+                <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform animate-bounce" />
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 8: GRAND MAISON (Photo 2: High-Fashion Editorial Cover with Massive Overlapping Title) */}
+        {designPreset === 'grand_maison' && (() => {
+          const isCustomBg = designPalette.canvasBg && designPalette.canvasBg !== '#FAF9F5';
+          const bgColor = isCustomBg ? designPalette.canvasBg : '#540B13';
+          const textColor = isCustomBg ? designPalette.textColor : '#FAF7F2';
+
+          return (
+            <div
+              className="relative min-h-[88vh] sm:min-h-[96vh] w-full flex flex-col justify-between items-center overflow-hidden px-4 sm:px-8 py-6 sm:py-10 transition-colors duration-500"
+              style={{ backgroundColor: bgColor, color: textColor }}
+            >
+              {/* Top Header / Studio Brand */}
+              <div className="relative z-10 w-full max-w-6xl mx-auto flex items-center justify-between text-xs sm:text-sm font-mono uppercase tracking-[0.32em] opacity-85">
+                <span>{studioName}</span>
+                <span className="hidden sm:inline font-bold">EDITION D&apos;ART</span>
+                <span>{totalPhotosCount > 0 ? `${totalPhotosCount} PHOTOS` : 'ARCHIVE'}</span>
+              </div>
+
+              {/* Centerpiece: Centered Vertical Portrait Artwork Flanked by Fine Art Quotes */}
+              <div className="relative z-10 my-auto w-full max-w-6xl mx-auto flex items-center justify-between sm:justify-around px-2">
+                {/* Left Fine Art Quote */}
+                <div className="hidden md:flex flex-col items-center text-center space-y-2 opacity-80 max-w-[180px] animate-in fade-in slide-in-from-left-4 duration-1000">
+                  <span className="text-xs lg:text-sm font-serif uppercase tracking-widest leading-relaxed">
+                    Creating your timeless love story
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-current opacity-60" />
+                </div>
+
+                {/* Centered Vertical Portrait Frame (3:4 aspect ratio) */}
+                <div className="relative w-64 sm:w-80 md:w-96 aspect-[3/4] shadow-[0_35px_80px_rgba(0,0,0,0.7)] overflow-hidden bg-stone-900 border border-white/20 animate-in fade-in zoom-in-95 duration-1000">
+                  {cleanCoverUrl ? (
+                    <>
+                      <img
+                        src={cleanCoverUrl}
+                        alt={gallery.title}
+                        className="hidden sm:block w-full h-full object-cover transition-transform duration-1000 hover:scale-103"
+                        style={{
+                          objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                          transform: `scale(${coverPos.desktop.zoom / 100})`,
+                        }}
+                      />
+                      <img
+                        src={cleanCoverUrl}
+                        alt={gallery.title}
+                        className="block sm:hidden w-full h-full object-cover transition-transform duration-1000 hover:scale-103"
+                        style={{
+                          objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                          transform: `scale(${coverPos.mobile.zoom / 100})`,
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <div className="w-full h-full bg-stone-800" />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+                </div>
+
+                {/* Right Fine Art Quote */}
+                <div className="hidden md:flex flex-col items-center text-center space-y-2 opacity-80 max-w-[180px] animate-in fade-in slide-in-from-right-4 duration-1000">
+                  <span className="text-xs lg:text-sm font-serif uppercase tracking-widest leading-relaxed">
+                    Fine art wedding photography &amp; film
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-current opacity-60" />
+                </div>
+              </div>
+
+              {/* Bottom Massive Haute-Couture Serif Typography (Overlapping lower section of photo) */}
+              <div className="relative z-20 w-full text-center -mt-8 sm:-mt-14 md:-mt-20 px-2 space-y-2">
+                <h1
+                  className="text-4xl sm:text-7xl md:text-8xl lg:text-9xl font-serif tracking-[0.1em] sm:tracking-[0.16em] uppercase font-normal drop-shadow-2xl leading-none animate-in fade-in slide-in-from-bottom-6 duration-1000"
+                  style={{ fontFamily: headingFont }}
+                >
+                  {gallery.title}
+                </h1>
+                <div className="flex items-center justify-center gap-3 text-xs sm:text-sm font-mono tracking-widest uppercase opacity-75 pt-2">
+                  <span>{formattedDate}</span>
+                  <span>•</span>
+                  <span>CINEMATIC ARCHIVE</span>
+                </div>
+                <div className="pt-2">
+                  <a
+                    href="#sub-events-bar"
+                    className="inline-flex flex-col items-center gap-1 opacity-75 hover:opacity-100 transition-opacity cursor-pointer group"
+                  >
+                    <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform animate-bounce" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       </div>
 

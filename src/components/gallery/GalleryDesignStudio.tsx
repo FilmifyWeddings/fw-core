@@ -27,14 +27,16 @@ import {
   Camera,
 } from 'lucide-react';
 import { parseCoverUrl, buildCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
-import { SparkleStar } from '@/components/gallery/CoverPresetEffects';
+import { SparkleStar, WashiTape, HandDrawnOval } from '@/components/gallery/CoverPresetEffects';
 
 export type PresetId =
   | 'cinematic_hero'
   | 'editorial_canvas'
   | 'faded_luxe'
   | 'split_atelier'
-  | 'monochrome_portal';
+  | 'monochrome_portal'
+  | 'vintage_scrapbook'
+  | 'grand_maison';
 
 export interface GalleryDesignConfig {
   preset: PresetId;
@@ -122,6 +124,20 @@ const PRESETS: PresetItem[] = [
     subtitle: 'Modern Diptych Pair',
     tag: 'Modern Asymmetric',
     description: 'Split canvas with bold left editorial copy and right large framed portrait artwork.',
+  },
+  {
+    id: 'vintage_scrapbook',
+    name: 'Vintage Scrapbook',
+    subtitle: 'Polaroid & Romance Notes',
+    tag: 'Scrapbook Keepsake',
+    description: 'Rotated polaroid photo card with frosted tape, crimson script calligraphy, and hand-drawn circled date.',
+  },
+  {
+    id: 'grand_maison',
+    name: 'Grand Maison',
+    subtitle: 'High-Fashion Editorial Cover',
+    tag: 'Vogue Haute Couture',
+    description: 'Statuesque vertical portrait flanked by fine art quotes and a massive bottom luxury serif headline.',
   },
 ];
 
@@ -504,6 +520,8 @@ export default function GalleryDesignStudio({
         'faded_luxe',
         'split_atelier',
         'monochrome_portal',
+        'vintage_scrapbook',
+        'grand_maison',
       ].includes(raw.preset)) {
         presetKey = raw.preset;
       } else if (raw.preset === 'cinematic_bleed' || raw.preset === 'torn_paper_edge' || raw.preset === 'flowing_silk_veil') {
@@ -1146,6 +1164,69 @@ export default function GalleryDesignStudio({
                                 )}
                               </div>
                               <span className="relative z-10 text-[7px] font-serif text-white capitalize font-semibold drop-shadow-sm">{coupleName}</span>
+                            </div>
+                          )}
+
+                          {preset.id === 'vintage_scrapbook' && (
+                            <div className="absolute inset-0 bg-[#FAF7F2] p-2 flex flex-col justify-between overflow-hidden">
+                              <div className="flex justify-between items-start">
+                                <span className="text-[5px] font-mono tracking-widest text-stone-500 uppercase">{studioName.slice(0, 8)}</span>
+                                <div className="text-right">
+                                  <span className="text-[5px] font-mono block text-stone-400">OUR</span>
+                                  <span className="text-[7px] font-serif text-[#8B1E1E] italic leading-none block">Forever</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between gap-1 my-auto">
+                                <div className="text-[5px] text-stone-500 font-serif leading-tight max-w-[40px]">
+                                  <span>Timeless vows</span>
+                                  <div className="mt-1 px-1 py-0.5 rounded-full border border-[#8B1E1E] text-[5px] text-[#8B1E1E] font-mono inline-block">
+                                    {eventDateFormatted.slice(0, 6)}
+                                  </div>
+                                </div>
+                                <div className="relative w-14 h-18 bg-white p-1 pb-2 shadow-md rotate-3 border border-stone-200/60 shrink-0">
+                                  <div className="absolute -top-1 left-1 w-5 h-1.5 bg-amber-100/90 -rotate-12 border-t border-amber-200/50" />
+                                  <div className="w-full h-full bg-stone-900 overflow-hidden">
+                                    {coverPositioning.url && (
+                                      <img
+                                        src={coverPositioning.url}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                        style={{
+                                          objectPosition: `${coverPositioning.desktop.x}% ${coverPositioning.desktop.y}%`,
+                                        }}
+                                      />
+                                    )}
+                                  </div>
+                                  <span className="absolute -top-1.5 left-2 text-[6px] font-serif italic text-[#8B1E1E] drop-shadow-xs">always</span>
+                                </div>
+                              </div>
+                              <span className="text-[5px] font-mono text-center text-stone-400">{coupleName}</span>
+                            </div>
+                          )}
+
+                          {preset.id === 'grand_maison' && (
+                            <div className="absolute inset-0 bg-[#540B13] p-1.5 flex flex-col items-center justify-between overflow-hidden text-white">
+                              <span className="text-[6px] font-mono tracking-[0.2em] uppercase opacity-75">{studioName.slice(0, 8)}</span>
+                              <div className="relative my-auto flex items-center justify-center w-full">
+                                <span className="text-[5px] opacity-60 tracking-widest uppercase mr-1">fine art •</span>
+                                <div className="w-12 h-16 bg-stone-900 shadow-xl overflow-hidden border border-white/20 shrink-0">
+                                  {coverPositioning.url && (
+                                    <img
+                                      src={coverPositioning.url}
+                                      alt=""
+                                      className="w-full h-full object-cover"
+                                      style={{
+                                        objectPosition: `${coverPositioning.desktop.x}% ${coverPositioning.desktop.y}%`,
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                                <span className="text-[5px] opacity-60 tracking-widest uppercase ml-1">• cinema</span>
+                              </div>
+                              <div className="w-full text-center relative z-10 -mt-2">
+                                <div className="text-[8px] font-serif uppercase tracking-[0.12em] font-light truncate drop-shadow-md">{coupleName}</div>
+                                <span className="text-[5px] font-mono opacity-60">{eventDateFormatted}</span>
+                              </div>
                             </div>
                           )}
 
@@ -2249,5 +2330,203 @@ function renderPresetContent(
           </div>
         </div>
       );
+
+    case 'vintage_scrapbook':
+      return (
+        <div
+          className={`relative ${
+            isMobile ? 'min-h-[480px] p-4' : 'min-h-[540px] p-8'
+          } w-full flex flex-col justify-between overflow-hidden bg-[#FAF7F2] text-zinc-900 border-b border-black/10`}
+        >
+          {/* Subtle Paper Grain Effect */}
+          <div
+            className="absolute inset-0 opacity-[0.035] pointer-events-none"
+            style={{
+              backgroundImage: `radial-gradient(#18181b 1px, transparent 1px)`,
+              backgroundSize: '16px 16px',
+            }}
+          />
+
+          {/* Top Header Row */}
+          <div className="relative z-10 w-full flex items-start justify-between">
+            <span className="text-[9px] font-mono uppercase tracking-[0.25em] text-zinc-500 font-semibold">
+              {studioName}
+            </span>
+            <div className="text-right leading-none space-y-0.5">
+              <span className="text-[8px] font-mono uppercase tracking-[0.2em] text-zinc-400 block font-bold">OUR</span>
+              <span
+                className="text-2xl sm:text-3xl font-normal block text-[#8B1E1E]"
+                style={{ fontFamily: "'Great Vibes', cursive" }}
+              >
+                Forever
+              </span>
+              <span className="text-[7px] font-mono uppercase tracking-[0.25em] text-zinc-600 block font-semibold">
+                CHAPTER
+              </span>
+            </div>
+          </div>
+
+          {/* Centerpiece Scrapbook Collage */}
+          <div className={`relative z-10 my-auto ${isMobile ? 'flex flex-col items-center gap-5' : 'flex items-center justify-around gap-6'}`}>
+            {/* Left Romantic Note & Circled Date */}
+            <div className={`${isMobile ? 'text-center order-2 max-w-xs' : 'text-left max-w-[220px]'} space-y-3`}>
+              <p className="text-[11px] sm:text-xs text-zinc-600 font-serif leading-relaxed italic">
+                &ldquo;Every single chapter written with love, laughter, and timeless devotion.&rdquo;
+              </p>
+              <div className="pt-1">
+                <HandDrawnOval className="text-[#8B1E1E]">
+                  <span className="text-xs sm:text-sm font-mono tracking-widest text-[#8B1E1E] font-bold">
+                    {eventDateFormatted}
+                  </span>
+                </HandDrawnOval>
+              </div>
+            </div>
+
+            {/* Right Tilted Polaroid Photo Card with Washi Tape and Cursive Script */}
+            <div className={`relative ${isMobile ? 'order-1' : ''}`}>
+              {/* The White Bordered Photo Card */}
+              <div
+                className={`relative bg-white p-2.5 sm:p-3.5 pb-7 sm:pb-9 shadow-[0_22px_45px_rgba(0,0,0,0.18)] border border-stone-200/70 transform rotate-3 sm:rotate-4 hover:rotate-1 transition-transform duration-500 ${
+                  isMobile ? 'w-48 sm:w-56' : 'w-56 sm:w-64'
+                }`}
+              >
+                {/* Frosted Washi Tape Top-Left */}
+                <div className="absolute -top-3 left-4 z-30">
+                  <WashiTape className="transform -rotate-12" />
+                </div>
+
+                {/* Hand-lettered Cursive Script Overlay */}
+                <div className="absolute -top-4 -left-6 z-40 select-none pointer-events-none transform -rotate-6">
+                  <span
+                    className="text-2xl sm:text-3xl text-[#8B1E1E] drop-shadow-xs block whitespace-nowrap"
+                    style={{ fontFamily: "'Great Vibes', cursive" }}
+                  >
+                    te amo siempre
+                  </span>
+                </div>
+
+                {/* Artwork Photo */}
+                <div className="w-full aspect-[4/5] bg-stone-900 overflow-hidden relative">
+                  {coverPos.url ? (
+                    <img
+                      src={coverPos.url}
+                      alt="Scrapbook Memory"
+                      className="w-full h-full object-cover"
+                      style={{
+                        objectPosition: `${focalX}% ${focalY}%`,
+                        transformOrigin: `${focalX}% ${focalY}%`,
+                        transform: `scale(${zoom / 100})`,
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-stone-200" />
+                  )}
+                </div>
+
+                {/* Polaroid Bottom Caption */}
+                <div className="pt-2 text-center">
+                  <span
+                    className="text-base sm:text-lg text-zinc-800 tracking-wide font-normal capitalize truncate block"
+                    style={{ fontFamily: headingFont }}
+                  >
+                    {coupleName}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Studio Attribution & Scroll Indicator */}
+          <div className="relative z-10 w-full pt-2 flex flex-col items-center justify-center space-y-1 text-center">
+            <span className="text-[8px] font-mono uppercase tracking-[0.25em] text-zinc-400">
+              GALLERY BY {studioName.toUpperCase()}
+            </span>
+            <ArrowDown className="w-3.5 h-3.5 text-zinc-400 animate-bounce" />
+          </div>
+        </div>
+      );
+
+    case 'grand_maison': {
+      const bgColor = design.palette.canvasBg && design.palette.canvasBg !== '#FAF9F5' ? design.palette.canvasBg : '#540B13';
+      const textColor = design.palette.textColor && design.palette.textColor !== '#18181B' ? design.palette.textColor : '#FAF7F2';
+
+      return (
+        <div
+          className={`relative ${
+            isMobile ? 'min-h-[500px] p-4' : 'min-h-[580px] p-8'
+          } w-full flex flex-col justify-between items-center overflow-hidden transition-colors duration-500`}
+          style={{ backgroundColor: bgColor, color: textColor }}
+        >
+          {/* Top Header / Studio Brand */}
+          <div className="relative z-10 w-full flex items-center justify-between text-[9px] sm:text-[10px] font-mono uppercase tracking-[0.3em] opacity-85">
+            <span>{studioName}</span>
+            <span className="hidden sm:inline font-bold">EDITION D&apos;ART</span>
+            <span>{countLabel}</span>
+          </div>
+
+          {/* Center Visual: Portrait Image flanked by fine art quotes */}
+          <div className="relative z-10 my-auto w-full max-w-4xl flex items-center justify-between sm:justify-around px-2">
+            {/* Left Fine Art Quote */}
+            <div className="hidden sm:flex flex-col items-center text-center space-y-1.5 opacity-80 max-w-[140px]">
+              <span className="text-[9px] font-serif uppercase tracking-widest leading-relaxed">
+                Creating your timeless love story
+              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
+            </div>
+
+            {/* Centered Vertical Portrait Frame (3:4 or 4:5 aspect ratio) */}
+            <div
+              className={`relative ${
+                isMobile ? 'w-44 aspect-[3/4]' : 'w-60 sm:w-72 aspect-[3/4]'
+              } shadow-[0_25px_60px_rgba(0,0,0,0.6)] overflow-hidden bg-stone-900 border border-white/20`}
+            >
+              {coverPos.url ? (
+                <img
+                  src={coverPos.url}
+                  alt="Editorial Portrait"
+                  className="w-full h-full object-cover transition-transform duration-1000 ease-out"
+                  style={{
+                    objectPosition: `${focalX}% ${focalY}%`,
+                    transformOrigin: `${focalX}% ${focalY}%`,
+                    transform: `scale(${zoom / 100})`,
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full bg-zinc-800" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none" />
+            </div>
+
+            {/* Right Fine Art Quote */}
+            <div className="hidden sm:flex flex-col items-center text-center space-y-1.5 opacity-80 max-w-[140px]">
+              <span className="text-[9px] font-serif uppercase tracking-widest leading-relaxed">
+                Fine art wedding photography &amp; film
+              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
+            </div>
+          </div>
+
+          {/* Bottom Massive Haute-Couture Serif Typography (Overlapping lower section of photo) */}
+          <div className="relative z-20 w-full text-center -mt-6 sm:-mt-10 px-2 space-y-1">
+            <h2
+              className={`${
+                isMobile ? 'text-3xl sm:text-4xl' : 'text-5xl sm:text-6xl md:text-7xl'
+              } font-serif tracking-[0.14em] sm:tracking-[0.2em] uppercase font-normal drop-shadow-xl leading-none truncate`}
+              style={{ fontFamily: headingFont }}
+            >
+              {coupleName}
+            </h2>
+            <div className="flex items-center justify-center gap-2 text-[9px] font-mono tracking-widest uppercase opacity-75 pt-1">
+              <span>{eventDateFormatted}</span>
+              <span>•</span>
+              <span>CINEMATIC ARCHIVE</span>
+            </div>
+            <div className="pt-2">
+              <ArrowDown className="w-3.5 h-3.5 mx-auto opacity-70 animate-bounce" />
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
 }
