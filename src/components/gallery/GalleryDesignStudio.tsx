@@ -731,21 +731,44 @@ export default function GalleryDesignStudio({
     });
   }, [coverPositioning]);
 
-  // Real photos list to display in the live preview (up to 20 for rich scroll simulation)
+  // Real photos list to display in the live preview (20 photos for rich scroll simulation)
   const previewPhotos = useMemo(() => {
     if (photos && photos.length > 0) {
       const urls = photos.map((p) => p.preview_url || p.thumbnail_url || p.url).filter(Boolean);
-      if (urls.length === 0) return [];
-      if (urls.length >= 20) return urls.slice(0, 20);
-      const repeated: string[] = [];
-      while (repeated.length < 20) {
-        for (const u of urls) {
-          if (repeated.length < 20) repeated.push(u);
+      if (urls.length > 0) {
+        if (urls.length >= 20) return urls.slice(0, 20);
+        const repeated: string[] = [];
+        while (repeated.length < 20) {
+          for (const u of urls) {
+            if (repeated.length < 20) repeated.push(u);
+          }
         }
+        return repeated;
       }
-      return repeated;
     }
-    return [];
+    // High-resolution curated wedding photo collection (20 photos) for instant live layout simulation
+    return [
+      'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1532712938310-34cb3982ef74?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1544077960-604201fe74bc?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1537633552985-df8429e8048b?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1529636798458-92182e662485?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1524824267900-2fa9cbf7a506?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1587271407850-8d438ca9fdf2?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1591604466107-ec97de577aff?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1469371670807-013ccf25f16a?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1545232979-8bf68ee9b1af?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=600&q=80',
+    ];
   }, [photos]);
 
   // Update theme mode when palette changes
@@ -1247,13 +1270,14 @@ export default function GalleryDesignStudio({
                           )}
 
                           {preset.id === 'faded_luxe' && (
-                            <div className="absolute inset-0 bg-white/70 text-zinc-900 p-2 flex flex-col items-center justify-center space-y-1">
-                              <div className="w-3 h-3 rounded-full border border-zinc-400" />
-                              <span className="text-[6px] font-mono uppercase tracking-widest text-zinc-500">
-                                GALLERY BY
-                              </span>
-                              <div className="text-[9px] font-serif font-bold uppercase">{coupleName}</div>
-                              <span className="text-[6px] font-mono text-zinc-400">{eventDateFormatted}</span>
+                            <div className="absolute inset-0 bg-gradient-to-t from-white via-white/80 to-transparent flex flex-col justify-end p-2 text-zinc-900">
+                              <div className="space-y-0.5 text-center">
+                                <span className="text-[5.5px] font-mono uppercase tracking-widest text-zinc-500 block">
+                                  GALLERY BY
+                                </span>
+                                <div className="text-[8.5px] font-serif font-bold uppercase leading-tight truncate">{coupleName}</div>
+                                <span className="text-[5.5px] font-mono text-zinc-400 block">{eventDateFormatted}</span>
+                              </div>
                             </div>
                           )}
 
@@ -1311,17 +1335,28 @@ export default function GalleryDesignStudio({
                           )}
 
                           {preset.id === 'vintage_scrapbook' && (
-                            <div className="absolute inset-0 bg-[#FAF7F2] p-2 flex flex-col justify-between overflow-hidden">
+                            <div
+                              className="absolute inset-0 p-2 flex flex-col justify-between overflow-hidden transition-colors duration-300"
+                              style={{ backgroundColor: design.palette.canvasBg, color: design.palette.textColor }}
+                            >
                               <div className="flex justify-end items-start">
                                 <div className="text-right">
-                                  <span className="text-[5px] font-mono block text-stone-400">OUR</span>
-                                  <span className="text-[7px] font-serif text-[#8B1E1E] italic leading-none block">Forever</span>
+                                  <span className="text-[5px] font-mono block opacity-50">OUR</span>
+                                  <span
+                                    className="text-[7px] font-serif italic leading-none block"
+                                    style={{ color: design.palette.accentColor }}
+                                  >
+                                    Forever
+                                  </span>
                                 </div>
                               </div>
                               <div className="flex items-center justify-between gap-1 my-auto">
-                                <div className="text-[5px] text-stone-500 font-serif leading-tight max-w-[40px]">
+                                <div className="text-[5px] opacity-75 font-serif leading-tight max-w-[40px]">
                                   <span>Timeless vows</span>
-                                  <div className="mt-1 px-1 py-0.5 rounded-full border border-[#8B1E1E] text-[5px] text-[#8B1E1E] font-mono inline-block">
+                                  <div
+                                    className="mt-1 px-1 py-0.5 rounded-full border text-[5px] font-mono inline-block font-semibold"
+                                    style={{ borderColor: design.palette.accentColor, color: design.palette.accentColor }}
+                                  >
                                     {eventDateFormatted.slice(0, 6)}
                                   </div>
                                 </div>
@@ -1341,7 +1376,7 @@ export default function GalleryDesignStudio({
                                   </div>
                                 </div>
                               </div>
-                              <span className="text-[5px] font-mono text-center text-stone-400">{coupleName}</span>
+                              <span className="text-[5px] font-mono text-center opacity-60 truncate">{coupleName}</span>
                             </div>
                           )}
 
@@ -1607,13 +1642,13 @@ export default function GalleryDesignStudio({
             )}
 
             {/* ─────────────────────────────────────────────────────────
-                TAB 3: 14 TOP-TIER AESTHETIC WEDDING FONTS
+                TAB 3: AESTHETIC WEDDING FONTS
             ───────────────────────────────────────────────────────── */}
             {activeTab === 'fonts' && (
               <div className="space-y-6">
                 
                 <div>
-                  <h2 className="text-sm font-black text-zinc-900">14 Aesthetic Typography Selections</h2>
+                  <h2 className="text-sm font-black text-zinc-900">{AESTHETIC_FONTS.length} Aesthetic Typography Selections</h2>
                   <p className="text-xs text-zinc-500">
                     Hand-curated high-fashion editorial serif and modern sans-serif fonts.
                   </p>
@@ -2004,6 +2039,14 @@ export default function GalleryDesignStudio({
                           <span className="text-[9px] opacity-65 block leading-tight">{studioSubtitle}</span>
                         </div>
                       </div>
+
+                      {/* Statically Centered Couple / Event Name */}
+                      <div className="hidden sm:flex flex-col items-center justify-center text-center px-4 max-w-[200px] truncate">
+                        <span className="text-xs font-bold tracking-tight truncate block" style={{ fontFamily: design.typography.headingFont }}>
+                          {coupleName}
+                        </span>
+                      </div>
+
                       <span className="text-[10px] font-mono font-bold opacity-65">
                         {photos.length > 0 ? `${photos.length} PHOTOS` : '114 PHOTOS'}
                       </span>
@@ -2044,25 +2087,27 @@ export default function GalleryDesignStudio({
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          className="p-1.5 rounded-full hover:bg-black/5 transition cursor-pointer border"
+                          className="px-2.5 py-1 rounded-full hover:bg-black/5 transition cursor-pointer border flex items-center gap-1.5 text-[11px] font-semibold"
                           style={{
                             color: design.palette.textColor,
                             borderColor: `${design.palette.textColor}25`,
                           }}
                           title="Search by Face AI"
                         >
-                          <FaceAiFocusIcon className="w-4 h-4" />
+                          <FaceAiFocusIcon className="w-3.5 h-3.5" />
+                          <span>My Photos</span>
                         </button>
                         <button
                           type="button"
-                          className="p-1.5 rounded-full hover:bg-black/5 transition cursor-pointer border"
+                          className="px-2.5 py-1 rounded-full hover:bg-black/5 transition cursor-pointer border flex items-center gap-1.5 text-[11px] font-semibold"
                           style={{
                             color: design.palette.textColor,
                             borderColor: `${design.palette.textColor}25`,
                           }}
                           title="Download Gallery"
                         >
-                          <Download className="w-4 h-4" />
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download</span>
                         </button>
                       </div>
                     </div>

@@ -46,6 +46,7 @@ export function UploadManagerDrawer({ onResumeInterrupted }: UploadManagerDrawer
   const completedPhotos = jobs.reduce((acc, j) => acc + j.completedCount, 0);
   const overallPercentage = totalPhotos > 0 ? Math.round((completedPhotos / totalPhotos) * 100) : 0;
   const isAnyUploading = jobs.some((j) => j.status === 'uploading');
+  const hasAnyErrors = jobs.some((j) => (Array.isArray(j.errors) && j.errors.length > 0) || j.status === 'failed');
 
   const handleCloseClick = () => {
     if (activeJobCount > 0 || isAnyUploading) {
@@ -95,7 +96,7 @@ export function UploadManagerDrawer({ onResumeInterrupted }: UploadManagerDrawer
                   </span>
                 ) : activeJobCount > 0 ? (
                   <span>{activeJobCount} queued upload{activeJobCount > 1 ? 's' : ''}</span>
-                ) : totalPhotos > completedPhotos ? (
+                ) : hasAnyErrors && totalPhotos > completedPhotos ? (
                   <span className="text-amber-800">{completedPhotos} of {totalPhotos} uploaded ({totalPhotos - completedPhotos} failed)</span>
                 ) : (
                   <span>Uploads complete ({completedPhotos} photos)</span>
@@ -340,7 +341,7 @@ function JobItem({ job, onCancel }: { job: UploadJob; onCancel: () => void }) {
         <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
           <span>
             {job.completedCount} of {job.totalCount} uploaded
-            {job.totalCount > job.completedCount && ` (${job.totalCount - job.completedCount} skipped/failed)`}
+            {(isCompleted || isFailed) && hasErrors && job.totalCount > job.completedCount && ` (${job.totalCount - job.completedCount} skipped/failed)`}
           </span>
           <span className="truncate max-w-[140px] text-[9.5px] text-zinc-400">
             {job.currentFileName || ''}

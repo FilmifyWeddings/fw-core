@@ -36,6 +36,8 @@ import {
   Send,
   AlertCircle,
   ArrowDown,
+  ArrowUp,
+  Share2,
 } from 'lucide-react';
 
 function InstagramIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -198,6 +200,17 @@ function GuestSlugGalleryContent() {
   const [selectedForAlbum, setSelectedForAlbum] = useState<Set<string>>(new Set());
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (typeof window !== 'undefined') {
+        setShowScrollTop(window.scrollY > 350);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const guestIdParam = searchParams?.get('guest') || searchParams?.get('guest_id');
   const tokenParam = searchParams?.get('token');
@@ -1055,118 +1068,348 @@ function GuestSlugGalleryContent() {
     }
   };
 
-  // Guest Landing Flow: Full photo cover with subtle dark gradient, aesthetic couple name, date, and frosted glass "Find My Photos" pill
+  const handleShareClick = () => {
+    if (typeof window !== 'undefined') {
+      if (navigator.share) {
+        navigator.share({
+          title: gallery?.title || 'Wedding Gallery',
+          text: `View our wedding gallery by ${studioName}`,
+          url: window.location.href,
+        }).catch(() => {});
+      } else {
+        navigator.clipboard.writeText(window.location.href);
+        alert('Gallery link copied to clipboard!');
+      }
+    }
+  };
+
+  // Guest Thank-You / Registration Confirmation View (Unpublished Gallery)
+  // When guest has registered and gallery is UNPUBLISHED, show clean celebratory confirmation without 85vh cover hero
+  const isGuestRegisteredUnpublished = !isPrivilegedMode && hasSearched && currentGalleryStatus === 'UNPUBLISHED';
+
+  if (isGuestRegisteredUnpublished) {
+    return (
+      <div
+        className="min-h-screen flex flex-col justify-between select-none transition-colors duration-300"
+        style={{
+          backgroundColor: designPalette.canvasBg,
+          color: designPalette.textColor,
+          fontFamily: bodyFont,
+        }}
+      >
+        {/* Luxury Top Header Bar */}
+        <header
+          className="w-full px-4 sm:px-8 py-3 flex items-center justify-between border-b backdrop-blur-xl"
+          style={{
+            backgroundColor: `${designPalette.canvasBg}E6`,
+            borderColor: `${designPalette.textColor}15`,
+            color: designPalette.textColor,
+          }}
+        >
+          <div className="flex items-center gap-3">
+            {studioLogo ? (
+              <img src={studioLogo} alt={studioName} className="w-8 h-8 rounded-full object-cover ring-1 ring-black/10" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-amber-600 text-white font-bold flex items-center justify-center text-xs">
+                {studioName.charAt(0)}
+              </div>
+            )}
+            <span className="text-sm font-semibold tracking-wide" style={{ fontFamily: headingFont }}>
+              {studioName}
+            </span>
+          </div>
+
+          <span className="text-xs font-bold tracking-tight opacity-75" style={{ fontFamily: headingFont }}>
+            {gallery.title}
+          </span>
+        </header>
+
+        {/* Centerpiece Luxury Congratulations Card */}
+        <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto">
+          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-emerald-200/80 shadow-2xl text-center space-y-6 max-w-xl w-full animate-in fade-in zoom-in-95 duration-300 text-zinc-900">
+            {/* Animated Celebration Avatar / Badge */}
+            <div className="relative w-20 h-20 sm:w-24 sm:h-24 mx-auto">
+              <div className="absolute inset-0 rounded-3xl bg-emerald-400/20 animate-ping" />
+              <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white flex items-center justify-center shadow-lg shadow-emerald-600/30">
+                <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12 text-white animate-bounce" />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider border border-emerald-300">
+                {isAlreadyRegistered ? '✨ Already Registered' : '🎉 Registration Successful'}
+              </span>
+              <h2
+                className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight"
+                style={{ fontFamily: headingFont }}
+              >
+                {isAlreadyRegistered
+                  ? `Welcome Back, ${guestName || 'Guest'}!`
+                  : 'Congratulations! Thank you so much for your registration.'}
+              </h2>
+              <p
+                className="text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
+              >
+                We will notify you on WhatsApp as soon as your photos are ready.
+              </p>
+            </div>
+
+            {/* Notification Alert Box */}
+            <div className="bg-[#FAF9F5] rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] text-left space-y-3">
+              <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wider">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span>Instant Notification Guaranteed</span>
+              </div>
+              <p className="text-xs text-zinc-600 leading-relaxed font-medium">
+                As soon as the photos are published by the studio, you will receive an instant notification with your personal photo album directly on:
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {guestPhone && (
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold font-mono">
+                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>WhatsApp: {guestPhone}</span>
+                  </span>
+                )}
+                {guestEmail && (
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 text-xs font-medium">
+                    <Mail className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>{guestEmail}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    navigator.clipboard.writeText(window.location.href);
+                    alert('Page link copied! Keep this bookmarked to view photos once published.');
+                  }
+                }}
+                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md active:scale-98"
+              >
+                <Copy className="w-4 h-4 text-amber-400" />
+                <span>Bookmark / Copy Link</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setHasSearched(false);
+                  setIsAlreadyRegistered(false);
+                  setGuestName('');
+                  setGuestPhone('');
+                  setGuestEmail('');
+                  setIsFaceScannerOpen(true);
+                }}
+                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-amber-600/20 active:scale-98"
+              >
+                <Users className="w-4 h-4 text-amber-200" />
+                <span>Click here to new registration</span>
+              </button>
+            </div>
+          </div>
+        </main>
+
+        {/* Footer */}
+        <footer className="py-4 text-center text-xs opacity-60">
+          <p>&copy; 2026 {studioName}. Powered by StudioCore.in</p>
+        </footer>
+
+        {/* Face Scanner Modal */}
+        <FaceScannerModal
+          isOpen={isFaceScannerOpen}
+          onClose={() => setIsFaceScannerOpen(false)}
+          onSubmit={handleFaceScanSubmit}
+          isProcessing={isMatching}
+          galleryId={gallery.id}
+          onScanComplete={(photos) => {
+            setMatchedPhotos(photos);
+            setHasSearched(true);
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Guest Landing Flow: Cover photo with aesthetic couple name, date, and frosted glass "Find My Photos" pill
   const isGuestPreRegistration = !isPrivilegedMode && !hasSearched && !isVerified;
 
   if (isGuestPreRegistration) {
     return (
       <div className="relative min-h-screen w-full flex flex-col justify-between overflow-hidden bg-zinc-950 text-white select-none">
-        {/* Full Screen Edge-to-Edge Hero Image with Focal Positioning & Scale */}
-        {cleanCoverUrl ? (
-          <>
+        
+        {/* MOBILE VIEW (45vh cover banner + bottom content directly visible without scrolling) */}
+        <div className="sm:hidden flex flex-col min-h-screen justify-between">
+          {/* Top 45vh Cover Hero */}
+          <div className="relative h-[45vh] w-full overflow-hidden bg-zinc-900 shrink-0">
+            {cleanCoverUrl ? (
+              <img
+                src={cleanCoverUrl}
+                alt={gallery.title}
+                className="w-full h-full object-cover transition-transform duration-1000 ease-out"
+                style={{
+                  objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                  transformOrigin: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                  transform: `scale(${coverPos.mobile.zoom / 100})`,
+                }}
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-b from-zinc-900 to-zinc-950" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80 pointer-events-none" />
+
+            {/* Mobile Studio Branding Header on top of image */}
+            <div className="absolute top-0 inset-x-0 z-10 px-4 py-3 flex items-center justify-between text-white/90">
+              <div className="flex items-center gap-2">
+                {studioLogo ? (
+                  <img src={studioLogo} alt={studioName} className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20" />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-black flex items-center justify-center text-[10px]">
+                    {studioName.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="text-xs font-semibold tracking-wide truncate max-w-[150px]" style={{ fontFamily: headingFont }}>
+                  {studioName}
+                </span>
+              </div>
+              {totalPhotosCount > 0 && (
+                <span className="text-[10px] font-mono font-bold tracking-wider opacity-60">
+                  {totalPhotosCount} PHOTOS
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Info & Action Area (No scrolling required) */}
+          <div className="flex-1 flex flex-col justify-between px-5 py-6 text-center bg-zinc-950">
+            <div className="space-y-2.5 my-auto">
+              <span className="text-[10px] font-mono uppercase tracking-[0.25em] text-amber-200/90 block font-semibold">
+                GALLERY BY {studioName.toUpperCase()}
+              </span>
+
+              <h1
+                className="text-3xl font-normal tracking-tight text-white capitalize leading-tight"
+                style={{ fontFamily: headingFont }}
+              >
+                {gallery.title}
+              </h1>
+
+              <span className="text-xs text-zinc-400 font-mono tracking-widest block">
+                {formattedDate}
+              </span>
+
+              {/* The Action Button */}
+              <div className="pt-4">
+                <button
+                  type="button"
+                  onClick={handleFindMyPhotoClick}
+                  className="w-full py-3.5 px-6 rounded-full bg-white/20 hover:bg-white/30 text-white font-bold text-xs tracking-wider backdrop-blur-xl border border-white/30 shadow-xl flex items-center justify-center gap-2.5 cursor-pointer active:scale-98 transition"
+                >
+                  <Camera className="w-4 h-4 text-amber-300" />
+                  <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
+                    {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
+                  </span>
+                  <FaceAiFocusIcon className="w-3.5 h-3.5 text-amber-300" />
+                </button>
+              </div>
+            </div>
+
+            {/* Mobile Footer Attribution */}
+            <div className="pt-4 text-center text-white/50 text-[10px] space-y-0.5">
+              <p>&copy; 2026 {studioName}. All Rights Reserved.</p>
+              <p className="text-[9.5px]">Powered by <a href="https://studiocore.in" target="_blank" rel="noopener noreferrer" className="font-bold underline text-white/70">StudioCore.in</a></p>
+            </div>
+          </div>
+        </div>
+
+        {/* DESKTOP VIEW (Edge-to-Edge Hero Image with Centered Romantic Content) */}
+        <div className="hidden sm:flex min-h-screen flex-col justify-between relative">
+          {cleanCoverUrl ? (
             <img
               src={cleanCoverUrl}
               alt={gallery.title}
-              className="hidden sm:block absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
               style={{
                 objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
                 transformOrigin: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
                 transform: `scale(${coverPos.desktop.zoom / 100})`,
               }}
             />
-            <img
-              src={cleanCoverUrl}
-              alt={gallery.title}
-              className="block sm:hidden absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
-              style={{
-                objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
-                transformOrigin: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
-                transform: `scale(${coverPos.mobile.zoom / 100})`,
-              }}
-            />
-          </>
-        ) : (
-          <div className="absolute inset-0 bg-gradient-to-b from-zinc-900 via-zinc-950 to-zinc-900" />
-        )}
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-b from-zinc-900 via-zinc-950 to-zinc-900" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/90 pointer-events-none" />
 
-        {/* Subtle Dark Gradient at Bottom */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/90 pointer-events-none" />
-
-        {/* Discreet Top Studio Branding Header */}
-        <div className="relative z-10 px-6 sm:px-12 py-6 flex items-center justify-between text-white/90">
-          <div className="flex items-center gap-3">
-            {studioLogo ? (
-              <img
-                src={studioLogo}
-                alt={studioName}
-                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover ring-1 ring-white/20"
-              />
-            ) : (
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-serif font-black flex items-center justify-center text-xs shadow-xs">
-                {studioName.charAt(0).toUpperCase()}
+          {/* Desktop Top Branding */}
+          <div className="relative z-10 px-6 sm:px-12 py-6 flex items-center justify-between text-white/90">
+            <div className="flex items-center gap-3">
+              {studioLogo ? (
+                <img src={studioLogo} alt={studioName} className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover ring-1 ring-white/20" />
+              ) : (
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-serif font-black flex items-center justify-center text-xs shadow-xs">
+                  {studioName.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="leading-tight">
+                <span className="block text-xs sm:text-sm font-semibold tracking-wide" style={{ fontFamily: headingFont }}>
+                  {studioName}
+                </span>
+                <span className="block text-[10px] opacity-65 hidden sm:block font-light">
+                  {studioSubtitle}
+                </span>
               </div>
+            </div>
+            {totalPhotosCount > 0 && (
+              <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-60">
+                {totalPhotosCount} PHOTOS
+              </span>
             )}
-            <div className="leading-tight">
-              <span
-                className="block text-xs sm:text-sm font-semibold tracking-wide"
-                style={{ fontFamily: headingFont }}
+          </div>
+
+          {/* Desktop Center-Lower Content */}
+          <div className="relative z-10 px-6 pb-16 sm:pb-24 text-center space-y-4 max-w-3xl mx-auto w-full my-auto">
+            <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-amber-200/90 block font-semibold drop-shadow-md">
+              GALLERY BY {studioName.toUpperCase()}
+            </span>
+            <h1
+              className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize"
+              style={{ fontFamily: headingFont }}
+            >
+              {gallery.title}
+            </h1>
+            <span className="text-xs sm:text-sm text-zinc-300 font-mono tracking-widest block drop-shadow-md">
+              {formattedDate}
+            </span>
+            <div className="pt-6">
+              <button
+                type="button"
+                onClick={handleFindMyPhotoClick}
+                className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-full bg-white/20 hover:bg-white/30 text-white font-bold text-sm tracking-wider backdrop-blur-xl border border-white/30 shadow-2xl shadow-black/50 transition-all duration-300 hover:scale-[1.03] active:scale-[0.98] cursor-pointer"
               >
-                {studioName}
-              </span>
-              <span className="block text-[10px] opacity-60 hidden sm:block font-light">
-                {studioSubtitle}
-              </span>
+                <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
+                <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
+                  {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
+                </span>
+                <FaceAiFocusIcon className="w-4 h-4 text-amber-300" />
+              </button>
             </div>
           </div>
-          {totalPhotosCount > 0 && (
-            <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-60">
-              {totalPhotosCount} PHOTOS
-            </span>
-          )}
-        </div>
 
-        {/* Center-Lower Romantic Typography & Frosted Blur Pill Button */}
-        <div className="relative z-10 px-6 pb-16 sm:pb-24 text-center space-y-4 max-w-3xl mx-auto w-full">
-          <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-amber-200/90 block font-semibold drop-shadow-md">
-            GALLERY BY {studioName.toUpperCase()}
-          </span>
-
-          <h1
-            className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize"
-            style={{ fontFamily: headingFont }}
-          >
-            {gallery.title}
-          </h1>
-
-          <span className="text-xs sm:text-sm text-zinc-300 font-mono tracking-widest block drop-shadow-md">
-            {formattedDate}
-          </span>
-
-          {/* Centered / Lower-centered Apple-Grade Frosted Glass Blur Pill Button */}
-          <div className="pt-6">
-            <button
-              type="button"
-              onClick={handleFindMyPhotoClick}
-              className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-full bg-white/20 hover:bg-white/30 text-white font-bold text-sm tracking-wider backdrop-blur-xl border border-white/30 shadow-2xl shadow-black/50 transition-all duration-300 hover:scale-[1.03] active:scale-[0.98] cursor-pointer"
-            >
-              <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
-              <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
-                {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
-              </span>
-              <FaceAiFocusIcon className="w-4 h-4 text-amber-300" />
-            </button>
+          {/* Desktop Footer */}
+          <div className="relative z-10 py-6 text-center text-white/60 text-[11px] space-y-1">
+            <p>&copy; 2026 {studioName}. All Rights Reserved.</p>
+            <p className="text-[10px]">
+              Powered by{' '}
+              <a href="https://studiocore.in" target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-white">
+                StudioCore.in
+              </a>
+            </p>
           </div>
-        </div>
-
-        {/* Guest Landing Footer Attribution */}
-        <div className="relative z-10 py-6 text-center text-white/60 text-[11px] space-y-1">
-          <p>&copy; 2026 {studioName}. All Rights Reserved.</p>
-          <p className="text-[10px]">
-            Powered by{' '}
-            <a href="https://studiocore.in" target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-white">
-              StudioCore.in
-            </a>
-          </p>
         </div>
 
         {/* Face Scanner Modal & PIN Modal in Guest Pre-Registration */}
@@ -1241,7 +1484,7 @@ function GuestSlugGalleryContent() {
         color: designPalette.textColor,
         fontFamily: bodyFont,
       }}
-      className="min-h-screen pb-32 select-none transition-colors duration-300">
+      className="min-h-screen pb-16 sm:pb-8 select-none transition-colors duration-300">
       
       {/* 0. LUXURY STUDIO HEADER BAR (GLOSSY LIQUID BLUR - SYNCED WITH PALETTE) */}
       <header
@@ -1252,8 +1495,8 @@ function GuestSlugGalleryContent() {
           color: designPalette.textColor,
         }}
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <div className="w-full px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 shrink-0">
             {studioLogo ? (
               <img
                 src={studioLogo}
@@ -1278,7 +1521,17 @@ function GuestSlugGalleryContent() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Statically Centered Couple / Event Name in Middle of Header */}
+          <div className="hidden md:flex flex-col items-center justify-center text-center px-4 max-w-md truncate">
+            <span
+              className="text-sm sm:text-base font-bold tracking-tight truncate block"
+              style={{ fontFamily: headingFont }}
+            >
+              {gallery.title}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
             {totalPhotosCount > 0 && (
               <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-65 mr-1">
                 {totalPhotosCount} PHOTOS
@@ -1859,7 +2112,7 @@ function GuestSlugGalleryContent() {
           color: designPalette.textColor,
         }}
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-8 py-2 flex items-center justify-between gap-3">
+        <div className="w-full px-4 sm:px-8 py-2.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-0.5 scroll-smooth flex-1 min-w-0">
             <button
               type="button"
@@ -1898,20 +2151,39 @@ function GuestSlugGalleryContent() {
             })}
           </div>
 
-          {/* Right side: 2 clean icon buttons */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Right side: Action buttons with explicit text labels */}
+          <div className="hidden sm:flex items-center gap-2 shrink-0">
             {gallery.is_face_ai_enabled !== false && (
               <button
                 type="button"
                 onClick={() => setIsFaceScannerOpen(true)}
-                title="AI Face Search / Registration"
-                className="w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-xs hover:scale-105 active:scale-95"
+                title="AI Face Search / My Photos"
+                className="px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95"
                 style={{
-                  backgroundColor: `${designPalette.textColor}10`,
+                  backgroundColor: `${designPalette.textColor}0A`,
+                  borderColor: `${designPalette.textColor}25`,
                   color: designPalette.textColor,
                 }}
               >
-                <FaceAiFocusIcon className="w-4 h-4" />
+                <FaceAiFocusIcon className="w-3.5 h-3.5" />
+                <span>My Photos</span>
+              </button>
+            )}
+
+            {isPrivilegedMode && !isUnlocked && (
+              <button
+                type="button"
+                onClick={() => setShowPinModal(true)}
+                title="Enter PIN to unlock private photos"
+                className="px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95"
+                style={{
+                  backgroundColor: `${designPalette.textColor}0A`,
+                  borderColor: `${designPalette.textColor}25`,
+                  color: designPalette.textColor,
+                }}
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Private Photos</span>
               </button>
             )}
 
@@ -1920,17 +2192,34 @@ function GuestSlugGalleryContent() {
               onClick={handleDownloadAllPhotosTrigger}
               title="Download Photos"
               disabled={isDownloadingAll}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-xs hover:scale-105 active:scale-95 disabled:opacity-50"
+              className="px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95 disabled:opacity-50"
               style={{
-                backgroundColor: `${designPalette.textColor}10`,
+                backgroundColor: `${designPalette.textColor}0A`,
+                borderColor: `${designPalette.textColor}25`,
                 color: designPalette.textColor,
               }}
             >
               {isDownloadingAll ? (
-                <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" />
               ) : (
-                <Download className="w-4 h-4" />
+                <Download className="w-3.5 h-3.5" />
               )}
+              <span>Download</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleShareClick}
+              title="Share Gallery Link"
+              className="px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95"
+              style={{
+                backgroundColor: `${designPalette.textColor}0A`,
+                borderColor: `${designPalette.textColor}25`,
+                color: designPalette.textColor,
+              }}
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share</span>
             </button>
           </div>
         </div>
@@ -1938,7 +2227,7 @@ function GuestSlugGalleryContent() {
       
       <div id="gallery-content" className="scroll-mt-14" />
       {/* 2. MAIN CONTENT AREA */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-6 relative z-10 space-y-8">
+      <div className="max-w-[1550px] mx-auto px-2 sm:px-4 lg:px-6 -mt-6 relative z-10 space-y-8">
 
         {/* CASE P: PRIVILEGED ACCESS LOCKED (Enter PIN / Pass Key) */}
         {isPrivilegedMode && !isUnlocked && (
@@ -1972,97 +2261,6 @@ function GuestSlugGalleryContent() {
               >
                 <KeyRound className="w-4 h-4 text-amber-400" />
                 <span>Enter Access PIN / Pass Key</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* CASE UNPUBLISHED: LUXURY CONGRATULATIONS CONFIRMATION SCREEN (No Steps 1, 2, 3) */}
-        {(!isPrivilegedMode && hasSearched && currentGalleryStatus === 'UNPUBLISHED') && (
-          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-emerald-200/80 shadow-2xl text-center space-y-6 max-w-2xl mx-auto animate-in fade-in zoom-in-95 duration-300">
-            {/* Animated Celebration Avatar / Badge */}
-            <div className="relative w-24 h-24 mx-auto">
-              <div className="absolute inset-0 rounded-3xl bg-emerald-400/20 animate-ping" />
-              <div className="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white flex items-center justify-center shadow-lg shadow-emerald-600/30">
-                <CheckCircle2 className="w-12 h-12 text-white animate-bounce" />
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider border border-emerald-300">
-                {isAlreadyRegistered ? '✨ Already Registered' : '🎉 Registration Successful'}
-              </span>
-              <h2
-                className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight"
-                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
-              >
-                {isAlreadyRegistered
-                  ? `Welcome Back, ${guestName || 'Guest'}!`
-                  : 'Congratulations! Thank you so much for your registration.'}
-              </h2>
-              <p
-                className="text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed"
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
-              >
-                We will notify you on WhatsApp as soon as your photos are ready.
-              </p>
-            </div>
-
-            {/* Notification Alert Box */}
-            <div className="bg-[#FAF9F5] rounded-2xl p-5 border border-[#E7E2D8] text-left space-y-3">
-              <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wider">
-                <Sparkles className="w-4 h-4 text-emerald-600" />
-                <span>Instant Notification Guaranteed</span>
-              </div>
-              <p className="text-xs text-zinc-600 leading-relaxed font-medium">
-                As soon as the photos are published by the studio, you will receive an instant notification with your personal photo album directly on:
-              </p>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                {guestPhone && (
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold font-mono">
-                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>WhatsApp: {guestPhone}</span>
-                  </span>
-                )}
-                {guestEmail && (
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 text-xs font-medium">
-                    <Mail className="w-3.5 h-3.5 text-zinc-500" />
-                    <span>{guestEmail}</span>
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Action buttons */}
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof window !== 'undefined') {
-                    navigator.clipboard.writeText(window.location.href);
-                    alert('Page link copied! Keep this bookmarked to view photos once published.');
-                  }
-                }}
-                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md active:scale-98"
-              >
-                <Copy className="w-4 h-4 text-amber-400" />
-                <span>Bookmark / Copy Link</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setHasSearched(false);
-                  setIsAlreadyRegistered(false);
-                  setGuestName('');
-                  setGuestPhone('');
-                  setGuestEmail('');
-                  setIsFaceScannerOpen(true);
-                }}
-                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-amber-600/20 active:scale-98"
-              >
-                <Users className="w-4 h-4 text-amber-200" />
-                <span>Click here to new registration</span>
               </button>
             </div>
           </div>
@@ -2174,12 +2372,12 @@ function GuestSlugGalleryContent() {
                       </div>
                     </div>
 
-                    {/* Matched Photos Grid (Dynamic Masonry vs Justified) */}
+                    {/* Matched Photos Grid (Dynamic Masonry vs Justified - 3 Majestic Columns) */}
                     <div
                       className={
                         layoutConfig.style === 'justified'
-                          ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
-                          : 'columns-2 sm:columns-3 md:columns-4 lg:columns-5'
+                          ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
+                          : 'columns-1 sm:columns-2 md:columns-3'
                       }
                       style={
                         layoutConfig.style === 'justified'
@@ -2273,12 +2471,12 @@ function GuestSlugGalleryContent() {
             {/* TAB 2: ALL EVENT PHOTOS VIEW */}
             {guestActiveTab === 'all' && (
               <div className="space-y-6">
-                {/* All Photos Grid (Dynamic Masonry vs Justified) */}
+                {/* All Photos Grid (Dynamic Masonry vs Justified - 3 Majestic Columns) */}
                 <div
                   className={
                     layoutConfig.style === 'justified'
-                      ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
-                      : 'columns-2 sm:columns-3 md:columns-4 lg:columns-5'
+                      ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
+                      : 'columns-1 sm:columns-2 md:columns-3'
                   }
                   style={
                     layoutConfig.style === 'justified'
@@ -2354,12 +2552,12 @@ function GuestSlugGalleryContent() {
               </div>
             )}
 
-            {/* Privileged Full Photo Grid (Dynamic Masonry vs Justified) */}
+            {/* Privileged Full Photo Grid (Dynamic Masonry vs Justified - 3 Majestic Columns) */}
             <div
               className={
                 layoutConfig.style === 'justified'
-                  ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
-                  : 'columns-2 sm:columns-3 md:columns-4 lg:columns-5'
+                  ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
+                  : 'columns-1 sm:columns-2 md:columns-3'
               }
               style={
                 layoutConfig.style === 'justified'
@@ -2971,6 +3169,84 @@ function GuestSlugGalleryContent() {
           onDownload={handleDownloadPhoto as any}
           allowDownloads={gallery.allow_downloads ?? true}
         />
+      )}
+
+      {/* 7. MOBILE APP-LIKE STICKY BOTTOM BAR (sm:hidden) */}
+      <nav
+        aria-label="Mobile Navigation"
+        className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/10 py-1.5 px-3 shadow-lg flex items-center justify-around sm:hidden transition-transform duration-300"
+        style={{
+          backgroundColor: `${designPalette.canvasBg}F5`,
+          borderColor: `${designPalette.textColor}1A`,
+          color: designPalette.textColor,
+        }}
+      >
+        <button
+          type="button"
+          onClick={handleShareClick}
+          className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90"
+        >
+          <Share2 className="w-4 h-4" />
+          <span>Share</span>
+        </button>
+
+        {gallery.is_face_ai_enabled !== false && (
+          <button
+            type="button"
+            onClick={() => setIsFaceScannerOpen(true)}
+            className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-amber-700 transition active:scale-90"
+          >
+            <FaceAiFocusIcon className="w-4 h-4" />
+            <span>My Photos</span>
+          </button>
+        )}
+
+        {isPrivilegedMode && !isUnlocked && (
+          <button
+            type="button"
+            onClick={() => setShowPinModal(true)}
+            className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90"
+          >
+            <Lock className="w-4 h-4" />
+            <span>Private</span>
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={handleDownloadAllPhotosTrigger}
+          disabled={isDownloadingAll}
+          className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90 disabled:opacity-50"
+        >
+          <Download className="w-4 h-4" />
+          <span>Download</span>
+        </button>
+
+        {isSelectionMode && (
+          <button
+            type="button"
+            onClick={() => setShowOnlySelected(!showOnlySelected)}
+            className={`flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90 ${
+              showOnlySelected ? 'text-rose-600 font-bold' : 'text-zinc-600'
+            }`}
+          >
+            <Heart className={`w-4 h-4 ${selectedForAlbum.size > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
+            <span>Selected ({selectedForAlbum.size})</span>
+          </button>
+        )}
+      </nav>
+
+      {/* Floating Scroll-to-Top Button */}
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-16 sm:bottom-6 right-4 sm:right-6 z-40 w-10 h-10 rounded-full bg-white/90 text-zinc-900 shadow-xl border border-black/10 flex items-center justify-center hover:bg-white hover:scale-105 active:scale-95 transition-all cursor-pointer backdrop-blur-md"
+          title="Scroll to top"
+          aria-label="Scroll to top"
+        >
+          <ArrowUp className="w-4 h-4" />
+        </button>
       )}
 
     </div>

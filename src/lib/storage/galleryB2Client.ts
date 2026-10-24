@@ -100,11 +100,14 @@ export function getGalleryPublicUrl(key: string, bucketName = B2_GALLERY_BUCKET_
   return `/api/gallery/image?key=${encodeURIComponent(cleanKey)}`;
 }
 
+let corsEnsured = false;
+
 /**
  * Automatically configure required CORS rules on the B2 gallery bucket
  * Allows web browsers to perform direct PUT uploads and GET downloads.
  */
 export async function ensureGalleryCors(bucketName = B2_GALLERY_BUCKET_NAME): Promise<{ success: boolean; error?: string }> {
+  if (corsEnsured) return { success: true };
   try {
     const command = new PutBucketCorsCommand({
       Bucket: bucketName,
@@ -122,6 +125,7 @@ export async function ensureGalleryCors(bucketName = B2_GALLERY_BUCKET_NAME): Pr
     });
 
     await galleryB2Client.send(command);
+    corsEnsured = true;
     return { success: true };
   } catch (err: any) {
     console.warn('[GalleryB2] Note on CORS configuration:', err.message);
