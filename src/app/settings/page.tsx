@@ -335,6 +335,7 @@ export default function SettingsPage() {
   // Profile Settings States
   const [profileFullName, setProfileFullName] = useState('');
   const [profileStudioName, setProfileStudioName] = useState('');
+  const [profileStudioSubtitle, setProfileStudioSubtitle] = useState('');
   const [profilePhone, setProfilePhone] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
   const [profileAddress, setProfileAddress] = useState('');
@@ -390,6 +391,7 @@ export default function SettingsPage() {
         userId: targetUserId,
         fullName: profileFullName.trim(),
         studioName: profileStudioName.trim() || 'My Studio',
+        studioSubtitle: profileStudioSubtitle.trim(),
         phone: profilePhone.trim(),
         address: profileAddress.trim(),
         instagram: profileInstagram.trim(),
@@ -1048,6 +1050,7 @@ export default function SettingsPage() {
             const p = pData.profile;
             setProfileFullName(p.fullName || '');
             setProfileStudioName(p.studioName || '');
+            setProfileStudioSubtitle(p.studioSubtitle || '');
             setProfilePhone(p.phone || '');
             setProfileEmail(p.email || '');
             setProfileAddress(p.address || '');
@@ -1352,6 +1355,7 @@ export default function SettingsPage() {
         userId: wId,
         fullName: profileFullName.trim(),
         studioName: profileStudioName.trim() || 'My Studio',
+        studioSubtitle: profileStudioSubtitle.trim(),
         phone: profilePhone.trim(),
         address: profileAddress.trim(),
         instagram: profileInstagram.trim(),
@@ -1936,6 +1940,21 @@ export default function SettingsPage() {
                         value={profileStudioName}
                         onChange={e => setProfileStudioName(e.target.value)}
                         placeholder="e.g. Filmify Weddings"
+                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
+                      />
+                    </div>
+
+                    {/* Studio Subtitle */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>Studio Subtitle</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={profileStudioSubtitle}
+                        onChange={e => setProfileStudioSubtitle(e.target.value)}
+                        placeholder="e.g. Luxury Wedding Photography & Cinematography"
                         className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-[#EAE5DA] dark:border-zinc-700 rounded-xl text-sm font-semibold text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs transition-all"
                       />
                     </div>

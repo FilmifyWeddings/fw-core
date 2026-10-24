@@ -290,7 +290,7 @@ function GuestSlugGalleryContent() {
       const isPrivileged = isFullAccess || isSelectionMode;
       const isGuestPinEnabled = gal.raw_payload?.guest_pin_enabled !== undefined
         ? Boolean(gal.raw_payload.guest_pin_enabled)
-        : (gal.raw_payload?.guest_ask_pin !== undefined ? Boolean(gal.raw_payload.guest_ask_pin) : false);
+        : (gal.raw_payload?.guest_ask_pin !== undefined ? Boolean(gal.raw_payload.guest_ask_pin) : true);
 
       const resolvedPrivilegedPin = (
         gal.pass_key ||
@@ -451,7 +451,7 @@ function GuestSlugGalleryContent() {
     const isPrivileged = isFullAccess || isSelectionMode;
     const isGuestPinEnabled = gallery.raw_payload?.guest_pin_enabled !== undefined
       ? Boolean(gallery.raw_payload.guest_pin_enabled)
-      : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : false);
+      : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : true);
 
     const resolvedPrivilegedPin = (
       gallery.pass_key ||
@@ -497,7 +497,7 @@ function GuestSlugGalleryContent() {
 
     const isGuestPinEnabled = gallery.raw_payload?.guest_pin_enabled !== undefined
       ? Boolean(gallery.raw_payload.guest_pin_enabled)
-      : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : false);
+      : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : true);
 
     const resolvedGuestPin = isGuestPinEnabled
       ? (gallery.guest_pin || gallery.raw_payload?.guest_pin || gallery.pin_code || '700680').toString().trim()
@@ -1032,7 +1032,7 @@ function GuestSlugGalleryContent() {
                 {studioName}
               </span>
               <span className="block text-[10px] text-zinc-400 hidden sm:block font-light">
-                {studioTagline}
+                {studioSubtitle}
               </span>
             </div>
           </div>
@@ -1236,7 +1236,7 @@ function GuestSlugGalleryContent() {
                 <span>Instant Notification Guaranteed</span>
               </div>
               <p className="text-xs text-zinc-600 leading-relaxed font-medium">
-                As soon as the photos are edited and published by the studio, you will receive an instant notification with your personal photo album directly on:
+                As soon as the photos are published by the studio, you will receive an instant notification with your personal photo album directly on:
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {guestPhone && (
@@ -1735,6 +1735,7 @@ function GuestSlugGalleryContent() {
         isOpen={isFaceScannerOpen}
         onClose={() => setIsFaceScannerOpen(false)}
         onSubmit={handleFaceScanSubmit}
+        isProcessing={isMatching}
         galleryId={gallery.id}
         onScanComplete={(photos) => {
           setMatchedPhotos(photos);
@@ -2056,58 +2057,71 @@ function GuestSlugGalleryContent() {
           </div>
 
           {/* Social Media Links */}
-          {(instagramHandle || facebookHandle || youtubeHandle || studioPhone || studioEmail) && (
+          {(studioPhone || instagramHandle || facebookHandle || youtubeHandle || studioEmail) && (
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-              {instagramHandle && (
-                <a
-                  href={`https://instagram.com/${instagramHandle.replace('@', '').trim()}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-pink-300 hover:text-pink-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
-                >
-                  <InstagramIcon className="w-3.5 h-3.5 text-pink-500" />
-                  <span>Instagram</span>
-                </a>
-              )}
-              {facebookHandle && (
-                <a
-                  href={facebookHandle.startsWith('http') ? facebookHandle : `https://facebook.com/${facebookHandle.trim()}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-blue-300 hover:text-blue-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
-                >
-                  <FacebookIcon className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Facebook</span>
-                </a>
-              )}
-              {youtubeHandle && (
-                <a
-                  href={youtubeHandle.startsWith('http') ? youtubeHandle : `https://youtube.com/${youtubeHandle.startsWith('@') ? youtubeHandle : `@${youtubeHandle}`}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-red-300 hover:text-red-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
-                >
-                  <YoutubeIcon className="w-3.5 h-3.5 text-red-600" />
-                  <span>YouTube</span>
-                </a>
-              )}
-              {studioPhone && (
+              {/* 1. WhatsApp */}
+              {socialVisibility?.whatsapp !== false && studioPhone && (
                 <a
                   href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-emerald-300 hover:text-emerald-700 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-emerald-300 hover:text-emerald-700 text-zinc-700 text-xs font-semibold shadow-2xs transition"
                 >
-                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                  <img
+                    src="/assets/icons/Whatsapp.png"
+                    alt="WhatsApp"
+                    className="w-4 h-4 object-contain"
+                  />
                   <span>WhatsApp</span>
                 </a>
               )}
+
+              {/* 2. Instagram */}
+              {socialVisibility?.instagram !== false && instagramHandle && (
+                <a
+                  href={instagramHandle.startsWith('http') ? instagramHandle : `https://instagram.com/${instagramHandle.replace('@', '').trim()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-pink-300 hover:text-pink-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                >
+                  <InstagramIcon className="w-4 h-4 text-pink-500" />
+                  <span>Instagram</span>
+                </a>
+              )}
+
+              {/* 3. Facebook */}
+              {socialVisibility?.facebook !== false && facebookHandle && (
+                <a
+                  href={facebookHandle.startsWith('http') ? facebookHandle : `https://facebook.com/${facebookHandle.trim()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-blue-300 hover:text-blue-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                >
+                  <FacebookIcon className="w-4 h-4 text-blue-600" />
+                  <span>Facebook</span>
+                </a>
+              )}
+
+              {/* 4. YouTube */}
+              {socialVisibility?.youtube !== false && youtubeHandle && (
+                <a
+                  href={youtubeHandle.startsWith('http') ? youtubeHandle : `https://youtube.com/${youtubeHandle.startsWith('@') ? youtubeHandle : `@${youtubeHandle}`}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-red-300 hover:text-red-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                >
+                  <YoutubeIcon className="w-4 h-4 text-red-600" />
+                  <span>YouTube</span>
+                </a>
+              )}
+
+              {/* Email */}
               {studioEmail && (
                 <a
                   href={`mailto:${studioEmail}`}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-zinc-400 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-zinc-400 text-zinc-700 text-xs font-semibold shadow-2xs transition"
                 >
-                  <Mail className="w-3.5 h-3.5 text-zinc-500" />
+                  <Mail className="w-4 h-4 text-zinc-500" />
                   <span>Email</span>
                 </a>
               )}

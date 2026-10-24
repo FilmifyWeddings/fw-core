@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
+import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
 
 function InstagramIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -58,6 +59,7 @@ function FacebookIcon({ className = 'w-4 h-4' }: { className?: string }) {
 
 interface GallerySettingsData {
   studio_name: string;
+  studio_subtitle: string;
   owner_name: string;
   tagline: string;
   about_bio: string;
@@ -74,6 +76,12 @@ interface GallerySettingsData {
     youtube: string;
     whatsapp: string;
   };
+  social_visibility: {
+    whatsapp: boolean;
+    instagram: boolean;
+    facebook: boolean;
+    youtube: boolean;
+  };
   template_preset: 'royal_classic' | 'minimalist_ivory' | 'cinematic_velvet';
   accent_color: string;
   font_pairing: 'playfair_inter' | 'cormorant_jakarta' | 'cinzel_outfit' | 'syne_inter';
@@ -87,6 +95,7 @@ interface GallerySettingsData {
 
 const DEFAULT_SETTINGS: GallerySettingsData = {
   studio_name: 'StudioCore Photography',
+  studio_subtitle: 'Luxury Wedding Photography & Cinematography',
   owner_name: 'Lead Artist',
   tagline: 'Preserving Sacred & Timeless Celebrations',
   about_bio: 'Crafting heartfelt visual legacies for couples who cherish authentic emotion, cinematic beauty, and timeless romance.',
@@ -102,6 +111,12 @@ const DEFAULT_SETTINGS: GallerySettingsData = {
     facebook: 'https://facebook.com/',
     youtube: 'https://youtube.com/',
     whatsapp: '+919876543210',
+  },
+  social_visibility: {
+    whatsapp: true,
+    instagram: true,
+    facebook: true,
+    youtube: true,
   },
   template_preset: 'royal_classic',
   accent_color: '#D97706',
@@ -138,7 +153,18 @@ export default function GallerySettingsPage() {
         const res = await fetch(`/api/gallery/settings?workspace_id=${encodeURIComponent(effectiveWsId)}`);
         const json = await res.json();
         if (json.success && json.settings) {
-          setSettings(json.settings);
+          setSettings({
+            ...DEFAULT_SETTINGS,
+            ...json.settings,
+            social_links: {
+              ...DEFAULT_SETTINGS.social_links,
+              ...(json.settings.social_links || {}),
+            },
+            social_visibility: {
+              ...DEFAULT_SETTINGS.social_visibility,
+              ...(json.settings.social_visibility || {}),
+            },
+          });
           setLogoInput(json.settings.logo_url || '');
         }
       } catch (err) {
@@ -294,12 +320,23 @@ export default function GallerySettingsPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-zinc-700">Studio Name *</label>
+                <label className="block text-xs font-bold text-zinc-700">Studio Brand Name *</label>
                 <input
                   type="text"
                   value={settings.studio_name}
                   onChange={(e) => setSettings({ ...settings, studio_name: e.target.value })}
                   placeholder="e.g. Royal Wedding Cinema"
+                  className="w-full px-4 py-2.5 bg-[#FBF9F5] rounded-2xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-zinc-700">Studio Subtitle</label>
+                <input
+                  type="text"
+                  value={settings.studio_subtitle || ''}
+                  onChange={(e) => setSettings({ ...settings, studio_subtitle: e.target.value })}
+                  placeholder="e.g. Luxury Wedding Photography & Cinematography"
                   className="w-full px-4 py-2.5 bg-[#FBF9F5] rounded-2xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition"
                 />
               </div>
@@ -448,22 +485,127 @@ export default function GallerySettingsPage() {
               />
             </div>
 
-            {/* Social Channels with Authentic Logos */}
+            {/* Social Channels with Authentic Logos & Visibility Toggles */}
             <div className="p-5 rounded-3xl bg-[#FBF9F5] border border-[#E7E2D8] space-y-4">
               <div className="space-y-0.5">
                 <span className="text-xs font-black text-zinc-900 block">Social Media Handles</span>
                 <span className="text-[11px] text-zinc-400">Direct links displayed as luxury buttons on the client portal</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Instagram */}
-                <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-white border border-[#E7E2D8]">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-yellow-500 via-pink-500 to-purple-600 flex items-center justify-center text-white shrink-0 shadow-2xs">
-                    <InstagramIcon className="w-4 h-4" />
+              <div className="grid grid-cols-1 gap-3.5">
+                {/* 1. WhatsApp */}
+                <div className="p-4 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-3 transition">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-[#25D366]/10 border border-[#25D366]/30 flex items-center justify-center shrink-0 shadow-2xs overflow-hidden p-1">
+                        <img src="/assets/icons/Whatsapp.png" alt="WhatsApp" className="w-full h-full object-contain" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-zinc-900 leading-tight">WhatsApp Contact</span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                            Direct Connect
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-zinc-400 font-medium">Click-to-chat button on gallery footer</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${settings.social_visibility?.whatsapp !== false ? 'text-emerald-700' : 'text-zinc-400'}`}>
+                        {settings.social_visibility?.whatsapp !== false ? 'Shown' : 'Hidden'}
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={settings.social_visibility?.whatsapp !== false}
+                        onClick={() => {
+                          const curr = settings.social_visibility?.whatsapp !== false;
+                          setSettings({
+                            ...settings,
+                            social_visibility: {
+                              ...settings.social_visibility,
+                              whatsapp: !curr,
+                            },
+                          });
+                        }}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          settings.social_visibility?.whatsapp !== false ? 'bg-[#25D366]' : 'bg-zinc-200'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            settings.social_visibility?.whatsapp !== false ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <CountryPhoneInput
+                      value={settings.social_links.whatsapp}
+                      onChange={(full) =>
+                        setSettings({
+                          ...settings,
+                          social_links: { ...settings.social_links, whatsapp: full },
+                        })
+                      }
+                      placeholder="98765 43210"
+                      disabled={settings.social_visibility?.whatsapp === false}
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Instagram */}
+                <div className="p-4 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-3 transition">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-yellow-500 via-pink-500 to-purple-600 flex items-center justify-center text-white shrink-0 shadow-2xs">
+                        <InstagramIcon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-zinc-900 leading-tight">Instagram</span>
+                          <span className="px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 text-[10px] font-bold">
+                            Profile
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-zinc-400 font-medium">Link to studio Instagram portfolio</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${settings.social_visibility?.instagram !== false ? 'text-pink-600' : 'text-zinc-400'}`}>
+                        {settings.social_visibility?.instagram !== false ? 'Shown' : 'Hidden'}
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={settings.social_visibility?.instagram !== false}
+                        onClick={() => {
+                          const curr = settings.social_visibility?.instagram !== false;
+                          setSettings({
+                            ...settings,
+                            social_visibility: {
+                              ...settings.social_visibility,
+                              instagram: !curr,
+                            },
+                          });
+                        }}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          settings.social_visibility?.instagram !== false ? 'bg-pink-600' : 'bg-zinc-200'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            settings.social_visibility?.instagram !== false ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                   <input
                     type="text"
                     value={settings.social_links.instagram}
+                    disabled={settings.social_visibility?.instagram === false}
                     onChange={(e) =>
                       setSettings({
                         ...settings,
@@ -471,18 +613,61 @@ export default function GallerySettingsPage() {
                       })
                     }
                     placeholder="https://instagram.com/yourhandle"
-                    className="flex-1 bg-transparent text-xs font-bold text-zinc-900 focus:outline-hidden"
+                    className="w-full px-4 py-2.5 bg-[#FBF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-pink-500 disabled:opacity-50 transition"
                   />
                 </div>
 
-                {/* Facebook */}
-                <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-white border border-[#E7E2D8]">
-                  <div className="w-8 h-8 rounded-xl bg-[#1877F2] flex items-center justify-center text-white shrink-0 shadow-2xs">
-                    <FacebookIcon className="w-4 h-4" />
+                {/* 3. Facebook */}
+                <div className="p-4 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-3 transition">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-[#1877F2] flex items-center justify-center text-white shrink-0 shadow-2xs">
+                        <FacebookIcon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-zinc-900 leading-tight">Facebook</span>
+                          <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">
+                            Business Page
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-zinc-400 font-medium">Link to studio Facebook page</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${settings.social_visibility?.facebook !== false ? 'text-blue-600' : 'text-zinc-400'}`}>
+                        {settings.social_visibility?.facebook !== false ? 'Shown' : 'Hidden'}
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={settings.social_visibility?.facebook !== false}
+                        onClick={() => {
+                          const curr = settings.social_visibility?.facebook !== false;
+                          setSettings({
+                            ...settings,
+                            social_visibility: {
+                              ...settings.social_visibility,
+                              facebook: !curr,
+                            },
+                          });
+                        }}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          settings.social_visibility?.facebook !== false ? 'bg-[#1877F2]' : 'bg-zinc-200'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            settings.social_visibility?.facebook !== false ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                   <input
                     type="text"
                     value={settings.social_links.facebook}
+                    disabled={settings.social_visibility?.facebook === false}
                     onChange={(e) =>
                       setSettings({
                         ...settings,
@@ -490,18 +675,61 @@ export default function GallerySettingsPage() {
                       })
                     }
                     placeholder="https://facebook.com/yourpage"
-                    className="flex-1 bg-transparent text-xs font-bold text-zinc-900 focus:outline-hidden"
+                    className="w-full px-4 py-2.5 bg-[#FBF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-blue-500 disabled:opacity-50 transition"
                   />
                 </div>
 
-                {/* YouTube */}
-                <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-white border border-[#E7E2D8]">
-                  <div className="w-8 h-8 rounded-xl bg-[#FF0000] flex items-center justify-center text-white shrink-0 shadow-2xs">
-                    <YoutubeIcon className="w-4 h-4" />
+                {/* 4. YouTube */}
+                <div className="p-4 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-3 transition">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-[#FF0000] flex items-center justify-center text-white shrink-0 shadow-2xs">
+                        <YoutubeIcon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-zinc-900 leading-tight">YouTube</span>
+                          <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold">
+                            Cinematics
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-zinc-400 font-medium">Link to films and wedding teasers</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${settings.social_visibility?.youtube !== false ? 'text-red-600' : 'text-zinc-400'}`}>
+                        {settings.social_visibility?.youtube !== false ? 'Shown' : 'Hidden'}
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={settings.social_visibility?.youtube !== false}
+                        onClick={() => {
+                          const curr = settings.social_visibility?.youtube !== false;
+                          setSettings({
+                            ...settings,
+                            social_visibility: {
+                              ...settings.social_visibility,
+                              youtube: !curr,
+                            },
+                          });
+                        }}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          settings.social_visibility?.youtube !== false ? 'bg-[#FF0000]' : 'bg-zinc-200'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            settings.social_visibility?.youtube !== false ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                   <input
                     type="text"
                     value={settings.social_links.youtube}
+                    disabled={settings.social_visibility?.youtube === false}
                     onChange={(e) =>
                       setSettings({
                         ...settings,
@@ -509,26 +737,7 @@ export default function GallerySettingsPage() {
                       })
                     }
                     placeholder="https://youtube.com/@channel"
-                    className="flex-1 bg-transparent text-xs font-bold text-zinc-900 focus:outline-hidden"
-                  />
-                </div>
-
-                {/* WhatsApp */}
-                <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-white border border-[#E7E2D8]">
-                  <div className="w-8 h-8 rounded-xl bg-[#25D366] flex items-center justify-center text-white shrink-0 shadow-2xs">
-                    <MessageCircle className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    value={settings.social_links.whatsapp}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        social_links: { ...settings.social_links, whatsapp: e.target.value },
-                      })
-                    }
-                    placeholder="+919876543210 (with country code)"
-                    className="flex-1 bg-transparent text-xs font-bold text-zinc-900 focus:outline-hidden"
+                    className="w-full px-4 py-2.5 bg-[#FBF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-red-500 disabled:opacity-50 transition"
                   />
                 </div>
               </div>

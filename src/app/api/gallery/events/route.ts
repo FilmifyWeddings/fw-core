@@ -47,24 +47,33 @@ async function enrichGalleryBranding(single: any) {
 
   if (single.workspace_id && single.workspace_id !== '00000000-0000-0000-0000-000000000000') {
     try {
-      const [wsRes, profRes] = await Promise.all([
+      const [wsRes, profRes, wsSettingsRes] = await Promise.all([
         supabaseAdmin.from('workspaces').select('name, slug, logo_url').eq('id', single.workspace_id).maybeSingle(),
         supabaseAdmin.from('profiles').select('workspace_name, studio_slug, business_name, instagram_handle, facebook_handle, youtube_handle, phone, email, avatar_url, logo_url, leads_table_preferences').eq('id', single.workspace_id).maybeSingle(),
+        supabaseAdmin.from('workspace_settings').select('config').eq('workspace_id', single.workspace_id).maybeSingle(),
       ]);
 
       const ws = wsRes.data;
       const prof = profRes.data;
+      const galSettings = wsSettingsRes?.data?.config?.gallery_settings || {};
       const prefs = prof?.leads_table_preferences || {};
       const invoiceCompanyName = prefs?.invoice_company_name;
 
-      studioDisplayName = invoiceCompanyName || prof?.business_name || ws?.name || 'Studio Core';
-      studioLogo = prefs?.invoice_logo_url || prof?.logo_url || prof?.avatar_url || ws?.logo_url || '';
-      studioTagline = prefs?.invoice_tagline || 'Luxury Wedding Photography & Cinematography';
-      studioInstagram = prof?.instagram_handle || prefs?.instagram_handle || '';
-      studioFacebook = prof?.facebook_handle || prefs?.facebook_handle || '';
-      studioYoutube = prof?.youtube_handle || prefs?.youtube_handle || '';
-      studioPhone = prefs?.invoice_phone || prof?.phone || '';
-      studioEmail = prefs?.invoice_email || prof?.email || '';
+      studioDisplayName = galSettings.studio_name || invoiceCompanyName || prof?.business_name || ws?.name || 'Studio Core';
+      studioLogo = galSettings.logo_url || prefs?.invoice_logo_url || prof?.logo_url || prof?.avatar_url || ws?.logo_url || '';
+      const effectiveSubtitle = galSettings.studio_subtitle || (prof as any)?.studio_subtitle || prefs?.studio_subtitle || galSettings.tagline || prefs?.invoice_tagline || 'Luxury Wedding Photography & Cinematography';
+      studioTagline = effectiveSubtitle;
+      studioInstagram = galSettings.social_links?.instagram || prof?.instagram_handle || prefs?.instagram_handle || '';
+      studioFacebook = galSettings.social_links?.facebook || prof?.facebook_handle || prefs?.facebook_handle || '';
+      studioYoutube = galSettings.social_links?.youtube || prof?.youtube_handle || prefs?.youtube_handle || '';
+      studioPhone = galSettings.social_links?.whatsapp || galSettings.phone || prefs?.invoice_phone || prof?.phone || '';
+      studioEmail = galSettings.email || prefs?.invoice_email || prof?.email || '';
+      const socialVisibility = galSettings.social_visibility || {
+        whatsapp: true,
+        instagram: true,
+        facebook: true,
+        youtube: true,
+      };
 
       if (ws?.slug) {
         studioSlug = ws.slug.toLowerCase().trim();
@@ -122,14 +131,24 @@ async function enrichGalleryBranding(single: any) {
     max_selection_limit: maxLimit,
     studio_branding: {
       studio_name: studioDisplayName,
+      studio_subtitle: studioTagline,
       studio_slug: studioSlug,
       logo_url: studioLogo,
       tagline: studioTagline,
       instagram: studioInstagram,
+      instagram_handle: studioInstagram,
       facebook: studioFacebook,
+      facebook_handle: studioFacebook,
       youtube: studioYoutube,
+      youtube_handle: studioYoutube,
       phone: studioPhone,
       email: studioEmail,
+      social_visibility: (typeof socialVisibility !== 'undefined' ? socialVisibility : {
+        whatsapp: true,
+        instagram: true,
+        facebook: true,
+        youtube: true,
+      }),
     },
   };
 }

@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     } catch (e) {}
 
     const effectiveStudioName = wsData?.name || profile?.workspace_name || userMeta.workspace_name || 'My Studio';
+    const effectiveStudioSubtitle = profile?.studio_subtitle || profile?.leads_table_preferences?.studio_subtitle || userMeta.studio_subtitle || '';
 
     return NextResponse.json({
       success: true,
@@ -50,6 +51,7 @@ export async function GET(req: NextRequest) {
         id: targetUserId,
         fullName: profile?.full_name || userMeta.full_name || userMeta.name || '',
         studioName: effectiveStudioName,
+        studioSubtitle: effectiveStudioSubtitle,
         email: email || '',
         phone: profile?.phone || userMeta.phone || '',
         address: profile?.address || userMeta.address || '',
@@ -83,6 +85,7 @@ export async function POST(req: NextRequest) {
       avatarUrl,
       logoUrl,
       studioName,
+      studioSubtitle,
       instagram,
       youtube,
       facebook,
@@ -98,6 +101,7 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanStudioName = (studioName || '').trim();
+    const cleanStudioSubtitle = studioSubtitle !== undefined ? (studioSubtitle || '').trim() : undefined;
     const cleanInstagram = (instagram || '').trim();
     const cleanYoutube = (youtube || '').trim();
     const cleanFacebook = (facebook || '').trim();
@@ -112,6 +116,16 @@ export async function POST(req: NextRequest) {
     };
 
     if (cleanStudioName) profilePayload.workspace_name = cleanStudioName;
+    if (cleanStudioSubtitle !== undefined) {
+      profilePayload.studio_subtitle = cleanStudioSubtitle;
+      try {
+        const { data: currProf } = await supabaseAdmin.from('profiles').select('leads_table_preferences').eq('id', targetUserId).maybeSingle();
+        profilePayload.leads_table_preferences = {
+          ...(currProf?.leads_table_preferences || {}),
+          studio_subtitle: cleanStudioSubtitle,
+        };
+      } catch (_) {}
+    }
     if (cleanFullName) profilePayload.full_name = cleanFullName;
     if (cleanPhone) profilePayload.phone = cleanPhone;
     if (avatarUrl !== undefined) profilePayload.avatar_url = avatarUrl;
@@ -141,6 +155,7 @@ export async function POST(req: NextRequest) {
             .from('workspaces')
             .update({
               name: cleanStudioName,
+              ...(cleanStudioSubtitle !== undefined ? { studio_subtitle: cleanStudioSubtitle } : {}),
               logo_url: logoUrl || null,
               updated_at: new Date().toISOString(),
             })
@@ -152,6 +167,7 @@ export async function POST(req: NextRequest) {
               id: targetUserId,
               owner_id: targetUserId,
               name: cleanStudioName,
+              ...(cleanStudioSubtitle !== undefined ? { studio_subtitle: cleanStudioSubtitle } : {}),
               logo_url: logoUrl || null,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
@@ -166,6 +182,7 @@ export async function POST(req: NextRequest) {
     try {
       const userMeta: Record<string, any> = {};
       if (cleanStudioName) userMeta.workspace_name = cleanStudioName;
+      if (cleanStudioSubtitle !== undefined) userMeta.studio_subtitle = cleanStudioSubtitle;
       if (cleanFullName) userMeta.full_name = cleanFullName;
       if (cleanPhone) userMeta.phone = cleanPhone;
       if (avatarUrl !== undefined) userMeta.avatar_url = avatarUrl;
@@ -189,6 +206,7 @@ export async function POST(req: NextRequest) {
       profile: {
         userId: targetUserId,
         studioName: cleanStudioName,
+        studioSubtitle: cleanStudioSubtitle || '',
         fullName: cleanFullName,
         phone: cleanPhone,
         avatarUrl,

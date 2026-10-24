@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 export interface GallerySettings {
   // Tab 1: Profile & Identity
   studio_name: string;
+  studio_subtitle?: string;
   owner_name: string;
   tagline: string;
   about_bio: string;
@@ -25,6 +26,12 @@ export interface GallerySettings {
     youtube: string;
     whatsapp: string;
   };
+  social_visibility?: {
+    whatsapp: boolean;
+    instagram: boolean;
+    facebook: boolean;
+    youtube: boolean;
+  };
 
   // Tab 3: Design & Templates
   template_preset: 'royal_classic' | 'minimalist_ivory' | 'cinematic_velvet';
@@ -42,6 +49,7 @@ export interface GallerySettings {
 
 const DEFAULT_GALLERY_SETTINGS: GallerySettings = {
   studio_name: 'StudioCore Photography',
+  studio_subtitle: 'Luxury Wedding Photography & Cinematography',
   owner_name: 'Lead Photographer',
   tagline: 'Capturing Timeless Stories & Unforgettable Moments',
   about_bio: 'We are a luxury wedding photography & cinematography collective dedicated to preserving authentic emotions and unforgettable celebrations.',
@@ -58,6 +66,12 @@ const DEFAULT_GALLERY_SETTINGS: GallerySettings = {
     facebook: 'https://facebook.com/',
     youtube: 'https://youtube.com/',
     whatsapp: '+919876543210',
+  },
+  social_visibility: {
+    whatsapp: true,
+    instagram: true,
+    facebook: true,
+    youtube: true,
   },
 
   template_preset: 'royal_classic',
@@ -123,6 +137,10 @@ export async function GET(req: NextRequest) {
         ...DEFAULT_GALLERY_SETTINGS.social_links,
         ...(profileDefaults as any)?.social_links,
         ...(savedGallerySettings?.social_links || {}),
+      },
+      social_visibility: {
+        ...(DEFAULT_GALLERY_SETTINGS.social_visibility || {}),
+        ...(savedGallerySettings?.social_visibility || {}),
       },
       cover_focal_point: {
         ...DEFAULT_GALLERY_SETTINGS.cover_focal_point,
@@ -191,6 +209,7 @@ export async function POST(req: NextRequest) {
     try {
       const profileUpdates: Record<string, any> = {};
       if (settings.studio_name) profileUpdates.studio_name = settings.studio_name;
+      if (settings.studio_subtitle) profileUpdates.studio_subtitle = settings.studio_subtitle;
       if (settings.logo_url) profileUpdates.logo_url = settings.logo_url;
       if (Object.keys(profileUpdates).length > 0) {
         await supabaseAdmin.from('profiles').update(profileUpdates).eq('id', workspaceId);

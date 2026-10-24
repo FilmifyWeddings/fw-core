@@ -421,12 +421,17 @@ export function FaceScannerModal({
     const fullPhone = `${selectedCountry.code}${cleanPhoneDigits}`;
 
     if (onSubmit) {
-      await onSubmit({
-        name: guestName.trim(),
-        phone: fullPhone,
-        email: guestEmail.trim(),
-        selfieBase64: capturedSelfie,
-      });
+      setInternalProcessing(true);
+      try {
+        await onSubmit({
+          name: guestName.trim(),
+          phone: fullPhone,
+          email: guestEmail.trim(),
+          selfieBase64: capturedSelfie,
+        });
+      } finally {
+        setInternalProcessing(false);
+      }
       return;
     }
 
@@ -818,17 +823,17 @@ export function FaceScannerModal({
           <div className="pt-2">
             <button
               type="submit"
-              disabled={!isReadyToSubmit}
+              disabled={!isReadyToSubmit || isSubmitting}
               className={`w-full py-3.5 rounded-2xl font-black text-xs tracking-wide transition-all duration-200 flex items-center justify-center gap-2 shadow-md cursor-pointer ${
-                isReadyToSubmit
+                isReadyToSubmit && !isSubmitting
                   ? 'bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white shadow-amber-600/25 active:scale-98'
                   : 'bg-zinc-200 text-zinc-400 cursor-not-allowed border border-zinc-300'
               }`}
             >
-              {isProcessing ? (
+              {isSubmitting ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Searching ArcFace Vector Database...</span>
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                  <span>Finding My Photos... Please wait</span>
                 </>
               ) : (
                 <>
