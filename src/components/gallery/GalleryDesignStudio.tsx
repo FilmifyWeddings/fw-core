@@ -27,8 +27,16 @@ import {
   Camera,
 } from 'lucide-react';
 import { parseCoverUrl, buildCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
+import { TornPaperEdge, FlowingSilkVeil, SparkleStar } from '@/components/gallery/CoverPresetEffects';
 
-export type PresetId = 'cinematic_hero' | 'editorial_canvas' | 'faded_luxe' | 'split_atelier';
+export type PresetId =
+  | 'cinematic_hero'
+  | 'editorial_canvas'
+  | 'faded_luxe'
+  | 'split_atelier'
+  | 'torn_paper_edge'
+  | 'monochrome_portal'
+  | 'flowing_silk_veil';
 
 export interface GalleryDesignConfig {
   preset: PresetId;
@@ -72,7 +80,7 @@ export const DEFAULT_DESIGN_CONFIG: GalleryDesignConfig = {
   },
 };
 
-// ── 4 EXACT HANDCRAFTED PRESETS (From User Photos 2, 3, 4, 5) ──
+// ── 7 LUXURY COVER HERO PRESETS (Classic 4 + 3 New Custom Creations) ──
 interface PresetItem {
   id: PresetId;
   name: string;
@@ -85,28 +93,49 @@ const PRESETS: PresetItem[] = [
   {
     id: 'cinematic_hero',
     name: 'Cinematic Hero',
-    subtitle: 'Photo 4 Style',
+    subtitle: 'Classic Full Bleed',
     tag: 'Celebrity Choice',
     description: 'Edge-to-edge full-bleed hero with bottom romantic typography and golden vignette.',
   },
   {
+    id: 'torn_paper_edge',
+    name: 'Torn Paper Edge',
+    subtitle: 'Photo 1 Beach Vibe Style',
+    tag: 'Vintage Handcrafted',
+    description: 'Artistic ragged torn paper rip bottom border with retro stars and peeling reveal animation.',
+  },
+  {
+    id: 'monochrome_portal',
+    name: 'Monochrome Portal',
+    subtitle: 'Photo 2 Cathedral Arch Style',
+    tag: 'Fine Art Arch Duo',
+    description: 'Dreamy black & white panorama background with a vibrant centerpiece cathedral arch portrait.',
+  },
+  {
+    id: 'flowing_silk_veil',
+    name: 'Floating Silk Veil',
+    subtitle: 'Concept 3 Ethereal Cloth',
+    tag: '3D Flying Fabric',
+    description: 'Luminous bridal veil cloth billowing gracefully in the wind along the footer with fluid wave physics.',
+  },
+  {
     id: 'editorial_canvas',
     name: 'Editorial Canvas',
-    subtitle: 'Photo 2 Terre Verde Style',
+    subtitle: 'Vogue Terre Verde Style',
     tag: 'Haute Fashion',
     description: 'Oversized spaced headline at top with vertical portrait artwork below on warm canvas.',
   },
   {
     id: 'faded_luxe',
     name: 'Faded Luxe',
-    subtitle: 'Photo 3 KnotsbyAMP Style',
+    subtitle: 'Misty High-Key Style',
     tag: 'Misty Romance',
     description: 'Misty soft-focus backdrop with centered ring emblem, stacked title, and gallery badge.',
   },
   {
     id: 'split_atelier',
     name: 'Split Atelier',
-    subtitle: 'Photo 5 Diptych Style',
+    subtitle: 'Modern Diptych Pair',
     tag: 'Modern Asymmetric',
     description: 'Split canvas with bold left editorial copy and right large framed portrait artwork.',
   },
@@ -485,7 +514,15 @@ export default function GalleryDesignStudio({
     const raw = gallery?.raw_payload?.design;
     if (raw) {
       let presetKey: PresetId = 'cinematic_hero';
-      if (['cinematic_hero', 'editorial_canvas', 'faded_luxe', 'split_atelier'].includes(raw.preset)) {
+      if ([
+        'cinematic_hero',
+        'editorial_canvas',
+        'faded_luxe',
+        'split_atelier',
+        'torn_paper_edge',
+        'monochrome_portal',
+        'flowing_silk_veil',
+      ].includes(raw.preset)) {
         presetKey = raw.preset;
       } else if (raw.preset === 'cinematic_bleed') {
         presetKey = 'cinematic_hero';
@@ -1071,6 +1108,65 @@ export default function GalleryDesignStudio({
                                     }}
                                   />
                                 )}
+                              </div>
+                            </div>
+                          )}
+
+                          {preset.id === 'torn_paper_edge' && (
+                            <div className="absolute inset-0 flex flex-col justify-between">
+                              <div className="relative z-10 text-center pt-8 space-y-0.5">
+                                <div className="flex items-center justify-center gap-1 text-[6px] font-mono uppercase tracking-widest text-amber-300">
+                                  <span>✦</span>
+                                  <span>GALLERY BY</span>
+                                  <span>✦</span>
+                                </div>
+                                <div className="text-[10px] font-serif capitalize font-bold text-white drop-shadow-md">{coupleName}</div>
+                                <span className="text-[6px] font-mono opacity-60 text-zinc-300">{eventDateFormatted}</span>
+                              </div>
+                              <div className="relative z-20 -mb-1 w-full">
+                                <TornPaperEdge color="#FAF9F5" isAnimated={false} />
+                              </div>
+                            </div>
+                          )}
+
+                          {preset.id === 'monochrome_portal' && (
+                            <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-between p-1.5">
+                              {coverPositioning.url && (
+                                <img
+                                  src={coverPositioning.url}
+                                  alt=""
+                                  className="absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 brightness-50"
+                                  style={{
+                                    objectPosition: `${coverPositioning.desktop.x}% ${coverPositioning.desktop.y}%`,
+                                  }}
+                                />
+                              )}
+                              <span className="relative z-10 text-[6px] font-mono uppercase tracking-widest text-white/80">✦ {studioName.slice(0, 8)} ✦</span>
+                              <div className="w-14 h-18 rounded-t-full rounded-b-xs border border-white/50 overflow-hidden shadow-lg relative z-10 bg-zinc-900">
+                                {coverPositioning.url && (
+                                  <img
+                                    src={coverPositioning.url}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    style={{
+                                      objectPosition: `${coverPositioning.desktop.x}% ${coverPositioning.desktop.y}%`,
+                                    }}
+                                  />
+                                )}
+                              </div>
+                              <span className="relative z-10 text-[7px] font-serif text-white capitalize font-semibold drop-shadow-sm">{coupleName}</span>
+                            </div>
+                          )}
+
+                          {preset.id === 'flowing_silk_veil' && (
+                            <div className="absolute inset-0 flex flex-col justify-between">
+                              <div className="relative z-10 text-center pt-8 space-y-0.5">
+                                <span className="text-[6px] font-mono uppercase tracking-widest text-amber-200">GALLERY BY</span>
+                                <div className="text-[10px] font-serif capitalize font-bold text-white drop-shadow-md">{coupleName}</div>
+                                <span className="text-[6px] font-mono opacity-60 text-zinc-300">{eventDateFormatted}</span>
+                              </div>
+                              <div className="relative z-20 -mb-1 w-full">
+                                <FlowingSilkVeil baseBgColor="#FAF9F5" />
                               </div>
                             </div>
                           )}
@@ -2096,6 +2192,222 @@ function renderPresetContent(
                 }}
               />
             )}
+          </div>
+        </div>
+      );
+
+    case 'torn_paper_edge':
+      return (
+        <div
+          className={`relative ${
+            isMobile ? 'h-80' : 'h-[440px]'
+          } w-full flex flex-col justify-between overflow-hidden text-center`}
+        >
+          {coverPos.url ? (
+            <img
+              src={coverPos.url}
+              alt="Hero"
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
+              style={{
+                objectPosition: `${focalX}% ${focalY}%`,
+                transformOrigin: `${focalX}% ${focalY}%`,
+                transform: `scale(${zoom / 100})`,
+              }}
+            />
+          ) : (
+            <div className="absolute inset-0 bg-zinc-900" />
+          )}
+
+          {/* Golden Romantic Vignette */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/20 to-black/75" />
+
+          {/* Top Bar inside image */}
+          <div className="relative z-10 px-4 py-3 flex items-center justify-between text-white/90 text-[10px] font-mono tracking-widest uppercase">
+            <span style={{ fontFamily: headingFont }}>{studioName}</span>
+            <span>{countLabel}</span>
+          </div>
+
+          {/* Center Artistic Romantic Typography (From User Photo 1) */}
+          <div className="relative z-10 p-4 space-y-2 text-white my-auto max-w-lg mx-auto">
+            <div className="flex items-center justify-center gap-1.5 text-[8px] sm:text-[9px] font-mono uppercase tracking-[0.28em] text-amber-200">
+              <SparkleStar className="w-2.5 h-2.5 text-amber-300 animate-spin" />
+              <span>GALLERY BY {studioName.toUpperCase()}</span>
+              <SparkleStar className="w-2.5 h-2.5 text-amber-300 animate-spin" />
+            </div>
+
+            <div className="space-y-0.5">
+              <h2
+                className={`${
+                  isMobile ? 'text-2xl' : 'text-4xl sm:text-5xl'
+                } font-normal tracking-tight text-white capitalize leading-tight drop-shadow-2xl`}
+                style={{ fontFamily: headingFont }}
+              >
+                {coupleName}
+              </h2>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <span className="w-6 h-px bg-white/40" />
+                <span className="text-[10px] text-amber-100/90 font-mono tracking-widest uppercase">
+                  {eventDateFormatted}
+                </span>
+                <span className="w-6 h-px bg-white/40" />
+              </div>
+            </div>
+
+            <div className="pt-1">
+              <ArrowDown className="w-3.5 h-3.5 mx-auto text-white/70 animate-bounce" />
+            </div>
+          </div>
+
+          {/* Ripped / Torn Paper Edge Footer (From User Photo 1) */}
+          <div className="relative z-20 -mb-1 w-full">
+            <TornPaperEdge color={design.palette.cardBg || design.palette.canvasBg || '#FFFFFF'} />
+          </div>
+        </div>
+      );
+
+    case 'monochrome_portal':
+      return (
+        <div
+          className={`relative ${
+            isMobile ? 'h-[460px]' : 'h-[520px]'
+          } w-full flex flex-col justify-between items-center overflow-hidden text-center bg-zinc-950 p-4`}
+        >
+          {/* Grayscale Wide Panorama Background (From User Photo 2) */}
+          {coverPos.url && (
+            <img
+              src={coverPos.url}
+              alt="Monochrome Backdrop"
+              className="absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 brightness-[0.55] transition-transform duration-1000 ease-out"
+              style={{
+                objectPosition: `${focalX}% ${focalY}%`,
+                transform: `scale(${zoom / 100})`,
+              }}
+            />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/20 to-black/85" />
+
+          {/* Top Studio Brand with Star Constellation */}
+          <div className="relative z-20 w-full pt-1 text-center space-y-0.5">
+            <div className="flex items-center justify-center gap-1.5 text-white/90 text-[9px] font-mono tracking-[0.25em] uppercase">
+              <SparkleStar className="w-2.5 h-2.5 text-amber-300" />
+              <span style={{ fontFamily: headingFont }}>{studioName}</span>
+              <SparkleStar className="w-2.5 h-2.5 text-amber-300" />
+            </div>
+            <span className="text-[7px] text-zinc-400 font-mono tracking-widest uppercase block">
+              FINE ART WEDDING VISUALS
+            </span>
+          </div>
+
+          {/* Centerpiece Color Arch Portal Window (From User Photo 2) */}
+          <div className="relative z-20 my-auto flex items-center justify-center">
+            {/* Flanking Hairlines & Pill Badges */}
+            <div className="absolute -left-16 sm:-left-24 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 text-[8px] font-mono tracking-widest text-white/70 uppercase">
+              <span className="w-8 h-px bg-white/40" />
+              <span className="px-2 py-0.5 rounded-full border border-white/20 bg-black/40 backdrop-blur-xs">STORY</span>
+            </div>
+            <div className="absolute -right-16 sm:-right-24 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 text-[8px] font-mono tracking-widest text-white/70 uppercase">
+              <span className="px-2 py-0.5 rounded-full border border-white/20 bg-black/40 backdrop-blur-xs">GALLERY</span>
+              <span className="w-8 h-px bg-white/40" />
+            </div>
+
+            {/* The Vibrant Color Arch Window Frame */}
+            <div
+              className={`${
+                isMobile ? 'w-44 h-56' : 'w-56 h-72'
+              } rounded-t-[100px] sm:rounded-t-[140px] rounded-b-xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.85)] border-2 border-white/40 relative bg-zinc-900 group`}
+            >
+              {coverPos.url && (
+                <img
+                  src={coverPos.url}
+                  alt="Color Arch Portrait"
+                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                  style={{
+                    objectPosition: `${focalX}% ${focalY}%`,
+                    transform: `scale(${zoom / 100})`,
+                  }}
+                />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Bottom Romantic Flourish Typography (From User Photo 2) */}
+          <div className="relative z-20 pb-2 space-y-1 text-white">
+            <h2
+              className={`${
+                isMobile ? 'text-2xl' : 'text-3xl sm:text-4xl'
+              } font-normal tracking-tight text-white capitalize drop-shadow-lg`}
+              style={{ fontFamily: headingFont }}
+            >
+              ✧ {coupleName} ✧
+            </h2>
+            <div className="flex items-center justify-center gap-2 text-[9px] font-mono text-zinc-300 tracking-widest">
+              <span>{eventDateFormatted}</span>
+              <span>•</span>
+              <span>{countLabel}</span>
+            </div>
+            <div className="pt-1">
+              <ArrowDown className="w-3.5 h-3.5 mx-auto text-white/60 animate-bounce" />
+            </div>
+          </div>
+        </div>
+      );
+
+    case 'flowing_silk_veil':
+      return (
+        <div
+          className={`relative ${
+            isMobile ? 'h-80' : 'h-[440px]'
+          } w-full flex flex-col justify-between overflow-hidden text-center`}
+        >
+          {coverPos.url ? (
+            <img
+              src={coverPos.url}
+              alt="Hero"
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
+              style={{
+                objectPosition: `${focalX}% ${focalY}%`,
+                transformOrigin: `${focalX}% ${focalY}%`,
+                transform: `scale(${zoom / 100})`,
+              }}
+            />
+          ) : (
+            <div className="absolute inset-0 bg-zinc-900" />
+          )}
+
+          {/* Dreamy Twilight Gradient */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/15 to-black/70" />
+
+          {/* Top Bar inside image */}
+          <div className="relative z-10 px-4 py-3 flex items-center justify-between text-white/90 text-[10px] font-mono tracking-widest uppercase">
+            <span style={{ fontFamily: headingFont }}>{studioName}</span>
+            <span>{countLabel}</span>
+          </div>
+
+          {/* Center Romance Typography */}
+          <div className="relative z-10 p-4 space-y-1 text-white my-auto max-w-lg mx-auto">
+            <span className="text-[8px] font-mono uppercase tracking-[0.28em] text-amber-200 block font-semibold drop-shadow-md">
+              GALLERY BY {studioName.toUpperCase()}
+            </span>
+            <h2
+              className={`${
+                isMobile ? 'text-2xl' : 'text-4xl'
+              } font-normal tracking-tight text-white capitalize drop-shadow-2xl`}
+              style={{ fontFamily: headingFont }}
+            >
+              {coupleName}
+            </h2>
+            <span className="text-[10px] text-zinc-200 font-mono tracking-wider block drop-shadow-md">
+              {eventDateFormatted}
+            </span>
+            <div className="pt-1">
+              <ArrowDown className="w-3.5 h-3.5 mx-auto text-white/70 animate-bounce" />
+            </div>
+          </div>
+
+          {/* 3D Flowing Silk Veil Waves (Floating Cloth Wave Effect) */}
+          <div className="relative z-20 -mb-1 w-full">
+            <FlowingSilkVeil baseBgColor={design.palette.cardBg || design.palette.canvasBg || '#FAF9F5'} />
           </div>
         </div>
       );

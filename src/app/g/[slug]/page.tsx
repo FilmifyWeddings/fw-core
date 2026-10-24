@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { parseCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
+import { TornPaperEdge, FlowingSilkVeil, SparkleStar } from '@/components/gallery/CoverPresetEffects';
 import {
   Camera,
   Sparkles,
@@ -1091,8 +1092,18 @@ function GuestSlugGalleryContent() {
       {/* 1. LUXURY WEDDING HERO (4 EXACT HANDCRAFTED PRESETS) */}
       <div className="relative overflow-hidden transition-all duration-700">
         
-        {/* PRESET 1: CINEMATIC HERO (Photo 4: Mr Sushant Photography Edge-to-Edge Hero) */}
-        {(designPreset === 'cinematic_hero' || designPreset === 'cinematic_bleed' || (!['editorial_canvas', 'faded_luxe', 'split_atelier', 'haute_editorial', 'royal_medallion', 'grand_diptych'].includes(designPreset))) && (
+        {/* PRESET 1: CINEMATIC HERO (Classic Full Bleed Hero) */}
+        {(designPreset === 'cinematic_hero' || designPreset === 'cinematic_bleed' || (![
+          'editorial_canvas',
+          'faded_luxe',
+          'split_atelier',
+          'haute_editorial',
+          'royal_medallion',
+          'grand_diptych',
+          'torn_paper_edge',
+          'monochrome_portal',
+          'flowing_silk_veil',
+        ].includes(designPreset))) && (
           <div className="relative min-h-[85vh] sm:min-h-[92vh] w-full flex flex-col justify-between overflow-hidden">
             {/* Desktop Hero Image with Auto Cinematic Zoom & Exact Focal Position */}
             {cleanCoverUrl ? (
@@ -1325,6 +1336,276 @@ function GuestSlugGalleryContent() {
               ) : (
                 <div className="w-full h-full bg-zinc-900" />
               )}
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 5: TORN PAPER EDGE (From User Photo 1) */}
+        {designPreset === 'torn_paper_edge' && (
+          <div className="relative min-h-[85vh] sm:min-h-[92vh] w-full flex flex-col justify-between overflow-hidden">
+            {/* Desktop Hero Image with Focal Positioning & Scale */}
+            {cleanCoverUrl ? (
+              <>
+                <img
+                  src={cleanCoverUrl}
+                  alt={gallery.title}
+                  className="hidden sm:block absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
+                  style={{
+                    objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                    transformOrigin: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                    transform: `scale(${coverPos.desktop.zoom / 100})`,
+                  }}
+                />
+                <img
+                  src={cleanCoverUrl}
+                  alt={gallery.title}
+                  className="block sm:hidden absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
+                  style={{
+                    objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                    transformOrigin: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                    transform: `scale(${coverPos.mobile.zoom / 100})`,
+                  }}
+                />
+              </>
+            ) : (
+              <div className="absolute inset-0 bg-zinc-900" />
+            )}
+
+            {/* Cinematic Gradient Vignette */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/20 to-black/75" />
+
+            {/* Top Bar inside hero */}
+            <div className="relative z-10 max-w-6xl w-full mx-auto px-6 py-4 flex items-center justify-between text-white/90 text-xs font-mono tracking-widest uppercase">
+              <span style={{ fontFamily: headingFont }}>{studioName}</span>
+              {totalPhotosCount > 0 && <span>{totalPhotosCount} PHOTOS</span>}
+            </div>
+
+            {/* Center Artistic Romantic Typography with Vintage Flourish Stars */}
+            <div className="relative z-10 px-6 my-auto text-center space-y-3 max-w-3xl mx-auto">
+              <div className="flex items-center justify-center gap-2 text-[10px] sm:text-xs font-mono uppercase tracking-[0.3em] text-amber-200/95 animate-in fade-in slide-in-from-bottom-2 duration-700">
+                <SparkleStar className="w-3.5 h-3.5 text-amber-300 animate-spin" />
+                <span>GALLERY BY {studioName.toUpperCase()}</span>
+                <SparkleStar className="w-3.5 h-3.5 text-amber-300 animate-spin" />
+              </div>
+
+              <h1
+                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize animate-in fade-in slide-in-from-bottom-5 duration-1000 delay-150 fill-mode-both"
+                style={{ fontFamily: headingFont }}
+              >
+                {gallery.title}
+              </h1>
+
+              <div className="flex items-center justify-center gap-3 pt-1 animate-in fade-in slide-in-from-bottom-3 duration-700 delay-300 fill-mode-both">
+                <span className="w-8 sm:w-16 h-px bg-white/40" />
+                <span className="text-xs sm:text-sm text-zinc-200 font-mono tracking-widest uppercase drop-shadow-md">
+                  {formattedDate}
+                </span>
+                <span className="w-8 sm:w-16 h-px bg-white/40" />
+              </div>
+
+              <div className="pt-4 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-500 fill-mode-both">
+                <a
+                  href="#sub-events-bar"
+                  className="inline-flex flex-col items-center gap-1 text-white/80 hover:text-white transition-colors cursor-pointer group"
+                  aria-label="Scroll to gallery content"
+                >
+                  <ArrowDown className="w-4 h-4 text-white/90 group-hover:translate-y-1 transition-transform animate-bounce" />
+                </a>
+              </div>
+            </div>
+
+            {/* Organic Ripped Torn Paper Edge along the footer (From User Photo 1) */}
+            <div className="relative z-20 -mb-1 w-full">
+              <TornPaperEdge color={designPalette.cardBg || designPalette.canvasBg || '#FFFFFF'} />
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 6: MONOCHROME PORTAL & ARCH DUO (From User Photo 2) */}
+        {designPreset === 'monochrome_portal' && (
+          <div className="relative min-h-[88vh] sm:min-h-[96vh] w-full flex flex-col justify-between items-center overflow-hidden bg-zinc-950 px-4 py-6 text-center">
+            {/* Grayscale Wide Panorama Background (From User Photo 2) */}
+            {cleanCoverUrl && (
+              <>
+                <img
+                  src={cleanCoverUrl}
+                  alt={gallery.title}
+                  className="hidden sm:block absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 brightness-[0.55] transition-transform duration-1000 ease-out"
+                  style={{
+                    objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                    transform: `scale(${coverPos.desktop.zoom / 100})`,
+                  }}
+                />
+                <img
+                  src={cleanCoverUrl}
+                  alt={gallery.title}
+                  className="block sm:hidden absolute inset-0 w-full h-full object-cover filter grayscale contrast-125 brightness-[0.55] transition-transform duration-1000 ease-out"
+                  style={{
+                    objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                    transform: `scale(${coverPos.mobile.zoom / 100})`,
+                  }}
+                />
+              </>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/25 to-black/85" />
+
+            {/* Top Studio Brand with Star Orbit Badges */}
+            <div className="relative z-20 w-full max-w-4xl mx-auto pt-2 space-y-1">
+              <div className="flex items-center justify-center gap-2 text-white/90 text-xs font-mono tracking-[0.28em] uppercase">
+                <SparkleStar className="w-3.5 h-3.5 text-amber-300" />
+                <span style={{ fontFamily: headingFont }} className="text-sm sm:text-base font-semibold">
+                  {studioName}
+                </span>
+                <SparkleStar className="w-3.5 h-3.5 text-amber-300" />
+              </div>
+              <span className="text-[10px] sm:text-xs text-zinc-400 font-mono tracking-widest uppercase block">
+                FINE ART WEDDING VISUALS
+              </span>
+            </div>
+
+            {/* Centerpiece Color Arch Portal Window (From User Photo 2) */}
+            <div className="relative z-20 my-auto flex items-center justify-center w-full max-w-5xl">
+              {/* Flanking Hairlines & Story Badges */}
+              <div className="absolute left-4 sm:left-12 top-1/2 -translate-y-1/2 hidden md:flex items-center gap-2 text-xs font-mono tracking-widest text-white/80 uppercase">
+                <span className="w-16 lg:w-28 h-px bg-white/40" />
+                <span className="px-3.5 py-1 rounded-full border border-white/30 bg-black/40 backdrop-blur-md shadow-sm">
+                  ✦ STORY
+                </span>
+              </div>
+              <div className="absolute right-4 sm:right-12 top-1/2 -translate-y-1/2 hidden md:flex items-center gap-2 text-xs font-mono tracking-widest text-white/80 uppercase">
+                <span className="px-3.5 py-1 rounded-full border border-white/30 bg-black/40 backdrop-blur-md shadow-sm">
+                  GALLERY ✦
+                </span>
+                <span className="w-16 lg:w-28 h-px bg-white/40" />
+              </div>
+
+              {/* The Vibrant Center Arch Portal Frame */}
+              <div className="w-64 sm:w-80 md:w-96 aspect-[9/13] rounded-t-[140px] sm:rounded-t-[200px] rounded-b-2xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.9)] border-2 border-white/50 relative bg-zinc-900 group">
+                {cleanCoverUrl && (
+                  <>
+                    <img
+                      src={cleanCoverUrl}
+                      alt={gallery.title}
+                      className="hidden sm:block w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
+                      style={{
+                        objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                        transform: `scale(${coverPos.desktop.zoom / 100})`,
+                      }}
+                    />
+                    <img
+                      src={cleanCoverUrl}
+                      alt={gallery.title}
+                      className="block sm:hidden w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
+                      style={{
+                        objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                        transform: `scale(${coverPos.mobile.zoom / 100})`,
+                      }}
+                    />
+                  </>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+              </div>
+            </div>
+
+            {/* Bottom Romantic Flourish Typography (From User Photo 2) */}
+            <div className="relative z-20 pb-4 space-y-2 text-white max-w-2xl mx-auto">
+              <h1
+                className="text-3xl sm:text-5xl md:text-6xl font-normal tracking-tight text-white capitalize drop-shadow-xl"
+                style={{ fontFamily: headingFont }}
+              >
+                ✧ {gallery.title} ✧
+              </h1>
+              <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-mono text-zinc-300 tracking-widest">
+                <span>{formattedDate}</span>
+                {totalPhotosCount > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>{totalPhotosCount} PHOTOS</span>
+                  </>
+                )}
+              </div>
+              <div className="pt-2">
+                <a
+                  href="#sub-events-bar"
+                  className="inline-flex flex-col items-center gap-1 text-white/80 hover:text-white transition-colors cursor-pointer group"
+                >
+                  <ArrowDown className="w-4 h-4 text-white/80 group-hover:translate-y-1 transition-transform animate-bounce" />
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 7: FLOATING SILK VEIL (User Concept 3) */}
+        {designPreset === 'flowing_silk_veil' && (
+          <div className="relative min-h-[85vh] sm:min-h-[92vh] w-full flex flex-col justify-between overflow-hidden">
+            {/* Desktop Hero Image with Focal Positioning & Scale */}
+            {cleanCoverUrl ? (
+              <>
+                <img
+                  src={cleanCoverUrl}
+                  alt={gallery.title}
+                  className="hidden sm:block absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
+                  style={{
+                    objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                    transformOrigin: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                    transform: `scale(${coverPos.desktop.zoom / 100})`,
+                  }}
+                />
+                <img
+                  src={cleanCoverUrl}
+                  alt={gallery.title}
+                  className="block sm:hidden absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
+                  style={{
+                    objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                    transformOrigin: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                    transform: `scale(${coverPos.mobile.zoom / 100})`,
+                  }}
+                />
+              </>
+            ) : (
+              <div className="absolute inset-0 bg-zinc-900" />
+            )}
+
+            {/* Dreamy Twilight Gradient */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/20 to-black/75" />
+
+            {/* Top Bar inside hero */}
+            <div className="relative z-10 max-w-6xl w-full mx-auto px-6 py-4 flex items-center justify-between text-white/90 text-xs font-mono tracking-widest uppercase">
+              <span style={{ fontFamily: headingFont }}>{studioName}</span>
+              {totalPhotosCount > 0 && <span>{totalPhotosCount} PHOTOS</span>}
+            </div>
+
+            {/* Center Typography */}
+            <div className="relative z-10 px-6 my-auto text-center space-y-3 max-w-3xl mx-auto">
+              <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-amber-200/90 block font-semibold drop-shadow-md animate-in fade-in slide-in-from-bottom-2 duration-700">
+                GALLERY BY {studioName.toUpperCase()}
+              </span>
+
+              <h1
+                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize animate-in fade-in slide-in-from-bottom-5 duration-1000 delay-150 fill-mode-both"
+                style={{ fontFamily: headingFont }}
+              >
+                {gallery.title}
+              </h1>
+
+              <span className="text-xs sm:text-sm text-zinc-200 font-mono tracking-widest block drop-shadow-md animate-in fade-in slide-in-from-bottom-3 duration-700 delay-300 fill-mode-both">
+                {formattedDate}
+              </span>
+
+              <div className="pt-4 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-500 fill-mode-both">
+                <a
+                  href="#sub-events-bar"
+                  className="inline-flex flex-col items-center gap-1 text-white/80 hover:text-white transition-colors cursor-pointer group"
+                >
+                  <ArrowDown className="w-4 h-4 text-white/90 group-hover:translate-y-1 transition-transform animate-bounce" />
+                </a>
+              </div>
+            </div>
+
+            {/* 3D Flowing Silk Veil Waves along footer (User Concept 3) */}
+            <div className="relative z-20 -mb-1 w-full">
+              <FlowingSilkVeil baseBgColor={designPalette.cardBg || designPalette.canvasBg || '#FAF9F5'} />
             </div>
           </div>
         )}
