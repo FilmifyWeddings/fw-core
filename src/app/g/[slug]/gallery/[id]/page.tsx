@@ -266,7 +266,7 @@ function StrictZeroKnowledgeGuestContent() {
               body: JSON.stringify({
                 gallery_id: gallery.id,
                 embedding: g.face_embedding,
-                threshold: 0.48,
+                threshold: 0.40,
               }),
             });
             const matchJson = await matchRes.json();
@@ -391,7 +391,7 @@ function StrictZeroKnowledgeGuestContent() {
           gallery_id: gallery.id,
           galleryId: gallery.id,
           selfieBase64: data.selfieBase64,
-          threshold: 0.48,
+          threshold: 0.40,
         }),
       });
 
@@ -468,7 +468,7 @@ function StrictZeroKnowledgeGuestContent() {
             body: JSON.stringify({
               gallery_id: gallery.id,
               embedding: gJson.guest.face_embedding,
-              threshold: 0.48,
+              threshold: 0.40,
             }),
           });
           const mJson = await mRes.json();

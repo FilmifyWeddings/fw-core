@@ -64,6 +64,14 @@ function FacebookIcon({ className = 'w-4 h-4' }: { className?: string }) {
     </svg>
   );
 }
+
+function WhatsAppIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+    </svg>
+  );
+}
 import { getPublicGalleryUrl } from '@/lib/r2';
 import { FaceScannerModal } from '@/components/gallery/FaceScannerModal';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
@@ -374,7 +382,7 @@ function GuestSlugGalleryContent() {
               body: JSON.stringify({
                 gallery_id: gallery.id,
                 embedding: rawEmb,
-                threshold: 0.48,
+                threshold: 0.40,
               }),
             });
             const matchJson = await matchRes.json();
@@ -548,7 +556,7 @@ function GuestSlugGalleryContent() {
           gallery_id: gallery.id,
           galleryId: gallery.id,
           selfieBase64: data.selfieBase64,
-          threshold: 0.48,
+          threshold: 0.40,
         }),
       });
 
@@ -623,7 +631,7 @@ function GuestSlugGalleryContent() {
             body: JSON.stringify({
               gallery_id: gallery.id,
               embedding: gJson.guest.face_embedding,
-              threshold: 0.48,
+              threshold: 0.40,
             }),
           });
           const mJson = await mRes.json();
@@ -998,7 +1006,7 @@ function GuestSlugGalleryContent() {
   };
   const totalPhotosCount = fullPhotos?.length || (gallery as any)?.photos_count || (gallery as any)?.total_photos || 0;
 
-  // ── DYNAMIC DESIGN CONFIGURATION (PRESETS, PALETTE, FONTS, MOTION) ──
+  // ── DYNAMIC DESIGN CONFIGURATION (PRESETS, PALETTE, FONTS, MOTION, LAYOUT) ──
   const designConfig = gallery?.raw_payload?.design;
   const designPreset = designConfig?.preset || 'cinematic_bleed';
   const designPalette = designConfig?.palette || {
@@ -1007,6 +1015,11 @@ function GuestSlugGalleryContent() {
     accentColor: '#D97706',
     subtextColor: '#71717A',
     cardBg: '#FFFFFF',
+  };
+  const layoutConfig = designConfig?.layout || {
+    style: 'masonry',
+    gap: 12,
+    cornerRadius: 12,
   };
   const headingFont = designConfig?.typography?.headingFont || "'Playfair Display', 'Cormorant Garamond', Georgia, serif";
   const bodyFont = designConfig?.typography?.bodyFont || "'Plus Jakarta Sans', sans-serif";
@@ -1143,6 +1156,17 @@ function GuestSlugGalleryContent() {
               <FaceAiFocusIcon className="w-4 h-4 text-amber-300" />
             </button>
           </div>
+        </div>
+
+        {/* Guest Landing Footer Attribution */}
+        <div className="relative z-10 py-6 text-center text-white/60 text-[11px] space-y-1">
+          <p>&copy; 2026 {studioName}. All Rights Reserved.</p>
+          <p className="text-[10px]">
+            Powered by{' '}
+            <a href="https://studiocore.in" target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-white">
+              StudioCore.in
+            </a>
+          </p>
         </div>
 
         {/* Face Scanner Modal & PIN Modal in Guest Pre-Registration */}
@@ -1396,7 +1420,7 @@ function GuestSlugGalleryContent() {
         {/* PRESET 3: FADED LUXE (KnotsbyAMP Misty Backdrop with Bottom-Up Gradient Fade & Centered Typography) */}
         {(designPreset === 'faded_luxe' || designPreset === 'royal_medallion') && (
           <div
-            className="relative min-h-[85vh] sm:min-h-[90vh] w-full flex flex-col justify-between overflow-hidden transition-colors duration-500"
+            className="relative min-h-[85vh] sm:min-h-[90vh] w-full flex flex-col justify-end overflow-hidden transition-colors duration-500"
             style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
           >
             {/* Clear Background Photo (High clarity, opacity 85-90%) */}
@@ -1411,19 +1435,16 @@ function GuestSlugGalleryContent() {
               />
             )}
 
-            {/* Bottom-Up Gradient Fade (Creamy in Light mode, Black in Dark mode) */}
+            {/* Bottom-Up Gradient Fade (strictly 40%-50% from bottom per user request) */}
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
-                background: `linear-gradient(to top, ${designPalette.canvasBg} 0%, ${designPalette.canvasBg}E6 28%, ${designPalette.canvasBg}66 55%, transparent 100%)`,
+                background: `linear-gradient(to top, ${designPalette.canvasBg} 0%, ${designPalette.canvasBg}F2 18%, ${designPalette.canvasBg}99 32%, ${designPalette.canvasBg}26 44%, transparent 50%)`,
               }}
             />
 
-            {/* Top Spacing (Duplicate studio header, couple name and photo count removed per user request) */}
-            <div className="h-6 sm:h-10 w-full" />
-
-            {/* Center Content: Stacked serif title, date (Circle emblem removed per user request) */}
-            <div className="relative z-10 px-6 py-12 text-center space-y-4 max-w-3xl mx-auto my-auto animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            {/* Bottom Content: Stacked serif title, date, placed right at bottom */}
+            <div className="relative z-10 px-6 pt-10 pb-2 sm:pb-4 text-center space-y-3 sm:space-y-4 max-w-3xl mx-auto mt-auto animate-in fade-in slide-in-from-bottom-4 duration-1000">
               <span className="text-[11px] font-mono uppercase tracking-[0.28em] opacity-60 block font-semibold">
                 GALLERY BY {studioName.toUpperCase()}
               </span>
@@ -1433,17 +1454,17 @@ function GuestSlugGalleryContent() {
               >
                 {gallery.title}
               </h1>
-              <span className="text-xs sm:text-sm font-mono tracking-widest opacity-75 block pt-1">
+              <span className="text-xs sm:text-sm font-mono tracking-widest opacity-75 block">
                 {formattedDate}
               </span>
-            </div>
 
-            {/* Bottom Delicate Line & Arrow */}
-            <div className="relative z-10 pb-8 flex flex-col items-center">
-              <div className="w-px h-8 bg-current opacity-30" />
-              <a href="#sub-events-bar" className="pt-2 opacity-60 hover:opacity-100 transition-colors" aria-label="Scroll down">
-                <ArrowDown className="w-4 h-4 animate-bounce" />
-              </a>
+              {/* Bottom Delicate Line & Arrow */}
+              <div className="pt-2 sm:pt-3 flex flex-col items-center">
+                <div className="w-px h-6 sm:h-8 bg-current opacity-30" />
+                <a href="#sub-events-bar" className="pt-1.5 opacity-60 hover:opacity-100 transition-colors" aria-label="Scroll down">
+                  <ArrowDown className="w-4 h-4 animate-bounce" />
+                </a>
+              </div>
             </div>
           </div>
         )}
@@ -1613,12 +1634,15 @@ function GuestSlugGalleryContent() {
 
         {/* PRESET 7: VINTAGE SCRAPBOOK (Photo 1: Tilted Polaroid, Washi Tape, Script Calligraphy & Circled Date) */}
         {designPreset === 'vintage_scrapbook' && (
-          <div className="relative min-h-[88vh] sm:min-h-[95vh] w-full flex flex-col justify-between overflow-hidden bg-[#FAF7F2] text-zinc-900 px-4 sm:px-8 py-6 sm:py-10">
+          <div
+            className="relative min-h-[88vh] sm:min-h-[95vh] w-full flex flex-col justify-between overflow-hidden px-4 sm:px-8 py-6 sm:py-10 transition-colors duration-500"
+            style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
+          >
             {/* Subtle Paper Grain Effect */}
             <div
               className="absolute inset-0 opacity-[0.035] pointer-events-none"
               style={{
-                backgroundImage: `radial-gradient(#18181b 1px, transparent 1px)`,
+                backgroundImage: `radial-gradient(${designPalette.textColor} 1px, transparent 1px)`,
                 backgroundSize: '16px 16px',
               }}
             />
@@ -1626,16 +1650,16 @@ function GuestSlugGalleryContent() {
             {/* Top Header Row (Studio name removed per user request) */}
             <div className="relative z-10 w-full max-w-6xl mx-auto flex justify-end">
               <div className="text-right leading-none space-y-0.5">
-                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.25em] text-zinc-400 block font-bold">
+                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.25em] opacity-50 block font-bold">
                   OUR
                 </span>
                 <span
-                  className="text-3xl sm:text-5xl font-normal block text-[#8B1E1E]"
-                  style={{ fontFamily: "'Great Vibes', cursive" }}
+                  className="text-3xl sm:text-5xl font-normal block"
+                  style={{ fontFamily: "'Great Vibes', cursive", color: designPalette.accentColor }}
                 >
                   Forever
                 </span>
-                <span className="text-[9px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-zinc-600 block font-semibold">
+                <span className="text-[9px] sm:text-[11px] font-mono uppercase tracking-[0.28em] opacity-65 block font-semibold">
                   WEDDING CHAPTER
                 </span>
               </div>
@@ -1645,14 +1669,14 @@ function GuestSlugGalleryContent() {
             <div className="relative z-10 my-auto w-full max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-around gap-8 sm:gap-12 lg:gap-16 py-6 sm:py-10">
               {/* Left Side: Romantic Wedding Vows & Circled Date Stamp */}
               <div className="order-2 lg:order-1 text-center lg:text-left max-w-md space-y-6 animate-in fade-in slide-in-from-left-6 duration-1000">
-                <p className="text-sm sm:text-base md:text-lg text-zinc-600 font-serif leading-relaxed italic">
+                <p className="text-sm sm:text-base md:text-lg opacity-75 font-serif leading-relaxed italic">
                   &ldquo;Every single chapter written with love, laughter, and timeless devotion. A celebration of two hearts becoming one forever.&rdquo;
                 </p>
 
                 {/* Authentic Hand-Drawn Circled Date Stamp (From User Photo 1) */}
-                <div className="flex justify-center lg:justify-start">
-                  <HandDrawnOval className="text-[#8B1E1E]">
-                    <span className="text-base sm:text-lg md:text-xl font-serif italic tracking-wide text-[#8B1E1E] font-semibold">
+                <div className="flex justify-center lg:justify-start" style={{ color: designPalette.accentColor }}>
+                  <HandDrawnOval>
+                    <span className="text-base sm:text-lg md:text-xl font-serif italic tracking-wide font-semibold" style={{ color: designPalette.accentColor }}>
                       {formattedDate}
                     </span>
                   </HandDrawnOval>
@@ -2150,20 +2174,37 @@ function GuestSlugGalleryContent() {
                       </div>
                     </div>
 
-                    {/* Matched Justified Multi-Column Grid */}
-                    <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
+                    {/* Matched Photos Grid (Dynamic Masonry vs Justified) */}
+                    <div
+                      className={
+                        layoutConfig.style === 'justified'
+                          ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
+                          : 'columns-2 sm:columns-3 md:columns-4 lg:columns-5'
+                      }
+                      style={
+                        layoutConfig.style === 'justified'
+                          ? { gap: `${layoutConfig.gap}px` }
+                          : { columnGap: `${layoutConfig.gap}px` }
+                      }
+                    >
                       {matchedPhotos.map((photo, idx) => (
                         <div
                           key={photo.id}
                           onClick={() => setSelectedPhotoIndex(idx)}
-                          className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
+                          className={`group relative overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer ${
+                            layoutConfig.style === 'justified' ? 'aspect-[4/3]' : 'break-inside-avoid'
+                          }`}
+                          style={{
+                            borderRadius: `${layoutConfig.cornerRadius}px`,
+                            marginBottom: layoutConfig.style === 'justified' ? undefined : `${layoutConfig.gap}px`,
+                          }}
                         >
                           <ProgressiveSmoothImage
                             src={photo.preview_url || photo.thumbnail_url}
                             thumbnailSrc={photo.thumbnail_url}
                             alt="Matched Photo"
-                            aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                            className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                            aspectRatio={layoutConfig.style === 'justified' ? '4/3' : (photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined)}
+                            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                           />
 
                           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -2232,20 +2273,37 @@ function GuestSlugGalleryContent() {
             {/* TAB 2: ALL EVENT PHOTOS VIEW */}
             {guestActiveTab === 'all' && (
               <div className="space-y-6">
-                {/* All Photos Grid */}
-                <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
+                {/* All Photos Grid (Dynamic Masonry vs Justified) */}
+                <div
+                  className={
+                    layoutConfig.style === 'justified'
+                      ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
+                      : 'columns-2 sm:columns-3 md:columns-4 lg:columns-5'
+                  }
+                  style={
+                    layoutConfig.style === 'justified'
+                      ? { gap: `${layoutConfig.gap}px` }
+                      : { columnGap: `${layoutConfig.gap}px` }
+                  }
+                >
                   {targetFullPhotos.map((photo, idx) => (
                     <div
                       key={photo.id}
                       onClick={() => setSelectedPhotoIndex(idx)}
-                      className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
+                      className={`group relative overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer ${
+                        layoutConfig.style === 'justified' ? 'aspect-[4/3]' : 'break-inside-avoid'
+                      }`}
+                      style={{
+                        borderRadius: `${layoutConfig.cornerRadius}px`,
+                        marginBottom: layoutConfig.style === 'justified' ? undefined : `${layoutConfig.gap}px`,
+                      }}
                     >
                       <ProgressiveSmoothImage
                         src={photo.preview_url || photo.thumbnail_url}
                         thumbnailSrc={photo.thumbnail_url}
                         alt="Event Photo"
-                        aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                        className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                        aspectRatio={layoutConfig.style === 'justified' ? '4/3' : (photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined)}
+                        className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                       />
 
                       <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -2296,8 +2354,19 @@ function GuestSlugGalleryContent() {
               </div>
             )}
 
-            {/* Privileged Full Photo Justified Multi-Column Grid */}
-            <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
+            {/* Privileged Full Photo Grid (Dynamic Masonry vs Justified) */}
+            <div
+              className={
+                layoutConfig.style === 'justified'
+                  ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
+                  : 'columns-2 sm:columns-3 md:columns-4 lg:columns-5'
+              }
+              style={
+                layoutConfig.style === 'justified'
+                  ? { gap: `${layoutConfig.gap}px` }
+                  : { columnGap: `${layoutConfig.gap}px` }
+              }
+            >
               {displayedPhotos.map((photo, idx) => {
                 const isSelected = selectedForAlbum.has(photo.id);
                 return (
@@ -2331,18 +2400,24 @@ function GuestSlugGalleryContent() {
                         setSelectedPhotoIndex(idx);
                       }
                     }}
-                    className={`group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
+                    className={`group relative overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
+                      layoutConfig.style === 'justified' ? 'aspect-[4/3]' : 'break-inside-avoid'
+                    } ${
                       isSelected
                         ? 'border-rose-500 ring-4 ring-rose-500/25 shadow-xl'
                         : 'border-[#E7E2D8] hover:shadow-lg'
                     }`}
+                    style={{
+                      borderRadius: `${layoutConfig.cornerRadius}px`,
+                      marginBottom: layoutConfig.style === 'justified' ? undefined : `${layoutConfig.gap}px`,
+                    }}
                   >
                     <ProgressiveSmoothImage
                       src={photo.preview_url || photo.thumbnail_url}
                       thumbnailSrc={photo.thumbnail_url}
                       alt="Wedding photo"
-                      aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                      className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                      aspectRatio={layoutConfig.style === 'justified' ? '4/3' : (photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined)}
+                      className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                     />
 
                     {/* Animated Heart Icon Button for Photo Selection */}
@@ -2725,87 +2800,120 @@ function GuestSlugGalleryContent() {
       )}
 
       {/* 7. STUDIO BRANDING FOOTER */}
-      <footer className="mt-20 border-t border-[#E7E2D8] bg-[#F5F2EB] text-zinc-800 py-12 px-4 sm:px-8">
+      <footer
+        className="mt-20 border-t py-12 px-4 sm:px-8 transition-colors duration-500"
+        style={{
+          backgroundColor: designPalette.canvasBg,
+          color: designPalette.textColor,
+          borderColor: `${designPalette.textColor}15`,
+        }}
+      >
         <div className="max-w-4xl mx-auto text-center space-y-6">
           <div className="flex flex-col items-center justify-center space-y-2">
             {studioLogo ? (
               <img
                 src={studioLogo}
                 alt={studioName}
-                className="w-14 h-14 rounded-full object-cover ring-2 ring-amber-500/30 mx-auto shadow-sm"
+                className="w-14 h-14 rounded-full object-cover ring-2 ring-black/10 mx-auto shadow-sm"
               />
             ) : (
-              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-serif font-black flex items-center justify-center text-base shadow-sm mx-auto">
+              <div
+                className="w-12 h-12 rounded-full font-serif font-black flex items-center justify-center text-base shadow-sm mx-auto"
+                style={{
+                  backgroundColor: designPalette.accentColor,
+                  color: '#FFFFFF',
+                }}
+              >
                 {studioName.charAt(0).toUpperCase()}
               </div>
             )}
             <h3
-              className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900"
-              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              className="text-xl sm:text-2xl font-bold tracking-tight"
+              style={{ fontFamily: headingFont }}
             >
               {studioName}
             </h3>
-            <p className="text-xs sm:text-sm text-zinc-500 font-serif italic max-w-md mx-auto">
-              {studioTagline}
+            <p className="text-xs sm:text-sm opacity-70 italic max-w-md mx-auto">
+              {studioSubtitle}
             </p>
           </div>
 
-          {/* Social Media Links */}
+          {/* Social Media Links - Horizontal Row of Pure Vector Icons */}
           {(studioPhone || instagramHandle || facebookHandle || youtubeHandle || studioEmail) && (
-            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-              {/* 1. WhatsApp */}
+            <div className="flex items-center justify-center gap-3 pt-2">
+              {/* WhatsApp */}
               {socialVisibility?.whatsapp !== false && studioPhone && (
                 <a
                   href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-emerald-300 hover:text-emerald-700 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                  style={{
+                    borderColor: `${designPalette.textColor}25`,
+                    color: designPalette.textColor,
+                    backgroundColor: `${designPalette.textColor}08`,
+                  }}
+                  title="WhatsApp"
+                  aria-label="WhatsApp"
                 >
-                  <img
-                    src="/assets/icons/Whatsapp.png"
-                    alt="WhatsApp"
-                    className="w-4 h-4 object-contain"
-                  />
-                  <span>WhatsApp</span>
+                  <WhatsAppIcon className="w-4 h-4" />
                 </a>
               )}
 
-              {/* 2. Instagram */}
+              {/* Instagram */}
               {socialVisibility?.instagram !== false && instagramHandle && (
                 <a
                   href={instagramHandle.startsWith('http') ? instagramHandle : `https://instagram.com/${instagramHandle.replace('@', '').trim()}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-pink-300 hover:text-pink-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                  style={{
+                    borderColor: `${designPalette.textColor}25`,
+                    color: designPalette.textColor,
+                    backgroundColor: `${designPalette.textColor}08`,
+                  }}
+                  title="Instagram"
+                  aria-label="Instagram"
                 >
-                  <InstagramIcon className="w-4 h-4 text-pink-500" />
-                  <span>Instagram</span>
+                  <InstagramIcon className="w-4 h-4" />
                 </a>
               )}
 
-              {/* 3. Facebook */}
+              {/* Facebook */}
               {socialVisibility?.facebook !== false && facebookHandle && (
                 <a
                   href={facebookHandle.startsWith('http') ? facebookHandle : `https://facebook.com/${facebookHandle.trim()}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-blue-300 hover:text-blue-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                  style={{
+                    borderColor: `${designPalette.textColor}25`,
+                    color: designPalette.textColor,
+                    backgroundColor: `${designPalette.textColor}08`,
+                  }}
+                  title="Facebook"
+                  aria-label="Facebook"
                 >
-                  <FacebookIcon className="w-4 h-4 text-blue-600" />
-                  <span>Facebook</span>
+                  <FacebookIcon className="w-4 h-4" />
                 </a>
               )}
 
-              {/* 4. YouTube */}
+              {/* YouTube */}
               {socialVisibility?.youtube !== false && youtubeHandle && (
                 <a
                   href={youtubeHandle.startsWith('http') ? youtubeHandle : `https://youtube.com/${youtubeHandle.startsWith('@') ? youtubeHandle : `@${youtubeHandle}`}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-red-300 hover:text-red-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                  style={{
+                    borderColor: `${designPalette.textColor}25`,
+                    color: designPalette.textColor,
+                    backgroundColor: `${designPalette.textColor}08`,
+                  }}
+                  title="YouTube"
+                  aria-label="YouTube"
                 >
-                  <YoutubeIcon className="w-4 h-4 text-red-600" />
-                  <span>YouTube</span>
+                  <YoutubeIcon className="w-4 h-4" />
                 </a>
               )}
 
@@ -2813,17 +2921,42 @@ function GuestSlugGalleryContent() {
               {studioEmail && (
                 <a
                   href={`mailto:${studioEmail}`}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-zinc-400 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                  style={{
+                    borderColor: `${designPalette.textColor}25`,
+                    color: designPalette.textColor,
+                    backgroundColor: `${designPalette.textColor}08`,
+                  }}
+                  title="Email"
+                  aria-label="Email"
                 >
-                  <Mail className="w-4 h-4 text-zinc-500" />
-                  <span>Email</span>
+                  <Mail className="w-4 h-4" />
                 </a>
               )}
             </div>
           )}
 
-          <div className="pt-4 border-t border-[#E7E2D8]/80 text-[11px] text-zinc-400">
-            © {new Date().getFullYear()} {studioName}. All rights reserved. • Powered by StudioCore
+          <div
+            className="pt-4 border-t text-[11px] space-y-1 transition-colors"
+            style={{
+              borderColor: `${designPalette.textColor}18`,
+              color: designPalette.textColor,
+            }}
+          >
+            <p className="opacity-75">
+              &copy; 2026 {studioName}. All Rights Reserved.
+            </p>
+            <p className="opacity-60 text-[10px]">
+              Powered by{' '}
+              <a
+                href="https://studiocore.in"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-bold underline hover:opacity-100 transition-opacity"
+              >
+                StudioCore.in
+              </a>
+            </p>
           </div>
         </div>
       </footer>

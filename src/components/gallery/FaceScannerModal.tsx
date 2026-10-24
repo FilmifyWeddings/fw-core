@@ -203,21 +203,21 @@ export function FaceScannerModal({
           const faceCenterY = (box.y + box.height / 2) / vh;
           const faceRatio = box.height / vh;
 
-          if (faceRatio < 0.28) {
+          if (faceRatio < 0.20) {
             setGuidance('too_far');
             setGuidanceMessage('🔴 Move closer to the camera');
             animFrameRef.current = requestAnimationFrame(evaluateFaceFrame);
             return;
           }
 
-          if (faceCenterX < 0.30 || faceCenterX > 0.70 || faceCenterY < 0.20 || faceCenterY > 0.80) {
+          if (faceCenterX < 0.25 || faceCenterX > 0.75 || faceCenterY < 0.15 || faceCenterY > 0.85) {
             setGuidance('not_centered');
             setGuidanceMessage('🟡 Center your face in the oval');
             animFrameRef.current = requestAnimationFrame(evaluateFaceFrame);
             return;
           }
 
-          // Check eye landmarks for looking straight (Yaw detection)
+          // Relaxed eye landmark check to support natural head tilts and angled faces
           if (face.landmarks && Array.isArray(face.landmarks)) {
             const eyes = face.landmarks.filter((l: any) => l.type === 'eye');
             if (eyes.length >= 2) {
@@ -225,9 +225,9 @@ export function FaceScannerModal({
               const eye2 = eyes[1].locations[0];
               const eyeDistance = Math.abs(eye1.x - eye2.x);
               const eyeDiffY = Math.abs(eye1.y - eye2.y);
-              if (eyeDistance < box.width * 0.18 || eyeDiffY > box.height * 0.20) {
+              if (eyeDistance < box.width * 0.10 || eyeDiffY > box.height * 0.45) {
                 setGuidance('looking_away');
-                setGuidanceMessage('🟡 Look straight at the camera');
+                setGuidanceMessage('🟡 Look towards the camera');
                 animFrameRef.current = requestAnimationFrame(evaluateFaceFrame);
                 return;
               }
@@ -307,19 +307,20 @@ export function FaceScannerModal({
         } else if (avgLuma > 248) {
           setGuidance('too_bright');
           setGuidanceMessage('🔴 Too Bright / Glare - Reduce direct light');
-        } else if (skinRatio < 0.15) {
+        } else if (skinRatio < 0.12) {
           setGuidance('no_face');
           setGuidanceMessage('🔴 No face detected. Keep face in frame');
-        } else if (skinRatio < 0.22) {
+        } else if (skinRatio < 0.18) {
           setGuidance('not_centered');
           setGuidanceMessage('🟡 Center your face inside the oval');
         } else {
+          // Relaxed for spectacles, sunglasses, head tilts and slight side angles
           const eyeDifference = Math.abs(leftEyeRegionDarkness - rightEyeRegionDarkness);
           const maxEyeDarkness = Math.max(leftEyeRegionDarkness, rightEyeRegionDarkness, 1);
 
-          if (eyeDifference / maxEyeDarkness > 0.85 && maxEyeDarkness > 20) {
+          if (eyeDifference / maxEyeDarkness > 0.98 && maxEyeDarkness > 60) {
             setGuidance('looking_away');
-            setGuidanceMessage('🟡 Look straight at the camera');
+            setGuidanceMessage('🟡 Look towards the camera');
           } else {
             setGuidance('ready');
             setGuidanceMessage('🟢 Ready to Capture');
@@ -446,7 +447,7 @@ export function FaceScannerModal({
             galleryId: galleryId,
             selfieBase64: capturedSelfie,
             image_base64: capturedSelfie,
-            threshold: 0.48,
+            threshold: 0.40,
           }),
         });
 

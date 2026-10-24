@@ -25,9 +25,11 @@ import {
   Sliders,
   Laptop,
   Camera,
+  Download,
+  Grid,
 } from 'lucide-react';
 import { parseCoverUrl, buildCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
-import { SparkleStar, WashiTape, HandDrawnOval } from '@/components/gallery/CoverPresetEffects';
+import { SparkleStar, WashiTape, HandDrawnOval, FaceAiFocusIcon } from '@/components/gallery/CoverPresetEffects';
 
 export type PresetId =
   | 'cinematic_hero'
@@ -37,6 +39,12 @@ export type PresetId =
   | 'monochrome_portal'
   | 'vintage_scrapbook'
   | 'grand_maison';
+
+export interface GalleryLayoutConfig {
+  style: 'masonry' | 'justified';
+  gap: number; // 0, 4, 8, 12, 16, 24 px
+  cornerRadius: number; // 0, 8, 16, 24, 32 px
+}
 
 export interface GalleryDesignConfig {
   preset: PresetId;
@@ -57,6 +65,7 @@ export interface GalleryDesignConfig {
     overlayOpacity: number;
     focalPoint: { x: number; y: number };
   };
+  layout?: GalleryLayoutConfig;
 }
 
 export const DEFAULT_DESIGN_CONFIG: GalleryDesignConfig = {
@@ -77,6 +86,11 @@ export const DEFAULT_DESIGN_CONFIG: GalleryDesignConfig = {
     url: '',
     overlayOpacity: 45,
     focalPoint: { x: 50, y: 50 },
+  },
+  layout: {
+    style: 'masonry',
+    gap: 12,
+    cornerRadius: 12,
   },
 };
 
@@ -497,6 +511,76 @@ const AESTHETIC_FONTS: AestheticFontItem[] = [
     category: 'Modern Sans',
     subFont: "'Inter', sans-serif",
   },
+  {
+    name: 'Syne',
+    family: "'Syne', sans-serif",
+    tag: 'Avant-Garde High-Fashion Sans',
+    category: 'Modern Sans',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Alex Brush',
+    family: "'Alex Brush', cursive",
+    tag: 'Signature Bridal Calligraphy',
+    category: 'Calligraphy',
+    subFont: "'Playfair Display', serif",
+  },
+  {
+    name: 'Cormorant Upright',
+    family: "'Cormorant Upright', Georgia, serif",
+    tag: 'Slender Poetic Italic',
+    category: 'Luxury Serif',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Cinzel Decorative',
+    family: "'Cinzel Decorative', Georgia, serif",
+    tag: 'Imperial Regal Swash',
+    category: 'Luxury Serif',
+    subFont: "'Cormorant Garamond', serif",
+  },
+  {
+    name: 'Ephesis',
+    family: "'Ephesis', cursive",
+    tag: 'Flowing Ink Handlettering',
+    category: 'Calligraphy',
+    subFont: "'Playfair Display', serif",
+  },
+  {
+    name: 'Castoro Titling',
+    family: "'Castoro Titling', Georgia, serif",
+    tag: 'Roman Heritage Stonecut',
+    category: 'Luxury Serif',
+    subFont: "'Inter', sans-serif",
+  },
+  {
+    name: 'Baskervville',
+    family: "'Baskervville', Georgia, serif",
+    tag: 'English Country Estate Serif',
+    category: 'Luxury Serif',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Bellefair',
+    family: "'Bellefair', Georgia, serif",
+    tag: 'Graceful Minimalist Editorial',
+    category: 'Luxury Serif',
+    subFont: "'Inter', sans-serif",
+  },
+  {
+    name: 'Urbanist',
+    family: "'Urbanist', sans-serif",
+    tag: 'Neo-Grotesque Ultra-Clean',
+    category: 'Modern Sans',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
+    name: 'Fraunces',
+    family: "'Fraunces', Georgia, serif",
+    tag: 'Vintage Organic Warm Serif',
+    category: 'Luxury Serif',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
 ];
 
 interface GalleryDesignStudioProps {
@@ -516,8 +600,8 @@ export default function GalleryDesignStudio({
   onSaveSuccess,
   onUpdateGallery,
 }: GalleryDesignStudioProps) {
-  // Top 3 Tabs: Presets, Palette, Fonts
-  const [activeTab, setActiveTab] = useState<'presets' | 'palette' | 'fonts'>('presets');
+  // Top 4 Tabs: Presets, Palette, Fonts, Layout
+  const [activeTab, setActiveTab] = useState<'presets' | 'palette' | 'fonts' | 'layout'>('presets');
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [paletteMode, setPaletteMode] = useState<'light' | 'dark'>('light');
   const [saving, setSaving] = useState(false);
@@ -583,6 +667,10 @@ export default function GalleryDesignStudio({
           ...DEFAULT_DESIGN_CONFIG.cover,
           ...(raw.cover || {}),
         },
+        layout: {
+          ...DEFAULT_DESIGN_CONFIG.layout,
+          ...(raw.layout || {}),
+        },
       };
     }
     return DEFAULT_DESIGN_CONFIG;
@@ -643,10 +731,19 @@ export default function GalleryDesignStudio({
     });
   }, [coverPositioning]);
 
-  // Real photos list to display in the live preview
+  // Real photos list to display in the live preview (up to 20 for rich scroll simulation)
   const previewPhotos = useMemo(() => {
     if (photos && photos.length > 0) {
-      return photos.slice(0, 6).map((p) => p.preview_url || p.thumbnail_url || p.url);
+      const urls = photos.map((p) => p.preview_url || p.thumbnail_url || p.url).filter(Boolean);
+      if (urls.length === 0) return [];
+      if (urls.length >= 20) return urls.slice(0, 20);
+      const repeated: string[] = [];
+      while (repeated.length < 20) {
+        for (const u of urls) {
+          if (repeated.length < 20) repeated.push(u);
+        }
+      }
+      return repeated;
     }
     return [];
   }, [photos]);
@@ -951,45 +1048,58 @@ export default function GalleryDesignStudio({
           ═════════════════════════════════════════════════════════════ */}
           <div className="lg:col-span-6 xl:col-span-5 overflow-y-auto max-h-[calc(100vh-140px)] pr-2 space-y-6 scrollbar-thin">
             
-            {/* 3 Main Tabs: Presets, Palette, Fonts */}
-            <div className="flex items-center p-1.5 bg-[#F4F1EA] rounded-2xl border border-[#E7E2D8] gap-1">
+            {/* 4 Main Tabs: Presets, Palette, Fonts, Layout */}
+            <div className="grid grid-cols-4 p-1.5 bg-[#F4F1EA] rounded-2xl border border-[#E7E2D8] gap-1">
               <button
                 type="button"
                 onClick={() => setActiveTab('presets')}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                className={`py-2 px-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   activeTab === 'presets'
                     ? 'bg-white text-zinc-950 shadow-sm border border-black/5'
                     : 'text-zinc-500 hover:text-zinc-800'
                 }`}
               >
                 <Layout className="w-3.5 h-3.5 text-amber-600" />
-                <span>1. Presets</span>
+                <span>Presets</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab('palette')}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                className={`py-2 px-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   activeTab === 'palette'
                     ? 'bg-white text-zinc-950 shadow-sm border border-black/5'
                     : 'text-zinc-500 hover:text-zinc-800'
                 }`}
               >
                 <Palette className="w-3.5 h-3.5 text-amber-600" />
-                <span>2. Palette</span>
+                <span>Palette</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab('fonts')}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                className={`py-2 px-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   activeTab === 'fonts'
                     ? 'bg-white text-zinc-950 shadow-sm border border-black/5'
                     : 'text-zinc-500 hover:text-zinc-800'
                 }`}
               >
                 <Type className="w-3.5 h-3.5 text-amber-600" />
-                <span>3. Fonts</span>
+                <span>Fonts</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('layout')}
+                className={`py-2 px-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === 'layout'
+                    ? 'bg-white text-zinc-950 shadow-sm border border-black/5'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                <Grid className="w-3.5 h-3.5 text-amber-600" />
+                <span>Layout</span>
               </button>
             </div>
 
@@ -1573,6 +1683,227 @@ export default function GalleryDesignStudio({
               </div>
             )}
 
+            {/* ─────────────────────────────────────────────────────────
+                TAB 4: GALLERY LAYOUT & SPACING CONTROLS
+            ───────────────────────────────────────────────────────── */}
+            {activeTab === 'layout' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-sm font-black text-zinc-900">Photo Grid &amp; Layout Controls</h2>
+                  <p className="text-xs text-zinc-500">
+                    Customize the grid arrangement, spacing between photographs, and corner rounding.
+                  </p>
+                </div>
+
+                {/* 1. Grid Style Selector */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-zinc-900">Grid Arrangement Style</span>
+                    <span className="text-[10px] font-mono font-bold text-amber-600 uppercase">
+                      {design.layout?.style === 'justified' ? 'Justified Rows' : 'Masonry Columns'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {/* Masonry Button */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDesign((prev) => ({
+                          ...prev,
+                          layout: {
+                            ...(prev.layout || { gap: 12, cornerRadius: 12 }),
+                            style: 'masonry',
+                          },
+                        }))
+                      }
+                      className={`p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                        (design.layout?.style || 'masonry') === 'masonry'
+                          ? 'border-amber-600 bg-amber-50/30 ring-2 ring-amber-600/20'
+                          : 'border-zinc-200 hover:border-zinc-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-zinc-900">Masonry</span>
+                        {(design.layout?.style || 'masonry') === 'masonry' && (
+                          <div className="w-4 h-4 rounded-full bg-amber-600 text-white flex items-center justify-center">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-zinc-500 leading-snug">
+                        Pinterest-style organic vertical columns respecting natural portrait &amp; landscape heights.
+                      </p>
+                    </button>
+
+                    {/* Justified Button */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDesign((prev) => ({
+                          ...prev,
+                          layout: {
+                            ...(prev.layout || { gap: 12, cornerRadius: 12 }),
+                            style: 'justified',
+                          },
+                        }))
+                      }
+                      className={`p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                        design.layout?.style === 'justified'
+                          ? 'border-amber-600 bg-amber-50/30 ring-2 ring-amber-600/20'
+                          : 'border-zinc-200 hover:border-zinc-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-zinc-900">Justified</span>
+                        {design.layout?.style === 'justified' && (
+                          <div className="w-4 h-4 rounded-full bg-amber-600 text-white flex items-center justify-center">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-zinc-500 leading-snug">
+                        Vogue editorial rows with uniform balanced aspect tiles in a clean structured grid.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Photo Gap / Spacing Controls */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-xs space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-zinc-900 block">Photo Spacing (Gap)</span>
+                      <span className="text-[10px] text-zinc-400">Distance between photos</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-mono font-bold text-xs">
+                      {design.layout?.gap ?? 12}px
+                    </span>
+                  </div>
+
+                  {/* Slider */}
+                  <input
+                    type="range"
+                    min="0"
+                    max="24"
+                    step="2"
+                    value={design.layout?.gap ?? 12}
+                    onChange={(e) =>
+                      setDesign((prev) => ({
+                        ...prev,
+                        layout: {
+                          ...(prev.layout || { style: 'masonry', cornerRadius: 12 }),
+                          gap: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                  />
+
+                  {/* Quick Preset Gap Buttons */}
+                  <div className="grid grid-cols-6 gap-1.5 pt-1">
+                    {[0, 4, 8, 12, 16, 24].map((g) => {
+                      const isSelected = (design.layout?.gap ?? 12) === g;
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() =>
+                            setDesign((prev) => ({
+                              ...prev,
+                              layout: {
+                                ...(prev.layout || { style: 'masonry', cornerRadius: 12 }),
+                                gap: g,
+                              },
+                            }))
+                          }
+                          className={`py-1.5 px-1 rounded-lg text-xs font-bold font-mono transition cursor-pointer text-center ${
+                            isSelected
+                              ? 'bg-amber-600 text-white shadow-xs'
+                              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                          }`}
+                        >
+                          {g}px
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. Photo Corner Rounding / Sharpness */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-xs space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-zinc-900 block">Corner Radius (Roundness)</span>
+                      <span className="text-[10px] text-zinc-400">Edge curvature of photo tiles</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-mono font-bold text-xs">
+                      {design.layout?.cornerRadius ?? 12}px
+                    </span>
+                  </div>
+
+                  {/* Slider */}
+                  <input
+                    type="range"
+                    min="0"
+                    max="32"
+                    step="4"
+                    value={design.layout?.cornerRadius ?? 12}
+                    onChange={(e) =>
+                      setDesign((prev) => ({
+                        ...prev,
+                        layout: {
+                          ...(prev.layout || { style: 'masonry', gap: 12 }),
+                          cornerRadius: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                  />
+
+                  {/* Visual Corner Preset Chips */}
+                  <div className="grid grid-cols-5 gap-1.5 pt-1">
+                    {[
+                      { r: 0, label: '0px Sharp' },
+                      { r: 8, label: '8px Subtle' },
+                      { r: 16, label: '16px Soft' },
+                      { r: 24, label: '24px Curved' },
+                      { r: 32, label: '32px Oval' },
+                    ].map((item) => {
+                      const isSelected = (design.layout?.cornerRadius ?? 12) === item.r;
+                      return (
+                        <button
+                          key={item.r}
+                          type="button"
+                          onClick={() =>
+                            setDesign((prev) => ({
+                              ...prev,
+                              layout: {
+                                ...(prev.layout || { style: 'masonry', gap: 12 }),
+                                cornerRadius: item.r,
+                              },
+                            }))
+                          }
+                          className={`py-2 px-1 rounded-lg text-[10px] font-bold transition cursor-pointer flex flex-col items-center gap-1 ${
+                            isSelected
+                              ? 'bg-amber-600 text-white shadow-xs'
+                              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-4 h-4 border ${isSelected ? 'border-white' : 'border-zinc-400'}`}
+                            style={{ borderRadius: `${Math.min(item.r / 2, 8)}px` }}
+                          />
+                          <span>{item.r}px</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+            )}
+
           </div>
 
           {/* ═════════════════════════════════════════════════════════════
@@ -1710,30 +2041,88 @@ export default function GalleryDesignStudio({
                         <span className="opacity-70 hover:opacity-100 cursor-pointer whitespace-nowrap">Haldi</span>
                         <span className="opacity-70 hover:opacity-100 cursor-pointer whitespace-nowrap">Wedding</span>
                       </div>
-                      <span className="text-[10px] font-mono opacity-50 whitespace-nowrap hidden sm:inline">
-                        AI Face Search Enabled
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-full hover:bg-black/5 transition cursor-pointer border"
+                          style={{
+                            color: design.palette.textColor,
+                            borderColor: `${design.palette.textColor}25`,
+                          }}
+                          title="Search by Face AI"
+                        >
+                          <FaceAiFocusIcon className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-full hover:bg-black/5 transition cursor-pointer border"
+                          style={{
+                            color: design.palette.textColor,
+                            borderColor: `${design.palette.textColor}25`,
+                          }}
+                          title="Download Gallery"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
-                    {/* 4. Real Photos Grid in Preview */}
+                    {/* 4. Real Photos Grid in Preview (20 Photos with Dynamic Layout & Spacing) */}
                     <div className="p-6">
                       {previewPhotos.length > 0 ? (
-                        <div className="grid grid-cols-3 gap-3">
-                          {previewPhotos.map((url, idx) => (
-                            <div key={idx} className="aspect-square rounded-xl overflow-hidden shadow-xs bg-black/5">
-                              <img src={url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                            </div>
-                          ))}
-                        </div>
+                        design.layout?.style === 'justified' ? (
+                          <div
+                            className="grid grid-cols-3"
+                            style={{ gap: `${design.layout?.gap ?? 12}px` }}
+                          >
+                            {previewPhotos.map((url, idx) => (
+                              <div
+                                key={idx}
+                                className="aspect-[4/3] overflow-hidden shadow-xs bg-black/5 transition-all duration-300"
+                                style={{ borderRadius: `${design.layout?.cornerRadius ?? 12}px` }}
+                              >
+                                <img src={url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div
+                            className="columns-3"
+                            style={{
+                              columnGap: `${design.layout?.gap ?? 12}px`,
+                            }}
+                          >
+                            {previewPhotos.map((url, idx) => (
+                              <div
+                                key={idx}
+                                className="break-inside-avoid overflow-hidden shadow-xs bg-black/5 transition-all duration-300"
+                                style={{
+                                  borderRadius: `${design.layout?.cornerRadius ?? 12}px`,
+                                  marginBottom: `${design.layout?.gap ?? 12}px`,
+                                }}
+                              >
+                                <img
+                                  src={url}
+                                  alt={`Photo ${idx + 1}`}
+                                  className={`w-full object-cover ${idx % 3 === 0 ? 'aspect-[3/4]' : idx % 2 === 0 ? 'aspect-[4/3]' : 'aspect-square'}`}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )
                       ) : (
-                        <div className="grid grid-cols-3 gap-3">
-                          {[1, 2, 3, 4, 5, 6].map((idx) => (
+                        <div
+                          className="grid grid-cols-3"
+                          style={{ gap: `${design.layout?.gap ?? 12}px` }}
+                        >
+                          {Array.from({ length: 9 }).map((_, idx) => (
                             <div
                               key={idx}
-                              className="aspect-square rounded-xl bg-black/5 border border-black/10 flex flex-col items-center justify-center p-3 text-center"
+                              className="aspect-square bg-black/5 border border-black/10 flex flex-col items-center justify-center p-3 text-center transition-all duration-300"
+                              style={{ borderRadius: `${design.layout?.cornerRadius ?? 12}px` }}
                             >
                               <ImageIcon className="w-5 h-5 opacity-20 mb-1" />
-                              <span className="text-[9px] opacity-40 font-mono">Photo {idx}</span>
+                              <span className="text-[9px] opacity-40 font-mono">Photo {idx + 1}</span>
                             </div>
                           ))}
                         </div>
@@ -1798,39 +2187,100 @@ export default function GalleryDesignStudio({
 
                     {/* Mobile Sub-Events Bar */}
                     <div
-                      className="px-3 py-2 border-y flex items-center gap-2 overflow-x-auto text-[10px] font-bold"
+                      className="px-3 py-2 border-y flex items-center justify-between text-[10px] font-bold"
                       style={{
                         backgroundColor: `${design.palette.cardBg || design.palette.canvasBg}F0`,
                         borderColor: `${design.palette.textColor}1A`,
                         color: design.palette.textColor,
                       }}
                     >
-                      <span
-                        className="px-2.5 py-1 rounded-full text-[9px] font-bold shadow-xs whitespace-nowrap"
-                        style={{ backgroundColor: design.palette.accentColor, color: '#FFFFFF' }}
-                      >
-                        All ({photos.length > 0 ? photos.length : 18})
-                      </span>
-                      <span className="opacity-70 whitespace-nowrap">Highlights</span>
-                      <span className="opacity-70 whitespace-nowrap">Sangeet</span>
+                      <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none">
+                        <span
+                          className="px-2.5 py-1 rounded-full text-[9px] font-bold shadow-xs whitespace-nowrap"
+                          style={{ backgroundColor: design.palette.accentColor, color: '#FFFFFF' }}
+                        >
+                          All ({photos.length > 0 ? photos.length : 18})
+                        </span>
+                        <span className="opacity-70 whitespace-nowrap">Highlights</span>
+                        <span className="opacity-70 whitespace-nowrap">Sangeet</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          className="p-1 rounded-full hover:bg-black/5 transition cursor-pointer border"
+                          style={{
+                            color: design.palette.textColor,
+                            borderColor: `${design.palette.textColor}25`,
+                          }}
+                          title="Search by Face AI"
+                        >
+                          <FaceAiFocusIcon className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1 rounded-full hover:bg-black/5 transition cursor-pointer border"
+                          style={{
+                            color: design.palette.textColor,
+                            borderColor: `${design.palette.textColor}25`,
+                          }}
+                          title="Download Gallery"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Mobile Photo Grid */}
+                    {/* Mobile Photo Grid (20 Photos with Dynamic Layout & Spacing) */}
                     <div className="p-3">
                       {previewPhotos.length > 0 ? (
-                        <div className="grid grid-cols-2 gap-2">
-                          {previewPhotos.slice(0, 4).map((url, idx) => (
-                            <div key={idx} className="aspect-square rounded-lg overflow-hidden bg-black/5 shadow-2xs">
-                              <img src={url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                            </div>
-                          ))}
-                        </div>
+                        design.layout?.style === 'justified' ? (
+                          <div
+                            className="grid grid-cols-2"
+                            style={{ gap: `${design.layout?.gap ?? 12}px` }}
+                          >
+                            {previewPhotos.map((url, idx) => (
+                              <div
+                                key={idx}
+                                className="aspect-[4/3] overflow-hidden bg-black/5 shadow-2xs transition-all duration-300"
+                                style={{ borderRadius: `${design.layout?.cornerRadius ?? 12}px` }}
+                              >
+                                <img src={url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div
+                            className="columns-2"
+                            style={{ columnGap: `${design.layout?.gap ?? 12}px` }}
+                          >
+                            {previewPhotos.map((url, idx) => (
+                              <div
+                                key={idx}
+                                className="break-inside-avoid overflow-hidden bg-black/5 shadow-2xs transition-all duration-300"
+                                style={{
+                                  borderRadius: `${design.layout?.cornerRadius ?? 12}px`,
+                                  marginBottom: `${design.layout?.gap ?? 12}px`,
+                                }}
+                              >
+                                <img
+                                  src={url}
+                                  alt={`Photo ${idx + 1}`}
+                                  className={`w-full object-cover ${idx % 2 === 0 ? 'aspect-[3/4]' : 'aspect-square'}`}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )
                       ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                          {[1, 2, 3, 4].map((idx) => (
+                        <div
+                          className="grid grid-cols-2"
+                          style={{ gap: `${design.layout?.gap ?? 12}px` }}
+                        >
+                          {[1, 2, 3, 4, 5, 6].map((idx) => (
                             <div
                               key={idx}
-                              className="aspect-square rounded-lg bg-black/5 flex items-center justify-center text-[9px] opacity-40"
+                              className="aspect-square bg-black/5 flex items-center justify-center text-[9px] opacity-40 transition-all duration-300"
+                              style={{ borderRadius: `${design.layout?.cornerRadius ?? 12}px` }}
                             >
                               Photo {idx}
                             </div>
@@ -2229,7 +2679,7 @@ function renderPresetContent(
         <div
           className={`relative ${
             isMobile ? 'h-[420px]' : 'h-[480px]'
-          } w-full flex flex-col justify-between overflow-hidden transition-colors duration-500`}
+          } w-full flex flex-col justify-end overflow-hidden transition-colors duration-500`}
           style={{ backgroundColor: canvasBg, color: textColor }}
         >
           {/* Clear Background Photo */}
@@ -2245,34 +2695,32 @@ function renderPresetContent(
             />
           )}
 
-          {/* Bottom-Up Gradient Fade (Creamy in Light mode, Black in Dark mode) */}
+          {/* Bottom-Up Gradient Fade (strictly 40%-50% from bottom per user request) */}
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
-              background: `linear-gradient(to top, ${canvasBg} 0%, ${canvasBg}E6 28%, ${canvasBg}66 55%, transparent 100%)`,
+              background: `linear-gradient(to top, ${canvasBg} 0%, ${canvasBg}F2 18%, ${canvasBg}99 32%, ${canvasBg}26 44%, transparent 50%)`,
             }}
           />
 
-          {/* Top spacing */}
-          <div className="h-4 w-full" />
-
-          {/* Center Content (Circle removed, clean centered typography) */}
-          <div className="relative z-10 p-6 text-center space-y-2 my-auto">
+          {/* Bottom Content: Stacked serif title, date, placed right at bottom */}
+          <div className="relative z-10 px-4 pt-6 pb-2 sm:pb-3 text-center space-y-1.5 sm:space-y-2 mt-auto">
             <span className="text-[8px] sm:text-[9px] font-mono uppercase tracking-[0.25em] opacity-60 block font-semibold">
               GALLERY BY {studioName.toUpperCase()}
             </span>
             <h2
-              className={`${isMobile ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-5xl'} font-normal uppercase leading-tight drop-shadow-xs`}
+              className={`${isMobile ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'} font-normal uppercase leading-tight drop-shadow-xs`}
               style={{ fontFamily: headingFont }}
             >
               {coupleName}
             </h2>
             <span className="text-[10px] sm:text-xs font-mono tracking-wider opacity-75 block">{eventDateFormatted}</span>
-          </div>
 
-          {/* Bottom Animated Arrow */}
-          <div className="relative z-10 pb-4 flex flex-col items-center">
-            <ArrowDown className="w-3.5 h-3.5 opacity-60 animate-bounce" />
+            {/* Bottom Animated Arrow */}
+            <div className="pt-1 flex flex-col items-center">
+              <div className="w-px h-4 sm:h-6 bg-current opacity-30" />
+              <ArrowDown className="w-3.5 h-3.5 opacity-60 animate-bounce pt-0.5" />
+            </div>
           </div>
         </div>
       );
@@ -2406,18 +2854,23 @@ function renderPresetContent(
         </div>
       );
 
-    case 'vintage_scrapbook':
+    case 'vintage_scrapbook': {
+      const canvasBg = design.palette.canvasBg || '#FAF7F2';
+      const textColor = design.palette.textColor || '#18181B';
+      const accentColor = design.palette.accentColor || '#8B1E1E';
+
       return (
         <div
           className={`relative ${
             isMobile ? 'min-h-[480px] p-4' : 'min-h-[540px] p-8'
-          } w-full flex flex-col justify-between overflow-hidden bg-[#FAF7F2] text-zinc-900 border-b border-black/10`}
+          } w-full flex flex-col justify-between overflow-hidden border-b border-black/10 transition-colors duration-500`}
+          style={{ backgroundColor: canvasBg, color: textColor }}
         >
           {/* Subtle Paper Grain Effect */}
           <div
             className="absolute inset-0 opacity-[0.035] pointer-events-none"
             style={{
-              backgroundImage: `radial-gradient(#18181b 1px, transparent 1px)`,
+              backgroundImage: `radial-gradient(${textColor} 1px, transparent 1px)`,
               backgroundSize: '16px 16px',
             }}
           />
@@ -2425,14 +2878,14 @@ function renderPresetContent(
           {/* Top Header Row (Studio name removed per user request) */}
           <div className="relative z-10 w-full flex justify-end">
             <div className="text-right leading-none space-y-0.5">
-              <span className="text-[8px] font-mono uppercase tracking-[0.2em] text-zinc-400 block font-bold">OUR</span>
+              <span className="text-[8px] font-mono uppercase tracking-[0.2em] opacity-50 block font-bold">OUR</span>
               <span
-                className="text-2xl sm:text-3xl font-normal block text-[#8B1E1E]"
-                style={{ fontFamily: "'Great Vibes', cursive" }}
+                className="text-2xl sm:text-3xl font-normal block"
+                style={{ fontFamily: "'Great Vibes', cursive", color: accentColor }}
               >
                 Forever
               </span>
-              <span className="text-[7px] font-mono uppercase tracking-[0.25em] text-zinc-600 block font-semibold">
+              <span className="text-[7px] font-mono uppercase tracking-[0.25em] opacity-65 block font-semibold">
                 CHAPTER
               </span>
             </div>
@@ -2442,12 +2895,12 @@ function renderPresetContent(
           <div className={`relative z-10 my-auto ${isMobile ? 'flex flex-col items-center gap-5' : 'flex items-center justify-around gap-6'}`}>
             {/* Left Romantic Note & Circled Date */}
             <div className={`${isMobile ? 'text-center order-2 max-w-xs' : 'text-left max-w-[220px]'} space-y-3`}>
-              <p className="text-[11px] sm:text-xs text-zinc-600 font-serif leading-relaxed italic">
+              <p className="text-[11px] sm:text-xs opacity-75 font-serif leading-relaxed italic">
                 &ldquo;Every single chapter written with love, laughter, and timeless devotion.&rdquo;
               </p>
-              <div className="pt-1 flex justify-center sm:justify-start">
-                <HandDrawnOval className="text-[#8B1E1E]">
-                  <span className="text-xs sm:text-sm font-serif italic tracking-wide text-[#8B1E1E] font-semibold">
+              <div className="pt-1 flex justify-center sm:justify-start" style={{ color: accentColor }}>
+                <HandDrawnOval>
+                  <span className="text-xs sm:text-sm font-serif italic tracking-wide font-semibold" style={{ color: accentColor }}>
                     {eventDateFormatted}
                   </span>
                 </HandDrawnOval>
@@ -2507,6 +2960,7 @@ function renderPresetContent(
           </div>
         </div>
       );
+    }
 
     case 'grand_maison': {
       const bgColor = design.palette.canvasBg && design.palette.canvasBg !== '#FAF9F5' ? design.palette.canvasBg : '#540B13';
