@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { parseCoverUrl } from '@/lib/gallery-cover-utils';
+import { parseCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
 import {
   Camera,
   Sparkles,
@@ -120,48 +120,7 @@ interface GalleryInfo {
   raw_payload?: any;
 }
 
-interface CoverPositioning {
-  url: string;
-  desktop: { x: number; y: number; zoom: number };
-  mobile: { x: number; y: number; zoom: number };
-}
 
-function parseCoverUrl(coverUrl: string | null | undefined): CoverPositioning {
-  if (!coverUrl) {
-    return {
-      url: '',
-      desktop: { x: 50, y: 50, zoom: 100 },
-      mobile: { x: 50, y: 50, zoom: 100 },
-    };
-  }
-
-  const hashIdx = coverUrl.indexOf('#');
-  if (hashIdx === -1) {
-    return {
-      url: coverUrl,
-      desktop: { x: 50, y: 50, zoom: 100 },
-      mobile: { x: 50, y: 50, zoom: 100 },
-    };
-  }
-
-  const cleanUrl = coverUrl.substring(0, hashIdx);
-  const hash = coverUrl.substring(hashIdx + 1);
-  const params = new URLSearchParams(hash);
-
-  return {
-    url: cleanUrl,
-    desktop: {
-      x: Number(params.get('dx')) || 50,
-      y: Number(params.get('dy')) || 50,
-      zoom: Number(params.get('dz')) || 100,
-    },
-    mobile: {
-      x: Number(params.get('mx')) || 50,
-      y: Number(params.get('my')) || 50,
-      zoom: Number(params.get('mz')) || 100,
-    },
-  };
-}
 
 function GuestSlugGalleryContent() {
   const params = useParams();
@@ -1036,16 +995,12 @@ function GuestSlugGalleryContent() {
   const coverPos = parseCoverUrl(gallery.cover_url || effectiveCoverUrl);
   const cleanCoverUrl = coverPos.url || effectiveCoverUrl;
 
-  const isLightPalette = useMemo(() => {
-    const hex = (designPalette.canvasBg || '#FAF9F5').replace('#', '');
-    if (hex.length === 6) {
-      const r = parseInt(hex.substring(0, 2), 16);
-      const g = parseInt(hex.substring(2, 4), 16);
-      const b = parseInt(hex.substring(4, 6), 16);
-      return (r * 0.299 + g * 0.587 + b * 0.114) > 150;
-    }
-    return true;
-  }, [designPalette.canvasBg]);
+  const canvasHex = (designPalette.canvasBg || '#FAF9F5').replace('#', '');
+  const isLightPalette = canvasHex.length === 6
+    ? ((parseInt(canvasHex.substring(0, 2), 16) * 0.299 +
+        parseInt(canvasHex.substring(2, 4), 16) * 0.587 +
+        parseInt(canvasHex.substring(4, 6), 16) * 0.114) > 150)
+    : true;
 
   // Entrance motion animation classes
   const getMotionClass = (type: string) => {

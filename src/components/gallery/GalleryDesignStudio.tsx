@@ -775,8 +775,9 @@ export default function GalleryDesignStudio({
 
   // Open live client gallery in new tab
   const handleOpenLivePreview = () => {
-    if (gallery?.slug) {
-      window.open(`/g/${gallery.slug}`, '_blank');
+    const target = gallery?.slug || gallery?.id;
+    if (target) {
+      window.open(`/g/${target}`, '_blank');
     } else {
       showToast('Please save the gallery to generate a public link.', 'info');
     }
@@ -1400,9 +1401,15 @@ export default function GalleryDesignStudio({
                 <div className="w-full bg-white rounded-2xl overflow-hidden shadow-2xl border border-black/10 transition-all duration-300">
                   {/* Browser Address Bar */}
                   <div className="bg-zinc-100 px-4 py-2 border-b border-zinc-200 flex items-center justify-between text-[11px] font-mono text-zinc-500">
-                    <div className="truncate max-w-xs">
-                      https://studiocore.in/{gallery?.slug || 'wedding-gallery'}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenLivePreview}
+                      className="truncate max-w-xs hover:text-zinc-900 flex items-center gap-1.5 transition text-left cursor-pointer"
+                      title="Click to open live preview in new tab"
+                    >
+                      <span>https://studiocore.in/g/{gallery?.slug || 'wedding-gallery'}</span>
+                      <ExternalLink className="w-3 h-3 text-zinc-400 shrink-0" />
+                    </button>
                     <span className="text-[10px] text-zinc-400 font-bold uppercase">Official Guest Portal</span>
                   </div>
 
