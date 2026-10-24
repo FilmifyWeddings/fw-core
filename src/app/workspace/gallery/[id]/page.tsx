@@ -436,8 +436,27 @@ function AlbumStudioContent() {
         loadData();
       }
     };
+
+    // Real-time progressive photo stream: instantly shows photos as each chunk registers!
+    const handlePhotosAdded = (e: any) => {
+      if (galleryId && (!e.detail?.galleryId || e.detail?.galleryId === galleryId)) {
+        if (Array.isArray(e.detail?.photos) && e.detail.photos.length > 0) {
+          setPhotos((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            const newPhotos = e.detail.photos.filter((p: any) => !existingIds.has(p.id));
+            if (newPhotos.length === 0) return prev;
+            return [...newPhotos, ...prev];
+          });
+        }
+      }
+    };
+
     window.addEventListener('studiocore:gallery_updated', handleGalleryUpdated);
-    return () => window.removeEventListener('studiocore:gallery_updated', handleGalleryUpdated);
+    window.addEventListener('studiocore:gallery_photos_added', handlePhotosAdded);
+    return () => {
+      window.removeEventListener('studiocore:gallery_updated', handleGalleryUpdated);
+      window.removeEventListener('studiocore:gallery_photos_added', handlePhotosAdded);
+    };
   }, [galleryId, loadData]);
 
   // Close dropdown on outside click
@@ -516,7 +535,7 @@ function AlbumStudioContent() {
           body: JSON.stringify({
             gallery_id: gallery.id,
             embedding: rawEmb,
-            match_threshold: 0.28,
+            match_threshold: 0.48,
           }),
         });
 
@@ -869,14 +888,14 @@ function AlbumStudioContent() {
     }
   };
 
-  // Delete Collection with Deep Backblaze B2 Storage Purge
+  // Delete Collection with Deep Cloud Storage Purge
   const handleDeleteCollectionWithPurge = async () => {
     if (!collectionToEdit || isDeletingCollection) return;
 
     const colPhotosCount = photos.filter((p) => p.collection_id === collectionToEdit.id).length;
     const confirmMsg =
       colPhotosCount > 0
-        ? `⚠️ WARNING: This collection contains ${colPhotosCount} photo(s).\n\nDeleting this collection will permanently DELETE all ${colPhotosCount} photos and PURGE them from Backblaze B2 storage so you are not charged for storage.\n\nAre you sure you want to proceed? This cannot be undone.`
+        ? `⚠️ WARNING: This collection contains ${colPhotosCount} photo(s).\n\nDeleting this collection will permanently DELETE all ${colPhotosCount} photos and PURGE them from cloud storage so you are not charged for storage.\n\nAre you sure you want to proceed? This cannot be undone.`
         : `Are you sure you want to delete collection "${collectionToEdit.name}"?`;
 
     if (!confirm(confirmMsg)) return;
@@ -977,7 +996,7 @@ function AlbumStudioContent() {
 
   // Delete Photo
   const handleDeletePhoto = async (photoId: string) => {
-    if (!confirm('Are you sure you want to delete this photo? It will also be permanently deleted from Backblaze B2 storage to stop storage charges.')) return;
+    if (!confirm('Are you sure you want to delete this photo? It will also be permanently deleted from cloud storage to stop storage charges.')) return;
 
     try {
       const res = await fetch(`/api/gallery/photos?photo_id=${photoId}`, { method: 'DELETE' });
@@ -1068,7 +1087,7 @@ function AlbumStudioContent() {
 
   const handleBulkDelete = async () => {
     if (selectedPhotoIds.size === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedPhotoIds.size} selected photo(s)? They will also be permanently deleted from Backblaze B2 storage to eliminate storage charges.`)) return;
+    if (!confirm(`Are you sure you want to delete ${selectedPhotoIds.size} selected photo(s)? They will also be permanently deleted from cloud storage to eliminate storage charges.`)) return;
 
     const ids = Array.from(selectedPhotoIds);
     try {
@@ -1202,8 +1221,19 @@ function AlbumStudioContent() {
         if (selectedPersonId && selectedPerson) {
           if (!selectedPerson.photo_ids?.includes(p.id)) return false;
         }
-        if (selectedCollectionId === 'highlights') {
-          if (!p.face_count || p.face_count <= 0) return false;
+        const highlightsCol = collections.find(
+          (c) => c.slug === 'highlights' || c.name.toLowerCase() === 'highlights'
+        );
+        const isHighlightsFilter =
+          selectedCollectionId === 'highlights' ||
+          (highlightsCol && selectedCollectionId === highlightsCol.id);
+
+        if (isHighlightsFilter) {
+          if (highlightsCol) {
+            if (p.collection_id !== highlightsCol.id && (!p.face_count || p.face_count <= 0)) return false;
+          } else {
+            if (!p.face_count || p.face_count <= 0) return false;
+          }
         } else if (selectedCollectionId !== 'all' && p.collection_id !== selectedCollectionId) {
           return false;
         }
@@ -1679,26 +1709,58 @@ function AlbumStudioContent() {
                           <span className="text-[10.5px] font-mono text-zinc-400">{photos.length}</span>
                         </button>
 
-                        {/* Highlights */}
-                        <button
-                          onClick={() => setSelectedCollectionId('highlights')}
-                          className={`w-full px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
-                            selectedCollectionId === 'highlights'
-                              ? 'bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs'
-                              : 'text-zinc-600 hover:bg-zinc-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                            <span>Highlights</span>
-                          </div>
-                          <span className="text-[10.5px] font-mono text-zinc-400">
-                            {photos.filter((p) => p.face_count > 0).length}
-                          </span>
-                        </button>
+                        {/* Highlights (Single unified Highlights collection) */}
+                        {(() => {
+                          const highlightsCol = collections.find(
+                            (c) => c.slug === 'highlights' || c.name.toLowerCase() === 'highlights'
+                          );
+                          const isHighlightsActive =
+                            selectedCollectionId === 'highlights' ||
+                            (highlightsCol && selectedCollectionId === highlightsCol.id);
+                          const highlightsCount = highlightsCol
+                            ? photos.filter((p) => p.collection_id === highlightsCol.id).length
+                            : photos.filter((p) => p.face_count > 0).length;
 
-                        {/* Custom Collections */}
-                        {collections.map((col) => {
+                          return (
+                            <div
+                              className={`group/col w-full px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                                isHighlightsActive
+                                  ? 'bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs'
+                                  : 'text-zinc-600 hover:bg-zinc-50'
+                              }`}
+                            >
+                              <button
+                                onClick={() => setSelectedCollectionId(highlightsCol ? highlightsCol.id : 'highlights')}
+                                className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer"
+                              >
+                                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                                <span>Highlights</span>
+                              </button>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="text-[10.5px] font-mono text-zinc-400">
+                                  {highlightsCount}
+                                </span>
+                                {highlightsCol && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenEditCollection(highlightsCol);
+                                    }}
+                                    className="opacity-0 group-hover/col:opacity-100 p-1 rounded-md text-zinc-400 hover:text-amber-700 hover:bg-amber-100/60 transition cursor-pointer"
+                                    title="Edit / Delete Collection"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Custom Collections (Excluding duplicate Highlights) */}
+                        {collections
+                          .filter((col) => col.slug !== 'highlights' && col.name.toLowerCase() !== 'highlights')
+                          .map((col) => {
                           const count = photos.filter((p) => p.collection_id === col.id).length;
                           return (
                             <div
@@ -1752,27 +1814,8 @@ function AlbumStudioContent() {
                     {isPeopleOpen && (
                       <div className="space-y-1 pl-1 max-h-64 overflow-y-auto scrollbar-thin">
                         {registeredGuests.length === 0 ? (
-                          <div className="p-3 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-center space-y-2">
-                            <p className="text-[11px] text-zinc-500 font-medium leading-relaxed">
-                              Guests who scan the QR and register their selfie will appear here with their profile and matched photos.
-                            </p>
-                            <div className="flex items-center justify-center gap-1.5 pt-1">
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(getPublicUrl(gallery.slug));
-                                  alert('Guest registration link copied!');
-                                }}
-                                className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-200 rounded-lg text-[10px] font-bold transition cursor-pointer"
-                              >
-                                Copy Link
-                              </button>
-                              <button
-                                onClick={() => setIsStandeeModalOpen(true)}
-                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-bold transition cursor-pointer"
-                              >
-                                Standee QR
-                              </button>
-                            </div>
+                          <div className="py-4 text-center">
+                            <p className="text-[11px] text-zinc-400 font-medium">No registered guests yet</p>
                           </div>
                         ) : (
                           registeredGuests.map((guest) => {
@@ -2054,7 +2097,7 @@ function AlbumStudioContent() {
                       {selectedCollectionId === 'all' ? 'No Photos in this Album Yet' : 'No Photos in this Collection'}
                     </h3>
                     <p className="text-xs text-zinc-400 max-w-sm mx-auto">
-                      Upload wedding photos to stream directly to Backblaze B2 Vault and index for AI face finding.
+                      Upload photos to stream directly to Cloud Vault and index for AI face finding.
                     </p>
                   </div>
                   <button
@@ -2608,7 +2651,7 @@ function AlbumStudioContent() {
                 <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Storage</span>
                   <div className="text-2xl font-black text-zinc-900 font-mono">{totalSizeDisplay}</div>
-                  <span className="text-[10px] font-bold text-purple-600">Backblaze Vault</span>
+                  <span className="text-[10px] font-bold text-amber-600">Cloud Vault</span>
                 </div>
               </div>
 
@@ -2901,7 +2944,7 @@ function AlbumStudioContent() {
                 </span>
               </div>
               <p className="text-[11px] text-amber-800/90 leading-relaxed font-normal">
-                Deleting this collection will permanently delete all its photos and purge all original and preview files from Backblaze B2 storage so you will never be charged for them.
+                Deleting this collection will permanently delete all its photos and purge all original and preview files from cloud storage so you will never be charged for them.
               </p>
             </div>
 
@@ -2953,7 +2996,6 @@ function AlbumStudioContent() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-zinc-900">Upload Photos</h3>
-                <span className="text-xs text-zinc-400">Direct High-Speed Backblaze B2 Upload</span>
               </div>
               <button
                 type="button"
@@ -2988,10 +3030,7 @@ function AlbumStudioContent() {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-zinc-800">
-                    Click or Drag &amp; Drop Wedding Photos
-                  </p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    RAW / JPEG / PNG files are compressed to WebP locally and uploaded to private B2 storage
+                    Click or drag and drop photos
                   </p>
                 </div>
                 <input
@@ -3031,8 +3070,8 @@ function AlbumStudioContent() {
                   onClick={handleStartUpload}
                   className="flex-1 py-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-zinc-300 disabled:to-zinc-300 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
                 >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Start Background Upload ({uploadFiles.length})</span>
+                  <Upload className="w-4 h-4" />
+                  <span>Upload ({uploadFiles.length})</span>
                 </button>
                 <button
                   type="button"

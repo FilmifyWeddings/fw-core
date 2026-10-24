@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
 
             if (efEmb && efEmb.length === 512) {
               const sim = cosineSimilarity(embedding, efEmb);
-              if (sim >= 0.28) {
+              if (sim >= 0.48) {
                 matchedSet.add(ef.photo_id);
               }
             }

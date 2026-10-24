@@ -95,6 +95,8 @@ export function UploadManagerDrawer({ onResumeInterrupted }: UploadManagerDrawer
                   </span>
                 ) : activeJobCount > 0 ? (
                   <span>{activeJobCount} queued upload{activeJobCount > 1 ? 's' : ''}</span>
+                ) : totalPhotos > completedPhotos ? (
+                  <span className="text-amber-800">{completedPhotos} of {totalPhotos} uploaded ({totalPhotos - completedPhotos} failed)</span>
                 ) : (
                   <span>Uploads complete ({completedPhotos} photos)</span>
                 )}
@@ -211,11 +213,11 @@ export function UploadManagerDrawer({ onResumeInterrupted }: UploadManagerDrawer
 
         {/* Footer Info */}
         <div className="p-3 px-4 border-t border-[#E7E2D8] bg-[#F7F4EE] flex items-center justify-between text-[10px] text-zinc-500 font-medium">
-          <span className="flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-amber-600" />
-            <span>StudioCore Cloud • Auto Face AI</span>
+          <span className="flex items-center gap-1.5 font-bold text-zinc-700">
+            <Upload className="w-3 h-3 text-amber-600" />
+            <span>Upload Vault</span>
           </span>
-          <span className="font-mono">{totalPhotos > 0 ? `${completedPhotos}/${totalPhotos} photos` : ''}</span>
+          <span className="font-mono font-bold text-zinc-700">{totalPhotos > 0 ? `${completedPhotos}/${totalPhotos} photos` : ''}</span>
         </div>
       </div>
 
@@ -276,6 +278,8 @@ function JobItem({ job, onCancel }: { job: UploadJob; onCancel: () => void }) {
   const isQueued = job.status === 'queued';
   const isPaused = job.status === 'paused';
   const isFailed = job.status === 'failed';
+  const hasErrors = Array.isArray(job.errors) && job.errors.length > 0;
+  const isPartial = (isCompleted || isFailed) && hasErrors && job.completedCount < job.totalCount;
 
   return (
     <div className="p-3 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2.5">
@@ -286,7 +290,9 @@ function JobItem({ job, onCancel }: { job: UploadJob; onCancel: () => void }) {
           </span>
           <span
             className={`text-[9.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
-              isCompleted
+              isPartial
+                ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                : isCompleted
                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : isUploading
                 ? 'bg-amber-50 text-amber-700 border border-amber-200'
@@ -295,7 +301,7 @@ function JobItem({ job, onCancel }: { job: UploadJob; onCancel: () => void }) {
                 : 'bg-zinc-100 text-zinc-600 border border-zinc-200'
             }`}
           >
-            {isUploading ? `${job.percentage}%` : job.status}
+            {isUploading ? `${job.percentage}%` : isPartial ? 'Partially Completed' : job.status}
           </span>
         </div>
 
@@ -309,7 +315,8 @@ function JobItem({ job, onCancel }: { job: UploadJob; onCancel: () => void }) {
               <X className="w-3.5 h-3.5" />
             </button>
           )}
-          {isCompleted && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+          {isCompleted && !hasErrors && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+          {isPartial && <AlertCircle className="w-4 h-4 text-amber-600" />}
         </div>
       </div>
 
@@ -318,8 +325,10 @@ function JobItem({ job, onCancel }: { job: UploadJob; onCancel: () => void }) {
         <div className="h-1.5 w-full bg-[#EAE5D9] rounded-full overflow-hidden">
           <div
             className={`h-full transition-all duration-300 rounded-full ${
-              isCompleted
+              isCompleted && !hasErrors
                 ? 'bg-emerald-500'
+                : isPartial
+                ? 'bg-amber-500'
                 : isFailed
                 ? 'bg-rose-500'
                 : 'bg-gradient-to-r from-amber-500 to-amber-600'
@@ -331,11 +340,18 @@ function JobItem({ job, onCancel }: { job: UploadJob; onCancel: () => void }) {
         <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
           <span>
             {job.completedCount} of {job.totalCount} uploaded
+            {job.totalCount > job.completedCount && ` (${job.totalCount - job.completedCount} skipped/failed)`}
           </span>
           <span className="truncate max-w-[140px] text-[9.5px] text-zinc-400">
             {job.currentFileName || ''}
           </span>
         </div>
+
+        {hasErrors && (
+          <div className="text-[9.5px] text-amber-800 bg-amber-50 rounded-lg p-1.5 border border-amber-200 leading-tight">
+            ⚠️ {job.errors[0]}
+          </div>
+        )}
       </div>
     </div>
   );

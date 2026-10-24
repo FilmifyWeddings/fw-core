@@ -441,7 +441,7 @@ export function FaceScannerModal({
             galleryId: galleryId,
             selfieBase64: capturedSelfie,
             image_base64: capturedSelfie,
-            threshold: 0.28,
+            threshold: 0.48,
           }),
         });
 

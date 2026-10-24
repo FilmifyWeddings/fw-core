@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     const {
       gallery_id,
       galleryId,
-      similarityThreshold = 0.28,
+      similarityThreshold = 0.48,
       send_email = true,
       notifyChannels = ['WHATSAPP', 'EMAIL'],
     } = body;
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
     }> = [];
 
     let totalNotified = 0;
-    const effectiveThreshold = Math.min(Number(similarityThreshold) || 0.28, 0.38);
+    const effectiveThreshold = Number(similarityThreshold) || 0.48;
 
     if (registeredGuests && registeredGuests.length > 0) {
       for (const guest of registeredGuests) {

@@ -85,18 +85,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, gallery: formatted, events: [formatted] });
     }
 
-    // 2. Fetch single gallery by Slug (used by public client views and direct links)
+    // 2. Fetch single gallery by Slug or ID (used by public client views and direct links)
     if (slug) {
-      const { data: single, error } = await supabaseAdmin
+      let query = supabaseAdmin
         .from('event_galleries')
         .select('*')
-        .eq('slug', slug)
-        .maybeSingle();
+        .or(`slug.eq.${slug},id.eq.${slug}`);
+
+      if (requestedWorkspaceId) {
+        query = query.eq('workspace_id', requestedWorkspaceId);
+      }
+
+      const { data: list, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(1);
 
       if (error) {
         console.error('Error fetching event gallery by Slug:', error);
         return NextResponse.json({ success: false, error: error.message, gallery: null, events: [] }, { status: 200 });
       }
+
+      const single = list?.[0] || null;
 
       const formatted = single ? {
         ...single,
@@ -216,12 +225,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing studio workspace identification. Please sign in.' }, { status: 401 });
     }
 
-    // Auto-generate clean URL slug
-    const finalSlug = (slug || title)
+    // Auto-generate clean URL slug with collision prevention
+    const baseSlug = (slug || title)
       .toLowerCase()
       .trim()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
+      .replace(/^-+|-+$/g, '') || 'event';
+
+    let finalSlug = baseSlug;
+    try {
+      const { data: existingSlug } = await supabaseAdmin
+        .from('event_galleries')
+        .select('id, workspace_id')
+        .eq('slug', baseSlug)
+        .limit(1);
+
+      if (existingSlug && existingSlug.length > 0) {
+        const shortSuffix = Math.random().toString(36).substring(2, 6);
+        finalSlug = `${baseSlug}-${shortSuffix}`;
+      }
+    } catch (_) {}
 
     // Scoped storage path in Backblaze B2: galleries/{workspaceId}/{slug}_{timestamp}
     const storage_folder_prefix = `galleries/${effectiveWorkspaceId}/${finalSlug}_${Date.now().toString(36)}`;
@@ -296,7 +319,7 @@ export async function PATCH(req: NextRequest) {
   try {
     const auth = await resolveRequestUser(req);
     const body = await req.json();
-    const { id, title, event_date, is_active, pin_code, allow_downloads, cover_url, status, workspace_id, event_type, is_face_ai_enabled } = body;
+    const { id, title, event_date, is_active, pin_code, allow_downloads, cover_url, status, workspace_id, event_type, is_face_ai_enabled, raw_payload } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Gallery ID is required' }, { status: 400 });
@@ -326,6 +349,7 @@ export async function PATCH(req: NextRequest) {
     if (cover_url !== undefined) updates.cover_url = cover_url;
     if (event_type !== undefined) updates.event_type = event_type;
     if (is_face_ai_enabled !== undefined) updates.is_face_ai_enabled = is_face_ai_enabled;
+    if (raw_payload !== undefined) updates.raw_payload = raw_payload;
 
     let { data: updated, error } = await supabaseAdmin
       .from('event_galleries')

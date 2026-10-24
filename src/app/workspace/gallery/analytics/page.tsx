@@ -275,7 +275,7 @@ export default function GalleryAnalyticsPage() {
               {metrics.totalStorageFormatted.value} <span className="text-xs font-normal text-zinc-400 font-sans">{metrics.totalStorageFormatted.unit}</span>
             </div>
             <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
-              Backblaze B2 Vault
+              Cloud Vault
             </p>
           </div>
         </div>

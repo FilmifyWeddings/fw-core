@@ -262,25 +262,35 @@ export async function batchUploadPhotos(
 
   const manifest = getUploadedManifest(galleryId);
 
-  // Helper to register pending photos in chunks
+  // Helper to register pending photos in chunks and stream them to UI live!
   const flushRegistration = async () => {
     if (pendingRegistration.length === 0) return;
     const batch = [...pendingRegistration];
     pendingRegistration.length = 0;
 
     try {
-      await fetch('/api/gallery/photos/register', {
+      const regRes = await fetch('/api/gallery/photos/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ galleryId, photos: batch }),
       });
+      const regJson = await regRes.json();
+      if (regJson.success && Array.isArray(regJson.photos) && regJson.photos.length > 0) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('studiocore:gallery_photos_added', {
+              detail: { galleryId, photos: regJson.photos },
+            })
+          );
+        }
+      }
     } catch (err: any) {
       console.warn('[ImageProcessor] Incremental registration notice:', err.message);
     }
   };
 
-  // High-throughput parallel concurrency: 4 files at a time for maximum bandwidth utilization
-  const CONCURRENCY = 4;
+  // High-throughput parallel concurrency: 3 files at a time for optimal stability & memory
+  const CONCURRENCY = 3;
 
   for (let i = 0; i < files.length; i += CONCURRENCY) {
     if (signal?.aborted) {
@@ -291,86 +301,92 @@ export async function batchUploadPhotos(
 
     await Promise.all(
       batch.map(async (file) => {
-        try {
-          // Check if already in manifest (e.g. from interrupted session or refresh)
-          const signature = `${file.name}_${file.size}`;
-          if (manifest.has(signature)) {
+        let attempts = 0;
+        let lastErr: any = null;
+
+        while (attempts < 2) {
+          try {
+            if (onProgress) {
+              onProgress(completed, total, Math.round((completed / total) * 100), `Optimizing ${file.name}...`);
+            }
+
+            // 1. Client-Side WebP Conversion (Memory-safe)
+            const variants = await generateImageVariants(file);
+
+            // 2. Fetch Presigned URLs from API
+            const cleanName = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
+            const urlRes = await fetch('/api/gallery/upload-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                galleryId,
+                filename: cleanName,
+                originalType: file.type || 'image/jpeg',
+                workspaceId,
+              }),
+              signal,
+            });
+
+            const urlJson = await urlRes.json();
+            if (!urlJson.success) {
+              throw new Error(urlJson.error || 'Failed to obtain presigned upload URLs');
+            }
+
+            const { originalUploadUrl, previewUploadUrl, thumbUploadUrl, originalKey, previewKey, thumbKey } = urlJson;
+
+            if (onProgress) {
+              onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} to Cloud...`);
+            }
+
+            // 3. Direct Storage Parallel Uploads via Presigned URLs
+            await Promise.all([
+              uploadBlobToPresignedUrl(originalUploadUrl, variants.original, file.type || 'image/jpeg', undefined, signal),
+              uploadBlobToPresignedUrl(previewUploadUrl, variants.preview, 'image/webp', undefined, signal),
+              uploadBlobToPresignedUrl(thumbUploadUrl, variants.thumb, 'image/webp', undefined, signal),
+            ]);
+
+            // Record in manifest
+            recordUploadedToManifest(galleryId, file.name, file.size);
+
+            // 4. Collect for registration
+            pendingRegistration.push({
+              gallery_id: galleryId,
+              collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
+              original_key: originalKey,
+              preview_key: previewKey,
+              thumbnail_key: thumbKey,
+              width: variants.width,
+              height: variants.height,
+              size_bytes: variants.sizeBytes,
+            });
+
             completed++;
             if (onProgress) {
-              onProgress(completed, total, Math.round((completed / total) * 100), `Skipped ${file.name} (already uploaded)`);
+              onProgress(completed, total, Math.round((completed / total) * 100), file.name);
             }
-            return;
+
+            // Register progressively in small batches of 2 so photos appear immediately in gallery view
+            if (pendingRegistration.length >= 2) {
+              await flushRegistration();
+            }
+
+            lastErr = null;
+            break;
+          } catch (fileErr: any) {
+            lastErr = fileErr;
+            if (fileErr.message === 'Upload cancelled' || signal?.aborted) {
+              throw fileErr;
+            }
+            attempts++;
+            if (attempts < 2) {
+              await new Promise((r) => setTimeout(r, 600));
+            }
           }
+        }
 
-          if (onProgress) {
-            onProgress(completed, total, Math.round((completed / total) * 100), `Optimizing ${file.name}...`);
-          }
-
-          // 1. Client-Side WebP Conversion (Memory-safe)
-          const variants = await generateImageVariants(file);
-
-          // 2. Fetch Presigned URLs from API
-          const cleanName = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
-          const urlRes = await fetch('/api/gallery/upload-url', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              galleryId,
-              filename: cleanName,
-              originalType: file.type || 'image/jpeg',
-              workspaceId,
-            }),
-            signal,
-          });
-
-          const urlJson = await urlRes.json();
-          if (!urlJson.success) {
-            throw new Error(urlJson.error || 'Failed to obtain presigned upload URLs');
-          }
-
-          const { originalUploadUrl, previewUploadUrl, thumbUploadUrl, originalKey, previewKey, thumbKey } = urlJson;
-
-          if (onProgress) {
-            onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} to StudioCore Cloud...`);
-          }
-
-          // 3. Direct Storage Parallel Uploads via Presigned URLs
-          await Promise.all([
-            uploadBlobToPresignedUrl(originalUploadUrl, variants.original, file.type || 'image/jpeg', undefined, signal),
-            uploadBlobToPresignedUrl(previewUploadUrl, variants.preview, 'image/webp', undefined, signal),
-            uploadBlobToPresignedUrl(thumbUploadUrl, variants.thumb, 'image/webp', undefined, signal),
-          ]);
-
-          // Record in manifest
-          recordUploadedToManifest(galleryId, file.name, file.size);
-
-          // 4. Collect for registration
-          pendingRegistration.push({
-            gallery_id: galleryId,
-            collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
-            original_key: originalKey,
-            preview_key: previewKey,
-            thumbnail_key: thumbKey,
-            width: variants.width,
-            height: variants.height,
-            size_bytes: variants.sizeBytes,
-          });
-
-          completed++;
-          if (onProgress) {
-            onProgress(completed, total, Math.round((completed / total) * 100), file.name);
-          }
-
-          // Register in chunks of 4 to save progress permanently
-          if (pendingRegistration.length >= 4) {
-            await flushRegistration();
-          }
-        } catch (err: any) {
-          if (err.message === 'Upload cancelled' || signal?.aborted) {
-            throw err;
-          }
-          console.error(`Failed to process ${file.name}:`, err);
-          errors.push(`${file.name}: ${err.message}`);
+        if (lastErr) {
+          console.error(`Failed to process ${file.name}:`, lastErr);
+          errors.push(`${file.name}: ${lastErr.message}`);
         }
       })
     );

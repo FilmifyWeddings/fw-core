@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     const { data: inserted, error: insertError } = await supabaseAdmin
       .from('gallery_photos')
       .insert(photos)
-      .select('id, preview_key, thumbnail_key, original_key');
+      .select('*');
 
     if (insertError) {
       console.error('Error inserting photos:', insertError);
@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
 
                   if (nfEmb && nfEmb.length === 512) {
                     const sim = cosineSimilarity(guestVector, nfEmb);
-                    if (sim >= 0.28) {
+                    if (sim >= 0.48) {
                       currentMatches.add(nf.photo_id);
                       hasNewMatch = true;
                     }
@@ -194,10 +194,26 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
+    const enrichedPhotos = (inserted || []).map((p: any) => ({
+      id: p.id,
+      gallery_id: p.gallery_id,
+      collection_id: p.collection_id,
+      original_key: p.original_key,
+      preview_key: p.preview_key,
+      thumbnail_key: p.thumbnail_key,
+      preview_url: `/api/gallery/image?key=${encodeURIComponent(p.preview_key)}`,
+      thumbnail_url: `/api/gallery/image?key=${encodeURIComponent(p.thumbnail_key || p.preview_key)}`,
+      width: p.width,
+      height: p.height,
+      size_bytes: p.size_bytes,
+      face_count: p.face_count || 0,
+      created_at: p.created_at,
+    }));
+
     return NextResponse.json({
       success: true,
       registeredCount: inserted?.length || 0,
-      photos: inserted,
+      photos: enrichedPhotos,
     });
   } catch (err: any) {
     console.error('Error in /api/gallery/photos/register:', err);

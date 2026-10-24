@@ -165,14 +165,15 @@ export function UploadQueueProvider({ children }: { children: React.ReactNode })
         controller.signal
       );
 
-      // Mark completed or failed
+      // Mark completed or failed with accurate counts and error preservation
       setJobs((prev) =>
         prev.map((j) =>
           j.id === nextJob.id
             ? {
                 ...j,
-                status: result.success || result.uploadedCount > 0 ? 'completed' : 'failed',
-                percentage: 100,
+                completedCount: result.uploadedCount,
+                status: result.success ? 'completed' : result.uploadedCount > 0 ? 'completed' : 'failed',
+                percentage: Math.round((result.uploadedCount / j.totalCount) * 100),
                 completedAt: Date.now(),
                 errors: result.errors,
               }

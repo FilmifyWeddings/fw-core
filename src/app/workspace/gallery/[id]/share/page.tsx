@@ -134,7 +134,10 @@ function GalleryShareCenterContent() {
       }
 
       setGallery(gal);
-      setGuestAskPin(!!gal.pin_code);
+      const isGuestPinEnabled = gal.raw_payload?.guest_pin_enabled !== undefined
+        ? Boolean(gal.raw_payload.guest_pin_enabled)
+        : (gal.raw_payload?.guest_ask_pin !== undefined ? Boolean(gal.raw_payload.guest_ask_pin) : !!gal.pin_code);
+      setGuestAskPin(isGuestPinEnabled);
       setFullAccessAskPin(!!gal.pin_code);
       setSelectionAskPin(!!gal.pin_code);
 
@@ -172,9 +175,35 @@ function GalleryShareCenterContent() {
   const passKey = gallery?.pass_key || gallery?.admin_pin || gallery?.pin_code || '518399';
 
   // Dynamic Link Structures directly mapped to /g/[slug]
-  const guestAccessUrl = guestAskPin
-    ? `${origin}/g/${eventSlug}?share_key=${guestPin}`
+  const guestAccessUrl = !guestAskPin
+    ? `${origin}/g/${eventSlug}?no_pin=1`
     : `${origin}/g/${eventSlug}`;
+
+  const handleToggleGuestPin = async (doNotAsk: boolean) => {
+    const askPin = !doNotAsk;
+    setGuestAskPin(askPin);
+    if (!gallery?.id) return;
+
+    try {
+      const updatedPayload = {
+        ...(gallery.raw_payload || {}),
+        guest_pin_enabled: askPin,
+        guest_ask_pin: askPin,
+      };
+      setGallery((prev: any) => (prev ? { ...prev, raw_payload: updatedPayload } : prev));
+
+      await fetch('/api/gallery/events', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: gallery.id,
+          raw_payload: updatedPayload,
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to update guest pin setting:', err);
+    }
+  };
 
   const fullAccessUrl = fullAccessAskPin
     ? `${origin}/g/${eventSlug}?access=all&pass_key=${passKey}`
@@ -320,7 +349,7 @@ function GalleryShareCenterContent() {
               <span className="font-bold text-zinc-700">Do not ask PIN</span>
               <AnimatedToggle
                 checked={!guestAskPin}
-                onChange={(val) => setGuestAskPin(!val)}
+                onChange={handleToggleGuestPin}
                 colorClass="bg-amber-500"
               />
             </div>

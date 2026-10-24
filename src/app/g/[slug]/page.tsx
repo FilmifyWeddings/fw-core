@@ -129,6 +129,7 @@ function GuestSlugGalleryContent() {
   const isVipMode = searchParams?.get('vip-link') === '1';
   const passKeyParam = searchParams?.get('pass_key');
   const shareKeyParam = searchParams?.get('share_key');
+  const isNoPinParam = searchParams?.get('no_pin') === '1' || searchParams?.get('no_pin') === 'true';
 
   const isPrivilegedMode = isFullAccess || isSelectionMode || isVipMode;
 
@@ -220,14 +221,22 @@ function GuestSlugGalleryContent() {
       setGallery(gal);
 
       // Check unlock permissions
+      const isGuestPinDisabled =
+        !isSelectionMode &&
+        !isFullAccess &&
+        (isNoPinParam ||
+          gal.raw_payload?.guest_pin_enabled === false ||
+          gal.raw_payload?.guest_ask_pin === false);
+
       const requiredPin = isSelectionMode
         ? (gal.admin_pin || gal.pin_code)
-        : (gal.guest_pin || gal.pin_code);
+        : (isGuestPinDisabled ? null : (gal.guest_pin || gal.pin_code));
 
       const passedKey = isSelectionMode ? passKeyParam : shareKeyParam;
 
       const hasValidPin =
         isVipMode ||
+        isGuestPinDisabled ||
         !requiredPin ||
         passedKey === requiredPin ||
         (typeof window !== 'undefined' && sessionStorage.getItem(`unlocked_${gal.id}`) === 'true');
@@ -320,7 +329,7 @@ function GuestSlugGalleryContent() {
               body: JSON.stringify({
                 gallery_id: gallery.id,
                 embedding: rawEmb,
-                threshold: 0.28,
+                threshold: 0.48,
               }),
             });
             const matchJson = await matchRes.json();
@@ -391,9 +400,16 @@ function GuestSlugGalleryContent() {
   const handleFindMyPhotoClick = () => {
     if (!gallery) return;
 
+    const isGuestPinDisabled =
+      !isSelectionMode &&
+      !isFullAccess &&
+      (isNoPinParam ||
+        gallery.raw_payload?.guest_pin_enabled === false ||
+        gallery.raw_payload?.guest_ask_pin === false);
+
     const requiredPin = isSelectionMode
       ? (gallery.admin_pin || gallery.pin_code)
-      : (gallery.guest_pin || gallery.pin_code);
+      : (isGuestPinDisabled ? null : (gallery.guest_pin || gallery.pin_code));
 
     const isPinActive = Boolean(requiredPin && requiredPin.trim().length > 0);
 
@@ -480,7 +496,7 @@ function GuestSlugGalleryContent() {
           gallery_id: gallery.id,
           galleryId: gallery.id,
           selfieBase64: data.selfieBase64,
-          threshold: 0.28,
+          threshold: 0.48,
         }),
       });
 
@@ -555,7 +571,7 @@ function GuestSlugGalleryContent() {
             body: JSON.stringify({
               gallery_id: gallery.id,
               embedding: gJson.guest.face_embedding,
-              threshold: 0.28,
+              threshold: 0.48,
             }),
           });
           const mJson = await mRes.json();
