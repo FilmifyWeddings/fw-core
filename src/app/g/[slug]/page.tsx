@@ -129,7 +129,6 @@ function GuestSlugGalleryContent() {
   const isVipMode = searchParams?.get('vip-link') === '1';
   const passKeyParam = searchParams?.get('pass_key');
   const shareKeyParam = searchParams?.get('share_key');
-  const isNoPinParam = searchParams?.get('no_pin') === '1' || searchParams?.get('no_pin') === 'true';
 
   const isPrivilegedMode = isFullAccess || isSelectionMode || isVipMode;
 
@@ -205,10 +204,13 @@ function GuestSlugGalleryContent() {
       } catch (_) {}
 
       if (!gal) {
-        const gRes = await fetch(`/api/gallery/events?id=${slug}`);
-        const gJson = await gRes.json();
-        if (gJson.success && gJson.gallery) {
-          gal = gJson.gallery;
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+        if (isUuid) {
+          const gRes = await fetch(`/api/gallery/events?id=${slug}`);
+          const gJson = await gRes.json();
+          if (gJson.success && gJson.gallery) {
+            gal = gJson.gallery;
+          }
         }
       }
 
@@ -221,28 +223,23 @@ function GuestSlugGalleryContent() {
       setGallery(gal);
 
       // Check unlock permissions
-      const isGuestPinDisabled =
-        !isSelectionMode &&
-        !isFullAccess &&
-        (isNoPinParam ||
-          gal.raw_payload?.guest_pin_enabled === false ||
-          gal.raw_payload?.guest_ask_pin === false);
-
-      const requiredPin = isSelectionMode
+      const isPrivileged = isFullAccess || isSelectionMode;
+      const requiredPin = isPrivileged
         ? (gal.admin_pin || gal.pin_code)
-        : (isGuestPinDisabled ? null : (gal.guest_pin || gal.pin_code));
+        : (gal.guest_pin || gal.pin_code);
 
-      const passedKey = isSelectionMode ? passKeyParam : shareKeyParam;
+      const passedKey = isPrivileged ? passKeyParam : shareKeyParam;
 
       const hasValidPin =
         isVipMode ||
-        isGuestPinDisabled ||
         !requiredPin ||
-        passedKey === requiredPin ||
+        (passedKey && passedKey.trim() === requiredPin.trim()) ||
         (typeof window !== 'undefined' && sessionStorage.getItem(`unlocked_${gal.id}`) === 'true');
 
       if (hasValidPin) {
         setIsUnlocked(true);
+      } else if (isPrivilegedMode) {
+        setShowPinModal(true);
       }
 
       // Fetch full collections & photos in parallel if in PRIVILEGED mode OR gallery is PUBLISHED
@@ -269,7 +266,7 @@ function GuestSlugGalleryContent() {
     } finally {
       setLoading(false);
     }
-  }, [slug, isSelectionMode, passKeyParam, shareKeyParam, isVipMode, isPrivilegedMode]);
+  }, [slug, isSelectionMode, isFullAccess, passKeyParam, shareKeyParam, isVipMode, isPrivilegedMode]);
 
   useEffect(() => {
     loadGalleryData();
@@ -370,7 +367,8 @@ function GuestSlugGalleryContent() {
     e.preventDefault();
     if (!gallery) return;
 
-    const requiredPin = isSelectionMode
+    const isPrivileged = isFullAccess || isSelectionMode;
+    const requiredPin = isPrivileged
       ? (gallery.admin_pin || gallery.pin_code)
       : (gallery.guest_pin || gallery.pin_code);
 
@@ -400,16 +398,10 @@ function GuestSlugGalleryContent() {
   const handleFindMyPhotoClick = () => {
     if (!gallery) return;
 
-    const isGuestPinDisabled =
-      !isSelectionMode &&
-      !isFullAccess &&
-      (isNoPinParam ||
-        gallery.raw_payload?.guest_pin_enabled === false ||
-        gallery.raw_payload?.guest_ask_pin === false);
-
-    const requiredPin = isSelectionMode
+    const isPrivileged = isFullAccess || isSelectionMode;
+    const requiredPin = isPrivileged
       ? (gallery.admin_pin || gallery.pin_code)
-      : (isGuestPinDisabled ? null : (gallery.guest_pin || gallery.pin_code));
+      : (gallery.guest_pin || gallery.pin_code);
 
     const isPinActive = Boolean(requiredPin && requiredPin.trim().length > 0);
 
@@ -902,6 +894,37 @@ function GuestSlugGalleryContent() {
 
       {/* 2. MAIN CONTENT AREA */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-6 relative z-10 space-y-8">
+
+        {/* CASE P: PRIVILEGED ACCESS LOCKED (Enter PIN / Pass Key) */}
+        {isPrivilegedMode && !isUnlocked && (
+          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-[#E7E2D8] shadow-xl text-center space-y-6 max-w-lg mx-auto animate-in fade-in">
+            <div className="w-20 h-20 rounded-3xl bg-amber-50 border-2 border-amber-200 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
+              <Lock className="w-9 h-9 text-amber-600" />
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-2xl font-black text-zinc-900 tracking-tight">
+                {isSelectionMode ? 'Album Selection Access' : 'Full Event Access'}
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-500 max-w-sm mx-auto leading-relaxed">
+                {isSelectionMode
+                  ? 'Please enter the client pass key to review, select, and finalize photos for your custom album print.'
+                  : 'This gallery is PIN protected. Enter the access PIN code to view all high-resolution event photos.'}
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowPinModal(true)}
+                className="px-8 py-3.5 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-black text-xs tracking-wide shadow-xl shadow-zinc-900/20 flex items-center justify-center gap-2 mx-auto transition-all active:scale-98 cursor-pointer"
+              >
+                <KeyRound className="w-4 h-4 text-amber-400" />
+                <span>Enter Access PIN / Pass Key</span>
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* CASE A: STRICT ZERO-KNOWLEDGE LOCKED HERO (Before Face Search) */}
         {!isPrivilegedMode && !hasSearched && (

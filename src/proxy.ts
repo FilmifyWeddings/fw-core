@@ -2,6 +2,55 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
 
+const RESERVED_ROOT_PATHS = new Set([
+  'admin',
+  'api',
+  'assigned-shoots',
+  'attendance',
+  'auth',
+  'bee-queen-curtail',
+  'blocked',
+  'book-demo',
+  'broadcast-campaigns',
+  'clear-cookies',
+  'dashboard',
+  'data-deletion',
+  'features',
+  'fix-431',
+  'forgot-password',
+  'free-trial',
+  'g',
+  'home',
+  'home2',
+  'instant-import',
+  'integration-showcase',
+  'integrations',
+  'leads',
+  'login',
+  'p',
+  'pdf-preview',
+  'portal',
+  'pricing',
+  'privacy-policy',
+  'quotations',
+  'r',
+  'reset-password',
+  'review',
+  'robots.txt',
+  'sarajosmith',
+  'settings',
+  'signup',
+  'single-send',
+  'sitemap.xml',
+  'support',
+  'sushant-1023-fw',
+  'terms-of-service',
+  'vendor-portal',
+  'workspace',
+  '_next',
+  'favicon.ico',
+]);
+
 /**
  * Next.js Proxy & Middleware Handler.
  * Preserves all route protections, Supabase auth sessions, and headers.
@@ -25,6 +74,58 @@ export async function proxy(request: NextRequest) {
         clearResponse.cookies.set(c.name, '', { maxAge: 0, path: '/' });
       });
       return clearResponse;
+    }
+
+    // Luxury Branded Event Gallery Rewrite
+    // Pattern 1: /{studio_slug}/{couple_slug}/{unique_code} -> /g/{couple_slug}-{unique_code}
+    const pathSegments = pathname.split('/').filter(Boolean);
+    if (
+      pathSegments.length === 3 &&
+      !pathSegments[0].includes('.') &&
+      !RESERVED_ROOT_PATHS.has(pathSegments[0].toLowerCase())
+    ) {
+      const [studio, couple, code] = pathSegments;
+      const rewriteUrl = request.nextUrl.clone();
+      rewriteUrl.pathname = `/g/${couple}-${code}`;
+      rewriteUrl.searchParams.set('studio', studio);
+      rewriteUrl.searchParams.set('couple', couple);
+      rewriteUrl.searchParams.set('code', code);
+      return NextResponse.rewrite(rewriteUrl);
+    }
+
+    // Pattern 2: Subdomain routing: {studio_slug}.studiocore.in/{couple_slug}/{unique_code}
+    const requestHost = request.headers.get('host') || request.nextUrl.host || '';
+    const hostParts = requestHost.split(':')[0].split('.');
+    const isSubdomain = hostParts.length > 2 && hostParts[0] !== 'www' && hostParts[0] !== 'localhost';
+    if (
+      isSubdomain &&
+      pathSegments.length === 2 &&
+      !pathSegments[0].includes('.') &&
+      !RESERVED_ROOT_PATHS.has(pathSegments[0].toLowerCase())
+    ) {
+      const studio = hostParts[0];
+      const [couple, code] = pathSegments;
+      const rewriteUrl = request.nextUrl.clone();
+      rewriteUrl.pathname = `/g/${couple}-${code}`;
+      rewriteUrl.searchParams.set('studio', studio);
+      rewriteUrl.searchParams.set('couple', couple);
+      rewriteUrl.searchParams.set('code', code);
+      return NextResponse.rewrite(rewriteUrl);
+    }
+
+    // Pattern 3: /{studio_slug}/{couple_slug} -> /g/{couple_slug}
+    if (
+      pathSegments.length === 2 &&
+      !isSubdomain &&
+      !pathSegments[0].includes('.') &&
+      !RESERVED_ROOT_PATHS.has(pathSegments[0].toLowerCase())
+    ) {
+      const [studio, couple] = pathSegments;
+      const rewriteUrl = request.nextUrl.clone();
+      rewriteUrl.pathname = `/g/${couple}`;
+      rewriteUrl.searchParams.set('studio', studio);
+      rewriteUrl.searchParams.set('couple', couple);
+      return NextResponse.rewrite(rewriteUrl);
     }
 
     // Proactively prune stale/orphaned auth token chunks & duplicate legacy cookies on every incoming request

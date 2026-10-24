@@ -32,6 +32,60 @@ function formatCoverUrl(url: string | null | undefined): string | null {
   return url;
 }
 
+async function enrichGalleryBranding(single: any) {
+  if (!single) return null;
+
+  let studioSlug = 'studio';
+  if (single.workspace_id && single.workspace_id !== '00000000-0000-0000-0000-000000000000') {
+    try {
+      const [wsRes, profRes] = await Promise.all([
+        supabaseAdmin.from('workspaces').select('name, slug').eq('id', single.workspace_id).maybeSingle(),
+        supabaseAdmin.from('profiles').select('workspace_name, studio_slug, business_name, leads_table_preferences').eq('id', single.workspace_id).maybeSingle(),
+      ]);
+
+      const ws = wsRes.data;
+      const prof = profRes.data;
+      const invoiceCompanyName = prof?.leads_table_preferences?.invoice_company_name;
+
+      if (ws?.slug) {
+        studioSlug = ws.slug.toLowerCase().trim();
+      } else if (invoiceCompanyName && typeof invoiceCompanyName === 'string' && invoiceCompanyName.trim().length > 0) {
+        studioSlug = invoiceCompanyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      } else if (prof?.business_name && prof.business_name !== 'Default Studio' && prof.business_name !== 'SusFWW') {
+        studioSlug = prof.business_name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      } else if (ws?.name && ws.name !== 'Default Studio' && ws.name !== 'My Workspace' && ws.name !== 'SusFWW') {
+        studioSlug = ws.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      } else if (prof?.studio_slug) {
+        studioSlug = prof.studio_slug.toLowerCase().trim();
+      } else if (prof?.business_name) {
+        studioSlug = prof.business_name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      } else if (ws?.name) {
+        studioSlug = ws.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      }
+    } catch (_) {}
+  }
+
+  let uniqueCode = single.id ? single.id.replace(/-/g, '').slice(0, 6) : 'code';
+  let coupleSlug = single.slug || 'event';
+  if (single.slug && single.slug.includes('-')) {
+    const parts = single.slug.split('-');
+    const lastPart = parts[parts.length - 1];
+    if (lastPart.length >= 4 && lastPart.length <= 8 && /^[0-9a-f]+$/i.test(lastPart)) {
+      uniqueCode = lastPart;
+      coupleSlug = parts.slice(0, -1).join('-');
+    }
+  }
+
+  return {
+    ...single,
+    cover_url: formatCoverUrl(single.cover_url),
+    is_face_ai_enabled: resolveIsFaceAiEnabled(single),
+    studio_slug: studioSlug,
+    couple_slug: coupleSlug,
+    unique_code: uniqueCode,
+  };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -44,6 +98,11 @@ export async function GET(req: NextRequest) {
 
     // 1. Fetch single gallery by ID
     if (id) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      if (!isUuid) {
+        return NextResponse.json({ success: false, error: 'Invalid gallery ID format', gallery: null, events: [] }, { status: 404 });
+      }
+
       const { data: single, error } = await supabaseAdmin
         .from('event_galleries')
         .select('*')
@@ -77,41 +136,52 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const formatted = {
-        ...single,
-        cover_url: formatCoverUrl(single.cover_url),
-        is_face_ai_enabled: resolveIsFaceAiEnabled(single),
-      };
+      const formatted = await enrichGalleryBranding(single);
       return NextResponse.json({ success: true, gallery: formatted, events: [formatted] });
     }
 
     // 2. Fetch single gallery by Slug or ID (used by public client views and direct links)
     if (slug) {
-      let query = supabaseAdmin
-        .from('event_galleries')
-        .select('*')
-        .or(`slug.eq.${slug},id.eq.${slug}`);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+      let single: any = null;
 
-      if (requestedWorkspaceId) {
-        query = query.eq('workspace_id', requestedWorkspaceId);
+      if (isUuid) {
+        const { data } = await supabaseAdmin
+          .from('event_galleries')
+          .select('*')
+          .or(`slug.eq.${slug},id.eq.${slug}`)
+          .limit(1);
+        single = data?.[0] || null;
+      } else {
+        const { data } = await supabaseAdmin
+          .from('event_galleries')
+          .select('*')
+          .eq('slug', slug)
+          .limit(1);
+        single = data?.[0] || null;
       }
 
-      const { data: list, error } = await query
-        .order('created_at', { ascending: false })
-        .limit(1);
+      // If not found and slug has compound format (e.g. couple-code like sushant-sneha-bb8bbb):
+      if (!single && slug.includes('-')) {
+        const parts = slug.split('-');
+        const code = parts[parts.length - 1];
+        const couple = parts.slice(0, -1).join('-');
 
-      if (error) {
-        console.error('Error fetching event gallery by Slug:', error);
-        return NextResponse.json({ success: false, error: error.message, gallery: null, events: [] }, { status: 200 });
+        // Try couple name match (and match id prefix with code if available)
+        const { data: byCouple } = await supabaseAdmin
+          .from('event_galleries')
+          .select('*')
+          .eq('slug', couple)
+          .order('created_at', { ascending: false });
+
+        if (byCouple && byCouple.length > 0) {
+          single = byCouple.find((e: any) =>
+            e.id.replace(/-/g, '').toLowerCase().startsWith(code.toLowerCase())
+          ) || byCouple[0];
+        }
       }
 
-      const single = list?.[0] || null;
-
-      const formatted = single ? {
-        ...single,
-        cover_url: formatCoverUrl(single.cover_url),
-        is_face_ai_enabled: resolveIsFaceAiEnabled(single),
-      } : null;
+      const formatted = await enrichGalleryBranding(single);
       return NextResponse.json(
         { success: true, gallery: formatted, events: formatted ? [formatted] : [] },
         {

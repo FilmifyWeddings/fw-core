@@ -24,13 +24,32 @@ export async function generateMetadata(
         .eq('slug', slug)
         .maybeSingle();
 
-      if (!gallery) {
-        const { data: gById } = await supabaseAdmin
+      if (!gallery && slug.includes('-')) {
+        const parts = slug.split('-');
+        const code = parts[parts.length - 1];
+        const couple = parts.slice(0, -1).join('-');
+        const { data: gByCouple } = await supabaseAdmin
           .from('event_galleries')
-          .select('title, cover_url')
-          .eq('id', slug)
-          .maybeSingle();
-        gallery = gById;
+          .select('id, title, cover_url')
+          .eq('slug', couple)
+          .order('created_at', { ascending: false });
+        if (gByCouple && gByCouple.length > 0) {
+          gallery = gByCouple.find((e: any) =>
+            e.id.replace(/-/g, '').toLowerCase().startsWith(code.toLowerCase())
+          ) || gByCouple[0];
+        }
+      }
+
+      if (!gallery) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+        if (isUuid) {
+          const { data: gById } = await supabaseAdmin
+            .from('event_galleries')
+            .select('title, cover_url')
+            .eq('id', slug)
+            .maybeSingle();
+          gallery = gById;
+        }
       }
 
       if (gallery) {

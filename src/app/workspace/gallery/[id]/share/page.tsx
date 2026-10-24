@@ -82,9 +82,9 @@ function GalleryShareCenterContent() {
   const [origin, setOrigin] = useState('https://studiocore.in');
 
   // Toggle Controls
-  const [guestAskPin, setGuestAskPin] = useState(false);
-  const [fullAccessAskPin, setFullAccessAskPin] = useState(true);
-  const [selectionAskPin, setSelectionAskPin] = useState(true);
+  const [guestAskPin, setGuestAskPin] = useState(true);
+  const [fullAccessDoNotAskPin, setFullAccessDoNotAskPin] = useState(false);
+  const [selectionDoNotAskPin, setSelectionDoNotAskPin] = useState(false);
   const [selectionMaxLimit, setSelectionMaxLimit] = useState<string>('50');
 
   // Standee Modal State
@@ -136,10 +136,10 @@ function GalleryShareCenterContent() {
       setGallery(gal);
       const isGuestPinEnabled = gal.raw_payload?.guest_pin_enabled !== undefined
         ? Boolean(gal.raw_payload.guest_pin_enabled)
-        : (gal.raw_payload?.guest_ask_pin !== undefined ? Boolean(gal.raw_payload.guest_ask_pin) : !!gal.pin_code);
+        : (gal.raw_payload?.guest_ask_pin !== undefined ? Boolean(gal.raw_payload.guest_ask_pin) : true);
       setGuestAskPin(isGuestPinEnabled);
-      setFullAccessAskPin(!!gal.pin_code);
-      setSelectionAskPin(!!gal.pin_code);
+      setFullAccessDoNotAskPin(false);
+      setSelectionDoNotAskPin(false);
 
       // Restore saved max selection limit
       try {
@@ -170,14 +170,19 @@ function GalleryShareCenterContent() {
     }
   };
 
-  const eventSlug = gallery?.slug || gallery?.id || 'event';
+  const studioSlug = (gallery as any)?.studio_slug || 'studio';
+  const coupleSlug = (gallery as any)?.couple_slug || gallery?.slug || 'event';
+  const uniqueCode = (gallery as any)?.unique_code || (gallery?.id ? gallery.id.replace(/-/g, '').slice(0, 6) : 'view');
+
+  const baseEventPath = `${origin}/${studioSlug}/${coupleSlug}/${uniqueCode}`;
   const guestPin = gallery?.guest_pin || gallery?.pin_code || '700680';
   const passKey = gallery?.pass_key || gallery?.admin_pin || gallery?.pin_code || '518399';
 
-  // Dynamic Link Structures directly mapped to /g/[slug]
+  // Dynamic Luxury Link Structures
+  // When "Do not ask PIN" is active (!guestAskPin === true), pass share_key in URL
   const guestAccessUrl = !guestAskPin
-    ? `${origin}/g/${eventSlug}?no_pin=1`
-    : `${origin}/g/${eventSlug}`;
+    ? `${baseEventPath}?share_key=${guestPin}`
+    : baseEventPath;
 
   const handleToggleGuestPin = async (doNotAsk: boolean) => {
     const askPin = !doNotAsk;
@@ -205,13 +210,15 @@ function GalleryShareCenterContent() {
     }
   };
 
-  const fullAccessUrl = fullAccessAskPin
-    ? `${origin}/g/${eventSlug}?access=all&pass_key=${passKey}`
-    : `${origin}/g/${eventSlug}?access=all`;
+  const fullAccessUrl = fullAccessDoNotAskPin
+    ? `${baseEventPath}?access=all&pass_key=${passKey}`
+    : `${baseEventPath}?access=all`;
 
   const parsedLimit = parseInt(selectionMaxLimit, 10);
   const limitQuery = !isNaN(parsedLimit) && parsedLimit > 0 ? `&max_limit=${parsedLimit}` : '';
-  const photoSelectionUrl = `${origin}/g/${eventSlug}?album_selection=true${selectionAskPin ? `&pass_key=${passKey}` : ''}${limitQuery}`;
+  const photoSelectionUrl = selectionDoNotAskPin
+    ? `${baseEventPath}?album_selection=true&pass_key=${passKey}${limitQuery}`
+    : `${baseEventPath}?album_selection=true${limitQuery}`;
 
   const copyToClipboard = (text: string, key: string) => {
     if (typeof navigator !== 'undefined') {
@@ -285,16 +292,6 @@ function GalleryShareCenterContent() {
             </h1>
           </div>
         </div>
-
-        <a
-          href={guestAccessUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-zinc-900/10 cursor-pointer shrink-0"
-        >
-          <ExternalLink className="w-4 h-4 text-amber-400" />
-          <span>Open Guest Portal</span>
-        </a>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
@@ -436,12 +433,12 @@ function GalleryShareCenterContent() {
               </button>
             </div>
 
-            {/* Animated Toggle: Require PIN Code */}
+            {/* Animated Toggle: Do not ask PIN */}
             <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-xs">
-              <span className="font-bold text-zinc-700">Require PIN Code</span>
+              <span className="font-bold text-zinc-700">Do not ask PIN</span>
               <AnimatedToggle
-                checked={fullAccessAskPin}
-                onChange={(val) => setFullAccessAskPin(val)}
+                checked={fullAccessDoNotAskPin}
+                onChange={(val) => setFullAccessDoNotAskPin(val)}
                 colorClass="bg-blue-600"
               />
             </div>
@@ -474,7 +471,7 @@ function GalleryShareCenterContent() {
               onClick={() => {
                 setStandeeUrl(fullAccessUrl);
                 setStandeeTitle(gallery.title);
-                setStandeePin(fullAccessAskPin ? passKey : null);
+                setStandeePin(fullAccessDoNotAskPin ? null : passKey);
                 setStandeeType('Full Access');
                 setIsStandeeModalOpen(true);
               }}
@@ -531,10 +528,10 @@ function GalleryShareCenterContent() {
             {/* Controls */}
             <div className="space-y-2.5 pt-2 border-t border-zinc-100 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-zinc-700">Require Pass Key</span>
+                <span className="font-bold text-zinc-700">Do not ask Pass Key</span>
                 <AnimatedToggle
-                  checked={selectionAskPin}
-                  onChange={(val) => setSelectionAskPin(val)}
+                  checked={selectionDoNotAskPin}
+                  onChange={(val) => setSelectionDoNotAskPin(val)}
                   colorClass="bg-purple-600"
                 />
               </div>
@@ -584,7 +581,7 @@ function GalleryShareCenterContent() {
               onClick={() => {
                 setStandeeUrl(photoSelectionUrl);
                 setStandeeTitle(gallery.title);
-                setStandeePin(selectionAskPin ? passKey : null);
+                setStandeePin(selectionDoNotAskPin ? null : passKey);
                 setStandeeType('Photo Selection');
                 setIsStandeeModalOpen(true);
               }}

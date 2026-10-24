@@ -85,7 +85,6 @@ function StrictZeroKnowledgeGuestContent() {
   const personParam = searchParams?.get('person');
   const passKeyParam = searchParams?.get('pass_key');
   const shareKeyParam = searchParams?.get('share_key');
-  const isNoPinParam = searchParams?.get('no_pin') === '1' || searchParams?.get('no_pin') === 'true';
 
   const isPrivilegedMode = isFullAccess || isSelectionMode || isVipMode;
 
@@ -170,28 +169,23 @@ function StrictZeroKnowledgeGuestContent() {
       setGallery(gal);
 
       // Check unlock permissions for privileged mode
-      const isGuestPinDisabled =
-        !isSelectionMode &&
-        !isFullAccess &&
-        (isNoPinParam ||
-          gal.raw_payload?.guest_pin_enabled === false ||
-          gal.raw_payload?.guest_ask_pin === false);
-
-      const requiredPin = isSelectionMode
+      const isPrivileged = isFullAccess || isSelectionMode;
+      const requiredPin = isPrivileged
         ? (gal.admin_pin || gal.pin_code)
-        : (isGuestPinDisabled ? null : (gal.guest_pin || gal.pin_code));
+        : (gal.guest_pin || gal.pin_code);
 
-      const passedKey = isSelectionMode ? passKeyParam : shareKeyParam;
+      const passedKey = isPrivileged ? passKeyParam : shareKeyParam;
 
       const hasValidPin =
         isVipMode ||
-        isGuestPinDisabled ||
         !requiredPin ||
-        passedKey === requiredPin ||
+        (passedKey && passedKey.trim() === requiredPin.trim()) ||
         (typeof window !== 'undefined' && sessionStorage.getItem(`unlocked_${gal.id}`) === 'true');
 
       if (hasValidPin) {
         setIsUnlocked(true);
+      } else if (isPrivilegedMode) {
+        setShowPinModal(true);
       }
 
       // Fetch full collections & photos if in PRIVILEGED mode OR gallery is PUBLISHED
@@ -313,7 +307,8 @@ function StrictZeroKnowledgeGuestContent() {
     e.preventDefault();
     if (!gallery) return;
 
-    const requiredPin = isSelectionMode
+    const isPrivileged = isFullAccess || isSelectionMode;
+    const requiredPin = isPrivileged
       ? (gallery.admin_pin || gallery.pin_code)
       : (gallery.guest_pin || gallery.pin_code);
 
