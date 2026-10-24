@@ -61,6 +61,7 @@ import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { useUploadQueue } from '@/context/UploadQueueContext';
 import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothImage';
+import GalleryDesignStudio from '@/components/gallery/GalleryDesignStudio';
 
 interface EventGallery {
   id: string;
@@ -2518,146 +2519,16 @@ function AlbumStudioContent() {
           )}
 
           {/* ════════════════════════════════════════════════════════════
-              VIEW 3: DESIGN SUB-PAGE (PORTAL CUSTOMIZER)
+              VIEW 3: DESIGN SUB-PAGE (VISUAL EXPERIENCE STUDIO)
           ════════════════════════════════════════════════════════════ */}
           {activeTab === 'design' && (
-            <div className="max-w-4xl space-y-6">
-              <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E7E2D8] shadow-2xs space-y-6">
-                <div>
-                  <h2 
-                    style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
-                    className="text-2xl font-medium text-zinc-900 tracking-tight"
-                  >
-                    Client Portal Design &amp; Layout
-                  </h2>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    Customize the luxury cover hero, typography, color accents, and watermarking for this wedding.
-                  </p>
-                </div>
-
-                {/* Color Theme Selector */}
-                <div className="space-y-3">
-                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-600 block">
-                    Accent Color Theme
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { id: 'cream', label: 'Warm Cream', hex: '#FAF9F5', border: '#E7E2D8' },
-                      { id: 'gold', label: 'Royal Amber', hex: '#F59E0B', border: '#D97706' },
-                      { id: 'emerald', label: 'Imperial Emerald', hex: '#10B981', border: '#059669' },
-                      { id: 'midnight', label: 'Velvet Midnight', hex: '#18181B', border: '#09090B' },
-                    ].map((theme) => (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        onClick={() => setDesignTheme(theme.id as any)}
-                        className={`p-3.5 rounded-2xl border text-left cursor-pointer transition ${
-                          designTheme === theme.id ? 'border-amber-500 ring-2 ring-amber-400/30 bg-[#FAF9F5]' : 'border-[#E7E2D8] bg-white'
-                        }`}
-                      >
-                        <div className="w-6 h-6 rounded-full mb-2 border shadow-2xs" style={{ backgroundColor: theme.hex }} />
-                        <span className="text-xs font-bold text-zinc-900 block">{theme.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Cover Style */}
-                <div className="space-y-3 pt-2 border-t border-[#F2EEE6]">
-                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-600 block">
-                    Cover Banner Layout
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {[
-                      { id: 'hero', label: 'Full Hero Landscape', desc: '16:9 cinematic widescreen header' },
-                      { id: 'split', label: 'Split Frame Elegance', desc: 'Cover photo with couple story on side' },
-                      { id: 'minimal', label: 'Minimalist Editorial', desc: 'Clean high-fashion typography' },
-                    ].map((layout) => (
-                      <button
-                        key={layout.id}
-                        type="button"
-                        onClick={() => setDesignCoverLayout(layout.id as any)}
-                        className={`p-4 rounded-2xl border text-left cursor-pointer transition ${
-                          designCoverLayout === layout.id ? 'border-amber-500 ring-2 ring-amber-400/30 bg-[#FAF9F5]' : 'border-[#E7E2D8] bg-white'
-                        }`}
-                      >
-                        <span className="text-xs font-bold text-zinc-900 block">{layout.label}</span>
-                        <p className="text-[11px] text-zinc-400 mt-1">{layout.desc}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Watermark Configuration */}
-                <div className="space-y-3 pt-2 border-t border-[#F2EEE6]">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold uppercase tracking-wider text-zinc-600 block">
-                        Watermarking Protection
-                      </span>
-                      <p className="text-[11px] text-zinc-400">
-                        Protect WebP gallery previews from unauthorized downloads
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setWatermarkEnabled(!watermarkEnabled)}
-                      className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
-                        watermarkEnabled ? 'bg-amber-500' : 'bg-zinc-200'
-                      }`}
-                    >
-                      <span className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
-                        watermarkEnabled ? 'left-6' : 'left-1'
-                      }`} />
-                    </button>
-                  </div>
-
-                  {watermarkEnabled && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-700 mb-1">Watermark Text</label>
-                        <input
-                          type="text"
-                          value={watermarkText}
-                          placeholder="e.g. Studio Name Photography"
-                          onChange={(e) => setWatermarkText(e.target.value)}
-                          className="w-full px-3.5 py-2 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-900"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-700 mb-1">Opacity: {watermarkOpacity}%</label>
-                        <input
-                          type="range"
-                          min="10"
-                          max="90"
-                          value={watermarkOpacity}
-                          onChange={(e) => setWatermarkOpacity(Number(e.target.value))}
-                          className="w-full accent-amber-500 mt-2"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex items-center gap-3 pt-4 border-t border-[#F2EEE6]">
-                  <button
-                    type="button"
-                    onClick={handleSaveDesign}
-                    className="px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition shadow-xs cursor-pointer"
-                  >
-                    {designSaved ? 'Saved Successfully!' : 'Save Design Settings'}
-                  </button>
-                  <a
-                    href={getPublicUrl(gallery.slug)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-5 py-2.5 rounded-full bg-white hover:bg-[#FAF9F5] text-zinc-700 border border-[#E7E2D8] font-bold text-xs transition cursor-pointer"
-                  >
-                    Live Portal Preview
-                  </a>
-                </div>
-              </div>
+            <div className="w-full -mx-4 sm:-mx-8 -my-6 bg-white rounded-3xl overflow-hidden border border-[#E7E2D8] shadow-xs">
+              <GalleryDesignStudio
+                gallery={gallery}
+                photos={photos}
+                isStandalonePage={false}
+                onUpdateGallery={(updated) => setGallery(updated)}
+              />
             </div>
           )}
 

@@ -33,6 +33,7 @@ import {
   Cloud,
   Send,
   AlertCircle,
+  ArrowDown,
 } from 'lucide-react';
 
 function InstagramIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -1006,8 +1007,49 @@ function GuestSlugGalleryContent() {
   const studioPhone = studioBranding?.phone;
   const studioEmail = studioBranding?.email;
 
+  // ── DYNAMIC DESIGN CONFIGURATION (PRESETS, PALETTE, FONTS, MOTION) ──
+  const designConfig = gallery?.raw_payload?.design;
+  const designPreset = designConfig?.preset || 'cinematic_bleed';
+  const designPalette = designConfig?.palette || {
+    canvasBg: '#FAF9F5',
+    textColor: '#18181B',
+    accentColor: '#D97706',
+    subtextColor: '#71717A',
+    cardBg: '#FFFFFF',
+  };
+  const headingFont = designConfig?.typography?.headingFont || "'Playfair Display', 'Cormorant Garamond', Georgia, serif";
+  const bodyFont = designConfig?.typography?.bodyFont || "'Plus Jakarta Sans', sans-serif";
+  const motionAnimation = designConfig?.motion?.animation || 'cinematic_zoom';
+  const coverFocal = designConfig?.cover?.focalPoint || { x: 50, y: 50 };
+  const coverOpacity = designConfig?.cover?.overlayOpacity ?? 40;
+  const effectiveCoverUrl = designConfig?.cover?.url || parseCoverUrl(gallery.cover_url).url || gallery.cover_url || '';
+  const formattedDate = new Date(gallery.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+  // Entrance motion animation classes
+  const getMotionClass = (type: string) => {
+    switch (type) {
+      case 'fade_up':
+        return 'animate-in fade-in slide-in-from-bottom-8 duration-1000 fill-mode-both';
+      case 'curtain_reveal':
+        return 'animate-in fade-in zoom-in-95 duration-1000 fill-mode-both';
+      case 'soft_focus':
+        return 'animate-in fade-in duration-1000 fill-mode-both';
+      case 'parallax_float':
+        return 'animate-in fade-in duration-1000 fill-mode-both';
+      case 'cinematic_zoom':
+      default:
+        return 'animate-in fade-in duration-1000 fill-mode-both';
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans pb-32 select-none">
+    <div
+      style={{
+        backgroundColor: designPalette.canvasBg,
+        color: designPalette.textColor,
+        fontFamily: bodyFont,
+      }}
+      className="min-h-screen pb-32 select-none transition-colors duration-300">
       
       {/* 0. LUXURY STUDIO HEADER BAR */}
       <header className="bg-zinc-950/95 backdrop-blur-md border-b border-white/10 text-white sticky top-0 z-40 transition-all">
@@ -1057,65 +1099,394 @@ function GuestSlugGalleryContent() {
         </div>
       </header>
 
-      {/* 1. LUXURY WEDDING HERO */}
-      <div className="relative bg-zinc-950 text-white overflow-hidden">
-        {gallery.cover_url ? (
-          <>
-            {/* Desktop Hero Cover */}
-            <img
-              src={parseCoverUrl(gallery.cover_url).url || gallery.cover_url}
-              alt={gallery.title}
-              style={{
-                objectPosition: `${parseCoverUrl(gallery.cover_url).desktop.x}% ${parseCoverUrl(gallery.cover_url).desktop.y}%`,
-                transform: `scale(${parseCoverUrl(gallery.cover_url).desktop.zoom / 100})`,
-                transformOrigin: `${parseCoverUrl(gallery.cover_url).desktop.x}% ${parseCoverUrl(gallery.cover_url).desktop.y}%`,
-              }}
-              className="hidden sm:block w-full h-80 sm:h-96 object-cover transition-all duration-300"
+      {/* 1. LUXURY WEDDING HERO (12 DYNAMIC PRESETS) */}
+      <div className={`relative overflow-hidden transition-all duration-500 ${getMotionClass(motionAnimation)}`}>
+        
+        {/* PRESET 1: CINEMATIC BLEED (Full-Bleed Widescreen Hero) */}
+        {designPreset === 'cinematic_bleed' && (
+          <div className="relative min-h-[75vh] sm:min-h-[85vh] w-full flex items-center justify-center text-center overflow-hidden">
+            {effectiveCoverUrl ? (
+              <img
+                src={effectiveCoverUrl}
+                alt={gallery.title}
+                className={`absolute inset-0 w-full h-full object-cover ${
+                  motionAnimation === 'cinematic_zoom' ? 'scale-105 transition-transform duration-1000' : ''
+                }`}
+                style={{
+                  objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
+                }}
+              />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-b from-zinc-900 via-zinc-950 to-zinc-900" />
+            )}
+            <div
+              className="absolute inset-0 bg-black transition-opacity"
+              style={{ opacity: coverOpacity / 100 }}
             />
-            {/* Mobile Hero Cover */}
-            <img
-              src={parseCoverUrl(gallery.cover_url).url || gallery.cover_url}
-              alt={gallery.title}
-              style={{
-                objectPosition: `${parseCoverUrl(gallery.cover_url).mobile.x}% ${parseCoverUrl(gallery.cover_url).mobile.y}%`,
-                transform: `scale(${parseCoverUrl(gallery.cover_url).mobile.zoom / 100})`,
-                transformOrigin: 'center center',
-              }}
-              className="block sm:hidden w-full h-80 sm:h-96 object-cover transition-all duration-300"
-            />
-          </>
-        ) : (
-          <div className="w-full h-80 sm:h-96 bg-gradient-to-b from-zinc-900 via-zinc-950 to-[#FAF9F5]" />
+            <div className="relative z-10 p-6 sm:p-12 space-y-4 text-white max-w-3xl mx-auto">
+              <div className="inline-flex items-center gap-2 text-xs uppercase tracking-widest px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20">
+                <Calendar className="w-3.5 h-3.5 text-amber-300" />
+                <span>{formattedDate}</span>
+              </div>
+              <h1
+                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight drop-shadow-xl"
+                style={{ fontFamily: headingFont }}
+              >
+                {gallery.title}
+              </h1>
+              <p
+                className="text-sm sm:text-base text-zinc-200/90 italic tracking-wide max-w-lg mx-auto"
+                style={{ fontFamily: headingFont }}
+              >
+                Moments captured forever. Find all your personal memories with AI Face Search.
+              </p>
+              <div className="pt-6">
+                <a
+                  href="#gallery-content"
+                  className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/20 text-white backdrop-blur-md border border-white/30 animate-bounce hover:bg-white/30 transition shadow-lg cursor-pointer"
+                  aria-label="Scroll to gallery content"
+                >
+                  <ArrowDown className="w-5 h-5" />
+                </a>
+              </div>
+            </div>
+          </div>
         )}
 
-        {/* Clean Luxury Gradient: Crystal clear faces with subtle bottom shade for couple name */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent pointer-events-none" />
-
-        <div className="absolute inset-0 flex flex-col justify-end p-6 sm:p-10 max-w-6xl mx-auto">
-          <div className="space-y-2 text-center sm:text-left max-w-2xl">
-            <div
-              className="flex items-center justify-center sm:justify-start gap-2 text-amber-400 text-xs tracking-widest uppercase font-semibold"
-              style={{ fontFamily: "'Cinzel', 'Playfair Display', serif" }}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>{new Date(gallery.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+        {/* PRESET 2: ROYAL MEDALLION (Center Circular Portrait Emblem & Warm Canvas) */}
+        {designPreset === 'royal_medallion' && (
+          <div
+            className="py-16 sm:py-24 px-4 sm:px-8 text-center space-y-6 flex flex-col items-center justify-center relative overflow-hidden"
+            style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
+          >
+            <div className="relative group">
+              <div
+                className="w-44 h-44 sm:w-60 sm:h-60 rounded-full overflow-hidden shadow-2xl relative transition-transform duration-500 group-hover:scale-105"
+                style={{
+                  boxShadow: `0 25px 50px -12px ${designPalette.accentColor}40, 0 0 0 4px ${designPalette.accentColor}50`,
+                }}
+              >
+                <img
+                  src={effectiveCoverUrl}
+                  alt={gallery.title}
+                  className="w-full h-full object-cover"
+                  style={{
+                    objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
+                  }}
+                />
+              </div>
             </div>
+            <div className="space-y-2 max-w-xl mx-auto">
+              <span className="text-[11px] tracking-widest uppercase font-bold opacity-60 block">
+                GALLERY BY {studioName.toUpperCase()}
+              </span>
+              <h1
+                className="text-3xl sm:text-5xl lg:text-6xl font-normal italic tracking-tight"
+                style={{ fontFamily: headingFont }}
+              >
+                {gallery.title}
+              </h1>
+              <div className="flex items-center justify-center gap-2 text-xs font-mono opacity-70">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{formattedDate}</span>
+              </div>
+            </div>
+            <div className="pt-2">
+              <a
+                href="#gallery-content"
+                className="inline-block animate-bounce p-2 hover:opacity-80 transition cursor-pointer"
+                style={{ color: designPalette.accentColor }}
+                aria-label="Scroll to gallery content"
+              >
+                <ArrowDown className="w-5 h-5" />
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 3: HAUTE EDITORIAL (Terre Verde Vogue Layout - Big Headline + Vertical Portrait) */}
+        {designPreset === 'haute_editorial' && (
+          <div
+            className="py-12 sm:py-20 px-4 sm:px-8 text-center space-y-6 flex flex-col items-center justify-center relative"
+            style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
+          >
+            <div className="space-y-1 max-w-3xl mx-auto">
+              <h1
+                className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-widest uppercase leading-none"
+                style={{ fontFamily: headingFont }}
+              >
+                {gallery.title}
+              </h1>
+            </div>
+            <div className="w-64 sm:w-80 md:w-96 aspect-[3/4] rounded-sm overflow-hidden shadow-2xl border-4 border-white bg-black relative group">
+              <img
+                src={effectiveCoverUrl}
+                alt={gallery.title}
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                style={{
+                  objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
+                }}
+              />
+            </div>
+            <div className="flex items-center gap-3 text-xs font-mono tracking-widest uppercase opacity-60">
+              <span>{formattedDate}</span>
+              <span>•</span>
+              <span>{studioName}</span>
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 4: GRAND DIPTYCH (Split 50/50 Canvas) */}
+        {designPreset === 'grand_diptych' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[70vh] w-full border-b border-black/10 overflow-hidden">
+            <div
+              className="p-8 sm:p-16 flex flex-col justify-center space-y-5"
+              style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
+            >
+              <div className="inline-flex items-center gap-2 text-xs font-mono uppercase tracking-widest font-bold" style={{ color: designPalette.accentColor }}>
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{formattedDate}</span>
+              </div>
+              <h1
+                className="text-4xl sm:text-6xl font-bold tracking-tight leading-tight"
+                style={{ fontFamily: headingFont }}
+              >
+                {gallery.title}
+              </h1>
+              <p className="text-sm sm:text-base opacity-75 font-serif italic max-w-md">
+                Moments captured forever. Find all your personal memories with AI Face Search.
+              </p>
+              <div className="pt-2">
+                <a
+                  href="#gallery-content"
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold transition shadow-sm cursor-pointer"
+                  style={{ backgroundColor: designPalette.accentColor, color: '#FFFFFF' }}
+                >
+                  <span>Explore Event Gallery</span>
+                  <ArrowDown className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+            <div className="h-80 lg:h-auto min-h-[400px] overflow-hidden relative">
+              <img
+                src={effectiveCoverUrl}
+                alt={gallery.title}
+                className="w-full h-full object-cover"
+                style={{
+                  objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 5: FLOATING GALLERY FRAME */}
+        {designPreset === 'floating_frame' && (
+          <div className="relative py-20 px-4 sm:px-8 flex items-center justify-center overflow-hidden min-h-[75vh]">
+            <img
+              src={effectiveCoverUrl}
+              alt="Ambient Background"
+              className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-25 scale-110"
+            />
+            <div
+              className="relative z-10 w-full max-w-xl rounded-3xl p-6 sm:p-8 border shadow-2xl space-y-4 text-center backdrop-blur-md"
+              style={{
+                backgroundColor: `${designPalette.canvasBg}F0`,
+                borderColor: `${designPalette.accentColor}40`,
+                color: designPalette.textColor,
+              }}
+            >
+              <div className="aspect-[16/10] rounded-2xl overflow-hidden shadow-lg border border-black/10">
+                <img
+                  src={effectiveCoverUrl}
+                  alt={gallery.title}
+                  className="w-full h-full object-cover"
+                  style={{
+                    objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-mono uppercase tracking-widest opacity-60">{formattedDate}</span>
+                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight" style={{ fontFamily: headingFont }}>
+                  {gallery.title}
+                </h1>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 6: VELVET MIDNIGHT */}
+        {designPreset === 'velvet_midnight' && (
+          <div className="relative min-h-[80vh] w-full flex items-center justify-center text-center bg-black overflow-hidden">
+            <div className="absolute inset-0 bg-radial from-amber-500/25 via-black to-black opacity-80" />
+            <img
+              src={effectiveCoverUrl}
+              alt="Noir"
+              className="absolute inset-0 w-full h-full object-cover opacity-35 mix-blend-luminosity scale-105"
+              style={{
+                objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
+              }}
+            />
+            <div className="relative z-10 space-y-4 p-6 sm:p-12 text-white max-w-3xl">
+              <span className="text-xs font-mono tracking-widest uppercase text-amber-400 block">{formattedDate}</span>
+              <h1 className="text-4xl sm:text-6xl lg:text-7xl font-light tracking-wide text-amber-100" style={{ fontFamily: headingFont }}>
+                {gallery.title}
+              </h1>
+              <div className="w-40 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent mx-auto" />
+              <div className="pt-4">
+                <a href="#gallery-content" className="inline-block animate-bounce text-amber-400" aria-label="Scroll down">
+                  <ArrowDown className="w-5 h-5" />
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 7: CATHEDRAL ARCH */}
+        {designPreset === 'cathedral_arch' && (
+          <div
+            className="py-16 sm:py-24 px-4 sm:px-8 flex flex-col items-center text-center space-y-6"
+            style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
+          >
+            <div
+              className="w-52 h-80 sm:w-64 sm:h-96 rounded-t-full overflow-hidden border-4 shadow-2xl relative"
+              style={{ borderColor: `${designPalette.accentColor}60` }}
+            >
+              <img
+                src={effectiveCoverUrl}
+                alt={gallery.title}
+                className="w-full h-full object-cover"
+                style={{
+                  objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
+                }}
+              />
+            </div>
+            <div className="space-y-2 max-w-xl">
+              <span className="text-xs font-mono uppercase tracking-widest opacity-60 block">{formattedDate}</span>
+              <h1 className="text-3xl sm:text-5xl font-bold tracking-tight" style={{ fontFamily: headingFont }}>
+                {gallery.title}
+              </h1>
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 8: MINIMALIST IVORY */}
+        {designPreset === 'minimalist_ivory' && (
+          <div
+            className="py-20 sm:py-28 px-4 sm:px-8 text-center space-y-5"
+            style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
+          >
+            <span className="text-[10px] tracking-widest uppercase font-mono opacity-50 block">OFFICIAL WEDDING ARCHIVE</span>
             <h1
-              className="text-3xl sm:text-5xl lg:text-6xl font-normal tracking-tight text-white drop-shadow-md"
-              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              className="text-4xl sm:text-6xl lg:text-7xl font-light tracking-widest uppercase"
+              style={{ fontFamily: headingFont }}
             >
               {gallery.title}
             </h1>
-            <p
-              className="text-sm sm:text-base text-zinc-200/90 italic tracking-wide drop-shadow-xs"
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-            >
-              Moments captured forever. Find all your personal memories with AI Face Search.
-            </p>
+            <div className="w-16 h-px bg-current opacity-30 mx-auto" />
+            <span className="text-xs font-mono opacity-60 block">{formattedDate}</span>
           </div>
-        </div>
+        )}
+
+        {/* PRESET 9: PARALLAX CANVAS */}
+        {designPreset === 'parallax_canvas' && (
+          <div className="relative min-h-[75vh] w-full flex items-center justify-center text-center overflow-hidden">
+            <img
+              src={effectiveCoverUrl}
+              alt="Parallax"
+              className="absolute inset-0 w-full h-full object-cover scale-110"
+              style={{
+                objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
+              }}
+            />
+            <div className="absolute inset-0 bg-black/45" />
+            <div className="relative z-10 text-white space-y-3 p-6 max-w-2xl">
+              <span className="text-xs font-mono tracking-widest text-amber-300 uppercase block">{formattedDate}</span>
+              <h1 className="text-4xl sm:text-6xl font-bold tracking-tight" style={{ fontFamily: headingFont }}>
+                {gallery.title}
+              </h1>
+              <a href="#gallery-content" className="inline-block pt-4 animate-bounce text-white" aria-label="Scroll down">
+                <ArrowDown className="w-5 h-5" />
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 10: HERITAGE STORYBOOK */}
+        {designPreset === 'heritage_storybook' && (
+          <div
+            className="py-16 sm:py-24 px-4 sm:px-8 flex flex-col items-center text-center space-y-6"
+            style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
+          >
+            <div className="flex items-center justify-center -space-x-12 sm:-space-x-16">
+              <div className="w-40 sm:w-56 h-56 sm:h-76 rounded-2xl overflow-hidden border-4 border-white shadow-2xl -rotate-6 transform hover:rotate-0 transition-transform duration-500">
+                <img src={effectiveCoverUrl} alt="Story 1" className="w-full h-full object-cover" />
+              </div>
+              <div className="w-40 sm:w-56 h-56 sm:h-76 rounded-2xl overflow-hidden border-4 border-white shadow-2xl rotate-6 z-10 transform hover:rotate-0 transition-transform duration-500">
+                <img src={effectiveCoverUrl} alt="Story 2" className="w-full h-full object-cover" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-3xl sm:text-5xl font-serif italic" style={{ fontFamily: headingFont }}>
+                {gallery.title}
+              </h1>
+              <span className="text-xs font-mono opacity-60 block">{formattedDate}</span>
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 11: CLASSIC HEIRLOOM */}
+        {designPreset === 'classic_heirloom' && (
+          <div
+            className="py-16 sm:py-24 px-4 sm:px-8 text-center space-y-4 flex flex-col items-center justify-center"
+            style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
+          >
+            <Crown className="w-8 h-8 text-amber-600 animate-pulse" />
+            <div className="w-20 h-0.5 bg-gradient-to-r from-transparent via-amber-500 to-transparent mx-auto" />
+            <h1 className="text-4xl sm:text-6xl font-normal tracking-wide" style={{ fontFamily: headingFont }}>
+              {gallery.title}
+            </h1>
+            <span className="text-xs font-mono opacity-60">{formattedDate}</span>
+            <div className="w-full max-w-xl h-64 sm:h-80 rounded-2xl overflow-hidden shadow-2xl border-2 border-amber-400/30 mt-4">
+              <img src={effectiveCoverUrl} alt="Classic" className="w-full h-full object-cover" />
+            </div>
+          </div>
+        )}
+
+        {/* PRESET 12: CONTEMPORARY VOGUE */}
+        {designPreset === 'contemporary_vogue' && (
+          <div className="relative min-h-[55vh] sm:min-h-[65vh] w-full flex items-center justify-between p-6 sm:p-16 bg-zinc-950 text-white overflow-hidden">
+            <img
+              src={effectiveCoverUrl}
+              alt="Contemporary"
+              className="absolute inset-0 w-full h-full object-cover opacity-55 scale-105"
+              style={{
+                objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
+              }}
+            />
+            <div className="relative z-10 space-y-2 max-w-xl">
+              <span className="text-xs font-mono tracking-widest uppercase bg-white/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
+                {formattedDate}
+              </span>
+              <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black uppercase tracking-tight" style={{ fontFamily: headingFont }}>
+                {gallery.title}
+              </h1>
+            </div>
+            <div className="relative z-10 hidden sm:block">
+              <a
+                href="#gallery-content"
+                className="px-6 py-3 rounded-full bg-white text-zinc-950 text-xs font-bold uppercase tracking-wider shadow-lg hover:bg-zinc-100 transition cursor-pointer"
+              >
+                Explore Photos
+              </a>
+            </div>
+          </div>
+        )}
+
       </div>
 
+      <div id="gallery-content" className="scroll-mt-14" />
       {/* 2. MAIN CONTENT AREA */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-6 relative z-10 space-y-8">
 
