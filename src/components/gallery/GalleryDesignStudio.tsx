@@ -27,16 +27,14 @@ import {
   Camera,
 } from 'lucide-react';
 import { parseCoverUrl, buildCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
-import { TornPaperEdge, FlowingSilkVeil, SparkleStar } from '@/components/gallery/CoverPresetEffects';
+import { SparkleStar } from '@/components/gallery/CoverPresetEffects';
 
 export type PresetId =
   | 'cinematic_hero'
   | 'editorial_canvas'
   | 'faded_luxe'
   | 'split_atelier'
-  | 'torn_paper_edge'
-  | 'monochrome_portal'
-  | 'flowing_silk_veil';
+  | 'monochrome_portal';
 
 export interface GalleryDesignConfig {
   preset: PresetId;
@@ -80,7 +78,7 @@ export const DEFAULT_DESIGN_CONFIG: GalleryDesignConfig = {
   },
 };
 
-// ── 7 LUXURY COVER HERO PRESETS (Classic 4 + 3 New Custom Creations) ──
+// ── LUXURY COVER HERO PRESETS ──
 interface PresetItem {
   id: PresetId;
   name: string;
@@ -98,25 +96,11 @@ const PRESETS: PresetItem[] = [
     description: 'Edge-to-edge full-bleed hero with bottom romantic typography and golden vignette.',
   },
   {
-    id: 'torn_paper_edge',
-    name: 'Torn Paper Edge',
-    subtitle: 'Photo 1 Beach Vibe Style',
-    tag: 'Vintage Handcrafted',
-    description: 'Artistic ragged torn paper rip bottom border with retro stars and peeling reveal animation.',
-  },
-  {
     id: 'monochrome_portal',
     name: 'Monochrome Portal',
-    subtitle: 'Photo 2 Cathedral Arch Style',
+    subtitle: 'Cathedral Arch Style',
     tag: 'Fine Art Arch Duo',
     description: 'Dreamy black & white panorama background with a vibrant centerpiece cathedral arch portrait.',
-  },
-  {
-    id: 'flowing_silk_veil',
-    name: 'Floating Silk Veil',
-    subtitle: 'Concept 3 Ethereal Cloth',
-    tag: '3D Flying Fabric',
-    description: 'Luminous bridal veil cloth billowing gracefully in the wind along the footer with fluid wave physics.',
   },
   {
     id: 'editorial_canvas',
@@ -519,12 +503,10 @@ export default function GalleryDesignStudio({
         'editorial_canvas',
         'faded_luxe',
         'split_atelier',
-        'torn_paper_edge',
         'monochrome_portal',
-        'flowing_silk_veil',
       ].includes(raw.preset)) {
         presetKey = raw.preset;
-      } else if (raw.preset === 'cinematic_bleed') {
+      } else if (raw.preset === 'cinematic_bleed' || raw.preset === 'torn_paper_edge' || raw.preset === 'flowing_silk_veil') {
         presetKey = 'cinematic_hero';
       } else if (raw.preset === 'haute_editorial') {
         presetKey = 'editorial_canvas';
@@ -810,13 +792,45 @@ export default function GalleryDesignStudio({
     }
   };
 
-  // Open live client gallery in new tab
-  const handleOpenLivePreview = () => {
+  // Open live client gallery in new tab with instant auto-save & bypass pin/gate
+  const handleOpenLivePreview = async () => {
     const target = gallery?.slug || gallery?.id;
-    if (target) {
-      window.open(`/g/${target}`, '_blank');
-    } else {
+    if (!target) {
       showToast('Please save the gallery to generate a public link.', 'info');
+      return;
+    }
+
+    // Open a blank tab immediately to avoid popup blocker after async await
+    const previewWindow = typeof window !== 'undefined' ? window.open('about:blank', '_blank') : null;
+    if (previewWindow) {
+      try {
+        previewWindow.document.title = 'Opening Live Preview...';
+        previewWindow.document.body.innerHTML = `
+          <div style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:#FAF9F5;color:#18181B;">
+            <div style="text-align:center;">
+              <div style="width:40px;height:40px;border:3px solid #D97706;border-top-color:transparent;border-radius:50%;margin:0 auto 16px;animation:spin 1s linear infinite;"></div>
+              <p style="font-size:16px;font-weight:bold;margin:0 0 6px;">Saving latest design changes...</p>
+              <p style="font-size:12px;color:#71717A;margin:0;">Launching direct live preview...</p>
+            </div>
+            <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+          </div>
+        `;
+      } catch (_) {}
+    }
+
+    try {
+      // Auto-save and publish on the fly
+      await handleSaveAndPublish();
+
+      const previewUrl = `/g/${target}?preview=true`;
+      if (previewWindow) {
+        previewWindow.location.href = previewUrl;
+      } else {
+        window.open(previewUrl, '_blank');
+      }
+    } catch (err: any) {
+      if (previewWindow) previewWindow.close();
+      showToast(`Preview Error: ${err.message}`, 'error');
     }
   };
 
@@ -1040,15 +1054,9 @@ export default function GalleryDesignStudio({
                             />
                           )}
 
-                          {/* Top Bar Representation */}
-                          <div className="relative z-10 flex items-center justify-between text-[8px] font-mono tracking-widest uppercase opacity-70">
-                            <span>{studioName.slice(0, 10)}</span>
-                            <span>PHOTOS</span>
-                          </div>
-
                           {/* Center / Layout Representation */}
                           {preset.id === 'cinematic_hero' && (
-                            <div className="relative z-10 text-center pb-1 space-y-0.5">
+                            <div className="relative z-10 text-center pb-1 space-y-0.5 my-auto">
                               <span className="text-[7px] uppercase font-mono tracking-widest text-amber-300">
                                 GALLERY BY
                               </span>
@@ -1112,23 +1120,6 @@ export default function GalleryDesignStudio({
                             </div>
                           )}
 
-                          {preset.id === 'torn_paper_edge' && (
-                            <div className="absolute inset-0 flex flex-col justify-between">
-                              <div className="relative z-10 text-center pt-8 space-y-0.5">
-                                <div className="flex items-center justify-center gap-1 text-[6px] font-mono uppercase tracking-widest text-amber-300">
-                                  <span>✦</span>
-                                  <span>GALLERY BY</span>
-                                  <span>✦</span>
-                                </div>
-                                <div className="text-[10px] font-serif capitalize font-bold text-white drop-shadow-md">{coupleName}</div>
-                                <span className="text-[6px] font-mono opacity-60 text-zinc-300">{eventDateFormatted}</span>
-                              </div>
-                              <div className="relative z-20 -mb-1 w-full">
-                                <TornPaperEdge color="#FAF9F5" isAnimated={false} />
-                              </div>
-                            </div>
-                          )}
-
                           {preset.id === 'monochrome_portal' && (
                             <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-between p-1.5">
                               {coverPositioning.url && (
@@ -1158,19 +1149,6 @@ export default function GalleryDesignStudio({
                             </div>
                           )}
 
-                          {preset.id === 'flowing_silk_veil' && (
-                            <div className="absolute inset-0 flex flex-col justify-between">
-                              <div className="relative z-10 text-center pt-8 space-y-0.5">
-                                <span className="text-[6px] font-mono uppercase tracking-widest text-amber-200">GALLERY BY</span>
-                                <div className="text-[10px] font-serif capitalize font-bold text-white drop-shadow-md">{coupleName}</div>
-                                <span className="text-[6px] font-mono opacity-60 text-zinc-300">{eventDateFormatted}</span>
-                              </div>
-                              <div className="relative z-20 -mb-1 w-full">
-                                <FlowingSilkVeil baseBgColor="#FAF9F5" />
-                              </div>
-                            </div>
-                          )}
-
                           {/* Selected Checkmark Badge */}
                           {isSelected && (
                             <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center shadow-md z-20">
@@ -1179,15 +1157,9 @@ export default function GalleryDesignStudio({
                           )}
                         </div>
 
-                        {/* Title & Metadata */}
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-zinc-900">{preset.name}</span>
-                            <span className="px-1.5 py-0.5 rounded-sm bg-zinc-100 text-zinc-700 text-[9px] font-mono font-bold">
-                              {preset.tag}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-zinc-500 mt-1 leading-snug">{preset.description}</p>
+                        {/* Title Only (Clean Headline) */}
+                        <div className="pt-1">
+                          <span className="text-xs font-black text-zinc-900">{preset.name}</span>
                         </div>
                       </div>
                     );
@@ -1542,7 +1514,7 @@ export default function GalleryDesignStudio({
                           </div>
                         )}
                         <div>
-                          <span className="text-xs font-bold block leading-none">{studioName}</span>
+                          <span className="text-xs font-bold block leading-none" style={{ fontFamily: design.typography.headingFont }}>{studioName}</span>
                           <span className="text-[9px] opacity-60 block leading-tight">{studioSubtitle}</span>
                         </div>
                       </div>
@@ -1653,7 +1625,7 @@ export default function GalleryDesignStudio({
                             {studioName.charAt(0)}
                           </div>
                         )}
-                        <span className="text-[11px] font-bold truncate max-w-[120px]">{studioName}</span>
+                        <span className="text-[11px] font-bold truncate max-w-[120px]" style={{ fontFamily: design.typography.headingFont }}>{studioName}</span>
                       </div>
                       <span className="text-[9px] font-mono opacity-60">
                         {photos.length > 0 ? `${photos.length}P` : '114P'}
@@ -2037,12 +2009,6 @@ function renderPresetContent(
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
 
-          {/* Top Bar inside image */}
-          <div className="relative z-10 px-4 py-3 flex items-center justify-between text-white/90 text-[10px] font-mono tracking-widest uppercase">
-            <span style={{ fontFamily: headingFont }}>{studioName}</span>
-            <span>{countLabel}</span>
-          </div>
-
           {/* Bottom Typography with Slide Animation */}
           <div className="relative z-10 p-4 space-y-1 text-white">
             <span className="text-[8px] font-mono uppercase tracking-[0.25em] text-amber-200 block font-semibold animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -2196,75 +2162,6 @@ function renderPresetContent(
         </div>
       );
 
-    case 'torn_paper_edge':
-      return (
-        <div
-          className={`relative ${
-            isMobile ? 'h-80' : 'h-[440px]'
-          } w-full flex flex-col justify-between overflow-hidden text-center`}
-        >
-          {coverPos.url ? (
-            <img
-              src={coverPos.url}
-              alt="Hero"
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
-              style={{
-                objectPosition: `${focalX}% ${focalY}%`,
-                transformOrigin: `${focalX}% ${focalY}%`,
-                transform: `scale(${zoom / 100})`,
-              }}
-            />
-          ) : (
-            <div className="absolute inset-0 bg-zinc-900" />
-          )}
-
-          {/* Golden Romantic Vignette */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/20 to-black/75" />
-
-          {/* Top Bar inside image */}
-          <div className="relative z-10 px-4 py-3 flex items-center justify-between text-white/90 text-[10px] font-mono tracking-widest uppercase">
-            <span style={{ fontFamily: headingFont }}>{studioName}</span>
-            <span>{countLabel}</span>
-          </div>
-
-          {/* Center Artistic Romantic Typography (From User Photo 1) */}
-          <div className="relative z-10 p-4 space-y-2 text-white my-auto max-w-lg mx-auto">
-            <div className="flex items-center justify-center gap-1.5 text-[8px] sm:text-[9px] font-mono uppercase tracking-[0.28em] text-amber-200">
-              <SparkleStar className="w-2.5 h-2.5 text-amber-300 animate-spin" />
-              <span>GALLERY BY {studioName.toUpperCase()}</span>
-              <SparkleStar className="w-2.5 h-2.5 text-amber-300 animate-spin" />
-            </div>
-
-            <div className="space-y-0.5">
-              <h2
-                className={`${
-                  isMobile ? 'text-2xl' : 'text-4xl sm:text-5xl'
-                } font-normal tracking-tight text-white capitalize leading-tight drop-shadow-2xl`}
-                style={{ fontFamily: headingFont }}
-              >
-                {coupleName}
-              </h2>
-              <div className="flex items-center justify-center gap-2 pt-1">
-                <span className="w-6 h-px bg-white/40" />
-                <span className="text-[10px] text-amber-100/90 font-mono tracking-widest uppercase">
-                  {eventDateFormatted}
-                </span>
-                <span className="w-6 h-px bg-white/40" />
-              </div>
-            </div>
-
-            <div className="pt-1">
-              <ArrowDown className="w-3.5 h-3.5 mx-auto text-white/70 animate-bounce" />
-            </div>
-          </div>
-
-          {/* Ripped / Torn Paper Edge Footer (From User Photo 1) */}
-          <div className="relative z-20 -mb-1 w-full">
-            <TornPaperEdge color={design.palette.cardBg || design.palette.canvasBg || '#FFFFFF'} />
-          </div>
-        </div>
-      );
-
     case 'monochrome_portal':
       return (
         <div
@@ -2349,65 +2246,6 @@ function renderPresetContent(
             <div className="pt-1">
               <ArrowDown className="w-3.5 h-3.5 mx-auto text-white/60 animate-bounce" />
             </div>
-          </div>
-        </div>
-      );
-
-    case 'flowing_silk_veil':
-      return (
-        <div
-          className={`relative ${
-            isMobile ? 'h-80' : 'h-[440px]'
-          } w-full flex flex-col justify-between overflow-hidden text-center`}
-        >
-          {coverPos.url ? (
-            <img
-              src={coverPos.url}
-              alt="Hero"
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
-              style={{
-                objectPosition: `${focalX}% ${focalY}%`,
-                transformOrigin: `${focalX}% ${focalY}%`,
-                transform: `scale(${zoom / 100})`,
-              }}
-            />
-          ) : (
-            <div className="absolute inset-0 bg-zinc-900" />
-          )}
-
-          {/* Dreamy Twilight Gradient */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/15 to-black/70" />
-
-          {/* Top Bar inside image */}
-          <div className="relative z-10 px-4 py-3 flex items-center justify-between text-white/90 text-[10px] font-mono tracking-widest uppercase">
-            <span style={{ fontFamily: headingFont }}>{studioName}</span>
-            <span>{countLabel}</span>
-          </div>
-
-          {/* Center Romance Typography */}
-          <div className="relative z-10 p-4 space-y-1 text-white my-auto max-w-lg mx-auto">
-            <span className="text-[8px] font-mono uppercase tracking-[0.28em] text-amber-200 block font-semibold drop-shadow-md">
-              GALLERY BY {studioName.toUpperCase()}
-            </span>
-            <h2
-              className={`${
-                isMobile ? 'text-2xl' : 'text-4xl'
-              } font-normal tracking-tight text-white capitalize drop-shadow-2xl`}
-              style={{ fontFamily: headingFont }}
-            >
-              {coupleName}
-            </h2>
-            <span className="text-[10px] text-zinc-200 font-mono tracking-wider block drop-shadow-md">
-              {eventDateFormatted}
-            </span>
-            <div className="pt-1">
-              <ArrowDown className="w-3.5 h-3.5 mx-auto text-white/70 animate-bounce" />
-            </div>
-          </div>
-
-          {/* 3D Flowing Silk Veil Waves (Floating Cloth Wave Effect) */}
-          <div className="relative z-20 -mb-1 w-full">
-            <FlowingSilkVeil baseBgColor={design.palette.cardBg || design.palette.canvasBg || '#FAF9F5'} />
           </div>
         </div>
       );

@@ -134,8 +134,9 @@ const DEFAULT_SETTINGS: GallerySettingsData = {
 type ActiveTab = 'profile' | 'branding' | 'design' | 'framing';
 
 export default function GallerySettingsPage() {
-  const { workspaceId, activeWorkspace, userId, loading: wsLoading } = useWorkspace();
+  const { workspaceId, activeWorkspace, workspaceName, workspaceConfig, userId, loading: wsLoading } = useWorkspace();
   const effectiveWsId = workspaceId || activeWorkspace?.workspaceId || userId || '';
+  const effectiveLogo = workspaceConfig?.logoUrl || activeWorkspace?.avatarUrl || '';
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('profile');
   const [settings, setSettings] = useState<GallerySettingsData>(DEFAULT_SETTINGS);
@@ -144,7 +145,7 @@ export default function GallerySettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [logoInput, setLogoInput] = useState('');
 
-  // Load existing gallery settings
+  // Load existing gallery settings & auto-sync with CRM workspace profile
   useEffect(() => {
     async function loadSettings() {
       if (!effectiveWsId) {
@@ -155,9 +156,14 @@ export default function GallerySettingsPage() {
         const res = await fetch(`/api/gallery/settings?workspace_id=${encodeURIComponent(effectiveWsId)}`);
         const json = await res.json();
         if (json.success && json.settings) {
+          const syncedBrand = activeWorkspace?.studioName || workspaceName || json.settings.studio_name || '';
+          const syncedLogo = workspaceConfig?.logoUrl || activeWorkspace?.avatarUrl || json.settings.logo_url || '';
+
           setSettings({
             ...DEFAULT_SETTINGS,
             ...json.settings,
+            studio_name: json.settings.studio_name || syncedBrand,
+            logo_url: json.settings.logo_url || syncedLogo,
             social_links: {
               ...DEFAULT_SETTINGS.social_links,
               ...(json.settings.social_links || {}),
@@ -167,7 +173,7 @@ export default function GallerySettingsPage() {
               ...(json.settings.social_visibility || {}),
             },
           });
-          setLogoInput(json.settings.logo_url || '');
+          setLogoInput(json.settings.logo_url || syncedLogo);
         }
       } catch (err) {
         console.error('Failed to load gallery settings:', err);
@@ -176,7 +182,7 @@ export default function GallerySettingsPage() {
       }
     }
     loadSettings();
-  }, [effectiveWsId, wsLoading]);
+  }, [effectiveWsId, wsLoading, activeWorkspace, workspaceName, workspaceConfig]);
 
   // Handle Save
   const handleSave = async (e?: React.FormEvent) => {
@@ -187,9 +193,10 @@ export default function GallerySettingsPage() {
     setSaveSuccess(false);
 
     try {
+      const resolvedLogo = logoInput.trim() || effectiveLogo || settings.logo_url;
       const payload = {
         ...settings,
-        logo_url: logoInput.trim() || settings.logo_url,
+        logo_url: resolvedLogo,
       };
 
       const res = await fetch('/api/gallery/settings', {
@@ -356,17 +363,6 @@ export default function GallerySettingsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-zinc-700">Brand Tagline</label>
-              <input
-                type="text"
-                value={settings.tagline}
-                onChange={(e) => setSettings({ ...settings, tagline: e.target.value })}
-                placeholder="e.g. Capturing timeless love stories and authentic emotions"
-                className="w-full px-4 py-2.5 bg-[#FBF9F5] rounded-2xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition"
-              />
-            </div>
-
-            <div className="space-y-1.5">
               <label className="block text-xs font-bold text-zinc-700">About Studio Bio</label>
               <textarea
                 rows={3}
@@ -377,33 +373,41 @@ export default function GallerySettingsPage() {
               />
             </div>
 
-            {/* Studio Logo Setup */}
-            <div className="p-5 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-black text-zinc-900 block">Portal Studio Logo</span>
-                  <span className="text-[11px] text-zinc-400">High-resolution PNG/SVG with transparent background</span>
-                </div>
-                {logoInput && (
-                  <div className="w-12 h-12 rounded-xl bg-white border border-[#E7E2D8] p-1 flex items-center justify-center overflow-hidden shadow-2xs">
-                    <img src={logoInput} alt="Logo Preview" className="max-w-full max-h-full object-contain" />
+            {/* Auto-Synced Studio Profile & Logo Card */}
+            <div className="p-5 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                {(logoInput || effectiveLogo || settings.logo_url) ? (
+                  <div className="w-14 h-14 rounded-2xl bg-white border border-[#E7E2D8] p-1.5 flex items-center justify-center overflow-hidden shadow-2xs shrink-0">
+                    <img
+                      src={logoInput || effectiveLogo || settings.logo_url}
+                      alt="Studio Logo"
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 text-white font-serif font-black flex items-center justify-center text-xl shadow-xs shrink-0">
+                    {(settings.studio_name || 'S').charAt(0).toUpperCase()}
                   </div>
                 )}
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-zinc-900 block">{settings.studio_name || 'Studio Profile'}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                      ✓ Auto-Synced
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 leading-snug">
+                    Official studio logo &amp; brand name automatically synchronize from your CRM workspace profile across all client galleries, covers, and headers.
+                  </p>
+                </div>
               </div>
 
-              <input
-                type="text"
-                value={logoInput}
-                onChange={(e) => {
-                  setLogoInput(e.target.value);
-                  setSettings({ ...settings, logo_url: e.target.value });
-                }}
-                placeholder="https://example.com/your-logo.png"
-                className="w-full px-4 py-2.5 bg-white rounded-xl border border-[#E7E2D8] text-xs font-mono text-zinc-900 focus:outline-hidden focus:border-amber-500"
-              />
-              <p className="text-[10px] text-zinc-400">
-                Tip: Enter your public image URL or paste an asset link. This logo appears in the top navigation of all client galleries.
-              </p>
+              <Link
+                href="/workspace/settings"
+                className="px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-amber-400 text-zinc-700 text-xs font-bold transition text-center shrink-0 shadow-2xs hover:text-amber-700"
+              >
+                Manage Studio Profile →
+              </Link>
             </div>
           </div>
         )}

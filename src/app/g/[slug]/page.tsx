@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { parseCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
-import { TornPaperEdge, FlowingSilkVeil, SparkleStar } from '@/components/gallery/CoverPresetEffects';
+import { SparkleStar } from '@/components/gallery/CoverPresetEffects';
 import {
   Camera,
   Sparkles,
@@ -135,10 +135,11 @@ function GuestSlugGalleryContent() {
   const maxLimitParam = searchParams?.get('max_limit');
   const maxSelectionLimit = maxLimitParam ? parseInt(maxLimitParam, 10) : null;
   const isVipMode = searchParams?.get('vip-link') === '1';
+  const isPreviewMode = searchParams?.get('preview') === 'true' || searchParams?.get('mode') === 'preview';
   const passKeyParam = searchParams?.get('pass_key');
   const shareKeyParam = searchParams?.get('share_key');
 
-  const isPrivilegedMode = isFullAccess || isSelectionMode || isVipMode;
+  const isPrivilegedMode = isFullAccess || isSelectionMode || isVipMode || isPreviewMode;
 
   const [gallery, setGallery] = useState<GalleryInfo | null>(null);
   const [collections, setCollections] = useState<GalleryCollection[]>([]);
@@ -179,7 +180,7 @@ function GuestSlugGalleryContent() {
   // Dual Guest Tab: 'my' (AI Face Matched) vs 'all' (Full Event Photos)
   const [guestActiveTab, setGuestActiveTab] = useState<'my' | 'all'>('my');
   const [isSyncingLivePhotos, setIsSyncingLivePhotos] = useState(false);
-  const [guestSavedSession, setGuestSavedSession] = useState<{ id?: string; token?: string; name?: string } | null>(null);
+  const [guestSavedSession, setGuestSavedSession] = useState<{ id?: string; token?: string; name?: string; phone?: string; email?: string } | null>(null);
 
   // 50-Photo Progressive Pagination for Privileged View
   const [visibleFullCount, setVisibleFullCount] = useState<number>(50);
@@ -274,10 +275,14 @@ function GuestSlugGalleryContent() {
       const isSessionUnlocked = typeof window !== 'undefined' && sessionStorage.getItem(sessionKey) === requiredPin;
       const isUrlKeyUnlocked = Boolean(passedKey && requiredPin && passedKey.trim() === requiredPin);
 
-      const hasValidPin = isVipMode || !requiredPin || isUrlKeyUnlocked || isSessionUnlocked;
+      const hasValidPin = isPreviewMode || isVipMode || !requiredPin || isUrlKeyUnlocked || isSessionUnlocked;
 
       if (hasValidPin) {
         setIsUnlocked(true);
+        if (isPreviewMode) {
+          setHasSearched(true);
+          setIsVerified(true);
+        }
       } else {
         setIsUnlocked(false);
         if (isPrivilegedMode) {
@@ -309,7 +314,7 @@ function GuestSlugGalleryContent() {
     } finally {
       setLoading(false);
     }
-  }, [slug, isSelectionMode, isFullAccess, passKeyParam, shareKeyParam, isVipMode, isPrivilegedMode]);
+  }, [slug, isSelectionMode, isFullAccess, passKeyParam, shareKeyParam, isVipMode, isPreviewMode, isPrivilegedMode]);
 
   useEffect(() => {
     loadGalleryData();
@@ -670,6 +675,23 @@ function GuestSlugGalleryContent() {
     setIsDownloadingAll(false);
   };
 
+  // One-click Download Trigger from Sub-Events Bar
+  const handleDownloadAllPhotosTrigger = async () => {
+    const listToDownload = matchedPhotos.length > 0 ? matchedPhotos : targetFullPhotos;
+    if (listToDownload.length === 0) {
+      alert('No photos available to download.');
+      return;
+    }
+    if (confirm(`Download ${listToDownload.length} high-resolution photos?`)) {
+      setIsDownloadingAll(true);
+      for (const photo of listToDownload) {
+        await handleDownloadPhoto(photo);
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      setIsDownloadingAll(false);
+    }
+  };
+
   const targetFullPhotos = useMemo(() => {
     return selectedCollectionId === 'all'
       ? fullPhotos
@@ -958,7 +980,7 @@ function GuestSlugGalleryContent() {
     );
   }
 
-  const studioBranding = gallery.studio_branding;
+  const studioBranding: any = gallery.studio_branding;
   const studioName = studioBranding?.studio_name || 'Wedding Studio';
   const studioLogo = studioBranding?.logo_url;
   const studioTagline = studioBranding?.tagline || 'Fine Art Wedding Photography & Films';
@@ -1020,6 +1042,174 @@ function GuestSlugGalleryContent() {
     }
   };
 
+  // Guest Landing Flow: Full photo cover with subtle dark gradient, aesthetic couple name, date, and frosted glass "Find My Photos" pill
+  const isGuestPreRegistration = !isPrivilegedMode && !hasSearched && !isVerified;
+
+  if (isGuestPreRegistration) {
+    return (
+      <div className="relative min-h-screen w-full flex flex-col justify-between overflow-hidden bg-zinc-950 text-white select-none">
+        {/* Full Screen Edge-to-Edge Hero Image with Focal Positioning & Scale */}
+        {cleanCoverUrl ? (
+          <>
+            <img
+              src={cleanCoverUrl}
+              alt={gallery.title}
+              className="hidden sm:block absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
+              style={{
+                objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                transformOrigin: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                transform: `scale(${coverPos.desktop.zoom / 100})`,
+              }}
+            />
+            <img
+              src={cleanCoverUrl}
+              alt={gallery.title}
+              className="block sm:hidden absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
+              style={{
+                objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                transformOrigin: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                transform: `scale(${coverPos.mobile.zoom / 100})`,
+              }}
+            />
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-b from-zinc-900 via-zinc-950 to-zinc-900" />
+        )}
+
+        {/* Subtle Dark Gradient at Bottom */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/90 pointer-events-none" />
+
+        {/* Discreet Top Studio Branding Header */}
+        <div className="relative z-10 px-6 sm:px-12 py-6 flex items-center justify-between text-white/90">
+          <div className="flex items-center gap-3">
+            {studioLogo ? (
+              <img
+                src={studioLogo}
+                alt={studioName}
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover ring-1 ring-white/20"
+              />
+            ) : (
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-serif font-black flex items-center justify-center text-xs shadow-xs">
+                {studioName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="leading-tight">
+              <span
+                className="block text-xs sm:text-sm font-semibold tracking-wide"
+                style={{ fontFamily: headingFont }}
+              >
+                {studioName}
+              </span>
+              <span className="block text-[10px] opacity-60 hidden sm:block font-light">
+                {studioSubtitle}
+              </span>
+            </div>
+          </div>
+          {totalPhotosCount > 0 && (
+            <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-60">
+              {totalPhotosCount} PHOTOS
+            </span>
+          )}
+        </div>
+
+        {/* Center-Lower Romantic Typography & Frosted Blur Pill Button */}
+        <div className="relative z-10 px-6 pb-16 sm:pb-24 text-center space-y-4 max-w-3xl mx-auto w-full">
+          <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-amber-200/90 block font-semibold drop-shadow-md">
+            GALLERY BY {studioName.toUpperCase()}
+          </span>
+
+          <h1
+            className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize"
+            style={{ fontFamily: headingFont }}
+          >
+            {gallery.title}
+          </h1>
+
+          <span className="text-xs sm:text-sm text-zinc-300 font-mono tracking-widest block drop-shadow-md">
+            {formattedDate}
+          </span>
+
+          {/* Centered / Lower-centered Apple-Grade Frosted Glass Blur Pill Button */}
+          <div className="pt-6">
+            <button
+              type="button"
+              onClick={handleFindMyPhotoClick}
+              className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-full bg-white/20 hover:bg-white/30 text-white font-bold text-sm tracking-wider backdrop-blur-xl border border-white/30 shadow-2xl shadow-black/50 transition-all duration-300 hover:scale-[1.03] active:scale-[0.98] cursor-pointer"
+            >
+              <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
+              <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
+                {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
+              </span>
+              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+            </button>
+          </div>
+        </div>
+
+        {/* Face Scanner Modal & PIN Modal in Guest Pre-Registration */}
+        <FaceScannerModal
+          isOpen={isFaceScannerOpen}
+          onClose={() => setIsFaceScannerOpen(false)}
+          onSubmit={handleFaceScanSubmit}
+          isProcessing={isMatching}
+          galleryId={gallery.id}
+          onScanComplete={(photos) => {
+            setMatchedPhotos(photos);
+            setHasSearched(true);
+          }}
+        />
+
+        {showPinModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-4 animate-in fade-in text-zinc-900">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-amber-600" />
+                  <h3 className="text-sm font-black text-zinc-900">Enter Access PIN</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPinModal(false);
+                    setOpenFaceScannerAfterPin(false);
+                  }}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handlePinSubmit} className="space-y-4">
+                <input
+                  type="password"
+                  maxLength={8}
+                  value={enteredPin}
+                  onChange={(e) => {
+                    setEnteredPin(e.target.value);
+                    setPinError(false);
+                  }}
+                  placeholder="Enter 6-digit PIN"
+                  className="w-full text-center text-xl tracking-[0.3em] font-mono py-3 rounded-2xl border-2 border-zinc-200 focus:border-amber-600 focus:outline-hidden"
+                  autoFocus
+                />
+                {pinError && (
+                  <p className="text-xs text-rose-600 text-center font-bold">
+                    Incorrect access PIN. Please try again.
+                  </p>
+                )}
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-black text-xs transition cursor-pointer"
+                >
+                  Unlock & Continue
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -1066,30 +1256,21 @@ function GuestSlugGalleryContent() {
 
           <div className="flex items-center gap-2">
             {totalPhotosCount > 0 && (
-              <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-60 mr-1 hidden sm:inline">
+              <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-60 mr-1">
                 {totalPhotosCount} PHOTOS
               </span>
             )}
-            {isSelectionMode ? (
+            {isSelectionMode && (
               <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-600 border border-rose-500/30 text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
                 <Heart className="w-3 h-3 fill-rose-500 text-rose-500" />
                 <span>Album Selection</span>
-              </span>
-            ) : isFullAccess ? (
-              <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-700 border border-amber-500/30 text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
-                <Crown className="w-3 h-3 text-amber-600" />
-                <span>VIP Access</span>
-              </span>
-            ) : (
-              <span className="px-3 py-1 rounded-full bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-[10px] sm:text-xs font-medium opacity-80">
-                Official Client Gallery
               </span>
             )}
           </div>
         </div>
       </header>
 
-      {/* 1. LUXURY WEDDING HERO (4 EXACT HANDCRAFTED PRESETS) */}
+      {/* 1. LUXURY WEDDING HERO (HANDCRAFTED PRESETS) */}
       <div className="relative overflow-hidden transition-all duration-700">
         
         {/* PRESET 1: CINEMATIC HERO (Classic Full Bleed Hero) */}
@@ -1100,9 +1281,7 @@ function GuestSlugGalleryContent() {
           'haute_editorial',
           'royal_medallion',
           'grand_diptych',
-          'torn_paper_edge',
           'monochrome_portal',
-          'flowing_silk_veil',
         ].includes(designPreset))) && (
           <div className="relative min-h-[85vh] sm:min-h-[92vh] w-full flex flex-col justify-between overflow-hidden">
             {/* Desktop Hero Image with Auto Cinematic Zoom & Exact Focal Position */}
@@ -1139,17 +1318,8 @@ function GuestSlugGalleryContent() {
               style={{ opacity: Math.max(coverOpacity / 100, 0.45) }}
             />
 
-            {/* Top Bar inside Cover */}
-            <div className="relative z-10 px-6 sm:px-12 py-6 flex items-center justify-between text-white/90">
-              <span className="text-xs sm:text-sm font-serif tracking-wider" style={{ fontFamily: headingFont }}>
-                {studioName}
-              </span>
-              {totalPhotosCount > 0 && (
-                <span className="text-[10px] sm:text-xs font-mono tracking-widest uppercase opacity-80">
-                  {totalPhotosCount} PHOTOS
-                </span>
-              )}
-            </div>
+            {/* Spacer (Inner top bar brand & photo count removed per request) */}
+            <div className="relative z-10 p-6" />
 
             {/* Center-Bottom Romantic Typography with Golden Glow & Staggered Slide Animations */}
             <div className="relative z-10 px-6 pb-12 sm:pb-16 text-center space-y-3 max-w-3xl mx-auto">
@@ -1340,87 +1510,6 @@ function GuestSlugGalleryContent() {
           </div>
         )}
 
-        {/* PRESET 5: TORN PAPER EDGE (From User Photo 1) */}
-        {designPreset === 'torn_paper_edge' && (
-          <div className="relative min-h-[85vh] sm:min-h-[92vh] w-full flex flex-col justify-between overflow-hidden">
-            {/* Desktop Hero Image with Focal Positioning & Scale */}
-            {cleanCoverUrl ? (
-              <>
-                <img
-                  src={cleanCoverUrl}
-                  alt={gallery.title}
-                  className="hidden sm:block absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
-                  style={{
-                    objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
-                    transformOrigin: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
-                    transform: `scale(${coverPos.desktop.zoom / 100})`,
-                  }}
-                />
-                <img
-                  src={cleanCoverUrl}
-                  alt={gallery.title}
-                  className="block sm:hidden absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
-                  style={{
-                    objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
-                    transformOrigin: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
-                    transform: `scale(${coverPos.mobile.zoom / 100})`,
-                  }}
-                />
-              </>
-            ) : (
-              <div className="absolute inset-0 bg-zinc-900" />
-            )}
-
-            {/* Cinematic Gradient Vignette */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/20 to-black/75" />
-
-            {/* Top Bar inside hero */}
-            <div className="relative z-10 max-w-6xl w-full mx-auto px-6 py-4 flex items-center justify-between text-white/90 text-xs font-mono tracking-widest uppercase">
-              <span style={{ fontFamily: headingFont }}>{studioName}</span>
-              {totalPhotosCount > 0 && <span>{totalPhotosCount} PHOTOS</span>}
-            </div>
-
-            {/* Center Artistic Romantic Typography with Vintage Flourish Stars */}
-            <div className="relative z-10 px-6 my-auto text-center space-y-3 max-w-3xl mx-auto">
-              <div className="flex items-center justify-center gap-2 text-[10px] sm:text-xs font-mono uppercase tracking-[0.3em] text-amber-200/95 animate-in fade-in slide-in-from-bottom-2 duration-700">
-                <SparkleStar className="w-3.5 h-3.5 text-amber-300 animate-spin" />
-                <span>GALLERY BY {studioName.toUpperCase()}</span>
-                <SparkleStar className="w-3.5 h-3.5 text-amber-300 animate-spin" />
-              </div>
-
-              <h1
-                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize animate-in fade-in slide-in-from-bottom-5 duration-1000 delay-150 fill-mode-both"
-                style={{ fontFamily: headingFont }}
-              >
-                {gallery.title}
-              </h1>
-
-              <div className="flex items-center justify-center gap-3 pt-1 animate-in fade-in slide-in-from-bottom-3 duration-700 delay-300 fill-mode-both">
-                <span className="w-8 sm:w-16 h-px bg-white/40" />
-                <span className="text-xs sm:text-sm text-zinc-200 font-mono tracking-widest uppercase drop-shadow-md">
-                  {formattedDate}
-                </span>
-                <span className="w-8 sm:w-16 h-px bg-white/40" />
-              </div>
-
-              <div className="pt-4 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-500 fill-mode-both">
-                <a
-                  href="#sub-events-bar"
-                  className="inline-flex flex-col items-center gap-1 text-white/80 hover:text-white transition-colors cursor-pointer group"
-                  aria-label="Scroll to gallery content"
-                >
-                  <ArrowDown className="w-4 h-4 text-white/90 group-hover:translate-y-1 transition-transform animate-bounce" />
-                </a>
-              </div>
-            </div>
-
-            {/* Organic Ripped Torn Paper Edge along the footer (From User Photo 1) */}
-            <div className="relative z-20 -mb-1 w-full">
-              <TornPaperEdge color={designPalette.cardBg || designPalette.canvasBg || '#FFFFFF'} />
-            </div>
-          </div>
-        )}
-
         {/* PRESET 6: MONOCHROME PORTAL & ARCH DUO (From User Photo 2) */}
         {designPreset === 'monochrome_portal' && (
           <div className="relative min-h-[88vh] sm:min-h-[96vh] w-full flex flex-col justify-between items-center overflow-hidden bg-zinc-950 px-4 py-6 text-center">
@@ -1536,80 +1625,6 @@ function GuestSlugGalleryContent() {
           </div>
         )}
 
-        {/* PRESET 7: FLOATING SILK VEIL (User Concept 3) */}
-        {designPreset === 'flowing_silk_veil' && (
-          <div className="relative min-h-[85vh] sm:min-h-[92vh] w-full flex flex-col justify-between overflow-hidden">
-            {/* Desktop Hero Image with Focal Positioning & Scale */}
-            {cleanCoverUrl ? (
-              <>
-                <img
-                  src={cleanCoverUrl}
-                  alt={gallery.title}
-                  className="hidden sm:block absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
-                  style={{
-                    objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
-                    transformOrigin: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
-                    transform: `scale(${coverPos.desktop.zoom / 100})`,
-                  }}
-                />
-                <img
-                  src={cleanCoverUrl}
-                  alt={gallery.title}
-                  className="block sm:hidden absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
-                  style={{
-                    objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
-                    transformOrigin: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
-                    transform: `scale(${coverPos.mobile.zoom / 100})`,
-                  }}
-                />
-              </>
-            ) : (
-              <div className="absolute inset-0 bg-zinc-900" />
-            )}
-
-            {/* Dreamy Twilight Gradient */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/20 to-black/75" />
-
-            {/* Top Bar inside hero */}
-            <div className="relative z-10 max-w-6xl w-full mx-auto px-6 py-4 flex items-center justify-between text-white/90 text-xs font-mono tracking-widest uppercase">
-              <span style={{ fontFamily: headingFont }}>{studioName}</span>
-              {totalPhotosCount > 0 && <span>{totalPhotosCount} PHOTOS</span>}
-            </div>
-
-            {/* Center Typography */}
-            <div className="relative z-10 px-6 my-auto text-center space-y-3 max-w-3xl mx-auto">
-              <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-amber-200/90 block font-semibold drop-shadow-md animate-in fade-in slide-in-from-bottom-2 duration-700">
-                GALLERY BY {studioName.toUpperCase()}
-              </span>
-
-              <h1
-                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize animate-in fade-in slide-in-from-bottom-5 duration-1000 delay-150 fill-mode-both"
-                style={{ fontFamily: headingFont }}
-              >
-                {gallery.title}
-              </h1>
-
-              <span className="text-xs sm:text-sm text-zinc-200 font-mono tracking-widest block drop-shadow-md animate-in fade-in slide-in-from-bottom-3 duration-700 delay-300 fill-mode-both">
-                {formattedDate}
-              </span>
-
-              <div className="pt-4 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-500 fill-mode-both">
-                <a
-                  href="#sub-events-bar"
-                  className="inline-flex flex-col items-center gap-1 text-white/80 hover:text-white transition-colors cursor-pointer group"
-                >
-                  <ArrowDown className="w-4 h-4 text-white/90 group-hover:translate-y-1 transition-transform animate-bounce" />
-                </a>
-              </div>
-            </div>
-
-            {/* 3D Flowing Silk Veil Waves along footer (User Concept 3) */}
-            <div className="relative z-20 -mb-1 w-full">
-              <FlowingSilkVeil baseBgColor={designPalette.cardBg || designPalette.canvasBg || '#FAF9F5'} />
-            </div>
-          </div>
-        )}
-
       </div>
 
       <div id="sub-events-bar" className="scroll-mt-14" />
@@ -1623,12 +1638,12 @@ function GuestSlugGalleryContent() {
           color: designPalette.textColor,
         }}
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-8 py-2.5 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto scrollbar-none py-1">
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 py-2 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-0.5 scroll-smooth flex-1 min-w-0">
             <button
               type="button"
               onClick={() => setSelectedCollectionId('all')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs ${
+              className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 shadow-2xs ${
                 selectedCollectionId === 'all' ? 'font-black' : 'opacity-70 hover:opacity-100'
               }`}
               style={
@@ -1647,7 +1662,7 @@ function GuestSlugGalleryContent() {
                   key={col.id}
                   type="button"
                   onClick={() => setSelectedCollectionId(col.id)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs ${
+                  className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 shadow-2xs ${
                     isSel ? 'font-black' : 'opacity-70 hover:opacity-100'
                   }`}
                   style={
@@ -1662,10 +1677,40 @@ function GuestSlugGalleryContent() {
             })}
           </div>
 
-          <div className="hidden sm:flex items-center gap-2 text-xs font-mono opacity-60 shrink-0">
-            <span>{fullPhotos.length} Photos</span>
-            <span>•</span>
-            <span>AI Face Search</span>
+          {/* Right side: 2 clean icon buttons */}
+          <div className="flex items-center gap-2 shrink-0">
+            {gallery.is_face_ai_enabled !== false && (
+              <button
+                type="button"
+                onClick={() => setIsFaceScannerOpen(true)}
+                title="AI Face Search / Registration"
+                className="w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-xs hover:scale-105 active:scale-95"
+                style={{
+                  backgroundColor: `${designPalette.textColor}10`,
+                  color: designPalette.textColor,
+                }}
+              >
+                <Sparkles className="w-4 h-4 text-amber-500" />
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleDownloadAllPhotosTrigger}
+              title="Download Photos"
+              disabled={isDownloadingAll}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-xs hover:scale-105 active:scale-95 disabled:opacity-50"
+              style={{
+                backgroundColor: `${designPalette.textColor}10`,
+                color: designPalette.textColor,
+              }}
+            >
+              {isDownloadingAll ? (
+                <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -1706,48 +1751,6 @@ function GuestSlugGalleryContent() {
               >
                 <KeyRound className="w-4 h-4 text-amber-400" />
                 <span>Enter Access PIN / Pass Key</span>
-              </button>
-            </div>
-          </div>
-        )}
-        
-        {/* CASE A: STRICT ZERO-KNOWLEDGE LOCKED HERO (Before Face Search) */}
-        {!isPrivilegedMode && !hasSearched && (
-          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-[#E7E2D8] shadow-xl text-center space-y-6 max-w-2xl mx-auto animate-in fade-in duration-200">
-            <div className="w-20 h-20 rounded-3xl bg-amber-50 border-2 border-amber-200 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
-              <Camera className="w-9 h-9 text-amber-600" />
-            </div>
-
-            <div className="space-y-2">
-              <h2
-                className="text-2xl sm:text-3xl font-normal text-zinc-900 tracking-tight"
-                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
-              >
-                {gallery.is_face_ai_enabled === false
-                  ? 'Explore Event Gallery'
-                  : 'Register to get your photos on your mobile'}
-              </h2>
-              <p
-                className="text-xs sm:text-sm text-zinc-500 max-w-md mx-auto leading-relaxed"
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
-              >
-                {gallery.is_face_ai_enabled === false
-                  ? 'Access and view all high-resolution memories captured during this event.'
-                  : 'Complete your registration by capturing a selfie to secure access your photos from this event.'}
-              </p>
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handleFindMyPhotoClick}
-                className="px-8 py-4 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-sm tracking-wide shadow-xl shadow-amber-600/30 flex items-center justify-center gap-2.5 mx-auto transition-all active:scale-98 cursor-pointer group"
-              >
-                <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
-                <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.05em' }}>
-                  {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photo'}
-                </span>
-                <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
               </button>
             </div>
           </div>
@@ -2032,37 +2035,6 @@ function GuestSlugGalleryContent() {
             {/* TAB 2: ALL EVENT PHOTOS VIEW */}
             {guestActiveTab === 'all' && (
               <div className="space-y-6">
-                {/* Collections Capsule Filters */}
-                {collections.length > 0 && (
-                  <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCollectionId('all')}
-                      className={`px-4 py-2 rounded-2xl text-xs font-black transition shrink-0 cursor-pointer ${
-                        selectedCollectionId === 'all'
-                          ? 'bg-zinc-900 text-white shadow-sm'
-                          : 'bg-white text-zinc-600 border border-[#E7E2D8] hover:bg-zinc-50'
-                      }`}
-                    >
-                      All Celebration Photos ({fullPhotos.length})
-                    </button>
-                    {collections.map((col) => (
-                      <button
-                        key={col.id}
-                        type="button"
-                        onClick={() => setSelectedCollectionId(col.id)}
-                        className={`px-4 py-2 rounded-2xl text-xs font-black transition shrink-0 cursor-pointer ${
-                          selectedCollectionId === col.id
-                            ? 'bg-zinc-900 text-white shadow-sm'
-                            : 'bg-white text-zinc-600 border border-[#E7E2D8] hover:bg-zinc-50'
-                        }`}
-                      >
-                        {col.name} ({col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length})
-                      </button>
-                    ))}
-                  </div>
-                )}
-
                 {/* All Photos Grid */}
                 <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
                   {targetFullPhotos.map((photo, idx) => (
@@ -2124,36 +2096,6 @@ function GuestSlugGalleryContent() {
                 >
                   Browse All Photos
                 </button>
-              </div>
-            )}
-
-            {collections.length > 0 && !showOnlySelected && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCollectionId('all')}
-                  className={`px-4 py-2 rounded-2xl text-xs font-black transition shrink-0 cursor-pointer ${
-                    selectedCollectionId === 'all'
-                      ? 'bg-zinc-900 text-white shadow-sm'
-                      : 'bg-white text-zinc-600 border border-[#E7E2D8] hover:bg-zinc-50'
-                  }`}
-                >
-                  All Photos ({fullPhotos.length})
-                </button>
-                {collections.map((col) => (
-                  <button
-                    key={col.id}
-                    type="button"
-                    onClick={() => setSelectedCollectionId(col.id)}
-                    className={`px-4 py-2 rounded-2xl text-xs font-black transition shrink-0 cursor-pointer ${
-                      selectedCollectionId === col.id
-                        ? 'bg-zinc-900 text-white shadow-sm'
-                        : 'bg-white text-zinc-600 border border-[#E7E2D8] hover:bg-zinc-50'
-                    }`}
-                  >
-                    {col.name}
-                  </button>
-                ))}
               </div>
             )}
 
@@ -2449,7 +2391,7 @@ function GuestSlugGalleryContent() {
                     <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Saving...
                   </span>
                 ) : (
-                  <Cloud className="w-3.5 h-3.5 text-zinc-400" title="Cloud Synced" />
+                  <span title="Cloud Synced"><Cloud className="w-3.5 h-3.5 text-zinc-400" /></span>
                 )}
               </div>
 

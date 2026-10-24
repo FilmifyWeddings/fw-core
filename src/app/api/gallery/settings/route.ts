@@ -116,21 +116,38 @@ export async function GET(req: NextRequest) {
       }
     } catch (_) {}
 
-    // 2. Fetch profile defaults as smart fallbacks if not explicitly configured
+    // 2. Fetch workspace & profile defaults as smart fallbacks
     let profileDefaults: Partial<GallerySettings> = {};
+    try {
+      const { data: ws } = await supabaseAdmin
+        .from('workspaces')
+        .select('name, logo_url, owner_id')
+        .eq('id', workspaceId)
+        .maybeSingle();
+
+      if (ws) {
+        if (ws.name) profileDefaults.studio_name = ws.name;
+        if (ws.logo_url) profileDefaults.logo_url = ws.logo_url;
+      }
+    } catch (_) {}
+
     try {
       const { data: profile } = await supabaseAdmin
         .from('profiles')
-        .select('studio_name, full_name, email, phone, avatar_url, logo_url')
+        .select('studio_name, workspace_name, full_name, email, phone, avatar_url, logo_url')
         .eq('id', workspaceId)
         .maybeSingle();
 
       if (profile) {
-        if (profile.studio_name) profileDefaults.studio_name = profile.studio_name;
+        if (profile.studio_name || profile.workspace_name) {
+          profileDefaults.studio_name = profile.studio_name || profile.workspace_name;
+        }
         if (profile.full_name) profileDefaults.owner_name = profile.full_name;
         if (profile.email) profileDefaults.email = profile.email;
         if (profile.phone) profileDefaults.phone = profile.phone;
-        if (profile.logo_url || profile.avatar_url) profileDefaults.logo_url = profile.logo_url || profile.avatar_url;
+        if (profile.logo_url || profile.avatar_url) {
+          profileDefaults.logo_url = profileDefaults.logo_url || profile.logo_url || profile.avatar_url;
+        }
       }
     } catch (_) {}
 
@@ -144,9 +161,9 @@ export async function GET(req: NextRequest) {
         ...(savedGallerySettings?.social_links || {}),
       },
       social_visibility: {
-        ...(DEFAULT_GALLERY_SETTINGS.social_visibility || {}),
+        ...DEFAULT_GALLERY_SETTINGS.social_visibility,
         ...(savedGallerySettings?.social_visibility || {}),
-      },
+      } as any,
       cover_focal_point: {
         ...DEFAULT_GALLERY_SETTINGS.cover_focal_point,
         ...(savedGallerySettings?.cover_focal_point || {}),
