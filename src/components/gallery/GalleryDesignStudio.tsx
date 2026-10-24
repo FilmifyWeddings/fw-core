@@ -154,205 +154,238 @@ interface PaletteItem {
 }
 
 const COLOR_PALETTES: PaletteItem[] = [
+  // ── LUXURY LIGHT EDITORIAL PALETTES ──
   {
-    id: 'champagne_noir',
-    name: 'Champagne & Noir',
+    id: 'sahara_dune',
+    name: 'Sahara Dune',
     category: 'Light Luxury',
-    canvasBg: '#FAF9F5',
-    textColor: '#18181B',
-    accentColor: '#D97706',
-    subtextColor: '#71717A',
-    cardBg: '#FFFFFF',
+    canvasBg: '#F5EFEB',
+    textColor: '#3A2B1D',
+    accentColor: '#9B5F19',
+    subtextColor: '#73614F',
+    cardBg: '#FCFAF6',
   },
   {
-    id: 'tuscan_cream',
-    name: 'Tuscan Cream',
+    id: 'eucalyptus_sage',
+    name: 'Eucalyptus Sage',
     category: 'Light Luxury',
-    canvasBg: '#F4EFEA',
-    textColor: '#1A1918',
-    accentColor: '#B45309',
-    subtextColor: '#78716C',
-    cardBg: '#FAF7F2',
+    canvasBg: '#EEF3EE',
+    textColor: '#1E3125',
+    accentColor: '#4A6D56',
+    subtextColor: '#577060',
+    cardBg: '#F7FAF7',
   },
   {
-    id: 'royal_ivory',
-    name: 'Royal Ivory',
-    category: 'Light Luxury',
-    canvasBg: '#FAF8F5',
-    textColor: '#262626',
-    accentColor: '#B45309',
-    subtextColor: '#737373',
-    cardBg: '#FFFFFF',
-  },
-  {
-    id: 'french_riviera',
-    name: 'French Riviera',
-    category: 'Light Luxury',
-    canvasBg: '#F8FAFC',
-    textColor: '#0F172A',
-    accentColor: '#0284C7',
-    subtextColor: '#64748B',
-    cardBg: '#FFFFFF',
-  },
-  {
-    id: 'rose_gold_blush',
-    name: 'Rose Gold & Blush',
-    category: 'Light Luxury',
-    canvasBg: '#FDF2F4',
-    textColor: '#27171B',
-    accentColor: '#E11D48',
-    subtextColor: '#881337',
-    cardBg: '#FFFFFF',
-  },
-  {
-    id: 'desert_sand',
-    name: 'Desert Sand',
-    category: 'Light Luxury',
-    canvasBg: '#F7F3EE',
-    textColor: '#292524',
-    accentColor: '#C2410C',
-    subtextColor: '#78716C',
-    cardBg: '#FFFFFF',
-  },
-  {
-    id: 'sage_olive',
-    name: 'Sage & Olive',
-    category: 'Light Luxury',
-    canvasBg: '#F4F7F4',
-    textColor: '#142318',
-    accentColor: '#15803D',
-    subtextColor: '#4B5563',
-    cardBg: '#FFFFFF',
-  },
-  {
-    id: 'lavender_mist',
-    name: 'Lavender Mist',
-    category: 'Light Luxury',
-    canvasBg: '#FAF5FF',
-    textColor: '#1E1B4B',
-    accentColor: '#9333EA',
-    subtextColor: '#6B21A8',
-    cardBg: '#FFFFFF',
-  },
-  {
-    id: 'terracotta_sunset',
-    name: 'Terracotta Sunset',
+    id: 'tuscan_sienna',
+    name: 'Tuscan Sienna',
     category: 'Light Luxury',
     canvasBg: '#FAF5F0',
-    textColor: '#271C17',
-    accentColor: '#EA580C',
-    subtextColor: '#78716C',
-    cardBg: '#FFFFFF',
+    textColor: '#361F17',
+    accentColor: '#933B2B',
+    subtextColor: '#70534C',
+    cardBg: '#FFFBF7',
   },
   {
-    id: 'vintage_sepia',
-    name: 'Vintage Sepia',
+    id: 'bordeaux_velvet',
+    name: 'Bordeaux Velvet',
     category: 'Light Luxury',
-    canvasBg: '#F5EFE6',
-    textColor: '#2B231D',
-    accentColor: '#854D0E',
-    subtextColor: '#713F12',
-    cardBg: '#EFE6D8',
+    canvasBg: '#FAF2F4',
+    textColor: '#3B1621',
+    accentColor: '#781F34',
+    subtextColor: '#784652',
+    cardBg: '#FFF8F9',
   },
   {
-    id: 'pearl_lustre',
-    name: 'Pearl Lustre',
+    id: 'alabaster_white',
+    name: 'Alabaster White',
     category: 'Light Luxury',
-    canvasBg: '#FBFBFB',
-    textColor: '#111827',
-    accentColor: '#6366F1',
+    canvasBg: '#FFFFFF',
+    textColor: '#1C1D1F',
+    accentColor: '#4B515D',
+    subtextColor: '#71717A',
+    cardBg: '#FAFAFA',
+  },
+  {
+    id: 'nordic_pebble',
+    name: 'Nordic Pebble',
+    category: 'Light Luxury',
+    canvasBg: '#F1F3EE',
+    textColor: '#2A2F22',
+    accentColor: '#59654C',
+    subtextColor: '#5F6856',
+    cardBg: '#F8FAF6',
+  },
+  {
+    id: 'sedona_terra',
+    name: 'Sedona Terra',
+    category: 'Light Luxury',
+    canvasBg: '#F8F2EC',
+    textColor: '#3C1F17',
+    accentColor: '#A14830',
+    subtextColor: '#7A5248',
+    cardBg: '#FCFAF7',
+  },
+  {
+    id: 'celestial_navy',
+    name: 'Celestial Navy',
+    category: 'Light Luxury',
+    canvasBg: '#EFF4FA',
+    textColor: '#142339',
+    accentColor: '#183466',
+    subtextColor: '#4C6182',
+    cardBg: '#F7FAFD',
+  },
+  {
+    id: 'mocha_roast',
+    name: 'Mocha Roast',
+    category: 'Light Luxury',
+    canvasBg: '#F6F1EA',
+    textColor: '#2F1E16',
+    accentColor: '#5C3729',
+    subtextColor: '#69554B',
+    cardBg: '#FAF6F0',
+  },
+  {
+    id: 'highland_pine',
+    name: 'Highland Pine',
+    category: 'Light Luxury',
+    canvasBg: '#EFF5F1',
+    textColor: '#112C1E',
+    accentColor: '#0C4C2B',
+    subtextColor: '#496654',
+    cardBg: '#F6FAF7',
+  },
+  {
+    id: 'pacific_slate',
+    name: 'Pacific Slate',
+    category: 'Light Luxury',
+    canvasBg: '#EFF4F8',
+    textColor: '#1A2837',
+    accentColor: '#3B5E78',
+    subtextColor: '#51677D',
+    cardBg: '#F7FAFC',
+  },
+  {
+    id: 'umbrian_olive',
+    name: 'Umbrian Olive',
+    category: 'Light Luxury',
+    canvasBg: '#F4F5EB',
+    textColor: '#2A2E16',
+    accentColor: '#555C23',
+    subtextColor: '#616744',
+    cardBg: '#FAFBF2',
+  },
+  {
+    id: 'french_linen',
+    name: 'French Linen',
+    category: 'Light Luxury',
+    canvasBg: '#F7F4ED',
+    textColor: '#31271D',
+    accentColor: '#745840',
+    subtextColor: '#6D5D50',
+    cardBg: '#FCFAF6',
+  },
+  {
+    id: 'amethyst_plum',
+    name: 'Amethyst Plum',
+    category: 'Light Luxury',
+    canvasBg: '#F7F1F8',
+    textColor: '#2D162B',
+    accentColor: '#63275A',
+    subtextColor: '#6A4B68',
+    cardBg: '#FCF8FC',
+  },
+  {
+    id: 'onyx_graphite',
+    name: 'Onyx Graphite',
+    category: 'Light Luxury',
+    canvasBg: '#F3F4F6',
+    textColor: '#1C1D1F',
+    accentColor: '#3F4347',
     subtextColor: '#6B7280',
     cardBg: '#FFFFFF',
   },
+
+  // ── LUXURY DARK REGAL PALETTES ──
   {
-    id: 'warm_cashmere',
-    name: 'Warm Cashmere',
-    category: 'Light Luxury',
-    canvasBg: '#F6F2EC',
-    textColor: '#1C1917',
-    accentColor: '#78716C',
-    subtextColor: '#A8A29E',
-    cardBg: '#FFFFFF',
-  },
-  {
-    id: 'aegean_blue',
-    name: 'Aegean Blue',
-    category: 'Light Luxury',
-    canvasBg: '#F0F7FA',
-    textColor: '#082F49',
-    accentColor: '#0284C7',
-    subtextColor: '#0369A1',
-    cardBg: '#FFFFFF',
-  },
-  {
-    id: 'midnight_gold',
-    name: 'Midnight Gold',
+    id: 'velvet_obsidian',
+    name: 'Velvet Obsidian',
     category: 'Dark Regal',
-    canvasBg: '#0A0A0B',
-    textColor: '#F4F4F5',
-    accentColor: '#F59E0B',
-    subtextColor: '#A1A1AA',
-    cardBg: '#18181B',
+    canvasBg: '#0D0E11',
+    textColor: '#F5F5F7',
+    accentColor: '#D4AF37',
+    subtextColor: '#9CA3AF',
+    cardBg: '#18191E',
   },
   {
-    id: 'emerald_gold',
-    name: 'Emerald & Gold',
+    id: 'sahara_night',
+    name: 'Sahara Night',
     category: 'Dark Regal',
-    canvasBg: '#061E16',
+    canvasBg: '#17130F',
+    textColor: '#F8F4EE',
+    accentColor: '#D97706',
+    subtextColor: '#A8998C',
+    cardBg: '#241D17',
+  },
+  {
+    id: 'imperial_bordeaux',
+    name: 'Imperial Bordeaux',
+    category: 'Dark Regal',
+    canvasBg: '#190A10',
+    textColor: '#FDF2F4',
+    accentColor: '#E11D48',
+    subtextColor: '#B87A89',
+    cardBg: '#261019',
+  },
+  {
+    id: 'highland_forest',
+    name: 'Highland Forest',
+    category: 'Dark Regal',
+    canvasBg: '#0A1811',
     textColor: '#F0FDF4',
-    accentColor: '#F59E0B',
-    subtextColor: '#86EFAC',
-    cardBg: '#0B2D21',
+    accentColor: '#10B981',
+    subtextColor: '#6EE7B7',
+    cardBg: '#12261B',
   },
   {
-    id: 'nordic_slate',
-    name: 'Nordic Slate',
+    id: 'royal_midnight',
+    name: 'Royal Midnight',
+    category: 'Dark Regal',
+    canvasBg: '#0B1321',
+    textColor: '#F0F4FA',
+    accentColor: '#38BDF8',
+    subtextColor: '#819BBF',
+    cardBg: '#131E33',
+  },
+  {
+    id: 'nordic_shadow',
+    name: 'Nordic Shadow',
     category: 'Dark Regal',
     canvasBg: '#0F172A',
     textColor: '#F8FAFC',
-    accentColor: '#38BDF8',
-    subtextColor: '#94A3B8',
+    accentColor: '#94A3B8',
+    subtextColor: '#64748B',
     cardBg: '#1E293B',
   },
   {
-    id: 'velvet_onyx',
-    name: 'Velvet Onyx',
+    id: 'deep_amethyst',
+    name: 'Deep Amethyst',
     category: 'Dark Regal',
-    canvasBg: '#09090B',
-    textColor: '#FAFAFA',
-    accentColor: '#E4E4E7',
-    subtextColor: '#71717A',
-    cardBg: '#18181B',
+    canvasBg: '#170A18',
+    textColor: '#FDF4FF',
+    accentColor: '#C084FC',
+    subtextColor: '#A880A8',
+    cardBg: '#241026',
   },
   {
-    id: 'gothic_noir',
-    name: 'Gothic Noir',
+    id: 'dark_espresso',
+    name: 'Dark Espresso',
     category: 'Dark Regal',
-    canvasBg: '#000000',
-    textColor: '#E4E4E7',
-    accentColor: '#A1A1AA',
-    subtextColor: '#71717A',
-    cardBg: '#121214',
-  },
-  {
-    id: 'imperial_crimson',
-    name: 'Imperial Crimson',
-    category: 'Dark Regal',
-    canvasBg: '#18080A',
-    textColor: '#FFF1F2',
-    accentColor: '#E11D48',
-    subtextColor: '#FDA4AF',
-    cardBg: '#240C10',
-  },
-  {
-    id: 'forest_pine',
-    name: 'Forest Pine',
-    category: 'Dark Regal',
-    canvasBg: '#0D1A14',
-    textColor: '#ECFDF5',
-    accentColor: '#10B981',
-    subtextColor: '#6EE7B7',
-    cardBg: '#13261D',
+    canvasBg: '#16100D',
+    textColor: '#F7EFEA',
+    accentColor: '#B45309',
+    subtextColor: '#9E857B',
+    cardBg: '#241914',
   },
 ];
 
@@ -1169,8 +1202,7 @@ export default function GalleryDesignStudio({
 
                           {preset.id === 'vintage_scrapbook' && (
                             <div className="absolute inset-0 bg-[#FAF7F2] p-2 flex flex-col justify-between overflow-hidden">
-                              <div className="flex justify-between items-start">
-                                <span className="text-[5px] font-mono tracking-widest text-stone-500 uppercase">{studioName.slice(0, 8)}</span>
+                              <div className="flex justify-end items-start">
                                 <div className="text-right">
                                   <span className="text-[5px] font-mono block text-stone-400">OUR</span>
                                   <span className="text-[7px] font-serif text-[#8B1E1E] italic leading-none block">Forever</span>
@@ -1197,7 +1229,6 @@ export default function GalleryDesignStudio({
                                       />
                                     )}
                                   </div>
-                                  <span className="absolute -top-1.5 left-2 text-[6px] font-serif italic text-[#8B1E1E] drop-shadow-xs">always</span>
                                 </div>
                               </div>
                               <span className="text-[5px] font-mono text-center text-stone-400">{coupleName}</span>
@@ -1206,10 +1237,10 @@ export default function GalleryDesignStudio({
 
                           {preset.id === 'grand_maison' && (
                             <div className="absolute inset-0 bg-[#540B13] p-1.5 flex flex-col items-center justify-between overflow-hidden text-white">
-                              <span className="text-[6px] font-mono tracking-[0.2em] uppercase opacity-75">{studioName.slice(0, 8)}</span>
+                              <div className="h-1" />
                               <div className="relative my-auto flex items-center justify-center w-full">
                                 <span className="text-[5px] opacity-60 tracking-widest uppercase mr-1">fine art •</span>
-                                <div className="w-12 h-16 bg-stone-900 shadow-xl overflow-hidden border border-white/20 shrink-0">
+                                <div className="w-12 h-16 bg-stone-900 overflow-hidden border border-white/20 shrink-0">
                                   {coverPositioning.url && (
                                     <img
                                       src={coverPositioning.url}
@@ -1224,7 +1255,7 @@ export default function GalleryDesignStudio({
                                 <span className="text-[5px] opacity-60 tracking-widest uppercase ml-1">• cinema</span>
                               </div>
                               <div className="w-full text-center relative z-10 -mt-2">
-                                <div className="text-[8px] font-serif uppercase tracking-[0.12em] font-light truncate drop-shadow-md">{coupleName}</div>
+                                <div className="text-[8px] font-serif uppercase tracking-[0.1em] font-light truncate drop-shadow-md">{coupleName}</div>
                                 <span className="text-[5px] font-mono opacity-60">{eventDateFormatted}</span>
                               </div>
                             </div>
@@ -1287,8 +1318,8 @@ export default function GalleryDesignStudio({
                   </div>
                 </div>
 
-                {/* Palettes Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Palettes Grid (Circular 4-Column Swatches Matching User Photo 4) */}
+                <div className="grid grid-cols-4 gap-y-5 gap-x-2 sm:gap-x-4 pt-1">
                   {COLOR_PALETTES.filter(
                     (p) => (paletteMode === 'light' ? p.category === 'Light Luxury' : p.category === 'Dark Regal')
                   ).map((pal) => {
@@ -1309,55 +1340,89 @@ export default function GalleryDesignStudio({
                             },
                           }))
                         }
-                        className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer relative flex items-center justify-between gap-3 ${
-                          isSelected
-                            ? 'border-amber-600 bg-amber-50/40 shadow-xs ring-2 ring-amber-600/20'
-                            : 'border-[#E7E2D8] bg-white hover:border-zinc-400'
-                        }`}
+                        className="flex flex-col items-center gap-1.5 cursor-pointer group"
                       >
-                        <div className="flex items-center gap-3">
-                          {/* Color Swatch Tri-dots */}
-                          <div className="flex items-center -space-x-1.5">
-                            <div
-                              className="w-6 h-6 rounded-full border border-black/10 shadow-xs"
-                              style={{ backgroundColor: pal.canvasBg }}
-                            />
-                            <div
-                              className="w-6 h-6 rounded-full border border-black/10 shadow-xs"
-                              style={{ backgroundColor: pal.textColor }}
-                            />
-                            <div
-                              className="w-6 h-6 rounded-full border border-black/10 shadow-xs"
-                              style={{ backgroundColor: pal.accentColor }}
-                            />
-                          </div>
-
-                          <div>
-                            <span className="text-xs font-bold text-zinc-900 block">{pal.name}</span>
-                            <span className="text-[10px] font-mono text-zinc-400">{pal.canvasBg}</span>
-                          </div>
+                        {/* 3-Band Circular Swatch Matching User Photo 4 */}
+                        <div
+                          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full border border-black/15 overflow-hidden flex flex-col transition-all duration-200 relative ${
+                            isSelected
+                              ? 'ring-2 ring-zinc-900 ring-offset-2 scale-105 shadow-md'
+                              : 'group-hover:scale-105 group-hover:shadow-sm'
+                          }`}
+                        >
+                          {/* Background (Top 48%) */}
+                          <div className="h-[48%] w-full" style={{ backgroundColor: pal.canvasBg }} />
+                          {/* Foreground / Text (Middle 26%) */}
+                          <div className="h-[26%] w-full" style={{ backgroundColor: pal.textColor }} />
+                          {/* Accent (Bottom 26%) */}
+                          <div className="h-[26%] w-full" style={{ backgroundColor: pal.accentColor }} />
                         </div>
 
-                        {isSelected && (
-                          <div className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0">
-                            <Check className="w-3 h-3 stroke-[3]" />
-                          </div>
-                        )}
+                        <span
+                          className={`text-[11px] text-center tracking-tight truncate max-w-full ${
+                            isSelected ? 'font-bold text-zinc-950' : 'font-medium text-zinc-600'
+                          }`}
+                        >
+                          {pal.name}
+                        </span>
                       </div>
                     );
                   })}
+
+                  {/* 16th Swatch: Custom Palette Circle */}
+                  {(() => {
+                    const matchesAnyPreset = COLOR_PALETTES.some(
+                      (p) => p.canvasBg.toLowerCase() === design.palette.canvasBg.toLowerCase()
+                    );
+                    const isCustomSelected = !matchesAnyPreset;
+
+                    return (
+                      <div
+                        onClick={() => {}}
+                        className="flex flex-col items-center gap-1.5 cursor-pointer group"
+                      >
+                        <div
+                          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full border border-black/15 overflow-hidden flex flex-col transition-all duration-200 relative ${
+                            isCustomSelected
+                              ? 'ring-2 ring-zinc-900 ring-offset-2 scale-105 shadow-md'
+                              : 'group-hover:scale-105 group-hover:shadow-sm'
+                          }`}
+                        >
+                          <div className="h-[48%] w-full" style={{ backgroundColor: design.palette.canvasBg }} />
+                          <div className="h-[26%] w-full" style={{ backgroundColor: design.palette.textColor }} />
+                          <div className="h-[26%] w-full" style={{ backgroundColor: design.palette.accentColor }} />
+                        </div>
+                        <span
+                          className={`text-[11px] text-center tracking-tight truncate max-w-full ${
+                            isCustomSelected ? 'font-bold text-zinc-950' : 'font-medium text-zinc-600'
+                          }`}
+                        >
+                          Custom
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {/* Custom Hex Color Pickers */}
-                <div className="p-4 rounded-2xl bg-white border border-[#E7E2D8] shadow-xs space-y-3">
-                  <span className="text-xs font-bold text-zinc-900 block">Custom Hex Color Pickers</span>
+                {/* Custom Palette Card (Matching User Photo 4) */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-xs space-y-3.5 mt-6">
+                  <div className="flex items-center gap-2 text-zinc-900">
+                    <Palette className="w-4 h-4 text-zinc-700" />
+                    <span className="text-xs font-bold">Custom palette</span>
+                  </div>
+
+                  <p className="text-[11px] text-zinc-500 leading-relaxed font-sans">
+                    Pick a canvas, a body text color, and an accent. We derive the muted tones, hairlines, and overlays from these three via color-mix in oklch space so they stay tonally linked.
+                  </p>
+
                   <div className="grid grid-cols-3 gap-3">
-                    {/* Canvas Background */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                        Background
-                      </label>
-                      <div className="flex items-center gap-2 p-1.5 rounded-xl border border-[#E7E2D8] bg-[#FAF9F5]">
+                    {/* 1. Background */}
+                    <div className="space-y-1.5">
+                      <div className="relative h-14 sm:h-16 rounded-xl border border-zinc-200 shadow-2xs overflow-hidden flex items-center justify-center cursor-pointer group">
+                        <div
+                          className="absolute inset-0 w-full h-full transition-transform group-hover:scale-105"
+                          style={{ backgroundColor: design.palette.canvasBg }}
+                        />
                         <input
                           type="color"
                           value={design.palette.canvasBg}
@@ -1367,18 +1432,22 @@ export default function GalleryDesignStudio({
                               palette: { ...prev.palette, canvasBg: e.target.value },
                             }))
                           }
-                          className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
+                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                         />
-                        <span className="text-xs font-mono font-bold">{design.palette.canvasBg}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[11px] font-medium text-zinc-700 block">Background</span>
+                        <span className="text-[10px] font-mono text-zinc-400 uppercase">{design.palette.canvasBg}</span>
                       </div>
                     </div>
 
-                    {/* Text Color */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                        Text
-                      </label>
-                      <div className="flex items-center gap-2 p-1.5 rounded-xl border border-[#E7E2D8] bg-[#FAF9F5]">
+                    {/* 2. Foreground */}
+                    <div className="space-y-1.5">
+                      <div className="relative h-14 sm:h-16 rounded-xl border border-zinc-200 shadow-2xs overflow-hidden flex items-center justify-center cursor-pointer group">
+                        <div
+                          className="absolute inset-0 w-full h-full transition-transform group-hover:scale-105"
+                          style={{ backgroundColor: design.palette.textColor }}
+                        />
                         <input
                           type="color"
                           value={design.palette.textColor}
@@ -1388,18 +1457,22 @@ export default function GalleryDesignStudio({
                               palette: { ...prev.palette, textColor: e.target.value },
                             }))
                           }
-                          className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
+                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                         />
-                        <span className="text-xs font-mono font-bold">{design.palette.textColor}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[11px] font-medium text-zinc-700 block">Foreground</span>
+                        <span className="text-[10px] font-mono text-zinc-400 uppercase">{design.palette.textColor}</span>
                       </div>
                     </div>
 
-                    {/* Accent Color */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                        Accent
-                      </label>
-                      <div className="flex items-center gap-2 p-1.5 rounded-xl border border-[#E7E2D8] bg-[#FAF9F5]">
+                    {/* 3. Accent */}
+                    <div className="space-y-1.5">
+                      <div className="relative h-14 sm:h-16 rounded-xl border border-zinc-200 shadow-2xs overflow-hidden flex items-center justify-center cursor-pointer group">
+                        <div
+                          className="absolute inset-0 w-full h-full transition-transform group-hover:scale-105"
+                          style={{ backgroundColor: design.palette.accentColor }}
+                        />
                         <input
                           type="color"
                           value={design.palette.accentColor}
@@ -1409,9 +1482,12 @@ export default function GalleryDesignStudio({
                               palette: { ...prev.palette, accentColor: e.target.value },
                             }))
                           }
-                          className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
+                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                         />
-                        <span className="text-xs font-mono font-bold">{design.palette.accentColor}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[11px] font-medium text-zinc-700 block">Accent</span>
+                        <span className="text-[10px] font-mono text-zinc-400 uppercase">{design.palette.accentColor}</span>
                       </div>
                     </div>
                   </div>
@@ -1571,15 +1647,13 @@ export default function GalleryDesignStudio({
                       fontFamily: design.typography.bodyFont,
                     }}
                   >
-                    {/* 1. Header Bar (Glassmorphic Blur matching Light/Dark Palette) */}
+                    {/* 1. Header Bar (Glassmorphic Blur matching Palette Canvas) */}
                     <div
-                      className="border-b px-6 py-3.5 flex items-center justify-between backdrop-blur-md sticky top-0 z-20 transition-all"
+                      className="border-b px-6 py-3.5 flex items-center justify-between backdrop-blur-xl backdrop-saturate-150 sticky top-0 z-20 transition-all shadow-2xs"
                       style={{
-                        backgroundColor:
-                          paletteMode === 'light' ? 'rgba(255, 255, 255, 0.82)' : 'rgba(9, 9, 11, 0.88)',
-                        borderColor:
-                          paletteMode === 'light' ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.12)',
-                        color: paletteMode === 'light' ? '#18181B' : '#FFFFFF',
+                        backgroundColor: `${design.palette.canvasBg}E6`,
+                        borderColor: `${design.palette.textColor}18`,
+                        color: design.palette.textColor,
                       }}
                     >
                       <div className="flex items-center gap-3">
@@ -1596,10 +1670,10 @@ export default function GalleryDesignStudio({
                         )}
                         <div>
                           <span className="text-xs font-bold block leading-none" style={{ fontFamily: design.typography.headingFont }}>{studioName}</span>
-                          <span className="text-[9px] opacity-60 block leading-tight">{studioSubtitle}</span>
+                          <span className="text-[9px] opacity-65 block leading-tight">{studioSubtitle}</span>
                         </div>
                       </div>
-                      <span className="text-[10px] font-mono font-bold opacity-60">
+                      <span className="text-[10px] font-mono font-bold opacity-65">
                         {photos.length > 0 ? `${photos.length} PHOTOS` : '114 PHOTOS'}
                       </span>
                     </div>
@@ -1615,12 +1689,12 @@ export default function GalleryDesignStudio({
                       false
                     )}
 
-                    {/* 3. Sub-Events Bar (Dynamically Colored by Selected Palette) */}
+                    {/* 3. Sub-Events Bar (Dynamically Colored by Selected Palette with Glassmorphism) */}
                     <div
-                      className="px-6 py-2.5 border-y flex items-center justify-between text-xs font-bold transition-all shadow-2xs sticky top-[53px] z-10"
+                      className="px-6 py-2.5 border-y flex items-center justify-between text-xs font-bold transition-all shadow-2xs sticky top-[53px] z-10 backdrop-blur-xl"
                       style={{
-                        backgroundColor: `${design.palette.cardBg || design.palette.canvasBg}F0`,
-                        borderColor: `${design.palette.textColor}1A`,
+                        backgroundColor: `${design.palette.canvasBg}F0`,
+                        borderColor: `${design.palette.textColor}18`,
                         color: design.palette.textColor,
                       }}
                     >
@@ -1687,15 +1761,13 @@ export default function GalleryDesignStudio({
                       fontFamily: design.typography.bodyFont,
                     }}
                   >
-                    {/* Mobile Header Bar */}
+                    {/* Mobile Header Bar (Glassmorphic Blur matching Palette Canvas) */}
                     <div
-                      className="border-b px-4 py-2.5 flex items-center justify-between backdrop-blur-md sticky top-0 z-20"
+                      className="border-b px-4 py-2.5 flex items-center justify-between backdrop-blur-xl backdrop-saturate-150 sticky top-0 z-20 shadow-2xs"
                       style={{
-                        backgroundColor:
-                          paletteMode === 'light' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(9, 9, 11, 0.88)',
-                        borderColor:
-                          paletteMode === 'light' ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.12)',
-                        color: paletteMode === 'light' ? '#18181B' : '#FFFFFF',
+                        backgroundColor: `${design.palette.canvasBg}E6`,
+                        borderColor: `${design.palette.textColor}18`,
+                        color: design.palette.textColor,
                       }}
                     >
                       <div className="flex items-center gap-2">
@@ -2347,11 +2419,8 @@ function renderPresetContent(
             }}
           />
 
-          {/* Top Header Row */}
-          <div className="relative z-10 w-full flex items-start justify-between">
-            <span className="text-[9px] font-mono uppercase tracking-[0.25em] text-zinc-500 font-semibold">
-              {studioName}
-            </span>
+          {/* Top Header Row (Studio name removed per user request) */}
+          <div className="relative z-10 w-full flex justify-end">
             <div className="text-right leading-none space-y-0.5">
               <span className="text-[8px] font-mono uppercase tracking-[0.2em] text-zinc-400 block font-bold">OUR</span>
               <span
@@ -2373,16 +2442,16 @@ function renderPresetContent(
               <p className="text-[11px] sm:text-xs text-zinc-600 font-serif leading-relaxed italic">
                 &ldquo;Every single chapter written with love, laughter, and timeless devotion.&rdquo;
               </p>
-              <div className="pt-1">
+              <div className="pt-1 flex justify-center sm:justify-start">
                 <HandDrawnOval className="text-[#8B1E1E]">
-                  <span className="text-xs sm:text-sm font-mono tracking-widest text-[#8B1E1E] font-bold">
+                  <span className="text-xs sm:text-sm font-serif italic tracking-wide text-[#8B1E1E] font-semibold">
                     {eventDateFormatted}
                   </span>
                 </HandDrawnOval>
               </div>
             </div>
 
-            {/* Right Tilted Polaroid Photo Card with Washi Tape and Cursive Script */}
+            {/* Right Tilted Polaroid Photo Card with Washi Tape */}
             <div className={`relative ${isMobile ? 'order-1' : ''}`}>
               {/* The White Bordered Photo Card */}
               <div
@@ -2393,16 +2462,6 @@ function renderPresetContent(
                 {/* Frosted Washi Tape Top-Left */}
                 <div className="absolute -top-3 left-4 z-30">
                   <WashiTape className="transform -rotate-12" />
-                </div>
-
-                {/* Hand-lettered Cursive Script Overlay */}
-                <div className="absolute -top-4 -left-6 z-40 select-none pointer-events-none transform -rotate-6">
-                  <span
-                    className="text-2xl sm:text-3xl text-[#8B1E1E] drop-shadow-xs block whitespace-nowrap"
-                    style={{ fontFamily: "'Great Vibes', cursive" }}
-                  >
-                    te amo siempre
-                  </span>
                 </div>
 
                 {/* Artwork Photo */}
@@ -2426,7 +2485,7 @@ function renderPresetContent(
                 {/* Polaroid Bottom Caption */}
                 <div className="pt-2 text-center">
                   <span
-                    className="text-base sm:text-lg text-zinc-800 tracking-wide font-normal capitalize truncate block"
+                    className="text-base sm:text-lg text-zinc-800 tracking-wide font-normal capitalize block px-1"
                     style={{ fontFamily: headingFont }}
                   >
                     {coupleName}
@@ -2457,12 +2516,8 @@ function renderPresetContent(
           } w-full flex flex-col justify-between items-center overflow-hidden transition-colors duration-500`}
           style={{ backgroundColor: bgColor, color: textColor }}
         >
-          {/* Top Header / Studio Brand */}
-          <div className="relative z-10 w-full flex items-center justify-between text-[9px] sm:text-[10px] font-mono uppercase tracking-[0.3em] opacity-85">
-            <span>{studioName}</span>
-            <span className="hidden sm:inline font-bold">EDITION D&apos;ART</span>
-            <span>{countLabel}</span>
-          </div>
+          {/* Top Spacing (Studio name, count and Edition D'Art removed per user request) */}
+          <div className="h-2 sm:h-4 w-full" />
 
           {/* Center Visual: Portrait Image flanked by fine art quotes */}
           <div className="relative z-10 my-auto w-full max-w-4xl flex items-center justify-between sm:justify-around px-2">
@@ -2474,11 +2529,11 @@ function renderPresetContent(
               <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
             </div>
 
-            {/* Centered Vertical Portrait Frame (3:4 or 4:5 aspect ratio) */}
+            {/* Centered Vertical Portrait Frame (No heavy shadow per user request) */}
             <div
               className={`relative ${
-                isMobile ? 'w-44 aspect-[3/4]' : 'w-60 sm:w-72 aspect-[3/4]'
-              } shadow-[0_25px_60px_rgba(0,0,0,0.6)] overflow-hidden bg-stone-900 border border-white/20`}
+                isMobile ? 'w-44 aspect-[3/4]' : 'w-56 sm:w-64 aspect-[3/4]'
+              } overflow-hidden bg-stone-900 border border-white/20`}
             >
               {coverPos.url ? (
                 <img
@@ -2506,22 +2561,18 @@ function renderPresetContent(
             </div>
           </div>
 
-          {/* Bottom Massive Haute-Couture Serif Typography (Overlapping lower section of photo) */}
-          <div className="relative z-20 w-full text-center -mt-6 sm:-mt-10 px-2 space-y-1">
+          {/* Bottom Massive Haute-Couture Serif Typography (No truncation, properly centered & auto-scaled) */}
+          <div className="relative z-20 w-full text-center -mt-6 sm:-mt-8 px-2 space-y-1">
             <h2
-              className={`${
-                isMobile ? 'text-3xl sm:text-4xl' : 'text-5xl sm:text-6xl md:text-7xl'
-              } font-serif tracking-[0.14em] sm:tracking-[0.2em] uppercase font-normal drop-shadow-xl leading-none truncate`}
+              className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-serif tracking-[0.1em] uppercase font-normal drop-shadow-md leading-tight text-center max-w-full break-words"
               style={{ fontFamily: headingFont }}
             >
               {coupleName}
             </h2>
-            <div className="flex items-center justify-center gap-2 text-[9px] font-mono tracking-widest uppercase opacity-75 pt-1">
-              <span>{eventDateFormatted}</span>
-              <span>•</span>
-              <span>CINEMATIC ARCHIVE</span>
+            <div className="text-[9px] font-mono tracking-widest uppercase opacity-75 pt-1 text-center">
+              {eventDateFormatted}
             </div>
-            <div className="pt-2">
+            <div className="pt-1">
               <ArrowDown className="w-3.5 h-3.5 mx-auto opacity-70 animate-bounce" />
             </div>
           </div>

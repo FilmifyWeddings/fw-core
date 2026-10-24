@@ -217,22 +217,25 @@ export function HandDrawnOval({
   children: React.ReactNode;
 }) {
   return (
-    <div className={`relative inline-flex items-center justify-center px-5 py-2 ${className}`}>
+    <div className={`relative inline-flex items-center justify-center px-6 py-2.5 sm:px-8 sm:py-3 ${className}`}>
       <svg
-        viewBox="0 0 220 70"
+        viewBox="0 0 280 70"
         fill="none"
         preserveAspectRatio="none"
-        className="absolute inset-0 w-full h-full pointer-events-none"
+        className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
       >
         <path
-          d="M 22,35 C 22,14 198,12 198,35 C 198,58 18,60 18,34 C 18,18 180,18 206,32"
+          d="M 16,35 C 16,12 264,10 264,35 C 264,60 12,62 12,35 C 12,16 250,14 270,32"
           stroke="currentColor"
-          strokeWidth="2.4"
+          strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
         />
       </svg>
-      <span className="relative z-10">{children}</span>
+      <div className="relative z-10 whitespace-nowrap leading-none flex items-center justify-center">
+        {children}
+      </div>
     </div>
   );
 }

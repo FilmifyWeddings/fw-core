@@ -1219,13 +1219,13 @@ function GuestSlugGalleryContent() {
       }}
       className="min-h-screen pb-32 select-none transition-colors duration-300">
       
-      {/* 0. LUXURY STUDIO HEADER BAR (GLOSSY BLUR - LIGHT / DARK SYNC) */}
+      {/* 0. LUXURY STUDIO HEADER BAR (GLOSSY LIQUID BLUR - SYNCED WITH PALETTE) */}
       <header
-        className="sticky top-0 z-40 transition-all backdrop-blur-md border-b shadow-2xs"
+        className="sticky top-0 z-40 transition-all backdrop-blur-xl backdrop-saturate-150 border-b shadow-2xs"
         style={{
-          backgroundColor: isLightPalette ? 'rgba(255, 255, 255, 0.85)' : 'rgba(9, 9, 11, 0.88)',
-          borderColor: isLightPalette ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.12)',
-          color: isLightPalette ? '#18181B' : '#FFFFFF',
+          backgroundColor: `${designPalette.canvasBg}E6`,
+          borderColor: `${designPalette.textColor}15`,
+          color: designPalette.textColor,
         }}
       >
         <div className="max-w-6xl mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
@@ -1248,7 +1248,7 @@ function GuestSlugGalleryContent() {
               >
                 {studioName}
               </span>
-              <span className="block text-[10px] opacity-60 hidden sm:block font-light">
+              <span className="block text-[10px] opacity-65 hidden sm:block font-light">
                 {studioSubtitle}
               </span>
             </div>
@@ -1256,7 +1256,7 @@ function GuestSlugGalleryContent() {
 
           <div className="flex items-center gap-2">
             {totalPhotosCount > 0 && (
-              <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-60 mr-1">
+              <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-65 mr-1">
                 {totalPhotosCount} PHOTOS
               </span>
             )}
@@ -1639,16 +1639,8 @@ function GuestSlugGalleryContent() {
               }}
             />
 
-            {/* Top Header Row */}
-            <div className="relative z-10 w-full max-w-6xl mx-auto flex items-start justify-between">
-              <div className="space-y-0.5">
-                <span className="text-xs sm:text-sm font-mono uppercase tracking-[0.28em] text-zinc-600 font-bold block">
-                  {studioName}
-                </span>
-                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-zinc-400 block">
-                  PHOTOGRAPHY &amp; FILMS
-                </span>
-              </div>
+            {/* Top Header Row (Studio name removed per user request) */}
+            <div className="relative z-10 w-full max-w-6xl mx-auto flex justify-end">
               <div className="text-right leading-none space-y-0.5">
                 <span className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.25em] text-zinc-400 block font-bold">
                   OUR
@@ -1676,29 +1668,19 @@ function GuestSlugGalleryContent() {
                 {/* Authentic Hand-Drawn Circled Date Stamp (From User Photo 1) */}
                 <div className="flex justify-center lg:justify-start">
                   <HandDrawnOval className="text-[#8B1E1E]">
-                    <span className="text-base sm:text-lg md:text-xl font-mono tracking-widest text-[#8B1E1E] font-bold">
+                    <span className="text-base sm:text-lg md:text-xl font-serif italic tracking-wide text-[#8B1E1E] font-semibold">
                       {formattedDate}
                     </span>
                   </HandDrawnOval>
                 </div>
               </div>
 
-              {/* Right Side: The Tilted Polaroid Photo Card with Washi Tape and Cursive Overlay */}
+              {/* Right Side: The Tilted Polaroid Photo Card with Washi Tape */}
               <div className="order-1 lg:order-2 relative animate-in fade-in zoom-in-95 duration-1000">
                 <div className="relative bg-white p-3.5 sm:p-5 pb-10 sm:pb-14 shadow-[0_25px_60px_rgba(0,0,0,0.22)] border border-stone-200/80 transform rotate-2 sm:rotate-3 hover:rotate-0 transition-transform duration-700 w-64 sm:w-80 md:w-96">
                   {/* Frosted Translucent Washi Tape Across Top-Left Corner */}
                   <div className="absolute -top-4 sm:-top-5 left-4 sm:left-6 z-30">
                     <WashiTape className="transform -rotate-12" />
-                  </div>
-
-                  {/* Romantic Hand-lettered Cursive Script Overlay Over Photo Corner */}
-                  <div className="absolute -top-6 sm:-top-8 -left-6 sm:-left-10 z-40 select-none pointer-events-none transform -rotate-6">
-                    <span
-                      className="text-3xl sm:text-5xl text-[#8B1E1E] drop-shadow-sm block whitespace-nowrap"
-                      style={{ fontFamily: "'Great Vibes', cursive" }}
-                    >
-                      te amo siempre
-                    </span>
                   </div>
 
                   {/* Polaroid Photo with Focal Point & Auto Scale */}
@@ -1774,12 +1756,8 @@ function GuestSlugGalleryContent() {
               className="relative min-h-[88vh] sm:min-h-[96vh] w-full flex flex-col justify-between items-center overflow-hidden px-4 sm:px-8 py-6 sm:py-10 transition-colors duration-500"
               style={{ backgroundColor: bgColor, color: textColor }}
             >
-              {/* Top Header / Studio Brand */}
-              <div className="relative z-10 w-full max-w-6xl mx-auto flex items-center justify-between text-xs sm:text-sm font-mono uppercase tracking-[0.32em] opacity-85">
-                <span>{studioName}</span>
-                <span className="hidden sm:inline font-bold">EDITION D&apos;ART</span>
-                <span>{totalPhotosCount > 0 ? `${totalPhotosCount} PHOTOS` : 'ARCHIVE'}</span>
-              </div>
+              {/* Top Spacing (Studio name, count and Edition D'Art removed per user request) */}
+              <div className="h-4 sm:h-8 w-full" />
 
               {/* Centerpiece: Centered Vertical Portrait Artwork Flanked by Fine Art Quotes */}
               <div className="relative z-10 my-auto w-full max-w-6xl mx-auto flex items-center justify-between sm:justify-around px-2">
@@ -1791,8 +1769,8 @@ function GuestSlugGalleryContent() {
                   <span className="w-2 h-2 rounded-full bg-current opacity-60" />
                 </div>
 
-                {/* Centered Vertical Portrait Frame (3:4 aspect ratio) */}
-                <div className="relative w-64 sm:w-80 md:w-96 aspect-[3/4] shadow-[0_35px_80px_rgba(0,0,0,0.7)] overflow-hidden bg-stone-900 border border-white/20 animate-in fade-in zoom-in-95 duration-1000">
+                {/* Centered Vertical Portrait Frame (No heavy shadow per user request) */}
+                <div className="relative w-64 sm:w-80 md:w-96 aspect-[3/4] overflow-hidden bg-stone-900 border border-white/20 animate-in fade-in zoom-in-95 duration-1000">
                   {cleanCoverUrl ? (
                     <>
                       <img
@@ -1839,8 +1817,6 @@ function GuestSlugGalleryContent() {
                 </h1>
                 <div className="flex items-center justify-center gap-3 text-xs sm:text-sm font-mono tracking-widest uppercase opacity-75 pt-2">
                   <span>{formattedDate}</span>
-                  <span>•</span>
-                  <span>CINEMATIC ARCHIVE</span>
                 </div>
                 <div className="pt-2">
                   <a
@@ -1859,11 +1835,11 @@ function GuestSlugGalleryContent() {
 
       <div id="sub-events-bar" className="scroll-mt-14" />
       
-      {/* 1.5 STICKY SUB-EVENTS HORIZONTAL BAR (SYNCED WITH PALETTE COLORS) */}
+      {/* 1.5 STICKY SUB-EVENTS HORIZONTAL BAR (GLOSSY LIQUID BLUR - SYNCED WITH PALETTE) */}
       <div
-        className="sticky top-[52px] sm:top-[57px] z-30 transition-all backdrop-blur-md border-y shadow-2xs"
+        className="sticky top-[52px] sm:top-[57px] z-30 transition-all backdrop-blur-xl border-y shadow-2xs"
         style={{
-          backgroundColor: `${designPalette.cardBg || designPalette.canvasBg}F0`,
+          backgroundColor: `${designPalette.canvasBg}F0`,
           borderColor: `${designPalette.textColor}18`,
           color: designPalette.textColor,
         }}
