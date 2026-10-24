@@ -1007,6 +1007,12 @@ function GuestSlugGalleryContent() {
   const youtubeHandle = studioBranding?.youtube_handle;
   const studioPhone = studioBranding?.phone;
   const studioEmail = studioBranding?.email;
+  const socialVisibility = studioBranding?.social_visibility || {
+    whatsapp: true,
+    instagram: true,
+    facebook: true,
+    youtube: true,
+  };
   const totalPhotosCount = fullPhotos?.length || (gallery as any)?.photos_count || (gallery as any)?.total_photos || 0;
 
   // ── DYNAMIC DESIGN CONFIGURATION (PRESETS, PALETTE, FONTS, MOTION) ──

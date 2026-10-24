@@ -44,6 +44,12 @@ async function enrichGalleryBranding(single: any) {
   let studioYoutube = '';
   let studioPhone = '';
   let studioEmail = '';
+  let studioSocialVisibility = {
+    whatsapp: true,
+    instagram: true,
+    facebook: true,
+    youtube: true,
+  };
 
   if (single.workspace_id && single.workspace_id !== '00000000-0000-0000-0000-000000000000') {
     try {
@@ -73,7 +79,7 @@ async function enrichGalleryBranding(single: any) {
       studioYoutube = galSettings.social_links?.youtube || prof?.youtube_handle || prefs?.youtube_handle || '';
       studioPhone = galSettings.social_links?.whatsapp || galSettings.phone || prefs?.invoice_phone || prof?.phone || '';
       studioEmail = galSettings.email || prefs?.invoice_email || prof?.email || '';
-      const socialVisibility = galSettings.social_visibility || {
+      studioSocialVisibility = galSettings.social_visibility || {
         whatsapp: true,
         instagram: true,
         facebook: true,
@@ -153,12 +159,7 @@ async function enrichGalleryBranding(single: any) {
       youtube_handle: studioYoutube,
       phone: studioPhone,
       email: studioEmail,
-      social_visibility: (typeof socialVisibility !== 'undefined' ? socialVisibility : {
-        whatsapp: true,
-        instagram: true,
-        facebook: true,
-        youtube: true,
-      }),
+      social_visibility: studioSocialVisibility,
     },
   };
 }

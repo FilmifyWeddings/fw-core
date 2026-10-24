@@ -100,6 +100,7 @@ export async function GET(req: NextRequest) {
 
     // 1. Fetch from workspace_settings table
     let savedGallerySettings: Partial<GallerySettings> | null = null;
+    let savedGalleryDesign: any = null;
     try {
       const { data: wsRow } = await supabaseAdmin
         .from('workspace_settings')
@@ -109,6 +110,9 @@ export async function GET(req: NextRequest) {
 
       if (wsRow?.config?.gallery_settings) {
         savedGallerySettings = wsRow.config.gallery_settings;
+      }
+      if (wsRow?.config?.gallery_design) {
+        savedGalleryDesign = wsRow.config.gallery_design;
       }
     } catch (_) {}
 
@@ -147,7 +151,7 @@ export async function GET(req: NextRequest) {
         ...DEFAULT_GALLERY_SETTINGS.cover_focal_point,
         ...(savedGallerySettings?.cover_focal_point || {}),
       },
-      gallery_design: (savedGallerySettings as any)?.gallery_design || wsRow?.config?.gallery_design || null,
+      gallery_design: (savedGallerySettings as any)?.gallery_design || savedGalleryDesign || null,
     };
 
     return NextResponse.json({ success: true, settings: mergedSettings });
