@@ -120,19 +120,54 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { gallery_id, client_name, client_email, selected_photo_ids, max_limit } = body;
+    const { gallery_id, client_name, client_email, selected_photo_ids, max_limit, is_submitted, action } = body;
 
-    if (!gallery_id || !client_email) {
+    if (!gallery_id) {
       return NextResponse.json(
-        { success: false, error: 'gallery_id and client_email are required' },
+        { success: false, error: 'gallery_id is required' },
         { status: 400 }
       );
     }
 
-    const normalizedEmail = client_email.toLowerCase().trim();
+    // Action: Studio Owner Unlocks Client Selection
+    if (action === 'unlock') {
+      const emailToUnlock = (client_email || '').toLowerCase().trim();
+      let query = supabaseAdmin
+        .from('gallery_album_selections')
+        .update({
+          is_submitted: false,
+          submitted_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('gallery_id', gallery_id);
+
+      if (emailToUnlock) {
+        query = query.eq('client_email', emailToUnlock);
+      }
+
+      await query;
+      return NextResponse.json({ success: true, message: 'Selection unlocked for client editing.' });
+    }
+
+    // Action: Studio Owner sets Max Limit from Share Modal
+    if (action === 'set_limit' && max_limit) {
+      const numLimit = Number(max_limit);
+      await supabaseAdmin
+        .from('gallery_album_selections')
+        .update({
+          max_limit: numLimit,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('gallery_id', gallery_id);
+
+      return NextResponse.json({ success: true, max_limit: numLimit });
+    }
+
+    const normalizedEmail = (client_email || 'guest@gallery.local').toLowerCase().trim();
     const cleanName = (client_name || 'Guest Client').trim();
     const photoIds = Array.isArray(selected_photo_ids) ? selected_photo_ids : [];
     const limit = Number(max_limit) || 50;
+    const isSubmitted = Boolean(is_submitted);
 
     // Always mirror to fallback cache for instantaneous resilience
     writeFallback(gallery_id, normalizedEmail, {
@@ -141,23 +176,33 @@ export async function POST(req: NextRequest) {
       client_email: normalizedEmail,
       selected_photo_ids: photoIds,
       max_limit: limit,
+      total_count: photoIds.length,
+      is_submitted: isSubmitted,
+      submitted_at: isSubmitted ? new Date().toISOString() : null,
     });
 
     // Save to PostgreSQL table
     try {
+      const updateData: any = {
+        gallery_id,
+        client_name: cleanName,
+        client_email: normalizedEmail,
+        selected_photo_ids: photoIds,
+        max_limit: limit,
+        total_count: photoIds.length,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (is_submitted !== undefined) {
+        updateData.is_submitted = isSubmitted;
+        if (isSubmitted) {
+          updateData.submitted_at = new Date().toISOString();
+        }
+      }
+
       const { data, error } = await supabaseAdmin
         .from('gallery_album_selections')
-        .upsert(
-          {
-            gallery_id,
-            client_name: cleanName,
-            client_email: normalizedEmail,
-            selected_photo_ids: photoIds,
-            max_limit: limit,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'gallery_id,client_email' }
-        )
+        .upsert(updateData, { onConflict: 'gallery_id,client_email' })
         .select()
         .maybeSingle();
 
@@ -174,6 +219,9 @@ export async function POST(req: NextRequest) {
         client_email: normalizedEmail,
         selected_photo_ids: photoIds,
         max_limit: limit,
+        total_count: photoIds.length,
+        is_submitted: isSubmitted,
+        submitted_at: isSubmitted ? new Date().toISOString() : null,
       },
     });
   } catch (err: any) {

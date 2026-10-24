@@ -30,7 +30,37 @@ import {
   KeyRound,
   RefreshCw,
   Zap,
+  Cloud,
+  Send,
+  AlertCircle,
 } from 'lucide-react';
+
+function InstagramIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
+    </svg>
+  );
+}
+
+function YoutubeIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"/>
+      <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/>
+    </svg>
+  );
+}
+
+function FacebookIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+    </svg>
+  );
+}
 import { getPublicGalleryUrl } from '@/lib/r2';
 import { FaceScannerModal } from '@/components/gallery/FaceScannerModal';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
@@ -64,12 +94,28 @@ interface GalleryInfo {
   pin_code: string | null;
   guest_pin?: string | null;
   admin_pin?: string | null;
+  pass_key?: string | null;
   cover_url: string | null;
   allow_downloads: boolean;
   is_active?: boolean;
   is_face_ai_enabled?: boolean;
   status?: string;
   studio_slug?: string;
+  couple_slug?: string;
+  unique_code?: string;
+  max_selection_limit?: number;
+  studio_branding?: {
+    studio_name: string;
+    studio_slug: string;
+    logo_url: string | null;
+    tagline: string;
+    instagram_handle: string;
+    facebook_handle: string;
+    youtube_handle: string;
+    phone: string;
+    email: string;
+  };
+  raw_payload?: any;
 }
 
 interface CoverPositioning {
@@ -145,6 +191,10 @@ function GuestSlugGalleryContent() {
   const [selectorEmail, setSelectorEmail] = useState('');
   const [showSelectorModal, setShowSelectorModal] = useState(false);
   const [isSyncingSelection, setIsSyncingSelection] = useState(false);
+  const [isSelectionSubmitted, setIsSelectionSubmitted] = useState(false);
+  const [submittedAt, setSubmittedAt] = useState<string | null>(null);
+  const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const [isSubmittingSelection, setIsSubmittingSelection] = useState(false);
 
   // PIN / PassKey State for Privileged Access
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -195,13 +245,27 @@ function GuestSlugGalleryContent() {
 
     try {
       let gal: any = null;
+      const codeFromSearch = searchParams?.get('code');
+      const coupleFromSearch = searchParams?.get('couple');
+
       try {
-        const slugRes = await fetch(`/api/gallery/events?slug=${slug}`);
+        const queryUrl = `/api/gallery/events?slug=${encodeURIComponent(slug)}${codeFromSearch ? `&code=${encodeURIComponent(codeFromSearch)}` : ''}${coupleFromSearch ? `&couple=${encodeURIComponent(coupleFromSearch)}` : ''}`;
+        const slugRes = await fetch(queryUrl);
         const slugJson = await slugRes.json();
         if (slugJson.success && slugJson.gallery) {
           gal = slugJson.gallery;
         }
       } catch (_) {}
+
+      if (!gal && codeFromSearch) {
+        try {
+          const cRes = await fetch(`/api/gallery/events?code=${encodeURIComponent(codeFromSearch)}`);
+          const cJson = await cRes.json();
+          if (cJson.success && cJson.gallery) {
+            gal = cJson.gallery;
+          }
+        } catch (_) {}
+      }
 
       if (!gal) {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
@@ -224,22 +288,39 @@ function GuestSlugGalleryContent() {
 
       // Check unlock permissions
       const isPrivileged = isFullAccess || isSelectionMode;
-      const requiredPin = isPrivileged
-        ? (gal.admin_pin || gal.pin_code)
-        : (gal.guest_pin || gal.pin_code);
+      const isGuestPinEnabled = gal.raw_payload?.guest_pin_enabled !== undefined
+        ? Boolean(gal.raw_payload.guest_pin_enabled)
+        : (gal.raw_payload?.guest_ask_pin !== undefined ? Boolean(gal.raw_payload.guest_ask_pin) : false);
 
+      const resolvedPrivilegedPin = (
+        gal.pass_key ||
+        gal.raw_payload?.pass_key ||
+        gal.admin_pin ||
+        gal.pin_code ||
+        '518399'
+      ).toString().trim();
+
+      const resolvedGuestPin = isGuestPinEnabled
+        ? (gal.guest_pin || gal.raw_payload?.guest_pin || gal.pin_code || '700680').toString().trim()
+        : null;
+
+      const requiredPin = isPrivileged ? resolvedPrivilegedPin : resolvedGuestPin;
       const passedKey = isPrivileged ? passKeyParam : shareKeyParam;
 
-      const hasValidPin =
-        isVipMode ||
-        !requiredPin ||
-        (passedKey && passedKey.trim() === requiredPin.trim()) ||
-        (typeof window !== 'undefined' && sessionStorage.getItem(`unlocked_${gal.id}`) === 'true');
+      const modeKey = isSelectionMode ? 'selection' : (isFullAccess ? 'full' : 'guest');
+      const sessionKey = `studiocore_unlocked_${modeKey}_${gal.id}`;
+      const isSessionUnlocked = typeof window !== 'undefined' && sessionStorage.getItem(sessionKey) === requiredPin;
+      const isUrlKeyUnlocked = Boolean(passedKey && requiredPin && passedKey.trim() === requiredPin);
+
+      const hasValidPin = isVipMode || !requiredPin || isUrlKeyUnlocked || isSessionUnlocked;
 
       if (hasValidPin) {
         setIsUnlocked(true);
-      } else if (isPrivilegedMode) {
-        setShowPinModal(true);
+      } else {
+        setIsUnlocked(false);
+        if (isPrivilegedMode) {
+          setShowPinModal(true);
+        }
       }
 
       // Fetch full collections & photos in parallel if in PRIVILEGED mode OR gallery is PUBLISHED
@@ -368,16 +449,32 @@ function GuestSlugGalleryContent() {
     if (!gallery) return;
 
     const isPrivileged = isFullAccess || isSelectionMode;
-    const requiredPin = isPrivileged
-      ? (gallery.admin_pin || gallery.pin_code)
-      : (gallery.guest_pin || gallery.pin_code);
+    const isGuestPinEnabled = gallery.raw_payload?.guest_pin_enabled !== undefined
+      ? Boolean(gallery.raw_payload.guest_pin_enabled)
+      : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : false);
 
-    if (!requiredPin || enteredPin.trim() === requiredPin.trim()) {
+    const resolvedPrivilegedPin = (
+      gallery.pass_key ||
+      gallery.raw_payload?.pass_key ||
+      gallery.admin_pin ||
+      gallery.pin_code ||
+      '518399'
+    ).toString().trim();
+
+    const resolvedGuestPin = isGuestPinEnabled
+      ? (gallery.guest_pin || gallery.raw_payload?.guest_pin || gallery.pin_code || '700680').toString().trim()
+      : null;
+
+    const requiredPin = isPrivileged ? resolvedPrivilegedPin : resolvedGuestPin;
+    const modeKey = isSelectionMode ? 'selection' : (isFullAccess ? 'full' : 'guest');
+    const sessionKey = `studiocore_unlocked_${modeKey}_${gallery.id}`;
+
+    if (!requiredPin || enteredPin.trim() === requiredPin) {
       setIsUnlocked(true);
       setPinError(false);
       setShowPinModal(false);
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem(`unlocked_${gallery.id}`, 'true');
+      if (typeof window !== 'undefined' && requiredPin) {
+        sessionStorage.setItem(sessionKey, requiredPin);
       }
       loadGalleryData();
 
@@ -398,27 +495,23 @@ function GuestSlugGalleryContent() {
   const handleFindMyPhotoClick = () => {
     if (!gallery) return;
 
-    const isPrivileged = isFullAccess || isSelectionMode;
-    const requiredPin = isPrivileged
-      ? (gallery.admin_pin || gallery.pin_code)
-      : (gallery.guest_pin || gallery.pin_code);
+    const isGuestPinEnabled = gallery.raw_payload?.guest_pin_enabled !== undefined
+      ? Boolean(gallery.raw_payload.guest_pin_enabled)
+      : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : false);
 
-    const isPinActive = Boolean(requiredPin && requiredPin.trim().length > 0);
+    const resolvedGuestPin = isGuestPinEnabled
+      ? (gallery.guest_pin || gallery.raw_payload?.guest_pin || gallery.pin_code || '700680').toString().trim()
+      : null;
 
-    if (isPinActive && !isUnlocked) {
+    const modeKey = 'guest';
+    const sessionKey = `studiocore_unlocked_${modeKey}_${gallery.id}`;
+    const isSessionUnlocked = typeof window !== 'undefined' && sessionStorage.getItem(sessionKey) === resolvedGuestPin;
+
+    if (resolvedGuestPin && !isUnlocked && !isSessionUnlocked) {
       setOpenFaceScannerAfterPin(true);
       setShowPinModal(true);
     } else {
-      if (gallery.is_face_ai_enabled === false) {
-        setIsUnlocked(true);
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem(`unlocked_${gallery.id}`, 'true');
-        }
-        setHasSearched(true);
-        loadGalleryData();
-      } else {
-        setIsFaceScannerOpen(true);
-      }
+      setIsFaceScannerOpen(true);
     }
   };
 
@@ -648,6 +741,10 @@ function GuestSlugGalleryContent() {
     };
   }, [hasMorePrivilegedPhotos, targetFullPhotos.length]);
 
+  const effectiveMaxSelectionLimit = (gallery?.max_selection_limit && gallery.max_selection_limit > 0)
+    ? gallery.max_selection_limit
+    : (maxSelectionLimit || 50);
+
   // Load selector identity and sync from backend for cross-device persistence
   useEffect(() => {
     if (!gallery?.id || !isSelectionMode) return;
@@ -662,8 +759,17 @@ function GuestSlugGalleryContent() {
           fetch(`/api/gallery/selections?gallery_id=${gallery.id}&email=${encodeURIComponent(parsed.email)}`)
             .then((r) => r.json())
             .then((res) => {
-              if (res.success && Array.isArray(res.selected_photo_ids)) {
-                setSelectedForAlbum(new Set(res.selected_photo_ids));
+              if (res.success) {
+                if (Array.isArray(res.selected_photo_ids)) {
+                  setSelectedForAlbum(new Set(res.selected_photo_ids));
+                }
+                if (res.is_submitted) {
+                  setIsSelectionSubmitted(true);
+                  setSubmittedAt(res.submitted_at || null);
+                } else {
+                  setIsSelectionSubmitted(false);
+                  setSubmittedAt(null);
+                }
               }
             })
             .catch(() => {});
@@ -678,7 +784,7 @@ function GuestSlugGalleryContent() {
 
   // Sync selections to backend
   const syncSelectionToBackend = useCallback(async (newSelection: Set<string>, name: string, email: string) => {
-    if (!gallery?.id || !email) return;
+    if (!gallery?.id || !email || isSelectionSubmitted) return;
     setIsSyncingSelection(true);
     try {
       await fetch('/api/gallery/selections', {
@@ -689,13 +795,55 @@ function GuestSlugGalleryContent() {
           client_name: name || 'Guest',
           client_email: email,
           selected_photo_ids: Array.from(newSelection),
-          max_limit: maxSelectionLimit,
+          max_limit: effectiveMaxSelectionLimit,
         }),
       });
     } catch (_) {} finally {
       setIsSyncingSelection(false);
     }
-  }, [gallery?.id, maxSelectionLimit]);
+  }, [gallery?.id, isSelectionSubmitted, effectiveMaxSelectionLimit]);
+
+  const handleSubmitSelection = async () => {
+    if (!gallery?.id) return;
+    const effectiveEmail = selectorEmail || guestSavedSession?.email || (gallery as any)?.client_email || 'guest@gallery.local';
+    const effectiveName = selectorName || guestSavedSession?.name || 'Guest Client';
+
+    if (selectedForAlbum.size === 0) {
+      alert('Please select at least 1 photo for your album before submitting.');
+      return;
+    }
+
+    setIsSubmittingSelection(true);
+    try {
+      const res = await fetch('/api/gallery/selections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gallery_id: gallery.id,
+          client_name: effectiveName,
+          client_email: effectiveEmail,
+          selected_photo_ids: Array.from(selectedForAlbum),
+          is_submitted: true,
+          submitted_at: new Date().toISOString(),
+          max_limit: effectiveMaxSelectionLimit,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setIsSelectionSubmitted(true);
+        setSubmittedAt(new Date().toISOString());
+        setShowSubmitConfirmModal(false);
+        setShowOnlySelected(true);
+      } else {
+        alert(json.error || 'Failed to submit selection. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error submitting selections:', err);
+      alert('Failed to submit selections. Please check your internet connection.');
+    } finally {
+      setIsSubmittingSelection(false);
+    }
+  };
 
   const handleSelectorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -718,8 +866,17 @@ function GuestSlugGalleryContent() {
       try {
         const res = await fetch(`/api/gallery/selections?gallery_id=${gallery.id}&email=${encodeURIComponent(cleanEmail)}`);
         const json = await res.json();
-        if (json.success && Array.isArray(json.selected_photo_ids)) {
-          setSelectedForAlbum(new Set(json.selected_photo_ids));
+        if (json.success) {
+          if (Array.isArray(json.selected_photo_ids)) {
+            setSelectedForAlbum(new Set(json.selected_photo_ids));
+          }
+          if (json.is_submitted) {
+            setIsSelectionSubmitted(true);
+            setSubmittedAt(json.submitted_at || null);
+          } else {
+            setIsSelectionSubmitted(false);
+            setSubmittedAt(null);
+          }
         }
       } catch (_) {} finally {
         setIsSyncingSelection(false);
@@ -839,9 +996,67 @@ function GuestSlugGalleryContent() {
     );
   }
 
+  const studioBranding = gallery.studio_branding;
+  const studioName = studioBranding?.studio_name || 'Wedding Studio';
+  const studioLogo = studioBranding?.logo_url;
+  const studioTagline = studioBranding?.tagline || 'Fine Art Wedding Photography & Films';
+  const instagramHandle = studioBranding?.instagram_handle;
+  const facebookHandle = studioBranding?.facebook_handle;
+  const youtubeHandle = studioBranding?.youtube_handle;
+  const studioPhone = studioBranding?.phone;
+  const studioEmail = studioBranding?.email;
+
   return (
     <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans pb-32 select-none">
       
+      {/* 0. LUXURY STUDIO HEADER BAR */}
+      <header className="bg-zinc-950/95 backdrop-blur-md border-b border-white/10 text-white sticky top-0 z-40 transition-all">
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {studioLogo ? (
+              <img
+                src={studioLogo}
+                alt={studioName}
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover ring-1 ring-white/20"
+              />
+            ) : (
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-serif font-black flex items-center justify-center text-xs shadow-xs">
+                {studioName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="leading-tight">
+              <span
+                className="block text-xs sm:text-sm font-semibold tracking-wide text-zinc-100"
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              >
+                {studioName}
+              </span>
+              <span className="block text-[10px] text-zinc-400 hidden sm:block font-light">
+                {studioTagline}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isSelectionMode ? (
+              <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
+                <Heart className="w-3 h-3 fill-rose-400 text-rose-400" />
+                <span>Album Selection</span>
+              </span>
+            ) : isFullAccess ? (
+              <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
+                <Crown className="w-3 h-3 text-amber-400" />
+                <span>VIP Full Access</span>
+              </span>
+            ) : (
+              <span className="px-3 py-1 rounded-full bg-white/10 text-zinc-300 border border-white/10 text-[10px] sm:text-xs font-medium">
+                Official Client Gallery
+              </span>
+            )}
+          </div>
+        </div>
+      </header>
+
       {/* 1. LUXURY WEDDING HERO */}
       <div className="relative bg-zinc-950 text-white overflow-hidden">
         {gallery.cover_url ? (
@@ -878,14 +1093,23 @@ function GuestSlugGalleryContent() {
 
         <div className="absolute inset-0 flex flex-col justify-end p-6 sm:p-10 max-w-6xl mx-auto">
           <div className="space-y-2 text-center sm:text-left max-w-2xl">
-            <div className="flex items-center justify-center sm:justify-start gap-2 text-amber-400 text-xs font-serif italic">
+            <div
+              className="flex items-center justify-center sm:justify-start gap-2 text-amber-400 text-xs tracking-widest uppercase font-semibold"
+              style={{ fontFamily: "'Cinzel', 'Playfair Display', serif" }}
+            >
               <Calendar className="w-3.5 h-3.5" />
               <span>{new Date(gallery.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
             </div>
-            <h1 className="text-3xl sm:text-5xl font-serif font-black tracking-tight text-white drop-shadow-md">
+            <h1
+              className="text-3xl sm:text-5xl lg:text-6xl font-normal tracking-tight text-white drop-shadow-md"
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+            >
               {gallery.title}
             </h1>
-            <p className="text-xs sm:text-sm text-zinc-300 font-serif italic drop-shadow-xs">
+            <p
+              className="text-sm sm:text-base text-zinc-200/90 italic tracking-wide drop-shadow-xs"
+              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+            >
               Moments captured forever. Find all your personal memories with AI Face Search.
             </p>
           </div>
@@ -903,10 +1127,16 @@ function GuestSlugGalleryContent() {
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-2xl font-black text-zinc-900 tracking-tight">
+              <h2
+                className="text-2xl font-normal text-zinc-900 tracking-tight"
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              >
                 {isSelectionMode ? 'Album Selection Access' : 'Full Event Access'}
               </h2>
-              <p className="text-xs sm:text-sm text-zinc-500 max-w-sm mx-auto leading-relaxed">
+              <p
+                className="text-xs sm:text-sm text-zinc-500 max-w-sm mx-auto leading-relaxed"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
+              >
                 {isSelectionMode
                   ? 'Please enter the client pass key to review, select, and finalize photos for your custom album print.'
                   : 'This gallery is PIN protected. Enter the access PIN code to view all high-resolution event photos.'}
@@ -934,12 +1164,18 @@ function GuestSlugGalleryContent() {
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+              <h2
+                className="text-2xl sm:text-3xl font-normal text-zinc-900 tracking-tight"
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              >
                 {gallery.is_face_ai_enabled === false
                   ? 'Explore Event Gallery'
                   : 'Register to get your photos on your mobile'}
               </h2>
-              <p className="text-xs sm:text-sm text-zinc-500 max-w-md mx-auto leading-relaxed">
+              <p
+                className="text-xs sm:text-sm text-zinc-500 max-w-md mx-auto leading-relaxed"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
+              >
                 {gallery.is_face_ai_enabled === false
                   ? 'Access and view all high-resolution memories captured during this event.'
                   : 'Complete your registration by capturing a selfie to secure access your photos from this event.'}
@@ -953,16 +1189,18 @@ function GuestSlugGalleryContent() {
                 className="px-8 py-4 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-sm tracking-wide shadow-xl shadow-amber-600/30 flex items-center justify-center gap-2.5 mx-auto transition-all active:scale-98 cursor-pointer group"
               >
                 <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
-                <span>{gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photo'}</span>
+                <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.05em' }}>
+                  {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photo'}
+                </span>
                 <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
               </button>
             </div>
           </div>
         )}
 
-        {/* CASE UNPUBLISHED: CELEBRATORY REGISTRATION CONFIRMATION */}
+        {/* CASE UNPUBLISHED: LUXURY CONGRATULATIONS CONFIRMATION SCREEN (No Steps 1, 2, 3) */}
         {(!isPrivilegedMode && hasSearched && currentGalleryStatus === 'UNPUBLISHED') && (
-          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-emerald-200 shadow-xl text-center space-y-6 max-w-2xl mx-auto animate-in fade-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-emerald-200/80 shadow-2xl text-center space-y-6 max-w-2xl mx-auto animate-in fade-in zoom-in-95 duration-300">
             {/* Animated Celebration Avatar / Badge */}
             <div className="relative w-24 h-24 mx-auto">
               <div className="absolute inset-0 rounded-3xl bg-emerald-400/20 animate-ping" />
@@ -973,70 +1211,46 @@ function GuestSlugGalleryContent() {
 
             <div className="space-y-3">
               <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider border border-emerald-300">
-                {isAlreadyRegistered ? '✨ Already Registered' : '✨ Registration Successful'}
+                {isAlreadyRegistered ? '✨ Already Registered' : '🎉 Registration Successful'}
               </span>
-              <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-                {isAlreadyRegistered ? `Welcome Back, ${guestName || 'Guest'}!` : 'Your registration successfully'}
-              </h2>
-              <p className="text-xs sm:text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed font-medium">
+              <h2
+                className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight"
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              >
                 {isAlreadyRegistered
-                  ? `You have already registered with this phone / email for ${gallery.title}. As soon as the photos are edited & published by the studio, you will be notified instantly!`
-                  : 'We will notify you when your photos are ready'}
+                  ? `Welcome Back, ${guestName || 'Guest'}!`
+                  : 'Congratulations! Thank you so much for your registration.'}
+              </h2>
+              <p
+                className="text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
+              >
+                We will notify you on WhatsApp as soon as your photos are ready.
               </p>
             </div>
 
             {/* Notification Alert Box */}
-            <div className="bg-[#FAF9F5] rounded-2xl p-4 sm:p-5 border border-[#E7E2D8] text-left space-y-3">
-              <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+            <div className="bg-[#FAF9F5] rounded-2xl p-5 border border-[#E7E2D8] text-left space-y-3">
+              <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wider">
                 <Sparkles className="w-4 h-4 text-emerald-600" />
                 <span>Instant Notification Guaranteed</span>
               </div>
-              <p className="text-xs text-zinc-600 leading-relaxed">
+              <p className="text-xs text-zinc-600 leading-relaxed font-medium">
                 As soon as the photos are edited and published by the studio, you will receive an instant notification with your personal photo album directly on:
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {guestPhone && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold font-mono">
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold font-mono">
                     <Phone className="w-3.5 h-3.5 text-emerald-600" />
                     <span>WhatsApp: {guestPhone}</span>
                   </span>
                 )}
                 {guestEmail && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 text-xs font-medium">
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 text-xs font-medium">
                     <Mail className="w-3.5 h-3.5 text-zinc-500" />
                     <span>{guestEmail}</span>
                   </span>
                 )}
-              </div>
-            </div>
-
-            {/* 3-Step Live Progress Timeline */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-left">
-              <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Step 1</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div className="text-xs font-bold text-zinc-900">Selfie Registered</div>
-                <p className="text-[10px] text-zinc-500">Your biometric face index is secured</p>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-1 animate-pulse">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">Step 2</span>
-                  <RefreshCw className="w-4 h-4 text-amber-600 animate-spin" />
-                </div>
-                <div className="text-xs font-bold text-zinc-900">Editing &amp; AI Matching</div>
-                <p className="text-[10px] text-zinc-500">Photos being curated by studio team</p>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Step 3</span>
-                  <Zap className="w-4 h-4 text-zinc-400" />
-                </div>
-                <div className="text-xs font-bold text-zinc-700">Instant Delivery</div>
-                <p className="text-[10px] text-zinc-500">Private album link sent to WhatsApp</p>
               </div>
             </div>
 
@@ -1050,7 +1264,7 @@ function GuestSlugGalleryContent() {
                     alert('Page link copied! Keep this bookmarked to view photos once published.');
                   }
                 }}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-sm"
+                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md active:scale-98"
               >
                 <Copy className="w-4 h-4 text-amber-400" />
                 <span>Bookmark / Copy Link</span>
@@ -1066,7 +1280,7 @@ function GuestSlugGalleryContent() {
                   setGuestEmail('');
                   setIsFaceScannerOpen(true);
                 }}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-amber-600/20 active:scale-98"
+                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-amber-600/20 active:scale-98"
               >
                 <Users className="w-4 h-4 text-amber-200" />
                 <span>Click here to new registration</span>
@@ -1340,91 +1554,13 @@ function GuestSlugGalleryContent() {
         {/* CASE C: PRIVILEGED FULL ACCESS */}
         {isPrivilegedMode && isUnlocked && (
           <div className="space-y-6">
-            {/* Album Selection Sticky Banner */}
-            {isSelectionMode && (
-              <div className="sticky top-4 z-40 bg-zinc-950/95 backdrop-blur-md text-white rounded-2xl p-4 shadow-2xl border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center border border-purple-500/30 shrink-0">
-                    <CheckSquare className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black uppercase tracking-wider text-purple-400">Album Selection Mode</span>
-                      {maxSelectionLimit && (
-                        <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/30">
-                          Limit: {maxSelectionLimit}
-                        </span>
-                      )}
-                      {isSyncingSelection ? (
-                        <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1">
-                          <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Saving...
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
-                          ✓ Synced
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-zinc-300 font-medium">
-                      <span>
-                        Selected <strong className="text-white text-sm font-black">{selectedForAlbum.size}</strong>
-                        {maxSelectionLimit ? ` / ${maxSelectionLimit}` : ''} photos
-                      </span>
-                      {selectorEmail && (
-                        <span className="text-zinc-500">
-                          • for <strong className="text-zinc-300">{selectorName || selectorEmail}</strong>
-                          <button
-                            type="button"
-                            onClick={handleSwitchSelector}
-                            className="text-amber-400 hover:text-amber-300 underline ml-1.5 cursor-pointer font-bold"
-                          >
-                            (Switch User)
-                          </button>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowOnlySelected(!showOnlySelected)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      showOnlySelected
-                        ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                        : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                    }`}
-                  >
-                    <CheckSquare className="w-3.5 h-3.5" />
-                    <span>{showOnlySelected ? 'Show All Photos' : `View Selected (${selectedForAlbum.size})`}</span>
-                  </button>
-
-                  {selectedForAlbum.size > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm('Clear all your photo selections?')) {
-                          const next = new Set<string>();
-                          setSelectedForAlbum(next);
-                          syncSelectionToBackend(next, selectorName, selectorEmail);
-                        }
-                      }}
-                      className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-bold transition cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
 
             {isSelectionMode && showOnlySelected && displayedPhotos.length === 0 && (
               <div className="bg-white rounded-3xl p-8 border border-[#E7E2D8] text-center space-y-3">
-                <CheckSquare className="w-8 h-8 text-purple-600 mx-auto" />
+                <Heart className="w-8 h-8 text-rose-600 fill-rose-600 mx-auto" />
                 <h3 className="text-base font-black text-zinc-900">No Photos Selected Yet</h3>
                 <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                  Click on any photo in the gallery to mark it for your album selection.
+                  Click on the heart icon on any photo in the gallery to mark it for your custom album selection.
                 </p>
                 <button
                   type="button"
@@ -1475,6 +1611,10 @@ function GuestSlugGalleryContent() {
                     key={photo.id}
                     onClick={() => {
                       if (isSelectionMode) {
+                        if (isSelectionSubmitted) {
+                          setSelectedPhotoIndex(idx);
+                          return;
+                        }
                         if (!selectorEmail) {
                           setShowSelectorModal(true);
                           return;
@@ -1485,8 +1625,8 @@ function GuestSlugGalleryContent() {
                           setSelectedForAlbum(next);
                           syncSelectionToBackend(next, selectorName, selectorEmail);
                         } else {
-                          if (maxSelectionLimit && next.size >= maxSelectionLimit) {
-                            alert(`You can select up to a maximum of ${maxSelectionLimit} photos.`);
+                          if (effectiveMaxSelectionLimit && next.size >= effectiveMaxSelectionLimit) {
+                            alert(`You can select up to a maximum of ${effectiveMaxSelectionLimit} photos. Please unselect another photo to choose this one.`);
                             return;
                           }
                           next.add(photo.id);
@@ -1499,7 +1639,7 @@ function GuestSlugGalleryContent() {
                     }}
                     className={`group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
                       isSelected
-                        ? 'border-amber-500 ring-4 ring-amber-500/20'
+                        ? 'border-rose-500 ring-4 ring-rose-500/25 shadow-xl'
                         : 'border-[#E7E2D8] hover:shadow-lg'
                     }`}
                   >
@@ -1511,18 +1651,44 @@ function GuestSlugGalleryContent() {
                       className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
                     />
 
+                    {/* Animated Heart Icon Button for Photo Selection */}
                     {isSelectionMode && (
-                      <div className="absolute top-2.5 right-2.5 z-10">
-                        {isSelected ? (
-                          <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-md">
-                            <CheckSquare className="w-4 h-4" />
-                          </div>
-                        ) : (
-                          <div className="w-6 h-6 rounded-lg bg-black/40 text-white/80 flex items-center justify-center backdrop-blur-xs">
-                            <Square className="w-4 h-4" />
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        disabled={isSelectionSubmitted}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isSelectionSubmitted) return;
+                          if (!selectorEmail) {
+                            setShowSelectorModal(true);
+                            return;
+                          }
+                          const next = new Set(selectedForAlbum);
+                          if (isSelected) {
+                            next.delete(photo.id);
+                            setSelectedForAlbum(next);
+                            syncSelectionToBackend(next, selectorName, selectorEmail);
+                          } else {
+                            if (effectiveMaxSelectionLimit && next.size >= effectiveMaxSelectionLimit) {
+                              alert(`You can select up to a maximum of ${effectiveMaxSelectionLimit} photos. Please unselect another photo to choose this one.`);
+                              return;
+                            }
+                            next.add(photo.id);
+                            setSelectedForAlbum(next);
+                            syncSelectionToBackend(next, selectorName, selectorEmail);
+                          }
+                        }}
+                        className={`absolute top-2.5 right-2.5 z-20 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer ${
+                          isSelectionSubmitted
+                            ? (isSelected ? 'bg-rose-600 text-white ring-2 ring-white cursor-not-allowed opacity-90' : 'hidden')
+                            : isSelected
+                            ? 'bg-rose-600 text-white ring-2 ring-white shadow-lg shadow-rose-600/50 scale-105 active:scale-95 animate-in zoom-in-90'
+                            : 'bg-black/40 hover:bg-black/60 text-white/80 hover:text-white backdrop-blur-md active:scale-90 hover:scale-105'
+                        }`}
+                        title={isSelected ? 'Remove from selection' : 'Select for album'}
+                      >
+                        <Heart className={`w-4 h-4 transition-transform ${isSelected ? 'fill-white text-white scale-110' : 'text-white'}`} />
+                      </button>
                     )}
 
                     <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1695,6 +1861,264 @@ function GuestSlugGalleryContent() {
           </div>
         </div>
       )}
+
+      {/* FLOATING ALBUM SELECTION BOTTOM DOCK */}
+      {isSelectionMode && isUnlocked && (
+        <div className="fixed bottom-4 inset-x-4 max-w-2xl mx-auto z-40 bg-zinc-950/95 backdrop-blur-xl text-white rounded-3xl p-3.5 sm:p-4 shadow-2xl border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in slide-in-from-bottom-3 duration-300">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${
+              isSelectionSubmitted
+                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+            }`}>
+              {isSelectionSubmitted ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              ) : (
+                <Heart className="w-5 h-5 fill-rose-500 text-rose-500 animate-pulse" />
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-rose-400">
+                  {isSelectionSubmitted ? 'Selection Locked' : 'Album Selection'}
+                </span>
+                {effectiveMaxSelectionLimit && (
+                  <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30">
+                    Limit: {effectiveMaxSelectionLimit}
+                  </span>
+                )}
+                {isSyncingSelection ? (
+                  <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Saving...
+                  </span>
+                ) : (
+                  <Cloud className="w-3.5 h-3.5 text-zinc-400" title="Cloud Synced" />
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-zinc-300 font-medium">
+                <span>
+                  Selected <strong className="text-white text-sm font-black">{selectedForAlbum.size}</strong>
+                  {effectiveMaxSelectionLimit ? ` / ${effectiveMaxSelectionLimit}` : ''} photos
+                </span>
+                {selectorEmail && (
+                  <span className="text-zinc-500 hidden sm:inline">
+                    • for <strong className="text-zinc-300">{selectorName || selectorEmail}</strong>
+                    {!isSelectionSubmitted && (
+                      <button
+                        type="button"
+                        onClick={handleSwitchSelector}
+                        className="text-amber-400 hover:text-amber-300 underline ml-1.5 cursor-pointer font-bold text-[11px]"
+                      >
+                        (Switch)
+                      </button>
+                    )}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowOnlySelected(!showOnlySelected)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                showOnlySelected
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+              }`}
+            >
+              <Heart className={`w-3.5 h-3.5 ${showOnlySelected ? 'fill-white' : ''}`} />
+              <span>{showOnlySelected ? 'All Photos' : `Selected (${selectedForAlbum.size})`}</span>
+            </button>
+
+            {!isSelectionSubmitted ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedForAlbum.size === 0) {
+                    alert('Please select at least 1 photo for your album before submitting.');
+                    return;
+                  }
+                  setShowSubmitConfirmModal(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-rose-600/30 transition cursor-pointer active:scale-98"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Submit Selection</span>
+              </button>
+            ) : (
+              <span className="px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Submitted &amp; Locked</span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SUBMIT SELECTION CONFIRMATION MODAL */}
+      {showSubmitConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-zinc-200 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+            <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto shadow-inner">
+              <Send className="w-7 h-7 text-rose-600" />
+            </div>
+
+            <div className="text-center space-y-2">
+              <h3
+                className="text-xl font-black text-zinc-900 tracking-tight"
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              >
+                Submit {selectedForAlbum.size} Photos for Album Design?
+              </h3>
+              <p
+                className="text-xs text-zinc-500 leading-relaxed max-w-sm mx-auto"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
+              >
+                Once submitted, your album selection will be locked so the studio team can finalize layout and printing.
+              </p>
+            </div>
+
+            <div className="bg-[#FAF9F5] rounded-2xl p-4 border border-[#E7E2D8] text-xs space-y-2">
+              <div className="flex justify-between text-zinc-600">
+                <span>Selected Photos:</span>
+                <strong className="text-zinc-900 font-bold">{selectedForAlbum.size} photos</strong>
+              </div>
+              <div className="flex justify-between text-zinc-600">
+                <span>Allowed Limit:</span>
+                <strong className="text-zinc-900 font-bold">{effectiveMaxSelectionLimit} photos</strong>
+              </div>
+              <div className="flex justify-between text-zinc-600">
+                <span>Client:</span>
+                <strong className="text-zinc-900 font-bold">{selectorName || selectorEmail}</strong>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSubmitConfirmModal(false)}
+                disabled={isSubmittingSelection}
+                className="flex-1 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitSelection}
+                disabled={isSubmittingSelection}
+                className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl transition shadow-md shadow-rose-600/30 flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+              >
+                {isSubmittingSelection ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Submitting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Confirm &amp; Submit</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. STUDIO BRANDING FOOTER */}
+      <footer className="mt-20 border-t border-[#E7E2D8] bg-[#F5F2EB] text-zinc-800 py-12 px-4 sm:px-8">
+        <div className="max-w-4xl mx-auto text-center space-y-6">
+          <div className="flex flex-col items-center justify-center space-y-2">
+            {studioLogo ? (
+              <img
+                src={studioLogo}
+                alt={studioName}
+                className="w-14 h-14 rounded-full object-cover ring-2 ring-amber-500/30 mx-auto shadow-sm"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-serif font-black flex items-center justify-center text-base shadow-sm mx-auto">
+                {studioName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <h3
+              className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900"
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+            >
+              {studioName}
+            </h3>
+            <p className="text-xs sm:text-sm text-zinc-500 font-serif italic max-w-md mx-auto">
+              {studioTagline}
+            </p>
+          </div>
+
+          {/* Social Media Links */}
+          {(instagramHandle || facebookHandle || youtubeHandle || studioPhone || studioEmail) && (
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              {instagramHandle && (
+                <a
+                  href={`https://instagram.com/${instagramHandle.replace('@', '').trim()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-pink-300 hover:text-pink-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                >
+                  <InstagramIcon className="w-3.5 h-3.5 text-pink-500" />
+                  <span>Instagram</span>
+                </a>
+              )}
+              {facebookHandle && (
+                <a
+                  href={facebookHandle.startsWith('http') ? facebookHandle : `https://facebook.com/${facebookHandle.trim()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-blue-300 hover:text-blue-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                >
+                  <FacebookIcon className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Facebook</span>
+                </a>
+              )}
+              {youtubeHandle && (
+                <a
+                  href={youtubeHandle.startsWith('http') ? youtubeHandle : `https://youtube.com/${youtubeHandle.startsWith('@') ? youtubeHandle : `@${youtubeHandle}`}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-red-300 hover:text-red-600 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                >
+                  <YoutubeIcon className="w-3.5 h-3.5 text-red-600" />
+                  <span>YouTube</span>
+                </a>
+              )}
+              {studioPhone && (
+                <a
+                  href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-emerald-300 hover:text-emerald-700 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                >
+                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>WhatsApp</span>
+                </a>
+              )}
+              {studioEmail && (
+                <a
+                  href={`mailto:${studioEmail}`}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7E2D8] hover:border-zinc-400 text-zinc-700 text-xs font-semibold shadow-2xs transition"
+                >
+                  <Mail className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>Email</span>
+                </a>
+              )}
+            </div>
+          )}
+
+          <div className="pt-4 border-t border-[#E7E2D8]/80 text-[11px] text-zinc-400">
+            © {new Date().getFullYear()} {studioName}. All rights reserved. • Powered by StudioCore
+          </div>
+        </div>
+      </footer>
 
       {/* 6. PREMAGIC / FOTOOWL TOUCH-SWIPE LIGHTBOX WITH SMART HD ZOOM */}
       {selectedPhotoIndex !== null && displayedPhotos[selectedPhotoIndex] && (

@@ -143,11 +143,13 @@ function GalleryShareCenterContent() {
 
       // Restore saved max selection limit
       try {
-        const savedLimit = localStorage.getItem(`studiocore_max_limit_${gal.id}`);
-        if (savedLimit) {
-          setSelectionMaxLimit(savedLimit);
-        } else if (gal.max_selection_limit) {
+        if (gal.max_selection_limit) {
           setSelectionMaxLimit(String(gal.max_selection_limit));
+        } else {
+          const savedLimit = localStorage.getItem(`studiocore_max_limit_${gal.id}`);
+          if (savedLimit) {
+            setSelectionMaxLimit(savedLimit);
+          }
         }
       } catch (_) {}
     } catch (err: any) {
@@ -167,6 +169,18 @@ function GalleryShareCenterContent() {
       try {
         localStorage.setItem(`studiocore_max_limit_${gallery.id}`, val);
       } catch (_) {}
+      const num = parseInt(val, 10);
+      if (!isNaN(num) && num > 0) {
+        fetch('/api/gallery/selections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            gallery_id: gallery.id,
+            max_limit: num,
+            action: 'set_limit',
+          }),
+        }).catch(() => {});
+      }
     }
   };
 
@@ -214,11 +228,9 @@ function GalleryShareCenterContent() {
     ? `${baseEventPath}?access=all&pass_key=${passKey}`
     : `${baseEventPath}?access=all`;
 
-  const parsedLimit = parseInt(selectionMaxLimit, 10);
-  const limitQuery = !isNaN(parsedLimit) && parsedLimit > 0 ? `&max_limit=${parsedLimit}` : '';
   const photoSelectionUrl = selectionDoNotAskPin
-    ? `${baseEventPath}?album_selection=true&pass_key=${passKey}${limitQuery}`
-    : `${baseEventPath}?album_selection=true${limitQuery}`;
+    ? `${baseEventPath}?album_selection=true&pass_key=${passKey}`
+    : `${baseEventPath}?album_selection=true`;
 
   const copyToClipboard = (text: string, key: string) => {
     if (typeof navigator !== 'undefined') {

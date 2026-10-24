@@ -31,6 +31,55 @@ export const StudioCoreBrandIcon = ({ className = "w-8 h-8", isCollapsed = false
   </div>
 );
 
+const RESERVED_PUBLIC_ROOTS = new Set([
+  'admin',
+  'api',
+  'assigned-shoots',
+  'attendance',
+  'auth',
+  'bee-queen-curtail',
+  'blocked',
+  'book-demo',
+  'broadcast-campaigns',
+  'clear-cookies',
+  'dashboard',
+  'data-deletion',
+  'features',
+  'fix-431',
+  'forgot-password',
+  'free-trial',
+  'g',
+  'home',
+  'home2',
+  'instant-import',
+  'integration-showcase',
+  'integrations',
+  'leads',
+  'login',
+  'p',
+  'pdf-preview',
+  'portal',
+  'pricing',
+  'privacy-policy',
+  'quotations',
+  'r',
+  'reset-password',
+  'review',
+  'robots.txt',
+  'sarajosmith',
+  'settings',
+  'signup',
+  'single-send',
+  'sitemap.xml',
+  'support',
+  'sushant-1023-fw',
+  'terms-of-service',
+  'vendor-portal',
+  'workspace',
+  '_next',
+  'favicon.ico',
+]);
+
 export function SidebarLayout({ children }: SidebarLayoutProps) {
   const router = useRouter();
   const rawPathname = usePathname();
@@ -642,7 +691,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   const menuItems = (isOwner && appMode === 'gallery') ? galleryMenuItems : baseMenuItems;
 
+  const pathSegments = pathname.split('/').filter(Boolean);
+  const isBrandedGallery =
+    pathSegments.length >= 2 &&
+    !pathSegments[0].includes('.') &&
+    !RESERVED_PUBLIC_ROOTS.has(pathSegments[0].toLowerCase());
+
   const isStandalonePage = 
+    isBrandedGallery ||
     pathname === '/' ||
     pathname === '/login' ||
     pathname === '/forgot-password' ||

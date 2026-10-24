@@ -36,16 +36,35 @@ async function enrichGalleryBranding(single: any) {
   if (!single) return null;
 
   let studioSlug = 'studio';
+  let studioDisplayName = 'Studio Core';
+  let studioLogo = '';
+  let studioTagline = 'Moments Captured Forever';
+  let studioInstagram = '';
+  let studioFacebook = '';
+  let studioYoutube = '';
+  let studioPhone = '';
+  let studioEmail = '';
+
   if (single.workspace_id && single.workspace_id !== '00000000-0000-0000-0000-000000000000') {
     try {
       const [wsRes, profRes] = await Promise.all([
-        supabaseAdmin.from('workspaces').select('name, slug').eq('id', single.workspace_id).maybeSingle(),
-        supabaseAdmin.from('profiles').select('workspace_name, studio_slug, business_name, leads_table_preferences').eq('id', single.workspace_id).maybeSingle(),
+        supabaseAdmin.from('workspaces').select('name, slug, logo_url').eq('id', single.workspace_id).maybeSingle(),
+        supabaseAdmin.from('profiles').select('workspace_name, studio_slug, business_name, instagram_handle, facebook_handle, youtube_handle, phone, email, avatar_url, logo_url, leads_table_preferences').eq('id', single.workspace_id).maybeSingle(),
       ]);
 
       const ws = wsRes.data;
       const prof = profRes.data;
-      const invoiceCompanyName = prof?.leads_table_preferences?.invoice_company_name;
+      const prefs = prof?.leads_table_preferences || {};
+      const invoiceCompanyName = prefs?.invoice_company_name;
+
+      studioDisplayName = invoiceCompanyName || prof?.business_name || ws?.name || 'Studio Core';
+      studioLogo = prefs?.invoice_logo_url || prof?.logo_url || prof?.avatar_url || ws?.logo_url || '';
+      studioTagline = prefs?.invoice_tagline || 'Luxury Wedding Photography & Cinematography';
+      studioInstagram = prof?.instagram_handle || prefs?.instagram_handle || '';
+      studioFacebook = prof?.facebook_handle || prefs?.facebook_handle || '';
+      studioYoutube = prof?.youtube_handle || prefs?.youtube_handle || '';
+      studioPhone = prefs?.invoice_phone || prof?.phone || '';
+      studioEmail = prefs?.invoice_email || prof?.email || '';
 
       if (ws?.slug) {
         studioSlug = ws.slug.toLowerCase().trim();
@@ -76,6 +95,23 @@ async function enrichGalleryBranding(single: any) {
     }
   }
 
+  // Fetch configured max selection limit from selections database
+  let maxLimit = 50;
+  if (single.id) {
+    try {
+      const { data: sel } = await supabaseAdmin
+        .from('gallery_album_selections')
+        .select('max_limit')
+        .eq('gallery_id', single.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sel?.max_limit) {
+        maxLimit = sel.max_limit;
+      }
+    } catch (_) {}
+  }
+
   return {
     ...single,
     cover_url: formatCoverUrl(single.cover_url),
@@ -83,6 +119,18 @@ async function enrichGalleryBranding(single: any) {
     studio_slug: studioSlug,
     couple_slug: coupleSlug,
     unique_code: uniqueCode,
+    max_selection_limit: maxLimit,
+    studio_branding: {
+      studio_name: studioDisplayName,
+      studio_slug: studioSlug,
+      logo_url: studioLogo,
+      tagline: studioTagline,
+      instagram: studioInstagram,
+      facebook: studioFacebook,
+      youtube: studioYoutube,
+      phone: studioPhone,
+      email: studioEmail,
+    },
   };
 }
 
@@ -91,6 +139,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const requestedWorkspaceId = searchParams.get('workspace_id');
     const slug = searchParams.get('slug');
+    const codeParam = searchParams.get('code');
+    const coupleParam = searchParams.get('couple');
     const id = searchParams.get('id') || searchParams.get('gallery_id');
     const showAll = searchParams.get('all') === 'true';
 
@@ -141,8 +191,8 @@ export async function GET(req: NextRequest) {
     }
 
     // 2. Fetch single gallery by Slug or ID (used by public client views and direct links)
-    if (slug) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+    if (slug || codeParam) {
+      const isUuid = slug && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
       let single: any = null;
 
       if (isUuid) {
@@ -152,7 +202,7 @@ export async function GET(req: NextRequest) {
           .or(`slug.eq.${slug},id.eq.${slug}`)
           .limit(1);
         single = data?.[0] || null;
-      } else {
+      } else if (slug) {
         const { data } = await supabaseAdmin
           .from('event_galleries')
           .select('*')
@@ -161,23 +211,45 @@ export async function GET(req: NextRequest) {
         single = data?.[0] || null;
       }
 
-      // If not found and slug has compound format (e.g. couple-code like sushant-sneha-bb8bbb):
-      if (!single && slug.includes('-')) {
-        const parts = slug.split('-');
-        const code = parts[parts.length - 1];
-        const couple = parts.slice(0, -1).join('-');
+      // Check for code and couple (either passed explicitly or embedded in compound slug like couple-code)
+      let codeToTry = codeParam;
+      let coupleToTry = coupleParam || '';
 
-        // Try couple name match (and match id prefix with code if available)
+      if (!codeToTry && slug && slug.includes('-')) {
+        const parts = slug.split('-');
+        const lastPart = parts[parts.length - 1];
+        if (lastPart.length === 6 && /^[0-9a-f]{6}$/i.test(lastPart)) {
+          codeToTry = lastPart;
+          coupleToTry = parts.slice(0, -1).join('-');
+        }
+      }
+
+      // 1. Authoritative Match by 6-char UUID prefix range (tamper-proof & resilient to title changes)
+      if (!single && codeToTry && /^[0-9a-f]{6}$/i.test(codeToTry)) {
+        try {
+          const lowerCode = codeToTry.toLowerCase();
+          const { data: rangeMatches } = await supabaseAdmin
+            .from('event_galleries')
+            .select('*')
+            .gte('id', `${lowerCode}00-0000-0000-0000-000000000000`)
+            .lte('id', `${lowerCode}ff-ffff-ffff-ffff-ffffffffffff`)
+            .limit(1);
+          if (rangeMatches && rangeMatches.length > 0) {
+            single = rangeMatches[0];
+          }
+        } catch (_) {}
+      }
+
+      // 2. Match by couple slug fallback
+      if (!single && coupleToTry) {
         const { data: byCouple } = await supabaseAdmin
           .from('event_galleries')
           .select('*')
-          .eq('slug', couple)
-          .order('created_at', { ascending: false });
-
+          .eq('slug', coupleToTry)
+          .order('created_at', { ascending: false })
+          .limit(1);
         if (byCouple && byCouple.length > 0) {
-          single = byCouple.find((e: any) =>
-            e.id.replace(/-/g, '').toLowerCase().startsWith(code.toLowerCase())
-          ) || byCouple[0];
+          single = byCouple[0];
         }
       }
 

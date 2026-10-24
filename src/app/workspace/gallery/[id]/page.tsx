@@ -11,6 +11,7 @@ import {
   ExternalLink,
   QrCode,
   Lock,
+  Unlock,
   Calendar,
   Image as ImageIcon,
   Trash2,
@@ -2360,7 +2361,14 @@ function AlbumStudioContent() {
                               {sel.client_name ? sel.client_name.charAt(0) : 'C'}
                             </span>
                             <div className="text-left">
-                              <span className="block font-bold leading-tight">{sel.client_name || 'Client'}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="block font-bold leading-tight">{sel.client_name || 'Client'}</span>
+                                {sel.is_submitted && (
+                                  <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-white text-[9px] font-bold">
+                                    Locked
+                                  </span>
+                                )}
+                              </div>
                               <span className={`text-[10px] block leading-none font-mono ${isClientActive ? 'text-purple-200' : 'text-zinc-400'}`}>
                                 {count} photos • {sel.client_email}
                               </span>
@@ -2383,6 +2391,50 @@ function AlbumStudioContent() {
                       </Link>
                     </div>
                   )}
+
+                  {/* Submission Status & Studio Owner Unlock Banner */}
+                  {selectedClientEmail && (() => {
+                    const activeClient = clientSelections.find((c) => c.client_email === selectedClientEmail);
+                    if (!activeClient) return null;
+                    return activeClient.is_submitted ? (
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in">
+                        <div className="flex items-center gap-2 text-emerald-900 font-bold">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>
+                            {activeClient.client_name || 'Client'} has submitted and locked {Array.isArray(activeClient.selected_photo_ids) ? activeClient.selected_photo_ids.length : 0} photos for album printing.
+                            {activeClient.submitted_at && ` (Submitted: ${new Date(activeClient.submitted_at).toLocaleDateString()})`}
+                          </span>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Unlock selections for ${activeClient.client_name || activeClient.client_email}? This will allow the client to make changes and select/deselect photos again.`)) {
+                              try {
+                                await fetch('/api/gallery/selections', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    gallery_id: galleryId,
+                                    client_email: activeClient.client_email,
+                                    action: 'unlock',
+                                  }),
+                                });
+                                loadClientSelections();
+                              } catch (_) {}
+                            }
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer shrink-0"
+                        >
+                          <Unlock className="w-3.5 h-3.5" />
+                          <span>Unlock for Client Changes</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 bg-[#FAF9F5] border border-[#E7E2D8] rounded-xl flex items-center justify-between text-xs text-zinc-600">
+                        <span>Status: <strong className="text-amber-700 font-bold">In Progress</strong> (Client is actively choosing photos)</span>
+                        <span className="font-mono text-[11px] text-zinc-500">{activeClient.selected_photo_ids?.length || 0} photos chosen</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Filter Tabs when viewing photos */}
