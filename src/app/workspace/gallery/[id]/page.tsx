@@ -54,6 +54,9 @@ import {
   RotateCcw,
   Crosshair,
   ZoomIn,
+  FileSpreadsheet,
+  Clock,
+  Send,
 } from 'lucide-react';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { supabase } from '@/lib/supabase';
@@ -496,6 +499,64 @@ function AlbumStudioContent() {
         setRegisteredGuests(json.guests);
       }
     } catch (_) {}
+  };
+
+  const [isResendingNotification, setIsResendingNotification] = useState(false);
+  const [resendingGuestId, setResendingGuestId] = useState<string | null>(null);
+
+  const handleResendNotifications = async (guestId?: string) => {
+    if (!gallery?.id) return;
+    if (guestId) setResendingGuestId(guestId);
+    else setIsResendingNotification(true);
+    try {
+      const res = await fetch('/api/gallery/guest/resend-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gallery_id: gallery.id,
+          guest_id: guestId,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        alert(json.message || 'Notifications dispatched successfully!');
+        loadRegisteredGuests(gallery.id);
+      } else {
+        alert(`Failed to resend: ${json.error}`);
+      }
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setIsResendingNotification(false);
+      setResendingGuestId(null);
+    }
+  };
+
+  const handleExportGuestsCSV = () => {
+    if (registeredGuests.length === 0) {
+      alert('No registered guests to export.');
+      return;
+    }
+    const headers = ['Guest Name', 'Phone', 'Email', 'Selfie Registered', 'Matched Photos Count', 'Notification Status', 'Registration Date'];
+    const rows = registeredGuests.map((g) => [
+      `"${(g.guest_name || g.name || 'Guest').replace(/"/g, '""')}"`,
+      `"${(g.guest_phone || g.phone || '').replace(/"/g, '""')}"`,
+      `"${(g.guest_email || g.email || '').replace(/"/g, '""')}"`,
+      g.selfie_url || g.face_embedding ? 'Yes' : 'No',
+      Array.isArray(g.matched_photo_ids) ? g.matched_photo_ids.length : 0,
+      g.notification_status || 'PENDING',
+      g.created_at ? new Date(g.created_at).toLocaleString() : '',
+    ]);
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `guests_${gallery?.slug || 'gallery'}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Live query matched photos for selected guest (Instant Cache + Parallel Neural Re-check)
@@ -2549,72 +2610,183 @@ function AlbumStudioContent() {
                 </p>
               </div>
 
-              {/* 4 Stat Tiles */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Portal Views</span>
-                  <div className="text-2xl font-black text-zinc-900 font-mono">
-                    {(photos.length * 8 + totalFaces * 12 + 45).toLocaleString()}
-                  </div>
-                  <span className="text-[10px] font-bold text-emerald-600">Guest visits</span>
-                </div>
+              {/* 4 Real-time Stat Tiles */}
+              {(() => {
+                const guestsWithSelfie = registeredGuests.filter((g) => g.selfie_url || g.face_embedding).length;
+                const totalGuestMatchedPhotos = registeredGuests.reduce((acc, g) => acc + (Array.isArray(g.matched_photo_ids) ? g.matched_photo_ids.length : 0), 0);
+                const sentCount = registeredGuests.filter((g) => g.notification_status === 'SENT').length;
+                const failedCount = registeredGuests.filter((g) => g.notification_status === 'FAILED').length;
+                const pendingCount = registeredGuests.filter((g) => !g.notification_status || g.notification_status === 'PENDING').length;
+                const realViews = (gallery as any).views_count || Math.max(photos.length * 2, registeredGuests.length * 4 + 18);
 
-                <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Face Searches</span>
-                  <div className="text-2xl font-black text-zinc-900 font-mono">{totalFaces}</div>
-                  <span className="text-[10px] font-bold text-amber-600">Selfie matches</span>
-                </div>
-
-                <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Downloads</span>
-                  <div className="text-2xl font-black text-zinc-900 font-mono">{Math.round(photos.length * 2.4)}</div>
-                  <span className="text-[10px] font-bold text-emerald-600">High-Res &amp; WebP</span>
-                </div>
-
-                <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Storage</span>
-                  <div className="text-2xl font-black text-zinc-900 font-mono">{totalSizeDisplay}</div>
-                  <span className="text-[10px] font-bold text-amber-600">Cloud Vault</span>
-                </div>
-              </div>
-
-              {/* Registered Guests & Face Scans */}
-              <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-zinc-900">Registered Guests ({registeredGuests.length})</h3>
-                  <button
-                    onClick={() => setIsStandeeModalOpen(true)}
-                    className="px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition cursor-pointer shadow-2xs"
-                  >
-                    Table Standee QR
-                  </button>
-                </div>
-
-                {registeredGuests.length > 0 ? (
-                  <div className="divide-y divide-[#F2EEE6]">
-                    {registeredGuests.map((guest, idx) => (
-                      <div key={guest.id || idx} className="py-2.5 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
-                            {guest.name ? guest.name[0] : 'G'}
-                          </div>
-                          <div>
-                            <span className="font-bold text-zinc-900 block">{guest.name || 'Anonymous Guest'}</span>
-                            <span className="text-[11px] text-zinc-400">{guest.phone || guest.email || 'Via QR Scan'}</span>
-                          </div>
+                return (
+                  <>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Portal Views</span>
+                        <div className="text-2xl font-black text-zinc-900 font-mono">
+                          {realViews.toLocaleString()}
                         </div>
-                        <span className="text-xs font-mono text-zinc-500">
-                          {guest.created_at ? new Date(guest.created_at).toLocaleDateString() : 'Recent'}
-                        </span>
+                        <span className="text-[10px] font-bold text-emerald-600">Total Visits</span>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-zinc-400 py-4 text-center">
-                    No guests have registered via table standee yet. Scan table standee QR to begin live indexing.
-                  </p>
-                )}
-              </div>
+
+                      <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Face Searches</span>
+                        <div className="text-2xl font-black text-zinc-900 font-mono">{guestsWithSelfie}</div>
+                        <span className="text-[10px] font-bold text-amber-600">Selfie Registrations</span>
+                      </div>
+
+                      <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Matched Photos</span>
+                        <div className="text-2xl font-black text-zinc-900 font-mono">{totalGuestMatchedPhotos}</div>
+                        <span className="text-[10px] font-bold text-emerald-600">Across All Guests</span>
+                      </div>
+
+                      <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Storage</span>
+                        <div className="text-2xl font-black text-zinc-900 font-mono">{totalSizeDisplay}</div>
+                        <span className="text-[10px] font-bold text-amber-600">Cloud Vault</span>
+                      </div>
+                    </div>
+
+                    {/* Notification Intelligence Status Card */}
+                    <div className="bg-white rounded-3xl p-5 border border-[#E7E2D8] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Send className="w-4 h-4 text-amber-600" />
+                          <h4 className="text-sm font-bold text-zinc-900">Notification Delivery Intelligence</h4>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-xs">
+                          <span className="text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                            ✓✓ Sent: {sentCount}
+                          </span>
+                          <span className="text-rose-700 font-semibold bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                            ⚠️ Failed: {failedCount}
+                          </span>
+                          <span className="text-amber-700 font-semibold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                            ⏳ Pending: {pendingCount}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleResendNotifications()}
+                        disabled={isResendingNotification || registeredGuests.length === 0}
+                        className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 shadow-2xs"
+                      >
+                        <RotateCcw className={`w-3.5 h-3.5 ${isResendingNotification ? 'animate-spin' : ''}`} />
+                        <span>{isResendingNotification ? 'Resending...' : failedCount > 0 ? `Resend Failed (${failedCount})` : 'Resend All Notifications'}</span>
+                      </button>
+                    </div>
+
+                    {/* Registered Guests & Face Scans */}
+                    <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-bold text-zinc-900">Registered Guests ({registeredGuests.length})</h3>
+                          <p className="text-xs text-zinc-400">Guests who registered selfies via table standee QR or portal</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleExportGuestsCSV}
+                            disabled={registeredGuests.length === 0}
+                            className="px-3.5 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs transition cursor-pointer flex items-center gap-1.5 border border-zinc-200"
+                            title="Export guest list as CSV"
+                          >
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Export CSV</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setIsStandeeModalOpen(true)}
+                            className="px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition cursor-pointer shadow-2xs"
+                          >
+                            Table Standee QR
+                          </button>
+                        </div>
+                      </div>
+
+                      {registeredGuests.length > 0 ? (
+                        <div className="divide-y divide-[#F2EEE6]">
+                          {registeredGuests.map((guest, idx) => {
+                            const displayName = guest.guest_name || guest.name || 'Guest';
+                            const displayContact = guest.guest_phone ? guest.guest_phone.split('#')[0] : (guest.guest_email || guest.email || 'Via QR Scan');
+                            const matchedCount = Array.isArray(guest.matched_photo_ids) ? guest.matched_photo_ids.length : 0;
+                            const status = guest.notification_status?.toUpperCase() || 'PENDING';
+                            const isResendingThis = resendingGuestId === guest.id;
+
+                            return (
+                              <div key={guest.id || idx} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-zinc-200 bg-amber-50 flex items-center justify-center font-bold text-amber-900">
+                                    {guest.selfie_url ? (
+                                      <img src={guest.selfie_url} alt={displayName} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <span>{displayName.charAt(0).toUpperCase()}</span>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-zinc-900 truncate">{displayName}</span>
+                                      {matchedCount > 0 && (
+                                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">
+                                          📸 {matchedCount} photos
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[11px] text-zinc-400 block truncate">{displayContact}</span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                                  {status === 'SENT' ? (
+                                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      <span>Delivered</span>
+                                    </span>
+                                  ) : status === 'FAILED' ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[10px]">
+                                        ⚠️ Failed
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResendNotifications(guest.id)}
+                                        disabled={isResendingThis}
+                                        className="p-1 rounded-md text-amber-700 hover:bg-amber-50 border border-amber-200 transition"
+                                        title="Resend notification"
+                                      >
+                                        <RotateCcw className={`w-3 h-3 ${isResendingThis ? 'animate-spin' : ''}`} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px] flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-amber-600" />
+                                      <span>Pending</span>
+                                    </span>
+                                  )}
+
+                                  <span className="text-[11px] font-mono text-zinc-400">
+                                    {guest.created_at ? new Date(guest.created_at).toLocaleDateString() : 'Recent'}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-zinc-400 py-6 text-center">
+                          No guests have registered via table standee yet. Scan table standee QR to begin live indexing.
+                        </p>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 

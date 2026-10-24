@@ -48,11 +48,14 @@ export async function getGalleryPresignedUploadUrl(
 export async function getGalleryPresignedDownloadUrl(
   key: string,
   expiresIn = 7200,
-  bucketName = B2_GALLERY_BUCKET_NAME
+  bucketName = B2_GALLERY_BUCKET_NAME,
+  filename?: string
 ): Promise<string> {
+  const cleanFilename = filename ? filename.replace(/["\r\n]/g, '') : null;
   const command = new GetObjectCommand({
     Bucket: bucketName,
     Key: key,
+    ...(cleanFilename ? { ResponseContentDisposition: `attachment; filename="${cleanFilename}"` } : {}),
   });
 
   return await getSignedUrl(galleryB2Client, command, { expiresIn });

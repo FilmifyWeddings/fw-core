@@ -38,7 +38,10 @@ import {
   ArrowDown,
   ArrowUp,
   Share2,
+  ChevronDown,
+  SlidersHorizontal,
 } from 'lucide-react';
+import { JustifiedGalleryLayout } from '@/components/gallery/JustifiedGalleryLayout';
 
 function InstagramIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -86,11 +89,14 @@ interface PhotoItem {
   preview_url: string;
   thumbnail_url: string;
   original_key: string;
+  preview_key?: string;
+  thumbnail_key?: string;
   width: number;
   height: number;
   face_count: number;
   similarity?: number;
   confidencePercent?: number;
+  [key: string]: any;
 }
 
 interface GalleryCollection {
@@ -201,6 +207,22 @@ function GuestSlugGalleryContent() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [isSubEventsDropdownOpen, setIsSubEventsDropdownOpen] = useState(false);
+  const subEventsDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (subEventsDropdownRef.current && !subEventsDropdownRef.current.contains(e.target as Node)) {
+        setIsSubEventsDropdownOpen(false);
+      }
+    };
+    if (isSubEventsDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isSubEventsDropdownOpen]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -660,24 +682,41 @@ function GuestSlugGalleryContent() {
     }
   };
 
-  // Download High-Res Photo
+  // Download High-Res Photo (Direct Save, Avoid New Tab)
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     setDownloadingId(photo.id);
+    const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
+    const cleanFileName = `photo_${photo.id.slice(0, 8)}.jpg`;
+
     try {
       const res = await fetch(
-        `/api/gallery/download-url?key=${encodeURIComponent(photo.original_key || photo.preview_url)}&name=wedding_${photo.id}.jpg`
+        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanFileName)}`
       );
       const json = await res.json();
       if (json.success && json.downloadUrl) {
         const link = document.createElement('a');
         link.href = json.downloadUrl;
-        link.download = `wedding_photo_${photo.id.slice(0, 8)}.jpg`;
+        link.setAttribute('download', cleanFileName);
+        link.setAttribute('rel', 'noopener noreferrer');
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-      } else {
-        window.open(photo.preview_url, '_blank');
+        return;
       }
+    } catch (_) {}
+
+    // Fallback: fetch blob directly to trigger native download without opening a new tab
+    try {
+      const blobRes = await fetch(photo.preview_url);
+      const blob = await blobRes.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', cleanFileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
     } catch (_) {
       window.open(photo.preview_url, '_blank');
     } finally {
@@ -1243,10 +1282,10 @@ function GuestSlugGalleryContent() {
     return (
       <div className="relative min-h-screen w-full flex flex-col justify-between overflow-hidden bg-zinc-950 text-white select-none">
         
-        {/* MOBILE VIEW (45vh cover banner + bottom content directly visible without scrolling) */}
+        {/* MOBILE VIEW (40vh cover banner + bottom content directly visible without scrolling) */}
         <div className="sm:hidden flex flex-col min-h-screen justify-between">
-          {/* Top 45vh Cover Hero */}
-          <div className="relative h-[45vh] w-full overflow-hidden bg-zinc-900 shrink-0">
+          {/* Top 40vh Cover Hero */}
+          <div className="relative h-[40vh] w-full overflow-hidden bg-zinc-900 shrink-0">
             {cleanCoverUrl ? (
               <img
                 src={cleanCoverUrl}
@@ -2114,6 +2153,82 @@ function GuestSlugGalleryContent() {
       >
         <div className="w-full px-4 sm:px-8 py-2.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-0.5 scroll-smooth flex-1 min-w-0">
+            {/* 3-Lines Sub-Events Menu Button with Popover */}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsSubEventsDropdownOpen((prev) => !prev)}
+                className="p-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                style={{
+                  backgroundColor: isSubEventsDropdownOpen ? designPalette.accentColor : `${designPalette.textColor}0D`,
+                  color: isSubEventsDropdownOpen ? '#FFFFFF' : designPalette.textColor,
+                  border: `1px solid ${designPalette.textColor}25`,
+                }}
+                title="Sub-Events Menu"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[11px]">Events</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${isSubEventsDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isSubEventsDropdownOpen && (
+                <div
+                  ref={subEventsDropdownRef}
+                  className="absolute left-0 mt-2 w-56 rounded-2xl shadow-2xl border py-2 z-50 animate-in fade-in zoom-in-95 backdrop-blur-2xl"
+                  style={{
+                    backgroundColor: designPalette.canvasBg,
+                    borderColor: `${designPalette.textColor}25`,
+                    color: designPalette.textColor,
+                  }}
+                >
+                  <div
+                    className="px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider opacity-60 border-b"
+                    style={{ borderColor: `${designPalette.textColor}15` }}
+                  >
+                    Select Event ({collections.length + 1})
+                  </div>
+                  <div className="max-h-64 overflow-y-auto py-1 scrollbar-thin">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCollectionId('all');
+                        setIsSubEventsDropdownOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
+                        selectedCollectionId === 'all' ? 'font-bold' : 'opacity-85'
+                      }`}
+                      style={selectedCollectionId === 'all' ? { color: designPalette.accentColor } : {}}
+                    >
+                      <span>All Photos</span>
+                      <span className="text-[10px] opacity-60 font-mono">({fullPhotos.length})</span>
+                    </button>
+
+                    {collections.map((col) => {
+                      const isSel = selectedCollectionId === col.id;
+                      const count = col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length;
+                      return (
+                        <button
+                          key={col.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCollectionId(col.id);
+                            setIsSubEventsDropdownOpen(false);
+                          }}
+                          className={`w-full px-3 py-2 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
+                            isSel ? 'font-bold' : 'opacity-85'
+                          }`}
+                          style={isSel ? { color: designPalette.accentColor } : {}}
+                        >
+                          <span className="truncate">{col.name}</span>
+                          <span className="text-[10px] opacity-60 font-mono ml-2">({count})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() => setSelectedCollectionId('all')}
@@ -2372,62 +2487,13 @@ function GuestSlugGalleryContent() {
                       </div>
                     </div>
 
-                    {/* Matched Photos Grid (Dynamic Masonry vs Justified - 3 Majestic Columns) */}
-                    <div
-                      className={
-                        layoutConfig.style === 'justified'
-                          ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
-                          : 'columns-1 sm:columns-2 md:columns-3'
-                      }
-                      style={
-                        layoutConfig.style === 'justified'
-                          ? { gap: `${layoutConfig.gap}px` }
-                          : { columnGap: `${layoutConfig.gap}px` }
-                      }
-                    >
-                      {matchedPhotos.map((photo, idx) => (
-                        <div
-                          key={photo.id}
-                          onClick={() => setSelectedPhotoIndex(idx)}
-                          className={`group relative overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer ${
-                            layoutConfig.style === 'justified' ? 'aspect-[4/3]' : 'break-inside-avoid'
-                          }`}
-                          style={{
-                            borderRadius: `${layoutConfig.cornerRadius}px`,
-                            marginBottom: layoutConfig.style === 'justified' ? undefined : `${layoutConfig.gap}px`,
-                          }}
-                        >
-                          <ProgressiveSmoothImage
-                            src={photo.preview_url || photo.thumbnail_url}
-                            thumbnailSrc={photo.thumbnail_url}
-                            alt="Matched Photo"
-                            aspectRatio={layoutConfig.style === 'justified' ? '4/3' : (photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined)}
-                            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                          />
-
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                          {/* Actions Bottom Bar */}
-                          <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="text-[10px] font-mono text-zinc-300">
-                              Photo #{idx + 1}
-                            </span>
-
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadPhoto(photo);
-                              }}
-                              className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                              title="Download High-Res"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    {/* Matched Photos Grid (Justified / Responsive Masonry) */}
+                    <JustifiedGalleryLayout
+                      photos={matchedPhotos}
+                      layoutConfig={layoutConfig}
+                      onPhotoClick={(photo, idx) => setSelectedPhotoIndex(idx)}
+                      onDownloadPhoto={handleDownloadPhoto}
+                    />
                   </>
                 ) : (
                   <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E7E2D8] shadow-sm text-center space-y-5 max-w-md mx-auto">
@@ -2471,61 +2537,13 @@ function GuestSlugGalleryContent() {
             {/* TAB 2: ALL EVENT PHOTOS VIEW */}
             {guestActiveTab === 'all' && (
               <div className="space-y-6">
-                {/* All Photos Grid (Dynamic Masonry vs Justified - 3 Majestic Columns) */}
-                <div
-                  className={
-                    layoutConfig.style === 'justified'
-                      ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
-                      : 'columns-1 sm:columns-2 md:columns-3'
-                  }
-                  style={
-                    layoutConfig.style === 'justified'
-                      ? { gap: `${layoutConfig.gap}px` }
-                      : { columnGap: `${layoutConfig.gap}px` }
-                  }
-                >
-                  {targetFullPhotos.map((photo, idx) => (
-                    <div
-                      key={photo.id}
-                      onClick={() => setSelectedPhotoIndex(idx)}
-                      className={`group relative overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer ${
-                        layoutConfig.style === 'justified' ? 'aspect-[4/3]' : 'break-inside-avoid'
-                      }`}
-                      style={{
-                        borderRadius: `${layoutConfig.cornerRadius}px`,
-                        marginBottom: layoutConfig.style === 'justified' ? undefined : `${layoutConfig.gap}px`,
-                      }}
-                    >
-                      <ProgressiveSmoothImage
-                        src={photo.preview_url || photo.thumbnail_url}
-                        thumbnailSrc={photo.thumbnail_url}
-                        alt="Event Photo"
-                        aspectRatio={layoutConfig.style === 'justified' ? '4/3' : (photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined)}
-                        className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                      />
-
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                      <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="text-[10px] font-mono text-zinc-300">
-                          #{idx + 1}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadPhoto(photo);
-                          }}
-                          className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                          title="Download High-Res"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {/* All Photos Grid (Justified / Responsive Masonry) */}
+                <JustifiedGalleryLayout
+                  photos={targetFullPhotos}
+                  layoutConfig={layoutConfig}
+                  onPhotoClick={(photo, idx) => setSelectedPhotoIndex(idx)}
+                  onDownloadPhoto={handleDownloadPhoto}
+                />
               </div>
             )}
           </div>
@@ -2552,136 +2570,58 @@ function GuestSlugGalleryContent() {
               </div>
             )}
 
-            {/* Privileged Full Photo Grid (Dynamic Masonry vs Justified - 3 Majestic Columns) */}
-            <div
-              className={
-                layoutConfig.style === 'justified'
-                  ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
-                  : 'columns-1 sm:columns-2 md:columns-3'
-              }
-              style={
-                layoutConfig.style === 'justified'
-                  ? { gap: `${layoutConfig.gap}px` }
-                  : { columnGap: `${layoutConfig.gap}px` }
-              }
-            >
-              {displayedPhotos.map((photo, idx) => {
-                const isSelected = selectedForAlbum.has(photo.id);
-                return (
-                  <div
-                    key={photo.id}
-                    onClick={() => {
-                      if (isSelectionMode) {
-                        if (isSelectionSubmitted) {
-                          setSelectedPhotoIndex(idx);
-                          return;
-                        }
-                        if (!selectorEmail) {
-                          setShowSelectorModal(true);
-                          return;
-                        }
-                        const next = new Set(selectedForAlbum);
-                        if (isSelected) {
-                          next.delete(photo.id);
-                          setSelectedForAlbum(next);
-                          syncSelectionToBackend(next, selectorName, selectorEmail);
-                        } else {
-                          if (effectiveMaxSelectionLimit && next.size >= effectiveMaxSelectionLimit) {
-                            alert(`You can select up to a maximum of ${effectiveMaxSelectionLimit} photos. Please unselect another photo to choose this one.`);
-                            return;
-                          }
-                          next.add(photo.id);
-                          setSelectedForAlbum(next);
-                          syncSelectionToBackend(next, selectorName, selectorEmail);
-                        }
-                      } else {
-                        setSelectedPhotoIndex(idx);
-                      }
-                    }}
-                    className={`group relative overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
-                      layoutConfig.style === 'justified' ? 'aspect-[4/3]' : 'break-inside-avoid'
-                    } ${
-                      isSelected
-                        ? 'border-rose-500 ring-4 ring-rose-500/25 shadow-xl'
-                        : 'border-[#E7E2D8] hover:shadow-lg'
-                    }`}
-                    style={{
-                      borderRadius: `${layoutConfig.cornerRadius}px`,
-                      marginBottom: layoutConfig.style === 'justified' ? undefined : `${layoutConfig.gap}px`,
-                    }}
-                  >
-                    <ProgressiveSmoothImage
-                      src={photo.preview_url || photo.thumbnail_url}
-                      thumbnailSrc={photo.thumbnail_url}
-                      alt="Wedding photo"
-                      aspectRatio={layoutConfig.style === 'justified' ? '4/3' : (photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined)}
-                      className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                    />
-
-                    {/* Animated Heart Icon Button for Photo Selection */}
-                    {isSelectionMode && (
-                      <button
-                        type="button"
-                        disabled={isSelectionSubmitted}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (isSelectionSubmitted) return;
-                          if (!selectorEmail) {
-                            setShowSelectorModal(true);
-                            return;
-                          }
-                          const next = new Set(selectedForAlbum);
-                          if (isSelected) {
-                            next.delete(photo.id);
-                            setSelectedForAlbum(next);
-                            syncSelectionToBackend(next, selectorName, selectorEmail);
-                          } else {
-                            if (effectiveMaxSelectionLimit && next.size >= effectiveMaxSelectionLimit) {
-                              alert(`You can select up to a maximum of ${effectiveMaxSelectionLimit} photos. Please unselect another photo to choose this one.`);
-                              return;
-                            }
-                            next.add(photo.id);
-                            setSelectedForAlbum(next);
-                            syncSelectionToBackend(next, selectorName, selectorEmail);
-                          }
-                        }}
-                        className={`absolute top-2.5 right-2.5 z-20 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer ${
-                          isSelectionSubmitted
-                            ? (isSelected ? 'bg-rose-600 text-white ring-2 ring-white cursor-not-allowed opacity-90' : 'hidden')
-                            : isSelected
-                            ? 'bg-rose-600 text-white ring-2 ring-white shadow-lg shadow-rose-600/50 scale-105 active:scale-95 animate-in zoom-in-90'
-                            : 'bg-black/40 hover:bg-black/60 text-white/80 hover:text-white backdrop-blur-md active:scale-90 hover:scale-105'
-                        }`}
-                        title={isSelected ? 'Remove from selection' : 'Select for album'}
-                      >
-                        <Heart className={`w-4 h-4 transition-transform ${isSelected ? 'fill-white text-white scale-110' : 'text-white'}`} />
-                      </button>
-                    )}
-
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                    <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                      {photo.face_count > 0 ? (
-                        <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-bold text-white">
-                          👥 {photo.face_count}
-                        </span>
-                      ) : <span />}
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownloadPhoto(photo);
-                        }}
-                        className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                        title="Download High-Res"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Privileged Full Photo Grid (Justified / Responsive Masonry) */}
+            <JustifiedGalleryLayout
+              photos={displayedPhotos}
+              layoutConfig={layoutConfig}
+              isSelectionMode={isSelectionMode}
+              selectedForAlbum={selectedForAlbum}
+              isSelectionSubmitted={isSelectionSubmitted}
+              effectiveMaxSelectionLimit={effectiveMaxSelectionLimit}
+              selectorEmail={selectorEmail}
+              onRequestSelectorModal={() => setShowSelectorModal(true)}
+              onPhotoClick={(photo, idx) => {
+                if (isSelectionMode) {
+                  if (isSelectionSubmitted) {
+                    setSelectedPhotoIndex(idx);
+                    return;
+                  }
+                  if (!selectorEmail) {
+                    setShowSelectorModal(true);
+                    return;
+                  }
+                  const next = new Set(selectedForAlbum);
+                  if (selectedForAlbum.has(photo.id)) {
+                    next.delete(photo.id);
+                  } else {
+                    if (effectiveMaxSelectionLimit && next.size >= effectiveMaxSelectionLimit) {
+                      alert(`You can select up to a maximum of ${effectiveMaxSelectionLimit} photos. Please unselect another photo to choose this one.`);
+                      return;
+                    }
+                    next.add(photo.id);
+                  }
+                  setSelectedForAlbum(next);
+                  syncSelectionToBackend(next, selectorName, selectorEmail);
+                } else {
+                  setSelectedPhotoIndex(idx);
+                }
+              }}
+              onToggleSelect={(photo) => {
+                const next = new Set(selectedForAlbum);
+                if (selectedForAlbum.has(photo.id)) {
+                  next.delete(photo.id);
+                } else {
+                  if (effectiveMaxSelectionLimit && next.size >= effectiveMaxSelectionLimit) {
+                    alert(`You can select up to a maximum of ${effectiveMaxSelectionLimit} photos. Please unselect another photo to choose this one.`);
+                    return;
+                  }
+                  next.add(photo.id);
+                }
+                setSelectedForAlbum(next);
+                syncSelectionToBackend(next, selectorName, selectorEmail);
+              }}
+              onDownloadPhoto={handleDownloadPhoto}
+            />
 
             {/* Automatic Infinite Scroll Sentinel */}
             {hasMorePrivilegedPhotos && (
