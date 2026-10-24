@@ -12,7 +12,10 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { galleryId, filename, originalType = 'image/jpeg', workspaceId: requestedWorkspaceId } = body;
+    const galleryId = body.galleryId || body.gallery_id;
+    const filename = body.filename || body.fileName || body.file_name;
+    const originalType = body.originalType || body.content_type || 'image/jpeg';
+    const requestedWorkspaceId = body.workspaceId || body.workspace_id;
 
     if (!galleryId || !filename) {
       return NextResponse.json({ success: false, error: 'Missing galleryId or filename' }, { status: 400 });

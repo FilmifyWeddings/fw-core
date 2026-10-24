@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
+import { parseCoverUrl } from '@/lib/gallery-cover-utils';
 import {
   Camera,
   Sparkles,
@@ -1032,6 +1033,19 @@ function GuestSlugGalleryContent() {
   const coverOpacity = designConfig?.cover?.overlayOpacity ?? 40;
   const effectiveCoverUrl = designConfig?.cover?.url || parseCoverUrl(gallery.cover_url).url || gallery.cover_url || '';
   const formattedDate = new Date(gallery.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const coverPos = parseCoverUrl(gallery.cover_url || effectiveCoverUrl);
+  const cleanCoverUrl = coverPos.url || effectiveCoverUrl;
+
+  const isLightPalette = useMemo(() => {
+    const hex = (designPalette.canvasBg || '#FAF9F5').replace('#', '');
+    if (hex.length === 6) {
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      return (r * 0.299 + g * 0.587 + b * 0.114) > 150;
+    }
+    return true;
+  }, [designPalette.canvasBg]);
 
   // Entrance motion animation classes
   const getMotionClass = (type: string) => {
@@ -1059,15 +1073,22 @@ function GuestSlugGalleryContent() {
       }}
       className="min-h-screen pb-32 select-none transition-colors duration-300">
       
-      {/* 0. LUXURY STUDIO HEADER BAR */}
-      <header className="bg-zinc-950/95 backdrop-blur-md border-b border-white/10 text-white sticky top-0 z-40 transition-all">
+      {/* 0. LUXURY STUDIO HEADER BAR (GLOSSY BLUR - LIGHT / DARK SYNC) */}
+      <header
+        className="sticky top-0 z-40 transition-all backdrop-blur-md border-b shadow-2xs"
+        style={{
+          backgroundColor: isLightPalette ? 'rgba(255, 255, 255, 0.85)' : 'rgba(9, 9, 11, 0.88)',
+          borderColor: isLightPalette ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.12)',
+          color: isLightPalette ? '#18181B' : '#FFFFFF',
+        }}
+      >
         <div className="max-w-6xl mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {studioLogo ? (
               <img
                 src={studioLogo}
                 alt={studioName}
-                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover ring-1 ring-white/20"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover ring-1 ring-black/10"
               />
             ) : (
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-serif font-black flex items-center justify-center text-xs shadow-xs">
@@ -1076,30 +1097,35 @@ function GuestSlugGalleryContent() {
             )}
             <div className="leading-tight">
               <span
-                className="block text-xs sm:text-sm font-semibold tracking-wide text-zinc-100"
-                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                className="block text-xs sm:text-sm font-semibold tracking-wide"
+                style={{ fontFamily: headingFont }}
               >
                 {studioName}
               </span>
-              <span className="block text-[10px] text-zinc-400 hidden sm:block font-light">
+              <span className="block text-[10px] opacity-60 hidden sm:block font-light">
                 {studioSubtitle}
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {totalPhotosCount > 0 && (
+              <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-60 mr-1 hidden sm:inline">
+                {totalPhotosCount} PHOTOS
+              </span>
+            )}
             {isSelectionMode ? (
-              <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
-                <Heart className="w-3 h-3 fill-rose-400 text-rose-400" />
+              <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-600 border border-rose-500/30 text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
+                <Heart className="w-3 h-3 fill-rose-500 text-rose-500" />
                 <span>Album Selection</span>
               </span>
             ) : isFullAccess ? (
-              <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
-                <Crown className="w-3 h-3 text-amber-400" />
-                <span>VIP Full Access</span>
+              <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-700 border border-amber-500/30 text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
+                <Crown className="w-3 h-3 text-amber-600" />
+                <span>VIP Access</span>
               </span>
             ) : (
-              <span className="px-3 py-1 rounded-full bg-white/10 text-zinc-300 border border-white/10 text-[10px] sm:text-xs font-medium">
+              <span className="px-3 py-1 rounded-full bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-[10px] sm:text-xs font-medium opacity-80">
                 Official Client Gallery
               </span>
             )}
@@ -1113,16 +1139,30 @@ function GuestSlugGalleryContent() {
         {/* PRESET 1: CINEMATIC HERO (Photo 4: Mr Sushant Photography Edge-to-Edge Hero) */}
         {(designPreset === 'cinematic_hero' || designPreset === 'cinematic_bleed' || (!['editorial_canvas', 'faded_luxe', 'split_atelier', 'haute_editorial', 'royal_medallion', 'grand_diptych'].includes(designPreset))) && (
           <div className="relative min-h-[85vh] sm:min-h-[92vh] w-full flex flex-col justify-between overflow-hidden">
-            {/* Background Image with Gentle Zoom Animation */}
-            {effectiveCoverUrl ? (
-              <img
-                src={effectiveCoverUrl}
-                alt={gallery.title}
-                className="absolute inset-0 w-full h-full object-cover scale-100 hover:scale-102 transition-transform duration-1000 ease-out"
-                style={{
-                  objectPosition: `${coverFocal.x}% ${coverFocal.y}%`,
-                }}
-              />
+            {/* Desktop Hero Image with Auto Cinematic Zoom & Exact Focal Position */}
+            {cleanCoverUrl ? (
+              <>
+                <img
+                  src={cleanCoverUrl}
+                  alt={gallery.title}
+                  className="hidden sm:block absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
+                  style={{
+                    objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                    transformOrigin: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
+                    transform: `scale(${coverPos.desktop.zoom / 100})`,
+                  }}
+                />
+                <img
+                  src={cleanCoverUrl}
+                  alt={gallery.title}
+                  className="block sm:hidden absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out animate-in fade-in zoom-in-[1.03]"
+                  style={{
+                    objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                    transformOrigin: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
+                    transform: `scale(${coverPos.mobile.zoom / 100})`,
+                  }}
+                />
+              </>
             ) : (
               <div className="absolute inset-0 bg-gradient-to-b from-zinc-900 via-zinc-950 to-zinc-900" />
             )}
@@ -1145,23 +1185,23 @@ function GuestSlugGalleryContent() {
               )}
             </div>
 
-            {/* Center-Bottom Romantic Typography with Golden Glow */}
-            <div className="relative z-10 px-6 pb-12 sm:pb-16 text-center space-y-3 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-6 duration-1000">
-              <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-amber-200/90 block font-semibold drop-shadow-md">
+            {/* Center-Bottom Romantic Typography with Golden Glow & Staggered Slide Animations */}
+            <div className="relative z-10 px-6 pb-12 sm:pb-16 text-center space-y-3 max-w-3xl mx-auto">
+              <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-amber-200/90 block font-semibold drop-shadow-md animate-in fade-in slide-in-from-bottom-3 duration-700 delay-150 fill-mode-both">
                 GALLERY BY {studioName.toUpperCase()}
               </span>
               <h1
-                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize"
+                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-300 fill-mode-both"
                 style={{ fontFamily: headingFont }}
               >
                 {gallery.title}
               </h1>
-              <span className="text-xs sm:text-sm text-zinc-300 font-mono tracking-widest block drop-shadow-md">
+              <span className="text-xs sm:text-sm text-zinc-300 font-mono tracking-widest block drop-shadow-md animate-in fade-in slide-in-from-bottom-4 duration-700 delay-500 fill-mode-both">
                 {formattedDate}
               </span>
-              <div className="pt-4">
+              <div className="pt-4 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-700 fill-mode-both">
                 <a
-                  href="#gallery-content"
+                  href="#sub-events-bar"
                   className="inline-flex flex-col items-center gap-1 text-white/80 hover:text-white transition-colors cursor-pointer group"
                   aria-label="Scroll to gallery content"
                 >
@@ -1336,6 +1376,64 @@ function GuestSlugGalleryContent() {
 
       </div>
 
+      <div id="sub-events-bar" className="scroll-mt-14" />
+      
+      {/* 1.5 STICKY SUB-EVENTS HORIZONTAL BAR (SYNCED WITH PALETTE COLORS) */}
+      <div
+        className="sticky top-[52px] sm:top-[57px] z-30 transition-all backdrop-blur-md border-y shadow-2xs"
+        style={{
+          backgroundColor: `${designPalette.cardBg || designPalette.canvasBg}F0`,
+          borderColor: `${designPalette.textColor}18`,
+          color: designPalette.textColor,
+        }}
+      >
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 py-2.5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto scrollbar-none py-1">
+            <button
+              type="button"
+              onClick={() => setSelectedCollectionId('all')}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs ${
+                selectedCollectionId === 'all' ? 'font-black' : 'opacity-70 hover:opacity-100'
+              }`}
+              style={
+                selectedCollectionId === 'all'
+                  ? { backgroundColor: designPalette.accentColor, color: '#FFFFFF' }
+                  : { backgroundColor: `${designPalette.textColor}0D`, color: designPalette.textColor }
+              }
+            >
+              All Photos ({fullPhotos.length})
+            </button>
+            {collections.map((col) => {
+              const isSel = selectedCollectionId === col.id;
+              const count = col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length;
+              return (
+                <button
+                  key={col.id}
+                  type="button"
+                  onClick={() => setSelectedCollectionId(col.id)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs ${
+                    isSel ? 'font-black' : 'opacity-70 hover:opacity-100'
+                  }`}
+                  style={
+                    isSel
+                      ? { backgroundColor: designPalette.accentColor, color: '#FFFFFF' }
+                      : { backgroundColor: `${designPalette.textColor}0D`, color: designPalette.textColor }
+                  }
+                >
+                  {col.name} {count > 0 && `(${count})`}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="hidden sm:flex items-center gap-2 text-xs font-mono opacity-60 shrink-0">
+            <span>{fullPhotos.length} Photos</span>
+            <span>•</span>
+            <span>AI Face Search</span>
+          </div>
+        </div>
+      </div>
+      
       <div id="gallery-content" className="scroll-mt-14" />
       {/* 2. MAIN CONTENT AREA */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-6 relative z-10 space-y-8">

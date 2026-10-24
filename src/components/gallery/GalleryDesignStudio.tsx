@@ -20,8 +20,13 @@ import {
   ArrowDown,
   Loader2,
   RefreshCw,
+  X,
+  Crosshair,
+  Sliders,
+  Laptop,
+  Camera,
 } from 'lucide-react';
-import { STATIC_CUSTOM_FONTS, registerFontFace } from '@/lib/font-loader';
+import { parseCoverUrl, buildCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
 
 export type PresetId = 'cinematic_hero' | 'editorial_canvas' | 'faded_luxe' | 'split_atelier';
 
@@ -56,7 +61,7 @@ export const DEFAULT_DESIGN_CONFIG: GalleryDesignConfig = {
     cardBg: '#FFFFFF',
   },
   typography: {
-    headingFont: "'Playfair Display', Georgia, serif",
+    headingFont: "'Italiana', 'Playfair Display', Georgia, serif",
     bodyFont: "'Plus Jakarta Sans', sans-serif",
     scale: 'balanced',
   },
@@ -322,153 +327,113 @@ const COLOR_PALETTES: PaletteItem[] = [
   },
 ];
 
-// ── EXTENSIVE AESTHETIC FONTS (QUOTATION-GRADE CARDS) ──
-interface FontOptionItem {
+// ── 14 TOP-TIER AESTHETIC WEDDING FONTS ──
+interface AestheticFontItem {
   name: string;
   family: string;
-  category: 'Luxury Serif' | 'Custom Aesthetic' | 'Modern Sans';
+  tag: string;
+  category: 'Luxury Serif' | 'Modern Sans' | 'Calligraphy';
   subFont: string;
 }
 
-const FONTS_CATALOG: FontOptionItem[] = [
+const AESTHETIC_FONTS: AestheticFontItem[] = [
+  {
+    name: 'Italiana',
+    family: "'Italiana', Georgia, serif",
+    tag: 'Haute Couture Vogue',
+    category: 'Luxury Serif',
+    subFont: "'Montserrat', sans-serif",
+  },
   {
     name: 'Playfair Display',
     family: "'Playfair Display', Georgia, serif",
+    tag: 'Classic Editorial',
     category: 'Luxury Serif',
     subFont: "'Plus Jakarta Sans', sans-serif",
   },
   {
     name: 'Cormorant Garamond',
     family: "'Cormorant Garamond', Georgia, serif",
+    tag: 'Old-Money Royal Serif',
     category: 'Luxury Serif',
     subFont: "'Inter', sans-serif",
   },
   {
     name: 'Cinzel',
     family: "'Cinzel', Georgia, serif",
+    tag: 'Roman Classical Monumental',
     category: 'Luxury Serif',
-    subFont: "'Cormorant Garamond', Georgia, serif",
-  },
-  {
-    name: 'Italiana',
-    family: "'Italiana', Georgia, serif",
-    category: 'Luxury Serif',
-    subFont: "'Montserrat', sans-serif",
+    subFont: "'Cormorant Garamond', serif",
   },
   {
     name: 'Bodoni Moda',
     family: "'Bodoni Moda', Georgia, serif",
+    tag: 'High Fashion Drama',
     category: 'Luxury Serif',
     subFont: "'Outfit', sans-serif",
   },
   {
     name: 'Prata',
     family: "'Prata', Georgia, serif",
-    category: 'Luxury Serif',
-    subFont: "'Plus Jakarta Sans', sans-serif",
-  },
-  {
-    name: 'Marcellus',
-    family: "'Marcellus', Georgia, serif",
-    category: 'Luxury Serif',
-    subFont: "'Inter', sans-serif",
-  },
-  {
-    name: 'DM Serif Display',
-    family: "'DM Serif Display', Georgia, serif",
+    tag: 'Romantic Teardrop Serif',
     category: 'Luxury Serif',
     subFont: "'Plus Jakarta Sans', sans-serif",
   },
   {
     name: 'Instrument Serif',
     family: "'Instrument Serif', Georgia, serif",
+    tag: 'Modern Literary Magazine',
     category: 'Luxury Serif',
     subFont: "'Inter', sans-serif",
   },
   {
+    name: 'DM Serif Display',
+    family: "'DM Serif Display', Georgia, serif",
+    tag: 'Bold Editorial Headline',
+    category: 'Luxury Serif',
+    subFont: "'Plus Jakarta Sans', sans-serif",
+  },
+  {
     name: 'Great Vibes',
     family: "'Great Vibes', cursive",
-    category: 'Custom Aesthetic',
+    tag: 'Romantic Fluid Calligraphy',
+    category: 'Calligraphy',
     subFont: "'Playfair Display', serif",
+  },
+  {
+    name: 'Marcellus',
+    family: "'Marcellus', Georgia, serif",
+    tag: 'Artisan Heritage Flared',
+    category: 'Luxury Serif',
+    subFont: "'Inter', sans-serif",
   },
   {
     name: 'Tenor Sans',
     family: "'Tenor Sans', sans-serif",
+    tag: 'Warm Flared Minimalist',
     category: 'Modern Sans',
     subFont: "'Plus Jakarta Sans', sans-serif",
   },
   {
-    name: 'Plus Jakarta Sans',
-    family: "'Plus Jakarta Sans', sans-serif",
-    category: 'Modern Sans',
-    subFont: "'Inter', sans-serif",
-  },
-  {
     name: 'Outfit',
     family: "'Outfit', sans-serif",
+    tag: 'Contemporary Geometric',
     category: 'Modern Sans',
     subFont: "'Plus Jakarta Sans', sans-serif",
   },
   {
     name: 'Montserrat',
     family: "'Montserrat', sans-serif",
+    tag: 'Architectural Clean Sans',
     category: 'Modern Sans',
     subFont: "'Plus Jakarta Sans', sans-serif",
   },
   {
-    name: 'Inter',
-    family: "'Inter', sans-serif",
+    name: 'Plus Jakarta Sans',
+    family: "'Plus Jakarta Sans', sans-serif",
+    tag: 'Refined Modern Editorial',
     category: 'Modern Sans',
     subFont: "'Inter', sans-serif",
-  },
-  // Custom Aesthetic Fonts from font-loader
-  {
-    name: 'Aligin',
-    family: "'Aligin', sans-serif",
-    category: 'Custom Aesthetic',
-    subFont: "'Plus Jakarta Sans', sans-serif",
-  },
-  {
-    name: 'Amida',
-    family: "'Amida', sans-serif",
-    category: 'Custom Aesthetic',
-    subFont: "'Plus Jakarta Sans', sans-serif",
-  },
-  {
-    name: 'Bevola Demo',
-    family: "'Bevola Demo Regular', sans-serif",
-    category: 'Custom Aesthetic',
-    subFont: "'Plus Jakarta Sans', sans-serif",
-  },
-  {
-    name: 'Soligant',
-    family: "'Soligant', serif",
-    category: 'Custom Aesthetic',
-    subFont: "'Plus Jakarta Sans', sans-serif",
-  },
-  {
-    name: 'Tan Pearl',
-    family: "'Tan Pearl', serif",
-    category: 'Custom Aesthetic',
-    subFont: "'Plus Jakarta Sans', sans-serif",
-  },
-  {
-    name: 'The Baethmy',
-    family: "'The Baethmy', serif",
-    category: 'Custom Aesthetic',
-    subFont: "'Plus Jakarta Sans', sans-serif",
-  },
-  {
-    name: 'Vigro',
-    family: "'Vigro', serif",
-    category: 'Custom Aesthetic',
-    subFont: "'Plus Jakarta Sans', sans-serif",
-  },
-  {
-    name: 'Wondershine',
-    family: "'Wondershine', cursive",
-    category: 'Custom Aesthetic',
-    subFont: "'Plus Jakarta Sans', sans-serif",
   },
 ];
 
@@ -493,10 +458,16 @@ export default function GalleryDesignStudio({
   const [activeTab, setActiveTab] = useState<'presets' | 'palette' | 'fonts'>('presets');
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [paletteMode, setPaletteMode] = useState<'light' | 'dark'>('light');
-  const [fontFilter, setFontFilter] = useState<string>('All');
   const [saving, setSaving] = useState(false);
-  const [uploadingCover, setUploadingCover] = useState(false);
-  const [toastNotification, setToastNotification] = useState<{ text: string; type: 'success' | 'error' | 'info' | 'loading' } | null>(null);
+  const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
+  const [coverModalMode, setCoverModalMode] = useState<'desktop' | 'mobile'>('desktop');
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+
+  // Floating in-component toast state
+  const [toastNotification, setToastNotification] = useState<{
+    text: string;
+    type: 'success' | 'error' | 'info' | 'loading';
+  } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' | 'loading' = 'success', duration = 3500) => {
     setToastNotification({ text, type });
@@ -553,16 +524,54 @@ export default function GalleryDesignStudio({
   const studioBranding = gallery?.studio_branding;
   const studioName = studioBranding?.studio_name || 'StudioCore';
   const studioLogo = studioBranding?.logo_url;
-  const studioSubtitle = studioBranding?.subtitle || studioBranding?.studio_subtitle || studioBranding?.tagline || 'Fine Art Wedding Photography & Films';
-  const coupleName = gallery?.title || 'Siddhant & Vedika';
+  const studioSubtitle =
+    studioBranding?.subtitle ||
+    studioBranding?.studio_subtitle ||
+    studioBranding?.tagline ||
+    'Fine Art Wedding Photography & Films';
+  const coupleName = gallery?.title || 'Navnath & Priya';
   const eventDateFormatted = gallery?.event_date
     ? new Date(gallery.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : 'October 24, 2026';
 
-  // Effective cover photo URL
+  // Effective cover photo URL and positioning from hash
   const effectiveCoverPhoto = useMemo(() => {
-    return design.cover?.url || gallery?.cover_url || (photos.length > 0 ? (photos[0].preview_url || photos[0].thumbnail_url) : '');
+    return (
+      design.cover?.url ||
+      gallery?.cover_url ||
+      (photos.length > 0 ? photos[0].preview_url || photos[0].thumbnail_url : '')
+    );
   }, [design.cover?.url, gallery?.cover_url, photos]);
+
+  const coverPositioning = useMemo(() => {
+    return parseCoverUrl(effectiveCoverPhoto);
+  }, [effectiveCoverPhoto]);
+
+  // Modal crop state
+  const [modalDesktopCrop, setModalDesktopCrop] = useState<{ x: number; y: number; zoom: number }>({
+    x: coverPositioning.desktop.x,
+    y: coverPositioning.desktop.y,
+    zoom: coverPositioning.desktop.zoom,
+  });
+  const [modalMobileCrop, setModalMobileCrop] = useState<{ x: number; y: number; zoom: number }>({
+    x: coverPositioning.mobile.x,
+    y: coverPositioning.mobile.y,
+    zoom: coverPositioning.mobile.zoom,
+  });
+
+  // Keep modal crop synced with cover position
+  useEffect(() => {
+    setModalDesktopCrop({
+      x: coverPositioning.desktop.x,
+      y: coverPositioning.desktop.y,
+      zoom: coverPositioning.desktop.zoom,
+    });
+    setModalMobileCrop({
+      x: coverPositioning.mobile.x,
+      y: coverPositioning.mobile.y,
+      zoom: coverPositioning.mobile.zoom,
+    });
+  }, [coverPositioning]);
 
   // Real photos list to display in the live preview
   const previewPhotos = useMemo(() => {
@@ -571,11 +580,6 @@ export default function GalleryDesignStudio({
     }
     return [];
   }, [photos]);
-
-  // Register custom fonts on mount
-  useEffect(() => {
-    STATIC_CUSTOM_FONTS.forEach((f) => registerFontFace(f));
-  }, []);
 
   // Update theme mode when palette changes
   useEffect(() => {
@@ -592,64 +596,27 @@ export default function GalleryDesignStudio({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploadingCover(true);
-    showToast('Converting to lightweight WebP & uploading cover...', 'loading');
+    const targetGalleryId = gallery?.id;
+    if (!targetGalleryId && !isGlobalDefault) {
+      showToast('Missing gallery identification', 'error');
+      return;
+    }
+
+    setIsUploadingCover(true);
+    showToast('Uploading high-resolution cover photo...', 'loading');
 
     try {
-      // 1. Convert to high-quality compressed WebP client-side
-      const webpBlob = await new Promise<Blob>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 2560;
-            const MAX_HEIGHT = 1800;
-            let width = img.width;
-            let height = img.height;
+      const filename = `cover_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
-            if (width > MAX_WIDTH || height > MAX_HEIGHT) {
-              if (width / height > MAX_WIDTH / MAX_HEIGHT) {
-                height = Math.round((height * MAX_WIDTH) / width);
-                width = MAX_WIDTH;
-              } else {
-                width = Math.round((width * MAX_HEIGHT) / height);
-                height = MAX_HEIGHT;
-              }
-            }
-
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return reject(new Error('Canvas context unavailable'));
-            ctx.drawImage(img, 0, 0, width, height);
-
-            canvas.toBlob(
-              (blob) => {
-                if (blob) resolve(blob);
-                else reject(new Error('WebP compression failed'));
-              },
-              'image/webp',
-              0.88
-            );
-          };
-          img.onerror = () => reject(new Error('Could not read image file'));
-          img.src = event.target?.result as string;
-        };
-        reader.onerror = () => reject(new Error('File reader failed'));
-        reader.readAsDataURL(file);
-      });
-
-      // 2. Request upload URL from server
-      const filename = `cover_${Date.now()}.webp`;
+      // 1. Request upload authorization URL (accepts both galleryId and gallery_id)
       const upRes = await fetch('/api/gallery/upload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          gallery_id: gallery?.id,
+          galleryId: targetGalleryId || 'global-default',
           filename,
-          content_type: 'image/webp',
-          size_bytes: webpBlob.size,
+          originalType: file.type || 'image/jpeg',
+          size_bytes: file.size,
         }),
       });
 
@@ -658,11 +625,11 @@ export default function GalleryDesignStudio({
         throw new Error(upJson.error || 'Failed to obtain upload authorization');
       }
 
-      // 3. Upload binary directly to Cloudflare R2 / Backblaze B2
+      // 2. Upload binary directly to Cloudflare R2 / Backblaze B2
       const putRes = await fetch(upJson.upload_url, {
         method: 'PUT',
-        headers: { 'Content-Type': 'image/webp' },
-        body: webpBlob,
+        headers: { 'Content-Type': file.type || 'image/jpeg' },
+        body: file,
       });
 
       if (!putRes.ok) {
@@ -671,38 +638,75 @@ export default function GalleryDesignStudio({
 
       const newCoverUrl = upJson.public_url || `/api/gallery/image?key=${encodeURIComponent(upJson.file_key)}`;
 
-      // 4. Update local state
+      // 3. Update local state with default center focal point
+      const compositeUrl = buildCoverUrl(newCoverUrl, { x: 50, y: 25, zoom: 100 }, { x: 50, y: 25, zoom: 100 });
+
       setDesign((prev) => ({
         ...prev,
         cover: {
-          ...(prev.cover || { overlayOpacity: 45, focalPoint: { x: 50, y: 50 } }),
-          url: newCoverUrl,
+          ...(prev.cover || { overlayOpacity: 45, focalPoint: { x: 50, y: 25 } }),
+          url: compositeUrl,
         },
       }));
 
-      // 5. Update backend immediately
-      if (gallery?.id) {
+      // 4. Update backend immediately
+      if (targetGalleryId) {
+        await fetch('/api/gallery/events', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: targetGalleryId,
+            cover_url: compositeUrl,
+          }),
+        });
+        if (onUpdateGallery) {
+          onUpdateGallery({ ...gallery, cover_url: compositeUrl });
+        }
+      }
+
+      showToast('HD cover photo uploaded & ready!', 'success');
+    } catch (err: any) {
+      console.error('Cover upload error:', err);
+      showToast(`Cover upload failed: ${err.message}`, 'error');
+    } finally {
+      setIsUploadingCover(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Save Focal Point & Zoom from Customizer Modal
+  const handleSaveModalFocalSettings = async () => {
+    if (!effectiveCoverPhoto) return;
+
+    const compositeUrl = buildCoverUrl(coverPositioning.url, modalDesktopCrop, modalMobileCrop);
+
+    setDesign((prev) => ({
+      ...prev,
+      cover: {
+        ...(prev.cover || { overlayOpacity: 45, focalPoint: { x: 50, y: 50 } }),
+        url: compositeUrl,
+        focalPoint: { x: modalDesktopCrop.x, y: modalDesktopCrop.y },
+      },
+    }));
+
+    if (gallery?.id) {
+      try {
         await fetch('/api/gallery/events', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: gallery.id,
-            cover_url: newCoverUrl,
+            cover_url: compositeUrl,
           }),
         });
         if (onUpdateGallery) {
-          onUpdateGallery({ ...gallery, cover_url: newCoverUrl });
+          onUpdateGallery({ ...gallery, cover_url: compositeUrl });
         }
-      }
-
-      showToast('Cover photo uploaded & updated successfully!', 'success');
-    } catch (err: any) {
-      console.error('Cover upload error:', err);
-      showToast(`Cover upload failed: ${err.message}`, 'error');
-    } finally {
-      setUploadingCover(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      } catch (_) {}
     }
+
+    setIsCoverModalOpen(false);
+    showToast('Focal position & crop applied!', 'success');
   };
 
   // Save & Publish Handler (Dual-Mode: Global Default or Event-Specific)
@@ -715,7 +719,6 @@ export default function GalleryDesignStudio({
 
     try {
       if (isGlobalDefault) {
-        // Save as studio-wide default gallery design in workspace_settings
         const res = await fetch('/api/gallery/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -730,7 +733,6 @@ export default function GalleryDesignStudio({
         if (!json.success) throw new Error(json.error || 'Failed to save global design');
         showToast('Default gallery design saved for all events!', 'success');
       } else {
-        // Save specifically for this event gallery
         if (!gallery?.id) throw new Error('Missing Gallery ID');
 
         const res = await fetch('/api/gallery/events', {
@@ -770,12 +772,6 @@ export default function GalleryDesignStudio({
       setSaving(false);
     }
   };
-
-  // Filtered fonts catalog
-  const filteredFonts = useMemo(() => {
-    if (fontFilter === 'All') return FONTS_CATALOG;
-    return FONTS_CATALOG.filter((f) => f.category === fontFilter);
-  }, [fontFilter]);
 
   // Open live client gallery in new tab
   const handleOpenLivePreview = () => {
@@ -900,16 +896,16 @@ export default function GalleryDesignStudio({
             {activeTab === 'presets' && (
               <div className="space-y-6">
                 
-                {/* Cover Photo Status & Upload Card */}
+                {/* Cover Photo Status & Event Cover Customizer Card */}
                 <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E7E2D8] shadow-xs space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <ImageIcon className="w-4 h-4 text-amber-600" />
                       <span className="text-xs font-bold text-zinc-900">Event Cover Photograph</span>
                     </div>
-                    {effectiveCoverPhoto ? (
+                    {coverPositioning.url ? (
                       <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                        Cover Ready
+                        Focal Set
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold">
@@ -918,36 +914,51 @@ export default function GalleryDesignStudio({
                     )}
                   </div>
 
-                  {effectiveCoverPhoto ? (
+                  {coverPositioning.url ? (
                     <div className="flex items-center gap-3 p-2 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8]">
-                      <div className="w-16 h-12 rounded-lg overflow-hidden bg-zinc-900 shrink-0">
-                        <img src={effectiveCoverPhoto} alt="Cover" className="w-full h-full object-cover" />
+                      <div
+                        onClick={() => setIsCoverModalOpen(true)}
+                        className="w-20 h-14 rounded-lg overflow-hidden bg-zinc-900 shrink-0 cursor-pointer relative group"
+                        title="Click to open Event Cover Customizer"
+                      >
+                        <img
+                          src={coverPositioning.url}
+                          alt="Cover"
+                          className="w-full h-full object-cover"
+                          style={{
+                            objectPosition: `${coverPositioning.desktop.x}% ${coverPositioning.desktop.y}%`,
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                          <Crosshair className="w-4 h-4" />
+                        </div>
                       </div>
                       <div className="flex-1 min-w-0 text-left">
-                        <span className="text-xs font-bold text-zinc-800 truncate block">Active Cover Photo</span>
-                        <span className="text-[10px] text-zinc-400">High-resolution WebP format</span>
+                        <span className="text-xs font-bold text-zinc-800 truncate block">Active HD Cover</span>
+                        <span className="text-[10px] text-zinc-400">
+                          Desktop focal: {coverPositioning.desktop.x}%, {coverPositioning.desktop.y}%
+                        </span>
                       </div>
                       <button
                         type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploadingCover}
-                        className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
+                        onClick={() => setIsCoverModalOpen(true)}
+                        className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
                       >
-                        {uploadingCover ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                        <span>Change</span>
+                        <Sliders className="w-3.5 h-3.5" />
+                        <span>Customize Focal &amp; Crop</span>
                       </button>
                     </div>
                   ) : (
                     <div
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => setIsCoverModalOpen(true)}
                       className="border-2 border-dashed border-amber-300 hover:border-amber-500 rounded-xl p-5 text-center bg-amber-50/40 hover:bg-amber-50/70 transition-all cursor-pointer space-y-1.5"
                     >
                       <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-700 flex items-center justify-center mx-auto">
                         <Upload className="w-4 h-4" />
                       </div>
-                      <p className="text-xs font-bold text-amber-950">Upload Event Cover Photo</p>
+                      <p className="text-xs font-bold text-amber-950">Upload &amp; Customize Event Cover Photo</p>
                       <p className="text-[10px] text-amber-700/80">
-                        Automatically compressed to high-efficiency WebP in KB size
+                        Adjust focal centers &amp; zoom independently for Desktop and Mobile
                       </p>
                     </div>
                   )}
@@ -978,13 +989,16 @@ export default function GalleryDesignStudio({
                       >
                         {/* Mini Visual Diagram Representation */}
                         <div className="w-full h-32 rounded-xl bg-zinc-950 overflow-hidden relative flex flex-col justify-between p-2.5 text-white">
-                          {effectiveCoverPhoto && (
+                          {coverPositioning.url && (
                             <img
-                              src={effectiveCoverPhoto}
+                              src={coverPositioning.url}
                               alt={preset.name}
                               className={`absolute inset-0 w-full h-full object-cover transition-opacity ${
                                 preset.id === 'faded_luxe' ? 'opacity-40 filter brightness-110' : 'opacity-70'
                               }`}
+                              style={{
+                                objectPosition: `${coverPositioning.desktop.x}% ${coverPositioning.desktop.y}%`,
+                              }}
                             />
                           )}
 
@@ -997,9 +1011,11 @@ export default function GalleryDesignStudio({
                           {/* Center / Layout Representation */}
                           {preset.id === 'cinematic_hero' && (
                             <div className="relative z-10 text-center pb-1 space-y-0.5">
-                              <span className="text-[7px] uppercase font-mono tracking-widest text-amber-300">GALLERY BY</span>
+                              <span className="text-[7px] uppercase font-mono tracking-widest text-amber-300">
+                                GALLERY BY
+                              </span>
                               <div className="text-[11px] font-serif font-normal capitalize">{coupleName}</div>
-                              <span className="text-[7px] font-mono opacity-60">OCTOBER 24, 2026</span>
+                              <span className="text-[7px] font-mono opacity-60">{eventDateFormatted}</span>
                             </div>
                           )}
 
@@ -1008,30 +1024,52 @@ export default function GalleryDesignStudio({
                               <span className="text-[6px] font-mono uppercase tracking-widest opacity-60">TERRE VERDE</span>
                               <div className="text-[10px] font-serif tracking-[0.2em] uppercase font-bold">{coupleName}</div>
                               <div className="w-12 h-16 rounded-xs bg-zinc-800 overflow-hidden shadow-xs">
-                                {effectiveCoverPhoto && <img src={effectiveCoverPhoto} alt="" className="w-full h-full object-cover" />}
+                                {coverPositioning.url && (
+                                  <img
+                                    src={coverPositioning.url}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    style={{
+                                      objectPosition: `${coverPositioning.desktop.x}% ${coverPositioning.desktop.y}%`,
+                                    }}
+                                  />
+                                )}
                               </div>
-                              <span className="text-[6px] font-mono opacity-50">OCTOBER 24, 2026</span>
+                              <span className="text-[6px] font-mono opacity-50">{eventDateFormatted}</span>
                             </div>
                           )}
 
                           {preset.id === 'faded_luxe' && (
                             <div className="absolute inset-0 bg-white/70 text-zinc-900 p-2 flex flex-col items-center justify-center space-y-1">
                               <div className="w-3 h-3 rounded-full border border-zinc-400" />
-                              <span className="text-[6px] font-mono uppercase tracking-widest text-zinc-500">GALLERY BY</span>
+                              <span className="text-[6px] font-mono uppercase tracking-widest text-zinc-500">
+                                GALLERY BY
+                              </span>
                               <div className="text-[9px] font-serif font-bold uppercase">{coupleName}</div>
-                              <span className="text-[6px] font-mono text-zinc-400">OCTOBER 24, 2026</span>
+                              <span className="text-[6px] font-mono text-zinc-400">{eventDateFormatted}</span>
                             </div>
                           )}
 
                           {preset.id === 'split_atelier' && (
                             <div className="absolute inset-0 grid grid-cols-2 bg-[#F4EFEA] text-zinc-900">
                               <div className="p-2 flex flex-col justify-center space-y-0.5">
-                                <span className="text-[5px] font-mono uppercase tracking-widest opacity-60">GALLERY BY</span>
+                                <span className="text-[5px] font-mono uppercase tracking-widest opacity-60">
+                                  GALLERY BY
+                                </span>
                                 <div className="text-[9px] font-serif font-bold uppercase leading-tight">{coupleName}</div>
-                                <span className="text-[5px] font-mono opacity-50">OCTOBER 24, 2026</span>
+                                <span className="text-[5px] font-mono opacity-50">{eventDateFormatted}</span>
                               </div>
                               <div className="bg-zinc-800 overflow-hidden">
-                                {effectiveCoverPhoto && <img src={effectiveCoverPhoto} alt="" className="w-full h-full object-cover" />}
+                                {coverPositioning.url && (
+                                  <img
+                                    src={coverPositioning.url}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    style={{
+                                      objectPosition: `${coverPositioning.desktop.x}% ${coverPositioning.desktop.y}%`,
+                                    }}
+                                  />
+                                )}
                               </div>
                             </div>
                           )}
@@ -1233,39 +1271,21 @@ export default function GalleryDesignStudio({
             )}
 
             {/* ─────────────────────────────────────────────────────────
-                TAB 3: AESTHETIC FONTS (QUOTATION-GRADE CARDS)
+                TAB 3: 14 TOP-TIER AESTHETIC WEDDING FONTS
             ───────────────────────────────────────────────────────── */}
             {activeTab === 'fonts' && (
               <div className="space-y-6">
                 
-                {/* Font Category Filter */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-black text-zinc-900">Aesthetic Typography</h2>
-                    <p className="text-xs text-zinc-500">
-                      High-fashion editorial serif and modern sans-serif fonts.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center p-1 bg-[#F4F1EA] rounded-xl border border-[#E7E2D8] gap-1">
-                    {['All', 'Luxury Serif', 'Custom Aesthetic', 'Modern Sans'].map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setFontFilter(cat)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition ${
-                          fontFilter === cat ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500 hover:text-zinc-900'
-                        }`}
-                      >
-                        {cat === 'Custom Aesthetic' ? 'Custom' : cat}
-                      </button>
-                    ))}
-                  </div>
+                <div>
+                  <h2 className="text-sm font-black text-zinc-900">14 Aesthetic Typography Selections</h2>
+                  <p className="text-xs text-zinc-500">
+                    Hand-curated high-fashion editorial serif and modern sans-serif fonts.
+                  </p>
                 </div>
 
                 {/* Big Aesthetic Font Cards */}
                 <div className="space-y-3">
-                  {filteredFonts.map((font) => {
+                  {AESTHETIC_FONTS.map((font) => {
                     const isSelected =
                       design.typography.headingFont.toLowerCase().includes(font.name.toLowerCase()) ||
                       design.typography.headingFont === font.family;
@@ -1293,7 +1313,7 @@ export default function GalleryDesignStudio({
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-zinc-900">{font.name}</span>
                             <span className="px-1.5 py-0.5 rounded-sm bg-zinc-100 text-zinc-600 text-[9px] font-mono">
-                              {font.category}
+                              {font.tag}
                             </span>
                           </div>
 
@@ -1395,11 +1415,24 @@ export default function GalleryDesignStudio({
                       fontFamily: design.typography.bodyFont,
                     }}
                   >
-                    {/* 1. Header Bar */}
-                    <div className="border-b border-black/10 px-6 py-3.5 flex items-center justify-between bg-white/70 backdrop-blur-md sticky top-0 z-20">
+                    {/* 1. Header Bar (Glassmorphic Blur matching Light/Dark Palette) */}
+                    <div
+                      className="border-b px-6 py-3.5 flex items-center justify-between backdrop-blur-md sticky top-0 z-20 transition-all"
+                      style={{
+                        backgroundColor:
+                          paletteMode === 'light' ? 'rgba(255, 255, 255, 0.82)' : 'rgba(9, 9, 11, 0.88)',
+                        borderColor:
+                          paletteMode === 'light' ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.12)',
+                        color: paletteMode === 'light' ? '#18181B' : '#FFFFFF',
+                      }}
+                    >
                       <div className="flex items-center gap-3">
                         {studioLogo ? (
-                          <img src={studioLogo} alt={studioName} className="w-7 h-7 rounded-full object-cover ring-1 ring-black/10" />
+                          <img
+                            src={studioLogo}
+                            alt={studioName}
+                            className="w-7 h-7 rounded-full object-cover ring-1 ring-black/10"
+                          />
                         ) : (
                           <div className="w-7 h-7 rounded-full bg-amber-600 text-white text-xs font-black flex items-center justify-center">
                             {studioName.charAt(0)}
@@ -1415,21 +1448,41 @@ export default function GalleryDesignStudio({
                       </span>
                     </div>
 
-                    {/* 2. Hero Preset Rendered */}
-                    {renderPresetContent(design, coupleName, eventDateFormatted, studioName, effectiveCoverPhoto, photos.length)}
+                    {/* 2. Hero Preset Rendered with Exact Focal Point & Zoom */}
+                    {renderPresetContent(
+                      design,
+                      coupleName,
+                      eventDateFormatted,
+                      studioName,
+                      coverPositioning,
+                      photos.length,
+                      false
+                    )}
 
-                    {/* 3. Sub-Events Bar */}
+                    {/* 3. Sub-Events Bar (Dynamically Colored by Selected Palette) */}
                     <div
-                      className="px-6 py-3 border-y border-black/10 flex items-center justify-between text-xs font-bold"
-                      style={{ backgroundColor: design.palette.cardBg || '#FFFFFF' }}
+                      className="px-6 py-2.5 border-y flex items-center justify-between text-xs font-bold transition-all shadow-2xs sticky top-[53px] z-10"
+                      style={{
+                        backgroundColor: `${design.palette.cardBg || design.palette.canvasBg}F0`,
+                        borderColor: `${design.palette.textColor}1A`,
+                        color: design.palette.textColor,
+                      }}
                     >
-                      <div className="flex items-center gap-4">
-                        <span className="text-amber-600 border-b-2 border-amber-600 pb-0.5">Highlights</span>
-                        <span className="opacity-50">Sangeet</span>
-                        <span className="opacity-50">Haldi</span>
-                        <span className="opacity-50">Wedding</span>
+                      <div className="flex items-center gap-3 overflow-x-auto py-0.5">
+                        <span
+                          className="px-3 py-1 rounded-full text-[11px] font-bold shadow-xs whitespace-nowrap"
+                          style={{ backgroundColor: design.palette.accentColor, color: '#FFFFFF' }}
+                        >
+                          All Photos ({photos.length > 0 ? photos.length : 18})
+                        </span>
+                        <span className="opacity-70 hover:opacity-100 cursor-pointer whitespace-nowrap">Highlights</span>
+                        <span className="opacity-70 hover:opacity-100 cursor-pointer whitespace-nowrap">Sangeet</span>
+                        <span className="opacity-70 hover:opacity-100 cursor-pointer whitespace-nowrap">Haldi</span>
+                        <span className="opacity-70 hover:opacity-100 cursor-pointer whitespace-nowrap">Wedding</span>
                       </div>
-                      <span className="text-[10px] font-mono opacity-50">AI Face Search Enabled</span>
+                      <span className="text-[10px] font-mono opacity-50 whitespace-nowrap hidden sm:inline">
+                        AI Face Search Enabled
+                      </span>
                     </div>
 
                     {/* 4. Real Photos Grid in Preview */}
@@ -1479,7 +1532,16 @@ export default function GalleryDesignStudio({
                     }}
                   >
                     {/* Mobile Header Bar */}
-                    <div className="border-b border-black/10 px-4 py-2.5 flex items-center justify-between bg-white/70 backdrop-blur-md sticky top-0 z-20">
+                    <div
+                      className="border-b px-4 py-2.5 flex items-center justify-between backdrop-blur-md sticky top-0 z-20"
+                      style={{
+                        backgroundColor:
+                          paletteMode === 'light' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(9, 9, 11, 0.88)',
+                        borderColor:
+                          paletteMode === 'light' ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.12)',
+                        color: paletteMode === 'light' ? '#18181B' : '#FFFFFF',
+                      }}
+                    >
                       <div className="flex items-center gap-2">
                         {studioLogo ? (
                           <img src={studioLogo} alt={studioName} className="w-5 h-5 rounded-full object-cover" />
@@ -1495,8 +1557,35 @@ export default function GalleryDesignStudio({
                       </span>
                     </div>
 
-                    {/* Mobile Hero Content */}
-                    {renderPresetContent(design, coupleName, eventDateFormatted, studioName, effectiveCoverPhoto, photos.length, true)}
+                    {/* Mobile Hero Content with Mobile Focal Positioning */}
+                    {renderPresetContent(
+                      design,
+                      coupleName,
+                      eventDateFormatted,
+                      studioName,
+                      coverPositioning,
+                      photos.length,
+                      true
+                    )}
+
+                    {/* Mobile Sub-Events Bar */}
+                    <div
+                      className="px-3 py-2 border-y flex items-center gap-2 overflow-x-auto text-[10px] font-bold"
+                      style={{
+                        backgroundColor: `${design.palette.cardBg || design.palette.canvasBg}F0`,
+                        borderColor: `${design.palette.textColor}1A`,
+                        color: design.palette.textColor,
+                      }}
+                    >
+                      <span
+                        className="px-2.5 py-1 rounded-full text-[9px] font-bold shadow-xs whitespace-nowrap"
+                        style={{ backgroundColor: design.palette.accentColor, color: '#FFFFFF' }}
+                      >
+                        All ({photos.length > 0 ? photos.length : 18})
+                      </span>
+                      <span className="opacity-70 whitespace-nowrap">Highlights</span>
+                      <span className="opacity-70 whitespace-nowrap">Sangeet</span>
+                    </div>
 
                     {/* Mobile Photo Grid */}
                     <div className="p-3">
@@ -1511,7 +1600,10 @@ export default function GalleryDesignStudio({
                       ) : (
                         <div className="grid grid-cols-2 gap-2">
                           {[1, 2, 3, 4].map((idx) => (
-                            <div key={idx} className="aspect-square rounded-lg bg-black/5 flex items-center justify-center text-[9px] opacity-40">
+                            <div
+                              key={idx}
+                              className="aspect-square rounded-lg bg-black/5 flex items-center justify-center text-[9px] opacity-40"
+                            >
                               Photo {idx}
                             </div>
                           ))}
@@ -1533,6 +1625,260 @@ export default function GalleryDesignStudio({
 
         </div>
       </div>
+
+      {/* ═════════════════════════════════════════════════════════════
+          5B. EXACT EVENT COVER CUSTOMIZER MODAL (DESKTOP & MOBILE)
+      ═════════════════════════════════════════════════════════════ */}
+      {isCoverModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-3xl w-full border border-[#E7E2D8] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-[#E7E2D8] flex items-center justify-between bg-[#FAF9F5]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shadow-xs">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">Event Cover Customizer</h3>
+                  <p className="text-[11px] text-zinc-500 font-medium">
+                    Adjust focal center &amp; zoom independently for Desktop and Mobile screens
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCoverModalOpen(false)}
+                className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-full transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+              
+              {/* Device Preview Switcher & HD Upload Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5] p-3 rounded-2xl border border-[#E7E2D8]">
+                {/* Desktop / Mobile Tabs */}
+                <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-[#E7E2D8] shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setCoverModalMode('desktop')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      coverModalMode === 'desktop'
+                        ? 'bg-zinc-900 text-white shadow-xs'
+                        : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+                    }`}
+                  >
+                    <Laptop className="w-3.5 h-3.5" />
+                    <span>Desktop (16:9)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCoverModalMode('mobile')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      coverModalMode === 'mobile'
+                        ? 'bg-zinc-900 text-white shadow-xs'
+                        : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>Mobile (9:16)</span>
+                  </button>
+                </div>
+
+                {/* Upload New HD Cover Button */}
+                <button
+                  type="button"
+                  disabled={isUploadingCover}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {isUploadingCover ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  <span>{isUploadingCover ? 'Uploading HD...' : 'Upload New HD Cover'}</span>
+                </button>
+              </div>
+
+              {/* Interactive Preview Canvas */}
+              <div className="flex flex-col items-center">
+                <div className="text-[11px] font-bold text-zinc-500 mb-2 flex items-center gap-1.5">
+                  <Crosshair className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Click anywhere on the preview to place the focal point center</span>
+                </div>
+
+                <div className="w-full flex justify-center bg-zinc-950 p-4 rounded-3xl border border-zinc-800 shadow-inner">
+                  <div
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const x = Math.round(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)));
+                      const y = Math.round(Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100)));
+                      if (coverModalMode === 'desktop') {
+                        setModalDesktopCrop((prev) => ({ ...prev, x, y }));
+                      } else {
+                        setModalMobileCrop((prev) => ({ ...prev, x, y }));
+                      }
+                    }}
+                    className={`relative overflow-hidden cursor-crosshair group select-none transition-all duration-300 shadow-2xl border border-white/20 ${
+                      coverModalMode === 'desktop' ? 'w-full max-w-xl aspect-[16/9] rounded-2xl' : 'w-64 aspect-[9/16] rounded-3xl'
+                    }`}
+                  >
+                    {coverPositioning.url ? (
+                      <img
+                        src={coverPositioning.url}
+                        alt="Cover Preview"
+                        style={{
+                          objectPosition: `${coverModalMode === 'desktop' ? modalDesktopCrop.x : modalMobileCrop.x}% ${
+                            coverModalMode === 'desktop' ? modalDesktopCrop.y : modalMobileCrop.y
+                          }%`,
+                          transform: `scale(${
+                            (coverModalMode === 'desktop' ? modalDesktopCrop.zoom : modalMobileCrop.zoom) / 100
+                          })`,
+                          transformOrigin: 'center center',
+                        }}
+                        className="w-full h-full object-cover pointer-events-none transition-transform duration-100"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400">
+                        <Camera className="w-10 h-10 mb-2 text-zinc-600" />
+                        <span className="text-xs font-bold">No Cover Image Selected</span>
+                      </div>
+                    )}
+
+                    {/* Gradient Overlay Preview */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/30 pointer-events-none" />
+
+                    {/* Glowing Focal Point Indicator / Crosshair */}
+                    <div
+                      style={{
+                        left: `${coverModalMode === 'desktop' ? modalDesktopCrop.x : modalMobileCrop.x}%`,
+                        top: `${coverModalMode === 'desktop' ? modalDesktopCrop.y : modalMobileCrop.y}%`,
+                      }}
+                      className="absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-2 border-amber-400 bg-amber-400/25 shadow-[0_0_16px_rgba(251,191,36,0.8)] pointer-events-none flex items-center justify-center transition-all duration-100"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-amber-300 shadow-xs" />
+                    </div>
+
+                    {/* Live Portal Title Mockup */}
+                    <div className="absolute bottom-4 left-4 right-4 text-white pointer-events-none space-y-1">
+                      <div className="inline-block px-2 py-0.5 rounded-full bg-amber-500/30 text-amber-300 text-[9px] font-black uppercase tracking-wider backdrop-blur-md border border-amber-400/30">
+                        ✨ Official Wedding Gallery
+                      </div>
+                      <h4
+                        style={{ fontFamily: design.typography.headingFont }}
+                        className="text-lg sm:text-xl font-medium text-white truncate drop-shadow-md"
+                      >
+                        {coupleName}
+                      </h4>
+                      <p className="text-[10px] text-white/70">{eventDateFormatted}</p>
+                    </div>
+
+                    {/* Device Indicator Pill */}
+                    <div className="absolute top-3 left-3 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[10px] font-bold text-white/90 border border-white/20 pointer-events-none flex items-center gap-1.5">
+                      {coverModalMode === 'desktop' ? (
+                        <>
+                          <Laptop className="w-3 h-3 text-amber-400" />
+                          <span>Desktop View (16:9)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Smartphone className="w-3 h-3 text-amber-400" />
+                          <span>Mobile View (9:16)</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Controls Grid: Zoom & Presets */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#FAF9F5] p-4 rounded-2xl border border-[#E7E2D8]">
+                {/* Zoom Slider */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-bold text-zinc-700">
+                    <span className="flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-amber-600" />
+                      <span>{coverModalMode === 'desktop' ? 'Desktop Zoom' : 'Mobile Zoom'}</span>
+                    </span>
+                    <span className="font-mono text-amber-700">
+                      {coverModalMode === 'desktop' ? modalDesktopCrop.zoom : modalMobileCrop.zoom}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="100"
+                    max="220"
+                    step="5"
+                    value={coverModalMode === 'desktop' ? modalDesktopCrop.zoom : modalMobileCrop.zoom}
+                    onChange={(e) => {
+                      const zoom = parseInt(e.target.value);
+                      if (coverModalMode === 'desktop') {
+                        setModalDesktopCrop((prev) => ({ ...prev, zoom }));
+                      } else {
+                        setModalMobileCrop((prev) => ({ ...prev, zoom }));
+                      }
+                    }}
+                    className="w-full accent-amber-600 cursor-pointer"
+                  />
+                </div>
+
+                {/* Quick Focal Presets */}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-zinc-700 block">Quick Focal Presets</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { label: 'Faces (Top 25%)', y: 25 },
+                      { label: 'Center (50%)', y: 50 },
+                      { label: 'Lower (75%)', y: 75 },
+                    ].map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => {
+                          if (coverModalMode === 'desktop') {
+                            setModalDesktopCrop((prev) => ({ ...prev, x: 50, y: p.y }));
+                          } else {
+                            setModalMobileCrop((prev) => ({ ...prev, x: 50, y: p.y }));
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white border border-[#E7E2D8] hover:border-amber-400 text-[11px] font-bold text-zinc-700 cursor-pointer transition shadow-2xs"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-[#E7E2D8] flex items-center justify-between bg-[#FAF9F5]">
+              <span className="text-[11px] text-zinc-500 font-medium">
+                Focal points persist across all devices.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCoverModalOpen(false)}
+                  className="px-4 py-2 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveModalFocalSettings}
+                  className="px-5 py-2 rounded-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold text-xs transition shadow-md shadow-amber-600/20 cursor-pointer"
+                >
+                  Apply &amp; Save
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* Floating Action Toast Notification */}
       {toastNotification && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-zinc-950 text-white shadow-2xl border border-white/15 animate-in fade-in slide-in-from-bottom-3 duration-300">
@@ -1547,30 +1893,41 @@ export default function GalleryDesignStudio({
   );
 }
 
-// ── SUB-RENDERER FOR THE 4 EXACT PRESET LAYOUTS ──
+// ── SUB-RENDERER FOR THE 4 EXACT PRESET LAYOUTS WITH EXACT FOCAL POSITIONING ──
 function renderPresetContent(
   design: GalleryDesignConfig,
   coupleName: string,
   eventDateFormatted: string,
   studioName: string,
-  coverPhoto: string,
+  coverPos: CoverPositioning,
   photoCount: number,
   isMobile: boolean = false
 ) {
   const headingFont = design.typography.headingFont;
   const countLabel = photoCount > 0 ? `${photoCount} PHOTOS` : '114 PHOTOS';
+  const focalX = isMobile ? coverPos.mobile.x : coverPos.desktop.x;
+  const focalY = isMobile ? coverPos.mobile.y : coverPos.desktop.y;
+  const zoom = isMobile ? coverPos.mobile.zoom : coverPos.desktop.zoom;
 
   switch (design.preset) {
     case 'cinematic_hero':
     default:
       return (
-        <div className={`relative ${isMobile ? 'h-72' : 'h-96'} w-full flex flex-col justify-between overflow-hidden text-center`}>
-          {coverPhoto ? (
+        <div
+          className={`relative ${
+            isMobile ? 'h-72' : 'h-96'
+          } w-full flex flex-col justify-between overflow-hidden text-center`}
+        >
+          {coverPos.url ? (
             <img
-              src={coverPhoto}
+              src={coverPos.url}
               alt="Hero"
-              className="absolute inset-0 w-full h-full object-cover scale-100 transition-transform duration-1000"
-              style={{ objectPosition: `${design.cover?.focalPoint.x || 50}% ${design.cover?.focalPoint.y || 50}%` }}
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
+              style={{
+                objectPosition: `${focalX}% ${focalY}%`,
+                transformOrigin: `${focalX}% ${focalY}%`,
+                transform: `scale(${zoom / 100})`,
+              }}
             />
           ) : (
             <div className="absolute inset-0 bg-zinc-900" />
@@ -1583,15 +1940,22 @@ function renderPresetContent(
             <span>{countLabel}</span>
           </div>
 
-          {/* Bottom Typography */}
+          {/* Bottom Typography with Slide Animation */}
           <div className="relative z-10 p-4 space-y-1 text-white">
-            <span className="text-[8px] font-mono uppercase tracking-[0.25em] text-amber-200 block font-semibold">
+            <span className="text-[8px] font-mono uppercase tracking-[0.25em] text-amber-200 block font-semibold animate-in fade-in slide-in-from-bottom-2 duration-500">
               GALLERY BY {studioName.toUpperCase()}
             </span>
-            <h2 className={`${isMobile ? 'text-2xl' : 'text-4xl'} font-normal tracking-tight text-white capitalize`} style={{ fontFamily: headingFont }}>
+            <h2
+              className={`${
+                isMobile ? 'text-2xl' : 'text-4xl'
+              } font-normal tracking-tight text-white capitalize animate-in fade-in slide-in-from-bottom-4 duration-700`}
+              style={{ fontFamily: headingFont }}
+            >
               {coupleName}
             </h2>
-            <span className="text-[10px] text-zinc-300 font-mono tracking-wider block">{eventDateFormatted}</span>
+            <span className="text-[10px] text-zinc-300 font-mono tracking-wider block animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150">
+              {eventDateFormatted}
+            </span>
             <div className="pt-2">
               <ArrowDown className="w-3.5 h-3.5 mx-auto text-white/70 animate-bounce" />
             </div>
@@ -1608,14 +1972,30 @@ function renderPresetContent(
           </div>
 
           <h2
-            className={`${isMobile ? 'text-2xl tracking-[0.15em]' : 'text-5xl tracking-[0.2em]'} font-normal uppercase leading-tight`}
+            className={`${
+              isMobile ? 'text-2xl tracking-[0.15em]' : 'text-5xl tracking-[0.2em]'
+            } font-normal uppercase leading-tight`}
             style={{ fontFamily: headingFont, color: design.palette.textColor }}
           >
             {coupleName}
           </h2>
 
-          <div className={`${isMobile ? 'w-40 aspect-[3/4]' : 'w-56 aspect-[3/4]'} rounded-xs overflow-hidden shadow-xl border-2 border-white bg-black`}>
-            {coverPhoto && <img src={coverPhoto} alt="Artwork" className="w-full h-full object-cover" />}
+          <div
+            className={`${
+              isMobile ? 'w-40 aspect-[3/4]' : 'w-56 aspect-[3/4]'
+            } rounded-xs overflow-hidden shadow-xl border-2 border-white bg-black`}
+          >
+            {coverPos.url && (
+              <img
+                src={coverPos.url}
+                alt="Artwork"
+                className="w-full h-full object-cover"
+                style={{
+                  objectPosition: `${focalX}% ${focalY}%`,
+                  transform: `scale(${zoom / 100})`,
+                }}
+              />
+            )}
           </div>
 
           <div className="text-[9px] font-mono tracking-widest uppercase opacity-60">
@@ -1626,9 +2006,21 @@ function renderPresetContent(
 
     case 'faded_luxe':
       return (
-        <div className={`relative ${isMobile ? 'h-72' : 'h-96'} w-full flex flex-col justify-between overflow-hidden bg-white text-zinc-900`}>
-          {coverPhoto && (
-            <img src={coverPhoto} alt="Misty" className="absolute inset-0 w-full h-full object-cover opacity-35 filter brightness-105" />
+        <div
+          className={`relative ${
+            isMobile ? 'h-72' : 'h-96'
+          } w-full flex flex-col justify-between overflow-hidden bg-white text-zinc-900`}
+        >
+          {coverPos.url && (
+            <img
+              src={coverPos.url}
+              alt="Misty"
+              className="absolute inset-0 w-full h-full object-cover opacity-35 filter brightness-105"
+              style={{
+                objectPosition: `${focalX}% ${focalY}%`,
+                transform: `scale(${zoom / 100})`,
+              }}
+            />
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-white/40 to-white/95" />
 
@@ -1642,7 +2034,10 @@ function renderPresetContent(
             <span className="text-[8px] font-mono uppercase tracking-[0.25em] text-zinc-500 block font-semibold">
               GALLERY BY {studioName.toUpperCase()}
             </span>
-            <h2 className={`${isMobile ? 'text-2xl' : 'text-4xl'} font-normal uppercase leading-tight`} style={{ fontFamily: headingFont }}>
+            <h2
+              className={`${isMobile ? 'text-2xl' : 'text-4xl'} font-normal uppercase leading-tight`}
+              style={{ fontFamily: headingFont }}
+            >
               {coupleName}
             </h2>
             <span className="text-[10px] text-zinc-600 font-mono tracking-wider block">{eventDateFormatted}</span>
@@ -1656,7 +2051,11 @@ function renderPresetContent(
 
     case 'split_atelier':
       return (
-        <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} ${isMobile ? 'min-h-[280px]' : 'min-h-[340px]'} w-full border-b border-black/10`}>
+        <div
+          className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} ${
+            isMobile ? 'min-h-[280px]' : 'min-h-[340px]'
+          } w-full border-b border-black/10`}
+        >
           <div className="p-5 flex flex-col justify-between space-y-3">
             <div className="flex items-center justify-between text-[8px] font-mono uppercase tracking-widest opacity-60">
               <span className="font-bold">{studioName}</span>
@@ -1679,7 +2078,17 @@ function renderPresetContent(
           </div>
 
           <div className="overflow-hidden bg-zinc-900 min-h-[160px]">
-            {coverPhoto && <img src={coverPhoto} alt="Artwork" className="w-full h-full object-cover" />}
+            {coverPos.url && (
+              <img
+                src={coverPos.url}
+                alt="Artwork"
+                className="w-full h-full object-cover"
+                style={{
+                  objectPosition: `${focalX}% ${focalY}%`,
+                  transform: `scale(${zoom / 100})`,
+                }}
+              />
+            )}
           </div>
         </div>
       );
