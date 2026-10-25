@@ -38,8 +38,12 @@ for ENV_FILE in /var/www/fw-core/.env.local /var/www/fw-core/.env /var/www/fw-co
   fi
 done
 
-echo "Installing dependencies..."
-npm install --no-audit
+if git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -q 'package.json'; then
+  echo "Installing dependencies (package.json modified)..."
+  npm install --no-audit || true
+else
+  echo "Skipping npm install (no package.json changes)..."
+fi
 
 echo "Freeing memory before building application..."
 pm2 stop baileys-worker 2>/dev/null || true
