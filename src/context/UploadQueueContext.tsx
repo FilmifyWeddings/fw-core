@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { batchUploadPhotos, getUploadedManifest } from '@/lib/imageProcessor';
+import { batchUploadPhotos, getUploadedManifest } from '../lib/imageProcessor';
 
 export interface UploadJob {
   id: string;
