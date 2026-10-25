@@ -4,9 +4,9 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Database, RefreshCw, Settings } from 'lucide-react';
 import { Lead } from '@/types';
-import { supabase } from '@/lib/supabase';
-import { LeadTable } from '@/components/dashboard/lead-table';
-import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
+import { supabase } from '../../../../lib/supabase';
+import { LeadTable } from '../../../../components/dashboard/lead-table';
+import { MasterSettingsHub } from '../../../../components/settings/master-settings-hub';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 

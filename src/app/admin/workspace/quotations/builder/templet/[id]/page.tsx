@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { StudioCoreAiryBuilderContent } from '@/components/StudioCoreAiryBuilderContent';
+import { StudioCoreAiryBuilderContent } from '../../../../../../../components/StudioCoreAiryBuilderContent';
 
 export default function AdminSystemTemplateBuilderPage() {
   return (
