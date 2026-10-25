@@ -54,6 +54,7 @@
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4",
     "three": "^0.186.0",
+    "typescript": "^5",
     "utf-8-validate": "^6.0.5",
     "xlsx": "^0.18.5"
   },
@@ -62,7 +63,6 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
-    "typescript": "^5"
+    "eslint-config-next": "16.2.9"
   }
 }
