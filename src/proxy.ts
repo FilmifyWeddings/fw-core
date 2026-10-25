@@ -15,6 +15,7 @@ const RESERVED_ROOT_PATHS = new Set([
   'clear-cookies',
   'dashboard',
   'data-deletion',
+  'downloads',
   'features',
   'fix-431',
   'forgot-password',
