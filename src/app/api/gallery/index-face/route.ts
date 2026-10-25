@@ -20,12 +20,12 @@ export async function POST(req: NextRequest) {
     if (!targetKey && photoId) {
       const { data: photo } = await supabaseAdmin
         .from('gallery_photos')
-        .select('preview_key')
+        .select('preview_key, thumbnail_key')
         .eq('id', photoId)
         .maybeSingle();
 
-      if (photo?.preview_key) {
-        targetKey = photo.preview_key;
+      if (photo) {
+        targetKey = photo.thumbnail_key || photo.preview_key;
       }
     }
 

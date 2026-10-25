@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
-import { extractFacesFromS3Key } from '@/lib/faceAI';
+import { extractFacesFromS3Key, extractFacesBatchFromS3Keys } from '@/lib/faceAI';
 
 export const dynamic = 'force-dynamic';
 
@@ -645,30 +645,45 @@ export async function PATCH(req: NextRequest) {
 
           console.log(`[FaceAI Toggle] Background indexing ${unindexed.length} unindexed photos for event ${id}...`);
 
-          const CHUNK_SIZE = 4;
-          for (let i = 0; i < unindexed.length; i += CHUNK_SIZE) {
-            const chunk = unindexed.slice(i, i + CHUNK_SIZE);
-            await Promise.all(
-              chunk.map(async (p) => {
-                try {
-                  const faces = await extractFacesFromS3Key(p.preview_key);
-                  if (faces && faces.length > 0) {
-                    const faceRecords = faces.map((f) => ({
-                      photo_id: p.id,
-                      gallery_id: id,
-                      bounding_box: f.box,
-                      embedding: f.embedding,
-                    }));
-                    await supabaseAdmin.from('photo_faces').insert(faceRecords);
-                    await supabaseAdmin.from('gallery_photos').update({ face_count: faces.length }).eq('id', p.id);
-                  } else {
-                    await supabaseAdmin.from('gallery_photos').update({ face_count: 0 }).eq('id', p.id);
-                  }
-                } catch (err) {
-                  console.warn(`[FaceAI Toggle] Error indexing photo ${p.id}:`, err);
+          // Rule 2 & 3: High-speed Batch Face Indexing (batches of 16, 640px thumbnail)
+          const BATCH_SIZE = 16;
+          for (let i = 0; i < unindexed.length; i += BATCH_SIZE) {
+            const chunk = unindexed.slice(i, i + BATCH_SIZE);
+            const batchItems = chunk.map((p) => ({
+              id: p.id,
+              key: p.thumbnail_key || p.preview_key,
+            }));
+
+            const resultMap = await extractFacesBatchFromS3Keys(batchItems);
+
+            const allFaceRecords: any[] = [];
+            const photoUpdatePromises: Promise<any>[] = [];
+
+            for (const p of chunk) {
+              const faces = resultMap.get(p.id) || [];
+              if (faces.length > 0) {
+                for (const f of faces) {
+                  allFaceRecords.push({
+                    photo_id: p.id,
+                    gallery_id: id,
+                    bounding_box: f.box,
+                    embedding: f.embedding,
+                  });
                 }
-              })
-            );
+                photoUpdatePromises.push(
+                  supabaseAdmin.from('gallery_photos').update({ face_count: faces.length }).eq('id', p.id)
+                );
+              } else {
+                photoUpdatePromises.push(
+                  supabaseAdmin.from('gallery_photos').update({ face_count: 0 }).eq('id', p.id)
+                );
+              }
+            }
+
+            if (allFaceRecords.length > 0) {
+              await supabaseAdmin.from('photo_faces').insert(allFaceRecords);
+            }
+            await Promise.all(photoUpdatePromises);
           }
           console.log(`[FaceAI Toggle] Completed background indexing for event ${id}`);
         } catch (bgErr) {

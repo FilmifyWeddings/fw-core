@@ -293,6 +293,7 @@ export async function batchUploadPhotos(
   const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
   const CONCURRENCY = isMobile ? 4 : 6;
   const MAX_RETRY_ATTEMPTS = 5;
+  const REGISTRATION_BATCH_SIZE = isMobile ? 8 : 16;
 
   for (let i = 0; i < files.length; i += CONCURRENCY) {
     if (signal?.aborted) {
@@ -399,8 +400,8 @@ export async function batchUploadPhotos(
               onProgress(completed, total, Math.round((completed / total) * 100), file.name);
             }
 
-            // Register progressively in small batches of 2 so photos appear immediately in gallery view
-            if (pendingRegistration.length >= 2) {
+            // Rule 1 & 2: Register in efficient batches of 16 (8 on mobile) to feed GPU in bulk and eliminate idle wait
+            if (pendingRegistration.length >= REGISTRATION_BATCH_SIZE) {
               await flushRegistration();
             }
 

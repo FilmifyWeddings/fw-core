@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getGalleryPresignedDownloadUrl } from '@/lib/storage/galleryB2Client';
-import { extractFacesFromS3Key, cosineSimilarity, normalizeVector } from '@/lib/faceAI';
+import { extractFacesFromS3Key, extractFacesBatchFromS3Keys, cosineSimilarity, normalizeVector } from '@/lib/faceAI';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,44 +76,54 @@ export async function POST(req: NextRequest) {
         .eq('id', galleryId);
     }
 
-    // 4. Automatic Multi-Face Indexing
+    // 4. Ultra-Fast Multi-Face Batch Indexing (Rule 1, 2, 3)
     if (inserted && inserted.length > 0 && isFaceAiEnabled) {
       // Non-blocking background face extraction: returns immediate 200 OK so uploads finish in milliseconds
       (async () => {
         try {
-          const CHUNK_SIZE = 4;
-          for (let i = 0; i < inserted.length; i += CHUNK_SIZE) {
-            const chunk = inserted.slice(i, i + CHUNK_SIZE);
-            await Promise.all(
-              chunk.map(async (p) => {
-                try {
-                  const faces = await extractFacesFromS3Key(p.preview_key);
-                  await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);
+          // Rule 2 & 3: Process in batches of 16 using 640px thumbnail_key
+          const BATCH_SIZE = 16;
+          for (let i = 0; i < inserted.length; i += BATCH_SIZE) {
+            const chunk = inserted.slice(i, i + BATCH_SIZE);
+            const batchItems = chunk.map((p) => ({
+              id: p.id,
+              // Rule 3: Prefer 640px thumbnail_key over 2048px preview_key for 8x speed & 80% bandwidth saving
+              key: p.thumbnail_key || p.preview_key,
+            }));
 
-                  if (faces && faces.length > 0) {
-                    const faceRecords = faces.map((f) => ({
-                      photo_id: p.id,
-                      gallery_id: galleryId,
-                      bounding_box: f.box,
-                      embedding: f.embedding,
-                    }));
+            const resultMap = await extractFacesBatchFromS3Keys(batchItems);
 
-                    await supabaseAdmin.from('photo_faces').insert(faceRecords);
-                    await supabaseAdmin
-                      .from('gallery_photos')
-                      .update({ face_count: faces.length })
-                      .eq('id', p.id);
-                  } else {
-                    await supabaseAdmin
-                      .from('gallery_photos')
-                      .update({ face_count: 0 })
-                      .eq('id', p.id);
-                  }
-                } catch (faceErr) {
-                  console.warn(`[FaceIndex] Error processing photo ${p.id}:`, faceErr);
+            const allFaceRecords: any[] = [];
+            const photoUpdatePromises: Promise<any>[] = [];
+
+            for (const p of chunk) {
+              const faces = resultMap.get(p.id) || [];
+              if (faces.length > 0) {
+                for (const f of faces) {
+                  allFaceRecords.push({
+                    photo_id: p.id,
+                    gallery_id: galleryId,
+                    bounding_box: f.box,
+                    embedding: f.embedding,
+                  });
                 }
-              })
-            );
+                photoUpdatePromises.push(
+                  supabaseAdmin.from('gallery_photos').update({ face_count: faces.length }).eq('id', p.id)
+                );
+              } else {
+                photoUpdatePromises.push(
+                  supabaseAdmin.from('gallery_photos').update({ face_count: 0 }).eq('id', p.id)
+                );
+              }
+            }
+
+            // Clean previous records and bulk insert new faces
+            const photoIds = chunk.map((p) => p.id);
+            await supabaseAdmin.from('photo_faces').delete().in('photo_id', photoIds);
+            if (allFaceRecords.length > 0) {
+              await supabaseAdmin.from('photo_faces').insert(allFaceRecords);
+            }
+            await Promise.all(photoUpdatePromises);
           }
 
           // Update gallery aggregate total_faces

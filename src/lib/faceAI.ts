@@ -7,6 +7,7 @@ export interface DetectedFace {
 }
 
 const MODAL_FACE_ENDPOINT = 'https://sushantnawale700--studiocore-face-service-studiocoreface-909b81.us-east.modal.run/api/ai/extract-faces';
+const MODAL_FACE_BATCH_ENDPOINT = 'https://sushantnawale700--studiocore-face-service-studiocoreface-909b81.us-east.modal.run/api/ai/extract-faces-batch';
 
 const WORKER_ENDPOINTS = [
   process.env.FACE_WORKER_URL,
@@ -99,6 +100,85 @@ export async function extractFacesFromS3Key(key: string): Promise<DetectedFace[]
     console.warn(`[FaceAI] extractFacesFromS3Key failed for key ${key}:`, err.message);
     return [];
   }
+}
+
+/**
+ * Rule 2 & Rule 3: Extracts faces for multiple photos in a single high-speed batch call on NVIDIA L4 GPU.
+ * Bypasses sequential latency and optimizes GPU tensor parallelism.
+ */
+export async function extractFacesBatchFromS3Keys(
+  items: Array<{ id: string; key: string }>
+): Promise<Map<string, DetectedFace[]>> {
+  const resultMap = new Map<string, DetectedFace[]>();
+  if (!items || items.length === 0) return resultMap;
+
+  // 1. Download image buffers in parallel from Cloud Storage
+  const payloadItems: Array<{ id: string; image_base64: string }> = [];
+  await Promise.all(
+    items.map(async (item) => {
+      try {
+        if (!item.key) return;
+        const buf = await getGalleryObjectBuffer(item.key);
+        if (buf && buf.length > 0) {
+          payloadItems.push({
+            id: item.id,
+            image_base64: `data:image/jpeg;base64,${buf.toString('base64')}`,
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[FaceAI] Failed to fetch buffer for item ${item.id} (${item.key}):`, err.message);
+      }
+    })
+  );
+
+  if (payloadItems.length === 0) return resultMap;
+
+  // 2. Send batch to Modal GPU
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+    const res = await fetch(MODAL_FACE_BATCH_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: payloadItems }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.status === 'success' && Array.isArray(json.results)) {
+        for (const r of json.results) {
+          if (r.id && Array.isArray(r.faces)) {
+            const detected = r.faces.map((f: any) => ({
+              box: f.box || { x: 0, y: 0, w: 100, h: 100 },
+              embedding: normalizeVector(f.embedding),
+              confidence: f.confidence || 0.95,
+            }));
+            resultMap.set(r.id, detected);
+          }
+        }
+        return resultMap;
+      }
+    }
+  } catch (batchErr: any) {
+    console.warn('[FaceAI] Batch endpoint failed, falling back to parallel single worker:', batchErr.message);
+  }
+
+  // 3. Resilient Fallback: Process individually if batch endpoint fails
+  await Promise.all(
+    payloadItems.map(async (item) => {
+      try {
+        const faces = await extractFacesFromBase64(item.image_base64);
+        resultMap.set(item.id, faces);
+      } catch (err) {
+        resultMap.set(item.id, []);
+      }
+    })
+  );
+
+  return resultMap;
 }
 
 /**

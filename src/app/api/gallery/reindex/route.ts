@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { extractFacesFromS3Key } from '@/lib/faceAI';
+import { extractFacesFromS3Key, extractFacesBatchFromS3Keys } from '@/lib/faceAI';
 import { getPublicGalleryUrl } from '@/lib/r2';
 
 export const dynamic = 'force-dynamic';
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     // Fetch batch slice
     let query = supabaseAdmin
       .from('gallery_photos')
-      .select('id, gallery_id, preview_key, width, height')
+      .select('id, gallery_id, preview_key, thumbnail_key, width, height')
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
 
@@ -57,49 +57,49 @@ export async function POST(req: NextRequest) {
     let indexedCount = 0;
     let totalFacesFound = 0;
 
-    // Process batch in parallel chunks of 4 for speed
-    const CHUNK_SIZE = 4;
-    for (let i = 0; i < (photos || []).length; i += CHUNK_SIZE) {
-      const chunk = photos.slice(i, i + CHUNK_SIZE);
-      await Promise.all(
-        chunk.map(async (p) => {
-          try {
-            const faces = await extractFacesFromS3Key(p.preview_key);
+    // Rule 2 & 3: Process in batches of 16 using 640px thumbnail_key
+    const BATCH_SIZE = 16;
+    for (let i = 0; i < (photos || []).length; i += BATCH_SIZE) {
+      const chunk = (photos || []).slice(i, i + BATCH_SIZE);
+      const batchItems = chunk.map((p) => ({
+        id: p.id,
+        key: p.thumbnail_key || p.preview_key,
+      }));
 
-            // 1. Delete previous faces for this photo to avoid stale/fake records
-            await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);
+      const resultMap = await extractFacesBatchFromS3Keys(batchItems);
 
-            if (faces && faces.length > 0) {
-              totalFacesFound += faces.length;
+      const allFaceRecords: any[] = [];
+      const photoUpdatePromises: Promise<any>[] = [];
 
-              // 2. Insert valid face records
-              const faceRecords = faces.map((f) => ({
-                photo_id: p.id,
-                gallery_id: p.gallery_id,
-                bounding_box: f.box,
-                embedding: f.embedding,
-              }));
-
-              const { error: insErr } = await supabaseAdmin.from('photo_faces').insert(faceRecords);
-              if (!insErr) {
-                indexedCount++;
-                await supabaseAdmin
-                  .from('gallery_photos')
-                  .update({ face_count: faces.length })
-                  .eq('id', p.id);
-              }
-            } else {
-              // Reset face_count to 0 if no faces detected
-              await supabaseAdmin
-                .from('gallery_photos')
-                .update({ face_count: 0 })
-                .eq('id', p.id);
-            }
-          } catch (err) {
-            console.warn('Error processing photo in chunk:', p.id, err);
+      for (const p of chunk) {
+        const faces = resultMap.get(p.id) || [];
+        if (faces.length > 0) {
+          totalFacesFound += faces.length;
+          indexedCount++;
+          for (const f of faces) {
+            allFaceRecords.push({
+              photo_id: p.id,
+              gallery_id: p.gallery_id,
+              bounding_box: f.box,
+              embedding: f.embedding,
+            });
           }
-        })
-      );
+          photoUpdatePromises.push(
+            supabaseAdmin.from('gallery_photos').update({ face_count: faces.length }).eq('id', p.id)
+          );
+        } else {
+          photoUpdatePromises.push(
+            supabaseAdmin.from('gallery_photos').update({ face_count: 0 }).eq('id', p.id)
+          );
+        }
+      }
+
+      const photoIds = chunk.map((p) => p.id);
+      await supabaseAdmin.from('photo_faces').delete().in('photo_id', photoIds);
+      if (allFaceRecords.length > 0) {
+        await supabaseAdmin.from('photo_faces').insert(allFaceRecords);
+      }
+      await Promise.all(photoUpdatePromises);
     }
 
     const nextOffset = offset + (photos?.length || 0);
