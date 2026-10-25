@@ -6,16 +6,15 @@ export interface DetectedFace {
   confidence?: number;
 }
 
+const MODAL_FACE_ENDPOINT = 'https://sushantnawale700--studiocore-face-service-studiocoreface-909b81.us-east.modal.run/api/ai/extract-faces';
+
 const WORKER_ENDPOINTS = [
   process.env.FACE_WORKER_URL,
-  'http://127.0.0.1:8005/api/ai/extract-faces',
-  'http://143.244.133.235:8005/api/ai/extract-faces',
+  MODAL_FACE_ENDPOINT,
 ].filter(Boolean) as string[];
 
 const CLUSTER_ENDPOINTS = [
   process.env.FACE_CLUSTER_URL,
-  'http://127.0.0.1:8005/api/ai/cluster-faces',
-  'http://143.244.133.235:8005/api/ai/cluster-faces',
 ].filter(Boolean) as string[];
 
 /**

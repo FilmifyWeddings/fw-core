@@ -57,8 +57,11 @@ cd /var/www/fw-core || exit 1
 pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 restart ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
 pm2 save
 
-echo "Ensuring InsightFace AI worker is active and diagnosing..."
-systemctl restart insightface 2>/dev/null || systemctl restart face-worker 2>/dev/null || true
+echo "Disabling local CPU InsightFace worker to save 100% DigitalOcean CPU (offloaded to Modal L4 GPU)..."
+systemctl stop insightface 2>/dev/null || true
+systemctl disable insightface 2>/dev/null || true
+systemctl stop face-worker 2>/dev/null || true
+systemctl disable face-worker 2>/dev/null || true
 ufw allow 8005/tcp 2>/dev/null || true
 
 mkdir -p /var/www/fw-core/public
