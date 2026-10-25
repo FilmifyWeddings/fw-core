@@ -84,7 +84,7 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
         previewCanvas.toBlob(
           (b) => (b ? resolve(b) : reject(new Error('Preview conversion failed'))),
           'image/webp',
-          0.8
+          0.75
         );
       });
 
@@ -92,7 +92,7 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
       previewCanvas.width = 1;
       previewCanvas.height = 1;
 
-      // 2. Generate 400px Grid Thumbnail Blob (WebP 70% quality ~25KB)
+      // 2. Generate 400px Grid Thumbnail Blob (WebP 65% quality ~18-22KB)
       const thumbCanvas = document.createElement('canvas');
       const thumbScale = Math.min(400 / Math.max(bitmap.width, bitmap.height), 1);
       thumbCanvas.width = Math.max(1, Math.round(bitmap.width * thumbScale));
@@ -107,7 +107,7 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
         thumbCanvas.toBlob(
           (b) => (b ? resolve(b) : reject(new Error('Thumbnail conversion failed'))),
           'image/webp',
-          0.7
+          0.65
         );
       });
 
@@ -152,7 +152,7 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
       const pCtx = previewCanvas.getContext('2d', { alpha: false });
       pCtx?.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height);
       const previewBlob = await new Promise<Blob>((res) =>
-        previewCanvas.toBlob((b) => res(b!), 'image/webp', 0.8)
+        previewCanvas.toBlob((b) => res(b!), 'image/webp', 0.75)
       );
       previewCanvas.width = 1;
       previewCanvas.height = 1;
@@ -165,7 +165,7 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
       const tCtx = thumbCanvas.getContext('2d', { alpha: false });
       tCtx?.drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height);
       const thumbBlob = await new Promise<Blob>((res) =>
-        thumbCanvas.toBlob((b) => res(b!), 'image/webp', 0.7)
+        thumbCanvas.toBlob((b) => res(b!), 'image/webp', 0.65)
       );
       thumbCanvas.width = 1;
       thumbCanvas.height = 1;
@@ -289,8 +289,10 @@ export async function batchUploadPhotos(
     }
   };
 
-  // High-throughput parallel concurrency: 3 files at a time for optimal stability & memory
-  const CONCURRENCY = 3;
+  // Adaptive parallel concurrency: 6 files simultaneously on Desktop, 4 on Mobile for optimal speed & memory
+  const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+  const CONCURRENCY = isMobile ? 4 : 6;
+  const MAX_RETRY_ATTEMPTS = 5;
 
   for (let i = 0; i < files.length; i += CONCURRENCY) {
     if (signal?.aborted) {
@@ -299,56 +301,88 @@ export async function batchUploadPhotos(
 
     const batch = files.slice(i, i + CONCURRENCY);
 
+    // 1. Batch pre-fetch presigned upload URLs for this entire batch in 1 single HTTP call (slashes latency)
+    const batchUrlMap = new Map<string, any>();
+    try {
+      const batchRes = await fetch('/api/gallery/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          galleryId,
+          workspaceId,
+          files: batch.map((f) => ({
+            filename: encodeURIComponent(f.name.replace(/[^a-zA-Z0-9._-]/g, '_')),
+            originalType: f.type || 'image/jpeg',
+          })),
+        }),
+        signal,
+      });
+      const batchJson = await batchRes.json();
+      if (batchJson.success && Array.isArray(batchJson.results)) {
+        batchJson.results.forEach((resItem: any, idx: number) => {
+          if (batch[idx]) {
+            batchUrlMap.set(batch[idx].name, resItem);
+          }
+        });
+      }
+    } catch (batchUrlErr: any) {
+      console.warn('[ImageProcessor] Batch presigned URL fallback to individual:', batchUrlErr?.message);
+    }
+
     await Promise.all(
       batch.map(async (file) => {
         let attempts = 0;
         let lastErr: any = null;
 
-        while (attempts < 2) {
+        while (attempts < MAX_RETRY_ATTEMPTS) {
           try {
             if (onProgress) {
               onProgress(completed, total, Math.round((completed / total) * 100), `Optimizing ${file.name}...`);
             }
 
-            // 1. Client-Side WebP Conversion (Memory-safe)
+            // 2. Client-Side WebP Conversion (Memory-safe OffscreenCanvas)
             const variants = await generateImageVariants(file);
 
-            // 2. Fetch Presigned URLs from API
-            const cleanName = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
-            const urlRes = await fetch('/api/gallery/upload-url', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                galleryId,
-                filename: cleanName,
-                originalType: file.type || 'image/jpeg',
-                workspaceId,
-              }),
-              signal,
-            });
+            // 3. Resolve Presigned URLs (from batch cache or individual fallback)
+            let presignedData = batchUrlMap.get(file.name);
+            if (!presignedData) {
+              const cleanName = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
+              const urlRes = await fetch('/api/gallery/upload-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  galleryId,
+                  filename: cleanName,
+                  originalType: file.type || 'image/jpeg',
+                  workspaceId,
+                }),
+                signal,
+              });
 
-            const urlJson = await urlRes.json();
-            if (!urlJson.success) {
-              throw new Error(urlJson.error || 'Failed to obtain presigned upload URLs');
+              const urlJson = await urlRes.json();
+              if (!urlJson.success) {
+                throw new Error(urlJson.error || 'Failed to obtain presigned upload URLs');
+              }
+              presignedData = urlJson;
             }
 
-            const { originalUploadUrl, previewUploadUrl, thumbUploadUrl, originalKey, previewKey, thumbKey } = urlJson;
+            const { originalUploadUrl, previewUploadUrl, thumbUploadUrl, originalKey, previewKey, thumbKey } = presignedData;
 
             if (onProgress) {
               onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} to Cloud...`);
             }
 
-            // 3. Direct Storage Parallel Uploads via Presigned URLs
+            // 4. Direct Storage Parallel Uploads via Presigned URLs
             await Promise.all([
               uploadBlobToPresignedUrl(originalUploadUrl, variants.original, file.type || 'image/jpeg', undefined, signal),
               uploadBlobToPresignedUrl(previewUploadUrl, variants.preview, 'image/webp', undefined, signal),
               uploadBlobToPresignedUrl(thumbUploadUrl, variants.thumb, 'image/webp', undefined, signal),
             ]);
 
-            // Record in manifest
+            // Record in manifest for crash protection & auto-resume
             recordUploadedToManifest(galleryId, file.name, file.size);
 
-            // 4. Collect for registration
+            // 5. Collect for registration
             pendingRegistration.push({
               gallery_id: galleryId,
               collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
@@ -378,8 +412,10 @@ export async function batchUploadPhotos(
               throw fileErr;
             }
             attempts++;
-            if (attempts < 2) {
-              await new Promise((r) => setTimeout(r, 600));
+            if (attempts < MAX_RETRY_ATTEMPTS) {
+              const backoffMs = Math.min(800 * Math.pow(2, attempts - 1), 6000);
+              console.warn(`[ImageProcessor] Retrying ${file.name} (Attempt ${attempts + 1}/${MAX_RETRY_ATTEMPTS}) in ${backoffMs}ms...`);
+              await new Promise((r) => setTimeout(r, backoffMs));
             }
           }
         }

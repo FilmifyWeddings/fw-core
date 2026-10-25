@@ -13,12 +13,15 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const galleryId = body.galleryId || body.gallery_id;
-    const filename = body.filename || body.fileName || body.file_name;
-    const originalType = body.originalType || body.content_type || 'image/jpeg';
     const requestedWorkspaceId = body.workspaceId || body.workspace_id;
+    const rawFiles: Array<{ filename?: string; fileName?: string; file_name?: string; originalType?: string; content_type?: string }> =
+      Array.isArray(body.files) ? body.files : (body.filename || body.fileName || body.file_name ? [{
+        filename: body.filename || body.fileName || body.file_name,
+        originalType: body.originalType || body.content_type || 'image/jpeg'
+      }] : []);
 
-    if (!galleryId || !filename) {
-      return NextResponse.json({ success: false, error: 'Missing galleryId or filename' }, { status: 400 });
+    if (!galleryId || rawFiles.length === 0) {
+      return NextResponse.json({ success: false, error: 'Missing galleryId or files' }, { status: 400 });
     }
 
     // 1. Fetch gallery details to verify existence and get studio workspace_id
@@ -55,36 +58,60 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Structured card-wise & studio-wise path in Backblaze B2:
-    // galleries/{workspaceId}/{galleryId}/original/...
-    // galleries/{workspaceId}/{galleryId}/previews/...
-    // galleries/{workspaceId}/{galleryId}/thumbs/...
+    // 3. Generate Backblaze B2 Presigned Upload URLs in parallel
     const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 7);
-    const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const isBatch = Array.isArray(body.files);
 
-    const originalKey = `galleries/${targetWorkspaceId}/${galleryId}/original/${timestamp}_${randomSuffix}_${baseName}.jpg`;
-    const previewKey = `galleries/${targetWorkspaceId}/${galleryId}/previews/${timestamp}_${randomSuffix}_${baseName}.webp`;
-    const thumbKey = `galleries/${targetWorkspaceId}/${galleryId}/thumbs/${timestamp}_${randomSuffix}_${baseName}.webp`;
+    const results = await Promise.all(
+      rawFiles.map(async (fileItem, index) => {
+        const fname = fileItem.filename || fileItem.fileName || fileItem.file_name || `photo_${index}`;
+        const ftype = fileItem.originalType || fileItem.content_type || 'image/jpeg';
+        const randomSuffix = Math.random().toString(36).substring(2, 7);
+        const baseName = fname.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
-    // 4. Generate Backblaze B2 Presigned Upload URLs
-    const [originalUploadUrl, previewUploadUrl, thumbUploadUrl] = await Promise.all([
-      getGalleryPresignedUploadUrl(originalKey, originalType, 3600, B2_GALLERY_BUCKET_NAME),
-      getGalleryPresignedUploadUrl(previewKey, 'image/webp', 3600, B2_GALLERY_BUCKET_NAME),
-      getGalleryPresignedUploadUrl(thumbKey, 'image/webp', 3600, B2_GALLERY_BUCKET_NAME),
-    ]);
+        const originalKey = `galleries/${targetWorkspaceId}/${galleryId}/original/${timestamp}_${randomSuffix}_${baseName}.jpg`;
+        const previewKey = `galleries/${targetWorkspaceId}/${galleryId}/previews/${timestamp}_${randomSuffix}_${baseName}.webp`;
+        const thumbKey = `galleries/${targetWorkspaceId}/${galleryId}/thumbs/${timestamp}_${randomSuffix}_${baseName}.webp`;
+
+        const [originalUploadUrl, previewUploadUrl, thumbUploadUrl] = await Promise.all([
+          getGalleryPresignedUploadUrl(originalKey, ftype, 3600, B2_GALLERY_BUCKET_NAME),
+          getGalleryPresignedUploadUrl(previewKey, 'image/webp', 3600, B2_GALLERY_BUCKET_NAME),
+          getGalleryPresignedUploadUrl(thumbKey, 'image/webp', 3600, B2_GALLERY_BUCKET_NAME),
+        ]);
+
+        return {
+          filename: fname,
+          originalKey,
+          previewKey,
+          thumbKey,
+          originalUploadUrl,
+          previewUploadUrl,
+          thumbUploadUrl,
+        };
+      })
+    );
 
     // Asynchronously ensure CORS is configured on the bucket
     ensureGalleryCors(B2_GALLERY_BUCKET_NAME).catch(() => {});
 
+    if (isBatch) {
+      return NextResponse.json({
+        success: true,
+        count: results.length,
+        results,
+      });
+    }
+
+    // Single file response for backward compatibility
+    const single = results[0];
     return NextResponse.json({
       success: true,
-      originalKey,
-      previewKey,
-      thumbKey,
-      originalUploadUrl,
-      previewUploadUrl,
-      thumbUploadUrl,
+      originalKey: single.originalKey,
+      previewKey: single.previewKey,
+      thumbKey: single.thumbKey,
+      originalUploadUrl: single.originalUploadUrl,
+      previewUploadUrl: single.previewUploadUrl,
+      thumbUploadUrl: single.thumbUploadUrl,
     });
   } catch (err: any) {
     console.error('Error generating presigned upload URLs:', err);

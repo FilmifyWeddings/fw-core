@@ -57,6 +57,7 @@ import {
   FileSpreadsheet,
   Clock,
   Send,
+  AlertTriangle,
 } from 'lucide-react';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { supabase } from '@/lib/supabase';
@@ -95,6 +96,7 @@ interface PhotoItem {
   id: string;
   gallery_id: string;
   collection_id: string | null;
+  file_name?: string;
   original_key: string;
   preview_key: string;
   thumbnail_key: string;
@@ -321,7 +323,49 @@ function AlbumStudioContent() {
   const { enqueueUpload } = useUploadQueue();
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadTargetCollection, setUploadTargetCollection] = useState<string>('all');
+  const [duplicateFiles, setDuplicateFiles] = useState<File[]>([]);
+  const [showDuplicatePrompt, setShowDuplicatePrompt] = useState(false);
+  const [showDesktopAppModal, setShowDesktopAppModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Intelligent Duplicate Detection for Photo Uploads
+  const handleSelectUploadFiles = useCallback((selectedFiles: File[], targetColId?: string) => {
+    if (!selectedFiles || selectedFiles.length === 0) return;
+
+    const colId = targetColId !== undefined ? targetColId : uploadTargetCollection;
+    const targetCol = colId !== 'all' ? colId : (collections[0]?.id || undefined);
+
+    // Existing photos in target collection (or entire gallery if 'all')
+    const existingPhotoNames = new Set<string>();
+    photos.forEach((p) => {
+      if (targetCol && colId !== 'all' && p.collection_id !== targetCol) return;
+      if (p.file_name) {
+        existingPhotoNames.add(p.file_name.trim().toLowerCase());
+      }
+      if (p.original_key) {
+        const parts = p.original_key.split('/');
+        const endPart = parts[parts.length - 1] || '';
+        const clean = endPart.replace(/^\d+_[a-z0-9]+_/, '');
+        if (clean) existingPhotoNames.add(clean.trim().toLowerCase());
+      }
+    });
+
+    const dupes: File[] = [];
+    selectedFiles.forEach((f) => {
+      if (existingPhotoNames.has(f.name.trim().toLowerCase())) {
+        dupes.push(f);
+      }
+    });
+
+    setUploadFiles(selectedFiles);
+    if (dupes.length > 0) {
+      setDuplicateFiles(dupes);
+      setShowDuplicatePrompt(true);
+    } else {
+      setDuplicateFiles([]);
+      setShowDuplicatePrompt(false);
+    }
+  }, [photos, uploadTargetCollection, collections]);
 
   // 1. Safe Multi-Tier Gallery Fetch & Auto-Highlights Initialization
   const loadData = useCallback(async () => {
@@ -598,7 +642,7 @@ function AlbumStudioContent() {
           body: JSON.stringify({
             gallery_id: gallery.id,
             embedding: rawEmb,
-            match_threshold: 0.48,
+            match_threshold: 0.40,
           }),
         });
 
@@ -3083,21 +3127,54 @@ function AlbumStudioContent() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          4. PHOTO UPLOADER MODAL (BACKGROUND FLOATING DRAWER)
+          4. PHOTO UPLOADER MODAL (BACKGROUND FLOATING DRAWER + DUPLICATE GUARD)
       ───────────────────────────────────────────────────────────── */}
       {isUploadModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full border border-[#E7E2D8] shadow-2xl space-y-5">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-zinc-900">Upload Photos</h3>
+                <p className="text-[11px] text-zinc-500 font-medium">Add photos to your event gallery collection</p>
               </div>
               <button
                 type="button"
-                onClick={() => setIsUploadModalOpen(false)}
+                onClick={() => {
+                  setIsUploadModalOpen(false);
+                  setShowDuplicatePrompt(false);
+                  setDuplicateFiles([]);
+                }}
                 className="p-1.5 text-zinc-400 hover:text-zinc-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* PIXIESET-STYLE DESKTOP UPLOADER RECOMMENDED CARD */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-200/80 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Laptop className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-zinc-900">StudioCore Desktop Uploader</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-extrabold uppercase tracking-wide">
+                      Recommended for 1,000+ photos
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-600 font-normal leading-tight mt-0.5">
+                    Upload 25MB+ RAW albums 10x faster with folder auto-sync, zero browser crashes &amp; auto-resume.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDesktopAppModal(true)}
+                className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Get App</span>
               </button>
             </div>
 
@@ -3106,7 +3183,13 @@ function AlbumStudioContent() {
                 <label className="block text-xs font-bold text-zinc-700 mb-1">Target Collection / Album</label>
                 <select
                   value={uploadTargetCollection}
-                  onChange={(e) => setUploadTargetCollection(e.target.value)}
+                  onChange={(e) => {
+                    const newCol = e.target.value;
+                    setUploadTargetCollection(newCol);
+                    if (uploadFiles.length > 0) {
+                      handleSelectUploadFiles(uploadFiles, newCol);
+                    }
+                  }}
                   className="w-full px-3.5 py-2 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-800 cursor-pointer"
                 >
                   <option value="all">Default / Main Album</option>
@@ -3118,6 +3201,17 @@ function AlbumStudioContent() {
 
               <div
                 onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleSelectUploadFiles(Array.from(e.dataTransfer.files));
+                  }
+                }}
                 className="border-2 border-dashed border-[#D5CFBE] hover:border-amber-500 bg-[#FAF9F5] rounded-3xl p-8 text-center cursor-pointer transition-all space-y-3"
               >
                 <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
@@ -3125,7 +3219,10 @@ function AlbumStudioContent() {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-zinc-800">
-                    Click or drag and drop photos
+                    Click or drag and drop photos here
+                  </p>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    Supports high-res JPG, PNG, WebP up to 100MB per file
                   </p>
                 </div>
                 <input
@@ -3136,11 +3233,58 @@ function AlbumStudioContent() {
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files && e.target.files.length > 0) {
-                      setUploadFiles(Array.from(e.target.files));
+                      handleSelectUploadFiles(Array.from(e.target.files));
                     }
                   }}
                 />
               </div>
+
+              {/* DUPLICATE PHOTO DETECTION INTERACTIVE PROMPT */}
+              {showDuplicatePrompt && duplicateFiles.length > 0 && (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-3 animate-in fade-in duration-200">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-black text-amber-950">
+                          Duplicate Photos Detected ({duplicateFiles.length})
+                        </h4>
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                          Already in album
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed mt-1">
+                        {duplicateFiles.length} photo{duplicateFiles.length > 1 ? 's' : ''} with identical filenames already exist in this collection (e.g. <strong>{duplicateFiles.slice(0, 2).map((f) => f.name).join(', ')}</strong>{duplicateFiles.length > 2 ? ` and ${duplicateFiles.length - 2} more` : ''}).
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dupeNames = new Set(duplicateFiles.map((d) => d.name.toLowerCase()));
+                        const uniqueFiles = uploadFiles.filter((f) => !dupeNames.has(f.name.toLowerCase()));
+                        setUploadFiles(uniqueFiles);
+                        setShowDuplicatePrompt(false);
+                        setDuplicateFiles([]);
+                      }}
+                      className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Skip Duplicates ({duplicateFiles.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDuplicatePrompt(false);
+                      }}
+                      className="py-2 px-3 rounded-xl bg-zinc-200 hover:bg-zinc-300 text-zinc-800 font-bold text-xs transition cursor-pointer"
+                    >
+                      <span>Upload Anyway (Keep Both)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {uploadFiles.length > 0 && (
                 <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-900 font-bold">
@@ -3150,7 +3294,11 @@ function AlbumStudioContent() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setUploadFiles([])}
+                    onClick={() => {
+                      setUploadFiles([]);
+                      setShowDuplicatePrompt(false);
+                      setDuplicateFiles([]);
+                    }}
                     className="text-[10px] text-rose-600 hover:underline cursor-pointer"
                   >
                     Clear
@@ -3170,12 +3318,83 @@ function AlbumStudioContent() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsUploadModalOpen(false)}
+                  onClick={() => {
+                    setIsUploadModalOpen(false);
+                    setShowDuplicatePrompt(false);
+                    setDuplicateFiles([]);
+                  }}
                   className="px-5 py-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
                 >
                   Cancel
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          4B. PIXIESET-STYLE DESKTOP UPLOADER APP MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {showDesktopAppModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full border border-[#E7E2D8] shadow-2xl space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                  <Laptop className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">StudioCore Desktop Uploader</h3>
+                  <p className="text-[11px] text-zinc-500">Pixieset-style high-speed standalone photo uploader</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDesktopAppModal(false)}
+                className="p-1.5 text-zinc-400 hover:text-zinc-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8] space-y-2">
+                <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider">
+                  Why use the Desktop Uploader?
+                </h4>
+                <ul className="text-xs text-zinc-600 space-y-1.5 list-disc list-inside">
+                  <li><strong>10x Faster:</strong> 8-12 parallel direct network streams to Cloud.</li>
+                  <li><strong>No Tab Limits:</strong> Close browser anytime without interrupting upload.</li>
+                  <li><strong>Auto-Resume:</strong> If Wi-Fi disconnects, it resumes automatically.</li>
+                  <li><strong>Duplicate Guard:</strong> Auto-skips photos that already exist in online album.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-2.5">
+                <a
+                  href="/downloads/studiocore-desktop-uploader.zip"
+                  download="studiocore-desktop-uploader.zip"
+                  className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download Desktop Uploader (.zip for Windows &amp; Mac)</span>
+                </a>
+
+                <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-600 space-y-1">
+                  <p className="font-bold text-zinc-800">Quick 2-Step Setup:</p>
+                  <p>1. Extract the downloaded ZIP folder on your PC.</p>
+                  <p>2. Double-click <code>studiocore-uploader.bat</code> (Windows) or run with Node. Paste your gallery link and drag your photo folder!</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowDesktopAppModal(false)}
+                className="w-full py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
