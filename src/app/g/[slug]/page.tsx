@@ -77,8 +77,9 @@ function WhatsAppIcon({ className = 'w-4 h-4' }: { className?: string }) {
     </svg>
   );
 }
-import { downloadPhotosAsZip, ZipDownloadProgress } from '@/lib/gallery/clientZipDownloader';
+import { downloadPhotosAsZip, ZipDownloadProgress, extractOriginalFileName } from '@/lib/gallery/clientZipDownloader';
 import { ZipDownloadModal } from '@/components/gallery/ZipDownloadModal';
+import { DownloadSelectionModal } from '@/components/gallery/DownloadSelectionModal';
 import { getPublicGalleryUrl } from '@/lib/r2';
 import { FaceScannerModal } from '@/components/gallery/FaceScannerModal';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
@@ -209,9 +210,24 @@ function GuestSlugGalleryContent() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
   const [isZipModalOpen, setIsZipModalOpen] = useState(false);
+  const [isDownloadSelectModalOpen, setIsDownloadSelectModalOpen] = useState(false);
   const [zipProgress, setZipProgress] = useState<ZipDownloadProgress | null>(null);
   const zipAbortControllerRef = useRef<AbortController | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+
+  // Warn user if reloading while ZIP download is actively running
+  useEffect(() => {
+    if (!isDownloadingAll) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'Photo download is in progress. Leaving will cancel the download.';
+      return 'Photo download is in progress. Leaving will cancel the download.';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isDownloadingAll]);
   const [isSubEventsDropdownOpen, setIsSubEventsDropdownOpen] = useState(false);
   const subEventsDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -338,7 +354,11 @@ function GuestSlugGalleryContent() {
         }
       }
 
-      // Fetch full collections & photos in parallel if in PRIVILEGED mode OR gallery is PUBLISHED
+      // Render gallery hero immediately so user sees cover preset in milliseconds!
+      setGallery(gal);
+      setLoading(false);
+
+      // Fetch full collections & photos in parallel in background
       const isGalleryPublished = gal.status?.toUpperCase() === 'PUBLISHED' || (gal.is_active && gal.status?.toUpperCase() !== 'UNPUBLISHED');
       if (isGalleryPublished || (isPrivilegedMode && hasValidPin)) {
         try {
@@ -359,7 +379,6 @@ function GuestSlugGalleryContent() {
     } catch (err: any) {
       console.error('Error loading gallery:', err);
       setError(err.message || 'Failed to load gallery');
-    } finally {
       setLoading(false);
     }
   }, [slug, isSelectionMode, isFullAccess, passKeyParam, shareKeyParam, isVipMode, isPreviewMode, isPrivilegedMode]);
@@ -687,37 +706,55 @@ function GuestSlugGalleryContent() {
     }
   };
 
-  // Download High-Res Photo (Direct Save, Avoid New Tab)
+  // Download High-Res Photo (Direct Save, Original Filename, iPhone Camera Roll Support)
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     setDownloadingId(photo.id);
     const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
-    const cleanFileName = `photo_${photo.id.slice(0, 8)}.jpg`;
+    const originalFileName = extractOriginalFileName(photo);
 
     try {
       const res = await fetch(
-        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanFileName)}`
+        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(originalFileName)}`
       );
       const json = await res.json();
-      if (json.success && json.downloadUrl) {
-        const link = document.createElement('a');
-        link.href = json.downloadUrl;
-        link.setAttribute('download', cleanFileName);
-        link.setAttribute('rel', 'noopener noreferrer');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        return;
+      const directUrl = (json.success && json.downloadUrl) ? json.downloadUrl : photo.preview_url;
+
+      // 1. iPhone iOS Safari: native Save Image to Camera Roll via Web Share API
+      const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (isIOS && typeof navigator.share === 'function') {
+        try {
+          const imgRes = await fetch(directUrl);
+          const blob = await imgRes.blob();
+          const file = new File([blob], originalFileName, { type: blob.type || 'image/jpeg' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: originalFileName,
+            });
+            return;
+          }
+        } catch (_) {}
       }
+
+      // 2. Android & Desktop: Direct single-click download with original filename
+      const link = document.createElement('a');
+      link.href = directUrl;
+      link.setAttribute('download', originalFileName);
+      link.setAttribute('rel', 'noopener noreferrer');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
     } catch (_) {}
 
-    // Fallback: fetch blob directly to trigger native download without opening a new tab
+    // Fallback: fetch blob directly
     try {
       const blobRes = await fetch(photo.preview_url);
       const blob = await blobRes.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.setAttribute('download', cleanFileName);
+      link.setAttribute('download', originalFileName);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -729,7 +766,7 @@ function GuestSlugGalleryContent() {
     }
   };
 
-  // Batch Download All Photos as Single Original High-Res ZIP Archive
+  // Batch Download Photos as Single Original High-Res ZIP Archive with Category Folders
   const handleDownloadPhotosZip = async (photosToZip: PhotoItem[], zipNamePrefix: string) => {
     if (photosToZip.length === 0) {
       alert('No photos available to download.');
@@ -744,11 +781,20 @@ function GuestSlugGalleryContent() {
     const safeTitle = (gallery?.title || 'Wedding')
       .replace(/[^a-zA-Z0-9_-]/g, '_')
       .slice(0, 30);
-    const cleanZipName = `${safeTitle}_${zipNamePrefix}_Original.zip`;
+    const cleanZipName = `${safeTitle}_${zipNamePrefix}.zip`;
+    const rootFolderName = `${gallery?.title || 'Wedding'} - ${formattedDate}`;
+
+    // Map collection IDs to names
+    const colMap: Record<string, string> = {};
+    collections.forEach((c) => {
+      colMap[c.id] = c.name;
+    });
 
     const res = await downloadPhotosAsZip({
       photos: photosToZip,
       zipFileName: cleanZipName,
+      rootFolderName,
+      collectionsMap: colMap,
       onProgress: (p) => setZipProgress(p),
       signal: controller.signal,
     });
@@ -773,13 +819,35 @@ function GuestSlugGalleryContent() {
     await handleDownloadPhotosZip(matchedPhotos, 'My_Photos');
   };
 
-  // One-click Download Trigger from Sub-Events Bar
-  const handleDownloadAllPhotosTrigger = async () => {
-    const listToDownload = matchedPhotos.length > 0 ? matchedPhotos : targetFullPhotos;
-    const prefix = selectedCollectionId === 'all'
-      ? (matchedPhotos.length > 0 ? 'My_Photos' : 'All_Photos')
-      : collections.find((c) => c.id === selectedCollectionId)?.name?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'Event';
-    await handleDownloadPhotosZip(listToDownload, prefix);
+  // One-click Download Trigger: Opens the DownloadSelectionModal!
+  const handleDownloadAllPhotosTrigger = () => {
+    setIsDownloadSelectModalOpen(true);
+  };
+
+  // Confirmed from DownloadSelectionModal
+  const handleConfirmDownloadSelection = async ({ mode, collectionIds }: { mode: 'all' | 'custom'; collectionIds: string[] }) => {
+    setIsDownloadSelectModalOpen(false);
+    let photosToDownload: PhotoItem[] = [];
+    let prefix = 'All_Photos';
+
+    if (mode === 'all') {
+      photosToDownload = fullPhotos;
+      prefix = 'All_Photos';
+    } else {
+      photosToDownload = fullPhotos.filter(
+        (p) => p.collection_id && collectionIds.includes(p.collection_id)
+      );
+      prefix = collectionIds.length === 1
+        ? (collections.find((c) => c.id === collectionIds[0])?.name?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'Event')
+        : 'Selected_Events';
+    }
+
+    if (photosToDownload.length === 0) {
+      alert('No photos found in the selected categories.');
+      return;
+    }
+
+    await handleDownloadPhotosZip(photosToDownload, prefix);
   };
 
   const targetFullPhotos = useMemo(() => {
@@ -1011,45 +1079,36 @@ function GuestSlugGalleryContent() {
 
   if (loading) {
     const rawBranding = gallery?.studio_branding;
-    const currentStudioName = rawBranding?.studio_name || 'Wedding Photography';
+    const currentStudioName = rawBranding?.studio_name;
     const currentStudioLogo = rawBranding?.logo_url;
 
     return (
-      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-between p-8 select-none animate-in fade-in duration-500">
+      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-between p-8 select-none animate-in fade-in duration-300">
         <div className="w-full flex justify-center pt-8" />
 
         {/* Center Animated Logo & Studio Branding */}
-        <div className="flex flex-col items-center text-center space-y-5 my-auto max-w-sm">
-          {/* Animated 3D Monogram Logo with Liquid Amber Wave */}
-          <div className="relative w-24 h-24 rounded-3xl bg-white/95 p-2.5 shadow-[0_20px_50px_rgba(217,119,6,0.2),inset_0_2px_4px_rgba(255,255,255,0.9)] border border-amber-100 flex items-center justify-center overflow-hidden">
-            <div className="absolute inset-0 w-full h-full overflow-hidden rounded-3xl pointer-events-none">
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-amber-600 via-amber-500 to-amber-400 opacity-90 animate-liquid-rise">
-                <div className="absolute -top-3 inset-x-0 h-4 bg-amber-400 opacity-80 rounded-[40%] animate-wave-churn" />
-              </div>
+        <div className="flex flex-col items-center text-center space-y-4 my-auto max-w-sm">
+          {currentStudioLogo ? (
+            <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden flex items-center justify-center shadow-lg bg-transparent">
+              <img src={currentStudioLogo} alt={currentStudioName || 'Studio Logo'} className="w-full h-full object-contain" />
             </div>
-
-            {currentStudioLogo ? (
-              <div className="relative z-10 w-full h-full rounded-2xl overflow-hidden bg-white/90 flex items-center justify-center p-1.5 shadow-sm">
-                <img src={currentStudioLogo} alt={currentStudioName} className="w-full h-full object-contain" />
-              </div>
-            ) : (
-              <div className="relative z-10 flex items-center justify-center select-none">
-                <span className="text-3xl font-black tracking-tighter text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
-                  SC
-                </span>
-              </div>
-            )}
-
-            <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/40 to-transparent rounded-t-3xl pointer-events-none" />
-          </div>
+          ) : currentStudioName ? (
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 text-white font-serif font-black flex items-center justify-center text-3xl shadow-lg">
+              {currentStudioName.charAt(0).toUpperCase()}
+            </div>
+          ) : (
+            <div className="w-14 h-14 rounded-full border-2 border-amber-600/20 border-t-amber-600 animate-spin" />
+          )}
 
           <div className="space-y-1.5">
-            <h2
-              className="text-2xl sm:text-3xl font-normal text-zinc-900 tracking-wide"
-              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
-            >
-              {currentStudioName}
-            </h2>
+            {currentStudioName && (
+              <h2
+                className="text-2xl sm:text-3xl font-normal text-zinc-900 tracking-wide"
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              >
+                {currentStudioName}
+              </h2>
+            )}
             <div className="flex items-center justify-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
               <span className="text-[11px] font-mono uppercase tracking-[0.22em] text-zinc-400 font-semibold">
@@ -1545,7 +1604,7 @@ function GuestSlugGalleryContent() {
             {/* Oversized High-Fashion Title (Studio name and photo count removed per user request) */}
             <div className="space-y-1 sm:space-y-2 max-w-4xl mx-auto animate-in fade-in duration-700">
               <h1
-                className={`font-normal tracking-[0.22em] uppercase leading-none ${isGuestPreRegistration ? 'text-2xl sm:text-5xl lg:text-6xl' : 'text-4xl sm:text-7xl lg:text-8xl'}`}
+                className={`font-normal uppercase leading-none ${isGuestPreRegistration ? 'text-3xl sm:text-6xl lg:text-7xl tracking-[0.16em]' : 'text-4xl sm:text-7xl lg:text-8xl tracking-[0.22em]'}`}
                 style={{ fontFamily: headingFont }}
               >
                 {gallery.title}
@@ -1553,7 +1612,7 @@ function GuestSlugGalleryContent() {
             </div>
 
             {/* Framed Vertical Portrait Artwork (3:4 ratio) */}
-            <div className={`${isGuestPreRegistration ? 'my-auto h-36 sm:h-56 md:h-64 max-h-[35vh] aspect-[3/4]' : 'mt-8 sm:mt-12 w-64 sm:w-80 md:w-96 aspect-[3/4]'} rounded-xs overflow-hidden shadow-2xl border-4 border-white bg-black relative group animate-in fade-in zoom-in-95 duration-1000`}>
+            <div className={`${isGuestPreRegistration ? 'my-auto w-48 sm:w-64 md:w-80 max-h-[46vh] aspect-[3/4]' : 'mt-8 sm:mt-12 w-64 sm:w-80 md:w-96 aspect-[3/4]'} rounded-xs overflow-hidden shadow-2xl border-4 border-white bg-black relative group animate-in fade-in zoom-in-95 duration-1000`}>
               {effectiveCoverUrl ? (
                 <img
                   src={effectiveCoverUrl}
@@ -1629,7 +1688,7 @@ function GuestSlugGalleryContent() {
             style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
           >
             {/* Left Content Side */}
-            <div className={`flex flex-col justify-between space-y-4 animate-in fade-in slide-in-from-left-6 duration-1000 ${isGuestPreRegistration ? 'p-4 sm:p-8 lg:p-12' : 'p-8 sm:p-14 lg:p-16'}`}>
+            <div className={`flex flex-col justify-between space-y-4 animate-in fade-in slide-in-from-left-6 duration-1000 ${isGuestPreRegistration ? 'p-4 sm:p-8 lg:p-12 order-2 lg:order-1' : 'p-8 sm:p-14 lg:p-16'}`}>
               {/* Gallery by {studioName} subtitle (Duplicate top bar removed per user request) */}
               <div className="pt-2">
                 <span className="text-[11px] font-mono uppercase tracking-[0.28em] opacity-60 block font-bold">
@@ -1653,8 +1712,8 @@ function GuestSlugGalleryContent() {
               {renderHeroAction()}
             </div>
 
-            {/* Right Artwork Side (Responsive fixed frame) */}
-            <div className={`${isGuestPreRegistration ? 'hidden sm:block min-h-0 h-full' : 'min-h-[380px] lg:min-h-full'} overflow-hidden relative group animate-in fade-in zoom-in-95 duration-1000`}>
+            {/* Right Artwork Side (Responsive frame visible on mobile too) */}
+            <div className={`${isGuestPreRegistration ? 'order-1 lg:order-2 h-44 sm:h-64 lg:h-full relative overflow-hidden rounded-2xl mx-3 sm:mx-0 my-1 lg:my-0 shadow-md' : 'min-h-[380px] lg:min-h-full'} overflow-hidden relative group animate-in fade-in zoom-in-95 duration-1000`}>
               {effectiveCoverUrl ? (
                 <img
                   src={effectiveCoverUrl}
@@ -1719,7 +1778,7 @@ function GuestSlugGalleryContent() {
               </div>
 
               {/* The Vibrant Center Arch Portal Frame */}
-              <div className={`${isGuestPreRegistration ? 'h-36 sm:h-52 md:h-64 max-h-[35vh] aspect-[9/13]' : 'w-64 sm:w-80 md:w-96 aspect-[9/13]'} rounded-t-[140px] sm:rounded-t-[200px] rounded-b-2xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.9)] border-2 border-white/50 relative bg-zinc-900 group`}>
+              <div className={`${isGuestPreRegistration ? 'w-48 sm:w-64 md:w-80 max-h-[46vh] aspect-[9/13]' : 'w-64 sm:w-80 md:w-96 aspect-[9/13]'} rounded-t-[140px] sm:rounded-t-[200px] rounded-b-2xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.9)] border-2 border-white/50 relative bg-zinc-900 group`}>
                 {cleanCoverUrl && (
                   <>
                     <img
@@ -1916,7 +1975,7 @@ function GuestSlugGalleryContent() {
                 </div>
 
                 {/* Centered Vertical Portrait Frame (No heavy shadow per user request) */}
-                <div className={`relative ${isGuestPreRegistration ? 'h-36 sm:h-52 md:h-64 max-h-[35vh] aspect-[3/4]' : 'w-64 sm:w-80 md:w-96 aspect-[3/4]'} overflow-hidden bg-stone-900 border border-white/20 animate-in fade-in zoom-in-95 duration-1000 shadow-xl`}>
+                <div className={`relative ${isGuestPreRegistration ? 'w-48 sm:w-64 md:w-80 max-h-[46vh] aspect-[3/4]' : 'w-64 sm:w-80 md:w-96 aspect-[3/4]'} overflow-hidden bg-stone-900 border border-white/20 animate-in fade-in zoom-in-95 duration-1000 shadow-xl`}>
                   {cleanCoverUrl ? (
                     <>
                       <img
@@ -2976,7 +3035,18 @@ function GuestSlugGalleryContent() {
         />
       )}
 
-      {/* 6.5 CLIENT-SIDE ORIGINAL HIGH-RES ZIP DOWNLOAD MODAL */}
+      {/* 6.4 DOWNLOAD SELECTION MODAL (All Photos vs Sub-Events) */}
+      <DownloadSelectionModal
+        isOpen={isDownloadSelectModalOpen}
+        onClose={() => setIsDownloadSelectModalOpen(false)}
+        albumTitle={gallery?.title || 'Wedding Gallery'}
+        totalPhotosCount={fullPhotos.length}
+        collections={collections}
+        onConfirmDownload={handleConfirmDownloadSelection}
+        accentColor={designPalette.accentColor}
+      />
+
+      {/* 6.5 CLIENT-SIDE ORIGINAL HIGH-RES ZIP DOWNLOAD FLOATING WIDGET */}
       <ZipDownloadModal
         isOpen={isZipModalOpen}
         albumTitle={gallery?.title || 'Wedding Gallery'}
@@ -3075,32 +3145,13 @@ export default function GuestSlugGalleryPage() {
       fallback={
         <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-between p-8 select-none">
           <div className="w-full flex justify-center pt-8" />
-          <div className="flex flex-col items-center text-center space-y-5 my-auto max-w-sm">
-            <div className="relative w-24 h-24 rounded-3xl bg-white/95 p-2.5 shadow-[0_20px_50px_rgba(217,119,6,0.2)] border border-amber-100 flex items-center justify-center overflow-hidden">
-              <div className="absolute inset-0 w-full h-full overflow-hidden rounded-3xl pointer-events-none">
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-amber-600 via-amber-500 to-amber-400 opacity-90 animate-liquid-rise">
-                  <div className="absolute -top-3 inset-x-0 h-4 bg-amber-400 opacity-80 rounded-[40%] animate-wave-churn" />
-                </div>
-              </div>
-              <div className="relative z-10 flex items-center justify-center select-none">
-                <span className="text-3xl font-black tracking-tighter text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
-                  SC
-                </span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <h2
-                className="text-2xl sm:text-3xl font-normal text-zinc-900 tracking-wide"
-                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
-              >
-                StudioCore Photography
-              </h2>
-              <div className="flex items-center justify-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                <span className="text-[11px] font-mono uppercase tracking-[0.22em] text-zinc-400 font-semibold">
-                  Opening Gallery
-                </span>
-              </div>
+          <div className="flex flex-col items-center text-center space-y-4 my-auto">
+            <div className="w-12 h-12 rounded-full border-2 border-amber-600/20 border-t-amber-600 animate-spin" />
+            <div className="flex items-center justify-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+              <span className="text-[11px] font-mono uppercase tracking-[0.22em] text-zinc-400 font-semibold">
+                Opening Gallery
+              </span>
             </div>
           </div>
           <div className="pb-4 text-center">

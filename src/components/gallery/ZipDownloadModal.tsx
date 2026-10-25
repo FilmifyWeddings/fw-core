@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Download, X, CheckCircle2, AlertCircle, RefreshCw, FileArchive } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { X, CheckCircle2, FileArchive } from 'lucide-react';
 import { ZipDownloadProgress } from '@/lib/gallery/clientZipDownloader';
 
 interface ZipDownloadModalProps {
@@ -19,111 +19,96 @@ export function ZipDownloadModal({
   onCancel,
   accentColor = '#D97706',
 }: ZipDownloadModalProps) {
+  const isDone = progress?.status === 'done';
+
+  // Automatically dismiss floating widget 4 seconds after download completes
+  useEffect(() => {
+    if (isDone) {
+      const timer = setTimeout(() => {
+        onCancel();
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [isDone, onCancel]);
+
   if (!isOpen || !progress) return null;
 
-  const isDone = progress.status === 'done';
   const isCompressing = progress.status === 'compressing';
   const isSaving = progress.status === 'saving';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-zinc-200 shadow-2xl space-y-6 relative">
-        {/* Top Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md"
-              style={{ backgroundColor: accentColor }}
-            >
-              {isDone ? (
-                <CheckCircle2 className="w-5 h-5 text-white" />
-              ) : (
-                <FileArchive className="w-5 h-5 text-white animate-bounce" />
-              )}
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-zinc-900 leading-tight">
-                {isDone ? 'Download Ready!' : 'Downloading Original Photos'}
-              </h3>
-              <p className="text-xs text-zinc-500 truncate max-w-[220px] sm:max-w-[260px]">
-                {albumTitle}
-              </p>
-            </div>
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-6 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-96 bg-white/95 backdrop-blur-xl rounded-2xl p-4 sm:p-5 border border-zinc-200 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-3 animate-in slide-in-from-bottom-5 duration-300"
+    >
+      {/* Top Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-xs shrink-0"
+            style={{ backgroundColor: isDone ? '#10B981' : accentColor }}
+          >
+            {isDone ? (
+              <CheckCircle2 className="w-4 h-4 text-white" />
+            ) : (
+              <FileArchive className="w-4 h-4 text-white animate-bounce" />
+            )}
           </div>
-
-          {!isDone && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition cursor-pointer"
-              title="Cancel Download"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Progress Display */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs font-semibold">
-            <span className="text-zinc-600">
-              {isDone
-                ? 'All photos archived and saved!'
-                : isSaving
-                ? 'Saving ZIP to device...'
-                : isCompressing
-                ? 'Packaging high-res archive...'
-                : `Fetching photo ${progress.current} of ${progress.total}`}
-            </span>
-            <span className="font-mono text-zinc-900">{progress.percent}%</span>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden p-0.5 border border-zinc-200/80">
-            <div
-              className="h-full rounded-full transition-all duration-300 ease-out"
-              style={{
-                width: `${progress.percent}%`,
-                backgroundColor: isDone ? '#10B981' : accentColor,
-              }}
-            />
-          </div>
-
-          {/* Current File / Status Subtitle */}
-          <div className="flex items-center justify-between text-[11px] text-zinc-400">
-            <span className="truncate max-w-[260px] font-mono">
-              {progress.currentFile || 'Processing high-res photos...'}
-            </span>
-            <span>
-              {progress.current} / {progress.total}
-            </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-zinc-900 leading-tight truncate">
+              {isDone ? 'Download Complete!' : 'Downloading Photos'}
+            </h3>
+            <p className="text-[11px] text-zinc-500 truncate max-w-[200px] sm:max-w-[220px]">
+              {albumTitle}
+            </p>
           </div>
         </div>
 
-        {/* Info Note & Close Button */}
-        <div className="pt-2 border-t border-zinc-100 flex items-center justify-between">
-          <p className="text-[11px] text-zinc-400 leading-tight">
-            Original full quality • Zero cloud wait
-          </p>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="p-1 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition cursor-pointer"
+          title={isDone ? 'Close' : 'Cancel Download'}
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
 
-          {isDone ? (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-4 py-2 rounded-xl text-white font-bold text-xs shadow-md transition cursor-pointer hover:opacity-90"
-              style={{ backgroundColor: accentColor }}
-            >
-              Done
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-3.5 py-1.5 rounded-xl border border-zinc-200 text-zinc-600 hover:bg-zinc-50 font-semibold text-xs transition cursor-pointer"
-            >
-              Cancel
-            </button>
-          )}
+      {/* Progress Display */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-[11px] font-semibold">
+          <span className="text-zinc-600 truncate max-w-[240px]">
+            {isDone
+              ? 'ZIP archive saved to your device!'
+              : isSaving
+              ? 'Saving to your device...'
+              : isCompressing
+              ? 'Packaging ZIP file...'
+              : `Downloading photo ${progress.current} of ${progress.total}`}
+          </span>
+          <span className="font-mono text-zinc-900 shrink-0 ml-2">{progress.percent}%</span>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden p-0.5 border border-zinc-200/80">
+          <div
+            className="h-full rounded-full transition-all duration-300 ease-out"
+            style={{
+              width: `${progress.percent}%`,
+              backgroundColor: isDone ? '#10B981' : accentColor,
+            }}
+          />
+        </div>
+
+        {/* Current File */}
+        <div className="flex items-center justify-between text-[10px] text-zinc-400">
+          <span className="truncate max-w-[240px] font-mono">
+            {progress.currentFile || 'Downloading photos...'}
+          </span>
+          <span className="shrink-0 font-mono">
+            {progress.current} / {progress.total}
+          </span>
         </div>
       </div>
     </div>
