@@ -59,7 +59,6 @@ import {
   Send,
   AlertTriangle,
   Zap,
-  ExternalLink,
 } from 'lucide-react';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { supabase } from '@/lib/supabase';
