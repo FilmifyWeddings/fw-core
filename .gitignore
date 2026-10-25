@@ -50,3 +50,4 @@ baileys-worker/sessions/
 
 .next-chunks-backup/
 .review_cache/
+public/downloads/*.exe

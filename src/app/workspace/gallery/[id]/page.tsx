@@ -58,6 +58,8 @@ import {
   Clock,
   Send,
   AlertTriangle,
+  Zap,
+  ExternalLink,
 } from 'lucide-react';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { supabase } from '@/lib/supabase';
@@ -326,7 +328,36 @@ function AlbumStudioContent() {
   const [duplicateFiles, setDuplicateFiles] = useState<File[]>([]);
   const [showDuplicatePrompt, setShowDuplicatePrompt] = useState(false);
   const [showDesktopAppModal, setShowDesktopAppModal] = useState(false);
+  const [isDesktopEngineActive, setIsDesktopEngineActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Pic-Time Style: Probe local Desktop Engine on 127.0.0.1:41789
+  useEffect(() => {
+    let mounted = true;
+    const probeEngine = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:41789/status', {
+          mode: 'cors',
+          signal: AbortSignal.timeout(1200),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (mounted && data.status === 'online') {
+            setIsDesktopEngineActive(true);
+            return;
+          }
+        }
+      } catch (_) {}
+      if (mounted) setIsDesktopEngineActive(false);
+    };
+
+    probeEngine();
+    const interval = setInterval(probeEngine, 4000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Intelligent Duplicate Detection for Photo Uploads
   const handleSelectUploadFiles = useCallback((selectedFiles: File[], targetColId?: string) => {
@@ -3150,33 +3181,64 @@ function AlbumStudioContent() {
               </button>
             </div>
 
-            {/* PIXIESET-STYLE DESKTOP UPLOADER RECOMMENDED CARD */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-200/80 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs shrink-0">
-                  <Laptop className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-zinc-900">StudioCore Desktop Uploader</span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-extrabold uppercase tracking-wide">
-                      Recommended for 1,000+ photos
-                    </span>
+            {/* PIC-TIME STYLE DESKTOP UPLOADER STATUS CARD */}
+            {isDesktopEngineActive ? (
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent border border-emerald-300/80 flex items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                    <Zap className="w-5 h-5 animate-pulse" />
                   </div>
-                  <p className="text-[11px] text-zinc-600 font-normal leading-tight mt-0.5">
-                    Upload 25MB+ RAW albums 10x faster with folder auto-sync, zero browser crashes &amp; auto-resume.
-                  </p>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-zinc-900">StudioCore Desktop Engine Active</span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-extrabold uppercase tracking-wide flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                        Pic-Time 20x Turbo Mode
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-600 font-normal leading-tight mt-0.5">
+                      Windows Desktop Engine connected! Photos uploaded will stream at 16x parallel speed directly to cloud.
+                    </p>
+                  </div>
                 </div>
+                <a
+                  href="http://127.0.0.1:41789"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open App</span>
+                </a>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowDesktopAppModal(true)}
-                className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Get App</span>
-              </button>
-            </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-200/80 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                    <Laptop className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-zinc-900">StudioCore Desktop Uploader</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-extrabold uppercase tracking-wide">
+                        Pic-Time Style 20x Speed
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-600 font-normal leading-tight mt-0.5">
+                      Run our native Windows app (.exe) for 16x parallel uploads, folder sync &amp; zero browser tab crashes.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDesktopAppModal(true)}
+                  className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Get .EXE</span>
+                </button>
+              </div>
+            )}
 
             <div className="space-y-4">
               <div>
@@ -3373,18 +3435,31 @@ function AlbumStudioContent() {
 
               <div className="space-y-2.5">
                 <a
-                  href="/downloads/studiocore-desktop-uploader.zip"
-                  download="studiocore-desktop-uploader.zip"
-                  className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition"
+                  href="/downloads/StudioCore-Uploader.exe"
+                  download="StudioCore-Uploader.exe"
+                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download Desktop Uploader (.zip for Windows &amp; Mac)</span>
+                  <span>Download StudioCore-Uploader.exe for Windows</span>
                 </a>
 
-                <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-600 space-y-1">
-                  <p className="font-bold text-zinc-800">Quick 2-Step Setup:</p>
-                  <p>1. Extract the downloaded ZIP folder on your PC.</p>
-                  <p>2. Double-click <code>studiocore-uploader.bat</code> (Windows) or run with Node. Paste your gallery link and drag your photo folder!</p>
+                <a
+                  href="/downloads/studiocore-desktop-uploader.zip"
+                  download="studiocore-desktop-uploader.zip"
+                  className="w-full py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs flex items-center justify-center gap-2 transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download ZIP Package (Cross-Platform)</span>
+                </a>
+
+                <div className="p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-600 space-y-1.5">
+                  <p className="font-bold text-zinc-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Pic-Time Style Instant Setup:
+                  </p>
+                  <p>1. Download &amp; double-click <strong>StudioCore-Uploader.exe</strong> (No installation required).</p>
+                  <p>2. Keep it open in background. When uploading in Chrome or Edge, the desktop engine automatically takes over and uploads at 20x turbo speed!</p>
+                  <p className="text-[10px] text-zinc-500">Also available on your local PC at: <code>C:\Sushant\StudioCore-Uploader.exe</code></p>
                 </div>
               </div>
 

@@ -260,6 +260,69 @@ export async function batchUploadPhotos(
   const errors: string[] = [];
   const pendingRegistration: any[] = [];
 
+  // 0. Check if StudioCore Native Desktop Engine (Pic-Time Architecture) is running locally
+  let isDesktopEngineActive = false;
+  if (typeof window !== 'undefined') {
+    try {
+      const probe = await fetch('http://127.0.0.1:41789/status', {
+        method: 'GET',
+        mode: 'cors',
+        signal: AbortSignal.timeout(1200),
+      });
+      if (probe.ok) {
+        const pData = await probe.json();
+        if (pData.status === 'online') {
+          isDesktopEngineActive = true;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 0B. If Desktop Engine is active, pipe uploads directly to the 16x parallel native engine!
+  if (isDesktopEngineActive) {
+    console.log('[ImageProcessor] ⚡ StudioCore Native Desktop Engine detected on 127.0.0.1:41789! Routing via 16x Turbo Pipeline...');
+    for (let i = 0; i < files.length; i++) {
+      if (signal?.aborted) throw new Error('Upload cancelled by user');
+      const file = files[i];
+      if (onProgress) {
+        onProgress(completed, total, Math.round((completed / total) * 100), `[Turbo Engine] Uploading ${file.name}...`);
+      }
+      try {
+        const res = await fetch('http://127.0.0.1:41789/api/upload-file', {
+          method: 'POST',
+          mode: 'cors',
+          headers: {
+            'x-gallery-id': galleryId,
+            'x-filename': file.name,
+            'x-filesize': file.size.toString(),
+            'x-filetype': file.type || 'image/jpeg',
+            'x-workspace-id': workspaceId || '',
+            'x-collection-id': collectionId && collectionId !== 'all' ? collectionId : '',
+          },
+          body: file,
+          signal,
+        });
+        const resJson = await res.json();
+        if (resJson.success) {
+          completed++;
+          if (onProgress) {
+            onProgress(completed, total, Math.round((completed / total) * 100), file.name);
+          }
+        } else {
+          errors.push(`${file.name}: ${resJson.error || 'Desktop engine upload failed'}`);
+        }
+      } catch (err: any) {
+        errors.push(`${file.name}: ${err.message}`);
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      uploadedCount: completed,
+      errors,
+    };
+  }
+
   const manifest = getUploadedManifest(galleryId);
 
   // Helper to register pending photos in chunks and stream them to UI live!
