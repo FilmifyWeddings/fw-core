@@ -11,7 +11,7 @@ export interface PhotoItem {
   original_key?: string;
   preview_key?: string;
   thumbnail_key?: string;
-  preview_url: string;
+  preview_url?: string;
   thumbnail_url?: string;
   width?: number;
   height?: number;
@@ -20,7 +20,7 @@ export interface PhotoItem {
 }
 
 interface JustifiedGalleryProps {
-  photos: PhotoItem[];
+  photos: PhotoItem[] | any[];
   layoutConfig: {
     style: 'justified' | 'masonry';
     gap: number;
@@ -31,9 +31,9 @@ interface JustifiedGalleryProps {
   isSelectionSubmitted?: boolean;
   effectiveMaxSelectionLimit?: number | null;
   selectorEmail?: string;
-  onPhotoClick: (photo: PhotoItem, index: number) => void | Promise<void>;
-  onToggleSelect?: (photo: PhotoItem) => void | Promise<void>;
-  onDownloadPhoto: (photo: PhotoItem) => void | Promise<void>;
+  onPhotoClick: (photo: any, index: number) => void | Promise<void>;
+  onToggleSelect?: (photo: any) => void | Promise<void>;
+  onDownloadPhoto: (photo: any) => void | Promise<void>;
   onRequestSelectorModal?: () => void;
 }
 

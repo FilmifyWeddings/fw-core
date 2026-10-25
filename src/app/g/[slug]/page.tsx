@@ -72,11 +72,13 @@ function FacebookIcon({ className = 'w-4 h-4' }: { className?: string }) {
 
 function WhatsAppIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.04 14.69 2 12.04 2ZM12.04 20.15C10.55 20.15 9.09 19.75 7.82 19L7.52 18.82L4.41 19.64L5.24 16.61L5.04 16.3C4.22 14.99 3.79 13.47 3.79 11.91C3.79 7.37 7.49 3.67 12.04 3.67C14.25 3.67 16.32 4.53 17.88 6.09C19.44 7.65 20.3 9.72 20.3 11.93C20.3 16.47 16.6 20.15 12.04 20.15ZM16.56 14.39C16.31 14.26 15.09 13.66 14.86 13.58C14.64 13.5 14.47 13.46 14.31 13.71C14.14 13.96 13.66 14.52 13.51 14.69C13.37 14.86 13.22 14.88 12.97 14.76C12.72 14.63 11.92 14.37 10.97 13.52C10.23 12.86 9.73 12.05 9.58 11.8C9.44 11.55 9.57 11.41 9.69 11.29C9.8 11.18 9.94 11 10.06 10.86C10.18 10.72 10.23 10.62 10.31 10.45C10.39 10.28 10.35 10.14 10.29 10.01C10.23 9.88 9.73 8.66 9.52 8.16C9.32 7.67 9.12 7.74 8.96 7.73C8.82 7.72 8.65 7.72 8.48 7.72C8.31 7.72 8.04 7.78 7.81 8.03C7.58 8.28 6.94 8.88 6.94 10.1C6.94 11.32 7.83 12.49 7.95 12.66C8.07 12.83 9.71 15.36 12.21 16.44C12.81 16.7 13.27 16.85 13.63 16.97C14.23 17.16 14.78 17.13 15.22 17.07C15.71 16.99 16.72 16.45 16.93 15.86C17.14 15.27 17.14 14.76 17.08 14.66C17.02 14.56 16.81 14.52 16.56 14.39Z" />
     </svg>
   );
 }
+import { downloadPhotosAsZip, ZipDownloadProgress } from '@/lib/gallery/clientZipDownloader';
+import { ZipDownloadModal } from '@/components/gallery/ZipDownloadModal';
 import { getPublicGalleryUrl } from '@/lib/r2';
 import { FaceScannerModal } from '@/components/gallery/FaceScannerModal';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
@@ -206,6 +208,9 @@ function GuestSlugGalleryContent() {
   const [selectedForAlbum, setSelectedForAlbum] = useState<Set<string>>(new Set());
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const [isZipModalOpen, setIsZipModalOpen] = useState(false);
+  const [zipProgress, setZipProgress] = useState<ZipDownloadProgress | null>(null);
+  const zipAbortControllerRef = useRef<AbortController | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isSubEventsDropdownOpen, setIsSubEventsDropdownOpen] = useState(false);
   const subEventsDropdownRef = useRef<HTMLDivElement>(null);
@@ -724,32 +729,57 @@ function GuestSlugGalleryContent() {
     }
   };
 
+  // Batch Download All Photos as Single Original High-Res ZIP Archive
+  const handleDownloadPhotosZip = async (photosToZip: PhotoItem[], zipNamePrefix: string) => {
+    if (photosToZip.length === 0) {
+      alert('No photos available to download.');
+      return;
+    }
+
+    const controller = new AbortController();
+    zipAbortControllerRef.current = controller;
+    setIsZipModalOpen(true);
+    setIsDownloadingAll(true);
+
+    const safeTitle = (gallery?.title || 'Wedding')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .slice(0, 30);
+    const cleanZipName = `${safeTitle}_${zipNamePrefix}_Original.zip`;
+
+    const res = await downloadPhotosAsZip({
+      photos: photosToZip,
+      zipFileName: cleanZipName,
+      onProgress: (p) => setZipProgress(p),
+      signal: controller.signal,
+    });
+
+    setIsDownloadingAll(false);
+    if (!res.success && res.error && !res.error.includes('aborted') && !res.error.includes('cancelled')) {
+      alert(`Download error: ${res.error}`);
+    }
+  };
+
+  const handleCancelZipDownload = () => {
+    if (zipAbortControllerRef.current) {
+      zipAbortControllerRef.current.abort();
+    }
+    setIsZipModalOpen(false);
+    setIsDownloadingAll(false);
+    setZipProgress(null);
+  };
+
   // Batch Download All Matched Photos
   const handleDownloadAllMyPhotos = async () => {
-    if (matchedPhotos.length === 0) return;
-    setIsDownloadingAll(true);
-    for (const photo of matchedPhotos) {
-      await handleDownloadPhoto(photo);
-      await new Promise((r) => setTimeout(r, 400));
-    }
-    setIsDownloadingAll(false);
+    await handleDownloadPhotosZip(matchedPhotos, 'My_Photos');
   };
 
   // One-click Download Trigger from Sub-Events Bar
   const handleDownloadAllPhotosTrigger = async () => {
     const listToDownload = matchedPhotos.length > 0 ? matchedPhotos : targetFullPhotos;
-    if (listToDownload.length === 0) {
-      alert('No photos available to download.');
-      return;
-    }
-    if (confirm(`Download ${listToDownload.length} high-resolution photos?`)) {
-      setIsDownloadingAll(true);
-      for (const photo of listToDownload) {
-        await handleDownloadPhoto(photo);
-        await new Promise((r) => setTimeout(r, 350));
-      }
-      setIsDownloadingAll(false);
-    }
+    const prefix = selectedCollectionId === 'all'
+      ? (matchedPhotos.length > 0 ? 'My_Photos' : 'All_Photos')
+      : collections.find((c) => c.id === selectedCollectionId)?.name?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'Event';
+    await handleDownloadPhotosZip(listToDownload, prefix);
   };
 
   const targetFullPhotos = useMemo(() => {
@@ -980,13 +1010,60 @@ function GuestSlugGalleryContent() {
   }, [isPrivilegedMode, isUnlocked, displayedPrivilegedPhotos, matchedPhotos, isSelectionMode, showOnlySelected, targetFullPhotos, selectedForAlbum]);
 
   if (loading) {
+    const rawBranding = gallery?.studio_branding;
+    const currentStudioName = rawBranding?.studio_name || 'Wedding Photography';
+    const currentStudioLogo = rawBranding?.logo_url;
+
     return (
-      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center space-y-4 p-6">
-        <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse shadow-md">
-          <Camera className="w-8 h-8" />
+      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-between p-8 select-none animate-in fade-in duration-500">
+        <div className="w-full flex justify-center pt-8" />
+
+        {/* Center Animated Logo & Studio Branding */}
+        <div className="flex flex-col items-center text-center space-y-5 my-auto max-w-sm">
+          {/* Animated 3D Monogram Logo with Liquid Amber Wave */}
+          <div className="relative w-24 h-24 rounded-3xl bg-white/95 p-2.5 shadow-[0_20px_50px_rgba(217,119,6,0.2),inset_0_2px_4px_rgba(255,255,255,0.9)] border border-amber-100 flex items-center justify-center overflow-hidden">
+            <div className="absolute inset-0 w-full h-full overflow-hidden rounded-3xl pointer-events-none">
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-amber-600 via-amber-500 to-amber-400 opacity-90 animate-liquid-rise">
+                <div className="absolute -top-3 inset-x-0 h-4 bg-amber-400 opacity-80 rounded-[40%] animate-wave-churn" />
+              </div>
+            </div>
+
+            {currentStudioLogo ? (
+              <div className="relative z-10 w-full h-full rounded-2xl overflow-hidden bg-white/90 flex items-center justify-center p-1.5 shadow-sm">
+                <img src={currentStudioLogo} alt={currentStudioName} className="w-full h-full object-contain" />
+              </div>
+            ) : (
+              <div className="relative z-10 flex items-center justify-center select-none">
+                <span className="text-3xl font-black tracking-tighter text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
+                  SC
+                </span>
+              </div>
+            )}
+
+            <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/40 to-transparent rounded-t-3xl pointer-events-none" />
+          </div>
+
+          <div className="space-y-1.5">
+            <h2
+              className="text-2xl sm:text-3xl font-normal text-zinc-900 tracking-wide"
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+            >
+              {currentStudioName}
+            </h2>
+            <div className="flex items-center justify-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+              <span className="text-[11px] font-mono uppercase tracking-[0.22em] text-zinc-400 font-semibold">
+                Opening Gallery
+              </span>
+            </div>
+          </div>
         </div>
-        <p className="text-sm font-black text-zinc-800 tracking-tight">Loading Wedding Gallery...</p>
-        <span className="text-xs text-zinc-400">Powered by StudioCore AI</span>
+
+        <div className="pb-4 text-center">
+          <p className="text-[11px] font-mono tracking-widest uppercase text-zinc-400">
+            Powered by <span className="font-bold text-zinc-700">StudioCore.in</span>
+          </p>
+        </div>
       </div>
     );
   }
@@ -1278,243 +1355,40 @@ function GuestSlugGalleryContent() {
   // Guest Landing Flow: Cover photo with aesthetic couple name, date, and frosted glass "Find My Photos" pill
   const isGuestPreRegistration = !isPrivilegedMode && !hasSearched && !isVerified;
 
-  if (isGuestPreRegistration) {
+  const renderHeroAction = () => {
+    if (isGuestPreRegistration) {
+      return (
+        <div className="pt-4 sm:pt-6 animate-in fade-in zoom-in-95 duration-500">
+          <button
+            type="button"
+            onClick={handleFindMyPhotoClick}
+            className="group relative inline-flex items-center justify-center gap-2.5 sm:gap-3 px-8 sm:px-10 py-3.5 sm:py-4 rounded-full text-white font-bold text-xs sm:text-sm tracking-wider shadow-2xl transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] cursor-pointer backdrop-blur-xl border border-white/30"
+            style={{
+              backgroundColor: designPalette.accentColor,
+            }}
+          >
+            <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-white group-hover:scale-110 transition-transform" />
+            <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
+              {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
+            </span>
+            <FaceAiFocusIcon className="w-4 h-4 text-white" />
+          </button>
+        </div>
+      );
+    }
     return (
-      <div className="relative min-h-screen w-full flex flex-col justify-between overflow-hidden bg-zinc-950 text-white select-none">
-        
-        {/* MOBILE VIEW (40vh cover banner + bottom content directly visible without scrolling) */}
-        <div className="sm:hidden flex flex-col min-h-screen justify-between">
-          {/* Top 40vh Cover Hero */}
-          <div className="relative h-[40vh] w-full overflow-hidden bg-zinc-900 shrink-0">
-            {cleanCoverUrl ? (
-              <img
-                src={cleanCoverUrl}
-                alt={gallery.title}
-                className="w-full h-full object-cover transition-transform duration-1000 ease-out"
-                style={{
-                  objectPosition: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
-                  transformOrigin: `${coverPos.mobile.x}% ${coverPos.mobile.y}%`,
-                  transform: `scale(${coverPos.mobile.zoom / 100})`,
-                }}
-              />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-b from-zinc-900 to-zinc-950" />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80 pointer-events-none" />
-
-            {/* Mobile Studio Branding Header on top of image */}
-            <div className="absolute top-0 inset-x-0 z-10 px-4 py-3 flex items-center justify-between text-white/90">
-              <div className="flex items-center gap-2">
-                {studioLogo ? (
-                  <img src={studioLogo} alt={studioName} className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20" />
-                ) : (
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-black flex items-center justify-center text-[10px]">
-                    {studioName.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <span className="text-xs font-semibold tracking-wide truncate max-w-[150px]" style={{ fontFamily: headingFont }}>
-                  {studioName}
-                </span>
-              </div>
-              {totalPhotosCount > 0 && (
-                <span className="text-[10px] font-mono font-bold tracking-wider opacity-60">
-                  {totalPhotosCount} PHOTOS
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Bottom Info & Action Area (No scrolling required) */}
-          <div className="flex-1 flex flex-col justify-between px-5 py-6 text-center bg-zinc-950">
-            <div className="space-y-2.5 my-auto">
-              <span className="text-[10px] font-mono uppercase tracking-[0.25em] text-amber-200/90 block font-semibold">
-                GALLERY BY {studioName.toUpperCase()}
-              </span>
-
-              <h1
-                className="text-3xl font-normal tracking-tight text-white capitalize leading-tight"
-                style={{ fontFamily: headingFont }}
-              >
-                {gallery.title}
-              </h1>
-
-              <span className="text-xs text-zinc-400 font-mono tracking-widest block">
-                {formattedDate}
-              </span>
-
-              {/* The Action Button */}
-              <div className="pt-4">
-                <button
-                  type="button"
-                  onClick={handleFindMyPhotoClick}
-                  className="w-full py-3.5 px-6 rounded-full bg-white/20 hover:bg-white/30 text-white font-bold text-xs tracking-wider backdrop-blur-xl border border-white/30 shadow-xl flex items-center justify-center gap-2.5 cursor-pointer active:scale-98 transition"
-                >
-                  <Camera className="w-4 h-4 text-amber-300" />
-                  <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
-                    {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
-                  </span>
-                  <FaceAiFocusIcon className="w-3.5 h-3.5 text-amber-300" />
-                </button>
-              </div>
-            </div>
-
-            {/* Mobile Footer Attribution */}
-            <div className="pt-4 text-center text-white/50 text-[10px] space-y-0.5">
-              <p>&copy; 2026 {studioName}. All Rights Reserved.</p>
-              <p className="text-[9.5px]">Powered by <a href="https://studiocore.in" target="_blank" rel="noopener noreferrer" className="font-bold underline text-white/70">StudioCore.in</a></p>
-            </div>
-          </div>
-        </div>
-
-        {/* DESKTOP VIEW (Edge-to-Edge Hero Image with Centered Romantic Content) */}
-        <div className="hidden sm:flex min-h-screen flex-col justify-between relative">
-          {cleanCoverUrl ? (
-            <img
-              src={cleanCoverUrl}
-              alt={gallery.title}
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-out"
-              style={{
-                objectPosition: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
-                transformOrigin: `${coverPos.desktop.x}% ${coverPos.desktop.y}%`,
-                transform: `scale(${coverPos.desktop.zoom / 100})`,
-              }}
-            />
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-b from-zinc-900 via-zinc-950 to-zinc-900" />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/90 pointer-events-none" />
-
-          {/* Desktop Top Branding */}
-          <div className="relative z-10 px-6 sm:px-12 py-6 flex items-center justify-between text-white/90">
-            <div className="flex items-center gap-3">
-              {studioLogo ? (
-                <img src={studioLogo} alt={studioName} className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover ring-1 ring-white/20" />
-              ) : (
-                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-zinc-950 font-serif font-black flex items-center justify-center text-xs shadow-xs">
-                  {studioName.charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div className="leading-tight">
-                <span className="block text-xs sm:text-sm font-semibold tracking-wide" style={{ fontFamily: headingFont }}>
-                  {studioName}
-                </span>
-                <span className="block text-[10px] opacity-65 hidden sm:block font-light">
-                  {studioSubtitle}
-                </span>
-              </div>
-            </div>
-            {totalPhotosCount > 0 && (
-              <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-60">
-                {totalPhotosCount} PHOTOS
-              </span>
-            )}
-          </div>
-
-          {/* Desktop Center-Lower Content */}
-          <div className="relative z-10 px-6 pb-16 sm:pb-24 text-center space-y-4 max-w-3xl mx-auto w-full my-auto">
-            <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-amber-200/90 block font-semibold drop-shadow-md">
-              GALLERY BY {studioName.toUpperCase()}
-            </span>
-            <h1
-              className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize"
-              style={{ fontFamily: headingFont }}
-            >
-              {gallery.title}
-            </h1>
-            <span className="text-xs sm:text-sm text-zinc-300 font-mono tracking-widest block drop-shadow-md">
-              {formattedDate}
-            </span>
-            <div className="pt-6">
-              <button
-                type="button"
-                onClick={handleFindMyPhotoClick}
-                className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-full bg-white/20 hover:bg-white/30 text-white font-bold text-sm tracking-wider backdrop-blur-xl border border-white/30 shadow-2xl shadow-black/50 transition-all duration-300 hover:scale-[1.03] active:scale-[0.98] cursor-pointer"
-              >
-                <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
-                <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
-                  {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
-                </span>
-                <FaceAiFocusIcon className="w-4 h-4 text-amber-300" />
-              </button>
-            </div>
-          </div>
-
-          {/* Desktop Footer */}
-          <div className="relative z-10 py-6 text-center text-white/60 text-[11px] space-y-1">
-            <p>&copy; 2026 {studioName}. All Rights Reserved.</p>
-            <p className="text-[10px]">
-              Powered by{' '}
-              <a href="https://studiocore.in" target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-white">
-                StudioCore.in
-              </a>
-            </p>
-          </div>
-        </div>
-
-        {/* Face Scanner Modal & PIN Modal in Guest Pre-Registration */}
-        <FaceScannerModal
-          isOpen={isFaceScannerOpen}
-          onClose={() => setIsFaceScannerOpen(false)}
-          onSubmit={handleFaceScanSubmit}
-          isProcessing={isMatching}
-          galleryId={gallery.id}
-          onScanComplete={(photos) => {
-            setMatchedPhotos(photos);
-            setHasSearched(true);
-          }}
-        />
-
-        {showPinModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-4 animate-in fade-in text-zinc-900">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <KeyRound className="w-5 h-5 text-amber-600" />
-                  <h3 className="text-sm font-black text-zinc-900">Enter Access PIN</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPinModal(false);
-                    setOpenFaceScannerAfterPin(false);
-                  }}
-                  className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <form onSubmit={handlePinSubmit} className="space-y-4">
-                <input
-                  type="password"
-                  maxLength={8}
-                  value={enteredPin}
-                  onChange={(e) => {
-                    setEnteredPin(e.target.value);
-                    setPinError(false);
-                  }}
-                  placeholder="Enter 6-digit PIN"
-                  className="w-full text-center text-xl tracking-[0.3em] font-mono py-3 rounded-2xl border-2 border-zinc-200 focus:border-amber-600 focus:outline-hidden"
-                  autoFocus
-                />
-                {pinError && (
-                  <p className="text-xs text-rose-600 text-center font-bold">
-                    Incorrect access PIN. Please try again.
-                  </p>
-                )}
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-black text-xs transition cursor-pointer"
-                >
-                  Unlock & Continue
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
+      <div className="pt-3">
+        <a
+          href="#sub-events-bar"
+          className="inline-flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-all cursor-pointer group"
+          aria-label="Scroll to gallery content"
+        >
+          <div className="w-px h-6 bg-current opacity-40 group-hover:h-8 transition-all" />
+          <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform animate-bounce" />
+        </a>
       </div>
     );
-  }
+  };
 
   return (
     <div
@@ -1523,11 +1397,15 @@ function GuestSlugGalleryContent() {
         color: designPalette.textColor,
         fontFamily: bodyFont,
       }}
-      className="min-h-screen pb-16 sm:pb-8 select-none transition-colors duration-300">
+      className={
+        isGuestPreRegistration
+          ? "h-[100dvh] max-h-[100dvh] flex flex-col justify-between overflow-hidden select-none transition-colors duration-300"
+          : "min-h-screen pb-16 sm:pb-8 select-none transition-colors duration-300"
+      }>
       
       {/* 0. LUXURY STUDIO HEADER BAR (GLOSSY LIQUID BLUR - SYNCED WITH PALETTE) */}
       <header
-        className="sticky top-0 z-40 transition-all backdrop-blur-xl backdrop-saturate-150 border-b shadow-2xs"
+        className="sticky top-0 z-40 shrink-0 transition-all backdrop-blur-xl backdrop-saturate-150 border-b shadow-2xs"
         style={{
           backgroundColor: `${designPalette.canvasBg}E6`,
           borderColor: `${designPalette.textColor}15`,
@@ -1587,7 +1465,7 @@ function GuestSlugGalleryContent() {
       </header>
 
       {/* 1. LUXURY WEDDING HERO (HANDCRAFTED PRESETS) */}
-      <div className="relative overflow-hidden transition-all duration-700">
+      <div className={isGuestPreRegistration ? "relative flex-1 min-h-0 flex flex-col justify-between overflow-hidden transition-all duration-700" : "relative overflow-hidden transition-all duration-700"}>
         
         {/* PRESET 1: CINEMATIC HERO (Classic Full Bleed Hero) */}
         {(designPreset === 'cinematic_hero' || designPreset === 'cinematic_bleed' || (![
@@ -1601,7 +1479,7 @@ function GuestSlugGalleryContent() {
           'vintage_scrapbook',
           'grand_maison',
         ].includes(designPreset))) && (
-          <div className="relative min-h-[85vh] sm:min-h-[92vh] w-full flex flex-col justify-between overflow-hidden">
+          <div className={`relative w-full flex flex-col justify-between overflow-hidden ${isGuestPreRegistration ? 'h-full min-h-0 flex-1' : 'min-h-[85vh] sm:min-h-[92vh]'}`}>
             {/* Desktop Hero Image with Auto Cinematic Zoom & Exact Focal Position */}
             {cleanCoverUrl ? (
               <>
@@ -1636,16 +1514,16 @@ function GuestSlugGalleryContent() {
               style={{ opacity: Math.max(coverOpacity / 100, 0.45) }}
             />
 
-            {/* Spacer (Inner top bar brand & photo count removed per request) */}
-            <div className="relative z-10 p-6" />
+            {/* Spacer */}
+            <div className={`relative z-10 ${isGuestPreRegistration ? 'p-2 sm:p-4' : 'p-6'}`} />
 
             {/* Center-Bottom Romantic Typography with Golden Glow & Staggered Slide Animations */}
-            <div className="relative z-10 px-6 pb-12 sm:pb-16 text-center space-y-3 max-w-3xl mx-auto">
+            <div className={`relative z-10 px-4 sm:px-6 text-center space-y-2 sm:space-y-3 max-w-3xl mx-auto ${isGuestPreRegistration ? 'pb-4 sm:pb-8 my-auto' : 'pb-12 sm:pb-16'}`}>
               <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-amber-200/90 block font-semibold drop-shadow-md animate-in fade-in slide-in-from-bottom-3 duration-700 delay-150 fill-mode-both">
                 GALLERY BY {studioName.toUpperCase()}
               </span>
               <h1
-                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white drop-shadow-2xl capitalize animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-300 fill-mode-both"
+                className={`font-normal tracking-tight text-white drop-shadow-2xl capitalize animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-300 fill-mode-both ${isGuestPreRegistration ? 'text-3xl sm:text-5xl lg:text-6xl' : 'text-4xl sm:text-6xl lg:text-7xl'}`}
                 style={{ fontFamily: headingFont }}
               >
                 {gallery.title}
@@ -1653,16 +1531,7 @@ function GuestSlugGalleryContent() {
               <span className="text-xs sm:text-sm text-zinc-300 font-mono tracking-widest block drop-shadow-md animate-in fade-in slide-in-from-bottom-4 duration-700 delay-500 fill-mode-both">
                 {formattedDate}
               </span>
-              <div className="pt-4 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-700 fill-mode-both">
-                <a
-                  href="#sub-events-bar"
-                  className="inline-flex flex-col items-center gap-1 text-white/80 hover:text-white transition-colors cursor-pointer group"
-                  aria-label="Scroll to gallery content"
-                >
-                  <div className="w-px h-6 bg-gradient-to-b from-transparent via-white/50 to-white/90 animate-pulse" />
-                  <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform" />
-                </a>
-              </div>
+              {renderHeroAction()}
             </div>
           </div>
         )}
@@ -1670,13 +1539,13 @@ function GuestSlugGalleryContent() {
         {/* PRESET 2: EDITORIAL CANVAS (Photo 2: Terre Verde Vogue Layout) */}
         {(designPreset === 'editorial_canvas' || designPreset === 'haute_editorial') && (
           <div
-            className="py-10 sm:py-16 px-4 sm:px-8 text-center flex flex-col items-center justify-center relative min-h-[85vh] transition-colors duration-500"
+            className={`px-4 sm:px-8 text-center flex flex-col items-center justify-between relative w-full transition-colors duration-500 ${isGuestPreRegistration ? 'h-full min-h-0 flex-1 py-4 sm:py-6' : 'py-10 sm:py-16 min-h-[85vh] justify-center'}`}
             style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
           >
             {/* Oversized High-Fashion Title (Studio name and photo count removed per user request) */}
-            <div className="space-y-2 max-w-4xl mx-auto animate-in fade-in duration-700">
+            <div className="space-y-1 sm:space-y-2 max-w-4xl mx-auto animate-in fade-in duration-700">
               <h1
-                className="text-4xl sm:text-7xl lg:text-8xl font-normal tracking-[0.22em] uppercase leading-none"
+                className={`font-normal tracking-[0.22em] uppercase leading-none ${isGuestPreRegistration ? 'text-2xl sm:text-5xl lg:text-6xl' : 'text-4xl sm:text-7xl lg:text-8xl'}`}
                 style={{ fontFamily: headingFont }}
               >
                 {gallery.title}
@@ -1684,7 +1553,7 @@ function GuestSlugGalleryContent() {
             </div>
 
             {/* Framed Vertical Portrait Artwork (3:4 ratio) */}
-            <div className="mt-8 sm:mt-12 w-64 sm:w-80 md:w-96 aspect-[3/4] rounded-xs overflow-hidden shadow-2xl border-4 border-white bg-black relative group animate-in fade-in zoom-in-95 duration-1000">
+            <div className={`${isGuestPreRegistration ? 'my-auto h-36 sm:h-56 md:h-64 max-h-[35vh] aspect-[3/4]' : 'mt-8 sm:mt-12 w-64 sm:w-80 md:w-96 aspect-[3/4]'} rounded-xs overflow-hidden shadow-2xl border-4 border-white bg-black relative group animate-in fade-in zoom-in-95 duration-1000`}>
               {effectiveCoverUrl ? (
                 <img
                   src={effectiveCoverUrl}
@@ -1700,11 +1569,9 @@ function GuestSlugGalleryContent() {
             </div>
 
             {/* Bottom Subtle Date and Arrow */}
-            <div className="pt-8 sm:pt-10 flex flex-col items-center gap-2 text-xs font-mono tracking-widest uppercase opacity-60">
+            <div className={`flex flex-col items-center gap-1.5 text-xs font-mono tracking-widest uppercase opacity-60 ${isGuestPreRegistration ? 'pt-2' : 'pt-8 sm:pt-10'}`}>
               <span>{formattedDate}</span>
-              <a href="#sub-events-bar" className="pt-2 hover:opacity-100 transition-opacity" aria-label="Scroll down">
-                <ArrowDown className="w-4 h-4 animate-bounce" />
-              </a>
+              {renderHeroAction()}
             </div>
           </div>
         )}
@@ -1712,7 +1579,7 @@ function GuestSlugGalleryContent() {
         {/* PRESET 3: FADED LUXE (KnotsbyAMP Misty Backdrop with Bottom-Up Gradient Fade & Centered Typography) */}
         {(designPreset === 'faded_luxe' || designPreset === 'royal_medallion') && (
           <div
-            className="relative min-h-[85vh] sm:min-h-[90vh] w-full flex flex-col justify-end overflow-hidden transition-colors duration-500"
+            className={`relative w-full flex flex-col justify-end overflow-hidden transition-colors duration-500 ${isGuestPreRegistration ? 'h-full min-h-0 flex-1' : 'min-h-[85vh] sm:min-h-[90vh]'}`}
             style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
           >
             {/* Clear Background Photo (High clarity, opacity 85-90%) */}
@@ -1736,12 +1603,12 @@ function GuestSlugGalleryContent() {
             />
 
             {/* Bottom Content: Stacked serif title, date, placed right at bottom */}
-            <div className="relative z-10 px-6 pt-10 pb-2 sm:pb-4 text-center space-y-3 sm:space-y-4 max-w-3xl mx-auto mt-auto animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            <div className={`relative z-10 px-6 text-center space-y-2 sm:space-y-3 max-w-3xl mx-auto mt-auto animate-in fade-in slide-in-from-bottom-4 duration-1000 ${isGuestPreRegistration ? 'pb-4 sm:pb-8 pt-4' : 'pt-10 pb-2 sm:pb-4'}`}>
               <span className="text-[11px] font-mono uppercase tracking-[0.28em] opacity-60 block font-semibold">
                 GALLERY BY {studioName.toUpperCase()}
               </span>
               <h1
-                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight uppercase leading-tight drop-shadow-xs"
+                className={`font-normal tracking-tight uppercase leading-tight drop-shadow-xs ${isGuestPreRegistration ? 'text-3xl sm:text-5xl lg:text-6xl' : 'text-4xl sm:text-6xl lg:text-7xl'}`}
                 style={{ fontFamily: headingFont }}
               >
                 {gallery.title}
@@ -1750,13 +1617,7 @@ function GuestSlugGalleryContent() {
                 {formattedDate}
               </span>
 
-              {/* Bottom Delicate Line & Arrow */}
-              <div className="pt-2 sm:pt-3 flex flex-col items-center">
-                <div className="w-px h-6 sm:h-8 bg-current opacity-30" />
-                <a href="#sub-events-bar" className="pt-1.5 opacity-60 hover:opacity-100 transition-colors" aria-label="Scroll down">
-                  <ArrowDown className="w-4 h-4 animate-bounce" />
-                </a>
-              </div>
+              {renderHeroAction()}
             </div>
           </div>
         )}
@@ -1764,11 +1625,11 @@ function GuestSlugGalleryContent() {
         {/* PRESET 4: SPLIT ATELIER (Modern Diptych Side-by-Side Canvas with Fixed Standard Height) */}
         {(designPreset === 'split_atelier' || designPreset === 'grand_diptych') && (
           <div
-            className="grid grid-cols-1 lg:grid-cols-2 min-h-[85vh] lg:h-[88vh] max-h-[92vh] w-full border-b border-black/10 overflow-hidden transition-colors duration-500"
+            className={`grid grid-cols-1 lg:grid-cols-2 w-full border-b border-black/10 overflow-hidden transition-colors duration-500 ${isGuestPreRegistration ? 'h-full min-h-0 flex-1' : 'min-h-[85vh] lg:h-[88vh] max-h-[92vh]'}`}
             style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
           >
             {/* Left Content Side */}
-            <div className="p-8 sm:p-14 lg:p-16 flex flex-col justify-between space-y-6 animate-in fade-in slide-in-from-left-6 duration-1000">
+            <div className={`flex flex-col justify-between space-y-4 animate-in fade-in slide-in-from-left-6 duration-1000 ${isGuestPreRegistration ? 'p-4 sm:p-8 lg:p-12' : 'p-8 sm:p-14 lg:p-16'}`}>
               {/* Gallery by {studioName} subtitle (Duplicate top bar removed per user request) */}
               <div className="pt-2">
                 <span className="text-[11px] font-mono uppercase tracking-[0.28em] opacity-60 block font-bold">
@@ -1777,9 +1638,9 @@ function GuestSlugGalleryContent() {
               </div>
 
               {/* Vertically Centered Typography */}
-              <div className="space-y-4 my-auto">
+              <div className="space-y-3 my-auto">
                 <h1
-                  className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-wide uppercase leading-tight"
+                  className={`font-normal tracking-wide uppercase leading-tight ${isGuestPreRegistration ? 'text-3xl sm:text-5xl lg:text-6xl' : 'text-4xl sm:text-6xl lg:text-7xl'}`}
                   style={{ fontFamily: headingFont }}
                 >
                   {gallery.title}
@@ -1789,21 +1650,11 @@ function GuestSlugGalleryContent() {
                 </span>
               </div>
 
-              {/* Bottom Animated Arrow Indicator */}
-              <div className="pt-4">
-                <a
-                  href="#sub-events-bar"
-                  className="inline-flex flex-col items-center gap-1 opacity-60 hover:opacity-100 transition-opacity cursor-pointer group"
-                  aria-label="Scroll down"
-                >
-                  <div className="w-px h-6 bg-current opacity-40" />
-                  <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform animate-bounce" />
-                </a>
-              </div>
+              {renderHeroAction()}
             </div>
 
             {/* Right Artwork Side (Responsive fixed frame) */}
-            <div className="min-h-[380px] lg:min-h-full overflow-hidden relative group animate-in fade-in zoom-in-95 duration-1000">
+            <div className={`${isGuestPreRegistration ? 'hidden sm:block min-h-0 h-full' : 'min-h-[380px] lg:min-h-full'} overflow-hidden relative group animate-in fade-in zoom-in-95 duration-1000`}>
               {effectiveCoverUrl ? (
                 <img
                   src={effectiveCoverUrl}
@@ -1822,7 +1673,7 @@ function GuestSlugGalleryContent() {
 
         {/* PRESET 6: MONOCHROME PORTAL & ARCH DUO (From User Photo 2) */}
         {designPreset === 'monochrome_portal' && (
-          <div className="relative min-h-[88vh] sm:min-h-[96vh] w-full flex flex-col justify-between items-center overflow-hidden bg-zinc-950 px-4 py-6 text-center">
+          <div className={`relative w-full flex flex-col justify-between items-center overflow-hidden bg-zinc-950 px-4 text-center ${isGuestPreRegistration ? 'h-full min-h-0 flex-1 py-3 sm:py-5' : 'min-h-[88vh] sm:min-h-[96vh] py-6'}`}>
             {/* Grayscale Wide Panorama Background with 40% Opacity per user request */}
             {cleanCoverUrl && (
               <>
@@ -1849,7 +1700,7 @@ function GuestSlugGalleryContent() {
             <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/25 to-black/85" />
 
             {/* Top Spacing (Brand name and fine art wedding visuals removed per user request) */}
-            <div className="h-6 sm:h-10 w-full" />
+            <div className={isGuestPreRegistration ? 'h-1 sm:h-4 w-full' : 'h-6 sm:h-10 w-full'} />
 
             {/* Centerpiece Color Arch Portal Window (From User Photo 2) */}
             <div className="relative z-20 my-auto flex items-center justify-center w-full max-w-5xl">
@@ -1868,7 +1719,7 @@ function GuestSlugGalleryContent() {
               </div>
 
               {/* The Vibrant Center Arch Portal Frame */}
-              <div className="w-64 sm:w-80 md:w-96 aspect-[9/13] rounded-t-[140px] sm:rounded-t-[200px] rounded-b-2xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.9)] border-2 border-white/50 relative bg-zinc-900 group">
+              <div className={`${isGuestPreRegistration ? 'h-36 sm:h-52 md:h-64 max-h-[35vh] aspect-[9/13]' : 'w-64 sm:w-80 md:w-96 aspect-[9/13]'} rounded-t-[140px] sm:rounded-t-[200px] rounded-b-2xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.9)] border-2 border-white/50 relative bg-zinc-900 group`}>
                 {cleanCoverUrl && (
                   <>
                     <img
@@ -1896,9 +1747,9 @@ function GuestSlugGalleryContent() {
             </div>
 
             {/* Bottom Romantic Flourish Typography (Enlarged font, star icons removed per user request) */}
-            <div className="relative z-20 pb-4 space-y-2 text-white max-w-3xl mx-auto">
+            <div className={`relative z-20 space-y-1.5 text-white max-w-3xl mx-auto ${isGuestPreRegistration ? 'pb-2' : 'pb-4'}`}>
               <h1
-                className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-normal tracking-tight text-white uppercase drop-shadow-xl"
+                className={`font-normal tracking-tight text-white uppercase drop-shadow-xl ${isGuestPreRegistration ? 'text-2xl sm:text-5xl md:text-6xl' : 'text-4xl sm:text-6xl md:text-7xl lg:text-8xl'}`}
                 style={{ fontFamily: headingFont }}
               >
                 {gallery.title}
@@ -1912,14 +1763,7 @@ function GuestSlugGalleryContent() {
                   </>
                 )}
               </div>
-              <div className="pt-2">
-                <a
-                  href="#sub-events-bar"
-                  className="inline-flex flex-col items-center gap-1 text-white/80 hover:text-white transition-colors cursor-pointer group"
-                >
-                  <ArrowDown className="w-4 h-4 text-white/80 group-hover:translate-y-1 transition-transform animate-bounce" />
-                </a>
-              </div>
+              {renderHeroAction()}
             </div>
           </div>
         )}
@@ -1927,7 +1771,7 @@ function GuestSlugGalleryContent() {
         {/* PRESET 7: VINTAGE SCRAPBOOK (Photo 1: Tilted Polaroid, Washi Tape, Script Calligraphy & Circled Date) */}
         {designPreset === 'vintage_scrapbook' && (
           <div
-            className="relative min-h-[88vh] sm:min-h-[95vh] w-full flex flex-col justify-between overflow-hidden px-4 sm:px-8 py-6 sm:py-10 transition-colors duration-500"
+            className={`relative w-full flex flex-col justify-between overflow-hidden px-4 sm:px-8 transition-colors duration-500 ${isGuestPreRegistration ? 'h-full min-h-0 flex-1 py-3 sm:py-4' : 'min-h-[88vh] sm:min-h-[95vh] py-6 sm:py-10'}`}
             style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
           >
             {/* Subtle Paper Grain Effect */}
@@ -1946,29 +1790,29 @@ function GuestSlugGalleryContent() {
                   OUR
                 </span>
                 <span
-                  className="text-3xl sm:text-5xl font-normal block"
+                  className="text-2xl sm:text-4xl font-normal block"
                   style={{ fontFamily: "'Great Vibes', cursive", color: designPalette.accentColor }}
                 >
                   Forever
                 </span>
-                <span className="text-[9px] sm:text-[11px] font-mono uppercase tracking-[0.28em] opacity-65 block font-semibold">
+                <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-[0.28em] opacity-65 block font-semibold">
                   WEDDING CHAPTER
                 </span>
               </div>
             </div>
 
             {/* Centerpiece Scrapbook Collage */}
-            <div className="relative z-10 my-auto w-full max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-around gap-8 sm:gap-12 lg:gap-16 py-6 sm:py-10">
+            <div className={`relative z-10 my-auto w-full max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-around gap-4 sm:gap-8 lg:gap-16 ${isGuestPreRegistration ? 'py-1 sm:py-3' : 'py-6 sm:py-10'}`}>
               {/* Left Side: Romantic Wedding Vows & Circled Date Stamp */}
-              <div className="order-2 lg:order-1 text-center lg:text-left max-w-md space-y-6 animate-in fade-in slide-in-from-left-6 duration-1000">
-                <p className="text-sm sm:text-base md:text-lg opacity-75 font-serif leading-relaxed italic">
+              <div className={`order-2 lg:order-1 text-center lg:text-left max-w-md space-y-3 sm:space-y-6 animate-in fade-in slide-in-from-left-6 duration-1000 ${isGuestPreRegistration ? 'hidden md:block' : ''}`}>
+                <p className="text-xs sm:text-base md:text-lg opacity-75 font-serif leading-relaxed italic">
                   &ldquo;Every single chapter written with love, laughter, and timeless devotion. A celebration of two hearts becoming one forever.&rdquo;
                 </p>
 
                 {/* Authentic Hand-Drawn Circled Date Stamp (From User Photo 1) */}
                 <div className="flex justify-center lg:justify-start" style={{ color: designPalette.accentColor }}>
                   <HandDrawnOval>
-                    <span className="text-base sm:text-lg md:text-xl font-serif italic tracking-wide font-semibold" style={{ color: designPalette.accentColor }}>
+                    <span className="text-sm sm:text-lg md:text-xl font-serif italic tracking-wide font-semibold" style={{ color: designPalette.accentColor }}>
                       {formattedDate}
                     </span>
                   </HandDrawnOval>
@@ -1977,9 +1821,9 @@ function GuestSlugGalleryContent() {
 
               {/* Right Side: The Tilted Polaroid Photo Card with Washi Tape */}
               <div className="order-1 lg:order-2 relative animate-in fade-in zoom-in-95 duration-1000">
-                <div className="relative bg-white p-3.5 sm:p-5 pb-10 sm:pb-14 shadow-[0_25px_60px_rgba(0,0,0,0.22)] border border-stone-200/80 transform rotate-2 sm:rotate-3 hover:rotate-0 transition-transform duration-700 w-64 sm:w-80 md:w-96">
+                <div className={`relative bg-white p-2.5 sm:p-5 pb-6 sm:pb-12 shadow-[0_25px_60px_rgba(0,0,0,0.22)] border border-stone-200/80 transform rotate-2 sm:rotate-3 hover:rotate-0 transition-transform duration-700 ${isGuestPreRegistration ? 'w-44 sm:w-64 md:w-80' : 'w-64 sm:w-80 md:w-96'}`}>
                   {/* Frosted Translucent Washi Tape Across Top-Left Corner */}
-                  <div className="absolute -top-4 sm:-top-5 left-4 sm:left-6 z-30">
+                  <div className="absolute -top-3 sm:-top-5 left-3 sm:left-6 z-30">
                     <WashiTape className="transform -rotate-12" />
                   </div>
 
@@ -2012,9 +1856,9 @@ function GuestSlugGalleryContent() {
                   </div>
 
                   {/* Bottom Polaroid Caption: Couple Title */}
-                  <div className="pt-4 text-center">
+                  <div className="pt-2 sm:pt-4 text-center">
                     <h1
-                      className="text-xl sm:text-3xl text-zinc-800 tracking-wide font-normal capitalize"
+                      className={`text-zinc-800 tracking-wide font-normal capitalize ${isGuestPreRegistration ? 'text-lg sm:text-2xl' : 'text-xl sm:text-3xl'}`}
                       style={{ fontFamily: headingFont }}
                     >
                       {gallery.title}
@@ -2025,7 +1869,7 @@ function GuestSlugGalleryContent() {
             </div>
 
             {/* Bottom Attribution & Navigation Scroll Arrow */}
-            <div className="relative z-10 w-full pt-4 flex flex-col items-center justify-center space-y-2 text-center">
+            <div className="relative z-10 w-full pt-2 flex flex-col items-center justify-center space-y-1.5 text-center">
               <div className="flex items-center gap-2 text-[10px] sm:text-xs font-mono uppercase tracking-[0.28em] text-zinc-500">
                 <span>GALLERY BY {studioName.toUpperCase()}</span>
                 {totalPhotosCount > 0 && (
@@ -2035,12 +1879,7 @@ function GuestSlugGalleryContent() {
                   </>
                 )}
               </div>
-              <a
-                href="#sub-events-bar"
-                className="inline-flex flex-col items-center gap-1 text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer group"
-              >
-                <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform animate-bounce" />
-              </a>
+              {renderHeroAction()}
             </div>
           </div>
         )}
@@ -2053,17 +1892,17 @@ function GuestSlugGalleryContent() {
 
           return (
             <div
-              className="relative min-h-[88vh] sm:min-h-[96vh] w-full flex flex-col justify-between items-center overflow-hidden px-4 sm:px-8 py-6 sm:py-10 transition-colors duration-500"
+              className={`relative w-full flex flex-col justify-between items-center overflow-hidden px-4 sm:px-8 transition-colors duration-500 ${isGuestPreRegistration ? 'h-full min-h-0 flex-1 py-3 sm:py-4' : 'min-h-[88vh] sm:min-h-[96vh] py-6 sm:py-10'}`}
               style={{ backgroundColor: bgColor, color: textColor }}
             >
               {/* Top Spacing / Mobile Header Quote (Per user photo: text on top for mobile) */}
               <div className="w-full text-center">
-                <div className="block md:hidden pt-2 pb-1">
+                <div className="block md:hidden pt-1 pb-1">
                   <span className="text-[11px] sm:text-xs font-serif uppercase tracking-widest opacity-80 block">
                     Creating your timeless love story
                   </span>
                 </div>
-                <div className="hidden md:block h-4 sm:h-8 w-full" />
+                <div className={`hidden md:block w-full ${isGuestPreRegistration ? 'h-2 sm:h-4' : 'h-4 sm:h-8'}`} />
               </div>
 
               {/* Centerpiece: Centered Vertical Portrait Artwork Flanked by Fine Art Quotes */}
@@ -2077,7 +1916,7 @@ function GuestSlugGalleryContent() {
                 </div>
 
                 {/* Centered Vertical Portrait Frame (No heavy shadow per user request) */}
-                <div className="relative w-64 sm:w-80 md:w-96 aspect-[3/4] overflow-hidden bg-stone-900 border border-white/20 animate-in fade-in zoom-in-95 duration-1000 shadow-xl">
+                <div className={`relative ${isGuestPreRegistration ? 'h-36 sm:h-52 md:h-64 max-h-[35vh] aspect-[3/4]' : 'w-64 sm:w-80 md:w-96 aspect-[3/4]'} overflow-hidden bg-stone-900 border border-white/20 animate-in fade-in zoom-in-95 duration-1000 shadow-xl`}>
                   {cleanCoverUrl ? (
                     <>
                       <img
@@ -2115,24 +1954,17 @@ function GuestSlugGalleryContent() {
               </div>
 
               {/* Bottom Massive Haute-Couture Serif Typography (Overlapping lower 25-30% of portrait photo) */}
-              <div className="relative z-20 w-full text-center -mt-14 sm:-mt-20 md:-mt-24 lg:-mt-28 px-2 space-y-2">
+              <div className={`relative z-20 w-full text-center px-2 space-y-1 sm:space-y-2 ${isGuestPreRegistration ? '-mt-6 sm:-mt-10 md:-mt-14' : '-mt-14 sm:-mt-20 md:-mt-24 lg:-mt-28'}`}>
                 <h1
-                  className="text-4xl sm:text-7xl md:text-8xl lg:text-9xl font-serif tracking-[0.1em] sm:tracking-[0.16em] uppercase font-normal drop-shadow-2xl leading-none animate-in fade-in slide-in-from-bottom-6 duration-1000"
+                  className={`font-serif tracking-[0.1em] sm:tracking-[0.16em] uppercase font-normal drop-shadow-2xl leading-none animate-in fade-in slide-in-from-bottom-6 duration-1000 ${isGuestPreRegistration ? 'text-3xl sm:text-5xl md:text-6xl' : 'text-4xl sm:text-7xl md:text-8xl lg:text-9xl'}`}
                   style={{ fontFamily: headingFont }}
                 >
                   {gallery.title}
                 </h1>
-                <div className="flex items-center justify-center gap-3 text-xs sm:text-sm font-mono tracking-widest uppercase opacity-75 pt-2">
+                <div className="flex items-center justify-center gap-3 text-xs sm:text-sm font-mono tracking-widest uppercase opacity-75 pt-1">
                   <span>{formattedDate}</span>
                 </div>
-                <div className="pt-2">
-                  <a
-                    href="#sub-events-bar"
-                    className="inline-flex flex-col items-center gap-1 opacity-75 hover:opacity-100 transition-opacity cursor-pointer group"
-                  >
-                    <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform animate-bounce" />
-                  </a>
-                </div>
+                {renderHeroAction()}
               </div>
             </div>
           );
@@ -2140,95 +1972,100 @@ function GuestSlugGalleryContent() {
 
       </div>
 
-      <div id="sub-events-bar" className="scroll-mt-14" />
-      
-      {/* 1.5 STICKY SUB-EVENTS HORIZONTAL BAR (GLOSSY LIQUID BLUR - SYNCED WITH PALETTE) */}
-      <div
-        className="sticky top-[52px] sm:top-[57px] z-30 transition-all backdrop-blur-xl border-y shadow-2xs"
-        style={{
-          backgroundColor: `${designPalette.canvasBg}F0`,
-          borderColor: `${designPalette.textColor}18`,
-          color: designPalette.textColor,
-        }}
-      >
-        <div className="w-full px-4 sm:px-8 py-2.5 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-0.5 scroll-smooth flex-1 min-w-0">
-            {/* 3-Lines Sub-Events Menu Button with Popover */}
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsSubEventsDropdownOpen((prev) => !prev)}
-                className="p-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+      {/* 1.5 STICKY SUB-EVENTS HORIZONTAL BAR & MAIN CONTENT */}
+      {!isGuestPreRegistration && (
+        <>
+          <div id="sub-events-bar" className="scroll-mt-14" />
+          
+          {/* 1.5 STICKY SUB-EVENTS HORIZONTAL BAR (GLOSSY LIQUID BLUR - SYNCED WITH PALETTE) */}
+          <div
+            className="sticky top-[52px] sm:top-[57px] z-30 transition-all backdrop-blur-xl border-y shadow-2xs"
+            style={{
+              backgroundColor: `${designPalette.canvasBg}F0`,
+              borderColor: `${designPalette.textColor}18`,
+              color: designPalette.textColor,
+            }}
+          >
+        <div className="w-full px-4 sm:px-8 py-2.5 flex items-center justify-between gap-3 relative">
+          {/* 3-Lines Sub-Events Menu Button (OUTSIDE the scrollable bar, floats over content) */}
+          <div className="relative shrink-0 z-40">
+            <button
+              type="button"
+              onClick={() => setIsSubEventsDropdownOpen((prev) => !prev)}
+              className="p-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+              style={{
+                backgroundColor: isSubEventsDropdownOpen ? designPalette.accentColor : `${designPalette.textColor}0D`,
+                color: isSubEventsDropdownOpen ? '#FFFFFF' : designPalette.textColor,
+                border: `1px solid ${designPalette.textColor}25`,
+              }}
+              title="Sub-Events Menu"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px]">Events</span>
+              <ChevronDown className={`w-3 h-3 transition-transform ${isSubEventsDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isSubEventsDropdownOpen && (
+              <div
+                ref={subEventsDropdownRef}
+                className="absolute left-0 top-full mt-2 w-64 rounded-2xl shadow-2xl border py-2 z-50 animate-in fade-in zoom-in-95 backdrop-blur-2xl"
                 style={{
-                  backgroundColor: isSubEventsDropdownOpen ? designPalette.accentColor : `${designPalette.textColor}0D`,
-                  color: isSubEventsDropdownOpen ? '#FFFFFF' : designPalette.textColor,
-                  border: `1px solid ${designPalette.textColor}25`,
+                  backgroundColor: designPalette.canvasBg,
+                  borderColor: `${designPalette.textColor}25`,
+                  color: designPalette.textColor,
                 }}
-                title="Sub-Events Menu"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline text-[11px]">Events</span>
-                <ChevronDown className={`w-3 h-3 transition-transform ${isSubEventsDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {isSubEventsDropdownOpen && (
                 <div
-                  ref={subEventsDropdownRef}
-                  className="absolute left-0 mt-2 w-56 rounded-2xl shadow-2xl border py-2 z-50 animate-in fade-in zoom-in-95 backdrop-blur-2xl"
-                  style={{
-                    backgroundColor: designPalette.canvasBg,
-                    borderColor: `${designPalette.textColor}25`,
-                    color: designPalette.textColor,
-                  }}
+                  className="px-3.5 py-2 text-[10px] uppercase font-bold tracking-wider opacity-60 border-b flex items-center justify-between"
+                  style={{ borderColor: `${designPalette.textColor}15` }}
                 >
-                  <div
-                    className="px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider opacity-60 border-b"
-                    style={{ borderColor: `${designPalette.textColor}15` }}
-                  >
-                    Select Event ({collections.length + 1})
-                  </div>
-                  <div className="max-h-64 overflow-y-auto py-1 scrollbar-thin">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCollectionId('all');
-                        setIsSubEventsDropdownOpen(false);
-                      }}
-                      className={`w-full px-3 py-2 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
-                        selectedCollectionId === 'all' ? 'font-bold' : 'opacity-85'
-                      }`}
-                      style={selectedCollectionId === 'all' ? { color: designPalette.accentColor } : {}}
-                    >
-                      <span>All Photos</span>
-                      <span className="text-[10px] opacity-60 font-mono">({fullPhotos.length})</span>
-                    </button>
-
-                    {collections.map((col) => {
-                      const isSel = selectedCollectionId === col.id;
-                      const count = col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length;
-                      return (
-                        <button
-                          key={col.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedCollectionId(col.id);
-                            setIsSubEventsDropdownOpen(false);
-                          }}
-                          className={`w-full px-3 py-2 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
-                            isSel ? 'font-bold' : 'opacity-85'
-                          }`}
-                          style={isSel ? { color: designPalette.accentColor } : {}}
-                        >
-                          <span className="truncate">{col.name}</span>
-                          <span className="text-[10px] opacity-60 font-mono ml-2">({count})</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <span>Select Event</span>
+                  <span className="font-mono">({collections.length + 1})</span>
                 </div>
-              )}
-            </div>
+                <div className="max-h-72 overflow-y-auto py-1 scrollbar-thin">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCollectionId('all');
+                      setIsSubEventsDropdownOpen(false);
+                    }}
+                    className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
+                      selectedCollectionId === 'all' ? 'font-bold' : 'opacity-85'
+                    }`}
+                    style={selectedCollectionId === 'all' ? { color: designPalette.accentColor } : {}}
+                  >
+                    <span>All Photos</span>
+                    <span className="text-[10px] opacity-60 font-mono">({fullPhotos.length})</span>
+                  </button>
 
+                  {collections.map((col) => {
+                    const isSel = selectedCollectionId === col.id;
+                    const count = col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length;
+                    return (
+                      <button
+                        key={col.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCollectionId(col.id);
+                          setIsSubEventsDropdownOpen(false);
+                        }}
+                        className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
+                          isSel ? 'font-bold' : 'opacity-85'
+                        }`}
+                        style={isSel ? { color: designPalette.accentColor } : {}}
+                      >
+                        <span className="truncate">{col.name}</span>
+                        <span className="text-[10px] opacity-60 font-mono ml-2">({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sub-Events Horizontal Scrollable Bar */}
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-0.5 scroll-smooth flex-1 min-w-0">
             <button
               type="button"
               onClick={() => setSelectedCollectionId('all')}
@@ -2341,8 +2178,8 @@ function GuestSlugGalleryContent() {
       </div>
       
       <div id="gallery-content" className="scroll-mt-14" />
-      {/* 2. MAIN CONTENT AREA */}
-      <div className="max-w-[1550px] mx-auto px-2 sm:px-4 lg:px-6 -mt-6 relative z-10 space-y-8">
+      {/* 2. MAIN CONTENT AREA (Generous top padding below sticky bar) */}
+      <div className="max-w-[1550px] mx-auto px-2 sm:px-4 lg:px-6 pt-6 sm:pt-8 relative z-10 space-y-8">
 
         {/* CASE P: PRIVILEGED ACCESS LOCKED (Enter PIN / Pass Key) */}
         {isPrivilegedMode && !isUnlocked && (
@@ -2636,6 +2473,8 @@ function GuestSlugGalleryContent() {
         )}
 
       </div>
+        </>
+      )}
 
       {/* 3. SMART 3D FACE GUIDANCE SCANNER */}
       <FaceScannerModal
@@ -2937,167 +2776,193 @@ function GuestSlugGalleryContent() {
         </div>
       )}
 
-      {/* 7. STUDIO BRANDING FOOTER */}
-      <footer
-        className="mt-20 border-t py-12 px-4 sm:px-8 transition-colors duration-500"
-        style={{
-          backgroundColor: designPalette.canvasBg,
-          color: designPalette.textColor,
-          borderColor: `${designPalette.textColor}15`,
-        }}
-      >
-        <div className="max-w-4xl mx-auto text-center space-y-6">
-          <div className="flex flex-col items-center justify-center space-y-2">
-            {studioLogo ? (
-              <img
-                src={studioLogo}
-                alt={studioName}
-                className="w-14 h-14 rounded-full object-cover ring-2 ring-black/10 mx-auto shadow-sm"
-              />
-            ) : (
-              <div
-                className="w-12 h-12 rounded-full font-serif font-black flex items-center justify-center text-base shadow-sm mx-auto"
-                style={{
-                  backgroundColor: designPalette.accentColor,
-                  color: '#FFFFFF',
-                }}
+      {/* 5. IMMERSIVE LUXURY FOOTER OR MINIMAL GUEST FOOTER */}
+      {isGuestPreRegistration ? (
+        <footer
+          className="shrink-0 w-full py-2.5 sm:py-3.5 text-center text-[10px] sm:text-[11px] space-y-0.5 relative z-20 border-t backdrop-blur-md"
+          style={{
+            borderColor: `${designPalette.textColor}15`,
+            color: designPalette.textColor,
+            backgroundColor: `${designPalette.canvasBg}E6`,
+          }}
+        >
+          <p className="opacity-75">
+            &copy; {new Date().getFullYear()} {studioName}. All Rights Reserved.
+          </p>
+          <p className="opacity-60 text-[9px] sm:text-[10px]">
+            Powered by{' '}
+            <a
+              href="https://studiocore.in"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold underline hover:opacity-100 transition-opacity"
+            >
+              StudioCore.in
+            </a>
+          </p>
+        </footer>
+      ) : (
+        <footer
+          className="mt-20 border-t py-12 px-4 sm:px-8 transition-colors duration-500"
+          style={{
+            backgroundColor: designPalette.canvasBg,
+            color: designPalette.textColor,
+            borderColor: `${designPalette.textColor}15`,
+          }}
+        >
+          <div className="max-w-4xl mx-auto text-center space-y-6">
+            <div className="flex flex-col items-center justify-center space-y-2">
+              {studioLogo ? (
+                <img
+                  src={studioLogo}
+                  alt={studioName}
+                  className="w-14 h-14 rounded-full object-cover ring-2 ring-black/10 mx-auto shadow-sm"
+                />
+              ) : (
+                <div
+                  className="w-12 h-12 rounded-full font-serif font-black flex items-center justify-center text-base shadow-sm mx-auto"
+                  style={{
+                    backgroundColor: designPalette.accentColor,
+                    color: '#FFFFFF',
+                  }}
+                >
+                  {studioName.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <h3
+                className="text-xl sm:text-2xl font-bold tracking-tight"
+                style={{ fontFamily: headingFont }}
               >
-                {studioName.charAt(0).toUpperCase()}
+                {studioName}
+              </h3>
+              <p className="text-xs sm:text-sm opacity-70 italic max-w-md mx-auto">
+                {studioSubtitle}
+              </p>
+            </div>
+
+            {/* Social Media Links - Horizontal Row of Pure Vector Icons */}
+            {(studioPhone || instagramHandle || facebookHandle || youtubeHandle || studioEmail) && (
+              <div className="flex items-center justify-center gap-3 pt-2">
+                {/* WhatsApp */}
+                {socialVisibility?.whatsapp !== false && studioPhone && (
+                  <a
+                    href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                    style={{
+                      borderColor: `${designPalette.textColor}25`,
+                      color: designPalette.textColor,
+                      backgroundColor: `${designPalette.textColor}08`,
+                    }}
+                    title="WhatsApp"
+                    aria-label="WhatsApp"
+                  >
+                    <WhatsAppIcon className="w-4 h-4" />
+                  </a>
+                )}
+
+                {/* Instagram */}
+                {socialVisibility?.instagram !== false && instagramHandle && (
+                  <a
+                    href={instagramHandle.startsWith('http') ? instagramHandle : `https://instagram.com/${instagramHandle.replace('@', '').trim()}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                    style={{
+                      borderColor: `${designPalette.textColor}25`,
+                      color: designPalette.textColor,
+                      backgroundColor: `${designPalette.textColor}08`,
+                    }}
+                    title="Instagram"
+                    aria-label="Instagram"
+                  >
+                    <InstagramIcon className="w-4 h-4" />
+                  </a>
+                )}
+
+                {/* Facebook */}
+                {socialVisibility?.facebook !== false && facebookHandle && (
+                  <a
+                    href={facebookHandle.startsWith('http') ? facebookHandle : `https://facebook.com/${facebookHandle.trim()}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                    style={{
+                      borderColor: `${designPalette.textColor}25`,
+                      color: designPalette.textColor,
+                      backgroundColor: `${designPalette.textColor}08`,
+                    }}
+                    title="Facebook"
+                    aria-label="Facebook"
+                  >
+                    <FacebookIcon className="w-4 h-4" />
+                  </a>
+                )}
+
+                {/* YouTube */}
+                {socialVisibility?.youtube !== false && youtubeHandle && (
+                  <a
+                    href={youtubeHandle.startsWith('http') ? youtubeHandle : `https://youtube.com/${youtubeHandle.startsWith('@') ? youtubeHandle : `@${youtubeHandle}`}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                    style={{
+                      borderColor: `${designPalette.textColor}25`,
+                      color: designPalette.textColor,
+                      backgroundColor: `${designPalette.textColor}08`,
+                    }}
+                    title="YouTube"
+                    aria-label="YouTube"
+                  >
+                    <YoutubeIcon className="w-4 h-4" />
+                  </a>
+                )}
+
+                {/* Email */}
+                {studioEmail && (
+                  <a
+                    href={`mailto:${studioEmail}`}
+                    className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
+                    style={{
+                      borderColor: `${designPalette.textColor}25`,
+                      color: designPalette.textColor,
+                      backgroundColor: `${designPalette.textColor}08`,
+                    }}
+                    title="Email"
+                    aria-label="Email"
+                  >
+                    <Mail className="w-4 h-4" />
+                  </a>
+                )}
               </div>
             )}
-            <h3
-              className="text-xl sm:text-2xl font-bold tracking-tight"
-              style={{ fontFamily: headingFont }}
+
+            <div
+              className="pt-4 border-t text-[11px] space-y-1 transition-colors"
+              style={{
+                borderColor: `${designPalette.textColor}18`,
+                color: designPalette.textColor,
+              }}
             >
-              {studioName}
-            </h3>
-            <p className="text-xs sm:text-sm opacity-70 italic max-w-md mx-auto">
-              {studioSubtitle}
-            </p>
-          </div>
-
-          {/* Social Media Links - Horizontal Row of Pure Vector Icons */}
-          {(studioPhone || instagramHandle || facebookHandle || youtubeHandle || studioEmail) && (
-            <div className="flex items-center justify-center gap-3 pt-2">
-              {/* WhatsApp */}
-              {socialVisibility?.whatsapp !== false && studioPhone && (
+              <p className="opacity-75">
+                &copy; {new Date().getFullYear()} {studioName}. All Rights Reserved.
+              </p>
+              <p className="opacity-60 text-[10px]">
+                Powered by{' '}
                 <a
-                  href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}`}
+                  href="https://studiocore.in"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
-                  style={{
-                    borderColor: `${designPalette.textColor}25`,
-                    color: designPalette.textColor,
-                    backgroundColor: `${designPalette.textColor}08`,
-                  }}
-                  title="WhatsApp"
-                  aria-label="WhatsApp"
+                  className="font-bold underline hover:opacity-100 transition-opacity"
                 >
-                  <WhatsAppIcon className="w-4 h-4" />
+                  StudioCore.in
                 </a>
-              )}
-
-              {/* Instagram */}
-              {socialVisibility?.instagram !== false && instagramHandle && (
-                <a
-                  href={instagramHandle.startsWith('http') ? instagramHandle : `https://instagram.com/${instagramHandle.replace('@', '').trim()}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
-                  style={{
-                    borderColor: `${designPalette.textColor}25`,
-                    color: designPalette.textColor,
-                    backgroundColor: `${designPalette.textColor}08`,
-                  }}
-                  title="Instagram"
-                  aria-label="Instagram"
-                >
-                  <InstagramIcon className="w-4 h-4" />
-                </a>
-              )}
-
-              {/* Facebook */}
-              {socialVisibility?.facebook !== false && facebookHandle && (
-                <a
-                  href={facebookHandle.startsWith('http') ? facebookHandle : `https://facebook.com/${facebookHandle.trim()}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
-                  style={{
-                    borderColor: `${designPalette.textColor}25`,
-                    color: designPalette.textColor,
-                    backgroundColor: `${designPalette.textColor}08`,
-                  }}
-                  title="Facebook"
-                  aria-label="Facebook"
-                >
-                  <FacebookIcon className="w-4 h-4" />
-                </a>
-              )}
-
-              {/* YouTube */}
-              {socialVisibility?.youtube !== false && youtubeHandle && (
-                <a
-                  href={youtubeHandle.startsWith('http') ? youtubeHandle : `https://youtube.com/${youtubeHandle.startsWith('@') ? youtubeHandle : `@${youtubeHandle}`}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
-                  style={{
-                    borderColor: `${designPalette.textColor}25`,
-                    color: designPalette.textColor,
-                    backgroundColor: `${designPalette.textColor}08`,
-                  }}
-                  title="YouTube"
-                  aria-label="YouTube"
-                >
-                  <YoutubeIcon className="w-4 h-4" />
-                </a>
-              )}
-
-              {/* Email */}
-              {studioEmail && (
-                <a
-                  href={`mailto:${studioEmail}`}
-                  className="w-10 h-10 rounded-full border flex items-center justify-center transition-all hover:scale-110 shadow-2xs cursor-pointer"
-                  style={{
-                    borderColor: `${designPalette.textColor}25`,
-                    color: designPalette.textColor,
-                    backgroundColor: `${designPalette.textColor}08`,
-                  }}
-                  title="Email"
-                  aria-label="Email"
-                >
-                  <Mail className="w-4 h-4" />
-                </a>
-              )}
+              </p>
             </div>
-          )}
-
-          <div
-            className="pt-4 border-t text-[11px] space-y-1 transition-colors"
-            style={{
-              borderColor: `${designPalette.textColor}18`,
-              color: designPalette.textColor,
-            }}
-          >
-            <p className="opacity-75">
-              &copy; 2026 {studioName}. All Rights Reserved.
-            </p>
-            <p className="opacity-60 text-[10px]">
-              Powered by{' '}
-              <a
-                href="https://studiocore.in"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-bold underline hover:opacity-100 transition-opacity"
-              >
-                StudioCore.in
-              </a>
-            </p>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {/* 6. PREMAGIC / FOTOOWL TOUCH-SWIPE LIGHTBOX WITH SMART HD ZOOM */}
       {selectedPhotoIndex !== null && displayedPhotos[selectedPhotoIndex] && (
@@ -3111,73 +2976,84 @@ function GuestSlugGalleryContent() {
         />
       )}
 
+      {/* 6.5 CLIENT-SIDE ORIGINAL HIGH-RES ZIP DOWNLOAD MODAL */}
+      <ZipDownloadModal
+        isOpen={isZipModalOpen}
+        albumTitle={gallery?.title || 'Wedding Gallery'}
+        progress={zipProgress}
+        onCancel={handleCancelZipDownload}
+        accentColor={designPalette.accentColor}
+      />
+
       {/* 7. MOBILE APP-LIKE STICKY BOTTOM BAR (sm:hidden) */}
-      <nav
-        aria-label="Mobile Navigation"
-        className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/10 py-1.5 px-3 shadow-lg flex items-center justify-around sm:hidden transition-transform duration-300"
-        style={{
-          backgroundColor: `${designPalette.canvasBg}F5`,
-          borderColor: `${designPalette.textColor}1A`,
-          color: designPalette.textColor,
-        }}
-      >
-        <button
-          type="button"
-          onClick={handleShareClick}
-          className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90"
+      {!isGuestPreRegistration && (
+        <nav
+          aria-label="Mobile Navigation"
+          className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/10 py-1.5 px-3 shadow-lg flex items-center justify-around sm:hidden transition-transform duration-300"
+          style={{
+            backgroundColor: `${designPalette.canvasBg}F5`,
+            borderColor: `${designPalette.textColor}1A`,
+            color: designPalette.textColor,
+          }}
         >
-          <Share2 className="w-4 h-4" />
-          <span>Share</span>
-        </button>
-
-        {gallery.is_face_ai_enabled !== false && (
           <button
             type="button"
-            onClick={() => setIsFaceScannerOpen(true)}
-            className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-amber-700 transition active:scale-90"
-          >
-            <FaceAiFocusIcon className="w-4 h-4" />
-            <span>My Photos</span>
-          </button>
-        )}
-
-        {isPrivilegedMode && !isUnlocked && (
-          <button
-            type="button"
-            onClick={() => setShowPinModal(true)}
+            onClick={handleShareClick}
             className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90"
           >
-            <Lock className="w-4 h-4" />
-            <span>Private</span>
+            <Share2 className="w-4 h-4" />
+            <span>Share</span>
           </button>
-        )}
 
-        <button
-          type="button"
-          onClick={handleDownloadAllPhotosTrigger}
-          disabled={isDownloadingAll}
-          className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90 disabled:opacity-50"
-        >
-          <Download className="w-4 h-4" />
-          <span>Download</span>
-        </button>
+          {gallery.is_face_ai_enabled !== false && (
+            <button
+              type="button"
+              onClick={() => setIsFaceScannerOpen(true)}
+              className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-amber-700 transition active:scale-90"
+            >
+              <FaceAiFocusIcon className="w-4 h-4" />
+              <span>My Photos</span>
+            </button>
+          )}
 
-        {isSelectionMode && (
+          {isPrivilegedMode && !isUnlocked && (
+            <button
+              type="button"
+              onClick={() => setShowPinModal(true)}
+              className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90"
+            >
+              <Lock className="w-4 h-4" />
+              <span>Private</span>
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={() => setShowOnlySelected(!showOnlySelected)}
-            className={`flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90 ${
-              showOnlySelected ? 'text-rose-600 font-bold' : 'text-zinc-600'
-            }`}
+            onClick={handleDownloadAllPhotosTrigger}
+            disabled={isDownloadingAll}
+            className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90 disabled:opacity-50"
           >
-            <Heart className={`w-4 h-4 ${selectedForAlbum.size > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
-            <span>Selected ({selectedForAlbum.size})</span>
+            <Download className="w-4 h-4" />
+            <span>Download</span>
           </button>
-        )}
-      </nav>
+
+          {isSelectionMode && (
+            <button
+              type="button"
+              onClick={() => setShowOnlySelected(!showOnlySelected)}
+              className={`flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90 ${
+                showOnlySelected ? 'text-rose-600 font-bold' : 'text-zinc-600'
+              }`}
+            >
+              <Heart className={`w-4 h-4 ${selectedForAlbum.size > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
+              <span>Selected ({selectedForAlbum.size})</span>
+            </button>
+          )}
+        </nav>
+      )}
 
       {/* Floating Scroll-to-Top Button */}
-      {showScrollTop && (
+      {!isGuestPreRegistration && showScrollTop && (
         <button
           type="button"
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -3197,12 +3073,41 @@ export default function GuestSlugGalleryPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center space-y-4 p-6">
-          <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse">
-            <Camera className="w-8 h-8" />
+        <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-between p-8 select-none">
+          <div className="w-full flex justify-center pt-8" />
+          <div className="flex flex-col items-center text-center space-y-5 my-auto max-w-sm">
+            <div className="relative w-24 h-24 rounded-3xl bg-white/95 p-2.5 shadow-[0_20px_50px_rgba(217,119,6,0.2)] border border-amber-100 flex items-center justify-center overflow-hidden">
+              <div className="absolute inset-0 w-full h-full overflow-hidden rounded-3xl pointer-events-none">
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-amber-600 via-amber-500 to-amber-400 opacity-90 animate-liquid-rise">
+                  <div className="absolute -top-3 inset-x-0 h-4 bg-amber-400 opacity-80 rounded-[40%] animate-wave-churn" />
+                </div>
+              </div>
+              <div className="relative z-10 flex items-center justify-center select-none">
+                <span className="text-3xl font-black tracking-tighter text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
+                  SC
+                </span>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <h2
+                className="text-2xl sm:text-3xl font-normal text-zinc-900 tracking-wide"
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              >
+                StudioCore Photography
+              </h2>
+              <div className="flex items-center justify-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                <span className="text-[11px] font-mono uppercase tracking-[0.22em] text-zinc-400 font-semibold">
+                  Opening Gallery
+                </span>
+              </div>
+            </div>
           </div>
-          <p className="text-sm font-black text-zinc-800 tracking-tight">Loading Wedding Gallery...</p>
-          <span className="text-xs text-zinc-400">Powered by StudioCore AI</span>
+          <div className="pb-4 text-center">
+            <p className="text-[11px] font-mono tracking-widest uppercase text-zinc-400">
+              Powered by <span className="font-bold text-zinc-700">StudioCore.in</span>
+            </p>
+          </div>
         </div>
       }
     >
