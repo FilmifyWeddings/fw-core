@@ -58,6 +58,8 @@ pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/d
 pm2 save
 
 echo "Disabling local CPU InsightFace worker to save 100% DigitalOcean CPU (offloaded to Modal L4 GPU)..."
+systemctl stop face-engine 2>/dev/null || true
+systemctl disable face-engine 2>/dev/null || true
 systemctl stop insightface 2>/dev/null || true
 systemctl disable insightface 2>/dev/null || true
 systemctl stop face-worker 2>/dev/null || true
