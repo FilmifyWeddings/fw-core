@@ -278,42 +278,49 @@ export async function batchUploadPhotos(
     } catch (_) {}
   }
 
-  // 0B. If Desktop Engine is active, pipe uploads directly to the 16x parallel native engine!
+  // 0B. If Desktop Engine is active, pipe uploads directly to the 24x parallel native engine!
   if (isDesktopEngineActive) {
-    console.log('[ImageProcessor] ⚡ StudioCore Native Desktop Engine detected on 127.0.0.1:41789! Routing via 16x Turbo Pipeline...');
-    for (let i = 0; i < files.length; i++) {
+    console.log('[ImageProcessor] ⚡ StudioCore Native Desktop Engine detected on 127.0.0.1:41789! Routing via 24x Turbo Parallel Pipeline...');
+    const TURBO_PARALLEL_CONCURRENCY = 24;
+
+    for (let i = 0; i < files.length; i += TURBO_PARALLEL_CONCURRENCY) {
       if (signal?.aborted) throw new Error('Upload cancelled by user');
-      const file = files[i];
-      if (onProgress) {
-        onProgress(completed, total, Math.round((completed / total) * 100), `[Turbo Engine] Uploading ${file.name}...`);
-      }
-      try {
-        const res = await fetch('http://127.0.0.1:41789/api/upload-file', {
-          method: 'POST',
-          mode: 'cors',
-          headers: {
-            'x-gallery-id': galleryId,
-            'x-filename': file.name,
-            'x-filesize': file.size.toString(),
-            'x-filetype': file.type || 'image/jpeg',
-            'x-workspace-id': workspaceId || '',
-            'x-collection-id': collectionId && collectionId !== 'all' ? collectionId : '',
-          },
-          body: file,
-          signal,
-        });
-        const resJson = await res.json();
-        if (resJson.success) {
-          completed++;
+      const chunk = files.slice(i, i + TURBO_PARALLEL_CONCURRENCY);
+
+      await Promise.all(
+        chunk.map(async (file) => {
           if (onProgress) {
-            onProgress(completed, total, Math.round((completed / total) * 100), file.name);
+            onProgress(completed, total, Math.round((completed / total) * 100), `[Turbo 24x] Uploading ${file.name}...`);
           }
-        } else {
-          errors.push(`${file.name}: ${resJson.error || 'Desktop engine upload failed'}`);
-        }
-      } catch (err: any) {
-        errors.push(`${file.name}: ${err.message}`);
-      }
+          try {
+            const res = await fetch('http://127.0.0.1:41789/api/upload-file', {
+              method: 'POST',
+              mode: 'cors',
+              headers: {
+                'x-gallery-id': galleryId,
+                'x-filename': file.name,
+                'x-filesize': file.size.toString(),
+                'x-filetype': file.type || 'image/jpeg',
+                'x-workspace-id': workspaceId || '',
+                'x-collection-id': collectionId && collectionId !== 'all' ? collectionId : '',
+              },
+              body: file,
+              signal,
+            });
+            const resJson = await res.json();
+            if (resJson.success) {
+              completed++;
+              if (onProgress) {
+                onProgress(completed, total, Math.round((completed / total) * 100), file.name);
+              }
+            } else {
+              errors.push(`${file.name}: ${resJson.error || 'Desktop engine upload failed'}`);
+            }
+          } catch (err: any) {
+            errors.push(`${file.name}: ${err.message}`);
+          }
+        })
+      );
     }
 
     return {
