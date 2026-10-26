@@ -327,11 +327,70 @@ export async function batchUploadPhotos(
                 })
               );
             }
+            continue;
           } else {
-            errors.push(`${file.name}: ${resJson.error || 'Desktop engine upload failed'}`);
+            console.warn(`[DesktopEngine] Upload failed for ${file.name}: ${resJson.error}. Falling back to browser pipeline...`);
           }
         } catch (err: any) {
-          errors.push(`${file.name}: ${err.message}`);
+          console.warn(`[DesktopEngine] Loopback error for ${file.name}: ${err.message}. Falling back to browser pipeline...`);
+        }
+
+        // Seamless In-Flight Fallback: If desktop engine ever fails, upload directly via browser pipeline!
+        try {
+          if (onProgress) {
+            onProgress(completed, total, Math.max(5, Math.round((completed / total) * 100)), `[Cloud Fallback] Uploading ${file.name}...`);
+          }
+          const variants = await generateImageVariants(file);
+          const cleanName = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
+          const urlRes = await fetch('/api/gallery/upload-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              galleryId,
+              filename: cleanName,
+              originalType: file.type || 'image/jpeg',
+              workspaceId,
+            }),
+            signal,
+          });
+          const urlJson = await urlRes.json();
+          if (!urlJson.success) throw new Error(urlJson.error || 'Failed to get upload URLs');
+
+          await Promise.all([
+            uploadToPresignedUrl(urlJson.originalUploadUrl, file, file.type || 'image/jpeg', signal),
+            uploadToPresignedUrl(urlJson.previewUploadUrl, variants.previewBlob, 'image/webp', signal),
+            uploadToPresignedUrl(urlJson.thumbUploadUrl, variants.thumbBlob, 'image/webp', signal),
+          ]);
+
+          const regRes = await fetch('/api/gallery/photos/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              galleryId,
+              photos: [{
+                gallery_id: galleryId,
+                collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
+                original_key: urlJson.originalKey,
+                preview_key: urlJson.previewKey,
+                thumbnail_key: urlJson.thumbKey,
+                width: variants.width,
+                height: variants.height,
+                size_bytes: file.size,
+              }],
+            }),
+            signal,
+          });
+          const regJson = await regRes.json();
+          if (regJson.success) {
+            completed++;
+            if (onProgress) {
+              onProgress(completed, total, Math.round((completed / total) * 100), file.name);
+            }
+          } else {
+            errors.push(`${file.name}: ${regJson.error || 'Registration failed'}`);
+          }
+        } catch (fbErr: any) {
+          errors.push(`${file.name}: ${fbErr.message}`);
         }
       }
     };
