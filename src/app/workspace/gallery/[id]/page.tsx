@@ -3434,8 +3434,7 @@ function AlbumStudioContent() {
 
               <div className="space-y-2.5">
                 <a
-                  href="/downloads/StudioCore-Uploader.exe"
-                  download="StudioCore-Uploader.exe"
+                  href="/api/gallery/uploader-download"
                   className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition"
                 >
                   <Download className="w-4 h-4" />

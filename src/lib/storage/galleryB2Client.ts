@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
+  ListObjectVersionsCommand,
   PutBucketCorsCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -23,6 +24,9 @@ export const B2_GALLERY_BUCKET_NAME = clean(process.env.B2_GALLERY_BUCKET_NAME) 
 // Optional Custom CDN Domain (e.g., https://gallery-cdn.studiocore.in)
 export const B2_GALLERY_CDN_URL = clean(process.env.NEXT_PUBLIC_B2_GALLERY_CDN_URL) || clean(process.env.NEXT_PUBLIC_R2_GALLERY_CDN_URL) || '';
 
+/**
+ * Singleton Backblaze B2 S3 Client
+ */
 export const galleryB2Client = new S3Client({
   endpoint: B2_ENDPOINT,
   region: B2_REGION,
@@ -30,10 +34,11 @@ export const galleryB2Client = new S3Client({
     accessKeyId: B2_ACCESS_KEY_ID,
     secretAccessKey: B2_SECRET_ACCESS_KEY,
   },
+  forcePathStyle: true,
 });
 
 /**
- * Generate Presigned Upload URL for direct client-to-B2 browser upload (PUT)
+ * Generates a presigned upload URL for direct browser-to-B2 PUT requests.
  */
 export async function getGalleryPresignedUploadUrl(
   key: string,
@@ -41,32 +46,33 @@ export async function getGalleryPresignedUploadUrl(
   expiresIn = 3600,
   bucketName = B2_GALLERY_BUCKET_NAME
 ): Promise<string> {
+  const cleanKey = key.replace(/^\/+/, '');
   const command = new PutObjectCommand({
     Bucket: bucketName,
-    Key: key,
+    Key: cleanKey,
     ContentType: contentType,
   });
 
-  return await getSignedUrl(galleryB2Client, command, { expiresIn });
+  return getSignedUrl(galleryB2Client, command, { expiresIn });
 }
 
 /**
- * Generate Presigned Download URL for high-res original download
+ * Generates a presigned download URL for a file in the gallery B2 bucket.
  */
 export async function getGalleryPresignedDownloadUrl(
   key: string,
-  expiresIn = 7200,
+  expiresIn = 3600,
   bucketName = B2_GALLERY_BUCKET_NAME,
-  filename?: string
+  responseContentDisposition?: string
 ): Promise<string> {
-  const cleanFilename = filename ? filename.replace(/["\r\n]/g, '') : null;
+  const cleanKey = key.replace(/^\/+/, '');
   const command = new GetObjectCommand({
     Bucket: bucketName,
-    Key: key,
-    ...(cleanFilename ? { ResponseContentDisposition: `attachment; filename="${cleanFilename}"` } : {}),
+    Key: cleanKey,
+    ResponseContentDisposition: responseContentDisposition,
   });
 
-  return await getSignedUrl(galleryB2Client, command, { expiresIn });
+  return getSignedUrl(galleryB2Client, command, { expiresIn });
 }
 
 /**
@@ -84,7 +90,7 @@ export async function getGalleryObjectBuffer(
     });
     const response = await galleryB2Client.send(command);
     if (!response.Body) return null;
-    const byteArray = await response.Body.transformToByteArray();
+    const byteArray = await (response.Body as any).transformToByteArray();
     return Buffer.from(byteArray);
   } catch (err: any) {
     console.warn(`[GalleryStorage] getGalleryObjectBuffer failed for key ${key}:`, err.message);
@@ -93,32 +99,28 @@ export async function getGalleryObjectBuffer(
 }
 
 /**
- * Get direct public / CDN URL for a gallery photo (WebP preview, thumbnail, or cover)
- * 100% White-Labeled: Routes through /api/gallery/image for private bucket security and clean URLs
+ * Converts a storage key into a public CDN URL or direct URL.
  */
-export function getGalleryPublicUrl(key: string, bucketName = B2_GALLERY_BUCKET_NAME): string {
+export function getGalleryPublicUrl(
+  key: string,
+  bucketName = B2_GALLERY_BUCKET_NAME
+): string {
   if (!key) return '';
-  if (key.startsWith('http://') || key.startsWith('https://')) return key;
   const cleanKey = key.replace(/^\/+/, '');
 
-  // 1. If custom CDN URL configured (and not the non-existent gallery-cdn.studiocore.in), use that
-  if (B2_GALLERY_CDN_URL && !B2_GALLERY_CDN_URL.includes('gallery-cdn.studiocore.in')) {
+  if (B2_GALLERY_CDN_URL) {
     const base = B2_GALLERY_CDN_URL.replace(/\/+$/, '');
     return `${base}/${cleanKey}`;
   }
 
-  // 2. 100% White-Labeled Native Image Proxy (presigned redirect with browser caching)
-  return `/api/gallery/image?key=${encodeURIComponent(cleanKey)}`;
+  const endpointBase = B2_ENDPOINT.replace(/\/+$/, '');
+  return `${endpointBase}/${bucketName}/${cleanKey}`;
 }
 
-let corsEnsured = false;
-
 /**
- * Automatically configure required CORS rules on the B2 gallery bucket
- * Allows web browsers to perform direct PUT uploads and GET downloads.
+ * Ensures CORS is configured on the gallery bucket so web browsers can upload directly.
  */
-export async function ensureGalleryCors(bucketName = B2_GALLERY_BUCKET_NAME): Promise<{ success: boolean; error?: string }> {
-  if (corsEnsured) return { success: true };
+export async function ensureGalleryCors(bucketName = B2_GALLERY_BUCKET_NAME): Promise<void> {
   try {
     const command = new PutBucketCorsCommand({
       Bucket: bucketName,
@@ -126,21 +128,17 @@ export async function ensureGalleryCors(bucketName = B2_GALLERY_BUCKET_NAME): Pr
         CORSRules: [
           {
             AllowedHeaders: ['*'],
-            AllowedMethods: ['GET', 'PUT', 'POST', 'HEAD', 'DELETE'],
+            AllowedMethods: ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
             AllowedOrigins: ['*'],
-            ExposeHeaders: ['ETag', 'x-amz-request-id'],
-            MaxAgeSeconds: 3600,
+            ExposeHeaders: ['ETag', 'x-amz-server-side-encryption'],
+            MaxAgeSeconds: 86400,
           },
         ],
       },
     });
-
     await galleryB2Client.send(command);
-    corsEnsured = true;
-    return { success: true };
   } catch (err: any) {
-    console.warn('[GalleryB2] Note on CORS configuration:', err.message);
-    return { success: false, error: err.message };
+    console.warn('[GalleryB2] Notice configuring CORS on bucket:', err.message);
   }
 }
 
@@ -201,7 +199,7 @@ export function normalizeStorageKey(rawKey: string | null | undefined, bucketNam
  * Purges original_key, preview_key, and thumbnail_key to free up storage space and eliminate charges.
  */
 export async function deleteGalleryObjects(
-  keys: (string | null | undefined)[],
+  keys: string[],
   bucketName = B2_GALLERY_BUCKET_NAME
 ): Promise<{ deleted: number; errors: number }> {
   const validKeys = Array.from(
@@ -259,8 +257,8 @@ export async function deleteGalleryObjects(
 }
 
 /**
- * Permanently deletes all objects under a given directory prefix in Backblaze B2.
- * Ideal for purging entire deleted galleries (e.g. "galleries/{workspace_id}/{gallery_id}/" or "events/{gallery_id}/").
+ * Permanently deletes all objects and all object versions/delete markers under a given directory prefix in Backblaze B2.
+ * Uses ListObjectVersionsCommand to ensure 100% permanent wipeout (no hidden versions, no delete markers, no asterisk * in B2 console).
  */
 export async function deleteGalleryPrefix(
   prefix: string,
@@ -274,8 +272,70 @@ export async function deleteGalleryPrefix(
 
   let totalDeleted = 0;
   let totalErrors = 0;
-  let continuationToken: string | undefined = undefined;
 
+  // Attempt Version-Aware Deletion first (erases all underlying versions and delete markers)
+  try {
+    let keyMarker: string | undefined = undefined;
+    let versionIdMarker: string | undefined = undefined;
+
+    do {
+      const listVersionsCmd = new ListObjectVersionsCommand({
+        Bucket: bucketName,
+        Prefix: targetPrefix,
+        KeyMarker: keyMarker,
+        VersionIdMarker: versionIdMarker,
+        MaxKeys: 1000,
+      });
+
+      const listRes = await galleryB2Client.send(listVersionsCmd);
+      const objectsToDelete: Array<{ Key: string; VersionId?: string }> = [];
+
+      (listRes.Versions || []).forEach((v) => {
+        if (v.Key) objectsToDelete.push({ Key: v.Key, VersionId: v.VersionId });
+      });
+
+      (listRes.DeleteMarkers || []).forEach((m) => {
+        if (m.Key) objectsToDelete.push({ Key: m.Key, VersionId: m.VersionId });
+      });
+
+      if (objectsToDelete.length > 0) {
+        for (let i = 0; i < objectsToDelete.length; i += 1000) {
+          const chunk = objectsToDelete.slice(i, i + 1000);
+          try {
+            const delCmd = new DeleteObjectsCommand({
+              Bucket: bucketName,
+              Delete: {
+                Objects: chunk,
+                Quiet: true,
+              },
+            });
+            const delRes = await galleryB2Client.send(delCmd);
+            const errCount = delRes.Errors?.length || 0;
+            totalErrors += errCount;
+            totalDeleted += (chunk.length - errCount);
+          } catch (chunkErr: any) {
+            console.warn('[GalleryB2] Chunk version delete error:', chunkErr.message);
+            totalErrors += chunk.length;
+          }
+        }
+      }
+
+      if (listRes.IsTruncated) {
+        keyMarker = listRes.NextKeyMarker;
+        versionIdMarker = listRes.NextVersionIdMarker;
+      } else {
+        keyMarker = undefined;
+      }
+    } while (keyMarker);
+
+    console.log(`[GalleryB2] deleteGalleryPrefix("${targetPrefix}") permanently wiped ${totalDeleted} versions/markers (${totalErrors} errors).`);
+    return { deleted: totalDeleted, errors: totalErrors };
+  } catch (versionListErr: any) {
+    console.warn(`[GalleryB2] ListObjectVersions fallback to ListObjectsV2 for ${targetPrefix}:`, versionListErr.message);
+  }
+
+  // Fallback to standard ListObjectsV2Command if bucket does not support version listing
+  let continuationToken: string | undefined = undefined;
   do {
     try {
       const listCmd = new ListObjectsV2Command({
