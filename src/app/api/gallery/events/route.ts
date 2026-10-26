@@ -6,7 +6,7 @@ import { deleteGalleryObjects, deleteGalleryPrefix } from '@/lib/storage/gallery
 
 export const dynamic = 'force-dynamic';
 
-export function resolveIsFaceAiEnabled(gallery: any): boolean {
+function resolveIsFaceAiEnabled(gallery: any): boolean {
   if (gallery?.is_face_ai_enabled !== undefined && gallery?.is_face_ai_enabled !== null) {
     return Boolean(gallery.is_face_ai_enabled);
   }
@@ -744,7 +744,7 @@ export async function PATCH(req: NextRequest) {
         try {
           const { data: photos } = await supabaseAdmin
             .from('gallery_photos')
-            .select('id, preview_key')
+            .select('id, preview_key, thumbnail_key, face_count')
             .eq('gallery_id', id);
 
           if (!photos || photos.length === 0) return;
@@ -755,7 +755,7 @@ export async function PATCH(req: NextRequest) {
             .eq('gallery_id', id);
 
           const indexedIds = new Set((existingFaces || []).map((f) => f.photo_id));
-          const unindexed = photos.filter((p) => !indexedIds.has(p.id) && p.preview_key);
+          const unindexed = photos.filter((p) => (p.face_count === null || p.face_count === undefined) && !indexedIds.has(p.id) && (p.preview_key || p.thumbnail_key));
 
           if (unindexed.length === 0) return;
 
@@ -773,7 +773,7 @@ export async function PATCH(req: NextRequest) {
             const resultMap = await extractFacesBatchFromS3Keys(batchItems);
 
             const allFaceRecords: any[] = [];
-            const photoUpdatePromises: Promise<any>[] = [];
+            const photoUpdatePromises: any[] = [];
 
             for (const p of chunk) {
               const faces = resultMap.get(p.id) || [];

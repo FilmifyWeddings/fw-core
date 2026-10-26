@@ -111,9 +111,21 @@ export default function GalleryShareModal({
   const [standeeType, setStandeeType] = useState<string>('Guest Access');
   const [activeDesignIndex, setActiveDesignIndex] = useState<number>(0);
   const [isDownloadingStandee, setIsDownloadingStandee] = useState<boolean>(false);
-  const [standeeViewTab, setStandeeViewTab] = useState<'standee' | 'qr'>('standee');
+  const [standeeViewTab, setStandeeViewTab] = useState<'qr' | 'standee'>('qr');
   const [isDownloadingMainQr, setIsDownloadingMainQr] = useState<boolean>(false);
   const [isCopiedQrLink, setIsCopiedQrLink] = useState<boolean>(false);
+
+  // Close standee modal on Escape
+  useEffect(() => {
+    if (!isStandeeModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsStandeeModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isStandeeModalOpen]);
 
   // Copy Feedback
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -818,11 +830,16 @@ export default function GalleryShareModal({
           CANVA 3X2 WEDDING TABLE STANDEE MODAL
       ───────────────────────────────────────────────────────────── */}
       {isStandeeModalOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
-          <div className="bg-white rounded-3xl p-5 sm:p-7 max-w-2xl w-full border border-zinc-200 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsStandeeModalOpen(false);
+          }}
+        >
+          <div className="bg-white rounded-3xl p-5 sm:p-6 max-w-xl w-full border border-zinc-200 shadow-2xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             
             {/* Clean Single Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-800 flex items-center justify-center">
                   <QrCode className="w-5 h-5 text-amber-700" />
@@ -841,13 +858,26 @@ export default function GalleryShareModal({
                 type="button"
                 onClick={() => setIsStandeeModalOpen(false)}
                 className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
+                title="Close (Esc)"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* View Switcher: 2x3 Table Standees vs Main Direct QR Code */}
-            <div className="flex items-center p-1 bg-zinc-100 rounded-2xl">
+            {/* View Switcher: Main Direct QR Code FIRST, 2x3 Table Standees SECOND */}
+            <div className="flex items-center p-1 bg-zinc-100 rounded-2xl shrink-0 mt-3">
+              <button
+                type="button"
+                onClick={() => setStandeeViewTab('qr')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  standeeViewTab === 'qr'
+                    ? 'bg-white text-zinc-900 shadow-xs'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5 text-amber-600" />
+                <span>📱 Main High-Res QR Code</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setStandeeViewTab('standee')}
@@ -859,19 +889,10 @@ export default function GalleryShareModal({
               >
                 <span>🎨 2x3 Table Standees (8 Designs)</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setStandeeViewTab('qr')}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                  standeeViewTab === 'qr'
-                    ? 'bg-white text-zinc-900 shadow-xs'
-                    : 'text-zinc-500 hover:text-zinc-800'
-                }`}
-              >
-                <QrCode className="w-3.5 h-3.5" />
-                <span>📱 Main High-Res QR Code</span>
-              </button>
             </div>
+
+            {/* Modal Body Container with Smooth Scrollbar */}
+            <div className="flex-1 overflow-y-auto pr-1 mt-3 space-y-4 scrollbar-thin">
 
             {/* TAB 1: MAIN HIGH-RES STANDALONE QR CODE */}
             {standeeViewTab === 'qr' && (
@@ -965,7 +986,7 @@ export default function GalleryShareModal({
             </div>
 
             {/* The 2x3 Standee Canvas Container */}
-            <div className="relative group max-w-md mx-auto w-full">
+            <div className="relative group max-w-[280px] sm:max-w-[320px] mx-auto w-full">
               <button
                 type="button"
                 onClick={() => setActiveDesignIndex((prev) => (prev === 0 ? 7 : prev - 1))}
@@ -1389,6 +1410,7 @@ export default function GalleryShareModal({
             </div>
             </>
             )}
+            </div>
 
           </div>
         </div>

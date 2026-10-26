@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, usePathname } from 'next/navigation';
 import { parseCoverUrl, CoverPositioning } from '@/lib/gallery-cover-utils';
 import { SparkleStar, WashiTape, HandDrawnOval, FaceAiFocusIcon } from '@/components/gallery/CoverPresetEffects';
 import {
@@ -126,6 +126,9 @@ interface GalleryInfo {
   couple_slug?: string;
   unique_code?: string;
   max_selection_limit?: number;
+  full_access_skip_pin?: boolean;
+  selection_skip_pin?: boolean;
+  guest_skip_pin?: boolean;
   studio_branding?: {
     studio_name: string;
     studio_slug: string;
@@ -145,12 +148,16 @@ interface GalleryInfo {
 function GuestSlugGalleryContent() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const pathname = usePathname() || (typeof window !== 'undefined' ? window.location.pathname : '');
 
-  const slug = params?.slug as string;
+  // Extract slug from route params or vanity pathname (e.g. /:eventName/:studioName/full-access/:slug)
+  const pathnameParts = pathname.split('/').filter(Boolean);
+  const pathSlug = pathnameParts[pathnameParts.length - 1];
+  const slug = (params?.slug as string) || pathSlug;
 
-  // Search parameters for access modes
-  const isFullAccess = searchParams?.get('access') === 'all' || searchParams?.get('access') === 'full';
-  const isSelectionMode = searchParams?.get('album_selection') === 'true';
+  // Search parameters & vanity pathname for access modes
+  const isFullAccess = searchParams?.get('access') === 'all' || searchParams?.get('access') === 'full' || pathname.includes('full-access');
+  const isSelectionMode = searchParams?.get('album_selection') === 'true' || (pathname.includes('selection') && !pathname.includes('full-access'));
   const maxLimitParam = searchParams?.get('max_limit');
   const maxSelectionLimit = maxLimitParam ? parseInt(maxLimitParam, 10) : null;
   const isVipMode = searchParams?.get('vip-link') === '1';
@@ -397,6 +404,19 @@ function GuestSlugGalleryContent() {
     loadGalleryData();
   }, [loadGalleryData]);
 
+  // Auto-scroll directly to gallery photos for Full Access and Album Selection clients
+  useEffect(() => {
+    if (isPrivilegedMode && isUnlocked && !loading && fullPhotos.length > 0) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById('sub-events-bar') || document.getElementById('gallery-content');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [isPrivilegedMode, isUnlocked, loading, fullPhotos.length]);
+
   // Auto-resolve Unique Guest Link or Saved Device Session (No repetitive login on re-scan)
   useEffect(() => {
     if (!gallery) return;
@@ -595,6 +615,7 @@ function GuestSlugGalleryContent() {
     setGuestEmail(data.email);
 
     try {
+      let savedGuestId: string = '';
       // 1. Register Guest in CRM (Uploads selfie to Backblaze B2 & saves 512-D embedding)
       try {
         const regRes = await fetch('/api/gallery/guest/register', {
@@ -617,6 +638,7 @@ function GuestSlugGalleryContent() {
 
         // Save session in localStorage so subsequent QR scans bypass login
         const savedId = regJson?.guest_id || regJson?.guest?.id;
+        if (savedId) savedGuestId = String(savedId);
         const savedTok = regJson?.access_token || regJson?.guest?.access_token;
         if (savedId) {
           try {
@@ -661,7 +683,7 @@ function GuestSlugGalleryContent() {
         setIsMyPhotosActive(true);
         try {
           const profObj = {
-            id: savedId,
+            id: savedGuestId,
             name: data.name,
             phone: data.phone,
             email: data.email,
@@ -1482,11 +1504,11 @@ function GuestSlugGalleryContent() {
       <div className="pt-3">
         <a
           href="#sub-events-bar"
-          className="inline-flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-all cursor-pointer group"
-          aria-label="Scroll to gallery content"
+          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 text-white font-bold text-xs uppercase tracking-wider transition-all duration-300 hover:scale-105 active:scale-95 shadow-lg cursor-pointer"
+          aria-label="View gallery photos"
         >
-          <div className="w-px h-6 bg-current opacity-40 group-hover:h-8 transition-all" />
-          <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform animate-bounce" />
+          <span>View Gallery Photos</span>
+          <ArrowDown className="w-3.5 h-3.5 animate-bounce" />
         </a>
       </div>
     );
@@ -1869,7 +1891,7 @@ function GuestSlugGalleryContent() {
               </h1>
               <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-mono text-zinc-300 tracking-widest">
                 <span>{formattedDate}</span>
-                {totalPhotosCount > 0 && (
+                {isPrivilegedMode && totalPhotosCount > 0 && (
                   <>
                     <span>•</span>
                     <span>{totalPhotosCount} PHOTOS</span>
@@ -1985,7 +2007,7 @@ function GuestSlugGalleryContent() {
             <div className="relative z-10 w-full pt-2 flex flex-col items-center justify-center space-y-1.5 text-center">
               <div className="flex items-center gap-2 text-[10px] sm:text-xs font-mono uppercase tracking-[0.28em] text-zinc-500">
                 <span>GALLERY BY {studioName.toUpperCase()}</span>
-                {totalPhotosCount > 0 && (
+                {isPrivilegedMode && totalPhotosCount > 0 && (
                   <>
                     <span>•</span>
                     <span>{totalPhotosCount} PHOTOS</span>
@@ -2181,37 +2203,6 @@ function GuestSlugGalleryContent() {
                 </div>
               )}
             </div>
-
-            {/* Personalized Guest Badge + Instant ZIP Download (Only for Guest mode) */}
-            {!isPrivilegedMode && guestName && (
-              <div className="flex items-center gap-1.5 shrink-0 animate-in fade-in duration-300">
-                <div
-                  className="px-3 py-1 sm:py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs border bg-amber-600 text-white border-amber-700 ring-2 ring-amber-400/30"
-                  title="Your Matched Photos"
-                >
-                  <span className="truncate max-w-[110px] sm:max-w-[140px]">👤 {guestName}</span>
-                  <FaceAiFocusIcon className="w-3.5 h-3.5 text-white" />
-                  {matchedPhotos.length > 0 && (
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-700 text-white">
-                      {matchedPhotos.length}
-                    </span>
-                  )}
-                </div>
-
-                {matchedPhotos.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleDownloadAllMyPhotos}
-                    disabled={isDownloadingAll}
-                    className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
-                    title="Download All My Photos (ZIP)"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Download ZIP</span>
-                  </button>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Sub-Events Horizontal Scrollable Bar */}
@@ -2257,22 +2248,6 @@ function GuestSlugGalleryContent() {
 
           {/* Right side: Action buttons with explicit text labels */}
           <div className="hidden sm:flex items-center gap-2 shrink-0">
-            {!isPrivilegedMode && gallery.is_face_ai_enabled !== false && (
-              <button
-                type="button"
-                onClick={() => setIsFaceScannerOpen(true)}
-                title="AI Face Search / My Photos"
-                className="px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95"
-                style={{
-                  backgroundColor: `${designPalette.textColor}0A`,
-                  borderColor: `${designPalette.textColor}25`,
-                  color: designPalette.textColor,
-                }}
-              >
-                <FaceAiFocusIcon className="w-3.5 h-3.5" />
-                <span>My Photos</span>
-              </button>
-            )}
 
             {isPrivilegedMode && !isUnlocked && (
               <button
