@@ -305,22 +305,22 @@ export default function GalleryShareModal({
 
   if (!isOpen || !gallery) return null;
 
-  const studioSlug = (gallery as any)?.studio_slug || 'studio';
-  const coupleSlug = (gallery as any)?.couple_slug || gallery?.slug || 'event';
-  const eventSlug = gallery?.slug || (gallery?.id ? gallery.id.replace(/-/g, '').slice(0, 8) : 'view');
+  const studioSlug = (gallery as any)?.studio_slug || (gallery as any)?.studio_branding?.studio_slug || 'studio';
+  const eventName = (gallery as any)?.couple_slug || gallery?.slug || 'event';
+  const eventId = gallery?.id || gallery?.slug || 'view';
 
-  // Dynamic URLs based on current toggle states
+  // Dynamic URLs matching user requirement: /eventname/studioname/guest-access/eventid
   const guestAccessUrl = !guestAskPin
-    ? `${origin}/${studioSlug}/${coupleSlug}/guest-access/${eventSlug}?share_key=${guestPin}`
-    : `${origin}/${studioSlug}/${coupleSlug}/guest-access/${eventSlug}`;
+    ? `${origin}/${eventName}/${studioSlug}/guest-access/${eventId}?share_key=${guestPin}`
+    : `${origin}/${eventName}/${studioSlug}/guest-access/${eventId}`;
 
   const fullAccessUrl = fullAccessDoNotAskPin
-    ? `${origin}/${studioSlug}/${coupleSlug}/full-access/${eventSlug}?pass_key=${passKey}`
-    : `${origin}/${studioSlug}/${coupleSlug}/full-access/${eventSlug}`;
+    ? `${origin}/${eventName}/${studioSlug}/full-access/${eventId}?pass_key=${passKey}`
+    : `${origin}/${eventName}/${studioSlug}/full-access/${eventId}`;
 
   const photoSelectionUrl = selectionDoNotAskPin
-    ? `${origin}/${studioSlug}/${coupleSlug}/selection/${eventSlug}?pass_key=${passKey}`
-    : `${origin}/${studioSlug}/${coupleSlug}/selection/${eventSlug}`;
+    ? `${origin}/${eventName}/${studioSlug}/selection/${eventId}?pass_key=${passKey}`
+    : `${origin}/${eventName}/${studioSlug}/selection/${eventId}`;
 
   const guestWhatsAppMessage = `Hello!\nWe're excited to share your personal photo gallery from the event. This link will take you directly to your own photos, so you can relive and enjoy the special moments captured just for you:\n\n${guestAccessUrl}\n\nThank you for being a part of our event – we hope these memories bring a smile to your face!`;
 

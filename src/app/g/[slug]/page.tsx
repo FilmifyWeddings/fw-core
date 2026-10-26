@@ -1488,7 +1488,7 @@ function GuestSlugGalleryContent() {
       }}
       className={
         isGuestPreRegistration
-          ? "h-[100dvh] max-h-[100dvh] flex flex-col justify-between overflow-hidden select-none transition-colors duration-300"
+          ? "min-h-[100dvh] flex flex-col justify-between overflow-y-auto select-none transition-colors duration-300"
           : "min-h-screen pb-16 sm:pb-8 select-none transition-colors duration-300"
       }>
       
@@ -1541,13 +1541,12 @@ function GuestSlugGalleryContent() {
             {gallery.is_face_ai_enabled !== false && (
               <button
                 type="button"
-                onClick={() => setIsFaceScannerOpen(true)}
+                onClick={handleFindMyPhotoClick}
                 className="px-3 sm:px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm active:scale-95"
                 title="AI Face Recognition - Find My Photos"
               >
                 <FaceAiFocusIcon className="w-3.5 h-3.5 text-white" />
-                <span className="hidden sm:inline">Find My Photo</span>
-                <span className="sm:hidden">Find</span>
+                <span className="inline font-bold">Find My Photo</span>
               </button>
             )}
             {totalPhotosCount > 0 && (
@@ -1872,7 +1871,7 @@ function GuestSlugGalleryContent() {
         {/* PRESET 7: VINTAGE SCRAPBOOK (Photo 1: Tilted Polaroid, Washi Tape, Script Calligraphy & Circled Date) */}
         {designPreset === 'vintage_scrapbook' && (
           <div
-            className={`relative w-full flex flex-col justify-between overflow-hidden px-4 sm:px-8 transition-colors duration-500 ${isGuestPreRegistration ? 'h-full min-h-0 flex-1 py-3 sm:py-4' : 'min-h-[88vh] sm:min-h-[95vh] py-6 sm:py-10'}`}
+            className={`relative w-full flex flex-col justify-between px-4 sm:px-8 transition-colors duration-500 ${isGuestPreRegistration ? 'min-h-[85vh] flex-1 py-3 sm:py-4 overflow-y-auto' : 'min-h-[88vh] sm:min-h-[95vh] py-6 sm:py-10'}`}
             style={{ backgroundColor: designPalette.canvasBg, color: designPalette.textColor }}
           >
             {/* Subtle Paper Grain Effect */}
@@ -1922,7 +1921,7 @@ function GuestSlugGalleryContent() {
 
               {/* Right Side: The Tilted Polaroid Photo Card with Washi Tape */}
               <div className="order-1 lg:order-2 relative animate-in fade-in zoom-in-95 duration-1000">
-                <div className={`relative bg-white p-2.5 sm:p-5 pb-6 sm:pb-12 shadow-[0_25px_60px_rgba(0,0,0,0.22)] border border-stone-200/80 transform rotate-2 sm:rotate-3 hover:rotate-0 transition-transform duration-700 ${isGuestPreRegistration ? 'w-44 sm:w-64 md:w-80' : 'w-64 sm:w-80 md:w-96'}`}>
+                <div className={`relative bg-white p-2.5 sm:p-5 pb-6 sm:pb-12 shadow-[0_25px_60px_rgba(0,0,0,0.22)] border border-stone-200/80 transform rotate-2 sm:rotate-3 hover:rotate-0 transition-transform duration-700 ${isGuestPreRegistration ? 'w-44 sm:w-56 md:w-64 max-h-[50vh]' : 'w-64 sm:w-80 md:w-96'}`}>
                   {/* Frosted Translucent Washi Tape Across Top-Left Corner */}
                   <div className="absolute -top-3 sm:-top-5 left-3 sm:left-6 z-30">
                     <WashiTape className="transform -rotate-12" />

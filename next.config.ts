@@ -66,6 +66,21 @@ const nextConfig: NextConfig = {
 
   async rewrites() {
     return [
+      // 1. Primary vanity format: /:eventName/:studioName/guest-access/:slug
+      {
+        source: '/:eventName((?!workspace|api|dashboard|admin|login|signup|auth|g|_next)[^/]+)/:studioName/guest-access/:slug',
+        destination: '/g/:slug',
+      },
+      {
+        source: '/:eventName((?!workspace|api|dashboard|admin|login|signup|auth|g|_next)[^/]+)/:studioName/full-access/:slug',
+        destination: '/g/:slug?access=all',
+      },
+      {
+        source: '/:eventName((?!workspace|api|dashboard|admin|login|signup|auth|g|_next)[^/]+)/:studioName/selection/:slug',
+        destination: '/g/:slug?album_selection=true',
+      },
+
+      // 2. Fallback format: /:studioSlug/:coupleSlug/guest-access/:slug
       {
         source: '/:studioSlug((?!workspace|api|dashboard|admin|login|signup|auth|g|_next)[^/]+)/:coupleSlug/guest-access/:slug',
         destination: '/g/:slug',
