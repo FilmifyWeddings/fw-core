@@ -3206,12 +3206,22 @@ function AlbumStudioContent() {
                     </p>
                   </div>
                 </div>
-                <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300/80 text-emerald-800 text-xs font-bold shrink-0 flex items-center gap-2 shadow-2xs">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
-                  </span>
-                  <span>Active &amp; Ready</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300/80 text-emerald-800 text-xs font-bold flex items-center gap-2 shadow-2xs">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+                    </span>
+                    <span>Active &amp; Ready</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDesktopAppModal(true)}
+                    className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 transition cursor-pointer"
+                    title="Desktop App Settings / Download latest installer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             ) : (
@@ -3438,7 +3448,7 @@ function AlbumStudioContent() {
 
               <div className="space-y-2.5">
                 <a
-                  href="/downloads/StudioCore-Uploader-Setup.exe"
+                  href="/api/gallery/uploader-download"
                   download="StudioCore-Uploader-Setup.exe"
                   className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
                 >
