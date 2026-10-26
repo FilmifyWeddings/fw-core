@@ -252,38 +252,50 @@ export default function TeamMemberFinanceDrawer({
     try {
       // 1. Parallelize ALL independent queries in 1 single network pass
       const [assignRes, payoutRes, slipsRes, recsRes, ordersRes] = await Promise.allSettled([
-        supabase
-          .from('fw_assignments')
-          .select(`
-            id,
-            project_id,
-            sub_event_id,
-            assigned_member_id,
-            required_role,
-            agreed_amount,
-            paid_amount,
-            advance_amount,
-            balance_amount,
-            status,
-            payment_status,
-            payment_date,
-            payment_method,
-            notes,
-            user_id,
-            workspace_id,
-            created_at,
-            updated_at,
-            sub_event:fw_sub_events(id, event_title, event_date, start_time_12h, end_time_12h, venue_name),
-            project:fw_projects(id, client_name, user_id, main_date, main_venue, status)
-          `)
-          .eq('assigned_member_id', member.id)
-          .order('created_at', { ascending: false }),
+        (() => {
+          let q = supabase
+            .from('fw_assignments')
+            .select(`
+              id,
+              project_id,
+              sub_event_id,
+              assigned_member_id,
+              required_role,
+              agreed_amount,
+              paid_amount,
+              advance_amount,
+              balance_amount,
+              status,
+              payment_status,
+              payment_date,
+              payment_method,
+              notes,
+              user_id,
+              workspace_id,
+              created_at,
+              updated_at,
+              sub_event:fw_sub_events(id, event_title, event_date, start_time_12h, end_time_12h, venue_name),
+              project:fw_projects(id, client_name, user_id, main_date, main_venue, status)
+            `);
+          if (member.name && member.name.trim()) {
+            q = q.or(`assigned_member_id.eq.${member.id},assigned_member_name.ilike.${member.name.trim()}`);
+          } else {
+            q = q.eq('assigned_member_id', member.id);
+          }
+          return q.order('created_at', { ascending: false });
+        })(),
 
-        supabase
-          .from('team_event_payouts')
-          .select('*')
-          .eq('member_id', member.id)
-          .order('created_at', { ascending: false }),
+        (() => {
+          let q = supabase
+            .from('team_event_payouts')
+            .select('*');
+          if (member.name && member.name.trim()) {
+            q = q.or(`member_id.eq.${member.id},member_name.ilike.${member.name.trim()}`);
+          } else {
+            q = q.eq('member_id', member.id);
+          }
+          return q.order('created_at', { ascending: false });
+        })(),
 
         supabase
           .from('team_salary_slips')
@@ -350,12 +362,24 @@ export default function TeamMemberFinanceDrawer({
         };
       });
 
-      // Merge custom payouts from team_event_payouts
+      // Merge custom payouts from team_event_payouts with smart sub_event deduplication
       const rawPayouts = payoutRes.status === 'fulfilled' && payoutRes.value.data ? payoutRes.value.data : [];
       const seenIds = new Set(eventPayouts.map(e => String(e.id)));
+      const seenSubEvents = new Set(eventPayouts.map(e => String(e.sub_event_id || '')).filter(Boolean));
       rawPayouts.forEach((p: any) => {
+        const pSubEventId = String(p.sub_event_id || '');
+        if (pSubEventId && seenSubEvents.has(pSubEventId)) {
+          // Already present from fw_assignments - enrich any missing notes or paid amounts
+          const existing = eventPayouts.find(e => String(e.sub_event_id || '') === pSubEventId);
+          if (existing) {
+            if (p.paid_amount && !existing.paid_amount) existing.paid_amount = Number(p.paid_amount);
+            if (p.notes && !existing.notes) existing.notes = p.notes;
+          }
+          return;
+        }
         if (!seenIds.has(String(p.id))) {
           seenIds.add(String(p.id));
+          if (pSubEventId) seenSubEvents.add(pSubEventId);
           eventPayouts.push(p);
         }
       });

@@ -297,11 +297,11 @@ export default function WorkspaceTeamPage() {
           const [assignRes, payoutRes] = await Promise.allSettled([
             supabase
               .from('fw_assignments')
-              .select('id, assigned_member_id, agreed_amount, advance_amount, paid_amount, balance_amount, payment_status, workspace_id, user_id, project:fw_projects(id, user_id)')
+              .select('id, assigned_member_id, assigned_member_name, agreed_amount, advance_amount, paid_amount, balance_amount, payment_status, workspace_id, user_id, project:fw_projects(id, user_id)')
               .in('assigned_member_id', allMemberIds),
             supabase
               .from('team_event_payouts')
-              .select('id, member_id, agreed_amount, paid_amount, balance_amount, status, workspace_id, user_id')
+              .select('id, member_id, member_name, agreed_amount, paid_amount, balance_amount, status, workspace_id, user_id')
               .in('member_id', allMemberIds)
               .or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`)
           ]);
@@ -316,16 +316,29 @@ export default function WorkspaceTeamPage() {
           });
           const payouts = payoutRes.status === 'fulfilled' && payoutRes.value.data ? payoutRes.value.data : [];
 
+          const nameToMemberIdMap = new Map<string, string>();
+          combinedMembers.forEach(m => {
+            if (m.name) nameToMemberIdMap.set(m.name.trim().toLowerCase(), m.id);
+          });
+
           const assignsByMember: Record<string, any[]> = {};
           assigns.forEach((a: any) => {
-            const mid = a.assigned_member_id;
+            let mid = a.assigned_member_id;
+            if ((!mid || !assignsByMember[mid]) && a.assigned_member_name) {
+              const matchedId = nameToMemberIdMap.get(a.assigned_member_name.trim().toLowerCase());
+              if (matchedId) mid = matchedId;
+            }
             if (!assignsByMember[mid]) assignsByMember[mid] = [];
             assignsByMember[mid].push(a);
           });
 
           const payoutsByMember: Record<string, any[]> = {};
           payouts.forEach((p: any) => {
-            const mid = p.member_id;
+            let mid = p.member_id;
+            if ((!mid || !payoutsByMember[mid]) && p.member_name) {
+              const matchedId = nameToMemberIdMap.get(p.member_name.trim().toLowerCase());
+              if (matchedId) mid = matchedId;
+            }
             if (!payoutsByMember[mid]) payoutsByMember[mid] = [];
             payoutsByMember[mid].push(p);
           });

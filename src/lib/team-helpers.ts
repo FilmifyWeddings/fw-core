@@ -123,48 +123,44 @@ export function resolveSubEventAssignments(
 
   // Helper to resolve FWTeamMember object for an assignment
   const resolveMemberObj = (existing: any): FWTeamMember | null => {
-    // If no assigned_member_id is present, the slot is strictly UNASSIGNED
-    if (!existing.assigned_member_id) {
-      return null;
-    }
+    const cleanName = String(existing.assigned_member_name || existing.clean_name || existing.member_name || (existing.fw_team_members?.name) || '').trim().toLowerCase();
+    const isPlaceholder = !cleanName || [
+      'not fixed',
+      'tbd',
+      'unassigned',
+      'pending',
+      'date not fixed'
+    ].includes(cleanName) || cleanName.startsWith('not fixed');
 
-    const assignedStr = String(existing.assigned_member_id).trim().toLowerCase();
-    if (!assignedStr || assignedStr === 'null' || assignedStr === 'undefined' || assignedStr === 'unassigned') {
+    const assignedStr = String(existing.assigned_member_id || '').trim().toLowerCase();
+    const hasValidId = Boolean(assignedStr && assignedStr !== 'null' && assignedStr !== 'undefined' && assignedStr !== 'unassigned');
+
+    if (!hasValidId && isPlaceholder) {
       return null;
     }
 
     // 1. First, check if there is an explicit fw_team_members object or matched team member by ID
     let matched = existing.fw_team_members || null;
-    if (!matched && existing.assigned_member_id) {
+    if (!matched && hasValidId) {
       matched = teamMembers.find(m => m.id === existing.assigned_member_id) || null;
     }
 
-    // If genuinely assigned to an existing team member in teamMembers, return it! (Even if their name is "Not Fixed")
+    // 2. If not matched by ID, check by Name (Bulletproof Fallback Shield)
+    if (!matched && !isPlaceholder) {
+      matched = teamMembers.find(m => m.name.toLowerCase().trim() === cleanName) || null;
+    }
+
+    // If genuinely assigned to an existing team member in teamMembers, return it!
     if (matched) {
       return matched;
     }
 
-    // 2. Only if NOT matched to any known team member, check if name is a placeholder
-    const cleanName = String(existing.assigned_member_name || (existing.fw_team_members?.name) || '').trim().toLowerCase();
-    if (
-      cleanName === 'not fixed' ||
-      cleanName.startsWith('not fixed') ||
-      cleanName === 'tbd' ||
-      cleanName === 'unassigned' ||
-      cleanName === 'pending' ||
-      cleanName === 'date not fixed'
-    ) {
-      return null;
-    }
-
-    if (!matched && existing.assigned_member_name) {
-      matched = teamMembers.find(m => m.name.toLowerCase().trim() === cleanName) || null;
-    }
-    if (!matched && existing.assigned_member_id) {
-      const fallbackName = existing.assigned_member_name || existing.member_name || '';
+    // 3. Fallback pseudo-object if real person name or valid ID exists
+    if (!isPlaceholder) {
+      const fallbackName = existing.assigned_member_name || existing.member_name || (existing.fw_team_members as any)?.name || '';
       if (fallbackName && !['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(fallbackName.toLowerCase())) {
         matched = {
-          id: existing.assigned_member_id,
+          id: existing.assigned_member_id || `temp_${fallbackName.replace(/\s+/g, '_')}`,
           name: fallbackName,
           primary_role: existing.required_role || 'Crew',
           is_active: true

@@ -588,8 +588,13 @@ export default function AddTeamMemberModal({
         ? Number(defaultDailyRate)
         : 0;
 
-      // 1. Trigger parent onSave for UI state
+      // Single Unified Canonical ID across both workspace_members and fw_team_members
+      const canonicalMemberId = memberToEdit?.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `mem_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+      const effectiveEmail = email.trim() || `${name.trim().toLowerCase().replace(/[^a-z0-9]/g, '')}@partner.studiocore.in`;
+
+      // 1. Trigger parent onSave for UI state with the exact canonicalMemberId
       await onSave({
+        id: canonicalMemberId,
         name: name.trim(),
         primary_role: primaryRole,
         roles: selectedRoles,
@@ -607,10 +612,10 @@ export default function AddTeamMemberModal({
         permissions: permissionsObj,
       });
 
-      let resolvedMemberId = memberToEdit?.id;
+      let resolvedMemberId = canonicalMemberId;
 
-      // 2. Persist to Multi-Tenant Database API
-      if (email.trim() && workspaceId) {
+      // 2. Persist to Multi-Tenant Database API using the EXACT SAME canonicalMemberId
+      if (workspaceId) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
           const res = await fetch('/api/workspace/members', {
@@ -620,11 +625,11 @@ export default function AddTeamMemberModal({
               Authorization: `Bearer ${session.access_token}`,
             },
             body: JSON.stringify({
-              id: memberToEdit?.id,
-              member_id: memberToEdit?.id,
+              id: canonicalMemberId,
+              member_id: canonicalMemberId,
               workspace_id: workspaceId,
               name: name.trim(),
-              email: email.trim(),
+              email: effectiveEmail,
               phone: `${countryCode} ${cleanEnteredPhone}`.trim(),
               primary_role: primaryRole,
               roles: selectedRoles,

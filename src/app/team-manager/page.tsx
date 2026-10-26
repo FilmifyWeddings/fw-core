@@ -746,7 +746,12 @@ export default function TeamManagerPage() {
               .map((se: any) => ({
                 ...se,
                 fw_assignments: (se.fw_assignments || []).map((a: any) => {
-                  const matched = a.fw_team_members || (a.assigned_member_id ? combinedMembers.find(m => m.id === a.assigned_member_id) : null);
+                  const cleanAssigneeName = String(a.assigned_member_name || a.clean_name || a.member_name || (a.fw_team_members as any)?.name || '').trim().toLowerCase();
+                  const isPlaceholder = !cleanAssigneeName || ['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(cleanAssigneeName) || cleanAssigneeName.startsWith('not fixed');
+
+                  const matched = a.fw_team_members || (a.assigned_member_id 
+                    ? combinedMembers.find(m => m.id === a.assigned_member_id || (!isPlaceholder && m.name.trim().toLowerCase() === cleanAssigneeName)) 
+                    : (!isPlaceholder ? combinedMembers.find(m => m.name.trim().toLowerCase() === cleanAssigneeName) : null));
                   return {
                     ...a,
                     fw_team_members: matched || a.fw_team_members || null
@@ -899,18 +904,25 @@ export default function TeamManagerPage() {
           .eq('id', editingMember.id);
         if (updateErr) throw updateErr;
       } else {
+        const memberIdToUse = cleanMemberData.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined);
+        const newPayload = {
+          ...payload,
+          ...(memberIdToUse ? { id: memberIdToUse } : {})
+        };
         const { data: insertedMember, error: insertErr } = await supabase
           .from('fw_team_members')
-          .insert([payload])
+          .upsert([newPayload], { onConflict: 'id' })
           .select()
           .single();
         if (insertErr) throw insertErr;
 
-        if (activeAssignmentForMember?.assignmentId && insertedMember) {
+        const effectiveMemberId = insertedMember?.id || memberIdToUse;
+        if (activeAssignmentForMember?.assignmentId && effectiveMemberId) {
           await supabase
             .from('fw_assignments')
             .update({ 
-              assigned_member_id: insertedMember.id,
+              assigned_member_id: effectiveMemberId,
+              assigned_member_name: cleanMemberData.name,
               ...(currentUserId ? { user_id: currentUserId } : {})
             })
             .eq('id', activeAssignmentForMember.assignmentId);
@@ -2638,7 +2650,11 @@ export default function TeamManagerPage() {
                                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                                   <div className="flex items-center gap-4 flex-wrap pt-1">
                                     {assignments.map((assignment) => {
-                                      const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
+                                      const cleanAssigneeName = String(assignment.assigned_member_name || (assignment.fw_team_members as any)?.name || '').trim().toLowerCase();
+                                      const isPlaceholder = !cleanAssigneeName || ['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(cleanAssigneeName) || cleanAssigneeName.startsWith('not fixed');
+                                      const memberObj = assignment.fw_team_members || (assignment.assigned_member_id 
+                                        ? teamMembers.find(m => m.id === assignment.assigned_member_id || (!isPlaceholder && m.name.trim().toLowerCase() === cleanAssigneeName))
+                                        : (!isPlaceholder ? teamMembers.find(m => m.name.trim().toLowerCase() === cleanAssigneeName) : null));
                                       const isCurrentUserSlot = Boolean(
                                         (currentMember?.id && assignment.assigned_member_id === currentMember.id) ||
                                         (activeWorkspace?.memberId && assignment.assigned_member_id === activeWorkspace.memberId) ||
