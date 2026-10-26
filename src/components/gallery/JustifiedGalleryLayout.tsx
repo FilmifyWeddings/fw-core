@@ -217,26 +217,26 @@ export function JustifiedGalleryLayout({
                       className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                     />
 
-                    {/* Animated Heart Icon Button for Photo Selection */}
+                    {/* Pure Heart Icon for Photo Selection (No Circle Container) */}
                     {isSelectionMode && (
                       <button
                         type="button"
                         disabled={isSelectionSubmitted}
                         onClick={(e) => handleSelectClick(e, item.photo)}
-                        className={`absolute top-2.5 right-2.5 z-20 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer ${
+                        className={`absolute top-2 right-2 z-20 p-1.5 transition-all duration-200 cursor-pointer select-none ${
                           isSelectionSubmitted
                             ? isSelected
-                              ? 'bg-rose-600 text-white ring-2 ring-white cursor-not-allowed opacity-90'
+                              ? 'cursor-not-allowed opacity-90'
                               : 'hidden'
-                            : isSelected
-                            ? 'bg-rose-600 text-white ring-2 ring-white shadow-lg shadow-rose-600/50 scale-105 active:scale-95 animate-in zoom-in-90'
-                            : 'bg-black/40 hover:bg-black/60 text-white/80 hover:text-white backdrop-blur-md active:scale-90 hover:scale-105'
+                            : 'active:scale-90 hover:scale-115'
                         }`}
                         title={isSelected ? 'Remove from selection' : 'Select for album'}
                       >
                         <Heart
-                          className={`w-3.5 h-3.5 transition-transform ${
-                            isSelected ? 'fill-white text-white scale-110' : 'text-white'
+                          className={`w-6 h-6 transition-all duration-200 ${
+                            isSelected
+                              ? 'fill-[#DC2626] stroke-white stroke-[2.2px] drop-shadow-[0_2px_6px_rgba(220,38,38,0.8)] scale-105'
+                              : 'fill-black/35 backdrop-blur-xs stroke-white stroke-[2.2px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)] hover:fill-black/50'
                           }`}
                         />
                       </button>
@@ -298,26 +298,26 @@ export function JustifiedGalleryLayout({
                   className="w-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                 />
 
-                {/* Animated Heart Icon Button for Photo Selection */}
+                {/* Pure Heart Icon for Photo Selection (No Circle Container) */}
                 {isSelectionMode && (
                   <button
                     type="button"
                     disabled={isSelectionSubmitted}
                     onClick={(e) => handleSelectClick(e, photo)}
-                    className={`absolute top-2.5 right-2.5 z-20 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer ${
+                    className={`absolute top-2 right-2 z-20 p-1.5 transition-all duration-200 cursor-pointer select-none ${
                       isSelectionSubmitted
                         ? isSelected
-                          ? 'bg-rose-600 text-white ring-2 ring-white cursor-not-allowed opacity-90'
+                          ? 'cursor-not-allowed opacity-90'
                           : 'hidden'
-                        : isSelected
-                        ? 'bg-rose-600 text-white ring-2 ring-white shadow-lg shadow-rose-600/50 scale-105 active:scale-95 animate-in zoom-in-90'
-                        : 'bg-black/40 hover:bg-black/60 text-white/80 hover:text-white backdrop-blur-md active:scale-90 hover:scale-105'
+                        : 'active:scale-90 hover:scale-115'
                     }`}
                     title={isSelected ? 'Remove from selection' : 'Select for album'}
                   >
                     <Heart
-                      className={`w-3.5 h-3.5 transition-transform ${
-                        isSelected ? 'fill-white text-white scale-110' : 'text-white'
+                      className={`w-6 h-6 transition-all duration-200 ${
+                        isSelected
+                          ? 'fill-[#DC2626] stroke-white stroke-[2.2px] drop-shadow-[0_2px_6px_rgba(220,38,38,0.8)] scale-105'
+                          : 'fill-black/35 backdrop-blur-xs stroke-white stroke-[2.2px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)] hover:fill-black/50'
                       }`}
                     />
                   </button>

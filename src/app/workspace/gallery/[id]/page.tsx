@@ -67,6 +67,7 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { useUploadQueue } from '@/context/UploadQueueContext';
 import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothImage';
 import GalleryDesignStudio from '@/components/gallery/GalleryDesignStudio';
+import GalleryShareModal from '@/components/gallery/GalleryShareModal';
 
 interface EventGallery {
   id: string;
@@ -258,6 +259,48 @@ function AlbumStudioContent() {
   const [isDeletingCollection, setIsDeletingCollection] = useState(false);
   const [isStandeeModalOpen, setIsStandeeModalOpen] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+
+  // Share Modal State
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  useEffect(() => {
+    if (searchParams?.get('modal') === 'share') {
+      setIsShareModalOpen(true);
+    }
+  }, [searchParams]);
+
+  // Local Folder Picker & Copy State (Fast & Recommended, 0 bandwidth)
+  const [isLocalFolderModalOpen, setIsLocalFolderModalOpen] = useState(false);
+  const [localFolderStatus, setLocalFolderStatus] = useState<'idle' | 'scanning' | 'copying' | 'completed' | 'error'>('idle');
+  const [localFolderProgress, setLocalFolderProgress] = useState<{
+    total: number;
+    scanned: number;
+    matched: number;
+    copied: number;
+    currentFile: string;
+    errorMessage?: string;
+  }>({ total: 0, scanned: 0, matched: 0, copied: 0, currentFile: '' });
+
+  // Zip Download State
+  const [isZipDownloading, setIsZipDownloading] = useState(false);
+  const [zipProgress, setZipProgress] = useState<{ current: number; total: number; message: string }>({ current: 0, total: 0, message: '' });
+
+  // "Get Selected Photos" Dropdown Menu State
+  const [isGetPhotosMenuOpen, setIsGetPhotosMenuOpen] = useState(false);
+  const getPhotosMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (getPhotosMenuRef.current && !getPhotosMenuRef.current.contains(e.target as Node)) {
+        setIsGetPhotosMenuOpen(false);
+      }
+    };
+    if (isGetPhotosMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isGetPhotosMenuOpen]);
 
   // Cover Customizer Modal State
   const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
@@ -1285,17 +1328,22 @@ function AlbumStudioContent() {
     return set;
   }, [selectedClientEmail, clientSelections, selectedPhotoIds]);
 
-  // Selection Export Helpers
-  const handleCopyLightroomFilenames = () => {
-    const selected = photos.filter((p) => activeSelectedIds.has(p.id));
-    const names = selected.map((p) => getCleanFilename(p.original_key)).join(', ');
-    navigator.clipboard.writeText(names || 'No photos selected');
-    setCopiedLightroomFilenames(true);
-    setTimeout(() => setCopiedLightroomFilenames(false), 2000);
-  };
+  // Format Helpers
+  const getCleanFilename = useCallback((key: string) => {
+    if (!key) return 'Photo.jpg';
+    const raw = key.split('/').pop() || key;
+    const match = raw.match(/^\d+_[a-z0-9]+_(.+)$/i);
+    return match ? match[1] : raw;
+  }, []);
 
+  // Selection Export Helpers
   const handleExportSelectionCsv = () => {
+    setIsGetPhotosMenuOpen(false);
     const selected = photos.filter((p) => activeSelectedIds.has(p.id));
+    if (selected.length === 0) {
+      alert('No photos selected to export.');
+      return;
+    }
     const header = ['Filename', 'Photo ID', 'Collection', 'Date'].join(',');
     const rows = selected.map((p) => {
       const colName = collections.find((c) => c.id === p.collection_id)?.name || 'General';
@@ -1306,18 +1354,200 @@ function AlbumStudioContent() {
     const a = document.createElement('a');
     a.href = url;
     const clientSuffix = selectedClientEmail ? `_${selectedClientEmail.split('@')[0]}` : '';
-    a.download = `${gallery?.slug || 'gallery'}_client_selection${clientSuffix}.csv`;
+    a.download = `${gallery?.slug || 'gallery'}_album_selection${clientSuffix}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  // Format Helpers
-  const getCleanFilename = useCallback((key: string) => {
-    if (!key) return 'Photo.jpg';
-    const raw = key.split('/').pop() || key;
-    const match = raw.match(/^\d+_[a-z0-9]+_(.+)$/i);
-    return match ? match[1] : raw;
-  }, []);
+  // Option 1: Select with Local Folder (Native File System Access API - Fast & Recommended)
+  const handleSelectWithLocalFolder = async () => {
+    setIsGetPhotosMenuOpen(false);
+
+    if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
+      alert('Native folder access is supported in Google Chrome, Microsoft Edge, and Brave browsers. Please open StudioCore in Chrome or use the "Download Zip" option.');
+      return;
+    }
+
+    const targetPhotos = photos.filter((p) => activeSelectedIds.has(p.id));
+    if (targetPhotos.length === 0) {
+      alert('No photos are selected to copy from your local folder.');
+      return;
+    }
+
+    try {
+      // 1. Pick root client event folder on SSD / hard drive
+      const rootDirHandle = await (window as any).showDirectoryPicker({
+        mode: 'readwrite',
+      });
+
+      setIsLocalFolderModalOpen(true);
+      setLocalFolderStatus('scanning');
+      setLocalFolderProgress({
+        total: targetPhotos.length,
+        scanned: 0,
+        matched: 0,
+        copied: 0,
+        currentFile: 'Scanning local directories...',
+      });
+
+      // 2. Index local files recursively
+      const fileIndex = new Map<string, { handle: any; dirHandle: any; path: string }>();
+      let scannedCount = 0;
+
+      async function scanDirectory(dirHandle: any, currentPath = '') {
+        for await (const entry of dirHandle.values()) {
+          if (entry.kind === 'file') {
+            scannedCount++;
+            if (scannedCount % 50 === 0) {
+              setLocalFolderProgress((prev) => ({
+                ...prev,
+                scanned: scannedCount,
+                currentFile: `Indexed ${scannedCount} local files...`,
+              }));
+            }
+            const lowerName = entry.name.toLowerCase().trim();
+            fileIndex.set(lowerName, { handle: entry, dirHandle, path: currentPath });
+
+            const baseName = lowerName.replace(/\.[^/.]+$/, '');
+            if (!fileIndex.has(baseName)) {
+              fileIndex.set(baseName, { handle: entry, dirHandle, path: currentPath });
+            }
+          } else if (entry.kind === 'directory' && entry.name !== 'Album Selection') {
+            await scanDirectory(entry, `${currentPath}${entry.name}/`);
+          }
+        }
+      }
+
+      await scanDirectory(rootDirHandle, '');
+
+      // 3. Create or access "Album Selection" destination directory
+      const albumSelectionDir = await rootDirHandle.getDirectoryHandle('Album Selection', { create: true });
+
+      setLocalFolderStatus('copying');
+      let matchedCount = 0;
+      let copiedCount = 0;
+      const subDirs = new Map<string, any>();
+
+      for (let i = 0; i < targetPhotos.length; i++) {
+        const p = targetPhotos[i];
+        const rawFilename = getCleanFilename(p.original_key || p.file_name || '').toLowerCase().trim();
+        const baseFilename = rawFilename.replace(/\.[^/.]+$/, '');
+
+        // Match against local files
+        const matched = fileIndex.get(rawFilename) || fileIndex.get(baseFilename);
+
+        const colName = collections.find((c) => c.id === p.collection_id)?.name || 'General';
+        const cleanColName = colName.replace(/[/\\?%*:|"<>]/g, '_').trim() || 'General';
+
+        if (!subDirs.has(cleanColName)) {
+          const subDirHandle = await albumSelectionDir.getDirectoryHandle(cleanColName, { create: true });
+          subDirs.set(cleanColName, subDirHandle);
+        }
+        const targetSubDir = subDirs.get(cleanColName);
+
+        if (matched) {
+          matchedCount++;
+          setLocalFolderProgress((prev) => ({
+            ...prev,
+            matched: matchedCount,
+            copied: copiedCount,
+            currentFile: `Copying: ${matched.handle.name} into ${cleanColName}/...`,
+          }));
+
+          try {
+            const srcFile = await matched.handle.getFile();
+            const destFileHandle = await targetSubDir.getFileHandle(matched.handle.name, { create: true });
+            const writable = await destFileHandle.createWritable();
+            await srcFile.stream().pipeTo(writable);
+            copiedCount++;
+          } catch (copyErr) {
+            console.warn('Error copying local file:', matched.handle.name, copyErr);
+          }
+        }
+
+        setLocalFolderProgress((prev) => ({
+          ...prev,
+          scanned: scannedCount,
+          matched: matchedCount,
+          copied: copiedCount,
+        }));
+      }
+
+      setLocalFolderStatus('completed');
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        setIsLocalFolderModalOpen(false);
+        return;
+      }
+      console.error('Local folder error:', err);
+      setLocalFolderStatus('error');
+      setLocalFolderProgress((prev) => ({
+        ...prev,
+        errorMessage: err.message || 'Failed to process local folder',
+      }));
+    }
+  };
+
+  // Option 2: Download Zip of Selected Photos (Using Direct CDN / B2 Integration)
+  const handleDownloadSelectedZip = async () => {
+    setIsGetPhotosMenuOpen(false);
+    const targetPhotos = photos.filter((p) => activeSelectedIds.has(p.id));
+    if (targetPhotos.length === 0) {
+      alert('No photos selected to download.');
+      return;
+    }
+
+    setIsZipDownloading(true);
+    setZipProgress({ current: 0, total: targetPhotos.length, message: 'Starting ZIP archive...' });
+
+    try {
+      const JSZipModule = await import('jszip');
+      const JSZip = JSZipModule.default || JSZipModule;
+      const zip = new JSZip();
+
+      for (let i = 0; i < targetPhotos.length; i++) {
+        const photo = targetPhotos[i];
+        const colName = collections.find((c) => c.id === photo.collection_id)?.name || 'General';
+        const cleanCol = colName.replace(/[/\\?%*:|"<>]/g, '_').trim() || 'General';
+        const filename = getCleanFilename(photo.original_key || photo.file_name || `photo_${i + 1}.jpg`);
+
+        setZipProgress({
+          current: i + 1,
+          total: targetPhotos.length,
+          message: `Fetching ${filename} (${i + 1}/${targetPhotos.length})...`,
+        });
+
+        try {
+          const downloadUrl = `/api/gallery/image?key=${encodeURIComponent(photo.original_key || photo.preview_key)}`;
+          const res = await fetch(downloadUrl);
+          if (res.ok) {
+            const blob = await res.blob();
+            const folder = zip.folder(cleanCol) || zip;
+            folder.file(filename, blob);
+          }
+        } catch (fetchErr) {
+          console.warn('Failed to fetch photo for zip:', photo.id, fetchErr);
+        }
+      }
+
+      setZipProgress((prev) => ({ ...prev, message: 'Compressing archive...' }));
+      const content = await zip.generateAsync({ type: 'blob' });
+      const clientName = clientSelections.find((c) => c.client_email === selectedClientEmail)?.client_name || 'selection';
+      const cleanClientName = clientName.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      const downloadUrl = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `${gallery?.slug || 'gallery'}_album_${cleanClientName}.zip`;
+      a.click();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (err: any) {
+      console.error('Error generating zip:', err);
+      alert('Failed to generate ZIP archive. Please try again.');
+    } finally {
+      setIsZipDownloading(false);
+    }
+  };
 
   const formatBytes = useCallback((bytes: number) => {
     if (!bytes || bytes <= 0) return '0 MB';
@@ -1696,14 +1926,15 @@ function AlbumStudioContent() {
             <QrCode className="w-4 h-4 text-amber-600" />
           </button>
 
-          {/* Share Button (Screenshot Match: Green Luxury Pill) */}
-          <Link
-            href={`/workspace/gallery/${gallery.id}/share`}
+          {/* Share Button (Screenshot Match: Green Luxury Pill - Opens Modal directly over gallery) */}
+          <button
+            type="button"
+            onClick={() => setIsShareModalOpen(true)}
             className="px-4 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
             <Share2 className="w-3.5 h-3.5" />
             <span>Share</span>
-          </Link>
+          </button>
 
           {/* Direct Live Client Portal Link */}
           <a
@@ -2407,255 +2638,415 @@ function AlbumStudioContent() {
           )}
 
           {/* ════════════════════════════════════════════════════════════
-              VIEW 2: SELECTION SUB-PAGE (CLIENT PROOFING)
+              VIEW 2: SELECTION SUB-PAGE (VERTICAL CLIENT MENU + PROOFING)
           ════════════════════════════════════════════════════════════ */}
           {activeTab === 'selection' && (
-            <div className="space-y-5">
-              <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 text-[10px] font-black uppercase tracking-wider border border-purple-200">
-                        Client Album Selections
-                      </span>
-                      <span className="text-xs font-bold text-zinc-400">
-                        {clientSelections.length} Client{clientSelections.length === 1 ? '' : 's'} Submitted
-                      </span>
+            <div className="bg-white rounded-3xl border border-[#E7E2D8] shadow-2xs overflow-hidden flex flex-col md:flex-row min-h-[650px]">
+              
+              {/* ─────────────────────────────────────────────────────────
+                  1. LEFT VERTICAL COLUMN / SIDEBAR MENU (ऊबे कॉलम में)
+              ───────────────────────────────────────────────────────── */}
+              <div className="w-full md:w-80 shrink-0 border-b md:border-b-0 md:border-r border-[#E7E2D8] bg-[#FAF9F5]/70 flex flex-col">
+                {/* Vertical Menu Header */}
+                <div className="p-4 border-b border-[#E7E2D8] flex items-center justify-between bg-white/80 backdrop-blur-xs">
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <CheckSquare className="w-4 h-4 text-purple-600" />
+                      <h3 className="text-sm font-black text-zinc-900 tracking-tight">
+                        Client Submissions
+                      </h3>
                     </div>
-                    <h2 
-                      style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
-                      className="text-2xl font-medium text-zinc-900 tracking-tight"
-                    >
-                      Client Photo Selection &amp; Proofing
-                    </h2>
-                    <p className="text-xs text-zinc-400">
-                      Manage client proofing, filter by individual client, and copy Lightroom filenames with 1 click.
+                    <p className="text-[11px] text-zinc-400 font-medium">
+                      {clientSelections.length} Client{clientSelections.length === 1 ? '' : 's'} registered
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button
-                      onClick={handleCopyLightroomFilenames}
-                      className="px-4 py-2 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                    >
-                      {copiedLightroomFilenames ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedLightroomFilenames ? 'Filenames Copied!' : 'Copy Lightroom Filenames'}</span>
-                    </button>
-
-                    <button
-                      onClick={handleExportSelectionCsv}
-                      className="px-4 py-2 rounded-full bg-white hover:bg-[#FAF9F5] text-zinc-800 border border-[#E7E2D8] font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Export CSV</span>
-                    </button>
-
-                    <button
-                      onClick={loadClientSelections}
-                      className="p-2 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 transition cursor-pointer"
-                      title="Refresh client selections"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSelections ? 'animate-spin text-amber-600' : ''}`} />
-                    </button>
-                  </div>
+                  <button
+                    onClick={loadClientSelections}
+                    className="p-1.5 rounded-xl bg-[#FAF9F5] hover:bg-[#F2EEE6] text-zinc-600 border border-[#E7E2D8] transition cursor-pointer"
+                    title="Refresh client selections"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSelections ? 'animate-spin text-amber-600' : ''}`} />
+                  </button>
                 </div>
 
-                {/* Client List Pills / Cards */}
-                <div className="pt-2 border-t border-[#F2EEE6] space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-zinc-500">
-                    <span>Select Client to View Their Choices:</span>
-                    {selectedClientEmail && (
-                      <button
-                        onClick={() => setSelectedClientEmail(null)}
-                        className="text-amber-600 hover:text-amber-700 underline text-xs font-bold cursor-pointer"
-                      >
-                        Reset / Show All Selections
-                      </button>
-                    )}
-                  </div>
-
+                {/* Vertical Client List Scrollable */}
+                <div className="p-3 space-y-2 overflow-y-auto max-h-[400px] md:max-h-[600px] scrollbar-thin">
                   {clientSelections.length > 0 ? (
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                    <>
+                      {/* All Clients Button */}
                       <button
+                        type="button"
                         onClick={() => setSelectedClientEmail(null)}
-                        className={`px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 cursor-pointer ${
+                        className={`w-full p-3 rounded-2xl text-left transition flex items-center justify-between cursor-pointer border ${
                           !selectedClientEmail
-                            ? 'bg-zinc-900 text-white shadow-xs'
-                            : 'bg-[#FAF9F5] text-zinc-700 border border-[#E7E2D8] hover:bg-zinc-100'
+                            ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs'
+                            : 'bg-white hover:bg-[#FAF9F5] text-zinc-800 border-[#E7E2D8]'
                         }`}
                       >
-                        👥 All Clients ({clientSelections.length})
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs ${
+                            !selectedClientEmail ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-700'
+                          }`}>
+                            <Users className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="block font-bold text-xs leading-tight">All Submissions</span>
+                            <span className={`text-[10px] block font-mono ${!selectedClientEmail ? 'text-zinc-400' : 'text-zinc-400'}`}>
+                              Combined view of all clients
+                            </span>
+                          </div>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                          !selectedClientEmail ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-600'
+                        }`}>
+                          {clientSelections.length}
+                        </span>
                       </button>
+
+                      {/* Client Vertical Cards */}
                       {clientSelections.map((sel) => {
                         const isClientActive = selectedClientEmail === sel.client_email;
                         const count = Array.isArray(sel.selected_photo_ids) ? sel.selected_photo_ids.length : 0;
                         return (
                           <button
                             key={sel.client_email}
+                            type="button"
                             onClick={() => setSelectedClientEmail(sel.client_email)}
-                            className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition shrink-0 flex items-center gap-2 cursor-pointer ${
+                            className={`w-full p-3 rounded-2xl text-left transition flex flex-col gap-1.5 cursor-pointer border ${
                               isClientActive
-                                ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-400/30'
-                                : 'bg-white text-zinc-700 border border-[#E7E2D8] hover:bg-purple-50/50'
+                                ? 'bg-purple-50/90 border-purple-400 shadow-xs ring-2 ring-purple-400/20'
+                                : 'bg-white hover:bg-[#FAF9F5] border-[#E7E2D8]'
                             }`}
                           >
-                            <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-black flex items-center justify-center uppercase shrink-0">
-                              {sel.client_name ? sel.client_name.charAt(0) : 'C'}
-                            </span>
-                            <div className="text-left">
-                              <div className="flex items-center gap-1.5">
-                                <span className="block font-bold leading-tight">{sel.client_name || 'Client'}</span>
-                                {sel.is_submitted && (
-                                  <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-white text-[9px] font-bold">
-                                    Locked
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 font-black text-xs flex items-center justify-center uppercase shrink-0">
+                                  {sel.client_name ? sel.client_name.charAt(0) : 'C'}
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="block font-bold text-xs text-zinc-900 truncate">
+                                    {sel.client_name || 'Client'}
                                   </span>
-                                )}
+                                  <span className="block text-[10px] text-zinc-400 truncate font-mono">
+                                    {sel.client_email}
+                                  </span>
+                                </div>
                               </div>
-                              <span className={`text-[10px] block leading-none font-mono ${isClientActive ? 'text-purple-200' : 'text-zinc-400'}`}>
-                                {count} photos • {sel.client_email}
+
+                              <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 text-[10px] font-black shrink-0">
+                                {count} photos
                               </span>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-1 border-t border-zinc-100 text-[10px]">
+                              {sel.is_submitted ? (
+                                <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Locked &amp; Submitted
+                                </span>
+                              ) : (
+                                <span className="text-amber-700 font-bold flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  In Progress
+                                </span>
+                              )}
+
+                              {sel.submitted_at && (
+                                <span className="text-zinc-400 font-mono">
+                                  {new Date(sel.submitted_at).toLocaleDateString()}
+                                </span>
+                              )}
                             </div>
                           </button>
                         );
                       })}
-                    </div>
+                    </>
                   ) : (
-                    <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2 text-amber-900">
-                        <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>No clients have submitted album selections yet. Share the Photo Selection Link with clients to start proofing!</span>
-                      </div>
-                      <Link
-                        href={`/workspace/gallery/${gallery.id}/share`}
-                        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold shrink-0 transition"
+                    <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-center space-y-2">
+                      <Sparkles className="w-5 h-5 text-amber-600 mx-auto" />
+                      <p className="text-xs text-amber-900 font-bold">No Selections Yet</p>
+                      <p className="text-[11px] text-amber-800/80 leading-relaxed">
+                        Share the photo selection link with your client to start album proofing.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setIsShareModalOpen(true)}
+                        className="w-full py-1.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition shadow-2xs"
                       >
                         Open Share Center
-                      </Link>
+                      </button>
                     </div>
                   )}
-
-                  {/* Submission Status & Studio Owner Unlock Banner */}
-                  {selectedClientEmail && (() => {
-                    const activeClient = clientSelections.find((c) => c.client_email === selectedClientEmail);
-                    if (!activeClient) return null;
-                    return activeClient.is_submitted ? (
-                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in">
-                        <div className="flex items-center gap-2 text-emerald-900 font-bold">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>
-                            {activeClient.client_name || 'Client'} has submitted and locked {Array.isArray(activeClient.selected_photo_ids) ? activeClient.selected_photo_ids.length : 0} photos for album printing.
-                            {activeClient.submitted_at && ` (Submitted: ${new Date(activeClient.submitted_at).toLocaleDateString()})`}
-                          </span>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            if (confirm(`Unlock selections for ${activeClient.client_name || activeClient.client_email}? This will allow the client to make changes and select/deselect photos again.`)) {
-                              try {
-                                await fetch('/api/gallery/selections', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    gallery_id: galleryId,
-                                    client_email: activeClient.client_email,
-                                    action: 'unlock',
-                                  }),
-                                });
-                                loadClientSelections();
-                              } catch (_) {}
-                            }
-                          }}
-                          className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer shrink-0"
-                        >
-                          <Unlock className="w-3.5 h-3.5" />
-                          <span>Unlock for Client Changes</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="p-2.5 bg-[#FAF9F5] border border-[#E7E2D8] rounded-xl flex items-center justify-between text-xs text-zinc-600">
-                        <span>Status: <strong className="text-amber-700 font-bold">In Progress</strong> (Client is actively choosing photos)</span>
-                        <span className="font-mono text-[11px] text-zinc-500">{activeClient.selected_photo_ids?.length || 0} photos chosen</span>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Filter Tabs when viewing photos */}
-                <div className="flex items-center gap-2 pt-2 border-t border-[#F2EEE6]">
-                  <span className="text-xs font-bold text-zinc-500">Filter:</span>
-                  <div className="flex items-center gap-1 bg-[#FAF9F5] p-1 rounded-full border border-[#E7E2D8]">
-                    <button
-                      onClick={() => setSelectionFilter('all')}
-                      className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition ${
-                        selectionFilter === 'all' ? 'bg-amber-500 text-white shadow-2xs' : 'text-zinc-600'
-                      }`}
-                    >
-                      All ({photos.length})
-                    </button>
-                    <button
-                      onClick={() => setSelectionFilter('selected')}
-                      className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition ${
-                        selectionFilter === 'selected' ? 'bg-amber-500 text-white shadow-2xs' : 'text-zinc-600'
-                      }`}
-                    >
-                      Selected ({activeSelectedIds.size})
-                    </button>
-                    <button
-                      onClick={() => setSelectionFilter('pending')}
-                      className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition ${
-                        selectionFilter === 'pending' ? 'bg-amber-500 text-white shadow-2xs' : 'text-zinc-600'
-                      }`}
-                    >
-                      Pending ({photos.length - activeSelectedIds.size})
-                    </button>
-                  </div>
                 </div>
               </div>
 
-              {/* Photo Proofing Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                {displayedPhotos.map((photo, idx) => {
-                  const isSelected = activeSelectedIds.has(photo.id);
-                  const cleanName = getCleanFilename(photo.original_key);
+              {/* ─────────────────────────────────────────────────────────
+                  2. RIGHT MAIN SELECTION VIEWER & ACTION PANEL
+              ───────────────────────────────────────────────────────── */}
+              <div className="flex-1 flex flex-col p-5 sm:p-6 space-y-5 overflow-y-auto">
+                
+                {/* Top Action Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E7E2D8]">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 text-[10px] font-black uppercase tracking-wider border border-purple-200">
+                        Album Proofing
+                      </span>
+                      <span className="text-xs font-bold text-zinc-400">
+                        {selectedClientEmail
+                          ? `Viewing: ${clientSelections.find((c) => c.client_email === selectedClientEmail)?.client_name || selectedClientEmail}`
+                          : 'Viewing All Client Choices'}
+                      </span>
+                    </div>
 
-                  return (
-                    <div
-                      key={photo.id}
-                      onClick={() => togglePhotoSelection(photo.id)}
-                      className={`group bg-white rounded-2xl border ${
-                        isSelected ? 'border-amber-500 ring-2 ring-amber-400' : 'border-[#E7E2D8]'
-                      } overflow-hidden shadow-2xs cursor-pointer transition-all duration-300 p-2.5 space-y-2`}
+                    <h2
+                      style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                      className="text-2xl font-medium text-zinc-900 tracking-tight"
                     >
-                      <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-zinc-100">
-                        <ProgressiveSmoothImage
-                          src={photo.thumbnail_url || photo.preview_url}
-                          thumbnailSrc={photo.thumbnail_url}
-                          alt={cleanName}
-                          className="w-full h-full object-cover"
-                        />
-                        <div className={`absolute top-2 left-2 p-1 rounded-lg ${isSelected ? 'bg-amber-500 text-white' : 'bg-black/40 text-white'}`}>
-                          {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-                        </div>
+                      {selectedClientEmail
+                        ? (clientSelections.find((c) => c.client_email === selectedClientEmail)?.client_name || 'Client') + '’s Album Choices'
+                        : 'All Selected Photos'}
+                    </h2>
+
+                    <p className="text-xs text-zinc-400">
+                      {activeSelectedIds.size} total photos marked for album printing
+                    </p>
+                  </div>
+
+                  {/* "Get Selected Photos" Menu with 3 Options */}
+                  <div className="flex items-center gap-2 relative" ref={getPhotosMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsGetPhotosMenuOpen(!isGetPhotosMenuOpen)}
+                      className="px-4 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center gap-2 shadow-md shadow-amber-500/20 cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-200" />
+                      <span>Get Selected Photos ({activeSelectedIds.size})</span>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+
+                    {isGetPhotosMenuOpen && (
+                      <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-white rounded-3xl border border-[#E7E2D8] shadow-2xl p-2 z-40 space-y-1 animate-in fade-in zoom-in-95">
+                        
+                        {/* Option 1: Select with Local Folder */}
+                        <button
+                          type="button"
+                          onClick={handleSelectWithLocalFolder}
+                          className="w-full p-3 rounded-2xl hover:bg-amber-50/80 text-left transition flex items-start gap-3 cursor-pointer group"
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 group-hover:bg-amber-200 transition">
+                            <HardDrive className="w-5 h-5 text-amber-700" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-black text-xs text-zinc-900">Select with Local Folder</span>
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase">
+                                ⚡ Fast &amp; Recommended
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
+                              Match &amp; copy original high-res photos into 'Album Selection' sub-folder locally at NVMe disk speed. 0 data used.
+                            </p>
+                          </div>
+                        </button>
+
+                        {/* Option 2: Download Zip */}
+                        <button
+                          type="button"
+                          onClick={handleDownloadSelectedZip}
+                          className="w-full p-3 rounded-2xl hover:bg-zinc-50 text-left transition flex items-start gap-3 cursor-pointer group"
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0 group-hover:bg-blue-200 transition">
+                            <Download className="w-5 h-5 text-blue-700" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="block font-black text-xs text-zinc-900">Download Zip</span>
+                            <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
+                              Download original photos archive directly via Cloudflare CDN / B2 integration.
+                            </p>
+                          </div>
+                        </button>
+
+                        {/* Option 3: Export CSV File */}
+                        <button
+                          type="button"
+                          onClick={handleExportSelectionCsv}
+                          className="w-full p-3 rounded-2xl hover:bg-zinc-50 text-left transition flex items-start gap-3 cursor-pointer group"
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-zinc-100 text-zinc-700 flex items-center justify-center shrink-0 group-hover:bg-zinc-200 transition">
+                            <FileSpreadsheet className="w-5 h-5 text-zinc-700" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="block font-black text-xs text-zinc-900">Export CSV File</span>
+                            <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
+                              Spreadsheet with selected filenames, sub-event collections, and client details.
+                            </p>
+                          </div>
+                        </button>
+
                       </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-zinc-900 truncate">{cleanName}</span>
-                        <span className={`text-[10px] font-bold ${isSelected ? 'text-amber-600' : 'text-zinc-400'}`}>
-                          {isSelected ? 'SELECTED' : 'PENDING'}
+                    )}
+                  </div>
+                </div>
+
+                {/* Selected Client Status & Unlock Banner */}
+                {selectedClientEmail && (() => {
+                  const activeClient = clientSelections.find((c) => c.client_email === selectedClientEmail);
+                  if (!activeClient) return null;
+                  return activeClient.is_submitted ? (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in">
+                      <div className="flex items-center gap-2 text-emerald-900 font-bold">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>
+                          {activeClient.client_name || 'Client'} has submitted and locked {Array.isArray(activeClient.selected_photo_ids) ? activeClient.selected_photo_ids.length : 0} photos for album printing.
+                          {activeClient.submitted_at && ` (Submitted: ${new Date(activeClient.submitted_at).toLocaleDateString()})`}
                         </span>
                       </div>
+                      <button
+                        onClick={async () => {
+                          if (confirm(`Unlock selections for ${activeClient.client_name || activeClient.client_email}? This will allow the client to make changes and select/deselect photos again.`)) {
+                            try {
+                              await fetch('/api/gallery/selections', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  gallery_id: galleryId,
+                                  client_email: activeClient.client_email,
+                                  action: 'unlock',
+                                }),
+                              });
+                              loadClientSelections();
+                            } catch (_) {}
+                          }
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer shrink-0"
+                      >
+                        <Unlock className="w-3.5 h-3.5" />
+                        <span>Unlock for Client Changes</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 bg-[#FAF9F5] border border-[#E7E2D8] rounded-xl flex items-center justify-between text-xs text-zinc-600">
+                      <span>Status: <strong className="text-amber-700 font-bold">In Progress</strong> (Client is actively selecting photos)</span>
+                      <span className="font-mono text-[11px] text-zinc-500">{activeClient.selected_photo_ids?.length || 0} photos chosen</span>
                     </div>
                   );
-                })}
-              </div>
+                })()}
 
-              {/* 50-Photo Progressive Automatic Infinite Scroll Sentinel */}
-              {hasMorePhotos && (
-                <div ref={infiniteSentinelRef} className="py-6 flex flex-col items-center justify-center gap-2">
-                  <div className="flex items-center gap-2 text-xs font-bold text-amber-800 bg-amber-50 px-4 py-2 rounded-full border border-amber-200 shadow-2xs">
-                    <RefreshCw className="w-3.5 h-3.5 text-amber-600 animate-spin" />
-                    <span>Loading more photos... ({displayedPhotos.length} of {filteredPhotos.length})</span>
+                {/* Filter Tabs */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-zinc-500">Filter View:</span>
+                    <div className="flex items-center gap-1 bg-[#FAF9F5] p-1 rounded-full border border-[#E7E2D8]">
+                      <button
+                        onClick={() => setSelectionFilter('all')}
+                        className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition ${
+                          selectionFilter === 'all' ? 'bg-amber-500 text-white shadow-2xs' : 'text-zinc-600'
+                        }`}
+                      >
+                        All Photos ({photos.length})
+                      </button>
+                      <button
+                        onClick={() => setSelectionFilter('selected')}
+                        className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition ${
+                          selectionFilter === 'selected' ? 'bg-amber-500 text-white shadow-2xs' : 'text-zinc-600'
+                        }`}
+                      >
+                        Selected Only ({activeSelectedIds.size})
+                      </button>
+                      <button
+                        onClick={() => setSelectionFilter('pending')}
+                        className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition ${
+                          selectionFilter === 'pending' ? 'bg-amber-500 text-white shadow-2xs' : 'text-zinc-600'
+                        }`}
+                      >
+                        Pending ({photos.length - activeSelectedIds.size})
+                      </button>
+                    </div>
                   </div>
                 </div>
-              )}
+
+                {/* Photo Proofing Grid */}
+                {(() => {
+                  const targetPhotos = selectionFilter === 'selected'
+                    ? photos.filter((p) => activeSelectedIds.has(p.id))
+                    : selectionFilter === 'pending'
+                    ? photos.filter((p) => !activeSelectedIds.has(p.id))
+                    : photos;
+
+                  if (targetPhotos.length === 0) {
+                    return (
+                      <div className="p-12 text-center border-2 border-dashed border-[#E7E2D8] rounded-3xl space-y-2">
+                        <CheckSquare className="w-8 h-8 text-zinc-300 mx-auto" />
+                        <h4 className="font-bold text-sm text-zinc-700">No photos to display</h4>
+                        <p className="text-xs text-zinc-400">
+                          {selectionFilter === 'selected'
+                            ? 'No photos have been selected in this view yet.'
+                            : 'All photos have been selected!'}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                      {targetPhotos.map((photo, idx) => {
+                        const isSelected = activeSelectedIds.has(photo.id);
+                        const cleanName = getCleanFilename(photo.original_key);
+                        const colName = collections.find((c) => c.id === photo.collection_id)?.name || 'General';
+
+                        return (
+                          <div
+                            key={photo.id}
+                            onClick={() => {
+                              const overallIdx = filteredPhotos.findIndex((p) => p.id === photo.id);
+                              if (overallIdx !== -1) setSelectedPhotoIndex(overallIdx);
+                            }}
+                            className={`group bg-white rounded-2xl border ${
+                              isSelected ? 'border-amber-500 ring-2 ring-amber-400/40 shadow-md' : 'border-[#E7E2D8]'
+                            } overflow-hidden shadow-2xs cursor-pointer transition-all duration-300 p-2 space-y-2 hover:shadow-lg`}
+                          >
+                            <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-zinc-100">
+                              <ProgressiveSmoothImage
+                                src={photo.thumbnail_url || photo.preview_url}
+                                thumbnailSrc={photo.thumbnail_url}
+                                alt={cleanName}
+                                className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                              />
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePhotoSelection(photo.id);
+                                }}
+                                className={`absolute top-2 left-2 p-1.5 rounded-lg cursor-pointer transition ${
+                                  isSelected ? 'bg-amber-500 text-white shadow-md' : 'bg-black/50 text-white hover:bg-black/70'
+                                }`}
+                                title={isSelected ? 'Remove selection' : 'Select photo'}
+                              >
+                                {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                              </div>
+
+                              <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/60 text-white text-[9px] font-mono backdrop-blur-xs">
+                                {colName}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs px-1">
+                              <span className="font-bold text-zinc-900 truncate text-[11px]">{cleanName}</span>
+                              <span className={`text-[9px] font-black uppercase tracking-wider ${isSelected ? 'text-amber-700' : 'text-zinc-400'}`}>
+                                {isSelected ? 'SELECTED' : 'PENDING'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+              </div>
+
             </div>
           )}
 
@@ -4216,6 +4607,152 @@ function AlbumStudioContent() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          7. INLINE DYNAMIC SHARE LINKS POPUP OVER GALLERY
+      ───────────────────────────────────────────────────────────── */}
+      <GalleryShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        gallery={gallery}
+        onGalleryUpdated={(updated) => {
+          setGallery((prev) => (prev ? { ...prev, ...updated } : updated));
+        }}
+      />
+
+      {/* ─────────────────────────────────────────────────────────────
+          8. LOCAL FOLDER COPY PROGRESS MODAL (FAST & RECOMMENDED)
+      ───────────────────────────────────────────────────────────── */}
+      {isLocalFolderModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full border border-zinc-200 shadow-2xl space-y-5 animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <HardDrive className="w-5 h-5 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-zinc-900 tracking-tight">
+                    Local Folder Album Extractor
+                  </h3>
+                  <span className="text-[10px] font-black uppercase text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 inline-block mt-0.5">
+                    ⚡ Fast &amp; NVMe Speed • 0 Bandwidth
+                  </span>
+                </div>
+              </div>
+              {localFolderStatus !== 'copying' && (
+                <button
+                  type="button"
+                  onClick={() => setIsLocalFolderModalOpen(false)}
+                  className="p-1 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+
+            {localFolderStatus === 'scanning' && (
+              <div className="text-center py-6 space-y-3">
+                <RefreshCw className="w-8 h-8 text-amber-600 animate-spin mx-auto" />
+                <div>
+                  <p className="font-bold text-sm text-zinc-900">Scanning Local Directory...</p>
+                  <p className="text-xs text-zinc-400 mt-1">{localFolderProgress.currentFile}</p>
+                </div>
+              </div>
+            )}
+
+            {localFolderStatus === 'copying' && (
+              <div className="space-y-4 py-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-zinc-700">Extracting to 'Album Selection' folder</span>
+                  <span className="font-mono font-black text-amber-700">
+                    {localFolderProgress.copied} / {localFolderProgress.total} photos
+                  </span>
+                </div>
+                <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden border border-zinc-200">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 to-amber-600 transition-all duration-200 rounded-full"
+                    style={{
+                      width: `${localFolderProgress.total > 0 ? (localFolderProgress.copied / localFolderProgress.total) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-zinc-500 font-mono truncate">
+                  {localFolderProgress.currentFile}
+                </p>
+              </div>
+            )}
+
+            {localFolderStatus === 'completed' && (
+              <div className="text-center py-4 space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                  <Check className="w-6 h-6 stroke-[3px]" />
+                </div>
+                <div>
+                  <p className="font-black text-base text-zinc-900">Album Selection Created Successfully!</p>
+                  <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+                    Found and copied <strong>{localFolderProgress.copied}</strong> of <strong>{localFolderProgress.total}</strong> original high-res photos into your local <strong className="text-zinc-800">Album Selection/</strong> sub-folders at native disk speed.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLocalFolderModalOpen(false)}
+                  className="w-full py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+
+            {localFolderStatus === 'error' && (
+              <div className="text-center py-4 space-y-3">
+                <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-zinc-900">Folder Processing Notice</p>
+                  <p className="text-xs text-rose-600 mt-1">{localFolderProgress.errorMessage}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLocalFolderModalOpen(false)}
+                  className="w-full py-2 rounded-xl bg-zinc-900 text-white font-bold text-xs cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          9. ZIP ARCHIVE GENERATION PROGRESS MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {isZipDownloading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-zinc-200 shadow-2xl text-center space-y-4 animate-in zoom-in-95">
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-2xs">
+              <Download className="w-6 h-6 animate-bounce" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-zinc-900">Preparing ZIP Download</h4>
+              <p className="text-xs text-zinc-400 mt-1">{zipProgress.message}</p>
+            </div>
+            <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden border border-zinc-200">
+              <div
+                className="h-full bg-amber-500 transition-all duration-200"
+                style={{
+                  width: `${zipProgress.total > 0 ? (zipProgress.current / zipProgress.total) * 100 : 0}%`,
+                }}
+              />
+            </div>
+            <span className="text-[11px] font-mono font-bold text-zinc-500">
+              {zipProgress.current} / {zipProgress.total} Files Processed
+            </span>
           </div>
         </div>
       )}

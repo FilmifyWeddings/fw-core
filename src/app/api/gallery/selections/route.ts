@@ -81,11 +81,12 @@ export async function GET(req: NextRequest) {
         });
       }
     } else {
-      // List all selections for studio workspace
+      // List all selections for studio workspace (excluding internal configuration record)
       const { data, error } = await supabaseAdmin
         .from('gallery_album_selections')
         .select('*')
         .eq('gallery_id', galleryId)
+        .neq('client_email', '__config__')
         .order('updated_at', { ascending: false });
 
       if (!error && Array.isArray(data)) {
@@ -109,7 +110,9 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const list = Object.values(fallbackData);
+  const list = Object.entries(fallbackData)
+    .filter(([k]) => k !== '__config__')
+    .map(([, v]) => v);
   return NextResponse.json({
     success: true,
     selections: list,
@@ -149,18 +152,154 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'Selection unlocked for client editing.' });
     }
 
-    // Action: Studio Owner sets Max Limit from Share Modal
+    // Action: Studio Owner sets Max Limit from Share Modal or Selections Tab
     if (action === 'set_limit' && max_limit) {
       const numLimit = Number(max_limit);
-      await supabaseAdmin
-        .from('gallery_album_selections')
-        .update({
-          max_limit: numLimit,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('gallery_id', gallery_id);
+      try {
+        // Upsert configuration row so it persists even if no client has submitted yet
+        await supabaseAdmin
+          .from('gallery_album_selections')
+          .upsert({
+            gallery_id,
+            client_email: '__config__',
+            client_name: 'Gallery Configuration',
+            max_limit: numLimit,
+            selected_photo_ids: [],
+            total_count: 0,
+            is_submitted: false,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'gallery_id,client_email' });
+
+        // Also update all existing client rows for this gallery
+        await supabaseAdmin
+          .from('gallery_album_selections')
+          .update({
+            max_limit: numLimit,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('gallery_id', gallery_id);
+      } catch (err) {
+        console.warn('[set_limit] DB warning:', err);
+      }
+
+      writeFallback(gallery_id, '__config__', {
+        gallery_id,
+        client_name: 'Gallery Configuration',
+        client_email: '__config__',
+        max_limit: numLimit,
+        selected_photo_ids: [],
+        total_count: 0,
+        is_submitted: false,
+      });
 
       return NextResponse.json({ success: true, max_limit: numLimit });
+    }
+
+    // Action: Studio Owner Saves Share Settings (PINs, Don't Ask PIN Toggles, Max Selection Limit)
+    if (action === 'save_share_settings') {
+      const {
+        guest_pin,
+        admin_pin,
+        guest_skip_pin,
+        full_access_skip_pin,
+        selection_skip_pin,
+        max_limit: customMaxLimit,
+      } = body;
+
+      // 1. Update PINs in event_galleries
+      const galUpdates: any = {};
+      if (guest_pin !== undefined && guest_pin !== null) {
+        galUpdates.guest_pin = String(guest_pin).trim();
+      }
+      if (admin_pin !== undefined && admin_pin !== null) {
+        galUpdates.admin_pin = String(admin_pin).trim();
+        galUpdates.pin_code = String(admin_pin).trim();
+      }
+
+      if (Object.keys(galUpdates).length > 0) {
+        try {
+          await supabaseAdmin
+            .from('event_galleries')
+            .update(galUpdates)
+            .eq('id', gallery_id);
+        } catch (dbPinErr) {
+          console.warn('[save_share_settings] event_galleries update warning:', dbPinErr);
+        }
+      }
+
+      // 2. Fetch existing config to merge notes
+      let existingNotes: any = {};
+      let curMax = 50;
+      try {
+        const { data: curConfig } = await supabaseAdmin
+          .from('gallery_album_selections')
+          .select('notes, max_limit')
+          .eq('gallery_id', gallery_id)
+          .eq('client_email', '__config__')
+          .maybeSingle();
+
+        if (curConfig?.notes) {
+          try {
+            existingNotes = JSON.parse(curConfig.notes);
+          } catch (_) {}
+        }
+        if (curConfig?.max_limit) {
+          curMax = curConfig.max_limit;
+        }
+      } catch (_) {}
+
+      const updatedNotes = {
+        ...existingNotes,
+        ...(guest_skip_pin !== undefined ? { guest_skip_pin: Boolean(guest_skip_pin) } : {}),
+        ...(full_access_skip_pin !== undefined ? { full_access_skip_pin: Boolean(full_access_skip_pin) } : {}),
+        ...(selection_skip_pin !== undefined ? { selection_skip_pin: Boolean(selection_skip_pin) } : {}),
+      };
+
+      const finalMaxLimit = customMaxLimit ? Number(customMaxLimit) : curMax;
+
+      try {
+        await supabaseAdmin
+          .from('gallery_album_selections')
+          .upsert({
+            gallery_id,
+            client_email: '__config__',
+            client_name: 'Gallery Configuration',
+            max_limit: finalMaxLimit,
+            notes: JSON.stringify(updatedNotes),
+            selected_photo_ids: [],
+            total_count: 0,
+            is_submitted: false,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'gallery_id,client_email' });
+
+        if (customMaxLimit) {
+          await supabaseAdmin
+            .from('gallery_album_selections')
+            .update({ max_limit: finalMaxLimit })
+            .eq('gallery_id', gallery_id);
+        }
+      } catch (dbConfigErr) {
+        console.warn('[save_share_settings] gallery_album_selections config upsert warning:', dbConfigErr);
+      }
+
+      writeFallback(gallery_id, '__config__', {
+        gallery_id,
+        client_name: 'Gallery Configuration',
+        client_email: '__config__',
+        max_limit: finalMaxLimit,
+        notes: JSON.stringify(updatedNotes),
+        ...galUpdates,
+        selected_photo_ids: [],
+        total_count: 0,
+        is_submitted: false,
+      });
+
+      return NextResponse.json({
+        success: true,
+        max_limit: finalMaxLimit,
+        share_settings: updatedNotes,
+        ...galUpdates,
+      });
     }
 
     const normalizedEmail = (client_email || 'guest@gallery.local').toLowerCase().trim();

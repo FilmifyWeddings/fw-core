@@ -116,28 +116,64 @@ async function enrichGalleryBranding(single: any) {
     }
   }
 
-  // Fetch configured max selection limit from selections database
+  // Fetch configured max selection limit and share passkey settings from selections database
   let maxLimit = 50;
+  let guestSkipPin = false;
+  let fullAccessSkipPin = false;
+  let selectionSkipPin = false;
+
   if (single.id) {
     try {
-      const { data: sel } = await supabaseAdmin
+      // 1. Try configuration record
+      const { data: configRow } = await supabaseAdmin
         .from('gallery_album_selections')
-        .select('max_limit')
+        .select('max_limit, notes')
         .eq('gallery_id', single.id)
-        .order('updated_at', { ascending: false })
-        .limit(1)
+        .eq('client_email', '__config__')
         .maybeSingle();
-      if (sel?.max_limit) {
-        maxLimit = sel.max_limit;
+
+      if (configRow) {
+        if (configRow.max_limit) maxLimit = configRow.max_limit;
+        if (configRow.notes) {
+          try {
+            const parsed = JSON.parse(configRow.notes);
+            if (parsed.guest_skip_pin !== undefined) guestSkipPin = Boolean(parsed.guest_skip_pin);
+            if (parsed.full_access_skip_pin !== undefined) fullAccessSkipPin = Boolean(parsed.full_access_skip_pin);
+            if (parsed.selection_skip_pin !== undefined) selectionSkipPin = Boolean(parsed.selection_skip_pin);
+          } catch (_) {}
+        }
+      } else {
+        // Fallback: check any client selection record
+        const { data: sel } = await supabaseAdmin
+          .from('gallery_album_selections')
+          .select('max_limit')
+          .eq('gallery_id', single.id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (sel?.max_limit) {
+          maxLimit = sel.max_limit;
+        }
       }
     } catch (_) {}
   }
 
+  const effectiveGuestPin = single.guest_pin || single.pin_code || '700680';
+  const effectivePassKey = single.admin_pin || single.pin_code || '518399';
+
   return {
     ...single,
+    guest_pin: effectiveGuestPin,
+    admin_pin: effectivePassKey,
+    pass_key: effectivePassKey,
+    guest_skip_pin: guestSkipPin,
+    full_access_skip_pin: fullAccessSkipPin,
+    selection_skip_pin: selectionSkipPin,
     raw_payload: {
       ...((single as any).raw_payload || {}),
       design: (single as any)._resolved_design || null,
+      guest_pin_enabled: !guestSkipPin,
+      guest_ask_pin: !guestSkipPin,
     },
     cover_url: formatCoverUrl(single.cover_url),
     is_face_ai_enabled: resolveIsFaceAiEnabled(single),
@@ -515,7 +551,27 @@ export async function PATCH(req: NextRequest) {
   try {
     const auth = await resolveRequestUser(req);
     const body = await req.json();
-    const { id, title, event_date, is_active, pin_code, allow_downloads, cover_url, status, workspace_id, event_type, is_face_ai_enabled, raw_payload } = body;
+    const {
+      id,
+      title,
+      event_date,
+      is_active,
+      pin_code,
+      guest_pin,
+      admin_pin,
+      pass_key,
+      allow_downloads,
+      cover_url,
+      status,
+      workspace_id,
+      event_type,
+      is_face_ai_enabled,
+      raw_payload,
+      guest_skip_pin,
+      full_access_skip_pin,
+      selection_skip_pin,
+      max_selection_limit,
+    } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Gallery ID is required' }, { status: 400 });
@@ -577,10 +633,69 @@ export async function PATCH(req: NextRequest) {
     if (is_active !== undefined) updates.is_active = is_active;
     if (status !== undefined) updates.status = status;
     if (pin_code !== undefined) updates.pin_code = pin_code ? String(pin_code).trim() : null;
+    if (guest_pin !== undefined) updates.guest_pin = guest_pin ? String(guest_pin).trim() : null;
+    if (admin_pin !== undefined) updates.admin_pin = admin_pin ? String(admin_pin).trim() : null;
+    if (pass_key !== undefined && admin_pin === undefined) updates.admin_pin = pass_key ? String(pass_key).trim() : null;
     if (allow_downloads !== undefined) updates.allow_downloads = allow_downloads;
     if (cover_url !== undefined) updates.cover_url = cover_url;
     if (event_type !== undefined) updates.event_type = event_type;
     if (is_face_ai_enabled !== undefined) updates.is_face_ai_enabled = is_face_ai_enabled;
+
+    // Handle share passkey toggles and max_selection_limit persistence
+    if (
+      guest_skip_pin !== undefined ||
+      full_access_skip_pin !== undefined ||
+      selection_skip_pin !== undefined ||
+      max_selection_limit !== undefined
+    ) {
+      try {
+        let existingNotes: any = {};
+        let curMax = 50;
+        const { data: curConf } = await supabaseAdmin
+          .from('gallery_album_selections')
+          .select('notes, max_limit')
+          .eq('gallery_id', id)
+          .eq('client_email', '__config__')
+          .maybeSingle();
+
+        if (curConf?.notes) {
+          try { existingNotes = JSON.parse(curConf.notes); } catch (_) {}
+        }
+        if (curConf?.max_limit) curMax = curConf.max_limit;
+
+        const mergedNotes = {
+          ...existingNotes,
+          ...(guest_skip_pin !== undefined ? { guest_skip_pin: Boolean(guest_skip_pin) } : {}),
+          ...(full_access_skip_pin !== undefined ? { full_access_skip_pin: Boolean(full_access_skip_pin) } : {}),
+          ...(selection_skip_pin !== undefined ? { selection_skip_pin: Boolean(selection_skip_pin) } : {}),
+        };
+
+        const finalMax = max_selection_limit ? Number(max_selection_limit) : curMax;
+
+        await supabaseAdmin
+          .from('gallery_album_selections')
+          .upsert({
+            gallery_id: id,
+            client_email: '__config__',
+            client_name: 'Gallery Configuration',
+            max_limit: finalMax,
+            notes: JSON.stringify(mergedNotes),
+            selected_photo_ids: [],
+            total_count: 0,
+            is_submitted: false,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'gallery_id,client_email' });
+
+        if (max_selection_limit) {
+          await supabaseAdmin
+            .from('gallery_album_selections')
+            .update({ max_limit: finalMax })
+            .eq('gallery_id', id);
+        }
+      } catch (confErr) {
+        console.warn('[PATCH /api/gallery/events] Share config upsert warning:', confErr);
+      }
+    }
 
     let { data: updated, error } = await supabaseAdmin
       .from('event_galleries')
@@ -693,10 +808,7 @@ export async function PATCH(req: NextRequest) {
       })().catch(() => {});
     }
 
-    const formatted = updated ? {
-      ...updated,
-      is_face_ai_enabled: resolveIsFaceAiEnabled(updated),
-    } : null;
+    const formatted = updated ? await enrichGalleryBranding(updated) : null;
 
     return NextResponse.json({ success: true, gallery: formatted, event: formatted });
   } catch (err: any) {

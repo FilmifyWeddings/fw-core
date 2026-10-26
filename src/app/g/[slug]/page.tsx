@@ -2469,32 +2469,16 @@ function GuestSlugGalleryContent() {
               selectorEmail={selectorEmail}
               onRequestSelectorModal={() => setShowSelectorModal(true)}
               onPhotoClick={(photo, idx) => {
-                if (isSelectionMode) {
-                  if (isSelectionSubmitted) {
-                    setSelectedPhotoIndex(idx);
-                    return;
-                  }
-                  if (!selectorEmail) {
-                    setShowSelectorModal(true);
-                    return;
-                  }
-                  const next = new Set(selectedForAlbum);
-                  if (selectedForAlbum.has(photo.id)) {
-                    next.delete(photo.id);
-                  } else {
-                    if (effectiveMaxSelectionLimit && next.size >= effectiveMaxSelectionLimit) {
-                      alert(`You can select up to a maximum of ${effectiveMaxSelectionLimit} photos. Please unselect another photo to choose this one.`);
-                      return;
-                    }
-                    next.add(photo.id);
-                  }
-                  setSelectedForAlbum(next);
-                  syncSelectionToBackend(next, selectorName, selectorEmail);
-                } else {
-                  setSelectedPhotoIndex(idx);
-                }
+                // Clicking on photo card ALWAYS opens the high-resolution lightbox viewer
+                setSelectedPhotoIndex(idx);
               }}
               onToggleSelect={(photo) => {
+                // ONLY clicking the heart icon toggles album selection / deselection
+                if (isSelectionSubmitted) return;
+                if (!selectorEmail) {
+                  setShowSelectorModal(true);
+                  return;
+                }
                 const next = new Set(selectedForAlbum);
                 if (selectedForAlbum.has(photo.id)) {
                   next.delete(photo.id);
@@ -2660,34 +2644,34 @@ function GuestSlugGalleryContent() {
         </div>
       )}
 
-      {/* FLOATING ALBUM SELECTION BOTTOM DOCK */}
+      {/* FLOATING ALBUM SELECTION BOTTOM DOCK (LUXURY PALETTE) */}
       {isSelectionMode && isUnlocked && (
-        <div className="fixed bottom-4 inset-x-4 max-w-2xl mx-auto z-40 bg-zinc-950/95 backdrop-blur-xl text-white rounded-3xl p-3.5 sm:p-4 shadow-2xl border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in slide-in-from-bottom-3 duration-300">
+        <div className="fixed bottom-4 inset-x-4 max-w-2xl mx-auto z-40 bg-[#FAF9F5]/98 backdrop-blur-xl text-zinc-900 rounded-3xl p-3.5 sm:p-4 shadow-2xl border border-[#E7E2D8] flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in slide-in-from-bottom-3 duration-300">
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${
               isSelectionSubmitted
-                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                : 'bg-rose-50 text-rose-600 border-rose-200'
             }`}>
               {isSelectionSubmitted ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
               ) : (
-                <Heart className="w-5 h-5 fill-rose-500 text-rose-500 animate-pulse" />
+                <Heart className="w-5 h-5 fill-rose-600 text-rose-600 animate-pulse" />
               )}
             </div>
 
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-rose-400">
+                <span className="text-xs font-black uppercase tracking-wider text-rose-700">
                   {isSelectionSubmitted ? 'Selection Locked' : 'Album Selection'}
                 </span>
                 {effectiveMaxSelectionLimit && (
-                  <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30">
+                  <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
                     Limit: {effectiveMaxSelectionLimit}
                   </span>
                 )}
                 {isSyncingSelection ? (
-                  <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1">
+                  <span className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
                     <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Saving...
                   </span>
                 ) : (
@@ -2695,19 +2679,19 @@ function GuestSlugGalleryContent() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 text-xs text-zinc-300 font-medium">
+              <div className="flex items-center gap-2 text-xs text-zinc-600 font-medium">
                 <span>
-                  Selected <strong className="text-white text-sm font-black">{selectedForAlbum.size}</strong>
+                  Selected <strong className="text-zinc-900 text-sm font-black">{selectedForAlbum.size}</strong>
                   {effectiveMaxSelectionLimit ? ` / ${effectiveMaxSelectionLimit}` : ''} photos
                 </span>
                 {selectorEmail && (
-                  <span className="text-zinc-500 hidden sm:inline">
-                    • for <strong className="text-zinc-300">{selectorName || selectorEmail}</strong>
+                  <span className="text-zinc-400 hidden sm:inline">
+                    • for <strong className="text-zinc-700">{selectorName || selectorEmail}</strong>
                     {!isSelectionSubmitted && (
                       <button
                         type="button"
                         onClick={handleSwitchSelector}
-                        className="text-amber-400 hover:text-amber-300 underline ml-1.5 cursor-pointer font-bold text-[11px]"
+                        className="text-amber-700 hover:text-amber-800 underline ml-1.5 cursor-pointer font-bold text-[11px]"
                       >
                         (Switch)
                       </button>
@@ -2725,10 +2709,10 @@ function GuestSlugGalleryContent() {
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 showOnlySelected
                   ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                  : 'bg-white text-zinc-700 border border-[#E7E2D8] hover:bg-[#F2EEE6]'
               }`}
             >
-              <Heart className={`w-3.5 h-3.5 ${showOnlySelected ? 'fill-white' : ''}`} />
+              <Heart className={`w-3.5 h-3.5 ${showOnlySelected ? 'fill-white text-white' : 'fill-rose-500 text-rose-500'}`} />
               <span>{showOnlySelected ? 'All Photos' : `Selected (${selectedForAlbum.size})`}</span>
             </button>
 
@@ -2742,14 +2726,14 @@ function GuestSlugGalleryContent() {
                   }
                   setShowSubmitConfirmModal(true);
                 }}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-rose-600/30 transition cursor-pointer active:scale-98"
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition cursor-pointer active:scale-98"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Submit Selection</span>
               </button>
             ) : (
-              <span className="px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="px-3 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Submitted &amp; Locked</span>
               </span>
             )}
