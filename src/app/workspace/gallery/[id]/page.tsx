@@ -4763,29 +4763,48 @@ function AlbumStudioContent() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          9. ZIP ARCHIVE GENERATION PROGRESS MODAL
+          9. ZIP ARCHIVE GENERATION FLOATING PROGRESS DOCK (NON-BLOCKING)
       ───────────────────────────────────────────────────────────── */}
       {isZipDownloading && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-zinc-200 shadow-2xl text-center space-y-4 animate-in zoom-in-95">
-            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-2xs">
-              <Download className="w-6 h-6 animate-bounce" />
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-96 bg-white/95 backdrop-blur-xl rounded-2xl p-4 sm:p-5 border border-zinc-200 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-3 animate-in slide-in-from-bottom-5 duration-300"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                <Download className="w-4 h-4 animate-bounce" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-zinc-900 leading-tight truncate">
+                  Preparing ZIP Download
+                </h4>
+                <p className="text-[11px] text-zinc-500 truncate max-w-[200px]">
+                  {gallery?.title || 'Gallery'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h4 className="text-sm font-black text-zinc-900">Preparing ZIP Download</h4>
-              <p className="text-xs text-zinc-400 mt-1">{zipProgress.message}</p>
-            </div>
-            <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden border border-zinc-200">
+            <span className="text-xs font-mono font-bold text-amber-600">
+              {zipProgress.total > 0 ? Math.round((zipProgress.current / zipProgress.total) * 100) : 0}%
+            </span>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden p-0.5 border border-zinc-200/80">
               <div
-                className="h-full bg-amber-500 transition-all duration-200"
+                className="h-full bg-amber-500 rounded-full transition-all duration-200 ease-out"
                 style={{
                   width: `${zipProgress.total > 0 ? (zipProgress.current / zipProgress.total) * 100 : 0}%`,
                 }}
               />
             </div>
-            <span className="text-[11px] font-mono font-bold text-zinc-500">
-              {zipProgress.current} / {zipProgress.total} Files Processed
-            </span>
+            <div className="flex items-center justify-between text-[10px] text-zinc-500 font-medium">
+              <span className="truncate max-w-[220px] font-mono">{zipProgress.message}</span>
+              <span className="shrink-0 font-mono font-bold">
+                {zipProgress.current} / {zipProgress.total}
+              </span>
+            </div>
           </div>
         </div>
       )}

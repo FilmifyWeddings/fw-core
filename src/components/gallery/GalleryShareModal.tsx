@@ -111,6 +111,9 @@ export default function GalleryShareModal({
   const [standeeType, setStandeeType] = useState<string>('Guest Access');
   const [activeDesignIndex, setActiveDesignIndex] = useState<number>(0);
   const [isDownloadingStandee, setIsDownloadingStandee] = useState<boolean>(false);
+  const [standeeViewTab, setStandeeViewTab] = useState<'standee' | 'qr'>('standee');
+  const [isDownloadingMainQr, setIsDownloadingMainQr] = useState<boolean>(false);
+  const [isCopiedQrLink, setIsCopiedQrLink] = useState<boolean>(false);
 
   // Copy Feedback
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -301,6 +304,35 @@ export default function GalleryShareModal({
     } finally {
       setIsDownloadingStandee(false);
     }
+  };
+
+  const handleDownloadMainQr = async () => {
+    if (!standeeUrl) return;
+    setIsDownloadingMainQr(true);
+    try {
+      const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent(standeeUrl)}`;
+      const res = await fetch(qrApiUrl);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      const safeTitle = (gallery?.title || 'wedding').replace(/[^a-zA-Z0-9_-]/g, '_');
+      a.download = `${safeTitle}_${standeeType.replace(/\s+/g, '_')}_QR_Code.png`;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error('Failed to download QR code:', err);
+      alert('Could not download QR image. Please try again.');
+    } finally {
+      setIsDownloadingMainQr(false);
+    }
+  };
+
+  const handleCopyQrLink = () => {
+    if (!standeeUrl || typeof window === 'undefined') return;
+    navigator.clipboard.writeText(standeeUrl);
+    setIsCopiedQrLink(true);
+    setTimeout(() => setIsCopiedQrLink(false), 2000);
   };
 
   if (!isOpen || !gallery) return null;
@@ -789,41 +821,18 @@ export default function GalleryShareModal({
         <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
           <div className="bg-white rounded-3xl p-5 sm:p-7 max-w-2xl w-full border border-zinc-200 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
             
-            {/* Modal Header & Design Switcher Dots */}
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <QrCode className="w-5 h-5 text-amber-600" />
-                  <h3 className="text-base font-black text-zinc-900 tracking-tight">
-                    Wedding Table Standee (3 x 2 Ratio)
-                  </h3>
-                </div>
-                <p className="text-[11px] text-zinc-400 font-medium">
-                  {standeeType} • Minimalist Canva Print Templates
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsStandeeModalOpen(false)}
-                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Header */}
+            {/* Clean Single Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-800 flex items-center justify-center">
-                  <QrCode className="w-4 h-4 text-amber-700" />
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-800 flex items-center justify-center">
+                  <QrCode className="w-5 h-5 text-amber-700" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-zinc-900 tracking-tight">
-                    Wedding Table Standee (2 x 3 Portrait Ratio)
+                  <h3 className="text-base font-black text-zinc-900 tracking-tight">
+                    {standeeType} • QR Code & 2x3 Table Standee
                   </h3>
                   <p className="text-[11px] text-zinc-400 font-medium">
-                    {standeeType} • Minimalist Canva Print Templates (8 Aesthetic Styles)
+                    Main High-Resolution QR Code & 8 Minimalist 2x3 Canva Print Templates
                   </p>
                 </div>
               </div>
@@ -837,6 +846,93 @@ export default function GalleryShareModal({
               </button>
             </div>
 
+            {/* View Switcher: 2x3 Table Standees vs Main Direct QR Code */}
+            <div className="flex items-center p-1 bg-zinc-100 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setStandeeViewTab('standee')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  standeeViewTab === 'standee'
+                    ? 'bg-white text-zinc-900 shadow-xs'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                <span>🎨 2x3 Table Standees (8 Designs)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStandeeViewTab('qr')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  standeeViewTab === 'qr'
+                    ? 'bg-white text-zinc-900 shadow-xs'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>📱 Main High-Res QR Code</span>
+              </button>
+            </div>
+
+            {/* TAB 1: MAIN HIGH-RES STANDALONE QR CODE */}
+            {standeeViewTab === 'qr' && (
+              <div className="space-y-5 animate-in fade-in duration-200">
+                <div className="bg-[#FAF9F5] border border-[#E7E2D8] rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center text-center space-y-4 max-w-md mx-auto shadow-sm">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-amber-700 font-bold block">
+                      {standeeType.toUpperCase()}
+                    </span>
+                    <h4 className="text-xl font-black text-zinc-900 tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                      {standeeTitle}
+                    </h4>
+                  </div>
+
+                  {/* Ultra HD Crisp QR Code */}
+                  <div className="w-56 h-56 sm:w-64 sm:h-64 bg-white p-3 rounded-3xl border-2 border-zinc-200 shadow-xl flex items-center justify-center">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(standeeUrl)}`}
+                      alt="Main High-Res QR Code"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+
+                  {standeePin && (
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900 font-mono text-xs font-black">
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>ACCESS PIN: {standeePin}</span>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-zinc-500 max-w-xs leading-relaxed font-medium">
+                    Point any smartphone camera at the QR code to open the gallery directly.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleDownloadMainQr}
+                    disabled={isDownloadingMainQr}
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-sm shadow-amber-600/20 active:scale-98"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{isDownloadingMainQr ? 'Downloading 1000x1000 PNG...' : 'Download High-Res QR (PNG)'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyQrLink}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-98"
+                  >
+                    {isCopiedQrLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
+                    <span>{isCopiedQrLink ? 'Link Copied!' : 'Copy Direct Link'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: 2x3 TABLE STANDEES (8 DESIGNS) */}
+            {standeeViewTab === 'standee' && (
+              <>
             {/* Slider Navigation Bar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-zinc-50 px-4 py-2.5 rounded-2xl border border-zinc-100 gap-2 text-xs">
               <span className="font-bold text-zinc-600 truncate max-w-sm">
@@ -1291,6 +1387,8 @@ export default function GalleryShareModal({
                 </button>
               </div>
             </div>
+            </>
+            )}
 
           </div>
         </div>

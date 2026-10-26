@@ -314,26 +314,35 @@ function GuestSlugGalleryContent() {
 
       setGallery(gal);
 
-      // Check unlock permissions
-      const isPrivileged = isFullAccess || isSelectionMode;
-      const isGuestPinEnabled = gal.raw_payload?.guest_pin_enabled !== undefined
-        ? Boolean(gal.raw_payload.guest_pin_enabled)
-        : (gal.raw_payload?.guest_ask_pin !== undefined ? Boolean(gal.raw_payload.guest_ask_pin) : true);
+      // Check unlock permissions for specific access modes
+      let requiredPin: string | null = null;
 
-      const resolvedPrivilegedPin = (
-        gal.pass_key ||
-        gal.raw_payload?.pass_key ||
-        gal.admin_pin ||
-        gal.pin_code ||
-        '518399'
-      ).toString().trim();
+      if (isFullAccess) {
+        const isFullAccessSkipPin = Boolean(gal.full_access_skip_pin ?? gal.raw_payload?.full_access_skip_pin);
+        if (!isFullAccessSkipPin) {
+          const pinVal = gal.pass_key || gal.raw_payload?.pass_key || gal.admin_pin || gal.pin_code;
+          if (pinVal) requiredPin = pinVal.toString().trim();
+        }
+      } else if (isSelectionMode) {
+        const isSelectionSkipPin = Boolean(gal.selection_skip_pin ?? gal.raw_payload?.selection_skip_pin);
+        if (!isSelectionSkipPin) {
+          const pinVal = gal.pass_key || gal.raw_payload?.pass_key || gal.admin_pin || gal.pin_code;
+          if (pinVal) requiredPin = pinVal.toString().trim();
+        }
+      } else {
+        // Guest Access PIN check
+        const isGuestSkipPin = Boolean(gal.guest_skip_pin ?? gal.raw_payload?.guest_skip_pin);
+        const isGuestPinEnabled = gal.raw_payload?.guest_pin_enabled !== undefined
+          ? Boolean(gal.raw_payload.guest_pin_enabled)
+          : (gal.raw_payload?.guest_ask_pin !== undefined ? Boolean(gal.raw_payload.guest_ask_pin) : !isGuestSkipPin);
 
-      const resolvedGuestPin = isGuestPinEnabled
-        ? (gal.guest_pin || gal.raw_payload?.guest_pin || gal.pin_code || '700680').toString().trim()
-        : null;
+        if (isGuestPinEnabled && !isGuestSkipPin) {
+          const pinVal = gal.guest_pin || gal.raw_payload?.guest_pin || gal.pin_code;
+          if (pinVal) requiredPin = pinVal.toString().trim();
+        }
+      }
 
-      const requiredPin = isPrivileged ? resolvedPrivilegedPin : resolvedGuestPin;
-      const passedKey = isPrivileged ? passKeyParam : shareKeyParam;
+      const passedKey = isPrivilegedMode ? passKeyParam : shareKeyParam;
 
       const modeKey = isSelectionMode ? 'selection' : (isFullAccess ? 'full' : 'guest');
       const sessionKey = `studiocore_unlocked_${modeKey}_${gal.id}`;
@@ -497,24 +506,31 @@ function GuestSlugGalleryContent() {
     e.preventDefault();
     if (!gallery) return;
 
-    const isPrivileged = isFullAccess || isSelectionMode;
-    const isGuestPinEnabled = gallery.raw_payload?.guest_pin_enabled !== undefined
-      ? Boolean(gallery.raw_payload.guest_pin_enabled)
-      : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : true);
+    let requiredPin: string | null = null;
+    if (isFullAccess) {
+      const isFullAccessSkipPin = Boolean(gallery.full_access_skip_pin ?? gallery.raw_payload?.full_access_skip_pin);
+      if (!isFullAccessSkipPin) {
+        const pinVal = gallery.pass_key || gallery.raw_payload?.pass_key || gallery.admin_pin || gallery.pin_code;
+        if (pinVal) requiredPin = pinVal.toString().trim();
+      }
+    } else if (isSelectionMode) {
+      const isSelectionSkipPin = Boolean(gallery.selection_skip_pin ?? gallery.raw_payload?.selection_skip_pin);
+      if (!isSelectionSkipPin) {
+        const pinVal = gallery.pass_key || gallery.raw_payload?.pass_key || gallery.admin_pin || gallery.pin_code;
+        if (pinVal) requiredPin = pinVal.toString().trim();
+      }
+    } else {
+      const isGuestSkipPin = Boolean(gallery.guest_skip_pin ?? gallery.raw_payload?.guest_skip_pin);
+      const isGuestPinEnabled = gallery.raw_payload?.guest_pin_enabled !== undefined
+        ? Boolean(gallery.raw_payload.guest_pin_enabled)
+        : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : !isGuestSkipPin);
 
-    const resolvedPrivilegedPin = (
-      gallery.pass_key ||
-      gallery.raw_payload?.pass_key ||
-      gallery.admin_pin ||
-      gallery.pin_code ||
-      '518399'
-    ).toString().trim();
+      if (isGuestPinEnabled && !isGuestSkipPin) {
+        const pinVal = gallery.guest_pin || gallery.raw_payload?.guest_pin || gallery.pin_code;
+        if (pinVal) requiredPin = pinVal.toString().trim();
+      }
+    }
 
-    const resolvedGuestPin = isGuestPinEnabled
-      ? (gallery.guest_pin || gallery.raw_payload?.guest_pin || gallery.pin_code || '700680').toString().trim()
-      : null;
-
-    const requiredPin = isPrivileged ? resolvedPrivilegedPin : resolvedGuestPin;
     const modeKey = isSelectionMode ? 'selection' : (isFullAccess ? 'full' : 'guest');
     const sessionKey = `studiocore_unlocked_${modeKey}_${gallery.id}`;
 
@@ -527,7 +543,7 @@ function GuestSlugGalleryContent() {
       }
       loadGalleryData();
 
-      if (openFaceScannerAfterPin) {
+      if (openFaceScannerAfterPin && !isPrivilegedMode) {
         setOpenFaceScannerAfterPin(false);
         if (gallery.is_face_ai_enabled === false) {
           setHasSearched(true);
@@ -540,15 +556,16 @@ function GuestSlugGalleryContent() {
     }
   };
 
-  // Find My Photo Trigger: Checks PIN requirement first
+  // Find My Photo Trigger: Only for Guest Access mode
   const handleFindMyPhotoClick = () => {
-    if (!gallery) return;
+    if (!gallery || isPrivilegedMode) return;
 
+    const isGuestSkipPin = Boolean(gallery.guest_skip_pin ?? gallery.raw_payload?.guest_skip_pin);
     const isGuestPinEnabled = gallery.raw_payload?.guest_pin_enabled !== undefined
       ? Boolean(gallery.raw_payload.guest_pin_enabled)
-      : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : true);
+      : (gallery.raw_payload?.guest_ask_pin !== undefined ? Boolean(gallery.raw_payload.guest_ask_pin) : !isGuestSkipPin);
 
-    const resolvedGuestPin = isGuestPinEnabled
+    const resolvedGuestPin = (isGuestPinEnabled && !isGuestSkipPin)
       ? (gallery.guest_pin || gallery.raw_payload?.guest_pin || gallery.pin_code || '700680').toString().trim()
       : null;
 
@@ -786,7 +803,7 @@ function GuestSlugGalleryContent() {
   };
 
   // Batch Download Photos as Single Original High-Res ZIP Archive with Category Folders
-  const handleDownloadPhotosZip = async (photosToZip: PhotoItem[], zipNamePrefix: string) => {
+  const handleDownloadPhotosZip = async (photosToZip: PhotoItem[], zipNamePrefix: string, customRootFolder?: string) => {
     if (photosToZip.length === 0) {
       alert('No photos available to download.');
       return;
@@ -797,11 +814,9 @@ function GuestSlugGalleryContent() {
     setIsZipModalOpen(true);
     setIsDownloadingAll(true);
 
-    const safeTitle = (gallery?.title || 'Wedding')
-      .replace(/[^a-zA-Z0-9_-]/g, '_')
-      .slice(0, 30);
-    const cleanZipName = `${safeTitle}_${zipNamePrefix}.zip`;
-    const rootFolderName = `${gallery?.title || 'Wedding'} - ${formattedDate}`;
+    const eventTitle = (gallery?.title || 'Wedding').trim();
+    const cleanZipName = `${eventTitle} - ${zipNamePrefix}.zip`;
+    const rootFolderName = customRootFolder || `${eventTitle} - ${zipNamePrefix}`;
 
     // Map collection IDs to names
     const colMap: Record<string, string> = {};
@@ -833,13 +848,18 @@ function GuestSlugGalleryContent() {
     setZipProgress(null);
   };
 
-  // Batch Download All Matched Photos
+  // Batch Download All Matched Photos (Organized by Sub-Event Folders, Named: [Event] - [GuestName].zip)
   const handleDownloadAllMyPhotos = async () => {
-    await handleDownloadPhotosZip(matchedPhotos, 'My_Photos');
+    const guestLabel = guestName ? guestName.trim() : 'Guest';
+    await handleDownloadPhotosZip(matchedPhotos, guestLabel, `${gallery?.title || 'Wedding'} - ${guestLabel}`);
   };
 
-  // One-click Download Trigger: Opens the DownloadSelectionModal!
+  // One-click Download Trigger: Direct download for guest, selector modal for privileged
   const handleDownloadAllPhotosTrigger = () => {
+    if (!isPrivilegedMode) {
+      handleDownloadAllMyPhotos();
+      return;
+    }
     setIsDownloadSelectModalOpen(true);
   };
 
@@ -1084,28 +1104,21 @@ function GuestSlugGalleryContent() {
   }, [selectedForAlbum, gallery?.id, isSelectionMode, selectorEmail, selectorName, guestSavedSession, syncSelectionToBackend]);
 
   const displayedPhotos = useMemo(() => {
-    // 1. If guest has scanned their face and "My Photos" is active, display only their matched photos!
-    if (isMyPhotosActive && matchedPhotos.length > 0) {
-      const filtered = selectedCollectionId === 'all'
-        ? matchedPhotos
-        : matchedPhotos.filter((p) => p.collection_id === selectedCollectionId);
-      if (isSelectionMode && showOnlySelected) {
-        return filtered.filter((p) => selectedForAlbum.has(p.id));
+    // 1. In Guest Access mode (!isPrivilegedMode): STRICT PRIVACY - ONLY show guest's matched photos!
+    if (!isPrivilegedMode) {
+      if (selectedCollectionId === 'all') {
+        return matchedPhotos;
       }
-      return filtered;
+      return matchedPhotos.filter((p) => p.collection_id === selectedCollectionId);
     }
 
-    let list = isPrivilegedMode && isUnlocked
-      ? displayedPrivilegedPhotos
-      : (matchedPhotos.length > 0 ? matchedPhotos : fullPhotos);
-
+    // 2. Privileged Access mode (Full Access / Album Selection)
     if (isSelectionMode && showOnlySelected) {
-      list = (isPrivilegedMode && isUnlocked ? targetFullPhotos : (matchedPhotos.length > 0 ? matchedPhotos : fullPhotos)).filter((p) =>
-        selectedForAlbum.has(p.id)
-      );
+      return targetFullPhotos.filter((p) => selectedForAlbum.has(p.id));
     }
-    return list;
-  }, [isMyPhotosActive, matchedPhotos, selectedCollectionId, isPrivilegedMode, isUnlocked, displayedPrivilegedPhotos, fullPhotos, isSelectionMode, showOnlySelected, targetFullPhotos, selectedForAlbum]);
+
+    return isUnlocked ? displayedPrivilegedPhotos : [];
+  }, [isPrivilegedMode, selectedCollectionId, matchedPhotos, isSelectionMode, showOnlySelected, targetFullPhotos, selectedForAlbum, isUnlocked, displayedPrivilegedPhotos]);
 
   if (loading) {
     const rawBranding = gallery?.studio_branding;
@@ -1538,7 +1551,7 @@ function GuestSlugGalleryContent() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {gallery.is_face_ai_enabled !== false && (
+            {(!isPrivilegedMode && !isGuestPreRegistration && gallery.is_face_ai_enabled !== false) && (
               <button
                 type="button"
                 onClick={handleFindMyPhotoClick}
@@ -1549,7 +1562,7 @@ function GuestSlugGalleryContent() {
                 <span className="inline font-bold">Find My Photo</span>
               </button>
             )}
-            {totalPhotosCount > 0 && (
+            {isPrivilegedMode && totalPhotosCount > 0 && (
               <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-65 mr-1 hidden sm:inline">
                 {totalPhotosCount} PHOTOS
               </span>
@@ -2136,12 +2149,16 @@ function GuestSlugGalleryContent() {
                       style={selectedCollectionId === 'all' ? { color: designPalette.accentColor } : {}}
                     >
                       <span>All Photos</span>
-                      <span className="text-[10px] opacity-60 font-mono">({fullPhotos.length})</span>
+                      <span className="text-[10px] opacity-60 font-mono">
+                        ({isPrivilegedMode ? fullPhotos.length : matchedPhotos.length})
+                      </span>
                     </button>
 
                     {collections.map((col) => {
                       const isSel = selectedCollectionId === col.id;
-                      const count = col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length;
+                      const count = isPrivilegedMode
+                        ? (col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length)
+                        : matchedPhotos.filter((p) => p.collection_id === col.id).length;
                       return (
                         <button
                           key={col.id}
@@ -2165,29 +2182,23 @@ function GuestSlugGalleryContent() {
               )}
             </div>
 
-            {/* Personalized Guest Badge + Face Icon + Instant ZIP Download */}
-            {guestName && (
+            {/* Personalized Guest Badge + Instant ZIP Download (Only for Guest mode) */}
+            {!isPrivilegedMode && guestName && (
               <div className="flex items-center gap-1.5 shrink-0 animate-in fade-in duration-300">
-                <button
-                  type="button"
-                  onClick={() => setIsMyPhotosActive((prev) => !prev)}
-                  className={`px-3 py-1 sm:py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border ${
-                    isMyPhotosActive
-                      ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-400/30'
-                      : 'bg-white/85 hover:bg-white text-zinc-700 border-[#E7E2D8]'
-                  }`}
-                  title={isMyPhotosActive ? "Showing only your matched photos. Click to view all event photos." : "Click to view your matched photos."}
+                <div
+                  className="px-3 py-1 sm:py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs border bg-amber-600 text-white border-amber-700 ring-2 ring-amber-400/30"
+                  title="Your Matched Photos"
                 >
-                  <span className="truncate max-w-[110px] sm:max-w-[140px]">{guestName}</span>
-                  <FaceAiFocusIcon className={`w-3.5 h-3.5 ${isMyPhotosActive ? 'text-white' : 'text-amber-600'}`} />
+                  <span className="truncate max-w-[110px] sm:max-w-[140px]">👤 {guestName}</span>
+                  <FaceAiFocusIcon className="w-3.5 h-3.5 text-white" />
                   {matchedPhotos.length > 0 && (
-                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${isMyPhotosActive ? 'bg-amber-700 text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-700 text-white">
                       {matchedPhotos.length}
                     </span>
                   )}
-                </button>
+                </div>
 
-                {isMyPhotosActive && matchedPhotos.length > 0 && (
+                {matchedPhotos.length > 0 && (
                   <button
                     type="button"
                     onClick={handleDownloadAllMyPhotos}
@@ -2217,11 +2228,13 @@ function GuestSlugGalleryContent() {
                   : { backgroundColor: `${designPalette.textColor}0D`, color: designPalette.textColor }
               }
             >
-              All Photos ({fullPhotos.length})
+              All Photos ({isPrivilegedMode ? fullPhotos.length : matchedPhotos.length})
             </button>
             {collections.map((col) => {
               const isSel = selectedCollectionId === col.id;
-              const count = col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length;
+              const count = isPrivilegedMode
+                ? (col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length)
+                : matchedPhotos.filter((p) => p.collection_id === col.id).length;
               return (
                 <button
                   key={col.id}
@@ -2244,7 +2257,7 @@ function GuestSlugGalleryContent() {
 
           {/* Right side: Action buttons with explicit text labels */}
           <div className="hidden sm:flex items-center gap-2 shrink-0">
-            {gallery.is_face_ai_enabled !== false && (
+            {!isPrivilegedMode && gallery.is_face_ai_enabled !== false && (
               <button
                 type="button"
                 onClick={() => setIsFaceScannerOpen(true)}
@@ -2357,54 +2370,26 @@ function GuestSlugGalleryContent() {
           </div>
         )}
 
-        {/* CASE B: PUBLISHED GUEST VIEW (DUAL TAB: MY PHOTOS VS ALL EVENT PHOTOS) */}
+        {/* CASE B: PUBLISHED GUEST VIEW (STRICT PRIVACY: ONLY MATCHED PHOTOS) */}
         {(!isPrivilegedMode && hasSearched && currentGalleryStatus === 'PUBLISHED') && (
           <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Top Control Bar: Dual Tabs, Guest Badge & Live Sync */}
-            <div className="bg-white rounded-3xl p-3 sm:p-4 border border-[#E7E2D8] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-1.5 p-1 bg-[#FAF9F5] border border-[#E7E2D8] rounded-2xl w-full sm:w-auto">
+            {/* Top Control Bar: Guest Badge & Live Sync */}
+            <div className="bg-white rounded-3xl p-3 sm:p-4 border border-[#E7E2D8] shadow-sm flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1.5 bg-amber-50 rounded-full border border-amber-200 text-xs font-bold text-amber-900 shadow-2xs">
+                  👤 {guestName || 'Guest'}
+                </span>
                 <button
                   type="button"
-                  onClick={() => setGuestActiveTab('my')}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    guestActiveTab === 'my'
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'text-zinc-600 hover:text-zinc-900'
-                  }`}
+                  onClick={handleSwitchGuest}
+                  className="text-xs text-amber-700 hover:text-amber-900 underline cursor-pointer font-bold"
+                  title="Switch guest or scan someone else"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>My Photos ({matchedPhotos.length})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setGuestActiveTab('all')}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    guestActiveTab === 'all'
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'text-zinc-600 hover:text-zinc-900'
-                  }`}
-                >
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  <span>All Event Photos ({fullPhotos.length})</span>
+                  (Switch)
                 </button>
               </div>
 
-              <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
-                {guestName && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-full border border-amber-200 text-xs font-bold text-amber-900 shadow-2xs">
-                    <span>👤 {guestName}</span>
-                    <button
-                      type="button"
-                      onClick={handleSwitchGuest}
-                      className="text-[10px] text-amber-700 hover:text-amber-900 underline ml-1 cursor-pointer font-bold"
-                      title="Switch guest or scan someone else"
-                    >
-                      (Switch)
-                    </button>
-                  </div>
-                )}
-
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleRefreshLivePhotos}
@@ -2418,110 +2403,83 @@ function GuestSlugGalleryContent() {
               </div>
             </div>
 
-            {/* TAB 1: MY PHOTOS VIEW */}
-            {guestActiveTab === 'my' && (
-              <div className="space-y-6">
-                {matchedPhotos.length > 0 ? (
-                  <>
-                    <div className="bg-white rounded-3xl p-5 sm:p-6 border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider border border-emerald-200">
-                            ✓ Face Verified
-                          </span>
-                          <span className="text-xs font-bold text-zinc-500">
-                            {guestName || 'Guest'}
-                          </span>
-                        </div>
-                        <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
-                          🎉 Found {matchedPhotos.length} photos of you!
-                        </h2>
-                        <p className="text-xs text-zinc-500">
-                          Out of {fullPhotos.length} celebration photos in {gallery.title}.
-                        </p>
-                      </div>
-
+            {/* GUEST PHOTOS VIEW */}
+            <div className="space-y-6">
+              {matchedPhotos.length > 0 ? (
+                <>
+                  <div className="bg-white rounded-3xl p-5 sm:p-6 border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={handleDownloadAllMyPhotos}
-                          disabled={isDownloadingAll}
-                          className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center gap-2 transition shadow-sm cursor-pointer"
-                        >
-                          <Download className="w-4 h-4 text-amber-400" />
-                          <span>{isDownloadingAll ? 'Downloading...' : 'Download All My Photos'}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setIsFaceScannerOpen(true)}
-                          className="px-3.5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Rescan Selfie</span>
-                        </button>
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider border border-emerald-200">
+                          ✓ Face Verified
+                        </span>
+                        <span className="text-xs font-bold text-zinc-500">
+                          {guestName || 'Guest'}
+                        </span>
                       </div>
+                      <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
+                        🎉 Found {matchedPhotos.length} photos of you!
+                      </h2>
                     </div>
 
-                    {/* Matched Photos Grid (Justified / Responsive Masonry) */}
-                    <JustifiedGalleryLayout
-                      photos={matchedPhotos}
-                      layoutConfig={layoutConfig}
-                      onPhotoClick={(photo, idx) => setSelectedPhotoIndex(idx)}
-                      onDownloadPhoto={handleDownloadPhoto}
-                    />
-                  </>
-                ) : (
-                  <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E7E2D8] shadow-sm text-center space-y-5 max-w-md mx-auto">
-                    <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
-                      <Camera className="w-8 h-8" />
-                    </div>
-
-                    <div className="space-y-2">
-                      <h3 className="text-xl font-black text-zinc-900">
-                        No Matching Photos Found Yet
-                      </h3>
-                      <p className="text-xs text-zinc-500 leading-relaxed">
-                        We scanned all {fullPhotos.length} celebration photos and couldn&apos;t detect a clear match for your selfie yet. You can browse all event photos or re-scan with better lighting.
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setGuestActiveTab('all')}
-                        className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                        onClick={handleDownloadAllMyPhotos}
+                        disabled={isDownloadingAll}
+                        className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center gap-2 transition shadow-sm cursor-pointer"
                       >
-                        <ImageIcon className="w-4 h-4" />
-                        <span>Browse All {fullPhotos.length} Photos</span>
+                        <Download className="w-4 h-4 text-amber-400" />
+                        <span>{isDownloadingAll ? 'Downloading...' : 'Download All My Photos'}</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setIsFaceScannerOpen(true)}
-                        className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                        className="px-3.5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
                       >
-                        <RefreshCw className="w-4 h-4" />
-                        <span>Re-scan Selfie</span>
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Rescan Selfie</span>
                       </button>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
 
-            {/* TAB 2: ALL EVENT PHOTOS VIEW */}
-            {guestActiveTab === 'all' && (
-              <div className="space-y-6">
-                {/* All Photos Grid (Justified / Responsive Masonry) */}
-                <JustifiedGalleryLayout
-                  photos={targetFullPhotos}
-                  layoutConfig={layoutConfig}
-                  onPhotoClick={(photo, idx) => setSelectedPhotoIndex(idx)}
-                  onDownloadPhoto={handleDownloadPhoto}
-                />
-              </div>
-            )}
+                  {/* Matched Photos Grid (filtered by selected sub-event / collection) */}
+                  <JustifiedGalleryLayout
+                    photos={displayedPhotos}
+                    layoutConfig={layoutConfig}
+                    onPhotoClick={(photo, idx) => setSelectedPhotoIndex(idx)}
+                    onDownloadPhoto={handleDownloadPhoto}
+                  />
+                </>
+              ) : (
+                <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E7E2D8] shadow-sm text-center space-y-5 max-w-md mx-auto">
+                  <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
+                    <Camera className="w-8 h-8" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-black text-zinc-900">
+                      No Matching Photos Found Yet
+                    </h3>
+                    <p className="text-xs text-zinc-500 leading-relaxed">
+                      We scanned the celebration photos and couldn&apos;t detect a clear match for your selfie yet. Please re-scan with a clearer selfie or different lighting.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsFaceScannerOpen(true)}
+                      className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      <span>Re-scan Selfie</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -3139,7 +3097,7 @@ function GuestSlugGalleryContent() {
             <span>Share</span>
           </button>
 
-          {gallery.is_face_ai_enabled !== false && (
+          {!isPrivilegedMode && gallery.is_face_ai_enabled !== false && (
             <button
               type="button"
               onClick={() => setIsFaceScannerOpen(true)}
