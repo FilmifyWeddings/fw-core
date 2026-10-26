@@ -281,6 +281,9 @@ export async function batchUploadPhotos(
   // 0B. If Desktop Engine is active, pipe uploads directly to the native sliding-window turbo engine!
   if (isDesktopEngineActive) {
     console.log('[ImageProcessor] ⚡ StudioCore Native Desktop Engine detected on 127.0.0.1:41789! Routing via smooth sliding-window turbo pipeline...');
+    if (onProgress && files.length > 0) {
+      onProgress(0, total, 5, `[Turbo Engine] Uploading ${files[0].name}...`);
+    }
     const SLIDING_CONCURRENCY = 6;
     let fileIndex = 0;
 
@@ -292,7 +295,8 @@ export async function batchUploadPhotos(
         if (!file) break;
 
         if (onProgress) {
-          onProgress(completed, total, Math.round((completed / total) * 100), `[Turbo Engine] Uploading ${file.name}...`);
+          const pct = Math.max(5, Math.round((completed / total) * 100));
+          onProgress(completed, total, pct, `[Turbo Engine] Uploading ${file.name}...`);
         }
 
         try {
@@ -370,6 +374,10 @@ export async function batchUploadPhotos(
   const CONCURRENCY = isMobile ? 4 : 6;
   const MAX_RETRY_ATTEMPTS = 5;
   const REGISTRATION_BATCH_SIZE = isMobile ? 8 : 16;
+
+  if (onProgress && files.length > 0) {
+    onProgress(0, total, 5, `Uploading ${files[0].name}...`);
+  }
 
   for (let i = 0; i < files.length; i += CONCURRENCY) {
     if (signal?.aborted) {

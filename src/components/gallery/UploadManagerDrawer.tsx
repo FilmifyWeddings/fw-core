@@ -92,7 +92,7 @@ export function UploadManagerDrawer({ onResumeInterrupted }: UploadManagerDrawer
               <div className="flex items-center gap-2 text-xs font-bold text-zinc-800">
                 {isAnyUploading ? (
                   <span>
-                    Uploading {completedPhotos}/{totalPhotos} ({overallPercentage}%)
+                    Uploading {completedPhotos === 0 ? '1' : completedPhotos}/{totalPhotos} ({Math.max(overallPercentage, 5)}%)
                   </span>
                 ) : activeJobCount > 0 ? (
                   <span>{activeJobCount} queued upload{activeJobCount > 1 ? 's' : ''}</span>
@@ -332,19 +332,21 @@ function JobItem({ job, onCancel }: { job: UploadJob; onCancel: () => void }) {
                 ? 'bg-amber-500'
                 : isFailed
                 ? 'bg-rose-500'
-                : 'bg-gradient-to-r from-amber-500 to-amber-600'
+                : 'bg-gradient-to-r from-amber-500 to-amber-600 animate-pulse'
             }`}
-            style={{ width: `${job.percentage}%` }}
+            style={{ width: `${isUploading ? Math.max(job.percentage, 5) : job.percentage}%` }}
           />
         </div>
 
         <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
           <span>
-            {job.completedCount} of {job.totalCount} uploaded
+            {isUploading && job.completedCount === 0
+              ? `Uploading 1 of ${job.totalCount}...`
+              : `${job.completedCount} of ${job.totalCount} uploaded`}
             {(isCompleted || isFailed) && hasErrors && job.totalCount > job.completedCount && ` (${job.totalCount - job.completedCount} skipped/failed)`}
           </span>
-          <span className="truncate max-w-[140px] text-[9.5px] text-zinc-400">
-            {job.currentFileName || ''}
+          <span className="truncate max-w-[140px] text-[9.5px] text-zinc-500 font-medium">
+            {job.currentFileName || (isUploading ? 'Transferring...' : '')}
           </span>
         </div>
 
