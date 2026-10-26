@@ -3,7 +3,7 @@ import { supabase, supabaseAdmin } from '@/lib/supabase';
 // Safely resolves the appropriate Supabase client:
 // On client (browser), always use supabase (authenticated with user session / anon key).
 // On server, fallback to supabaseAdmin || supabase.
-const getDbClient = () => (typeof window !== 'undefined' ? supabase : (getDbClient() || supabase));
+const getDbClient = () => (typeof window !== 'undefined' ? supabase : (supabaseAdmin || supabase));
 
 export type AssignmentCategory = 
   | 'all' 
@@ -486,10 +486,17 @@ export async function fetchVendorAlbumOrders(
 
     // AUTO-SYNC 2: Check fw_assignments and crew_assignments_finance for Shoots assigned to this member
     try {
-      const { data: assignments } = await getDbClient()
+      let assignQuery = getDbClient()
         .from('fw_assignments')
-        .select('*')
-        .eq('assigned_member_id', vendorId);
+        .select('*');
+
+      if (vendorName && vendorName.trim()) {
+        assignQuery = assignQuery.or(`assigned_member_id.eq.${vendorId},assigned_member_name.ilike.%${vendorName.trim()}%`);
+      } else {
+        assignQuery = assignQuery.eq('assigned_member_id', vendorId);
+      }
+
+      const { data: assignments } = await assignQuery;
 
       if (assignments && assignments.length > 0) {
         const isStrictUuid = (val: any): boolean => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
@@ -611,10 +618,17 @@ export async function fetchVendorAlbumOrders(
 
     // AUTO-SYNC 3: Check team_event_payouts for any shoot payouts recorded for this member
     try {
-      const { data: payouts } = await getDbClient()
+      let payoutQuery = getDbClient()
         .from('team_event_payouts')
-        .select('*')
-        .eq('member_id', vendorId);
+        .select('*');
+
+      if (vendorName && vendorName.trim()) {
+        payoutQuery = payoutQuery.or(`member_id.eq.${vendorId},member_name.ilike.%${vendorName.trim()}%`);
+      } else {
+        payoutQuery = payoutQuery.eq('member_id', vendorId);
+      }
+
+      const { data: payouts } = await payoutQuery;
 
       if (payouts && payouts.length > 0) {
         for (const p of payouts) {

@@ -31,7 +31,7 @@ export default function DedicatedTeamMemberPage() {
   const memberId = Array.isArray(rawId) ? rawId[0] : (rawId as string);
 
   const { workspaceId, workspaceName, activeWorkspace, isOwner } = useWorkspace();
-  const effectiveWsId = workspaceId || activeWorkspace?.workspaceId || activeWorkspace?.studioSlug || '';
+  const effectiveWsId = workspaceId || activeWorkspace?.workspaceId || activeWorkspace?.studioSlug || (member as any)?.workspace_id || '';
   const studioName = workspaceName || activeWorkspace?.studioName || 'StudioCore Partner Studio';
 
   const [member, setMember] = useState<TeamMember | null>(() => {
@@ -63,6 +63,7 @@ export default function DedicatedTeamMemberPage() {
       if (wsMember) {
         const formatted: TeamMember = {
           id: wsMember.id,
+          workspace_id: wsMember.workspace_id,
           name: wsMember.name || 'Team Specialist',
           email: wsMember.email || '',
           phone: wsMember.phone || '',
@@ -92,6 +93,7 @@ export default function DedicatedTeamMemberPage() {
       if (fwMember) {
         const formatted: TeamMember = {
           id: fwMember.id,
+          workspace_id: fwMember.user_id,
           name: fwMember.name || 'Team Specialist',
           email: fwMember.email || '',
           phone: fwMember.phone_number ? `${fwMember.country_code || '+91'} ${fwMember.phone_number}` : '',

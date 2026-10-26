@@ -1011,7 +1011,7 @@ export default function VendorAlbumDeliverablesModal({
     } finally {
       setIsLoading(false);
     }
-  }, [workspaceId, vendor]);
+  }, [workspaceId, vendor?.id, vendor?.name, vendor?.email]);
 
   // Synchronous cache loading whenever modal opens or vendor changes
   useEffect(() => {
@@ -1033,7 +1033,7 @@ export default function VendorAlbumDeliverablesModal({
       // Revalidate in background
       loadOrders(memCachedVendorOrders.has(vendor.id) || orders.length > 0);
     }
-  }, [isOpen, vendor?.id]);
+  }, [isOpen, vendor?.id, workspaceId]);
 
   // Reset lazy card count when view or filters change
   useEffect(() => {
