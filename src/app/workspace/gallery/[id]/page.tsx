@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
+import * as XLSX from 'xlsx';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -90,6 +91,7 @@ interface GalleryCollection {
   id: string;
   gallery_id: string;
   name: string;
+  slug?: string;
   cover_url: string | null;
   photo_count?: number;
   created_at: string;
@@ -324,6 +326,7 @@ function AlbumStudioContent() {
   const [loadingGuestPhotos, setLoadingGuestPhotos] = useState(false);
   const [filterGuest, setFilterGuest] = useState<{ id: string; name: string; photoIds: string[] } | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
+  const [lightboxPhotosList, setLightboxPhotosList] = useState<any[] | null>(null);
   const [isReindexing, setIsReindexing] = useState(false);
   const [reindexProgress, setReindexProgress] = useState<string>('');
 
@@ -1389,27 +1392,39 @@ function AlbumStudioContent() {
     return match ? match[1] : raw;
   }, []);
 
-  // Selection Export Helpers
-  const handleExportSelectionCsv = () => {
+  // Selection Export Helpers (Genuine Excel .xlsx export)
+  const handleExportSelectionExcel = () => {
     setIsGetPhotosMenuOpen(false);
     const selected = photos.filter((p) => activeSelectedIds.has(p.id));
     if (selected.length === 0) {
       alert('No photos selected to export.');
       return;
     }
-    const header = ['Filename', 'Photo ID', 'Collection', 'Date'].join(',');
-    const rows = selected.map((p) => {
+    const clientName = clientSelections.find((c) => c.client_email === selectedClientEmail)?.client_name || gallery?.title || 'Client';
+    const cleanClientName = clientName.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    const rows = selected.map((p, idx) => {
       const colName = collections.find((c) => c.id === p.collection_id)?.name || 'General';
-      return `"${getCleanFilename(p.original_key)}",${p.id},"${colName}","${p.created_at}"`;
+      return {
+        'S.No': idx + 1,
+        'Filename': getCleanFilename(p.original_key),
+        'Sub-Event': colName,
+        'Date Uploaded': p.created_at ? new Date(p.created_at).toLocaleDateString() : '',
+        'Status': 'Selected for Album',
+      };
     });
-    const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const clientSuffix = selectedClientEmail ? `_${selectedClientEmail.split('@')[0]}` : '';
-    a.download = `${gallery?.slug || 'gallery'}_album_selection${clientSuffix}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 8 },
+      { wch: 35 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 22 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Selected Photos');
+    XLSX.writeFile(wb, `${gallery?.slug || 'gallery'}_selected_photos_${cleanClientName}.xlsx`);
   };
 
   // Option 1: Select with Local Folder (Native File System Access API - Fast & Recommended)
@@ -2741,6 +2756,12 @@ function AlbumStudioContent() {
                       {clientSelections.map((sel) => {
                         const isClientActive = selectedClientEmail === sel.client_email;
                         const count = Array.isArray(sel.selected_photo_ids) ? sel.selected_photo_ids.length : 0;
+                        const displayName = (sel.client_name && sel.client_name !== 'Guest Client')
+                          ? sel.client_name
+                          : (gallery?.title ? `${gallery.title} (Client)` : 'Client Selection');
+                        const displayEmail = (sel.client_email && !sel.client_email.includes('.local'))
+                          ? sel.client_email
+                          : 'Direct Link Selection';
                         return (
                           <button
                             key={sel.client_email}
@@ -2755,14 +2776,14 @@ function AlbumStudioContent() {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2 min-w-0">
                                 <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 font-black text-xs flex items-center justify-center uppercase shrink-0">
-                                  {sel.client_name ? sel.client_name.charAt(0) : 'C'}
+                                  {displayName ? displayName.charAt(0) : 'C'}
                                 </div>
                                 <div className="min-w-0">
                                   <span className="block font-bold text-xs text-zinc-900 truncate">
-                                    {sel.client_name || 'Client'}
+                                    {displayName}
                                   </span>
                                   <span className="block text-[10px] text-zinc-400 truncate font-mono">
-                                    {sel.client_email}
+                                    {displayEmail}
                                   </span>
                                 </div>
                               </div>
@@ -2901,19 +2922,19 @@ function AlbumStudioContent() {
                           </div>
                         </button>
 
-                        {/* Option 3: Export CSV File */}
+                        {/* Option 3: Export Excel Sheet (.xlsx) */}
                         <button
                           type="button"
-                          onClick={handleExportSelectionCsv}
-                          className="w-full p-3 rounded-2xl hover:bg-zinc-50 text-left transition flex items-start gap-3 cursor-pointer group"
+                          onClick={handleExportSelectionExcel}
+                          className="w-full p-3 rounded-2xl hover:bg-emerald-50 text-left transition flex items-start gap-3 cursor-pointer group"
                         >
-                          <div className="w-9 h-9 rounded-xl bg-zinc-100 text-zinc-700 flex items-center justify-center shrink-0 group-hover:bg-zinc-200 transition">
-                            <FileSpreadsheet className="w-5 h-5 text-zinc-700" />
+                          <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 group-hover:bg-emerald-200 transition">
+                            <FileSpreadsheet className="w-5 h-5 text-emerald-700" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <span className="block font-black text-xs text-zinc-900">Export CSV File</span>
+                            <span className="block font-black text-xs text-zinc-900">Export Excel Sheet (.xlsx)</span>
                             <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
-                              Spreadsheet with selected filenames, sub-event collections, and client details.
+                              Spreadsheet with selected filenames and sub-events, opens in Microsoft Excel on all devices.
                             </p>
                           </div>
                         </button>
@@ -2967,46 +2988,19 @@ function AlbumStudioContent() {
                   );
                 })()}
 
-                {/* Filter Tabs */}
+                {/* Filter View: Strictly Selected Photos */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-zinc-500">Filter View:</span>
-                    <div className="flex items-center gap-1 bg-[#FAF9F5] p-1 rounded-full border border-[#E7E2D8]">
-                      <button
-                        onClick={() => setSelectionFilter('all')}
-                        className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition ${
-                          selectionFilter === 'all' ? 'bg-amber-500 text-white shadow-2xs' : 'text-zinc-600'
-                        }`}
-                      >
-                        All Photos ({photos.length})
-                      </button>
-                      <button
-                        onClick={() => setSelectionFilter('selected')}
-                        className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition ${
-                          selectionFilter === 'selected' ? 'bg-amber-500 text-white shadow-2xs' : 'text-zinc-600'
-                        }`}
-                      >
-                        Selected Only ({activeSelectedIds.size})
-                      </button>
-                      <button
-                        onClick={() => setSelectionFilter('pending')}
-                        className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition ${
-                          selectionFilter === 'pending' ? 'bg-amber-500 text-white shadow-2xs' : 'text-zinc-600'
-                        }`}
-                      >
-                        Pending ({photos.length - activeSelectedIds.size})
-                      </button>
-                    </div>
+                    <span className="px-3 py-1 rounded-full bg-amber-500 text-white font-bold text-xs shadow-2xs flex items-center gap-1.5">
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span>Selected Photos ({activeSelectedIds.size})</span>
+                    </span>
                   </div>
                 </div>
 
                 {/* Photo Proofing Grid */}
                 {(() => {
-                  const targetPhotos = selectionFilter === 'selected'
-                    ? photos.filter((p) => activeSelectedIds.has(p.id))
-                    : selectionFilter === 'pending'
-                    ? photos.filter((p) => !activeSelectedIds.has(p.id))
-                    : photos;
+                  const targetPhotos = photos.filter((p) => activeSelectedIds.has(p.id));
 
                   if (targetPhotos.length === 0) {
                     return (
@@ -3014,9 +3008,7 @@ function AlbumStudioContent() {
                         <CheckSquare className="w-8 h-8 text-zinc-300 mx-auto" />
                         <h4 className="font-bold text-sm text-zinc-700">No photos to display</h4>
                         <p className="text-xs text-zinc-400">
-                          {selectionFilter === 'selected'
-                            ? 'No photos have been selected in this view yet.'
-                            : 'All photos have been selected!'}
+                          No photos have been selected in this view yet.
                         </p>
                       </div>
                     );
@@ -3033,8 +3025,8 @@ function AlbumStudioContent() {
                           <div
                             key={photo.id}
                             onClick={() => {
-                              const overallIdx = filteredPhotos.findIndex((p) => p.id === photo.id);
-                              if (overallIdx !== -1) setSelectedPhotoIndex(overallIdx);
+                              setLightboxPhotosList(targetPhotos);
+                              setSelectedPhotoIndex(idx);
                             }}
                             className={`group bg-white rounded-2xl border ${
                               isSelected ? 'border-amber-500 ring-2 ring-amber-400/40 shadow-md' : 'border-[#E7E2D8]'
@@ -4491,7 +4483,8 @@ function AlbumStudioContent() {
                       <div
                         key={photo.id}
                         onClick={() => {
-                          const idx = filteredPhotos.findIndex((p) => p.id === photo.id);
+                          setLightboxPhotosList(guestMatchedPhotos);
+                          const idx = guestMatchedPhotos.findIndex((p) => p.id === photo.id);
                           if (idx >= 0) setSelectedPhotoIndex(idx);
                         }}
                         className="group relative aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-200 cursor-pointer shadow-2xs hover:shadow-md transition"
@@ -4546,17 +4539,20 @@ function AlbumStudioContent() {
       {/* ─────────────────────────────────────────────────────────────
           6. LIGHTBOX FOR FULLSCREEN PREVIEW
       ───────────────────────────────────────────────────────────── */}
-      {selectedPhotoIndex !== null && (
+      {selectedPhotoIndex !== null && (lightboxPhotosList || filteredPhotos)[selectedPhotoIndex] && (
         <PremagicLightbox
-          photos={filteredPhotos}
+          photos={lightboxPhotosList || filteredPhotos}
           currentIndex={selectedPhotoIndex}
-          onClose={() => setSelectedPhotoIndex(null)}
+          onClose={() => {
+            setSelectedPhotoIndex(null);
+            setLightboxPhotosList(null);
+          }}
           onNavigate={(idx) => setSelectedPhotoIndex(idx)}
           onDownload={handleDownloadPhoto as any}
           onToggleSelect={togglePhotoSelection as any}
-          isSelected={filteredPhotos[selectedPhotoIndex] ? selectedPhotoIds.has(filteredPhotos[selectedPhotoIndex].id) : false}
+          isSelected={(lightboxPhotosList || filteredPhotos)[selectedPhotoIndex] ? selectedPhotoIds.has((lightboxPhotosList || filteredPhotos)[selectedPhotoIndex].id) : false}
           onSetCover={handleSetCover as any}
-          isCover={filteredPhotos[selectedPhotoIndex] ? gallery.cover_url === filteredPhotos[selectedPhotoIndex].preview_url : false}
+          isCover={(lightboxPhotosList || filteredPhotos)[selectedPhotoIndex] ? gallery.cover_url === (lightboxPhotosList || filteredPhotos)[selectedPhotoIndex].preview_url : false}
           onDelete={handleDeletePhoto as any}
           allowDownloads={gallery.allow_downloads ?? true}
         />

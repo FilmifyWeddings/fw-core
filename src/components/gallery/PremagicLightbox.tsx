@@ -10,8 +10,7 @@ import {
   ZoomOut,
   Star,
   Trash2,
-  CheckSquare,
-  Square,
+  Heart,
   RefreshCw,
 } from 'lucide-react';
 
@@ -35,6 +34,7 @@ interface PremagicLightboxProps {
   onDownload?: (photo: LightboxPhoto) => Promise<void> | void;
   onToggleSelect?: (photoId: string) => void;
   isSelected?: boolean;
+  isSelectionMode?: boolean;
   onSetCover?: (photo: LightboxPhoto) => void;
   isCover?: boolean;
   onDelete?: (photoId: string) => void;
@@ -49,25 +49,50 @@ export function PremagicLightbox({
   onDownload,
   onToggleSelect,
   isSelected = false,
+  isSelectionMode = false,
   onSetCover,
   isCover = false,
   onDelete,
   allowDownloads = true,
 }: PremagicLightboxProps) {
-  const [isZoomed, setIsZoomed] = useState(false);
+  // Multi-level zoom scale (1 = normal, up to 3.5x)
+  const [zoomScale, setZoomScale] = useState<number>(1);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
   const [isDownloading, setIsDownloading] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [touchDeltaX, setTouchDeltaX] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
-
   const currentPhoto = currentIndex !== null && photos[currentIndex] ? photos[currentIndex] : null;
 
-  // Reset zoom on slide change
+  // Reset zoom & pan when navigating to another slide
   useEffect(() => {
-    setIsZoomed(false);
+    setZoomScale(1);
+    setPanOffset({ x: 0, y: 0 });
+    setIsDragging(false);
   }, [currentIndex]);
+
+  // Aggressive Next/Prev Image Preloading for instant millisecond transitions
+  useEffect(() => {
+    if (currentIndex === null || photos.length === 0) return;
+    const preload = (url?: string) => {
+      if (!url) return;
+      const img = new Image();
+      img.src = url;
+    };
+    if (currentIndex < photos.length - 1) {
+      preload(photos[currentIndex + 1].preview_url);
+      if (currentIndex < photos.length - 2) preload(photos[currentIndex + 2].preview_url);
+    }
+    if (currentIndex > 0) {
+      preload(photos[currentIndex - 1].preview_url);
+      if (currentIndex > 1) preload(photos[currentIndex - 2].preview_url);
+    }
+  }, [currentIndex, photos]);
 
   const handlePrev = useCallback(() => {
     if (currentIndex === null || photos.length === 0) return;
@@ -81,6 +106,33 @@ export function PremagicLightbox({
     onNavigate(nextIdx);
   }, [currentIndex, photos.length, onNavigate]);
 
+  // Zoom controls
+  const handleZoomIn = () => {
+    setZoomScale((prev) => {
+      if (prev < 1.75) return 1.75;
+      if (prev < 2.5) return 2.5;
+      return 3.5;
+    });
+  };
+
+  const handleZoomOut = () => {
+    setZoomScale((prev) => {
+      if (prev > 2.5) return 2.5;
+      if (prev > 1.75) return 1.75;
+      setPanOffset({ x: 0, y: 0 });
+      return 1;
+    });
+  };
+
+  const toggleZoom = () => {
+    if (zoomScale > 1) {
+      setZoomScale(1);
+      setPanOffset({ x: 0, y: 0 });
+    } else {
+      setZoomScale(2);
+    }
+  };
+
   // Keyboard navigation
   useEffect(() => {
     if (currentIndex === null) return;
@@ -89,36 +141,84 @@ export function PremagicLightbox({
       if (e.key === 'Escape') {
         onClose();
       } else if (e.key === 'ArrowLeft') {
-        handlePrev();
+        if (zoomScale === 1) handlePrev();
       } else if (e.key === 'ArrowRight') {
-        handleNext();
-      } else if (e.key === 'z' || e.key === 'Z') {
-        setIsZoomed((prev) => !prev);
+        if (zoomScale === 1) handleNext();
+      } else if (e.key === '+' || e.key === '=') {
+        handleZoomIn();
+      } else if (e.key === '-') {
+        handleZoomOut();
+      } else if (e.key === '0') {
+        setZoomScale(1);
+        setPanOffset({ x: 0, y: 0 });
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, handlePrev, handleNext, onClose]);
+  }, [currentIndex, zoomScale, handlePrev, handleNext, onClose]);
 
-  // Touch swipe handlers
+  // Mouse Pan when zoomed in
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoomScale <= 1) return;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX - panOffset.x,
+      y: e.clientY - panOffset.y,
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || zoomScale <= 1) return;
+    setPanOffset({
+      x: e.clientX - dragStartRef.current.x,
+      y: e.clientY - dragStartRef.current.y,
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Touch handlers for swipe (at 1x) & pan (at >1x)
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (isZoomed) return;
-    setTouchStartX(e.touches[0].clientX);
-    setTouchStartY(e.touches[0].clientY);
-    setTouchDeltaX(0);
+    if (e.touches.length === 1) {
+      if (zoomScale > 1) {
+        setIsDragging(true);
+        dragStartRef.current = {
+          x: e.touches[0].clientX - panOffset.x,
+          y: e.touches[0].clientY - panOffset.y,
+        };
+      } else {
+        setTouchStartX(e.touches[0].clientX);
+        setTouchStartY(e.touches[0].clientY);
+        setTouchDeltaX(0);
+      }
+    }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStartX === null || isZoomed) return;
-    const currentX = e.touches[0].clientX;
-    const deltaX = currentX - touchStartX;
-    setTouchDeltaX(deltaX);
+    if (e.touches.length === 1) {
+      if (zoomScale > 1 && isDragging) {
+        setPanOffset({
+          x: e.touches[0].clientX - dragStartRef.current.x,
+          y: e.touches[0].clientY - dragStartRef.current.y,
+        });
+      } else if (touchStartX !== null && zoomScale === 1) {
+        const deltaX = e.touches[0].clientX - touchStartX;
+        setTouchDeltaX(deltaX);
+      }
+    }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartX === null || isZoomed) return;
-    const currentY = e.changedTouches[0].clientY;
+    if (zoomScale > 1) {
+      setIsDragging(false);
+      return;
+    }
+
+    if (touchStartX === null) return;
+    const currentY = e.changedTouches[0]?.clientY || 0;
     const deltaY = currentY - (touchStartY || 0);
 
     // Swipe down to close
@@ -130,10 +230,10 @@ export function PremagicLightbox({
       return;
     }
 
-    // Horizontal swipe threshold: 50px
-    if (touchDeltaX < -50) {
+    // Horizontal swipe threshold: 45px for ultra-responsive feel
+    if (touchDeltaX < -45) {
       handleNext();
-    } else if (touchDeltaX > 50) {
+    } else if (touchDeltaX > 45) {
       handlePrev();
     }
 
@@ -152,112 +252,104 @@ export function PremagicLightbox({
     }
   };
 
-  const toggleZoom = () => {
-    setIsZoomed((prev) => !prev);
-  };
-
   if (currentIndex === null || !currentPhoto) return null;
 
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl flex flex-col justify-between select-none animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl flex flex-col justify-between select-none animate-in fade-in duration-150"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onMouseUp={handleMouseUp}
     >
-      {/* 1. TOP ACTION BAR */}
-      <div className="flex items-center justify-between p-3 sm:p-5 z-20 bg-gradient-to-b from-black/80 via-black/40 to-transparent">
-        {/* Left: Counter & Selection */}
+      {/* 1. TOP ACTION BAR (Clean Icon-Only Buttons, Counter, Close) */}
+      <div className="flex items-center justify-between p-3 sm:p-5 z-30 bg-gradient-to-b from-black/80 via-black/40 to-transparent">
+        {/* Left: Counter */}
         <div className="flex items-center gap-3">
-          <span className="text-xs font-mono font-bold text-zinc-300 bg-white/10 px-2.5 py-1 rounded-full border border-white/10">
+          <span className="text-xs font-mono font-bold text-zinc-300 bg-white/10 px-3 py-1.5 rounded-full border border-white/15 backdrop-blur-md">
             {currentIndex + 1} / {photos.length}
           </span>
-
-          {onToggleSelect && (
-            <button
-              onClick={() => onToggleSelect(currentPhoto.id)}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
-                isSelected
-                  ? 'bg-amber-500 text-white border-amber-400'
-                  : 'bg-white/10 text-zinc-300 hover:bg-white/20 border-white/10'
-              }`}
-            >
-              {isSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
-              <span>{isSelected ? 'Selected' : 'Select'}</span>
-            </button>
-          )}
-
-          {currentPhoto.confidencePercent && (
-            <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full bg-emerald-950/80 text-[11px] font-black text-emerald-300 border border-emerald-500/40">
-              ✓ {currentPhoto.confidencePercent}% Match
-            </span>
-          )}
         </div>
 
-        {/* Right: Actions (Zoom, Download, Cover, Delete, Close) */}
+        {/* Right: Actions (Zoom In, Zoom Out, Cover, Download, Close - ALL ICON ONLY) */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Zoom Toggle */}
+          {/* Zoom Out Button (Icon Only) */}
           <button
-            onClick={toggleZoom}
-            className={`p-2 sm:px-3 sm:py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
-              isZoomed
-                ? 'bg-amber-500 text-white border-amber-400'
-                : 'bg-white/10 text-zinc-300 hover:bg-white/20 border-white/10'
-            }`}
-            title="Toggle Smart HD Zoom (Z)"
+            type="button"
+            onClick={handleZoomOut}
+            disabled={zoomScale <= 1}
+            className="p-2 sm:p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition cursor-pointer border border-white/15 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Zoom Out (-)"
           >
-            {isZoomed ? <ZoomOut className="w-4 h-4" /> : <ZoomIn className="w-4 h-4" />}
-            <span className="hidden sm:inline">{isZoomed ? 'Reset Zoom' : 'Zoom HD'}</span>
+            <ZoomOut className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+
+          {/* Zoom In Button (Icon Only) */}
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            disabled={zoomScale >= 3.5}
+            className={`p-2 sm:p-2.5 rounded-full transition cursor-pointer border ${
+              zoomScale > 1
+                ? 'bg-amber-500 text-white border-amber-400'
+                : 'bg-white/10 hover:bg-white/20 text-white border-white/15'
+            } disabled:opacity-30 disabled:cursor-not-allowed`}
+            title="Zoom In (+)"
+          >
+            <ZoomIn className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
 
           {/* Set Cover Action */}
           {onSetCover && (
             <button
+              type="button"
               onClick={() => onSetCover(currentPhoto)}
-              className={`p-2 rounded-xl transition cursor-pointer border ${
+              className={`p-2 sm:p-2.5 rounded-full transition cursor-pointer border ${
                 isCover
                   ? 'bg-amber-500 text-white border-amber-400'
-                  : 'bg-white/10 text-zinc-300 hover:bg-white/20 border-white/10'
+                  : 'bg-white/10 text-zinc-300 hover:bg-white/20 border-white/15'
               }`}
               title={isCover ? 'Cover Photo' : 'Set as Event Cover'}
             >
-              <Star className={`w-4 h-4 ${isCover ? 'fill-white' : ''}`} />
+              <Star className={`w-4 h-4 sm:w-5 sm:h-5 ${isCover ? 'fill-white' : ''}`} />
             </button>
           )}
 
-          {/* High-Res Download */}
+          {/* High-Res Original Download (Icon Only, No text) */}
           {allowDownloads && onDownload && (
             <button
+              type="button"
               onClick={handleDownloadClick}
               disabled={isDownloading}
-              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
-              title="Download Original High-Res"
+              className="p-2 sm:p-2.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition flex items-center justify-center cursor-pointer shadow-md disabled:opacity-50"
+              title="Download Original High-Res Photo"
             >
               {isDownloading ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
               ) : (
-                <Download className="w-3.5 h-3.5" />
+                <Download className="w-4 h-4 sm:w-5 sm:h-5" />
               )}
-              <span className="hidden sm:inline">Download HD</span>
             </button>
           )}
 
           {/* Delete Photo Action */}
           {onDelete && (
             <button
+              type="button"
               onClick={() => onDelete(currentPhoto.id)}
-              className="p-2 rounded-xl bg-white/10 hover:bg-rose-600 text-zinc-300 hover:text-white transition cursor-pointer border border-white/10"
+              className="p-2 sm:p-2.5 rounded-full bg-white/10 hover:bg-rose-600 text-zinc-300 hover:text-white transition cursor-pointer border border-white/15"
               title="Delete Photo"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           )}
 
           {/* Close Button */}
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white transition cursor-pointer border border-white/10 ml-1"
+            className="p-2 sm:p-2.5 rounded-full bg-white/10 hover:bg-white/25 text-white transition cursor-pointer border border-white/15 ml-1"
             title="Close Lightbox (Esc)"
           >
             <X className="w-5 h-5" />
@@ -265,70 +357,86 @@ export function PremagicLightbox({
         </div>
       </div>
 
-      {/* 2. MAIN VIEWPORT WITH TOUCH SLIDER */}
-      <div className="relative flex-1 flex items-center justify-center p-2 sm:p-6 overflow-hidden">
+      {/* 2. MAIN VIEWPORT WITH HARDWARE-ACCELERATED PAN & ZOOM */}
+      <div
+        className="relative flex-1 flex items-center justify-center p-2 sm:p-4 overflow-hidden"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+      >
         {/* Left Arrow (Desktop) */}
-        <button
-          onClick={handlePrev}
-          className="hidden md:flex absolute left-4 z-20 w-12 h-12 rounded-full bg-black/40 hover:bg-black/80 border border-white/10 text-white items-center justify-center backdrop-blur-md transition cursor-pointer hover:scale-105 active:scale-95"
-          title="Previous Photo (Left Arrow)"
-        >
-          <ChevronLeft className="w-6 h-6" />
-        </button>
+        {photos.length > 1 && (
+          <button
+            type="button"
+            onClick={handlePrev}
+            className="hidden md:flex absolute left-4 sm:left-6 z-30 w-12 h-12 rounded-full bg-black/50 hover:bg-black/90 border border-white/20 text-white items-center justify-center backdrop-blur-md transition cursor-pointer hover:scale-105 active:scale-95 shadow-xl"
+            title="Previous Photo (Left Arrow)"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+        )}
 
-        {/* Photo Canvas */}
+        {/* Photo Canvas Container */}
         <div
-          className="relative max-h-[82vh] max-w-full flex items-center justify-center transition-transform duration-300 overflow-hidden"
+          className={`relative max-h-[85vh] max-w-full flex items-center justify-center select-none ${
+            zoomScale > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'
+          }`}
           style={{
-            transform: `translateX(${touchDeltaX * 0.4}px)`,
+            transform: zoomScale > 1
+              ? `translate3d(${panOffset.x}px, ${panOffset.y}px, 0) scale(${zoomScale})`
+              : `translate3d(${touchDeltaX * 0.4}px, 0, 0)`,
+            transition: isDragging ? 'none' : 'transform 200ms ease-out',
           }}
           onDoubleClick={toggleZoom}
         >
+          {/* Main Photo with High-Priority Decoding for Millisecond Display */}
           <img
+            key={currentPhoto.id}
             src={currentPhoto.preview_url}
             alt="Full Preview"
             draggable={false}
-            className={`max-h-[82vh] max-w-[95vw] sm:max-w-[85vw] object-contain rounded-2xl transition-all duration-300 ${
-              isZoomed ? 'scale-[2.2] cursor-grab active:cursor-grabbing shadow-2xl' : 'cursor-zoom-in shadow-xl'
-            }`}
+            decoding="async"
+            className="max-h-[84vh] max-w-[96vw] sm:max-w-[88vw] object-contain rounded-2xl shadow-2xl pointer-events-none"
           />
         </div>
 
         {/* Right Arrow (Desktop) */}
-        <button
-          onClick={handleNext}
-          className="hidden md:flex absolute right-4 z-20 w-12 h-12 rounded-full bg-black/40 hover:bg-black/80 border border-white/10 text-white items-center justify-center backdrop-blur-md transition cursor-pointer hover:scale-105 active:scale-95"
-          title="Next Photo (Right Arrow)"
-        >
-          <ChevronRight className="w-6 h-6" />
-        </button>
+        {photos.length > 1 && (
+          <button
+            type="button"
+            onClick={handleNext}
+            className="hidden md:flex absolute right-4 sm:right-6 z-30 w-12 h-12 rounded-full bg-black/50 hover:bg-black/90 border border-white/20 text-white items-center justify-center backdrop-blur-md transition cursor-pointer hover:scale-105 active:scale-95 shadow-xl"
+            title="Next Photo (Right Arrow)"
+          >
+            <ChevronRight className="w-6 h-6" />
+          </button>
+        )}
       </div>
 
-      {/* 3. BOTTOM THUMBNAIL FILMSTRIP */}
-      <div className="p-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-20">
-        <div className="flex items-center justify-center gap-2 overflow-x-auto py-1 max-w-4xl mx-auto scrollbar-thin">
-          {photos.map((p, idx) => {
-            const isCurrent = idx === currentIndex;
-            return (
-              <button
-                key={p.id}
-                onClick={() => onNavigate(idx)}
-                className={`relative shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
-                  isCurrent
-                    ? 'border-amber-500 scale-105 ring-2 ring-amber-400/50 opacity-100'
-                    : 'border-white/20 opacity-60 hover:opacity-100'
-                }`}
-              >
-                <img
-                  src={p.thumbnail_url || p.preview_url}
-                  alt="Thumb"
-                  className="w-full h-full object-cover"
-                />
-              </button>
-            );
-          })}
+      {/* 3. CENTER BOTTOM LIKE / HEART BUTTON IN SELECTION MODE */}
+      {isSelectionMode && onToggleSelect && (
+        <div className="absolute bottom-6 inset-x-0 flex items-center justify-center z-30 pointer-events-none">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect(currentPhoto.id);
+            }}
+            className="pointer-events-auto px-5 py-2.5 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-xl border border-white/20 transition-all duration-200 hover:scale-105 active:scale-95 shadow-2xl cursor-pointer flex items-center gap-2 text-white"
+            title={isSelected ? 'Remove from Selection' : 'Select for Album'}
+          >
+            <Heart
+              className={`w-6 h-6 transition-transform duration-200 ${
+                isSelected
+                  ? 'fill-[#DC2626] text-[#DC2626] scale-110 drop-shadow-[0_2px_8px_rgba(220,38,38,0.9)]'
+                  : 'fill-transparent text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)]'
+              }`}
+            />
+            <span className="text-xs sm:text-sm font-bold tracking-wide">
+              {isSelected ? 'Selected' : 'Select Photo'}
+            </span>
+          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -681,6 +681,10 @@ function GuestSlugGalleryContent() {
         setHasSearched(true);
         setIsVerified(true);
         setIsMyPhotosActive(true);
+        if (isPrivilegedMode) {
+          setSelectedCollectionId('my_photos');
+          setShowOnlySelected(false);
+        }
         try {
           const profObj = {
             id: savedGuestId,
@@ -785,31 +789,18 @@ function GuestSlugGalleryContent() {
       const json = await res.json();
       const directUrl = (json.success && json.downloadUrl) ? json.downloadUrl : photo.preview_url;
 
-      // 1. iPhone iOS Safari: native Save Image to Camera Roll via Web Share API
-      const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
-      if (isIOS && typeof navigator.share === 'function') {
-        try {
-          const imgRes = await fetch(directUrl);
-          const blob = await imgRes.blob();
-          const file = new File([blob], originalFileName, { type: blob.type || 'image/jpeg' });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: originalFileName,
-            });
-            return;
-          }
-        } catch (_) {}
-      }
-
-      // 2. Android & Desktop: Direct single-click download with original filename
+      // Direct single-click instant download without opening save file picker or share sheet
+      const imgRes = await fetch(directUrl);
+      const blob = await imgRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = directUrl;
-      link.setAttribute('download', originalFileName);
-      link.setAttribute('rel', 'noopener noreferrer');
+      link.href = blobUrl;
+      link.download = originalFileName;
+      link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
       return;
     } catch (_) {}
 
@@ -1008,8 +999,9 @@ function GuestSlugGalleryContent() {
 
   const handleSubmitSelection = async () => {
     if (!gallery?.id) return;
-    const effectiveEmail = selectorEmail || guestSavedSession?.email || (gallery as any)?.client_email || 'guest@gallery.local';
-    const effectiveName = selectorName || guestSavedSession?.name || 'Guest Client';
+    const defaultName = (gallery as any)?.client_name || gallery?.title || 'Client';
+    const effectiveName = selectorName || guestSavedSession?.name || defaultName;
+    const effectiveEmail = selectorEmail || guestSavedSession?.email || (gallery as any)?.client_email || `${gallery?.slug || 'client'}@selection.local`;
 
     if (selectedForAlbum.size === 0) {
       alert('Please select at least 1 photo for your album before submitting.');
@@ -1091,6 +1083,28 @@ function GuestSlugGalleryContent() {
     setShowSelectorModal(true);
   };
 
+  const handleTogglePhotoSelection = useCallback((photoId: string) => {
+    if (isSelectionSubmitted) return;
+    if (!selectorEmail) {
+      setShowSelectorModal(true);
+      return;
+    }
+    setSelectedForAlbum((prev) => {
+      const next = new Set(prev);
+      if (next.has(photoId)) {
+        next.delete(photoId);
+      } else {
+        if (effectiveMaxSelectionLimit && next.size >= effectiveMaxSelectionLimit) {
+          alert(`You can select up to a maximum of ${effectiveMaxSelectionLimit} photos. Please unselect another photo to choose this one.`);
+          return prev;
+        }
+        next.add(photoId);
+      }
+      syncSelectionToBackend(next, selectorName, selectorEmail);
+      return next;
+    });
+  }, [isSelectionSubmitted, selectorEmail, effectiveMaxSelectionLimit, syncSelectionToBackend, selectorName]);
+
   // LocalStorage persistence for Album Selection Mode
   useEffect(() => {
     if (!gallery?.id || !isSelectionMode) return;
@@ -1115,8 +1129,9 @@ function GuestSlugGalleryContent() {
   // Real-time debounced auto-sync to backend (guaranteed persistence across devices/tabs)
   useEffect(() => {
     if (!gallery?.id || !isSelectionMode) return;
-    const effectiveEmail = selectorEmail || guestSavedSession?.email || (gallery as any)?.client_email || 'guest@gallery.local';
-    const effectiveName = selectorName || guestSavedSession?.name || 'Guest Client';
+    const defaultName = (gallery as any)?.client_name || gallery?.title || 'Client';
+    const effectiveName = selectorName || guestSavedSession?.name || defaultName;
+    const effectiveEmail = selectorEmail || guestSavedSession?.email || (gallery as any)?.client_email || `${gallery?.slug || 'client'}@selection.local`;
 
     const timer = setTimeout(() => {
       syncSelectionToBackend(selectedForAlbum, effectiveName, effectiveEmail);
@@ -1135,7 +1150,11 @@ function GuestSlugGalleryContent() {
     }
 
     // 2. Privileged Access mode (Full Access / Album Selection)
-    if (isSelectionMode && showOnlySelected) {
+    if (selectedCollectionId === 'my_photos') {
+      return matchedPhotos;
+    }
+
+    if (isSelectionMode && (showOnlySelected || selectedCollectionId === 'selected')) {
       return targetFullPhotos.filter((p) => selectedForAlbum.has(p.id));
     }
 
@@ -1504,11 +1523,12 @@ function GuestSlugGalleryContent() {
       <div className="pt-3">
         <a
           href="#sub-events-bar"
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 text-white font-bold text-xs uppercase tracking-wider transition-all duration-300 hover:scale-105 active:scale-95 shadow-lg cursor-pointer"
-          aria-label="View gallery photos"
+          className="inline-flex flex-col items-center gap-1 opacity-75 hover:opacity-100 transition-all cursor-pointer group"
+          style={{ color: designPalette.textColor }}
+          aria-label="Scroll to gallery photos"
         >
-          <span>View Gallery Photos</span>
-          <ArrowDown className="w-3.5 h-3.5 animate-bounce" />
+          <div className="w-px h-6 bg-current opacity-40 group-hover:h-8 transition-all" />
+          <ArrowDown className="w-4 h-4 group-hover:translate-y-1 transition-transform animate-bounce" />
         </a>
       </div>
     );
@@ -2159,16 +2179,59 @@ function GuestSlugGalleryContent() {
                     <span className="font-mono">({collections.length + 1})</span>
                   </div>
                   <div className="max-h-72 overflow-y-auto py-1 scrollbar-thin">
+                    {/* In Selection Mode: Selected Photos in Dropdown */}
+                    {isSelectionMode && selectedForAlbum.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCollectionId('selected');
+                          setShowOnlySelected(true);
+                          setIsSubEventsDropdownOpen(false);
+                        }}
+                        className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
+                          selectedCollectionId === 'selected' || showOnlySelected ? 'font-bold text-rose-600' : 'opacity-85'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Heart className="w-3.5 h-3.5 fill-rose-600 text-rose-600" />
+                          <span>Selected Photos</span>
+                        </span>
+                        <span className="text-[10px] font-mono font-bold text-rose-600">({selectedForAlbum.size})</span>
+                      </button>
+                    )}
+
+                    {/* Matched Face AI Photos in Dropdown */}
+                    {isPrivilegedMode && matchedPhotos.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCollectionId('my_photos');
+                          setShowOnlySelected(false);
+                          setIsSubEventsDropdownOpen(false);
+                        }}
+                        className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
+                          selectedCollectionId === 'my_photos' ? 'font-bold text-amber-600' : 'opacity-85'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <FaceAiFocusIcon className="w-3.5 h-3.5 text-amber-500" />
+                          <span>{guestName || 'My Photos'}</span>
+                        </span>
+                        <span className="text-[10px] font-mono font-bold text-amber-600">({matchedPhotos.length})</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedCollectionId('all');
+                        setShowOnlySelected(false);
                         setIsSubEventsDropdownOpen(false);
                       }}
                       className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
-                        selectedCollectionId === 'all' ? 'font-bold' : 'opacity-85'
+                        selectedCollectionId === 'all' && !showOnlySelected ? 'font-bold' : 'opacity-85'
                       }`}
-                      style={selectedCollectionId === 'all' ? { color: designPalette.accentColor } : {}}
+                      style={selectedCollectionId === 'all' && !showOnlySelected ? { color: designPalette.accentColor } : {}}
                     >
                       <span>All Photos</span>
                       <span className="text-[10px] opacity-60 font-mono">
@@ -2187,6 +2250,7 @@ function GuestSlugGalleryContent() {
                           type="button"
                           onClick={() => {
                             setSelectedCollectionId(col.id);
+                            setShowOnlySelected(false);
                             setIsSubEventsDropdownOpen(false);
                           }}
                           className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
@@ -2207,14 +2271,61 @@ function GuestSlugGalleryContent() {
 
           {/* Sub-Events Horizontal Scrollable Bar */}
           <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-0.5 scroll-smooth flex-1 min-w-0">
+            {/* 1. Selection Mode: Dedicated Selected Photos Tab BEFORE All Photos */}
+            {isSelectionMode && selectedForAlbum.size > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCollectionId('selected');
+                  setShowOnlySelected(true);
+                }}
+                className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 shadow-2xs flex items-center gap-1.5 ${
+                  selectedCollectionId === 'selected' || showOnlySelected ? 'font-black ring-2 ring-rose-400/40' : 'opacity-85 hover:opacity-100'
+                }`}
+                style={
+                  selectedCollectionId === 'selected' || showOnlySelected
+                    ? { backgroundColor: '#DC2626', color: '#FFFFFF' }
+                    : { backgroundColor: `${designPalette.textColor}0D`, color: designPalette.textColor }
+                }
+              >
+                <Heart className={`w-3 h-3 ${selectedCollectionId === 'selected' || showOnlySelected ? 'fill-white text-white' : 'fill-rose-500 text-rose-500'}`} />
+                <span>Selected Photos ({selectedForAlbum.size})</span>
+              </button>
+            )}
+
+            {/* 2. Full Access / Selection Mode: Face AI Matched Photos Tab BEFORE All Photos */}
+            {isPrivilegedMode && matchedPhotos.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCollectionId('my_photos');
+                  setShowOnlySelected(false);
+                }}
+                className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 shadow-2xs flex items-center gap-1.5 ${
+                  selectedCollectionId === 'my_photos' ? 'font-black ring-2 ring-amber-400/40' : 'opacity-85 hover:opacity-100'
+                }`}
+                style={
+                  selectedCollectionId === 'my_photos'
+                    ? { backgroundColor: designPalette.accentColor, color: '#FFFFFF' }
+                    : { backgroundColor: `${designPalette.textColor}0D`, color: designPalette.textColor }
+                }
+              >
+                <FaceAiFocusIcon className="w-3 h-3" />
+                <span>{guestName || 'My Photos'} ({matchedPhotos.length})</span>
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => setSelectedCollectionId('all')}
+              onClick={() => {
+                setSelectedCollectionId('all');
+                setShowOnlySelected(false);
+              }}
               className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 shadow-2xs ${
-                selectedCollectionId === 'all' ? 'font-black' : 'opacity-70 hover:opacity-100'
+                selectedCollectionId === 'all' && !showOnlySelected ? 'font-black' : 'opacity-70 hover:opacity-100'
               }`}
               style={
-                selectedCollectionId === 'all'
+                selectedCollectionId === 'all' && !showOnlySelected
                   ? { backgroundColor: designPalette.accentColor, color: '#FFFFFF' }
                   : { backgroundColor: `${designPalette.textColor}0D`, color: designPalette.textColor }
               }
@@ -2230,7 +2341,10 @@ function GuestSlugGalleryContent() {
                 <button
                   key={col.id}
                   type="button"
-                  onClick={() => setSelectedCollectionId(col.id)}
+                  onClick={() => {
+                    setSelectedCollectionId(col.id);
+                    setShowOnlySelected(false);
+                  }}
                   className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 shadow-2xs ${
                     isSel ? 'font-black' : 'opacity-70 hover:opacity-100'
                   }`}
@@ -2246,8 +2360,8 @@ function GuestSlugGalleryContent() {
             })}
           </div>
 
-          {/* Right side: Action buttons with explicit text labels */}
-          <div className="hidden sm:flex items-center gap-2 shrink-0">
+          {/* Right side: Action buttons (Find My Photos, Download, Share) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
 
             {isPrivilegedMode && !isUnlocked && (
               <button
@@ -2262,7 +2376,25 @@ function GuestSlugGalleryContent() {
                 }}
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span>Private Photos</span>
+                <span className="hidden sm:inline">Private Photos</span>
+              </button>
+            )}
+
+            {/* Find My Photos Button with Face Icon before Download */}
+            {isPrivilegedMode && gallery.is_face_ai_enabled !== false && (
+              <button
+                type="button"
+                onClick={() => setIsFaceScannerOpen(true)}
+                title="Find My Photos with AI Face Search"
+                className="px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95"
+                style={{
+                  backgroundColor: `${designPalette.textColor}0A`,
+                  borderColor: `${designPalette.textColor}25`,
+                  color: designPalette.textColor,
+                }}
+              >
+                <FaceAiFocusIcon className="w-3.5 h-3.5 text-amber-500" />
+                <span className="hidden sm:inline">Find My Photos</span>
               </button>
             )}
 
@@ -2271,7 +2403,7 @@ function GuestSlugGalleryContent() {
               onClick={handleDownloadAllPhotosTrigger}
               title="Download Photos"
               disabled={isDownloadingAll}
-              className="px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95 disabled:opacity-50"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95 disabled:opacity-50"
               style={{
                 backgroundColor: `${designPalette.textColor}0A`,
                 borderColor: `${designPalette.textColor}25`,
@@ -2283,14 +2415,14 @@ function GuestSlugGalleryContent() {
               ) : (
                 <Download className="w-3.5 h-3.5" />
               )}
-              <span>Download</span>
+              <span className="hidden sm:inline">Download</span>
             </button>
 
             <button
               type="button"
               onClick={handleShareClick}
               title="Share Gallery Link"
-              className="px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-95"
               style={{
                 backgroundColor: `${designPalette.textColor}0A`,
                 borderColor: `${designPalette.textColor}25`,
@@ -2298,7 +2430,7 @@ function GuestSlugGalleryContent() {
               }}
             >
               <Share2 className="w-3.5 h-3.5" />
-              <span>Share</span>
+              <span className="hidden sm:inline">Share</span>
             </button>
           </div>
         </div>
@@ -2493,26 +2625,7 @@ function GuestSlugGalleryContent() {
                 // Clicking on photo card ALWAYS opens the high-resolution lightbox viewer
                 setSelectedPhotoIndex(idx);
               }}
-              onToggleSelect={(photo) => {
-                // ONLY clicking the heart icon toggles album selection / deselection
-                if (isSelectionSubmitted) return;
-                if (!selectorEmail) {
-                  setShowSelectorModal(true);
-                  return;
-                }
-                const next = new Set(selectedForAlbum);
-                if (selectedForAlbum.has(photo.id)) {
-                  next.delete(photo.id);
-                } else {
-                  if (effectiveMaxSelectionLimit && next.size >= effectiveMaxSelectionLimit) {
-                    alert(`You can select up to a maximum of ${effectiveMaxSelectionLimit} photos. Please unselect another photo to choose this one.`);
-                    return;
-                  }
-                  next.add(photo.id);
-                }
-                setSelectedForAlbum(next);
-                syncSelectionToBackend(next, selectorName, selectorEmail);
-              }}
+              onToggleSelect={(photo) => handleTogglePhotoSelection(photo.id)}
               onDownloadPhoto={handleDownloadPhoto}
             />
 
@@ -2726,15 +2839,25 @@ function GuestSlugGalleryContent() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowOnlySelected(!showOnlySelected)}
+              onClick={() => {
+                if (selectedCollectionId === 'selected' || showOnlySelected) {
+                  setSelectedCollectionId('all');
+                  setShowOnlySelected(false);
+                } else {
+                  setSelectedCollectionId('selected');
+                  setShowOnlySelected(true);
+                  const el = document.getElementById('sub-events-bar') || document.getElementById('gallery-content');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                showOnlySelected
+                selectedCollectionId === 'selected' || showOnlySelected
                   ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
                   : 'bg-white text-zinc-700 border border-[#E7E2D8] hover:bg-[#F2EEE6]'
               }`}
             >
-              <Heart className={`w-3.5 h-3.5 ${showOnlySelected ? 'fill-white text-white' : 'fill-rose-500 text-rose-500'}`} />
-              <span>{showOnlySelected ? 'All Photos' : `Selected (${selectedForAlbum.size})`}</span>
+              <Heart className={`w-3.5 h-3.5 ${selectedCollectionId === 'selected' || showOnlySelected ? 'fill-white text-white' : 'fill-rose-500 text-rose-500'}`} />
+              <span>Selected Photos ({selectedForAlbum.size})</span>
             </button>
 
             {!isSelectionSubmitted ? (
@@ -3028,6 +3151,9 @@ function GuestSlugGalleryContent() {
           onClose={() => setSelectedPhotoIndex(null)}
           onNavigate={(idx) => setSelectedPhotoIndex(idx)}
           onDownload={handleDownloadPhoto as any}
+          onToggleSelect={isSelectionMode ? handleTogglePhotoSelection : undefined}
+          isSelected={selectedForAlbum.has(displayedPhotos[selectedPhotoIndex]?.id)}
+          isSelectionMode={isSelectionMode}
           allowDownloads={gallery.allow_downloads ?? true}
         />
       )}

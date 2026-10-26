@@ -302,8 +302,21 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const normalizedEmail = (client_email || 'guest@gallery.local').toLowerCase().trim();
-    const cleanName = (client_name || 'Guest Client').trim();
+    let cleanName = (client_name || '').trim();
+    let normalizedEmail = (client_email || '').toLowerCase().trim();
+
+    if (!cleanName || cleanName === 'Guest' || cleanName === 'Guest Client') {
+      try {
+        const { data: g } = await supabaseAdmin.from('event_galleries').select('title').eq('id', gallery_id).maybeSingle();
+        cleanName = g?.title ? `${g.title} (Client)` : 'Client Selection';
+      } catch (_) {
+        cleanName = 'Client Selection';
+      }
+    }
+
+    if (!normalizedEmail || normalizedEmail === 'guest@gallery.local') {
+      normalizedEmail = `${gallery_id.substring(0, 8)}@selection.local`;
+    }
     const photoIds = Array.isArray(selected_photo_ids) ? selected_photo_ids : [];
     const limit = Number(max_limit) || 50;
     const isSubmitted = Boolean(is_submitted);
