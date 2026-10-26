@@ -310,6 +310,7 @@ export async function batchUploadPhotos(
               'x-filetype': file.type || 'image/jpeg',
               'x-workspace-id': workspaceId || '',
               'x-collection-id': collectionId && collectionId !== 'all' ? collectionId : '',
+              'x-api-origin': typeof window !== 'undefined' ? window.location.origin : 'https://studiocore.in',
             },
             body: file,
             signal,
@@ -357,9 +358,9 @@ export async function batchUploadPhotos(
           if (!urlJson.success) throw new Error(urlJson.error || 'Failed to get upload URLs');
 
           await Promise.all([
-            uploadToPresignedUrl(urlJson.originalUploadUrl, file, file.type || 'image/jpeg', signal),
-            uploadToPresignedUrl(urlJson.previewUploadUrl, variants.previewBlob, 'image/webp', signal),
-            uploadToPresignedUrl(urlJson.thumbUploadUrl, variants.thumbBlob, 'image/webp', signal),
+            uploadBlobToPresignedUrl(urlJson.originalUploadUrl, file, file.type || 'image/jpeg', undefined, signal),
+            uploadBlobToPresignedUrl(urlJson.previewUploadUrl, variants.preview, 'image/webp', undefined, signal),
+            uploadBlobToPresignedUrl(urlJson.thumbUploadUrl, variants.thumb, 'image/webp', undefined, signal),
           ]);
 
           const regRes = await fetch('/api/gallery/photos/register', {

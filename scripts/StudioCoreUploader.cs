@@ -18,7 +18,7 @@ namespace StudioCoreUploader
     static class Program
     {
         public const string AppName = "StudioCore Desktop Uploader";
-        public const string AppVersion = "2.3.0";
+        public const string AppVersion = "2.4.0";
         private const string RegistryRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string RegistryValueName = "StudioCoreUploader";
         public const int Port = 41789;
@@ -99,12 +99,15 @@ namespace StudioCoreUploader
                 SetAutoStart(targetExe, true);
                 EnsureShortcuts(targetExe);
 
-                Application.Run(new TrayForm(Port, targetExe, targetDir));
+                Log("Starting Application.Run(TrayAppContext)...");
+                Application.Run(new TrayAppContext(Port, targetExe, targetDir));
+                Log("Application.Run exited normally.");
             }
             catch (Exception ex)
             {
                 Log("[FATAL GUI] " + ex.ToString());
             }
+            Log("Main finished, process terminating.");
         }
 
         public static void Log(string msg)
@@ -184,6 +187,12 @@ namespace StudioCoreUploader
                 string galleryId = req.Headers["x-gallery-id"] ?? "";
                 string workspaceId = req.Headers["x-workspace-id"] ?? "";
                 string collectionId = req.Headers["x-collection-id"] ?? "";
+                string apiOrigin = req.Headers["x-api-origin"];
+                if (string.IsNullOrEmpty(apiOrigin) || (!apiOrigin.StartsWith("http://") && !apiOrigin.StartsWith("https://")))
+                {
+                    apiOrigin = "https://studiocore.in";
+                }
+                apiOrigin = apiOrigin.TrimEnd('/');
 
                 try
                 {
@@ -224,10 +233,10 @@ namespace StudioCoreUploader
                                 imgHeight = srcImg.Height;
 
                                 // Generate 2048px High-Res Preview (~115 KB)
-                                previewBytes = ResizeImage(srcImg, 2048, 78L);
+                                previewBytes = ResizeImage(srcImg, 2048, 72L);
 
                                 // Generate 480px Fast Thumbnail (~18 KB)
-                                thumbBytes = ResizeImage(srcImg, 480, 65L);
+                                thumbBytes = ResizeImage(srcImg, 480, 60L);
                             }
                         }
                         catch (Exception exImg)
@@ -243,7 +252,7 @@ namespace StudioCoreUploader
 
                         // 2. Request presigned upload URLs from StudioCore API
                         string getUrlPayload = "{\"galleryId\":\"" + galleryId + "\",\"filename\":\"" + filename + "\",\"filesize\":" + originalBytes.Length + ",\"workspaceId\":\"" + workspaceId + "\",\"collectionId\":\"" + collectionId + "\"}";
-                        string urlJson = await PostJsonAsync("https://studiocore.in/api/gallery/upload-url", getUrlPayload);
+                        string urlJson = await PostJsonAsync(apiOrigin + "/api/gallery/upload-url", getUrlPayload);
 
                         string originalUploadUrl = ExtractJsonValue(urlJson, "originalUploadUrl");
                         string previewUploadUrl = ExtractJsonValue(urlJson, "previewUploadUrl");
@@ -277,7 +286,7 @@ namespace StudioCoreUploader
                             + "\"height\":" + imgHeight + ","
                             + "\"size_bytes\":" + originalBytes.Length
                             + "}]}";
-                        await PostJsonAsync("https://studiocore.in/api/gallery/photos/register", registerPayload);
+                        await PostJsonAsync(apiOrigin + "/api/gallery/photos/register", registerPayload);
                         Log("Successfully registered " + filename + " in database");
 
                         res.ContentType = "application/json";
@@ -360,7 +369,7 @@ namespace StudioCoreUploader
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "POST";
             req.ContentType = "application/json";
-            req.UserAgent = "StudioCore-Turbo-Engine/2.3 (" + Environment.OSVersion.ToString() + ")";
+            req.UserAgent = "StudioCore-Turbo-Engine/2.4 (" + Environment.OSVersion.ToString() + ")";
             req.Timeout = 60000;
             req.ReadWriteTimeout = 60000;
 
@@ -370,11 +379,36 @@ namespace StudioCoreUploader
             {
                 await os.WriteAsync(bytes, 0, bytes.Length);
             }
-            using (WebResponse resp = await req.GetResponseAsync())
-            using (StreamReader sr = new StreamReader(resp.GetResponseStream()))
+            string errBody = null;
+            int statusCode = 500;
+            try
             {
-                return await sr.ReadToEndAsync();
+                using (WebResponse resp = await req.GetResponseAsync())
+                using (StreamReader sr = new StreamReader(resp.GetResponseStream()))
+                {
+                    return await sr.ReadToEndAsync();
+                }
             }
+            catch (WebException wex)
+            {
+                if (wex.Response != null)
+                {
+                    using (StreamReader sr = new StreamReader(wex.Response.GetResponseStream()))
+                    {
+                        errBody = sr.ReadToEnd();
+                    }
+                    statusCode = (int)((HttpWebResponse)wex.Response).StatusCode;
+                }
+                else
+                {
+                    throw;
+                }
+            }
+            if (errBody != null)
+            {
+                throw new Exception("HTTP " + statusCode + ": " + errBody);
+            }
+            return null;
         }
 
         private static async Task<bool> PutBinaryAsync(string url, byte[] data, string contentType)
@@ -383,7 +417,7 @@ namespace StudioCoreUploader
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "PUT";
             req.ContentType = contentType;
-            req.UserAgent = "StudioCore-Turbo-Engine/2.3";
+            req.UserAgent = "StudioCore-Turbo-Engine/2.4";
             req.Timeout = 120000;
             req.ReadWriteTimeout = 120000;
             req.ContentLength = data.Length;
@@ -635,24 +669,19 @@ namespace StudioCoreUploader
         }
     }
 
-    public class TrayForm : Form
+    public class TrayAppContext : ApplicationContext
     {
         private NotifyIcon _trayIcon;
         private readonly string _targetExe;
         private readonly string _logsDir;
         private readonly int _port;
 
-        public TrayForm(int port, string targetExe, string targetDir)
+        public TrayAppContext(int port, string targetExe, string targetDir)
         {
             _port = port;
             _targetExe = targetExe;
             _logsDir = Path.Combine(targetDir, "logs");
             if (!Directory.Exists(_logsDir)) Directory.CreateDirectory(_logsDir);
-
-            this.ShowInTaskbar = false;
-            this.WindowState = FormWindowState.Minimized;
-            this.FormBorderStyle = FormBorderStyle.None;
-            this.Size = new Size(0, 0);
 
             // Enterprise Tray Menu
             ContextMenu trayMenu = new ContextMenu();
@@ -690,16 +719,22 @@ namespace StudioCoreUploader
                     });
                 }
                 catch { }
-                if (_trayIcon != null) _trayIcon.Visible = false;
-                this.Close();
-                Application.Exit();
+                if (_trayIcon != null)
+                {
+                    _trayIcon.Visible = false;
+                    _trayIcon.Dispose();
+                }
+                ExitThread();
             });
 
             MenuItem quitItem = new MenuItem("❌ Quit", delegate(object s, EventArgs e)
             {
-                if (_trayIcon != null) _trayIcon.Visible = false;
-                this.Close();
-                Application.Exit();
+                if (_trayIcon != null)
+                {
+                    _trayIcon.Visible = false;
+                    _trayIcon.Dispose();
+                }
+                ExitThread();
             });
 
             trayMenu.MenuItems.Add(versionItem);
@@ -740,20 +775,6 @@ namespace StudioCoreUploader
             {
                 Program.Log("NotifyIcon initialization warning: " + ex.Message);
             }
-        }
-
-        protected override void SetVisibleCore(bool value)
-        {
-            base.SetVisibleCore(false);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                if (_trayIcon != null) _trayIcon.Dispose();
-            }
-            base.Dispose(disposing);
         }
     }
 }

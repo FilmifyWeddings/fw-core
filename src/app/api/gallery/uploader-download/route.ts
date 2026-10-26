@@ -4,9 +4,7 @@ import { getGalleryPresignedDownloadUrl, B2_GALLERY_BUCKET_NAME } from '@/lib/st
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const os = req.nextUrl.searchParams.get('os');
-  const isMac = os === 'mac' || os === 'darwin';
-  const filename = isMac ? 'StudioCore-Uploader-Mac.zip' : 'StudioCore-Uploader-Setup.exe';
+  const filename = 'StudioCore-Uploader-Setup.exe';
   const key = `downloads/${filename}`;
 
   try {
