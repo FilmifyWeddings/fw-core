@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { extractFacesFromS3Key, extractFacesBatchFromS3Keys } from '@/lib/faceAI';
+import { deleteGalleryObjects, deleteGalleryPrefix } from '@/lib/storage/galleryB2Client';
 
 export const dynamic = 'force-dynamic';
 
@@ -715,31 +716,94 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Gallery ID is required' }, { status: 400 });
     }
 
+    // 1. Fetch existing gallery to verify access and obtain workspace_id & storage metadata
+    const { data: existing } = await supabaseAdmin
+      .from('event_galleries')
+      .select('id, workspace_id, cover_url, r2_folder_prefix')
+      .eq('id', id)
+      .maybeSingle();
+
     // Tenant check
     if (auth.userId && !auth.isSuperAdmin) {
-      const { data: existing } = await supabaseAdmin
-        .from('event_galleries')
-        .select('workspace_id')
-        .eq('id', id)
-        .maybeSingle();
-
       const userWsId = requestedWorkspaceId || auth.userId;
       if (existing && existing.workspace_id && existing.workspace_id !== userWsId && existing.workspace_id !== '00000000-0000-0000-0000-000000000000') {
         return NextResponse.json({ success: false, error: 'Unauthorized to delete this gallery' }, { status: 403 });
       }
     }
 
-    // Cascade delete gallery photos, collections, and face records
+    // 2. Fetch all photos belonging to this gallery to retrieve Backblaze B2 storage keys
+    const { data: galleryPhotos } = await supabaseAdmin
+      .from('gallery_photos')
+      .select('id, original_key, preview_key, thumbnail_key')
+      .eq('gallery_id', id);
+
+    const photoIds = (galleryPhotos || []).map((p) => p.id);
+    const storageKeys: string[] = [];
+    if (existing?.cover_url) {
+      storageKeys.push(existing.cover_url);
+    }
+    (galleryPhotos || []).forEach((p) => {
+      if (p.original_key) storageKeys.push(p.original_key);
+      if (p.preview_key) storageKeys.push(p.preview_key);
+      if (p.thumbnail_key) storageKeys.push(p.thumbnail_key);
+    });
+
+    // 3. Purge explicit storage keys from Backblaze B2
+    if (storageKeys.length > 0) {
+      try {
+        const purgeResult = await deleteGalleryObjects(storageKeys);
+        console.log(`[GalleryEvents] Purged ${purgeResult.deleted} individual files from Backblaze B2 for gallery ${id}.`);
+      } catch (purgeErr) {
+        console.warn('[GalleryEvents] deleteGalleryObjects error:', purgeErr);
+      }
+    }
+
+    // 4. Purge entire S3 folder prefixes for this gallery to clean up any uncataloged or thumbnail artifacts
+    const prefixesToPurge = new Set<string>();
+    if (existing?.workspace_id) {
+      prefixesToPurge.add(`galleries/${existing.workspace_id}/${id}/`);
+    }
+    prefixesToPurge.add(`galleries/00000000-0000-0000-0000-000000000000/${id}/`);
+    prefixesToPurge.add(`events/${id}/`);
+    if (existing?.r2_folder_prefix) {
+      const p = existing.r2_folder_prefix.trim();
+      if (p) prefixesToPurge.add(p.endsWith('/') ? p : `${p}/`);
+    }
+
+    for (const prefix of prefixesToPurge) {
+      try {
+        const prefixRes = await deleteGalleryPrefix(prefix);
+        if (prefixRes.deleted > 0) {
+          console.log(`[GalleryEvents] Purged ${prefixRes.deleted} prefix files under ${prefix}`);
+        }
+      } catch (prefixErr) {
+        console.warn(`[GalleryEvents] deleteGalleryPrefix error for ${prefix}:`, prefixErr);
+      }
+    }
+
+    // 5. Cascade delete related records from Supabase
     try {
+      if (photoIds.length > 0) {
+        await supabaseAdmin.from('photo_faces').delete().in('photo_id', photoIds);
+      }
       await supabaseAdmin.from('photo_faces').delete().eq('gallery_id', id);
       await supabaseAdmin.from('gallery_photos').delete().eq('gallery_id', id);
       await supabaseAdmin.from('gallery_collections').delete().eq('gallery_id', id);
-    } catch (_) {}
+      await supabaseAdmin.from('gallery_selections').delete().eq('gallery_id', id);
+      await supabaseAdmin.from('gallery_guests').delete().eq('gallery_id', id);
+    } catch (dbCascadeErr) {
+      console.warn('[GalleryEvents] Supabase cascade cleanup notice:', dbCascadeErr);
+    }
 
     const { error } = await supabaseAdmin.from('event_galleries').delete().eq('id', id);
 
     if (error) throw error;
-    return NextResponse.json({ success: true, deletedId: id });
+    return NextResponse.json({
+      success: true,
+      deletedId: id,
+      purgedPhotosCount: photoIds.length,
+      purgedStorageKeysCount: storageKeys.length,
+    });
   } catch (err: any) {
     console.error('Error deleting event gallery:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
