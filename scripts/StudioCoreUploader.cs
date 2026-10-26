@@ -90,7 +90,7 @@ namespace StudioCoreUploader
             {
                 StartHttpServer(Port, targetDir);
             });
-            serverThread.IsBackground = true;
+            serverThread.IsBackground = false;
             serverThread.Start();
 
             // 3. Running in System Tray
@@ -99,8 +99,8 @@ namespace StudioCoreUploader
                 SetAutoStart(targetExe, true);
                 EnsureShortcuts(targetExe);
 
-                Log("Starting Application.Run(TrayAppContext)...");
-                Application.Run(new TrayAppContext(Port, targetExe, targetDir));
+                Log("Starting Application.Run(TrayForm)...");
+                Application.Run(new TrayForm(Port, targetExe, targetDir));
                 Log("Application.Run exited normally.");
             }
             catch (Exception ex)
@@ -669,19 +669,24 @@ namespace StudioCoreUploader
         }
     }
 
-    public class TrayAppContext : ApplicationContext
+    public class TrayForm : Form
     {
         private NotifyIcon _trayIcon;
         private readonly string _targetExe;
         private readonly string _logsDir;
         private readonly int _port;
 
-        public TrayAppContext(int port, string targetExe, string targetDir)
+        public TrayForm(int port, string targetExe, string targetDir)
         {
             _port = port;
             _targetExe = targetExe;
             _logsDir = Path.Combine(targetDir, "logs");
             if (!Directory.Exists(_logsDir)) Directory.CreateDirectory(_logsDir);
+
+            this.ShowInTaskbar = false;
+            this.WindowState = FormWindowState.Minimized;
+            this.FormBorderStyle = FormBorderStyle.None;
+            this.Size = new Size(0, 0);
 
             // Enterprise Tray Menu
             ContextMenu trayMenu = new ContextMenu();
@@ -724,7 +729,9 @@ namespace StudioCoreUploader
                     _trayIcon.Visible = false;
                     _trayIcon.Dispose();
                 }
-                ExitThread();
+                if (_trayIcon != null) { _trayIcon.Visible = false; _trayIcon.Dispose(); }
+                this.Close();
+                Environment.Exit(0);
             });
 
             MenuItem quitItem = new MenuItem("❌ Quit", delegate(object s, EventArgs e)
@@ -734,7 +741,9 @@ namespace StudioCoreUploader
                     _trayIcon.Visible = false;
                     _trayIcon.Dispose();
                 }
-                ExitThread();
+                if (_trayIcon != null) { _trayIcon.Visible = false; _trayIcon.Dispose(); }
+                this.Close();
+                Environment.Exit(0);
             });
 
             trayMenu.MenuItems.Add(versionItem);
@@ -775,6 +784,20 @@ namespace StudioCoreUploader
             {
                 Program.Log("NotifyIcon initialization warning: " + ex.Message);
             }
+        }
+
+        protected override void SetVisibleCore(bool value)
+        {
+            base.SetVisibleCore(false);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_trayIcon != null) _trayIcon.Dispose();
+            }
+            base.Dispose(disposing);
         }
     }
 }
