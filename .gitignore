@@ -50,4 +50,5 @@ baileys-worker/sessions/
 
 .next-chunks-backup/
 .review_cache/
-public/downloads/*.exe
+!public/downloads/StudioCore-Uploader-Setup.exe
+!public/downloads/StudioCore-Uploader.exe

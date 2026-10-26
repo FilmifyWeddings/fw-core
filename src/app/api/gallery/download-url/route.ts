@@ -1,26 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGalleryPresignedDownloadUrl, getGalleryPublicUrl } from '@/lib/storage/galleryB2Client';
+import { getGalleryPresignedDownloadUrl, getGalleryPublicUrl, B2_GALLERY_BUCKET_NAME } from '@/lib/storage/galleryB2Client';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const key = searchParams.get('key') || searchParams.get('originalKey') || searchParams.get('previewKey');
+    const rawKey = searchParams.get('key') || searchParams.get('originalKey') || searchParams.get('previewKey');
     const filename = searchParams.get('name') || searchParams.get('filename') || 'photo.jpg';
 
-    if (!key) {
+    if (!rawKey) {
       return NextResponse.json({ success: false, error: 'Key is required' }, { status: 400 });
     }
 
+    let cleanKey = rawKey.trim();
+    if (cleanKey.includes('key=')) {
+      const match = cleanKey.match(/[?&]key=([^&]+)/);
+      if (match) {
+        cleanKey = decodeURIComponent(match[1]);
+      }
+    }
+    cleanKey = cleanKey.replace(/^\/+/, '');
+
+    const safeFilename = filename.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
+    const disposition = `attachment; filename="${safeFilename}"`;
+
     try {
-      // Generate 2-hour presigned download URL with Content-Disposition attachment header
-      const downloadUrl = await getGalleryPresignedDownloadUrl(key, 7200, undefined, filename);
+      // Generate 2-hour presigned download URL pointing directly to original object in Backblaze B2
+      const downloadUrl = await getGalleryPresignedDownloadUrl(cleanKey, 7200, B2_GALLERY_BUCKET_NAME, disposition);
       return NextResponse.json({ success: true, downloadUrl });
     } catch (s3Err) {
-      // Fallback to direct public URL if presigner encounters an issue
-      const publicUrl = getGalleryPublicUrl(key);
-      return NextResponse.json({ success: true, downloadUrl: publicUrl });
+      // Fallback to direct download proxy URL if presigner encounters an issue
+      const proxyUrl = `/api/gallery/image?key=${encodeURIComponent(cleanKey)}&download=1&name=${encodeURIComponent(safeFilename)}`;
+      return NextResponse.json({ success: true, downloadUrl: proxyUrl });
     }
   } catch (err: any) {
     console.error('Error generating download URL (GET):', err);
@@ -33,21 +45,31 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { originalKey, previewKey, key, name, filename } = body;
 
-    const targetKey = key || originalKey || previewKey;
+    const rawKey = key || originalKey || previewKey;
     const downloadName = name || filename || 'photo.jpg';
 
-    if (!targetKey) {
+    if (!rawKey) {
       return NextResponse.json({ success: false, error: 'Key is required' }, { status: 400 });
     }
 
+    let cleanKey = rawKey.trim();
+    if (cleanKey.includes('key=')) {
+      const match = cleanKey.match(/[?&]key=([^&]+)/);
+      if (match) {
+        cleanKey = decodeURIComponent(match[1]);
+      }
+    }
+    cleanKey = cleanKey.replace(/^\/+/, '');
+
+    const safeFilename = downloadName.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
+    const disposition = `attachment; filename="${safeFilename}"`;
+
     try {
-      // Generate 2-hour presigned download URL with Content-Disposition attachment header
-      const downloadUrl = await getGalleryPresignedDownloadUrl(targetKey, 7200, undefined, downloadName);
+      const downloadUrl = await getGalleryPresignedDownloadUrl(cleanKey, 7200, B2_GALLERY_BUCKET_NAME, disposition);
       return NextResponse.json({ success: true, downloadUrl });
     } catch (s3Err) {
-      // Fallback to direct public URL if presigner encounters an issue
-      const publicUrl = getGalleryPublicUrl(targetKey);
-      return NextResponse.json({ success: true, downloadUrl: publicUrl });
+      const proxyUrl = `/api/gallery/image?key=${encodeURIComponent(cleanKey)}&download=1&name=${encodeURIComponent(safeFilename)}`;
+      return NextResponse.json({ success: true, downloadUrl: proxyUrl });
     }
   } catch (err: any) {
     console.error('Error generating download URL (POST):', err);

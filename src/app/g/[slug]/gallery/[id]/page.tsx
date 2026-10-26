@@ -484,26 +484,31 @@ function StrictZeroKnowledgeGuestContent() {
     }
   };
 
-  // Download High-Res Original Photo
+  // Download High-Res Original Photo directly from originals/ folder
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     setDownloadingId(photo.id);
     try {
+      const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
+      const cleanName = photo.original_key ? photo.original_key.split('/').pop()?.replace(/^\d+_[a-z0-9]+_/, '') : `photo_${photo.id.slice(0, 8)}.jpg`;
       const res = await fetch(
-        `/api/gallery/download-url?key=${encodeURIComponent(photo.original_key || photo.preview_url)}&name=wedding_${photo.id}.jpg`
+        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanName || 'photo.jpg')}`
       );
       const json = await res.json();
       if (json.success && json.downloadUrl) {
         const link = document.createElement('a');
         link.href = json.downloadUrl;
-        link.download = `wedding_photo_${photo.id.slice(0, 8)}.jpg`;
+        link.setAttribute('download', cleanName || 'photo.jpg');
+        link.target = '_blank';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
       } else {
-        window.open(photo.preview_url, '_blank');
+        const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName || 'photo.jpg')}`;
+        window.open(fallbackUrl, '_blank');
       }
     } catch (_) {
-      window.open(photo.preview_url, '_blank');
+      const targetKey = photo.original_key || photo.preview_url;
+      window.open(`/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1`, '_blank');
     } finally {
       setDownloadingId(null);
     }

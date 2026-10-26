@@ -85,8 +85,15 @@ export async function GET(req: NextRequest) {
     if (contentLength) {
       headers.set('Content-Length', String(contentLength));
     }
-    // 1-Year Cloudflare Edge Cache + Browser Cache
-    headers.set('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
+    const isDownload = searchParams.get('download') === '1';
+    if (isDownload) {
+      const downloadFilename = searchParams.get('name') || cleanKey.split('/').pop() || 'photo.jpg';
+      const safeFilename = downloadFilename.replace(/["\r\n]/g, '').trim();
+      headers.set('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    } else {
+      // 1-Year Cloudflare Edge Cache + Browser Cache
+      headers.set('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
+    }
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Accept-Ranges', 'bytes');
     if (s3Response.ETag) {

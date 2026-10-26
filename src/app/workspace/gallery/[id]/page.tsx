@@ -1174,25 +1174,31 @@ function AlbumStudioContent() {
     }
   };
 
-  // Download High-Res Original Photo
+  // Download High-Res Original Photo directly from originals/ folder
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     try {
+      const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
+      const cleanName = getCleanFilename(photo.original_key) || `photo_${photo.id.slice(0, 8)}.jpg`;
       const res = await fetch(
-        `/api/gallery/download-url?key=${encodeURIComponent(photo.original_key || photo.preview_url)}&name=wedding_${photo.id}.jpg`
+        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanName)}`
       );
       const json = await res.json();
       if (json.success && json.downloadUrl) {
         const link = document.createElement('a');
         link.href = json.downloadUrl;
-        link.download = `photo_${photo.id.slice(0, 8)}.jpg`;
+        link.setAttribute('download', cleanName);
+        link.target = '_blank';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
       } else {
-        window.open(photo.preview_url, '_blank');
+        const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName)}`;
+        window.open(fallbackUrl, '_blank');
       }
     } catch (_) {
-      window.open(photo.preview_url, '_blank');
+      const targetKey = photo.original_key || photo.preview_url;
+      const cleanName = getCleanFilename(photo.original_key) || `photo_${photo.id.slice(0, 8)}.jpg`;
+      window.open(`/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName)}`, '_blank');
     }
   };
 
@@ -2264,9 +2270,9 @@ function AlbumStudioContent() {
                         } bg-zinc-900 shadow-2xs hover:shadow-xl transition-all duration-300 cursor-pointer select-none`}
                         onClick={() => setSelectedPhotoIndex(idx)}
                       >
-                        {/* Progressive Smooth Blur-Up Image */}
+                        {/* Progressive Smooth Blur-Up Image (loads lightweight 480px WebP thumbnail from thumbs/ folder) */}
                         <ProgressiveSmoothImage
-                          src={photo.preview_url || photo.thumbnail_url}
+                          src={photo.thumbnail_url || photo.preview_url}
                           thumbnailSrc={photo.thumbnail_url}
                           alt={cleanName}
                           aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
@@ -2621,7 +2627,7 @@ function AlbumStudioContent() {
                     >
                       <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-zinc-100">
                         <ProgressiveSmoothImage
-                          src={photo.preview_url || photo.thumbnail_url}
+                          src={photo.thumbnail_url || photo.preview_url}
                           thumbnailSrc={photo.thumbnail_url}
                           alt={cleanName}
                           className="w-full h-full object-cover"
@@ -3196,19 +3202,17 @@ function AlbumStudioContent() {
                       </span>
                     </div>
                     <p className="text-[11px] text-zinc-600 font-normal leading-tight mt-0.5">
-                      Windows Desktop Engine connected! Photos uploaded will stream at 16x parallel speed directly to cloud.
+                      Windows Desktop Engine active in background tray! Photos will stream directly at 20x speed.
                     </p>
                   </div>
                 </div>
-                <a
-                  href="http://127.0.0.1:41789"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open App</span>
-                </a>
+                <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300/80 text-emerald-800 text-xs font-bold shrink-0 flex items-center gap-2 shadow-2xs">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+                  </span>
+                  <span>Active &amp; Ready</span>
+                </div>
               </div>
             ) : (
               <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-200/80 flex items-center justify-between gap-3">
@@ -3434,17 +3438,18 @@ function AlbumStudioContent() {
 
               <div className="space-y-2.5">
                 <a
-                  href="/api/gallery/uploader-download"
-                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition"
+                  href="/downloads/StudioCore-Uploader-Setup.exe"
+                  download="StudioCore-Uploader-Setup.exe"
+                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download StudioCore-Uploader.exe for Windows</span>
+                  <span>Download StudioCore-Uploader-Setup.exe for Windows</span>
                 </a>
 
                 <a
                   href="/downloads/studiocore-desktop-uploader.zip"
                   download="studiocore-desktop-uploader.zip"
-                  className="w-full py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs flex items-center justify-center gap-2 transition"
+                  className="w-full py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download ZIP Package (Cross-Platform)</span>
@@ -3453,11 +3458,11 @@ function AlbumStudioContent() {
                 <div className="p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-600 space-y-1.5">
                   <p className="font-bold text-zinc-800 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    Pic-Time Style Instant Setup:
+                    One-Time Auto-Start Setup:
                   </p>
-                  <p>1. Download &amp; double-click <strong>StudioCore-Uploader.exe</strong> (No installation required).</p>
-                  <p>2. Keep it open in background. When uploading in Chrome or Edge, the desktop engine automatically takes over and uploads at 20x turbo speed!</p>
-                  <p className="text-[10px] text-zinc-500">Also available on your local PC at: <code>C:\Sushant\StudioCore-Uploader.exe</code></p>
+                  <p>1. Download &amp; double-click <strong>StudioCore-Uploader-Setup.exe</strong> once.</p>
+                  <p>2. It installs into your system and runs silently in the <strong>Windows System Tray (under the ^ arrow icon)</strong>.</p>
+                  <p>3. Automatically starts whenever your PC boots, giving you instant 20x multi-gigabyte upload speeds with zero failures.</p>
                 </div>
               </div>
 
@@ -4055,7 +4060,7 @@ function AlbumStudioContent() {
                         className="group relative aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-200 cursor-pointer shadow-2xs hover:shadow-md transition"
                       >
                         <ProgressiveSmoothImage
-                          src={photo.preview_url || photo.thumbnail_url}
+                          src={photo.thumbnail_url || photo.preview_url}
                           thumbnailSrc={photo.thumbnail_url}
                           alt="Matched"
                           aspectRatio="1/1"

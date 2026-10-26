@@ -320,6 +320,13 @@ export async function batchUploadPhotos(
             if (onProgress) {
               onProgress(completed, total, Math.round((completed / total) * 100), file.name);
             }
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent('studiocore:gallery_photos_refresh', {
+                  detail: { galleryId },
+                })
+              );
+            }
           } else {
             errors.push(`${file.name}: ${resJson.error || 'Desktop engine upload failed'}`);
           }

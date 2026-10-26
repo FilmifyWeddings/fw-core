@@ -747,18 +747,10 @@ function GuestSlugGalleryContent() {
       return;
     } catch (_) {}
 
-    // Fallback: fetch blob directly
+    // Fallback: fetch blob or stream directly
     try {
-      const blobRes = await fetch(photo.preview_url);
-      const blob = await blobRes.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.setAttribute('download', originalFileName);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
+      const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(originalFileName)}`;
+      window.open(fallbackUrl, '_blank');
     } catch (_) {
       window.open(photo.preview_url, '_blank');
     } finally {
