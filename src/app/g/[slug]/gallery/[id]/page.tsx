@@ -932,7 +932,7 @@ function StrictZeroKnowledgeGuestContent() {
                           className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
                         >
                           <ProgressiveSmoothImage
-                            src={photo.preview_url || photo.thumbnail_url}
+                            src={photo.thumbnail_url || photo.preview_url}
                             thumbnailSrc={photo.thumbnail_url}
                             alt="Matched Photo"
                             aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
@@ -1045,7 +1045,7 @@ function StrictZeroKnowledgeGuestContent() {
                       className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
                     >
                       <ProgressiveSmoothImage
-                        src={photo.preview_url || photo.thumbnail_url}
+                        src={photo.thumbnail_url || photo.preview_url}
                         thumbnailSrc={photo.thumbnail_url}
                         alt="Event Photo"
                         aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
@@ -1138,7 +1138,7 @@ function StrictZeroKnowledgeGuestContent() {
                     }`}
                   >
                     <ProgressiveSmoothImage
-                      src={photo.preview_url || photo.thumbnail_url}
+                      src={photo.thumbnail_url || photo.preview_url}
                       thumbnailSrc={photo.thumbnail_url}
                       alt="Wedding photo"
                       aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}

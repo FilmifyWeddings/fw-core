@@ -69,9 +69,9 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
       width = bitmap.width;
       height = bitmap.height;
 
-      // 1. Generate 1920px Preview Blob (WebP 80% quality ~180KB)
+      // 1. Generate 2048px 2K Preview Blob (PhotoOwl Style High-Res ~115KB)
       const previewCanvas = document.createElement('canvas');
-      const previewScale = Math.min(1920 / Math.max(bitmap.width, bitmap.height), 1);
+      const previewScale = Math.min(2048 / Math.max(bitmap.width, bitmap.height), 1);
       previewCanvas.width = Math.max(1, Math.round(bitmap.width * previewScale));
       previewCanvas.height = Math.max(1, Math.round(bitmap.height * previewScale));
       const pCtx = previewCanvas.getContext('2d', { alpha: false });
@@ -84,7 +84,7 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
         previewCanvas.toBlob(
           (b) => (b ? resolve(b) : reject(new Error('Preview conversion failed'))),
           'image/webp',
-          0.75
+          0.78
         );
       });
 
@@ -92,9 +92,9 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
       previewCanvas.width = 1;
       previewCanvas.height = 1;
 
-      // 2. Generate 400px Grid Thumbnail Blob (WebP 65% quality ~18-22KB)
+      // 2. Generate 480px Grid Thumbnail Blob (PhotoOwl Style Low-Res ~9.9KB)
       const thumbCanvas = document.createElement('canvas');
-      const thumbScale = Math.min(400 / Math.max(bitmap.width, bitmap.height), 1);
+      const thumbScale = Math.min(480 / Math.max(bitmap.width, bitmap.height), 1);
       thumbCanvas.width = Math.max(1, Math.round(bitmap.width * thumbScale));
       thumbCanvas.height = Math.max(1, Math.round(bitmap.height * thumbScale));
       const tCtx = thumbCanvas.getContext('2d', { alpha: false });
@@ -146,20 +146,20 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
 
       // 1. Preview
       const previewCanvas = document.createElement('canvas');
-      const pScale = Math.min(1920 / Math.max(width, height), 1);
+      const pScale = Math.min(2048 / Math.max(width, height), 1);
       previewCanvas.width = Math.max(1, Math.round(width * pScale));
       previewCanvas.height = Math.max(1, Math.round(height * pScale));
       const pCtx = previewCanvas.getContext('2d', { alpha: false });
       pCtx?.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height);
       const previewBlob = await new Promise<Blob>((res) =>
-        previewCanvas.toBlob((b) => res(b!), 'image/webp', 0.75)
+        previewCanvas.toBlob((b) => res(b!), 'image/webp', 0.78)
       );
       previewCanvas.width = 1;
       previewCanvas.height = 1;
 
       // 2. Thumb
       const thumbCanvas = document.createElement('canvas');
-      const tScale = Math.min(400 / Math.max(width, height), 1);
+      const tScale = Math.min(480 / Math.max(width, height), 1);
       thumbCanvas.width = Math.max(1, Math.round(width * tScale));
       thumbCanvas.height = Math.max(1, Math.round(height * tScale));
       const tCtx = thumbCanvas.getContext('2d', { alpha: false });

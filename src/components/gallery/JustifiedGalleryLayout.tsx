@@ -211,7 +211,7 @@ export function JustifiedGalleryLayout({
                     }}
                   >
                     <ProgressiveSmoothImage
-                      src={item.photo.preview_url || item.photo.thumbnail_url || ''}
+                      src={item.photo.thumbnail_url || item.photo.preview_url || ''}
                       thumbnailSrc={item.photo.thumbnail_url}
                       alt={item.photo.title || 'Wedding photo'}
                       className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
@@ -291,7 +291,7 @@ export function JustifiedGalleryLayout({
                 }}
               >
                 <ProgressiveSmoothImage
-                  src={photo.preview_url || photo.thumbnail_url || ''}
+                  src={photo.thumbnail_url || photo.preview_url || ''}
                   thumbnailSrc={photo.thumbnail_url}
                   alt={photo.title || 'Wedding photo'}
                   aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
