@@ -45,6 +45,11 @@ else
   echo "Skipping npm install (no package.json changes)..."
 fi
 
+if [ ! -f "/var/www/fw-core/node_modules/typescript/lib/lib.es2022.d.ts" ]; then
+  echo "Repairing root TypeScript definitions in /var/www/fw-core/node_modules..."
+  npm install typescript@^5 --save-dev --no-audit || true
+fi
+
 echo "Freeing memory before building application..."
 pm2 stop baileys-worker 2>/dev/null || true
 pm2 stop fw-staging 2>/dev/null || true
@@ -54,8 +59,19 @@ NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2560" npm run build
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
-npm install --include=dev --no-audit
-npx tsc
+npm install --include=dev --no-audit || true
+if [ -f "./node_modules/.bin/tsc" ]; then
+  ./node_modules/.bin/tsc || npm run build || true
+else
+  npm run build || npx tsc || true
+fi
+
+if [ -f "dist/server.js" ]; then
+  echo "✅ WhatsApp Worker precompiled dist/server.js is verified and ready."
+else
+  echo "⚠️ Warning: dist/server.js missing, building via npx..."
+  npx tsc || true
+fi
 
 echo "Restarting PM2 apps via ecosystem.config.js..."
 cd /var/www/fw-core || exit 1

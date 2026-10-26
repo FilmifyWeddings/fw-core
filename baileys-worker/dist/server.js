@@ -1225,18 +1225,32 @@ async function executeAction(action) {
         throw new Error(`[QueueProcessor Error] Missing user_id/workspace_id for action ${action.id}`);
     }
     console.log(`[QueueProcessor Trace] Processing action ${action.id} with resolved targetWsId: ${targetWsId}`);
-    // Pre-flight check: If workflow log or lead was deleted, abort dispatch immediately
+    // Pre-flight check: If workflow log, lead, or workflow execution was stopped/deleted, abort dispatch immediately
     const actPayload = (action.payload || {});
     const checkLogId = actPayload.workflowLogId;
     const checkLeadId = actPayload.leadId || actPayload.lead_id;
+    const checkWfId = actPayload.workflowId || actPayload.workflow_id;
     if (checkLogId) {
         const { data: wfLog } = await supabase
             .from('whatsapp_workflow_logs')
-            .select('id, status')
+            .select('id, status, error_message, workflow_id')
             .eq('id', checkLogId)
             .maybeSingle();
-        if (!wfLog || wfLog.status === 'stopped' || wfLog.status === 'cancelled') {
-            logger.info({ actionId: action.id, checkLogId }, '🛑 Workflow log cancelled or deleted. Skipping dispatch.');
+        if (!wfLog || wfLog.status === 'stopped' || wfLog.status === 'cancelled' || wfLog.error_message === 'STOPPED' || wfLog.error_message === 'Cancelled by user stop action.') {
+            logger.info({ actionId: action.id, checkLogId }, '🛑 Workflow log cancelled or stopped. Skipping dispatch.');
+            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: workflow step stopped' }).eq('id', action.id);
+            return { success: true, waMessageId: null };
+        }
+    }
+    if (checkWfId) {
+        const { data: wfObj } = await supabase
+            .from('whatsapp_custom_workflows')
+            .select('id, status')
+            .eq('id', checkWfId)
+            .maybeSingle();
+        if (wfObj && (wfObj.status === 'Inactive' || wfObj.status === 'stopped' || wfObj.status === 'paused')) {
+            logger.info({ actionId: action.id, checkWfId }, '🛑 Workflow is inactive/stopped. Skipping dispatch.');
+            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: parent workflow is inactive/stopped' }).eq('id', action.id);
             return { success: true, waMessageId: null };
         }
     }
@@ -1248,7 +1262,21 @@ async function executeAction(action) {
             .maybeSingle();
         if (!leadRow) {
             logger.info({ actionId: action.id, checkLeadId }, '🛑 Lead was deleted from CRM. Skipping dispatch.');
+            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: lead deleted' }).eq('id', action.id);
             return { success: true, waMessageId: null };
+        }
+        if (checkWfId) {
+            const { data: execRow } = await supabase
+                .from('workflow_executions')
+                .select('id, status')
+                .eq('lead_id', checkLeadId)
+                .eq('workflow_id', checkWfId)
+                .maybeSingle();
+            if (execRow && execRow.status === 'STOPPED') {
+                logger.info({ actionId: action.id, checkLeadId, checkWfId }, '🛑 Lead execution stopped. Skipping dispatch.');
+                await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: lead execution stopped' }).eq('id', action.id);
+                return { success: true, waMessageId: null };
+            }
         }
     }
     let targetSock;
