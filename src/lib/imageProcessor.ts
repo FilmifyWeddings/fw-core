@@ -260,7 +260,7 @@ export async function batchUploadPhotos(
   const errors: string[] = [];
   const pendingRegistration: any[] = [];
 
-  // 0. Check if StudioCore Native Desktop Engine (Pic-Time Architecture) is running locally
+  // 0. Check if StudioCore Native Desktop Engine is running locally on 127.0.0.1:41789
   let isDesktopEngineActive = false;
   if (typeof window !== 'undefined') {
     try {

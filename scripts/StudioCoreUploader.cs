@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Net;
 using System.Reflection;
@@ -16,7 +18,7 @@ namespace StudioCoreUploader
     static class Program
     {
         public const string AppName = "StudioCore Desktop Uploader";
-        public const string AppVersion = "2.2.0";
+        public const string AppVersion = "2.3.0";
         private const string RegistryRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string RegistryValueName = "StudioCoreUploader";
         public const int Port = 41789;
@@ -45,6 +47,7 @@ namespace StudioCoreUploader
                 }
             }
             catch { }
+
             string targetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StudioCore");
             string targetExe = Path.Combine(targetDir, "StudioCore-Uploader.exe");
             string currentExe = Application.ExecutablePath;
@@ -189,11 +192,57 @@ namespace StudioCoreUploader
                     using (MemoryStream ms = new MemoryStream())
                     {
                         await req.InputStream.CopyToAsync(ms);
-                        byte[] fileBytes = ms.ToArray();
-                        Log("Buffered " + fileBytes.Length + " bytes for " + filename);
+                        byte[] originalBytes = ms.ToArray();
+                        Log("Buffered " + originalBytes.Length + " bytes for " + filename);
 
-                        // 1. Request presigned upload URLs from StudioCore API
-                        string getUrlPayload = "{\"galleryId\":\"" + galleryId + "\",\"filename\":\"" + filename + "\",\"filesize\":" + fileBytes.Length + ",\"workspaceId\":\"" + workspaceId + "\",\"collectionId\":\"" + collectionId + "\"}";
+                        // 1. Generate True Optimized PhotoOwl Preview (2048px) and Thumbnail (480px)
+                        byte[] previewBytes = null;
+                        byte[] thumbBytes = null;
+                        int imgWidth = 1920;
+                        int imgHeight = 1080;
+
+                        try
+                        {
+                            using (MemoryStream imgMs = new MemoryStream(originalBytes))
+                            using (Image srcImg = Image.FromStream(imgMs, true, false))
+                            {
+                                // Auto-rotate if EXIF orientation tag exists
+                                try
+                                {
+                                    if (Array.IndexOf(srcImg.PropertyIdList, 0x0112) >= 0)
+                                    {
+                                        var prop = srcImg.GetPropertyItem(0x0112);
+                                        int orient = BitConverter.ToUInt16(prop.Value, 0);
+                                        if (orient == 3) srcImg.RotateFlip(RotateFlipType.Rotate180FlipNone);
+                                        else if (orient == 6) srcImg.RotateFlip(RotateFlipType.Rotate90FlipNone);
+                                        else if (orient == 8) srcImg.RotateFlip(RotateFlipType.Rotate270FlipNone);
+                                    }
+                                }
+                                catch { }
+
+                                imgWidth = srcImg.Width;
+                                imgHeight = srcImg.Height;
+
+                                // Generate 2048px High-Res Preview (~115 KB)
+                                previewBytes = ResizeImage(srcImg, 2048, 78L);
+
+                                // Generate 480px Fast Thumbnail (~18 KB)
+                                thumbBytes = ResizeImage(srcImg, 480, 65L);
+                            }
+                        }
+                        catch (Exception exImg)
+                        {
+                            Log("Image resize notice for " + filename + ": " + exImg.Message);
+                        }
+
+                        if (previewBytes == null || previewBytes.Length == 0) previewBytes = originalBytes;
+                        if (thumbBytes == null || thumbBytes.Length == 0) thumbBytes = previewBytes;
+
+                        Log(string.Format("Generated variants for {0}: Original={1:N0} KB, Preview={2:N0} KB, Thumb={3:N0} KB ({4}x{5})",
+                            filename, originalBytes.Length / 1024, previewBytes.Length / 1024, thumbBytes.Length / 1024, imgWidth, imgHeight));
+
+                        // 2. Request presigned upload URLs from StudioCore API
+                        string getUrlPayload = "{\"galleryId\":\"" + galleryId + "\",\"filename\":\"" + filename + "\",\"filesize\":" + originalBytes.Length + ",\"workspaceId\":\"" + workspaceId + "\",\"collectionId\":\"" + collectionId + "\"}";
                         string urlJson = await PostJsonAsync("https://studiocore.in/api/gallery/upload-url", getUrlPayload);
 
                         string originalUploadUrl = ExtractJsonValue(urlJson, "originalUploadUrl");
@@ -208,22 +257,31 @@ namespace StudioCoreUploader
                             throw new Exception("Did not receive upload URLs from studio server. Server response: " + urlJson);
                         }
 
-                        // 2. Direct PUT streams to Backblaze B2 (high-speed parallel network threads)
-                        Log("Streaming " + filename + " directly to Backblaze B2 storage...");
-                        var uploadOriginal = PutBinaryAsync(originalUploadUrl, fileBytes, "image/jpeg");
-                        var uploadPreview = !string.IsNullOrEmpty(previewUploadUrl) ? PutBinaryAsync(previewUploadUrl, fileBytes, "image/webp") : Task.FromResult(true);
-                        var uploadThumb = !string.IsNullOrEmpty(thumbUploadUrl) ? PutBinaryAsync(thumbUploadUrl, fileBytes, "image/webp") : Task.FromResult(true);
+                        // 3. Direct PUT streams to Backblaze B2 (high-speed parallel network threads)
+                        Log("Streaming " + filename + " (Original + Optimized Preview + Thumb) directly to Backblaze B2 storage...");
+                        var uploadOriginal = PutBinaryAsync(originalUploadUrl, originalBytes, "image/jpeg");
+                        var uploadPreview = !string.IsNullOrEmpty(previewUploadUrl) ? PutBinaryAsync(previewUploadUrl, previewBytes, "image/jpeg") : Task.FromResult(true);
+                        var uploadThumb = !string.IsNullOrEmpty(thumbUploadUrl) ? PutBinaryAsync(thumbUploadUrl, thumbBytes, "image/jpeg") : Task.FromResult(true);
 
                         await Task.WhenAll(uploadOriginal, uploadPreview, uploadThumb);
                         Log("Completed B2 upload for " + filename);
 
-                        // 3. Register photo in Supabase
-                        string registerPayload = "{\"galleryId\":\"" + galleryId + "\",\"photos\":[{\"gallery_id\":\"" + galleryId + "\",\"collection_id\":" + (string.IsNullOrEmpty(collectionId) ? "null" : "\"" + collectionId + "\"") + ",\"original_key\":\"" + originalKey + "\",\"preview_key\":\"" + previewKey + "\",\"thumbnail_key\":\"" + thumbKey + "\",\"size_bytes\":" + fileBytes.Length + "}]}";
+                        // 4. Register photo in Supabase with correct dimensions and size
+                        string registerPayload = "{\"galleryId\":\"" + galleryId + "\",\"photos\":[{"
+                            + "\"gallery_id\":\"" + galleryId + "\","
+                            + "\"collection_id\":" + (string.IsNullOrEmpty(collectionId) ? "null" : "\"" + collectionId + "\"") + ","
+                            + "\"original_key\":\"" + originalKey + "\","
+                            + "\"preview_key\":\"" + previewKey + "\","
+                            + "\"thumbnail_key\":\"" + thumbKey + "\","
+                            + "\"width\":" + imgWidth + ","
+                            + "\"height\":" + imgHeight + ","
+                            + "\"size_bytes\":" + originalBytes.Length
+                            + "}]}";
                         await PostJsonAsync("https://studiocore.in/api/gallery/photos/register", registerPayload);
                         Log("Successfully registered " + filename + " in database");
 
                         res.ContentType = "application/json";
-                        byte[] okBuf = Encoding.UTF8.GetBytes("{\"success\":true,\"filename\":\"" + filename + "\"}");
+                        byte[] okBuf = Encoding.UTF8.GetBytes("{\"success\":true,\"filename\":\"" + filename + "\",\"width\":" + imgWidth + ",\"height\":" + imgHeight + "}");
                         res.ContentLength64 = okBuf.Length;
                         await res.OutputStream.WriteAsync(okBuf, 0, okBuf.Length);
                         res.Close();
@@ -252,13 +310,57 @@ namespace StudioCoreUploader
             res.Close();
         }
 
+        private static byte[] ResizeImage(Image src, int maxDimension, long quality)
+        {
+            float ratio = Math.Min((float)maxDimension / src.Width, (float)maxDimension / src.Height);
+            if (ratio > 1.0f) ratio = 1.0f;
+
+            int newW = Math.Max(1, (int)(src.Width * ratio));
+            int newH = Math.Max(1, (int)(src.Height * ratio));
+
+            using (Bitmap dest = new Bitmap(newW, newH, PixelFormat.Format24bppRgb))
+            {
+                dest.SetResolution(src.HorizontalResolution > 0 ? src.HorizontalResolution : 96, src.VerticalResolution > 0 ? src.VerticalResolution : 96);
+                using (Graphics g = Graphics.FromImage(dest))
+                {
+                    g.CompositingQuality = CompositingQuality.HighSpeed;
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.SmoothingMode = SmoothingMode.HighSpeed;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    g.DrawImage(src, 0, 0, newW, newH);
+                }
+
+                using (MemoryStream outMs = new MemoryStream())
+                {
+                    ImageCodecInfo jpegCodec = GetEncoder(ImageFormat.Jpeg);
+                    EncoderParameters encoderParams = new EncoderParameters(1);
+                    encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, quality);
+                    dest.Save(outMs, jpegCodec, encoderParams);
+                    return outMs.ToArray();
+                }
+            }
+        }
+
+        private static ImageCodecInfo GetEncoder(ImageFormat format)
+        {
+            ImageCodecInfo[] codecs = ImageCodecInfo.GetImageEncoders();
+            foreach (ImageCodecInfo codec in codecs)
+            {
+                if (codec.FormatID == format.Guid)
+                {
+                    return codec;
+                }
+            }
+            return null;
+        }
+
         private static async Task<string> PostJsonAsync(string url, string jsonBody)
         {
             ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | (SecurityProtocolType)12288 | SecurityProtocolType.Tls12;
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "POST";
             req.ContentType = "application/json";
-            req.UserAgent = "StudioCore-Turbo-Engine/2.2 (" + Environment.OSVersion.ToString() + ")";
+            req.UserAgent = "StudioCore-Turbo-Engine/2.3 (" + Environment.OSVersion.ToString() + ")";
             req.Timeout = 60000;
             req.ReadWriteTimeout = 60000;
 
@@ -281,7 +383,7 @@ namespace StudioCoreUploader
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "PUT";
             req.ContentType = contentType;
-            req.UserAgent = "StudioCore-Turbo-Engine/2.2";
+            req.UserAgent = "StudioCore-Turbo-Engine/2.3";
             req.Timeout = 120000;
             req.ReadWriteTimeout = 120000;
             req.ContentLength = data.Length;
@@ -366,30 +468,53 @@ namespace StudioCoreUploader
                     shortcut.TargetPath = targetExePath;
                     shortcut.WorkingDirectory = Path.GetDirectoryName(targetExePath);
                     shortcut.Description = description;
+                    shortcut.IconLocation = targetExePath + ",0";
                     shortcut.Save();
                 }
             }
             catch { }
         }
 
+        public static Icon GetAppIcon(string targetDir)
+        {
+            try
+            {
+                Icon icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (icon != null) return icon;
+            }
+            catch { }
+
+            try
+            {
+                string localIco = Path.Combine(targetDir, "studiocore-uploader.ico");
+                if (File.Exists(localIco)) return new Icon(localIco);
+            }
+            catch { }
+
+            return SystemIcons.Application;
+        }
+
         static void RunInstaller(string targetDir, string targetExe, string currentExe)
         {
+            Icon appIcon = GetAppIcon(targetDir);
+
             Form installerForm = new Form
             {
                 Text = "StudioCore Desktop Uploader Setup",
-                Width = 480,
-                Height = 310,
+                Width = 500,
+                Height = 320,
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 MaximizeBox = false,
                 MinimizeBox = false,
                 StartPosition = FormStartPosition.CenterScreen,
-                BackColor = Color.FromArgb(24, 24, 27),
-                ForeColor = Color.White
+                BackColor = Color.FromArgb(20, 20, 24),
+                ForeColor = Color.White,
+                Icon = appIcon
             };
 
             Label titleLabel = new Label
             {
-                Text = "⚡ StudioCore Desktop Uploader",
+                Text = "⚡ StudioCore Desktop Uploader (Beta)",
                 Font = new Font("Segoe UI", 14, FontStyle.Bold),
                 ForeColor = Color.FromArgb(245, 158, 11),
                 Location = new Point(24, 20),
@@ -398,18 +523,18 @@ namespace StudioCoreUploader
 
             Label subLabel = new Label
             {
-                Text = "Pic-Time style native desktop engine for 20x multi-GB wedding photo uploads...",
+                Text = "Next-Generation High-Speed Desktop Engine for Multi-GB Wedding Galleries...",
                 Font = new Font("Segoe UI", 9.5f),
                 ForeColor = Color.FromArgb(161, 161, 170),
                 Location = new Point(24, 55),
-                Width = 420,
+                Width = 440,
                 Height = 35
             };
 
             ProgressBar progressBar = new ProgressBar
             {
                 Location = new Point(24, 105),
-                Width = 416,
+                Width = 436,
                 Height = 22,
                 Style = ProgressBarStyle.Marquee,
                 MarqueeAnimationSpeed = 30
@@ -421,13 +546,13 @@ namespace StudioCoreUploader
                 Font = new Font("Segoe UI", 9),
                 ForeColor = Color.FromArgb(113, 113, 122),
                 Location = new Point(24, 140),
-                Width = 420
+                Width = 440
             };
 
             Button finishButton = new Button
             {
                 Text = "Installing...",
-                Location = new Point(330, 210),
+                Location = new Point(350, 215),
                 Width = 110,
                 Height = 36,
                 BackColor = Color.FromArgb(39, 39, 42),
@@ -459,7 +584,7 @@ namespace StudioCoreUploader
                     }
                     Thread.Sleep(300);
 
-                    // Create subdirectories like Pic-Time (logs, temp, uploads)
+                    // Create subdirectories (logs, temp, uploads)
                     if (!Directory.Exists(targetDir)) Directory.CreateDirectory(targetDir);
                     string logsDir = Path.Combine(targetDir, "logs");
                     string tempDir = Path.Combine(targetDir, "temp");
@@ -529,7 +654,7 @@ namespace StudioCoreUploader
             this.FormBorderStyle = FormBorderStyle.None;
             this.Size = new Size(0, 0);
 
-            // Pic-Time Style Professional Tray Menu (Matching Image 2)
+            // Enterprise Tray Menu
             ContextMenu trayMenu = new ContextMenu();
             MenuItem versionItem = new MenuItem("Version " + Program.AppVersion + " (StudioCore Turbo)") { Enabled = false };
             MenuItem machineItem = new MenuItem(Environment.MachineName) { Enabled = false };
@@ -590,11 +715,13 @@ namespace StudioCoreUploader
 
             try
             {
+                Icon appIcon = Program.GetAppIcon(targetDir);
+
                 _trayIcon = new NotifyIcon
                 {
-                    Icon = SystemIcons.Application,
+                    Icon = appIcon,
                     ContextMenu = trayMenu,
-                    Text = "StudioCore Turbo Uploader - " + Environment.MachineName + " (Port " + port + ")",
+                    Text = "StudioCore Desktop Uploader - " + Environment.MachineName + " (Port " + port + ")",
                     Visible = true
                 };
 
@@ -602,8 +729,8 @@ namespace StudioCoreUploader
                 {
                     try
                     {
-                        _trayIcon.ShowBalloonTip(3000, "StudioCore Turbo Uploader",
-                            "Active & running on " + Environment.MachineName + " (Port " + port + "). Photos uploaded in Chrome/Edge use 20x turbo speed!",
+                        _trayIcon.ShowBalloonTip(3000, "StudioCore Desktop Uploader",
+                            "Active & running on " + Environment.MachineName + " (Port " + port + "). Photos upload at turbo speed with zero drops!",
                             ToolTipIcon.Info);
                     }
                     catch { }
