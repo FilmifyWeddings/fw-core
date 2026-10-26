@@ -307,21 +307,20 @@ export default function GalleryShareModal({
 
   const studioSlug = (gallery as any)?.studio_slug || 'studio';
   const coupleSlug = (gallery as any)?.couple_slug || gallery?.slug || 'event';
-  const uniqueCode = (gallery as any)?.unique_code || (gallery?.id ? gallery.id.replace(/-/g, '').slice(0, 6) : 'view');
-  const baseEventPath = `${origin}/${studioSlug}/${coupleSlug}/${uniqueCode}`;
+  const eventSlug = gallery?.slug || (gallery?.id ? gallery.id.replace(/-/g, '').slice(0, 8) : 'view');
 
   // Dynamic URLs based on current toggle states
   const guestAccessUrl = !guestAskPin
-    ? `${baseEventPath}?share_key=${guestPin}`
-    : baseEventPath;
+    ? `${origin}/${studioSlug}/${coupleSlug}/guest-access/${eventSlug}?share_key=${guestPin}`
+    : `${origin}/${studioSlug}/${coupleSlug}/guest-access/${eventSlug}`;
 
   const fullAccessUrl = fullAccessDoNotAskPin
-    ? `${baseEventPath}?access=all&pass_key=${passKey}`
-    : `${baseEventPath}?access=all`;
+    ? `${origin}/${studioSlug}/${coupleSlug}/full-access/${eventSlug}?pass_key=${passKey}`
+    : `${origin}/${studioSlug}/${coupleSlug}/full-access/${eventSlug}`;
 
   const photoSelectionUrl = selectionDoNotAskPin
-    ? `${baseEventPath}?album_selection=true&pass_key=${passKey}`
-    : `${baseEventPath}?album_selection=true`;
+    ? `${origin}/${studioSlug}/${coupleSlug}/selection/${eventSlug}?pass_key=${passKey}`
+    : `${origin}/${studioSlug}/${coupleSlug}/selection/${eventSlug}`;
 
   const guestWhatsAppMessage = `Hello!\nWe're excited to share your personal photo gallery from the event. This link will take you directly to your own photos, so you can relive and enjoy the special moments captured just for you:\n\n${guestAccessUrl}\n\nThank you for being a part of our event – we hope these memories bring a smile to your face!`;
 
@@ -813,26 +812,55 @@ export default function GalleryShareModal({
               </button>
             </div>
 
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-800 flex items-center justify-center">
+                  <QrCode className="w-4 h-4 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900 tracking-tight">
+                    Wedding Table Standee (2 x 3 Portrait Ratio)
+                  </h3>
+                  <p className="text-[11px] text-zinc-400 font-medium">
+                    {standeeType} • Minimalist Canva Print Templates (8 Aesthetic Styles)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsStandeeModalOpen(false)}
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
             {/* Slider Navigation Bar */}
-            <div className="flex items-center justify-between bg-zinc-50 px-4 py-2 rounded-2xl border border-zinc-100 text-xs">
-              <span className="font-bold text-zinc-600">
-                Design {activeDesignIndex + 1} of 4:
-                <strong className="text-zinc-900 ml-1.5">
-                  {activeDesignIndex === 0 && 'Warm Ivory & Champagne (Classic)'}
-                  {activeDesignIndex === 1 && 'Royal Forest Emerald & Gold'}
-                  {activeDesignIndex === 2 && 'Modern Obsidian & Monochrome'}
-                  {activeDesignIndex === 3 && 'Boho Terracotta & Dusty Rose'}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-zinc-50 px-4 py-2.5 rounded-2xl border border-zinc-100 gap-2 text-xs">
+              <span className="font-bold text-zinc-600 truncate max-w-sm">
+                Design {activeDesignIndex + 1} of 8:
+                <strong className="text-zinc-900 ml-1.5 font-black">
+                  {activeDesignIndex === 0 && 'Warm Ivory & Champagne Botanical'}
+                  {activeDesignIndex === 1 && 'Royal Heritage Elephant & Gold'}
+                  {activeDesignIndex === 2 && 'Royal Forest Emerald & Gold'}
+                  {activeDesignIndex === 3 && 'Boho Terracotta & Sun Arch'}
+                  {activeDesignIndex === 4 && 'Modern Obsidian & Crisp White'}
+                  {activeDesignIndex === 5 && 'Blush Petal Rose & Gold'}
+                  {activeDesignIndex === 6 && 'Regal Midnight Navy & Platinum'}
+                  {activeDesignIndex === 7 && 'Earthy Sage & Eucalyptus'}
                 </strong>
               </span>
 
-              <div className="flex items-center gap-1.5">
-                {[0, 1, 2, 3].map((idx) => (
+              <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto py-0.5">
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => setActiveDesignIndex(idx)}
                     className={`w-2.5 h-2.5 rounded-full transition-all cursor-pointer ${
-                      activeDesignIndex === idx ? 'w-6 bg-amber-600' : 'bg-zinc-300 hover:bg-zinc-400'
+                      activeDesignIndex === idx ? 'w-5 bg-amber-600' : 'bg-zinc-300 hover:bg-zinc-400'
                     }`}
                     title={`Design ${idx + 1}`}
                   />
@@ -840,12 +868,12 @@ export default function GalleryShareModal({
               </div>
             </div>
 
-            {/* The 3x2 Standee Canvas Container */}
-            <div className="relative group">
+            {/* The 2x3 Standee Canvas Container */}
+            <div className="relative group max-w-md mx-auto w-full">
               <button
                 type="button"
-                onClick={() => setActiveDesignIndex((prev) => (prev === 0 ? 3 : prev - 1))}
-                className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition shadow-lg cursor-pointer"
+                onClick={() => setActiveDesignIndex((prev) => (prev === 0 ? 7 : prev - 1))}
+                className="absolute -left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition shadow-lg cursor-pointer"
                 title="Previous Design"
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -853,8 +881,8 @@ export default function GalleryShareModal({
 
               <button
                 type="button"
-                onClick={() => setActiveDesignIndex((prev) => (prev === 3 ? 0 : prev + 1))}
-                className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition shadow-lg cursor-pointer"
+                onClick={() => setActiveDesignIndex((prev) => (prev === 7 ? 0 : prev + 1))}
+                className="absolute -right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition shadow-lg cursor-pointer"
                 title="Next Design"
               >
                 <ChevronRight className="w-5 h-5" />
@@ -862,45 +890,43 @@ export default function GalleryShareModal({
 
               <div
                 ref={standeeCardRef}
-                className="w-full aspect-[3/2] rounded-3xl overflow-hidden shadow-xl select-none flex flex-col justify-between p-6 sm:p-8 transition-all duration-300"
+                className="w-full aspect-[2/3] rounded-3xl overflow-hidden shadow-2xl select-none flex flex-col justify-between p-6 sm:p-7 transition-all duration-300 relative"
               >
-                {/* DESIGN 1: WARM IVORY & CHAMPAGNE EDITORIAL */}
+                {/* DESIGN 1: WARM IVORY & CHAMPAGNE BOTANICAL */}
                 {activeDesignIndex === 0 && (
-                  <div className="w-full h-full bg-[#FCFAF5] border-4 border-amber-300/60 rounded-2xl p-5 flex flex-col justify-between text-zinc-900 shadow-inner relative">
-                    <div className="absolute top-2 right-2 text-[8px] tracking-widest uppercase font-bold text-amber-700/60 font-mono">
-                      TABLE CARD
-                    </div>
-                    
-                    <div className="text-center space-y-1">
-                      <span className="text-[10px] tracking-[0.25em] uppercase font-serif text-amber-800">
-                        CELEBRATION OF LOVE
-                      </span>
+                  <div className="w-full h-full bg-[#FCFAF5] border-4 border-amber-300/70 rounded-2xl p-5 flex flex-col justify-between text-zinc-900 shadow-inner relative">
+                    <div className="text-center space-y-1.5 pt-1">
+                      <div className="flex items-center justify-center gap-1.5 text-amber-700/80 mb-0.5">
+                        <span className="text-xs">✦</span>
+                        <span className="text-[9.5px] tracking-[0.3em] uppercase font-serif font-bold">
+                          CELEBRATION OF LOVE
+                        </span>
+                        <span className="text-xs">✦</span>
+                      </div>
                       <h2 
                         style={{ fontFamily: "'Playfair Display', Georgia, serif" }} 
-                        className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight"
+                        className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight leading-tight"
                       >
                         {standeeTitle}
                       </h2>
                       <p className="text-[11px] text-zinc-500 font-serif italic">
-                        Scan below to view your personalized wedding photos
+                        Scan with your phone to discover your moments
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-center gap-6 my-auto">
-                      <div className="w-28 h-28 sm:w-32 sm:h-32 bg-white p-2 rounded-2xl border-2 border-amber-400 shadow-md shrink-0">
+                    <div className="flex flex-col items-center justify-center my-auto space-y-3">
+                      <div className="w-36 h-36 sm:w-40 sm:h-40 bg-white p-2.5 rounded-2xl border-2 border-amber-400 shadow-md">
                         <img
                           src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(standeeUrl)}`}
                           alt="QR Code"
                           className="w-full h-full object-contain"
                         />
                       </div>
-                      <div className="space-y-1.5 text-left text-xs">
-                        <p className="font-bold text-zinc-800">1. Open Phone Camera</p>
-                        <p className="font-bold text-zinc-800">2. Point at QR Code</p>
-                        <p className="font-bold text-zinc-800">3. Take a selfie &amp; find photos</p>
+                      <div className="space-y-1 text-center text-xs">
+                        <p className="font-bold text-zinc-800">1. Open Camera • 2. Scan QR • 3. Find Photos</p>
                         {standeePin && (
-                          <div className="pt-1">
-                            <span className="px-2.5 py-1 bg-amber-100 border border-amber-300 text-amber-900 font-mono text-[11px] font-black rounded-lg inline-block">
+                          <div className="pt-0.5">
+                            <span className="px-3 py-1 bg-amber-100 border border-amber-300 text-amber-900 font-mono text-xs font-black rounded-lg inline-block">
                               PIN: {standeePin}
                             </span>
                           </div>
@@ -910,21 +936,72 @@ export default function GalleryShareModal({
 
                     <div className="flex items-center justify-between text-[9px] font-serif text-zinc-400 border-t border-amber-200/60 pt-2 tracking-wider">
                       <span>POWERED BY STUDIOCORE AI</span>
-                      <span>THANK YOU FOR CELEBRATING WITH US</span>
+                      <span>THANK YOU FOR COMING</span>
                     </div>
                   </div>
                 )}
 
-                {/* DESIGN 2: ROYAL FOREST EMERALD & GOLD */}
+                {/* DESIGN 2: ROYAL HERITAGE ELEPHANT & GOLD ARCH */}
                 {activeDesignIndex === 1 && (
-                  <div className="w-full h-full bg-gradient-to-br from-[#062D24] via-[#0A382E] to-[#041D17] border-4 border-amber-400/80 rounded-2xl p-5 flex flex-col justify-between text-white shadow-2xl relative">
-                    <div className="text-center space-y-1">
-                      <span className="text-[10px] tracking-[0.3em] uppercase font-serif text-amber-300">
-                        ROYAL WEDDING GALLERY
+                  <div className="w-full h-full bg-[#FAF5EB] border-4 border-amber-500/80 rounded-2xl p-5 flex flex-col justify-between text-zinc-900 shadow-inner relative">
+                    <div className="text-center space-y-1.5 pt-1">
+                      {/* Royal Indian Elephant Minimal Silhouette SVG */}
+                      <div className="flex justify-center text-amber-700">
+                        <svg className="w-8 h-8 fill-current" viewBox="0 0 100 100">
+                          <path d="M50 20c-15 0-25 8-28 20-3 1-8 5-8 10 0 8 6 12 10 12l2 16h6l1-12h14l1 12h6l2-16c4 0 10-4 10-12 0-5-5-9-8-10-3-12-13-20-28-20zm0 6c11 0 19 6 22 15-4 1-8 4-10 8-3-2-7-3-12-3s-9 1-12 3c-2-4-6-7-10-8 3-9 11-15 22-15z" />
+                        </svg>
+                      </div>
+                      <span className="text-[9.5px] tracking-[0.3em] uppercase font-serif font-black text-amber-800 block">
+                        ROYAL WEDDING CELEBRATION
                       </span>
                       <h2 
                         style={{ fontFamily: "'Cinzel', 'Playfair Display', serif" }} 
-                        className="text-2xl sm:text-3xl font-black text-amber-100 tracking-wide drop-shadow-sm"
+                        className="text-2xl sm:text-3xl font-black text-amber-950 tracking-wide leading-tight"
+                      >
+                        {standeeTitle}
+                      </h2>
+                      <p className="text-[11px] text-amber-800/80 font-serif italic">
+                        Find every blessed moment captured with family
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-center my-auto space-y-3">
+                      <div className="w-36 h-36 sm:w-40 sm:h-40 bg-white p-2.5 rounded-2xl border-2 border-amber-500 shadow-xl">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(standeeUrl)}`}
+                          alt="QR Code"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                      <div className="space-y-1 text-center text-xs text-amber-950">
+                        <p className="font-bold">✦ Scan with phone camera to find your photos ✦</p>
+                        {standeePin && (
+                          <div className="pt-0.5">
+                            <span className="px-3 py-1 bg-amber-500 text-white font-mono text-xs font-black rounded-lg inline-block shadow-xs">
+                              PASS KEY: {standeePin}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[9px] font-serif text-amber-800/70 border-t border-amber-300 pt-2 tracking-widest uppercase">
+                      <span>SHUBH VIVAH</span>
+                      <span>STUDIOCORE LUXURY</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* DESIGN 3: ROYAL FOREST EMERALD & GOLD */}
+                {activeDesignIndex === 2 && (
+                  <div className="w-full h-full bg-gradient-to-b from-[#072B22] via-[#0A382E] to-[#041E17] border-4 border-amber-400/80 rounded-2xl p-5 flex flex-col justify-between text-white shadow-2xl relative">
+                    <div className="text-center space-y-1.5 pt-1">
+                      <span className="text-[9.5px] tracking-[0.3em] uppercase font-serif text-amber-300 block font-bold">
+                        EXCLUSIVE WEDDING GALLERY
+                      </span>
+                      <h2 
+                        style={{ fontFamily: "'Cinzel', 'Playfair Display', serif" }} 
+                        className="text-2xl sm:text-3xl font-black text-amber-100 tracking-wide leading-tight drop-shadow-sm"
                       >
                         {standeeTitle}
                       </h2>
@@ -933,21 +1010,19 @@ export default function GalleryShareModal({
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-center gap-6 my-auto">
-                      <div className="w-28 h-28 sm:w-32 sm:h-32 bg-white p-2 rounded-2xl border-2 border-amber-400 shadow-xl shrink-0">
+                    <div className="flex flex-col items-center justify-center my-auto space-y-3">
+                      <div className="w-36 h-36 sm:w-40 sm:h-40 bg-white p-2.5 rounded-2xl border-2 border-amber-400 shadow-xl">
                         <img
                           src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(standeeUrl)}`}
                           alt="QR Code"
                           className="w-full h-full object-contain"
                         />
                       </div>
-                      <div className="space-y-1.5 text-left text-xs text-emerald-100">
-                        <p className="font-bold">✦ Open Camera App</p>
-                        <p className="font-bold">✦ Scan QR Code</p>
-                        <p className="font-bold">✦ Instant AI Face Search</p>
+                      <div className="space-y-1 text-center text-xs text-emerald-100">
+                        <p className="font-bold">✦ 1. Open Camera  2. Scan QR  3. Face Search</p>
                         {standeePin && (
-                          <div className="pt-1">
-                            <span className="px-2.5 py-1 bg-amber-400 text-zinc-950 font-mono text-[11px] font-black rounded-lg inline-block shadow-md">
+                          <div className="pt-0.5">
+                            <span className="px-3 py-1 bg-amber-400 text-zinc-950 font-mono text-xs font-black rounded-lg inline-block shadow-md">
                               PASS KEY: {standeePin}
                             </span>
                           </div>
@@ -962,39 +1037,82 @@ export default function GalleryShareModal({
                   </div>
                 )}
 
-                {/* DESIGN 3: MODERN OBSIDIAN & MONOCHROME EDITORIAL */}
-                {activeDesignIndex === 2 && (
-                  <div className="w-full h-full bg-[#121214] border-2 border-zinc-700 rounded-2xl p-5 flex flex-col justify-between text-white shadow-2xl relative">
-                    <div className="text-center space-y-1">
-                      <span className="text-[10px] tracking-[0.35em] uppercase font-mono text-zinc-400">
-                        DIGITAL EVENT ARCHIVE
+                {/* DESIGN 4: BOHO TERRACOTTA & SUN ARCH */}
+                {activeDesignIndex === 3 && (
+                  <div className="w-full h-full bg-[#FAF3EE] border-4 border-[#E8C8B5] rounded-2xl p-5 flex flex-col justify-between text-[#4A2D23] shadow-inner relative">
+                    <div className="text-center space-y-1.5 pt-1">
+                      <span className="text-[9.5px] tracking-[0.28em] uppercase font-serif font-black text-[#9E5743] block">
+                        CELEBRATING FOREVER
                       </span>
                       <h2 
-                        style={{ fontFamily: "'Italiana', 'Instrument Serif', Georgia, serif" }} 
-                        className="text-3xl sm:text-4xl font-normal text-white tracking-tight"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }} 
+                        className="text-2xl sm:text-3xl font-black text-[#3D2118] tracking-tight leading-tight"
                       >
                         {standeeTitle}
                       </h2>
-                      <p className="text-[11px] text-zinc-400 font-mono">
-                        Fast biometric face search • High-resolution prints
+                      <p className="text-[11px] text-[#805041] font-serif italic">
+                        Find every moment captured with love &amp; joy
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-center gap-6 my-auto">
-                      <div className="w-28 h-28 sm:w-32 sm:h-32 bg-white p-2 rounded-2xl border-4 border-zinc-200 shadow-xl shrink-0">
+                    <div className="flex flex-col items-center justify-center my-auto space-y-3">
+                      <div className="w-36 h-36 sm:w-40 sm:h-40 bg-white p-2.5 rounded-2xl border-2 border-[#D98B75] shadow-md">
                         <img
                           src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(standeeUrl)}`}
                           alt="QR Code"
                           className="w-full h-full object-contain"
                         />
                       </div>
-                      <div className="space-y-1.5 text-left text-xs text-zinc-300 font-mono">
-                        <p className="font-bold">1. Scan with Phone</p>
-                        <p className="font-bold">2. Quick Face Match</p>
-                        <p className="font-bold">3. Save Your Photos</p>
+                      <div className="space-y-1 text-center text-xs text-[#523228]">
+                        <p className="font-bold">🌸 Scan with phone • Snap selfie • Get photos</p>
                         {standeePin && (
-                          <div className="pt-1">
-                            <span className="px-2.5 py-1 bg-white text-zinc-950 font-mono text-[11px] font-black rounded-lg inline-block">
+                          <div className="pt-0.5">
+                            <span className="px-3 py-1 bg-[#F0D5C7] text-[#52291E] font-mono text-xs font-black rounded-lg inline-block border border-[#DFB6A2]">
+                              PIN: {standeePin}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[9px] font-serif text-[#8A5A4D] border-t border-[#ECCDBE] pt-2 tracking-wider">
+                      <span>WITH GRATITUDE</span>
+                      <span>STUDIOCORE AI</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* DESIGN 5: MODERN OBSIDIAN & CRISP WHITE */}
+                {activeDesignIndex === 4 && (
+                  <div className="w-full h-full bg-[#121214] border-2 border-zinc-700 rounded-2xl p-5 flex flex-col justify-between text-white shadow-2xl relative">
+                    <div className="text-center space-y-1.5 pt-1">
+                      <span className="text-[9.5px] tracking-[0.35em] uppercase font-mono text-zinc-400 block">
+                        DIGITAL EVENT ARCHIVE
+                      </span>
+                      <h2 
+                        style={{ fontFamily: "'Italiana', 'Instrument Serif', Georgia, serif" }} 
+                        className="text-3xl sm:text-4xl font-normal text-white tracking-tight leading-tight"
+                      >
+                        {standeeTitle}
+                      </h2>
+                      <p className="text-[11px] text-zinc-400 font-mono">
+                        Instant biometric face recognition
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-center my-auto space-y-3">
+                      <div className="w-36 h-36 sm:w-40 sm:h-40 bg-white p-2.5 rounded-2xl border-4 border-zinc-300 shadow-xl">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(standeeUrl)}`}
+                          alt="QR Code"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                      <div className="space-y-1 text-center text-xs text-zinc-300 font-mono">
+                        <p className="font-bold">Scan • Face Match • Save Full Res</p>
+                        {standeePin && (
+                          <div className="pt-0.5">
+                            <span className="px-3 py-1 bg-white text-zinc-950 font-mono text-xs font-black rounded-lg inline-block">
                               PIN: {standeePin}
                             </span>
                           </div>
@@ -1009,39 +1127,37 @@ export default function GalleryShareModal({
                   </div>
                 )}
 
-                {/* DESIGN 4: BOHO TERRACOTTA & DUSTY ROSE */}
-                {activeDesignIndex === 3 && (
-                  <div className="w-full h-full bg-[#FAF3EE] border-4 border-[#E8C8B5] rounded-2xl p-5 flex flex-col justify-between text-[#4A2D23] shadow-inner relative">
-                    <div className="text-center space-y-1">
-                      <span className="text-[10px] tracking-[0.25em] uppercase font-serif text-[#9E5743]">
-                        WELCOME TO THE CELEBRATION
+                {/* DESIGN 6: BLUSH PETAL ROSE & GOLD */}
+                {activeDesignIndex === 5 && (
+                  <div className="w-full h-full bg-[#FDF8F7] border-4 border-rose-300/80 rounded-2xl p-5 flex flex-col justify-between text-zinc-900 shadow-inner relative">
+                    <div className="text-center space-y-1.5 pt-1">
+                      <span className="text-[9.5px] tracking-[0.3em] uppercase font-serif text-rose-800 font-bold block">
+                        THE WEDDING OF
                       </span>
                       <h2 
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }} 
-                        className="text-2xl sm:text-3xl font-black text-[#3D2118] tracking-tight"
+                        style={{ fontFamily: "'Playfair Display', Georgia, serif" }} 
+                        className="text-2xl sm:text-3xl font-black text-rose-950 tracking-tight leading-tight"
                       >
                         {standeeTitle}
                       </h2>
-                      <p className="text-[11px] text-[#805041] font-serif italic">
-                        Find every moment captured with love
+                      <p className="text-[11px] text-rose-700/80 font-serif italic">
+                        Scan with your phone to relive every romantic moment
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-center gap-6 my-auto">
-                      <div className="w-28 h-28 sm:w-32 sm:h-32 bg-white p-2 rounded-2xl border-2 border-[#D98B75] shadow-md shrink-0">
+                    <div className="flex flex-col items-center justify-center my-auto space-y-3">
+                      <div className="w-36 h-36 sm:w-40 sm:h-40 bg-white p-2.5 rounded-2xl border-2 border-rose-400 shadow-md">
                         <img
                           src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(standeeUrl)}`}
                           alt="QR Code"
                           className="w-full h-full object-contain"
                         />
                       </div>
-                      <div className="space-y-1.5 text-left text-xs text-[#523228]">
-                        <p className="font-bold">🌸 1. Scan the QR code</p>
-                        <p className="font-bold">📸 2. Snap a quick selfie</p>
-                        <p className="font-bold">✨ 3. Get all your photos</p>
+                      <div className="space-y-1 text-center text-xs text-rose-900">
+                        <p className="font-bold">✦ Open Camera • Scan QR • Download Photos ✦</p>
                         {standeePin && (
-                          <div className="pt-1">
-                            <span className="px-2.5 py-1 bg-[#F0D5C7] text-[#52291E] font-mono text-[11px] font-black rounded-lg inline-block border border-[#DFB6A2]">
+                          <div className="pt-0.5">
+                            <span className="px-3 py-1 bg-rose-100 border border-rose-300 text-rose-950 font-mono text-xs font-black rounded-lg inline-block">
                               PIN: {standeePin}
                             </span>
                           </div>
@@ -1049,9 +1165,99 @@ export default function GalleryShareModal({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-[9px] font-serif text-[#8A5A4D] border-t border-[#ECCDBE] pt-2 tracking-wider">
-                      <span>WITH GRATITUDE</span>
-                      <span>STUDIOCORE PHOTO DISCOVERY</span>
+                    <div className="flex items-center justify-between text-[9px] font-serif text-rose-400 border-t border-rose-200 pt-2 tracking-wider">
+                      <span>CHERISHED MEMORIES</span>
+                      <span>STUDIOCORE AI</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* DESIGN 7: REGAL MIDNIGHT NAVY & PLATINUM */}
+                {activeDesignIndex === 6 && (
+                  <div className="w-full h-full bg-gradient-to-b from-[#0B132B] via-[#1C2541] to-[#0B132B] border-4 border-slate-400/60 rounded-2xl p-5 flex flex-col justify-between text-white shadow-2xl relative">
+                    <div className="text-center space-y-1.5 pt-1">
+                      <span className="text-[9.5px] tracking-[0.35em] uppercase font-mono text-cyan-300/80 block font-bold">
+                        GUEST PHOTO PORTAL
+                      </span>
+                      <h2 
+                        style={{ fontFamily: "'Cinzel', Georgia, serif" }} 
+                        className="text-2xl sm:text-3xl font-black text-slate-100 tracking-wide leading-tight"
+                      >
+                        {standeeTitle}
+                      </h2>
+                      <p className="text-[11px] text-slate-300/80 font-serif italic">
+                        Scan the code to access your high-resolution photos
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-center my-auto space-y-3">
+                      <div className="w-36 h-36 sm:w-40 sm:h-40 bg-white p-2.5 rounded-2xl border-2 border-slate-300 shadow-xl">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(standeeUrl)}`}
+                          alt="QR Code"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                      <div className="space-y-1 text-center text-xs text-slate-200 font-mono">
+                        <p className="font-bold">✦ Point Phone Camera &amp; Tap Notification ✦</p>
+                        {standeePin && (
+                          <div className="pt-0.5">
+                            <span className="px-3 py-1 bg-cyan-500 text-slate-950 font-mono text-xs font-black rounded-lg inline-block">
+                              PASS KEY: {standeePin}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[9px] font-mono tracking-widest text-slate-400 border-t border-slate-700 pt-2 uppercase">
+                      <span>STUDIOCORE AI</span>
+                      <span>HIGH RESOLUTION</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* DESIGN 8: EARTHY SAGE & EUCALYPTUS */}
+                {activeDesignIndex === 7 && (
+                  <div className="w-full h-full bg-[#F5F7F5] border-4 border-[#7A8B7B]/60 rounded-2xl p-5 flex flex-col justify-between text-[#2D3B2E] shadow-inner relative">
+                    <div className="text-center space-y-1.5 pt-1">
+                      <span className="text-[9.5px] tracking-[0.3em] uppercase font-serif font-black text-[#566A59] block">
+                        TOGETHER WITH THEIR FAMILIES
+                      </span>
+                      <h2 
+                        style={{ fontFamily: "'Playfair Display', Georgia, serif" }} 
+                        className="text-2xl sm:text-3xl font-black text-[#1E2B20] tracking-tight leading-tight"
+                      >
+                        {standeeTitle}
+                      </h2>
+                      <p className="text-[11px] text-[#566A59] font-serif italic">
+                        Find your photos instantly with AI face search
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-center my-auto space-y-3">
+                      <div className="w-36 h-36 sm:w-40 sm:h-40 bg-white p-2.5 rounded-2xl border-2 border-[#7A8B7B] shadow-md">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(standeeUrl)}`}
+                          alt="QR Code"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                      <div className="space-y-1 text-center text-xs text-[#2D3B2E]">
+                        <p className="font-bold">🍃 1. Scan QR  2. Snap quick selfie  3. Save photos</p>
+                        {standeePin && (
+                          <div className="pt-0.5">
+                            <span className="px-3 py-1 bg-[#E1E8E2] border border-[#7A8B7B] text-[#1E2B20] font-mono text-xs font-black rounded-lg inline-block">
+                              PIN: {standeePin}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[9px] font-serif text-[#7A8B7B] border-t border-[#D0DAD2] pt-2 tracking-wider">
+                      <span>THANK YOU FOR CELEBRATING</span>
+                      <span>STUDIOCORE AI</span>
                     </div>
                   </div>
                 )}
@@ -1061,7 +1267,7 @@ export default function GalleryShareModal({
             {/* Modal Bottom Action Controls */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
               <div className="text-[11px] font-bold text-zinc-500">
-                Resolution: 300 DPI High-Res Print ready • 3:2 Ratio
+                Resolution: 300 DPI High-Res Print ready • 2:3 Vertical Standee
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">

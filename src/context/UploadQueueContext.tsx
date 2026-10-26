@@ -45,6 +45,7 @@ interface UploadQueueContextType {
     workspaceId?: string
   ) => string;
   cancelJob: (jobId: string) => void;
+  retryJob: (jobId: string) => void;
   clearCompleted: () => void;
 }
 
@@ -268,6 +269,24 @@ export function UploadQueueProvider({ children }: { children: React.ReactNode })
     );
   }, []);
 
+  const retryJob = useCallback((jobId: string) => {
+    setJobs((prev) =>
+      prev.map((j) => {
+        if (j.id === jobId) {
+          return {
+            ...j,
+            status: 'queued',
+            errors: [],
+            percentage: 0,
+            completedCount: 0,
+          };
+        }
+        return j;
+      })
+    );
+    setTimeout(processQueue, 50);
+  }, [processQueue]);
+
   const clearCompleted = useCallback(() => {
     setJobs((prev) => prev.filter((j) => j.status !== 'completed' && j.status !== 'paused'));
   }, []);
@@ -287,6 +306,7 @@ export function UploadQueueProvider({ children }: { children: React.ReactNode })
         dismissInterrupted,
         enqueueUpload,
         cancelJob,
+        retryJob,
         clearCompleted,
       }}
     >

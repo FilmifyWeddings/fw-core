@@ -64,6 +64,27 @@ const nextConfig: NextConfig = {
     ];
   },
 
+  async rewrites() {
+    return [
+      {
+        source: '/:studioSlug/:coupleSlug/guest-access/:slug',
+        destination: '/g/:slug',
+      },
+      {
+        source: '/:studioSlug/:coupleSlug/full-access/:slug',
+        destination: '/g/:slug?access=all',
+      },
+      {
+        source: '/:studioSlug/:coupleSlug/selection/:slug',
+        destination: '/g/:slug?album_selection=true',
+      },
+      {
+        source: '/:studioSlug/:coupleSlug/:slug',
+        destination: '/g/:slug',
+      },
+    ];
+  },
+
   async redirects() {
     return [
       {

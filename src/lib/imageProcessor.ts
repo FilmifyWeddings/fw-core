@@ -551,8 +551,9 @@ export async function batchUploadPhotos(
               onProgress(completed, total, Math.round((completed / total) * 100), file.name);
             }
 
-            // Rule 1 & 2: Register in efficient batches of 16 (8 on mobile) to feed GPU in bulk and eliminate idle wait
-            if (pendingRegistration.length >= REGISTRATION_BATCH_SIZE) {
+            // Immediate 1st photo streaming: flush photo 1 immediately so it appears on UI in 1 second, then batch in groups of 4-8!
+            const dynamicBatchThreshold = completed <= 1 ? 1 : (completed < 8 ? 4 : REGISTRATION_BATCH_SIZE);
+            if (pendingRegistration.length >= dynamicBatchThreshold) {
               await flushRegistration();
             }
 

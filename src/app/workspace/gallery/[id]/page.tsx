@@ -68,6 +68,7 @@ import { useUploadQueue } from '@/context/UploadQueueContext';
 import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothImage';
 import GalleryDesignStudio from '@/components/gallery/GalleryDesignStudio';
 import GalleryShareModal from '@/components/gallery/GalleryShareModal';
+import { FaceAiFocusIcon } from '@/components/gallery/CoverPresetEffects';
 
 interface EventGallery {
   id: string;
@@ -1265,9 +1266,61 @@ function AlbumStudioContent() {
 
   const handleBulkDownload = async () => {
     const selected = filteredPhotos.filter((p) => selectedPhotoIds.has(p.id));
-    for (const photo of selected) {
-      await handleDownloadPhoto(photo);
-      await new Promise((r) => setTimeout(r, 350));
+    if (selected.length === 0) return;
+
+    setIsZipDownloading(true);
+    setZipProgress({ current: 0, total: selected.length, message: `Preparing ZIP archive of ${selected.length} photos...` });
+
+    try {
+      const JSZipModule = await import('jszip');
+      const JSZip = JSZipModule.default || JSZipModule;
+      const zip = new JSZip();
+
+      // Download in parallel chunks of 4 for maximum speed & 0 egress cost
+      const CHUNK_SIZE = 4;
+      for (let i = 0; i < selected.length; i += CHUNK_SIZE) {
+        const chunk = selected.slice(i, i + CHUNK_SIZE);
+        await Promise.all(
+          chunk.map(async (photo, chunkIdx) => {
+            const overallIdx = i + chunkIdx;
+            const colName = collections.find((c) => c.id === photo.collection_id)?.name || 'General';
+            const cleanCol = colName.replace(/[/\\?%*:|"<>]/g, '_').trim() || 'General';
+            const filename = getCleanFilename(photo.original_key || photo.file_name || `photo_${overallIdx + 1}.jpg`);
+
+            setZipProgress({
+              current: overallIdx + 1,
+              total: selected.length,
+              message: `Downloading ${filename} (${overallIdx + 1}/${selected.length})...`,
+            });
+
+            try {
+              const downloadUrl = `/api/gallery/image?key=${encodeURIComponent(photo.original_key || photo.preview_key)}`;
+              const res = await fetch(downloadUrl);
+              if (res.ok) {
+                const blob = await res.blob();
+                const folder = zip.folder(cleanCol) || zip;
+                folder.file(filename, blob);
+              }
+            } catch (fetchErr) {
+              console.warn('Failed to fetch photo for zip:', photo.id, fetchErr);
+            }
+          })
+        );
+      }
+
+      setZipProgress((prev) => ({ ...prev, message: 'Compressing archive...' }));
+      const content = await zip.generateAsync({ type: 'blob' });
+      const downloadUrl = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `${gallery?.slug || 'gallery'}_selected_${selected.length}_photos.zip`;
+      a.click();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (err: any) {
+      console.error('Error generating bulk zip:', err);
+      alert('Failed to generate ZIP archive. Please try again.');
+    } finally {
+      setIsZipDownloading(false);
     }
   };
 
@@ -1913,17 +1966,8 @@ function AlbumStudioContent() {
                 : 'Face AI is OFF: Click to turn ON & index existing photos'
             }
           >
-            <Sparkles className={`w-3.5 h-3.5 ${gallery.is_face_ai_enabled !== false ? 'text-violet-600' : 'text-zinc-400'}`} />
+            <FaceAiFocusIcon className={`w-3.5 h-3.5 ${gallery.is_face_ai_enabled !== false ? 'text-violet-600' : 'text-zinc-400'}`} />
             <span>Face AI: {gallery.is_face_ai_enabled !== false ? 'ON' : 'OFF'}</span>
-          </button>
-
-          {/* Table Standee QR Button */}
-          <button
-            onClick={() => setIsStandeeModalOpen(true)}
-            className="p-2 rounded-full bg-white hover:bg-[#FAF9F5] text-zinc-700 border border-[#E7E2D8] transition shadow-2xs cursor-pointer"
-            title="Live Table Standee & QR"
-          >
-            <QrCode className="w-4 h-4 text-amber-600" />
           </button>
 
           {/* Share Button (Screenshot Match: Green Luxury Pill - Opens Modal directly over gallery) */}
@@ -1935,17 +1979,6 @@ function AlbumStudioContent() {
             <Share2 className="w-3.5 h-3.5" />
             <span>Share</span>
           </button>
-
-          {/* Direct Live Client Portal Link */}
-          <a
-            href={getPublicUrl(gallery.slug)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-2 rounded-full bg-[#FAF9F5] hover:bg-white text-zinc-600 hover:text-amber-700 border border-[#E7E2D8] transition cursor-pointer"
-            title="Open Live Guest Portal"
-          >
-            <ExternalLink className="w-4 h-4" />
-          </a>
         </div>
       </header>
 
@@ -2424,14 +2457,14 @@ function AlbumStudioContent() {
 
               {/* Bulk Selection Sticky Toolbar */}
               {selectedPhotoIds.size > 0 && (
-                <div className="sticky top-2 z-30 bg-zinc-900 text-white rounded-2xl p-3 shadow-xl border border-zinc-800 flex items-center justify-between animate-in slide-in-from-top duration-200">
+                <div className="sticky top-2 z-30 bg-[#FAF9F5] text-zinc-900 rounded-2xl p-3 shadow-md border border-[#E7E2D8] flex items-center justify-between animate-in slide-in-from-top duration-200">
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-black text-amber-400 bg-zinc-800 px-3 py-1 rounded-xl">
+                    <span className="text-xs font-bold text-amber-900 bg-amber-100 border border-amber-200/80 px-3 py-1 rounded-xl">
                       {selectedPhotoIds.size} Selected
                     </span>
                     <button
                       onClick={handleSelectAll}
-                      className="text-xs text-zinc-300 hover:text-white font-bold cursor-pointer underline"
+                      className="text-xs text-zinc-600 hover:text-zinc-900 font-bold cursor-pointer underline decoration-zinc-300"
                     >
                       {selectedPhotoIds.size === filteredPhotos.length ? 'Deselect All' : 'Select All'}
                     </button>
@@ -2440,7 +2473,7 @@ function AlbumStudioContent() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleBulkDownload}
-                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                      className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm active:scale-95"
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>Download Selected</span>
@@ -2448,7 +2481,7 @@ function AlbumStudioContent() {
 
                     <button
                       onClick={handleBulkDelete}
-                      className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                      className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm active:scale-95"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Delete</span>
@@ -3510,7 +3543,7 @@ function AlbumStudioContent() {
                 </span>
               </div>
               <p className="text-[11px] text-amber-800/90 leading-relaxed font-normal">
-                Deleting this collection will permanently delete all its photos and purge all original and preview files from cloud storage so you will never be charged for them.
+                Deleting the collection will permanently delete all photos.
               </p>
             </div>
 

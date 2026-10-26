@@ -198,6 +198,7 @@ function GuestSlugGalleryContent() {
 
   // Dual Guest Tab: 'my' (AI Face Matched) vs 'all' (Full Event Photos)
   const [guestActiveTab, setGuestActiveTab] = useState<'my' | 'all'>('my');
+  const [isMyPhotosActive, setIsMyPhotosActive] = useState<boolean>(true);
   const [isSyncingLivePhotos, setIsSyncingLivePhotos] = useState(false);
   const [guestSavedSession, setGuestSavedSession] = useState<{ id?: string; token?: string; name?: string; phone?: string; email?: string } | null>(null);
 
@@ -464,11 +465,25 @@ function GuestSlugGalleryContent() {
     } else {
       // Check device localStorage
       try {
-        const rawLocal = localStorage.getItem(`studiocore_guest_${slug}`) || localStorage.getItem(`studiocore_guest_${gallery.id}`);
+        const rawLocal = localStorage.getItem(`studiocore_guest_profile_${gallery.id}`) || localStorage.getItem(`studiocore_guest_${slug}`) || localStorage.getItem(`studiocore_guest_${gallery.id}`);
         if (rawLocal) {
           const parsed = JSON.parse(rawLocal);
+          if (parsed?.name) {
+            setGuestName(parsed.name);
+          }
           if (parsed?.id) {
             fetchGuestData(parsed.id, parsed.token);
+          } else if (Array.isArray(parsed?.matchedPhotoIds) && parsed.matchedPhotoIds.length > 0) {
+            fetch(`/api/gallery/photos?gallery_id=${gallery.id}&ids=${parsed.matchedPhotoIds.join(',')}`)
+              .then((r) => r.json())
+              .then((j) => {
+                if (isMounted && j.success && Array.isArray(j.photos) && j.photos.length > 0) {
+                  setMatchedPhotos(j.photos);
+                  setHasSearched(true);
+                  setIsMyPhotosActive(true);
+                }
+              })
+              .catch(() => {});
           }
         }
       } catch (_) {}
@@ -626,6 +641,18 @@ function GuestSlugGalleryContent() {
         setMatchedPhotos(json.photos);
         setHasSearched(true);
         setIsVerified(true);
+        setIsMyPhotosActive(true);
+        try {
+          const profObj = {
+            id: savedId,
+            name: data.name,
+            phone: data.phone,
+            email: data.email,
+            matchedPhotoIds: json.photos.map((p: any) => p.id),
+          };
+          localStorage.setItem(`studiocore_guest_profile_${gallery.id}`, JSON.stringify(profObj));
+          localStorage.setItem(`studiocore_guest_profile_${slug}`, JSON.stringify(profObj));
+        } catch (_) {}
       } else {
         setMatchedPhotos([]);
         setHasSearched(true);
@@ -1057,17 +1084,28 @@ function GuestSlugGalleryContent() {
   }, [selectedForAlbum, gallery?.id, isSelectionMode, selectorEmail, selectorName, guestSavedSession, syncSelectionToBackend]);
 
   const displayedPhotos = useMemo(() => {
+    // 1. If guest has scanned their face and "My Photos" is active, display only their matched photos!
+    if (isMyPhotosActive && matchedPhotos.length > 0) {
+      const filtered = selectedCollectionId === 'all'
+        ? matchedPhotos
+        : matchedPhotos.filter((p) => p.collection_id === selectedCollectionId);
+      if (isSelectionMode && showOnlySelected) {
+        return filtered.filter((p) => selectedForAlbum.has(p.id));
+      }
+      return filtered;
+    }
+
     let list = isPrivilegedMode && isUnlocked
       ? displayedPrivilegedPhotos
-      : matchedPhotos;
+      : (matchedPhotos.length > 0 ? matchedPhotos : fullPhotos);
 
     if (isSelectionMode && showOnlySelected) {
-      list = (isPrivilegedMode && isUnlocked ? targetFullPhotos : matchedPhotos).filter((p) =>
+      list = (isPrivilegedMode && isUnlocked ? targetFullPhotos : (matchedPhotos.length > 0 ? matchedPhotos : fullPhotos)).filter((p) =>
         selectedForAlbum.has(p.id)
       );
     }
     return list;
-  }, [isPrivilegedMode, isUnlocked, displayedPrivilegedPhotos, matchedPhotos, isSelectionMode, showOnlySelected, targetFullPhotos, selectedForAlbum]);
+  }, [isMyPhotosActive, matchedPhotos, selectedCollectionId, isPrivilegedMode, isUnlocked, displayedPrivilegedPhotos, fullPhotos, isSelectionMode, showOnlySelected, targetFullPhotos, selectedForAlbum]);
 
   if (loading) {
     const rawBranding = gallery?.studio_branding;
@@ -1500,8 +1538,20 @@ function GuestSlugGalleryContent() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {gallery.is_face_ai_enabled !== false && (
+              <button
+                type="button"
+                onClick={() => setIsFaceScannerOpen(true)}
+                className="px-3 sm:px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm active:scale-95"
+                title="AI Face Recognition - Find My Photos"
+              >
+                <FaceAiFocusIcon className="w-3.5 h-3.5 text-white" />
+                <span className="hidden sm:inline">Find My Photo</span>
+                <span className="sm:hidden">Find</span>
+              </button>
+            )}
             {totalPhotosCount > 0 && (
-              <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-65 mr-1">
+              <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider opacity-65 mr-1 hidden sm:inline">
                 {totalPhotosCount} PHOTOS
               </span>
             )}
@@ -2038,79 +2088,118 @@ function GuestSlugGalleryContent() {
             }}
           >
         <div className="w-full px-4 sm:px-8 py-2.5 flex items-center justify-between gap-3 relative">
-          {/* 3-Lines Sub-Events Menu Button (OUTSIDE the scrollable bar, floats over content) */}
-          <div className="relative shrink-0 z-40">
-            <button
-              type="button"
-              onClick={() => setIsSubEventsDropdownOpen((prev) => !prev)}
-              className="p-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
-              style={{
-                backgroundColor: isSubEventsDropdownOpen ? designPalette.accentColor : `${designPalette.textColor}0D`,
-                color: isSubEventsDropdownOpen ? '#FFFFFF' : designPalette.textColor,
-                border: `1px solid ${designPalette.textColor}25`,
-              }}
-              title="Sub-Events Menu"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline text-[11px]">Events</span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${isSubEventsDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isSubEventsDropdownOpen && (
-              <div
-                ref={subEventsDropdownRef}
-                className="absolute left-0 top-full mt-2 w-64 rounded-2xl shadow-2xl border py-2 z-50 animate-in fade-in zoom-in-95 backdrop-blur-2xl"
+          {/* Left: Events Dropdown Button & Personalized Guest Badge */}
+          <div className="flex items-center gap-2 shrink-0 z-40">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsSubEventsDropdownOpen((prev) => !prev)}
+                className="p-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
                 style={{
-                  backgroundColor: designPalette.canvasBg,
-                  borderColor: `${designPalette.textColor}25`,
-                  color: designPalette.textColor,
+                  backgroundColor: isSubEventsDropdownOpen ? designPalette.accentColor : `${designPalette.textColor}0D`,
+                  color: isSubEventsDropdownOpen ? '#FFFFFF' : designPalette.textColor,
+                  border: `1px solid ${designPalette.textColor}25`,
                 }}
+                title="Sub-Events Menu"
               >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[11px]">Events</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${isSubEventsDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isSubEventsDropdownOpen && (
                 <div
-                  className="px-3.5 py-2 text-[10px] uppercase font-bold tracking-wider opacity-60 border-b flex items-center justify-between"
-                  style={{ borderColor: `${designPalette.textColor}15` }}
+                  ref={subEventsDropdownRef}
+                  className="absolute left-0 top-full mt-2 w-64 rounded-2xl shadow-2xl border py-2 z-50 animate-in fade-in zoom-in-95 backdrop-blur-2xl"
+                  style={{
+                    backgroundColor: designPalette.canvasBg,
+                    borderColor: `${designPalette.textColor}25`,
+                    color: designPalette.textColor,
+                  }}
                 >
-                  <span>Select Event</span>
-                  <span className="font-mono">({collections.length + 1})</span>
+                  <div
+                    className="px-3.5 py-2 text-[10px] uppercase font-bold tracking-wider opacity-60 border-b flex items-center justify-between"
+                    style={{ borderColor: `${designPalette.textColor}15` }}
+                  >
+                    <span>Select Event</span>
+                    <span className="font-mono">({collections.length + 1})</span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto py-1 scrollbar-thin">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCollectionId('all');
+                        setIsSubEventsDropdownOpen(false);
+                      }}
+                      className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
+                        selectedCollectionId === 'all' ? 'font-bold' : 'opacity-85'
+                      }`}
+                      style={selectedCollectionId === 'all' ? { color: designPalette.accentColor } : {}}
+                    >
+                      <span>All Photos</span>
+                      <span className="text-[10px] opacity-60 font-mono">({fullPhotos.length})</span>
+                    </button>
+
+                    {collections.map((col) => {
+                      const isSel = selectedCollectionId === col.id;
+                      const count = col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length;
+                      return (
+                        <button
+                          key={col.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCollectionId(col.id);
+                            setIsSubEventsDropdownOpen(false);
+                          }}
+                          className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
+                            isSel ? 'font-bold' : 'opacity-85'
+                          }`}
+                          style={isSel ? { color: designPalette.accentColor } : {}}
+                        >
+                          <span className="truncate">{col.name}</span>
+                          <span className="text-[10px] opacity-60 font-mono ml-2">({count})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="max-h-72 overflow-y-auto py-1 scrollbar-thin">
+              )}
+            </div>
+
+            {/* Personalized Guest Badge + Face Icon + Instant ZIP Download */}
+            {guestName && (
+              <div className="flex items-center gap-1.5 shrink-0 animate-in fade-in duration-300">
+                <button
+                  type="button"
+                  onClick={() => setIsMyPhotosActive((prev) => !prev)}
+                  className={`px-3 py-1 sm:py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border ${
+                    isMyPhotosActive
+                      ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-400/30'
+                      : 'bg-white/85 hover:bg-white text-zinc-700 border-[#E7E2D8]'
+                  }`}
+                  title={isMyPhotosActive ? "Showing only your matched photos. Click to view all event photos." : "Click to view your matched photos."}
+                >
+                  <span className="truncate max-w-[110px] sm:max-w-[140px]">{guestName}</span>
+                  <FaceAiFocusIcon className={`w-3.5 h-3.5 ${isMyPhotosActive ? 'text-white' : 'text-amber-600'}`} />
+                  {matchedPhotos.length > 0 && (
+                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${isMyPhotosActive ? 'bg-amber-700 text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                      {matchedPhotos.length}
+                    </span>
+                  )}
+                </button>
+
+                {isMyPhotosActive && matchedPhotos.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedCollectionId('all');
-                      setIsSubEventsDropdownOpen(false);
-                    }}
-                    className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
-                      selectedCollectionId === 'all' ? 'font-bold' : 'opacity-85'
-                    }`}
-                    style={selectedCollectionId === 'all' ? { color: designPalette.accentColor } : {}}
+                    onClick={handleDownloadAllMyPhotos}
+                    disabled={isDownloadingAll}
+                    className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
+                    title="Download All My Photos (ZIP)"
                   >
-                    <span>All Photos</span>
-                    <span className="text-[10px] opacity-60 font-mono">({fullPhotos.length})</span>
+                    <Download className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Download ZIP</span>
                   </button>
-
-                  {collections.map((col) => {
-                    const isSel = selectedCollectionId === col.id;
-                    const count = col.photo_count ?? fullPhotos.filter((p) => p.collection_id === col.id).length;
-                    return (
-                      <button
-                        key={col.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCollectionId(col.id);
-                          setIsSubEventsDropdownOpen(false);
-                        }}
-                        className={`w-full px-3.5 py-2.5 text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer hover:bg-black/5 ${
-                          isSel ? 'font-bold' : 'opacity-85'
-                        }`}
-                        style={isSel ? { color: designPalette.accentColor } : {}}
-                      >
-                        <span className="truncate">{col.name}</span>
-                        <span className="text-[10px] opacity-60 font-mono ml-2">({count})</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                )}
               </div>
             )}
           </div>
