@@ -184,7 +184,11 @@ export async function POST(req: NextRequest) {
             .from('gallery_photos')
             .select('id, gallery_id, preview_key, thumbnail_key, original_key, width, height, created_at, is_selected')
             .in('id', mergedMatches);
-          matchedPhotos = pData || [];
+          matchedPhotos = (pData || []).map((p: any) => ({
+            ...p,
+            preview_url: `/api/gallery/image?key=${encodeURIComponent(p.preview_key)}`,
+            thumbnail_url: `/api/gallery/image?key=${encodeURIComponent(p.thumbnail_key || p.preview_key)}`,
+          }));
         } catch (pErr) {
           console.warn('[GuestRegister] Failed to fetch matched photo rows:', pErr);
         }
@@ -260,7 +264,11 @@ export async function POST(req: NextRequest) {
           .from('gallery_photos')
           .select('id, gallery_id, preview_key, thumbnail_key, original_key, width, height, created_at, is_selected')
           .in('id', matchedPhotoIds);
-        matchedPhotos = pData || [];
+        matchedPhotos = (pData || []).map((p: any) => ({
+            ...p,
+            preview_url: `/api/gallery/image?key=${encodeURIComponent(p.preview_key)}`,
+            thumbnail_url: `/api/gallery/image?key=${encodeURIComponent(p.thumbnail_key || p.preview_key)}`,
+          }));
       } catch (pErr) {
         console.warn('[GuestRegister] Failed to fetch matched photo rows:', pErr);
       }

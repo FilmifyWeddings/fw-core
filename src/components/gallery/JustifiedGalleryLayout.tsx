@@ -236,7 +236,7 @@ export function JustifiedGalleryLayout({
                           className={`w-6 h-6 transition-all duration-200 ${
                             isSelected
                               ? 'fill-[#DC2626] stroke-white stroke-[2.2px] drop-shadow-[0_2px_6px_rgba(220,38,38,0.8)] scale-105'
-                              : 'fill-black/35 backdrop-blur-xs stroke-white stroke-[2.2px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)] hover:fill-black/50'
+                              : 'fill-black/25 stroke-white stroke-[2.2px] drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)] hover:fill-black/40'
                           }`}
                         />
                       </button>
@@ -317,7 +317,7 @@ export function JustifiedGalleryLayout({
                       className={`w-6 h-6 transition-all duration-200 ${
                         isSelected
                           ? 'fill-[#DC2626] stroke-white stroke-[2.2px] drop-shadow-[0_2px_6px_rgba(220,38,38,0.8)] scale-105'
-                          : 'fill-black/35 backdrop-blur-xs stroke-white stroke-[2.2px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)] hover:fill-black/50'
+                          : 'fill-black/25 stroke-white stroke-[2.2px] drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)] hover:fill-black/40'
                       }`}
                     />
                   </button>

@@ -624,11 +624,15 @@ function AlbumStudioContent() {
 
   const [isResendingNotification, setIsResendingNotification] = useState(false);
   const [resendingGuestId, setResendingGuestId] = useState<string | null>(null);
+  const [resendBanner, setResendBanner] = useState<string | null>(null);
 
   const handleResendNotifications = async (guestId?: string) => {
     if (!gallery?.id) return;
     if (guestId) setResendingGuestId(guestId);
     else setIsResendingNotification(true);
+    setResendBanner('Dispatching notifications in the background...');
+    setShowPublishConfirmModal(false);
+
     try {
       const res = await fetch('/api/gallery/guest/resend-notification', {
         method: 'POST',
@@ -640,13 +644,16 @@ function AlbumStudioContent() {
       });
       const json = await res.json();
       if (json.success) {
-        alert(json.message || 'Notifications dispatched successfully!');
-        loadRegisteredGuests(gallery.id);
+        setResendBanner(json.message || 'Notifications dispatched successfully!');
+        await loadRegisteredGuests(gallery.id);
+        setTimeout(() => setResendBanner(null), 5000);
       } else {
-        alert(`Failed to resend: ${json.error}`);
+        setResendBanner(`Notification error: ${json.error}`);
+        setTimeout(() => setResendBanner(null), 6000);
       }
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      setResendBanner(`Error: ${err.message}`);
+      setTimeout(() => setResendBanner(null), 6000);
     } finally {
       setIsResendingNotification(false);
       setResendingGuestId(null);
@@ -830,10 +837,13 @@ function AlbumStudioContent() {
       if (data.success) {
         setGallery((prev) => (prev ? { ...prev, status: 'PUBLISHED', is_active: true } : null));
         setShowPublishConfirmModal(false);
+        loadRegisteredGuests(gallery.id);
         if (sendEmailNotification) {
-          alert(`🎉 Gallery published! Emails dispatched to ${data.total_notified || registeredGuestsCount} registered guests.`);
+          setResendBanner(`🎉 Gallery published! Emails dispatched to ${data.total_notified || registeredGuestsCount} registered guests.`);
+          setTimeout(() => setResendBanner(null), 5000);
         } else {
-          alert('🎉 Gallery published successfully (without emails)!');
+          setResendBanner('🎉 Gallery published successfully (without emails)!');
+          setTimeout(() => setResendBanner(null), 4000);
         }
       } else {
         alert(data.error || 'Failed to publish event');
@@ -3206,35 +3216,68 @@ function AlbumStudioContent() {
                         </div>
                       </div>
 
+                      {resendBanner && (
+                        <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between gap-2 animate-in fade-in">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-amber-600 animate-spin" />
+                            <span>{resendBanner}</span>
+                          </div>
+                          <button type="button" onClick={() => setResendBanner(null)} className="text-zinc-400 hover:text-zinc-700">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
                       {registeredGuests.length > 0 ? (
                         <div className="divide-y divide-[#F2EEE6]">
                           {registeredGuests.map((guest, idx) => {
                             const displayName = guest.guest_name || guest.name || 'Guest';
-                            const displayContact = guest.guest_phone ? guest.guest_phone.split('#')[0] : (guest.guest_email || guest.email || 'Via QR Scan');
                             const matchedCount = Array.isArray(guest.matched_photo_ids) ? guest.matched_photo_ids.length : 0;
                             const status = guest.notification_status?.toUpperCase() || 'PENDING';
                             const isResendingThis = resendingGuestId === guest.id;
 
                             return (
-                              <div key={guest.id || idx} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                              <div
+                                key={guest.id || idx}
+                                onClick={() => {
+                                  setSelectedGuest(guest);
+                                  setIsGuestModalOpen(true);
+                                }}
+                                className="py-3 px-3 -mx-3 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-[#FAF9F5] transition cursor-pointer border border-transparent hover:border-[#E7E2D8] group"
+                                title="Click to view guest profile, matched photos, and private portal link"
+                              >
                                 <div className="flex items-center gap-3 min-w-0">
-                                  <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-zinc-200 bg-amber-50 flex items-center justify-center font-bold text-amber-900">
+                                  <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border border-zinc-200 bg-amber-50 flex items-center justify-center font-bold text-amber-900 group-hover:scale-105 transition-transform shadow-xs">
                                     {guest.selfie_url ? (
                                       <img src={guest.selfie_url} alt={displayName} className="w-full h-full object-cover" />
                                     ) : (
                                       <span>{displayName.charAt(0).toUpperCase()}</span>
                                     )}
                                   </div>
-                                  <div className="min-w-0">
+                                  <div className="min-w-0 space-y-0.5">
                                     <div className="flex items-center gap-2">
-                                      <span className="font-bold text-zinc-900 truncate">{displayName}</span>
+                                      <span className="font-bold text-zinc-900 truncate group-hover:text-amber-700 transition-colors">{displayName}</span>
                                       {matchedCount > 0 && (
                                         <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">
                                           📸 {matchedCount} photos
                                         </span>
                                       )}
                                     </div>
-                                    <span className="text-[11px] text-zinc-400 block truncate">{displayContact}</span>
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-500">
+                                      {guest.guest_phone && (
+                                        <span className="font-mono text-zinc-700 font-medium">
+                                          📞 {guest.guest_phone.split('#')[0]}
+                                        </span>
+                                      )}
+                                      {guest.guest_email && (
+                                        <span className="text-zinc-500 truncate max-w-[200px]">
+                                          ✉️ {guest.guest_email}
+                                        </span>
+                                      )}
+                                      {!guest.guest_phone && !guest.guest_email && (
+                                        <span className="text-zinc-400">Via QR Scan</span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
 
@@ -3251,7 +3294,10 @@ function AlbumStudioContent() {
                                       </span>
                                       <button
                                         type="button"
-                                        onClick={() => handleResendNotifications(guest.id)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleResendNotifications(guest.id);
+                                        }}
                                         disabled={isResendingThis}
                                         className="p-1 rounded-md text-amber-700 hover:bg-amber-50 border border-amber-200 transition"
                                         title="Resend notification"

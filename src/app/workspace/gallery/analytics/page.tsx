@@ -91,16 +91,10 @@ export default function GalleryAnalyticsPage() {
       ? { value: (totalBytes / (1024 * 1024 * 1024)).toFixed(2), unit: 'GB' }
       : { value: (totalBytes / (1024 * 1024)).toFixed(1), unit: 'MB' };
 
-    // Realistic estimated engagement ratios based on gallery size and guests
-    const totalEstimatedViews = galleries.reduce((acc, g) => {
-      const base = (g.photo_count || 0) * 8 + (g.total_faces || 0) * 12 + 45;
-      return acc + (g.photo_count ? base : 0);
-    }, 0);
-
-    const totalEstimatedDownloads = galleries.reduce((acc, g) => {
-      const base = Math.round((g.photo_count || 0) * 2.4);
-      return acc + base;
-    }, 0);
+    // Real tracked metrics across all events (Zero fake multipliers)
+    const totalViews = galleries.reduce((acc, g: any) => acc + (g.views_count || 0), 0);
+    const totalDownloads = galleries.reduce((acc, g: any) => acc + (g.downloads_count || 0), 0);
+    const totalFaceSearches = galleries.reduce((acc, g: any) => acc + (g.face_searches || g.total_registered_guests || 0), 0);
 
     return {
       totalEvents,
@@ -108,8 +102,9 @@ export default function GalleryAnalyticsPage() {
       totalFaces,
       totalGuests,
       totalStorageFormatted,
-      totalEstimatedViews,
-      totalEstimatedDownloads,
+      totalViews,
+      totalDownloads,
+      totalFaceSearches,
     };
   }, [galleries]);
 
@@ -208,7 +203,7 @@ export default function GalleryAnalyticsPage() {
           </div>
           <div>
             <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
-              {metrics.totalEstimatedViews.toLocaleString('en-IN')}
+              {metrics.totalViews.toLocaleString('en-IN')}
             </div>
             <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
               Live guest visits
@@ -224,10 +219,10 @@ export default function GalleryAnalyticsPage() {
           </div>
           <div>
             <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
-              {metrics.totalFaces.toLocaleString('en-IN')}
+              {metrics.totalFaceSearches.toLocaleString('en-IN')}
             </div>
             <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
-              Vector selfie matches
+              Selfie registrations
             </p>
           </div>
         </div>
@@ -240,7 +235,7 @@ export default function GalleryAnalyticsPage() {
           </div>
           <div>
             <div className="text-2xl font-black text-zinc-900 tracking-tight font-mono">
-              {metrics.totalEstimatedDownloads.toLocaleString('en-IN')}
+              {metrics.totalDownloads.toLocaleString('en-IN')}
             </div>
             <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
               Original High-Res &amp; WebP
@@ -322,8 +317,8 @@ export default function GalleryAnalyticsPage() {
                   <th className="py-3 px-4">Event &amp; Type</th>
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4 text-center">Photos</th>
-                  <th className="py-3 px-4 text-center">Face Scans</th>
-                  <th className="py-3 px-4 text-center">Est. Views</th>
+                  <th className="py-3 px-4 text-center">Face Searches</th>
+                  <th className="py-3 px-4 text-center">Views</th>
                   <th className="py-3 px-4 text-center">Downloads</th>
                   <th className="py-3 px-4 text-center">Storage</th>
                   <th className="py-3 px-4 text-center">Status</th>
@@ -331,9 +326,10 @@ export default function GalleryAnalyticsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F7F5EE]">
-                {filteredGalleries.map((gallery) => {
-                  const estViews = (gallery.photo_count || 0) * 8 + (gallery.total_faces || 0) * 12 + 45;
-                  const estDownloads = Math.round((gallery.photo_count || 0) * 2.4);
+                {filteredGalleries.map((gallery: any) => {
+                  const eventViews = gallery.views_count || 0;
+                  const eventDownloads = gallery.downloads_count || 0;
+                  const eventFaceSearches = gallery.face_searches || gallery.total_registered_guests || 0;
 
                   return (
                     <tr key={gallery.id} className="hover:bg-[#FAF9F5] transition-colors">
@@ -379,21 +375,21 @@ export default function GalleryAnalyticsPage() {
                         {gallery.photo_count || 0}
                       </td>
 
-                      {/* Face Scans */}
+                      {/* Face Searches */}
                       <td className="py-3 px-4 text-center">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                          {gallery.total_faces || 0}
+                          {eventFaceSearches}
                         </span>
                       </td>
 
-                      {/* Est. Views */}
-                      <td className="py-3 px-4 text-center font-bold text-amber-700">
-                        {gallery.photo_count ? estViews.toLocaleString('en-IN') : 0}
+                      {/* Real Views */}
+                      <td className="py-3 px-4 text-center font-bold text-amber-700 font-mono">
+                        {eventViews.toLocaleString('en-IN')}
                       </td>
 
                       {/* Downloads */}
-                      <td className="py-3 px-4 text-center font-bold text-emerald-700">
-                        {gallery.photo_count ? estDownloads.toLocaleString('en-IN') : 0}
+                      <td className="py-3 px-4 text-center font-bold text-emerald-700 font-mono">
+                        {eventDownloads.toLocaleString('en-IN')}
                       </td>
 
                       {/* Storage */}

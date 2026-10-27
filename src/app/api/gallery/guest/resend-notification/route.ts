@@ -84,93 +84,95 @@ export async function POST(req: NextRequest) {
     let resentCount = 0;
     let failedCount = 0;
 
-    for (const guest of guests) {
-      const guestName = guest.guest_name || guest.name || 'Guest';
-      const guestEmail = guest.guest_email || guest.email;
-      const guestPhone = guest.guest_phone || guest.phone;
-      const matchedPhotoIds = Array.isArray(guest.matched_photo_ids) ? guest.matched_photo_ids : [];
-      const guestPortalUrl = `${baseUrl}/g/${gallery.slug}?guest=${guest.id}&token=${guest.access_token || ''}`;
+    await Promise.allSettled(
+      guests.map(async (guest) => {
+        const guestName = guest.guest_name || guest.name || 'Guest';
+        const guestEmail = guest.guest_email || guest.email;
+        const guestPhone = guest.guest_phone || guest.phone;
+        const matchedPhotoIds = Array.isArray(guest.matched_photo_ids) ? guest.matched_photo_ids : [];
+        const guestPortalUrl = `${baseUrl}/g/${gallery.slug}?guest=${guest.id}&token=${guest.access_token || ''}`;
 
-      let sentSuccess = false;
+        let sentSuccess = false;
 
-      // 1. Resend Email
-      if (guestEmail) {
-        try {
-          const emailRes = await sendGuestGalleryPublishedEmail({
-            toEmail: guestEmail,
-            guestName,
-            eventTitle: gallery.title,
-            gallerySlug: gallery.slug,
-            matchedCount: matchedPhotoIds.length,
-            portalUrl: guestPortalUrl,
-            studioName,
-            studioLogoUrl,
-            studioPhone,
-          });
+        // 1. Resend Email (Parallel Dispatch)
+        if (guestEmail) {
+          try {
+            const emailRes = await sendGuestGalleryPublishedEmail({
+              toEmail: guestEmail,
+              guestName,
+              eventTitle: gallery.title,
+              gallerySlug: gallery.slug,
+              matchedCount: matchedPhotoIds.length,
+              portalUrl: guestPortalUrl,
+              studioName,
+              studioLogoUrl,
+              studioPhone,
+            });
 
-          await supabaseAdmin.from('guest_delivery_logs').insert({
-            workspace_id: workspaceId,
-            gallery_id: targetGalleryId,
-            guest_id: guest.id,
-            channel: 'EMAIL',
-            status: emailRes.success ? 'DELIVERED' : 'FAILED',
-            recipient: guestEmail,
-            matched_count: matchedPhotoIds.length,
-            payload: {
-              subject: `📸 ${guestName}, your photos from ${gallery.title} are ready!`,
-              link: guestPortalUrl,
-              is_resend: true,
-              error: (emailRes as any).error,
-            },
-          });
+            await supabaseAdmin.from('guest_delivery_logs').insert({
+              workspace_id: workspaceId,
+              gallery_id: targetGalleryId,
+              guest_id: guest.id,
+              channel: 'EMAIL',
+              status: emailRes.success ? 'DELIVERED' : 'FAILED',
+              recipient: guestEmail,
+              matched_count: matchedPhotoIds.length,
+              payload: {
+                subject: `📸 ${guestName}, your photos from ${gallery.title} are ready!`,
+                link: guestPortalUrl,
+                is_resend: true,
+                error: (emailRes as any).error,
+              },
+            });
 
-          if (emailRes.success) sentSuccess = true;
-        } catch (e: any) {
-          console.warn('[ResendNotification] Email error:', e?.message);
+            if (emailRes.success) sentSuccess = true;
+          } catch (e: any) {
+            console.warn('[ResendNotification] Email error:', e?.message);
+          }
         }
-      }
 
-      // 2. Resend WhatsApp Log
-      if (guestPhone) {
-        const rawPhone = guestPhone.split('#')[0];
-        const messageText = matchedPhotoIds.length > 0
-          ? `🎉 Hello ${guestName}! Your photos from "${gallery.title}" are ready! View & download your ${matchedPhotoIds.length} photos: ${guestPortalUrl}`
-          : `🎉 Hello ${guestName}! Photos from "${gallery.title}" are published! View celebration: ${guestPortalUrl}`;
+        // 2. Resend WhatsApp Log
+        if (guestPhone) {
+          const rawPhone = guestPhone.split('#')[0];
+          const messageText = matchedPhotoIds.length > 0
+            ? `🎉 Hello ${guestName}! Your photos from "${gallery.title}" are ready! View & download your ${matchedPhotoIds.length} photos: ${guestPortalUrl}`
+            : `🎉 Hello ${guestName}! Photos from "${gallery.title}" are published! View celebration: ${guestPortalUrl}`;
 
-        try {
-          await supabaseAdmin.from('guest_delivery_logs').insert({
-            workspace_id: workspaceId,
-            gallery_id: targetGalleryId,
-            guest_id: guest.id,
-            channel: 'WHATSAPP',
-            status: 'DELIVERED',
-            recipient: rawPhone,
-            matched_count: matchedPhotoIds.length,
-            payload: { message: messageText, link: guestPortalUrl, is_resend: true },
-          });
-          sentSuccess = true;
-        } catch (_) {}
-      }
+          try {
+            await supabaseAdmin.from('guest_delivery_logs').insert({
+              workspace_id: workspaceId,
+              gallery_id: targetGalleryId,
+              guest_id: guest.id,
+              channel: 'WHATSAPP',
+              status: 'DELIVERED',
+              recipient: rawPhone,
+              matched_count: matchedPhotoIds.length,
+              payload: { message: messageText, link: guestPortalUrl, is_resend: true },
+            });
+            sentSuccess = true;
+          } catch (_) {}
+        }
 
-      if (sentSuccess) {
-        resentCount++;
-        await supabaseAdmin
-          .from('event_guest_registrations')
-          .update({
-            notification_status: 'SENT',
-            notified_at: new Date().toISOString(),
-          })
-          .eq('id', guest.id);
-      } else {
-        failedCount++;
-        await supabaseAdmin
-          .from('event_guest_registrations')
-          .update({
-            notification_status: 'FAILED',
-          })
-          .eq('id', guest.id);
-      }
-    }
+        if (sentSuccess) {
+          resentCount++;
+          await supabaseAdmin
+            .from('event_guest_registrations')
+            .update({
+              notification_status: 'SENT',
+              notified_at: new Date().toISOString(),
+            })
+            .eq('id', guest.id);
+        } else {
+          failedCount++;
+          await supabaseAdmin
+            .from('event_guest_registrations')
+            .update({
+              notification_status: 'FAILED',
+            })
+            .eq('id', guest.id);
+        }
+      })
+    );
 
     return NextResponse.json({
       success: true,

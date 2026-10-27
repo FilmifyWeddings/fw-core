@@ -386,7 +386,12 @@ function StrictZeroKnowledgeGuestContent() {
       // 2. If PUBLISHED: Check instant matches from registration first (avoids duplicate Modal GPU calls!)
       if (regJson?.matched_photos || regJson?.photos) {
         setIsFaceScannerOpen(false);
-        const resolvedPhotos = Array.isArray(regJson.matched_photos) ? regJson.matched_photos : (Array.isArray(regJson.photos) ? regJson.photos : []);
+        const rawList = Array.isArray(regJson.matched_photos) ? regJson.matched_photos : (Array.isArray(regJson.photos) ? regJson.photos : []);
+        const resolvedPhotos = rawList.map((p: any) => ({
+          ...p,
+          preview_url: p.preview_url || (p.preview_key ? `/api/gallery/image?key=${encodeURIComponent(p.preview_key)}` : ''),
+          thumbnail_url: p.thumbnail_url || (p.thumbnail_key ? `/api/gallery/image?key=${encodeURIComponent(p.thumbnail_key)}` : (p.preview_url || '')),
+        }));
         setMatchedPhotos(resolvedPhotos);
         setSelectedCollectionId('all');
         setHasSearched(true);

@@ -69,6 +69,34 @@ export function PremagicLightbox({
   const containerRef = useRef<HTMLDivElement>(null);
   const currentPhoto = currentIndex !== null && photos[currentIndex] ? photos[currentIndex] : null;
 
+  const thumbnailContainerRef = useRef<HTMLDivElement>(null);
+  const activeThumbRef = useRef<HTMLButtonElement>(null);
+
+  // Prevent background gallery scroll while lightbox is open
+  useEffect(() => {
+    if (currentIndex !== null) {
+      const origOverflow = document.body.style.overflow;
+      const origTouchAction = document.body.style.touchAction;
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      return () => {
+        document.body.style.overflow = origOverflow;
+        document.body.style.touchAction = origTouchAction;
+      };
+    }
+  }, [currentIndex]);
+
+  // Auto-scroll active thumbnail into view
+  useEffect(() => {
+    if (activeThumbRef.current) {
+      activeThumbRef.current.scrollIntoView({
+        behavior: 'smooth',
+        inline: 'center',
+        block: 'nearest',
+      });
+    }
+  }, [currentIndex]);
+
   // Reset zoom & pan when navigating to another slide
   useEffect(() => {
     setZoomScale(1);
@@ -231,9 +259,9 @@ export function PremagicLightbox({
     }
 
     // Horizontal swipe threshold: 45px for ultra-responsive feel
-    if (touchDeltaX < -45) {
+    if (touchDeltaX < -35) {
       handleNext();
-    } else if (touchDeltaX > 45) {
+    } else if (touchDeltaX > 35) {
       handlePrev();
     }
 
@@ -368,7 +396,7 @@ export function PremagicLightbox({
           <button
             type="button"
             onClick={handlePrev}
-            className="hidden md:flex absolute left-4 sm:left-6 z-30 w-12 h-12 rounded-full bg-black/50 hover:bg-black/90 border border-white/20 text-white items-center justify-center backdrop-blur-md transition cursor-pointer hover:scale-105 active:scale-95 shadow-xl"
+            className="flex absolute left-2 sm:left-6 z-30 w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-black/60 hover:bg-black/90 border border-white/20 text-white items-center justify-center backdrop-blur-md transition cursor-pointer active:scale-90 shadow-xl"
             title="Previous Photo (Left Arrow)"
           >
             <ChevronLeft className="w-6 h-6" />
@@ -404,7 +432,7 @@ export function PremagicLightbox({
           <button
             type="button"
             onClick={handleNext}
-            className="hidden md:flex absolute right-4 sm:right-6 z-30 w-12 h-12 rounded-full bg-black/50 hover:bg-black/90 border border-white/20 text-white items-center justify-center backdrop-blur-md transition cursor-pointer hover:scale-105 active:scale-95 shadow-xl"
+            className="flex absolute right-2 sm:right-6 z-30 w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-black/60 hover:bg-black/90 border border-white/20 text-white items-center justify-center backdrop-blur-md transition cursor-pointer active:scale-90 shadow-xl"
             title="Next Photo (Right Arrow)"
           >
             <ChevronRight className="w-6 h-6" />
@@ -412,31 +440,69 @@ export function PremagicLightbox({
         )}
       </div>
 
-      {/* 3. CENTER BOTTOM LIKE / HEART BUTTON IN SELECTION MODE */}
-      {isSelectionMode && onToggleSelect && (
-        <div className="absolute bottom-6 inset-x-0 flex items-center justify-center z-30 pointer-events-none">
+      {/* 3. BOTTOM THUMBNAIL STRIP & SELECTION CONTROL (Mobile & Desktop) */}
+      <div className="z-30 w-full bg-gradient-to-t from-black/95 via-black/75 to-transparent pt-2 pb-3 px-3 flex flex-col items-center gap-2 select-none">
+        {/* Heart Selection Button in Album Selection Mode */}
+        {isSelectionMode && onToggleSelect && (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onToggleSelect(currentPhoto.id);
             }}
-            className="pointer-events-auto px-5 py-2.5 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-xl border border-white/20 transition-all duration-200 hover:scale-105 active:scale-95 shadow-2xl cursor-pointer flex items-center gap-2 text-white"
+            className="px-5 py-2 rounded-full bg-black/80 hover:bg-black border border-white/25 transition-all duration-200 hover:scale-105 active:scale-95 shadow-2xl cursor-pointer flex items-center gap-2 text-white"
             title={isSelected ? 'Remove from Selection' : 'Select for Album'}
           >
             <Heart
-              className={`w-6 h-6 transition-transform duration-200 ${
+              className={`w-4 h-4 transition-transform duration-200 ${
                 isSelected
                   ? 'fill-[#DC2626] text-[#DC2626] scale-110 drop-shadow-[0_2px_8px_rgba(220,38,38,0.9)]'
                   : 'fill-transparent text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)]'
               }`}
             />
-            <span className="text-xs sm:text-sm font-bold tracking-wide">
-              {isSelected ? 'Selected' : 'Select Photo'}
+            <span className="text-xs font-bold tracking-wide">
+              {isSelected ? 'Selected for Album' : 'Select Photo'}
             </span>
           </button>
-        </div>
-      )}
+        )}
+
+        {/* Horizontal Thumbnail Carousel Strip */}
+        {photos.length > 1 && (
+          <div
+            ref={thumbnailContainerRef}
+            className="flex items-center gap-1.5 sm:gap-2 max-w-full overflow-x-auto no-scrollbar py-1 px-2 select-none"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            {photos.map((p, idx) => {
+              const isActive = idx === currentIndex;
+              return (
+                <button
+                  key={p.id || idx}
+                  ref={isActive ? activeThumbRef : null}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigate(idx);
+                  }}
+                  className={`relative shrink-0 rounded-lg overflow-hidden transition-all duration-200 cursor-pointer ${
+                    isActive
+                      ? 'w-11 h-11 sm:w-14 sm:h-14 ring-2 ring-amber-400 border-2 border-white scale-105 opacity-100 z-10 shadow-lg'
+                      : 'w-9 h-9 sm:w-12 sm:h-12 opacity-45 hover:opacity-80 border border-white/20'
+                  }`}
+                  title={`Photo ${idx + 1}`}
+                >
+                  <img
+                    src={p.thumbnail_url || p.preview_url}
+                    alt=""
+                    loading="lazy"
+                    className="w-full h-full object-cover pointer-events-none"
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
