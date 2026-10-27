@@ -66,7 +66,23 @@ pkill -9 -f 'next build' 2>/dev/null || true
 pkill -9 -f 'next-build' 2>/dev/null || true
 rm -f /var/www/fw-core/.next/lock* 2>/dev/null || true
 rm -rf /var/www/fw-core/node_modules/.es-abstract*
-NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2560" npm run build
+
+# Ensure at least 2GB swap space exists so Linux kernel never OOM-kills next build
+SWAP_TOTAL=$(free -m 2>/dev/null | awk '/^Swap:/{print $2}')
+if [ -z "$SWAP_TOTAL" ] || [ "$SWAP_TOTAL" -lt 1024 ]; then
+  if [ ! -f /swapfile ]; then
+    echo "Configuring 2GB swapfile to prevent build OOM kills..."
+    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 2>/dev/null || true
+    chmod 600 /swapfile 2>/dev/null || true
+    mkswap /swapfile 2>/dev/null || true
+  fi
+  swapon /swapfile 2>/dev/null || true
+fi
+
+# Drop cached memory to maximize available physical RAM
+sync && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+
+NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2048" npm run build
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
