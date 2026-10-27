@@ -49,13 +49,17 @@ async function fetchShootsForUser(userId: string, email: string) {
 
     if (rpcErr) {
       console.warn('[API /team/shoots] RPC notice, falling back to direct query:', rpcErr.message);
-      // Fallback direct query
-      const { data: teamRecs } = await supabaseAdmin
-        .from('fw_team_members')
-        .select('id')
-        .or(`auth_user_id.eq.${userId},email.ilike.${email}`);
+      // Fallback direct query across fw_team_members & workspace_members
+      const [ftmRes, wmRes] = await Promise.all([
+        supabaseAdmin.from('fw_team_members').select('id').or(`user_id.eq.${userId},email.ilike.${email}`),
+        supabaseAdmin.from('workspace_members').select('id').or(`user_id.eq.${userId},email.ilike.${email}`)
+      ]);
 
-      const memberIds = Array.from(new Set([userId, ...(teamRecs || []).map((t: any) => t.id)]));
+      const memberIds = Array.from(new Set([
+        userId,
+        ...(ftmRes.data || []).map((t: any) => t.id),
+        ...(wmRes.data || []).map((t: any) => t.id),
+      ].filter(Boolean)));
 
       const { data: asgList } = await supabaseAdmin
         .from('fw_assignments')
@@ -76,14 +80,13 @@ async function fetchShootsForUser(userId: string, email: string) {
             event_date,
             start_time_12h,
             end_time_12h,
-            venue,
-            location,
+            venue_name,
             fw_projects (
               id,
               user_id,
               client_name,
-              couple_name,
-              venue_location
+              main_venue,
+              main_date
             )
           )
         `)
@@ -99,12 +102,12 @@ async function fetchShootsForUser(userId: string, email: string) {
           workspace_id: p?.user_id || '',
           studio_name: 'StudioCore Studio',
           client_name: p?.client_name || 'Client',
-          couple_name: p?.couple_name || p?.client_name || 'Wedding Couple',
+          couple_name: p?.client_name || 'Wedding Couple',
           event_name: se?.event_title || 'Wedding Event',
           event_date: se?.event_date || 'TBD',
           start_time: se?.start_time_12h || '09:00 AM',
           end_time: se?.end_time_12h || '06:00 PM',
-          venue_location: se?.venue || se?.location || p?.venue_location || 'Venue TBA',
+          venue_location: se?.venue_name || p?.main_venue || 'Venue TBA',
           role_name: a.role_name || 'Crew Member',
           agreed_amount: Number(a.agreed_amount) || 0,
           advance_amount: Number(a.advance_amount) || 0,

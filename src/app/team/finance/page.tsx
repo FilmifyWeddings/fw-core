@@ -29,6 +29,7 @@ import {
 import VendorAlbumDeliverablesModal from '@/components/vendors/VendorAlbumDeliverablesModal';
 import TeamMemberFinanceDrawer from '@/app/workspace/team/components/TeamMemberFinanceDrawer';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
+import { TeamDeliverableAssignment, fetchMemberDeliverables } from '@/lib/team-finance-sync';
 
 interface ShootFinancial {
   assignment_id: string;
@@ -57,21 +58,22 @@ export default function TeamFinancePage() {
   const router = useRouter();
   const { workspaceName, activeWorkspace, userRole } = useWorkspace();
   const [shoots, setShoots] = useState<ShootFinancial[]>([]);
+  const [deliverables, setDeliverables] = useState<TeamDeliverableAssignment[]>([]);
   const [salaries, setSalaries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudio, setSelectedStudio] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid'>('all');
-  const [activeTab, setActiveTab] = useState<'shoots' | 'salaries'>('shoots');
+  const [activeTab, setActiveTab] = useState<'shoots' | 'deliverables' | 'salaries'>('shoots');
 
   // Transparency Read-Only Modals
   const [selectedDeliverablesMember, setSelectedDeliverablesMember] = useState<any | null>(null);
   const [isDeliverablesModalOpen, setIsDeliverablesModalOpen] = useState(false);
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<any | null>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
-  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics'>('bookings');
+  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics' | 'deliverables'>('bookings');
   const [currentMemberProfile, setCurrentMemberProfile] = useState<any | null>(null);
 
-  // Load crew data and salaries
+  // Load crew data, deliverables, and salaries
   const loadFinanceData = async () => {
     try {
       setLoading(true);
@@ -84,6 +86,24 @@ export default function TeamFinancePage() {
         return;
       }
 
+      // 1. Resolve all linked member IDs across workspace_members and fw_team_members
+      const [wmRes, ftmRes] = await Promise.all([
+        supabase
+          .from('workspace_members')
+          .select('id, workspace_id, role, full_name')
+          .or(`user_id.eq.${activeUser.id},email.ilike.${activeUser.email}`),
+        supabase
+          .from('fw_team_members')
+          .select('id, workspace_id, role_name, name')
+          .or(`user_id.eq.${activeUser.id},auth_user_id.eq.${activeUser.id},email.ilike.${activeUser.email}`)
+      ]);
+
+      const allMemberIds = Array.from(new Set([
+        activeUser.id,
+        ...(wmRes.data || []).map((m: any) => m.id),
+        ...(ftmRes.data || []).map((m: any) => m.id),
+      ].filter(Boolean)));
+
       const token = session?.access_token;
       const res = await fetch('/api/team/shoots', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -92,26 +112,35 @@ export default function TeamFinancePage() {
       const loadedShoots = (json.success && Array.isArray(json.shoots)) ? json.shoots : [];
       setShoots(loadedShoots);
 
-      // Fetch Salary Slips from team_salary_slips & team_salary_records
+      // 2. Fetch Salary Slips from team_salary_slips & team_salary_records
       let slipRows: any[] = [];
       try {
         const { data: slips } = await supabase
           .from('team_salary_slips')
           .select('*')
-          .eq('member_id', activeUser.id)
-          .order('month_year', { ascending: false });
+          .in('member_id', allMemberIds)
+          .order('payout_date', { ascending: false });
         if (slips && slips.length > 0) {
           slipRows = slips;
         } else {
           const { data: recs } = await supabase
             .from('team_salary_records')
             .select('*')
-            .eq('member_id', activeUser.id)
+            .in('member_id', allMemberIds)
             .order('month_year', { ascending: false });
           if (recs) slipRows = recs;
         }
       } catch (_) {}
       setSalaries(slipRows);
+
+      // 3. Fetch Post-Production Deliverables assigned to this user
+      const effectiveWs = activeWorkspace?.workspaceId || (wmRes.data?.[0]?.workspace_id) || (ftmRes.data?.[0]?.workspace_id) || loadedShoots[0]?.workspace_id || '';
+      try {
+        const fetchedDelivs = await fetchMemberDeliverables(effectiveWs, allMemberIds);
+        setDeliverables(fetchedDelivs);
+      } catch (dErr) {
+        console.warn('[Team Finance] Deliverables fetch notice:', dErr);
+      }
 
       // Rate details
       let rateRow: any = null;
@@ -119,7 +148,7 @@ export default function TeamFinancePage() {
         const { data: r } = await supabase
           .from('workspace_member_rates')
           .select('default_daily_rate, payout_frequency')
-          .eq('team_member_id', activeUser.id)
+          .in('team_member_id', allMemberIds)
           .maybeSingle();
         if (r) rateRow = r;
       } catch (_) {}
@@ -129,7 +158,7 @@ export default function TeamFinancePage() {
       const cleanFreq = rateRow?.payout_frequency || 'daily';
 
       setCurrentMemberProfile({
-        id: activeUser.id,
+        id: allMemberIds[0] || activeUser.id,
         name: rawName,
         email: activeUser.email || '',
         phone: activeUser.phone || activeUser.user_metadata?.phone || '',
@@ -138,7 +167,7 @@ export default function TeamFinancePage() {
         default_daily_rate: cleanRate,
         daily_rate: cleanRate,
         payout_frequency: cleanFreq,
-        workspace_id: activeWorkspace?.workspaceId || loadedShoots[0]?.workspace_id || '',
+        workspace_id: effectiveWs,
         assignments: loadedShoots,
       });
     } catch (err) {
@@ -167,18 +196,22 @@ export default function TeamFinancePage() {
     });
   }, [shoots, selectedStudio, statusFilter]);
 
-  // Combined Totals (Shoots + Salaries)
+  // Combined Totals (Shoots + Deliverables + Salaries)
   const totalShootAgreed = filteredShoots.reduce((acc, s) => acc + (Number(s.agreed_amount) || 0), 0);
   const totalShootPaid = filteredShoots.reduce((acc, s) => acc + (Number(s.paid_amount) || 0), 0);
   const totalShootBalance = filteredShoots.reduce((acc, s) => acc + (Number(s.balance_amount) || 0), 0);
 
-  const totalSalaryNet = salaries.reduce((acc, s) => acc + (Number(s.net_payable ?? s.base_salary) || 0), 0);
-  const totalSalaryPaid = salaries.reduce((acc, s) => acc + (Number(s.paid_amount ?? s.net_payable) || 0), 0);
+  const totalDelivAgreed = deliverables.reduce((acc, d) => acc + (Number(d.agreed_amount) || 0), 0);
+  const totalDelivPaid = deliverables.reduce((acc, d) => acc + (Number(d.paid_amount) || 0), 0);
+  const totalDelivBalance = deliverables.reduce((acc, d) => acc + (Number(d.balance_amount) || 0), 0);
+
+  const totalSalaryNet = salaries.reduce((acc, s) => acc + (Number(s.net_paid ?? s.net_payable ?? s.base_salary) || 0), 0);
+  const totalSalaryPaid = salaries.reduce((acc, s) => acc + (Number(s.net_paid ?? s.paid_amount ?? s.net_payable) || 0), 0);
   const totalSalaryBalance = Math.max(0, totalSalaryNet - totalSalaryPaid);
 
-  const grandAgreed = totalShootAgreed + totalSalaryNet;
-  const grandPaid = totalShootPaid + totalSalaryPaid;
-  const grandBalance = totalShootBalance + totalSalaryBalance;
+  const grandAgreed = totalShootAgreed + totalDelivAgreed + totalSalaryNet;
+  const grandPaid = totalShootPaid + totalDelivPaid + totalSalaryPaid;
+  const grandBalance = totalShootBalance + totalDelivBalance + totalSalaryBalance;
   const payoutPercentage = grandAgreed > 0 ? Math.min(100, Math.round((grandPaid / grandAgreed) * 100)) : 100;
 
   if (loading) {
@@ -187,7 +220,7 @@ export default function TeamFinancePage() {
 
   return (
     <SidebarLayout>
-      <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-6">
+      <div className="w-full max-w-7xl mx-auto p-3.5 sm:p-6 lg:p-8 space-y-6">
         
         {/* 1. Header Banner */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#EBE7DF]">
@@ -209,27 +242,6 @@ export default function TeamFinancePage() {
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
-            <button
-              type="button"
-              onClick={() => {
-                if (currentMemberProfile) {
-                  setSelectedFinanceMember({
-                    ...currentMemberProfile,
-                    studio_name: selectedStudio !== 'all' ? selectedStudio : (shoots[0]?.studio_name || workspaceName),
-                    assignments: shoots,
-                    salaries: salaries
-                  });
-                  setFinanceInitialTab('bookings');
-                  setIsFinanceDrawerOpen(true);
-                }
-              }}
-              className="px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-black text-amber-300 font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer border border-stone-800"
-              title="Open full interactive ledger"
-            >
-              <Receipt className="w-3.5 h-3.5 text-amber-400" />
-              <span>Full Financial Ledger</span>
-            </button>
-
             <button
               type="button"
               onClick={loadFinanceData}
@@ -263,7 +275,7 @@ export default function TeamFinancePage() {
             </div>
             <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between text-xs text-zinc-500">
               <span>Assignments:</span>
-              <span className="font-bold text-zinc-700">{filteredShoots.length} Shoots</span>
+              <span className="font-bold text-zinc-700">{filteredShoots.length} Shoots • {deliverables.length} Deliverables</span>
             </div>
           </div>
 
@@ -316,12 +328,12 @@ export default function TeamFinancePage() {
 
         {/* 3. Studio & Status Filter Bar */}
         <div className="bg-white p-3.5 rounded-2xl border border-[#EBE7DF] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Main Tabs: Shoots vs Salaries */}
-          <div className="flex items-center gap-1.5 p-1 bg-zinc-100/80 rounded-xl">
+          {/* Main Tabs: Shoots vs Deliverables vs Salaries */}
+          <div className="flex items-center gap-1.5 p-1 bg-zinc-100/80 rounded-xl overflow-x-auto">
             <button
               type="button"
               onClick={() => setActiveTab('shoots')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
                 activeTab === 'shoots' ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
@@ -331,8 +343,19 @@ export default function TeamFinancePage() {
 
             <button
               type="button"
+              onClick={() => setActiveTab('deliverables')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'deliverables' ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Post-Production &amp; Edits ({deliverables.length})</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveTab('salaries')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
                 activeTab === 'salaries' ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
@@ -357,8 +380,8 @@ export default function TeamFinancePage() {
               </select>
             )}
 
-            {/* Status Filter for Shoots */}
-            {activeTab === 'shoots' && (
+            {/* Status Filter for Shoots & Deliverables */}
+            {(activeTab === 'shoots' || activeTab === 'deliverables') && (
               <div className="flex items-center gap-1 p-0.5 bg-zinc-100 rounded-lg">
                 {[
                   { id: 'all', label: 'All' },
@@ -497,7 +520,129 @@ export default function TeamFinancePage() {
           </div>
         )}
 
-        {/* 5. Tab 2: Salary Slips List */}
+        {/* 5. Tab 2: Post-Production & Edits Deliverables */}
+        {activeTab === 'deliverables' && (
+          <div className="space-y-3">
+            {deliverables.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3">
+                <Sparkles className="w-10 h-10 text-zinc-300 mx-auto" />
+                <h3 className="text-base font-black text-zinc-700">No Post-Production Deliverables Assigned</h3>
+                <p className="text-xs text-zinc-500 max-w-md mx-auto">
+                  When your studio owner assigns video editing, photo retouching, or album deliverables to your profile, they will appear here with contracted fees and payment status.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {deliverables
+                  .filter(deliv => {
+                    const isSettled = deliv.balance_amount <= 0 && deliv.agreed_amount > 0;
+                    if (statusFilter === 'paid' && !isSettled) return false;
+                    if (statusFilter === 'pending' && isSettled) return false;
+                    return true;
+                  })
+                  .map((deliv) => {
+                    const agreed = Number(deliv.agreed_amount) || 0;
+                    const paid = Number(deliv.paid_amount) || 0;
+                    const balance = Number(deliv.balance_amount) || 0;
+                    const isSettled = balance <= 0 && agreed > 0;
+
+                    return (
+                      <div
+                        key={deliv.id}
+                        className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-2xs hover:border-amber-300 transition-all flex flex-col justify-between gap-4"
+                      >
+                        <div>
+                          {/* Segment Tag & Payment Status */}
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-zinc-100 text-zinc-700 border border-zinc-200">
+                              {deliv.segment || 'Wedding'} • {deliv.category || 'Deliverable'}
+                            </span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black border ${
+                              isSettled
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : agreed === 0
+                                ? 'bg-zinc-50 text-zinc-600 border-zinc-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}>
+                              {isSettled ? '✓ Fully Paid' : agreed === 0 ? 'Rate TBD' : `Pending ₹${balance.toLocaleString('en-IN')}`}
+                            </span>
+                          </div>
+
+                          {/* Deliverable Title & Client */}
+                          <h4 className="text-base font-black text-zinc-900">
+                            {deliv.title}
+                          </h4>
+                          <p className="text-xs font-semibold text-zinc-500 mt-0.5">
+                            {deliv.client_name || 'Client Project'}
+                          </p>
+
+                          {/* Details Grid */}
+                          <div className="mt-3.5 grid grid-cols-2 gap-2 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                              <span className="font-bold">Due: {deliv.due_date || 'TBD'}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span className="font-bold text-amber-900">Status: {deliv.status}</span>
+                            </div>
+                            {deliv.specs && (
+                              <div className="flex items-center gap-1.5 col-span-2 text-zinc-600">
+                                <span className="font-medium">Specs: {deliv.specs}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bottom Commercials Summary Bar */}
+                        <div className="pt-3 border-t border-zinc-100 flex items-center justify-between">
+                          <div className="flex items-center gap-3 text-xs">
+                            <div>
+                              <span className="text-[10px] text-zinc-400 uppercase font-black block">Agreed</span>
+                              <span className="font-black text-zinc-900 font-mono">₹{agreed.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="text-zinc-300">|</div>
+                            <div>
+                              <span className="text-[10px] text-zinc-400 uppercase font-black block">Paid</span>
+                              <span className="font-black text-emerald-600 font-mono">₹{paid.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="text-zinc-300">|</div>
+                            <div>
+                              <span className="text-[10px] text-zinc-400 uppercase font-black block">Balance</span>
+                              <span className="font-black text-amber-600 font-mono">₹{balance.toLocaleString('en-IN')}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (currentMemberProfile) {
+                                setSelectedFinanceMember({
+                                  ...currentMemberProfile,
+                                  studio_name: selectedStudio !== 'all' ? selectedStudio : (shoots[0]?.studio_name || workspaceName),
+                                  workspace_id: deliv.workspace_id,
+                                  assignments: shoots,
+                                  salaries: salaries
+                                });
+                                setFinanceInitialTab('deliverables');
+                                setIsFinanceDrawerOpen(true);
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-950 text-xs font-bold transition flex items-center gap-1 cursor-pointer border border-amber-200"
+                          >
+                            <Receipt className="w-3 h-3 text-amber-700" />
+                            <span>View Ledger</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 6. Tab 3: Salary Slips List */}
         {activeTab === 'salaries' && (
           <div className="space-y-3">
             {salaries.length === 0 ? (

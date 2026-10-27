@@ -17,6 +17,7 @@ import {
   TeamSalaryRecord, 
   TeamPayoutTransaction,
   TeamFinancialSummary,
+  TeamDeliverableAssignment,
   fetchMemberEventPayouts, 
   saveOrUpdateEventPayout, 
   recordPayoutTransaction, 
@@ -30,7 +31,9 @@ import {
   updateCrewAssignmentPayment,
   fetchMemberFinancialSummary,
   syncTeamPaymentToFinanceExpense,
-  syncTeamPaymentToExpensesAndAnalytics
+  syncTeamPaymentToExpensesAndAnalytics,
+  fetchMemberDeliverables,
+  recordDeliverablePayment
 } from '@/lib/team-finance-sync';
 import { supabase } from '@/lib/supabase';
 import { fetchMemberPayouts, recordMemberPayment } from '@/lib/services/teamPayoutService';
@@ -63,7 +66,7 @@ interface TeamMemberFinanceDrawerProps {
     [key: string]: any;
   } | null;
   initialSummary?: TeamFinancialSummary | null;
-  initialTab?: 'bookings' | 'payroll' | 'analytics';
+  initialTab?: 'bookings' | 'payroll' | 'analytics' | 'deliverables';
   onFinancialUpdate?: (memberId: string, updatedMetrics: Partial<TeamFinancialSummary>) => void;
   isReadOnly?: boolean;
 }
@@ -136,8 +139,8 @@ export default function TeamMemberFinanceDrawer({
     }, 4000);
   }, []);
 
-  // 3 Primary Tabs
-  const [activeTab, setActiveTab] = useState<'bookings' | 'payroll' | 'analytics'>(initialTab || 'bookings');
+  // Navigation Tabs
+  const [activeTab, setActiveTab] = useState<'bookings' | 'payroll' | 'analytics' | 'deliverables'>(initialTab || 'bookings');
 
   useEffect(() => {
     if (isOpen && initialTab) {
@@ -149,6 +152,8 @@ export default function TeamMemberFinanceDrawer({
   // Data States
   const [payouts, setPayouts] = useState<TeamEventPayout[]>([]);
   const [albumOrders, setAlbumOrders] = useState<PartnerAlbumOrder[]>([]);
+  const [deliverables, setDeliverables] = useState<TeamDeliverableAssignment[]>([]);
+  const [deliverablesFilter, setDeliverablesFilter] = useState<'all' | 'pending' | 'paid'>('all');
   const [salaryRecords, setSalaryRecords] = useState<TeamSalaryRecord[]>([]);
   const [summary, setSummary] = useState<TeamFinancialSummary>(initialSummary || {
     member_id: member?.id || '',
@@ -161,10 +166,10 @@ export default function TeamMemberFinanceDrawer({
     monthly_breakdown: []
   });
 
-  // Modal States for Shoot / Album Payment
+  // Modal States for Shoot / Album / Deliverable Payment
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState<{
-    type: 'EVENT' | 'ALBUM' | 'SALARY';
+    type: 'EVENT' | 'ALBUM' | 'SALARY' | 'DELIVERABLE';
     id: string;
     title: string;
     clientName?: string;
@@ -264,7 +269,7 @@ export default function TeamMemberFinanceDrawer({
     setIsRefreshing(true);
     try {
       // 1. Parallelize ALL independent queries in 1 single network pass
-      const [assignRes, payoutRes, slipsRes, recsRes, ordersRes] = await Promise.allSettled([
+      const [assignRes, payoutRes, slipsRes, recsRes, ordersRes, delivsRes] = await Promise.allSettled([
         (() => {
           let q = supabase
             .from('fw_assignments')
@@ -322,7 +327,9 @@ export default function TeamMemberFinanceDrawer({
           .eq('member_id', member.id)
           .order('month_year', { ascending: false }),
 
-        isLab ? fetchPartnerAlbumOrders(workspaceId || '', member.id) : Promise.resolve([])
+        isLab ? fetchPartnerAlbumOrders(workspaceId || '', member.id) : Promise.resolve([]),
+
+        fetchMemberDeliverables(workspaceId || '', [member.id])
       ]);
 
       // Process assignments (supports DB queries or pre-hydrated member.assignments)
@@ -447,10 +454,12 @@ export default function TeamMemberFinanceDrawer({
       }
 
       const orders: PartnerAlbumOrder[] = ordersRes.status === 'fulfilled' ? (ordersRes.value || []) : [];
+      const memberDeliverables: TeamDeliverableAssignment[] = (delivsRes && (delivsRes as any).status === 'fulfilled') ? ((delivsRes as any).value || []) : [];
 
       setPayouts(eventPayouts);
       setSalaryRecords(salaries);
       setAlbumOrders(orders);
+      setDeliverables(memberDeliverables);
 
       const eventAgreed = eventPayouts.reduce((a, b) => {
         const rawAmt = Number(b.agreed_amount || 0);
@@ -462,9 +471,11 @@ export default function TeamMemberFinanceDrawer({
       const salaryAgreedTotal = salaries.reduce((a, b) => a + Number(b.net_payable ?? b.base_salary ?? b.paid_amount ?? 0), 0);
       const albumAgreedTotal = orders.reduce((a, b) => a + Number(b.total_amount || 0), 0);
       const albumPaidTotal = orders.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
+      const delivAgreedTotal = memberDeliverables.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
+      const delivPaidTotal = memberDeliverables.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
 
-      const totalAgreed = eventAgreed + salaryAgreedTotal + (isLab ? albumAgreedTotal : 0);
-      const totalPaid = eventPaid + salaryPaidTotal + (isLab ? albumPaidTotal : 0);
+      const totalAgreed = eventAgreed + salaryAgreedTotal + (isLab ? albumAgreedTotal : 0) + delivAgreedTotal;
+      const totalPaid = eventPaid + salaryPaidTotal + (isLab ? albumPaidTotal : 0) + delivPaidTotal;
       const totalBalance = Math.max(0, totalAgreed - totalPaid);
 
       const computedSummary: TeamFinancialSummary = {
@@ -472,7 +483,7 @@ export default function TeamMemberFinanceDrawer({
         total_agreed: totalAgreed,
         total_paid: totalPaid,
         total_balance: totalBalance,
-        active_events_count: eventPayouts.length + (isLab ? orders.length : 0),
+        active_events_count: eventPayouts.length + (isLab ? orders.length : 0) + memberDeliverables.length,
         paid_events_count: eventPayouts.filter(p => p.status === 'PAID' || p.status === 'completed').length,
         pending_events_count: eventPayouts.filter(p => p.status !== 'PAID' && p.status !== 'completed').length,
         monthly_breakdown: []
@@ -1025,7 +1036,7 @@ export default function TeamMemberFinanceDrawer({
       const finalBalance = Math.max(0, agreedVal - paidVal);
       const finalStatus = (finalBalance === 0 && finalAgreed > 0) ? 'PAID' : (finalPaid > 0 ? 'PARTIAL' : 'PENDING');
 
-      // 1. Immediately update this event payout in local state for 0ms visual feedback
+      // 1. Immediately update this event payout or deliverable in local state for 0ms visual feedback
       setPayouts(prev => prev.map(p => {
         if (p.id === paymentTarget.id) {
           return {
@@ -1041,6 +1052,22 @@ export default function TeamMemberFinanceDrawer({
         }
         return p;
       }));
+
+      if (paymentTarget.type === 'DELIVERABLE') {
+        setDeliverables(prev => prev.map(d => {
+          if (d.id === paymentTarget.id) {
+            return {
+              ...d,
+              agreed_amount: finalAgreed,
+              paid_amount: finalPaid,
+              balance_amount: finalBalance,
+              payment_status: (finalBalance === 0 && finalAgreed > 0) ? 'FULL_PAID' : (finalPaid > 0 ? 'PARTIAL' : 'PENDING'),
+              notes: pNotes || d.notes,
+            };
+          }
+          return d;
+        }));
+      }
 
       const updatedMetrics = {
         ...summary,
@@ -1114,6 +1141,26 @@ export default function TeamMemberFinanceDrawer({
               safeAssignmentId,
               notes: pNotes || `${paymentType} for ${paymentTarget.title || 'Assignment'}`
             });
+          } else if (paymentTarget.type === 'DELIVERABLE') {
+            await recordDeliverablePayment(workspaceId, {
+              deliverableId: safeAssignmentId,
+              projectId: paymentTarget.projectId,
+              memberId: memberId!,
+              memberName: memberName,
+              clientName: paymentTarget.clientName,
+              deliverableTitle: paymentTarget.title,
+              amountPaid: Math.max(0, paidVal - Number(paymentTarget.paidAmount || 0)),
+              paymentMode: pMode,
+              referenceNo: pRef,
+              paymentDate: pDate,
+              notes: pNotes,
+              autoSyncExpense: autoSyncFinance,
+              explicitAgreed: agreedVal,
+              explicitPaid: paidVal,
+            });
+
+            const freshDelivs = await fetchMemberDeliverables(workspaceId, [member!.id]);
+            setDeliverables(freshDelivs);
           }
 
           if (typeof (window as any).mutate === 'function') {
@@ -1286,11 +1333,11 @@ export default function TeamMemberFinanceDrawer({
             )}
           </div>
 
-          {/* 3 Navigation Tabs */}
-          <div className="px-4 pt-2.5 pb-0 flex items-center gap-2 border-b border-amber-200/60 bg-[#FAF8F2]">
+          {/* 4 Navigation Tabs */}
+          <div className="px-4 pt-2.5 pb-0 flex items-center gap-2 border-b border-amber-200/60 bg-[#FAF8F2] overflow-x-auto">
             <button
               onClick={() => setActiveTab('bookings')}
-              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer ${
+              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
                 activeTab === 'bookings'
                   ? 'border-amber-600 text-amber-950 font-black'
                   : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -1299,8 +1346,18 @@ export default function TeamMemberFinanceDrawer({
               📅 Bookings &amp; Events ({filteredShoots.length})
             </button>
             <button
+              onClick={() => setActiveTab('deliverables')}
+              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
+                activeTab === 'deliverables'
+                  ? 'border-amber-600 text-amber-950 font-black'
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              🎨 Post-Production &amp; Edits ({deliverables.length})
+            </button>
+            <button
               onClick={() => setActiveTab('payroll')}
-              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer ${
+              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
                 activeTab === 'payroll'
                   ? 'border-amber-600 text-amber-950 font-black'
                   : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -1310,7 +1367,7 @@ export default function TeamMemberFinanceDrawer({
             </button>
             <button
               onClick={() => setActiveTab('analytics')}
-              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer ${
+              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
                 activeTab === 'analytics'
                   ? 'border-amber-600 text-amber-950 font-black'
                   : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -1635,7 +1692,163 @@ export default function TeamMemberFinanceDrawer({
             )}
 
             {/* ══════════════════════════════════════════════════════════════
-                TAB 2: MONTHLY PAYROLL & SALARY (COLLAPSIBLE FORM + 3D SLIPS)
+                TAB 2: POST-PRODUCTION & DELIVERABLES
+               ══════════════════════════════════════════════════════════════ */}
+            {activeTab === 'deliverables' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black text-amber-950 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Post-Production Deliverables &amp; Editing Fees</span>
+                    </h3>
+                    <p className="text-[10px] text-stone-500 font-medium">
+                      Deliverables and segments assigned in Post-Production module.
+                    </p>
+                  </div>
+
+                  {/* Status Filters */}
+                  <div className="flex items-center gap-1 p-0.5 bg-stone-100 rounded-lg">
+                    {[
+                      { id: 'all', label: 'All' },
+                      { id: 'pending', label: 'Pending Due' },
+                      { id: 'paid', label: 'Fully Paid' },
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setDeliverablesFilter(f.id as any)}
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition cursor-pointer ${
+                          deliverablesFilter === f.id
+                            ? 'bg-white text-stone-900 shadow-2xs'
+                            : 'text-stone-500 hover:text-stone-800'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Deliverables List */}
+                <div className="space-y-2.5">
+                  {deliverables.length === 0 ? (
+                    <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 text-stone-400 space-y-1">
+                      <Sparkles className="w-8 h-8 text-stone-300 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-stone-600">No Post-Production Deliverables Assigned</p>
+                      <p className="text-[11px] text-stone-400">
+                        When you assign this specialist to video/photo deliverables or albums in Post-Production, they will automatically appear here with agreed commercials.
+                      </p>
+                    </div>
+                  ) : (
+                    deliverables
+                      .filter(deliv => {
+                        const isSettled = deliv.balance_amount <= 0 && deliv.agreed_amount > 0;
+                        if (deliverablesFilter === 'paid') return isSettled;
+                        if (deliverablesFilter === 'pending') return !isSettled;
+                        return true;
+                      })
+                      .map((deliv) => {
+                        const isSettled = deliv.balance_amount <= 0 && deliv.agreed_amount > 0;
+
+                        return (
+                          <div
+                            key={deliv.id}
+                            className="p-3.5 rounded-2xl bg-white border border-amber-200/90 shadow-2xs hover:shadow-xs transition space-y-2.5"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">
+                                  {deliv.segment || 'Wedding'} • {deliv.category || 'Deliverable'}
+                                </span>
+                                <h4 className="text-sm font-bold text-slate-900 truncate">
+                                  {deliv.title}
+                                </h4>
+                                <p className="text-xs text-amber-700 font-semibold truncate mt-0.5">
+                                  {deliv.client_name || 'Client Project'}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1 text-[10px] text-stone-500 flex-wrap">
+                                  {deliv.specs && (
+                                    <span className="px-1.5 py-0.2 rounded bg-stone-100 text-stone-700 font-bold border border-stone-200">
+                                      {deliv.specs}
+                                    </span>
+                                  )}
+                                  {deliv.due_date && (
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="w-2.5 h-2.5 text-stone-400" />
+                                      Due: {deliv.due_date}
+                                    </span>
+                                  )}
+                                  <span className="px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 font-bold border border-amber-200/80">
+                                    Status: {deliv.status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 border ${
+                                isSettled
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : deliv.agreed_amount === 0
+                                    ? 'bg-stone-100 text-stone-600 border-stone-200'
+                                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}>
+                                {isSettled ? '🟢 PAID' : deliv.agreed_amount === 0 ? '⚪ ₹0 RATE' : `🟡 DUE ₹${deliv.balance_amount.toLocaleString('en-IN')}`}
+                              </span>
+                            </div>
+
+                            {/* Commercial numbers */}
+                            <div className="bg-stone-50 rounded-xl p-2 grid grid-cols-3 gap-1 text-center font-mono border border-stone-200/70">
+                              <div>
+                                <span className="text-[9px] font-bold text-stone-400 block uppercase">Agreed</span>
+                                <span className="text-xs font-black text-stone-800">₹{deliv.agreed_amount.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-stone-400 block uppercase">Paid</span>
+                                <span className="text-xs font-black text-emerald-600">₹{deliv.paid_amount.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-stone-400 block uppercase">Balance</span>
+                                <span className={`text-xs font-black ${deliv.balance_amount > 0 ? 'text-amber-600' : 'text-stone-400'}`}>
+                                  ₹{deliv.balance_amount.toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Action Button */}
+                            {!isReadOnly && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPaymentTarget({
+                                    type: 'DELIVERABLE',
+                                    id: deliv.id,
+                                    title: deliv.title,
+                                    clientName: deliv.client_name,
+                                    totalAmount: deliv.agreed_amount,
+                                    paidAmount: deliv.paid_amount,
+                                    balanceAmount: deliv.balance_amount,
+                                    projectId: deliv.project_id,
+                                    notes: deliv.notes,
+                                  });
+                                  setPaymentAmount(deliv.balance_amount > 0 ? String(deliv.balance_amount) : '');
+                                  setIsPaymentModalOpen(true);
+                                }}
+                                className="w-full py-1.5 font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition bg-stone-900 hover:bg-black text-white"
+                              >
+                                <CreditCard className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Record Payment / Edit Deliverable Fee</span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════
+                TAB 3: MONTHLY PAYROLL & SALARY (COLLAPSIBLE FORM + 3D SLIPS)
                ══════════════════════════════════════════════════════════════ */}
             {activeTab === 'payroll' && (
               <div className="space-y-4">

@@ -109,6 +109,31 @@ export interface TeamFinancialSummary {
   }>;
 }
 
+export interface TeamDeliverableAssignment {
+  id: string;
+  deliverable_id?: string;
+  project_id: string;
+  workspace_id: string;
+  client_name: string;
+  member_id: string;
+  member_name: string;
+  title: string;
+  segment: string;
+  category: string;
+  specs?: string;
+  status: string;
+  agreed_amount: number;
+  paid_amount: number;
+  balance_amount: number;
+  payment_status: string;
+  due_date?: string;
+  notes?: string;
+  drive_links?: any[];
+  source?: 'project' | 'deliverable' | 'partner_order';
+  created_at?: string;
+  updated_at?: string;
+}
+
 // Storage Keys
 const LS_PAYOUTS_KEY = 'fw_team_event_payouts_';
 const LS_ALBUMS_KEY = 'fw_partner_album_orders_';
@@ -1885,6 +1910,9 @@ export async function syncTeamPaymentToFinanceExpense(
     client_name?: string;
     event_name?: string;
     linked_event_id?: string;
+    project_id?: string;
+    assignment_id?: string;
+    reference_no?: string;
   }
 ): Promise<void> {
   try {
@@ -1917,12 +1945,35 @@ export async function syncTeamPaymentToFinanceExpense(
       updated_at: new Date().toISOString()
     };
 
-    // 1. Insert into finance_expenses DB table
+    // 1. Insert into studio_expenses so Studio Owner's /workspace/finance displays it immediately
+    try {
+      await supabase.from('studio_expenses').insert([{
+        id: expId,
+        user_id: effectiveWsId,
+        project_id: expenseData.project_id || null,
+        member_id: expenseData.team_member_id || null,
+        assignment_id: expenseData.assignment_id || expenseData.linked_event_id || null,
+        category: expenseData.category || 'Crew & Freelancer Payout',
+        title: expenseData.title,
+        amount: amt,
+        expense_date: payDate,
+        payment_mode: expenseData.payment_mode || 'UPI',
+        reference_no: expenseData.reference_no || null,
+        notes: expenseData.notes || '',
+        is_synced_payout: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
+    } catch (sExpErr) {
+      console.warn('[team-finance-sync] studio_expenses insert notice:', sExpErr);
+    }
+
+    // 2. Insert into finance_expenses DB table
     try {
       await supabase.from('finance_expenses').insert([expenseItem]);
     } catch (_) {}
 
-    // 2. Insert into finance_transactions DB table
+    // 3. Insert into finance_transactions DB table
     try {
       await supabase.from('finance_transactions').insert({
         workspace_id: effectiveWsId,
@@ -1941,7 +1992,7 @@ export async function syncTeamPaymentToFinanceExpense(
       });
     } catch (_) {}
 
-    // 3. Also update local storage and notify listeners
+    // 4. Also update local storage and notify listeners
     if (typeof window !== 'undefined') {
       const lsKey = `fw_finance_expenses_${effectiveWsId}`;
       const raw = localStorage.getItem(lsKey);
@@ -1953,6 +2004,330 @@ export async function syncTeamPaymentToFinanceExpense(
     }
   } catch (err) {
     console.error('[team-finance-sync] syncTeamPaymentToFinanceExpense error:', err);
+  }
+}
+
+// ── 4B. POST-PRODUCTION DELIVERABLES FETCH & PAYMENT SYNC ────────────────────
+
+export async function fetchMemberDeliverables(
+  workspaceId: string,
+  memberIds: string[]
+): Promise<TeamDeliverableAssignment[]> {
+  const targetIds = new Set((memberIds || []).filter(Boolean));
+  if (targetIds.size === 0) return [];
+
+  try {
+    const [ppProjectsRes, fwProjectsRes, ordersRes, delivsRes] = await Promise.allSettled([
+      (() => {
+        let q = supabase
+          .from('post_production_projects')
+          .select('id, workspace_id, client_id, deliverables, is_deleted');
+        if (workspaceId && workspaceId !== 'all') {
+          q = q.eq('workspace_id', workspaceId);
+        }
+        return q.neq('is_deleted', true);
+      })(),
+      supabase
+        .from('fw_projects')
+        .select('id, client_name'),
+      (() => {
+        let q = supabase
+          .from('partner_album_orders')
+          .select('*')
+          .in('partner_id', Array.from(targetIds));
+        if (workspaceId && workspaceId !== 'all') {
+          q = q.eq('workspace_id', workspaceId);
+        }
+        return q;
+      })(),
+      supabase
+        .from('post_production_deliverables')
+        .select('*')
+        .in('assigned_member_id', Array.from(targetIds))
+    ]);
+
+    const clientMap = new Map<string, string>();
+    if (fwProjectsRes.status === 'fulfilled' && fwProjectsRes.value.data) {
+      fwProjectsRes.value.data.forEach((p: any) => {
+        if (p.id && p.client_name) clientMap.set(p.id, p.client_name);
+      });
+    }
+
+    const deliverableMap = new Map<string, TeamDeliverableAssignment>();
+
+    // 1. Process post_production_projects.deliverables
+    if (ppProjectsRes.status === 'fulfilled' && ppProjectsRes.value.data) {
+      ppProjectsRes.value.data.forEach((p: any) => {
+        const clientName = clientMap.get(p.id) || clientMap.get(p.client_id) || 'Client Project';
+        (p.deliverables || []).forEach((d: any) => {
+          if (d.assigned_member_id && targetIds.has(d.assigned_member_id)) {
+            const rawAgreed = Number(d.agreed_amount) || 0;
+            const rawPaid = Number(d.paid_amount) || 0;
+            const bal = Math.max(0, rawAgreed - rawPaid);
+            const status = d.status || 'Upcoming';
+            const pStatus = d.payment_status || (bal === 0 && rawAgreed > 0 ? 'FULL_PAID' : rawPaid > 0 ? 'PARTIAL' : 'PENDING');
+
+            deliverableMap.set(d.id, {
+              id: d.id,
+              deliverable_id: d.id,
+              project_id: p.id,
+              workspace_id: p.workspace_id || workspaceId,
+              client_name: clientName,
+              member_id: d.assigned_member_id,
+              member_name: d.assigned_to || '',
+              title: d.title || 'Deliverable',
+              segment: d.segment || 'Wedding',
+              category: d.category || 'Post-Production',
+              specs: d.specs || d.count || '',
+              status: status,
+              agreed_amount: rawAgreed,
+              paid_amount: rawPaid,
+              balance_amount: bal,
+              payment_status: pStatus,
+              due_date: d.due_date || d.deadline || '',
+              notes: d.notes || '',
+              drive_links: d.drive_links || [],
+              source: 'project'
+            });
+          }
+        });
+      });
+    }
+
+    // 2. Process post_production_deliverables
+    if (delivsRes.status === 'fulfilled' && delivsRes.value.data) {
+      delivsRes.value.data.forEach((d: any) => {
+        if (!targetIds.has(d.assigned_member_id)) return;
+        const existing = deliverableMap.get(d.id);
+        const rawAgreed = Number(d.agreed_amount) || 0;
+        const rawPaid = Number(d.paid_amount) || 0;
+        const bal = Math.max(0, rawAgreed - rawPaid);
+
+        if (existing) {
+          if (rawPaid > existing.paid_amount) {
+            existing.paid_amount = rawPaid;
+            existing.balance_amount = Math.max(0, existing.agreed_amount - rawPaid);
+            existing.payment_status = existing.balance_amount === 0 ? 'FULL_PAID' : 'PARTIAL';
+          }
+        } else {
+          deliverableMap.set(d.id, {
+            id: d.id,
+            deliverable_id: d.id,
+            project_id: d.project_id || '',
+            workspace_id: workspaceId,
+            client_name: clientMap.get(d.project_id) || 'Client Project',
+            member_id: d.assigned_member_id,
+            member_name: '',
+            title: d.title || 'Deliverable',
+            segment: d.segment || 'Wedding',
+            category: d.category || 'Post-Production',
+            specs: d.specs || '',
+            status: d.status || 'Upcoming',
+            agreed_amount: rawAgreed,
+            paid_amount: rawPaid,
+            balance_amount: bal,
+            payment_status: d.payment_status || (bal === 0 && rawAgreed > 0 ? 'FULL_PAID' : rawPaid > 0 ? 'PARTIAL' : 'PENDING'),
+            due_date: d.due_date || '',
+            notes: d.notes || '',
+            drive_links: d.drive_links || [],
+            source: 'deliverable'
+          });
+        }
+      });
+    }
+
+    // 3. Process partner_album_orders (which holds deliverables assigned via saveVendorAlbumOrder)
+    if (ordersRes.status === 'fulfilled' && ordersRes.value.data) {
+      ordersRes.value.data.forEach((o: any) => {
+        const isDeliverable = (o.deliverable_id || (o.category && o.category !== 'shoot') || !o.id.startsWith('shoot_'));
+        if (!isDeliverable) return;
+
+        const key = o.deliverable_id || o.id;
+        const existing = deliverableMap.get(key);
+        const rawAgreed = Number(o.total_amount) || 0;
+        const rawPaid = Number(o.paid_amount) || 0;
+        const bal = Math.max(0, rawAgreed - rawPaid);
+
+        if (existing) {
+          if (rawPaid > existing.paid_amount) {
+            existing.paid_amount = rawPaid;
+            existing.balance_amount = Math.max(0, existing.agreed_amount - rawPaid);
+            existing.payment_status = existing.balance_amount === 0 ? 'FULL_PAID' : 'PARTIAL';
+          }
+          if (o.client_name && (existing.client_name === 'Client Project' || !existing.client_name)) {
+            existing.client_name = o.client_name;
+          }
+        } else {
+          deliverableMap.set(key, {
+            id: key,
+            deliverable_id: o.deliverable_id || key,
+            project_id: o.project_id || '',
+            workspace_id: o.workspace_id || workspaceId,
+            client_name: o.client_name || clientMap.get(o.project_id) || 'Client Project',
+            member_id: o.partner_id,
+            member_name: o.partner_name || '',
+            title: o.item_title || o.album_type || 'Post-Production Deliverable',
+            segment: o.segment || 'Wedding',
+            category: o.category || 'Post-Production',
+            specs: o.specs || '',
+            status: o.order_status || 'In Progress',
+            agreed_amount: rawAgreed,
+            paid_amount: rawPaid,
+            balance_amount: bal,
+            payment_status: o.payment_status || (bal === 0 && rawAgreed > 0 ? 'FULL_PAID' : rawPaid > 0 ? 'PARTIAL' : 'PENDING'),
+            due_date: o.due_date || o.delivery_date || '',
+            notes: o.notes || '',
+            drive_links: o.drive_links || [],
+            source: 'partner_order'
+          });
+        }
+      });
+    }
+
+    return Array.from(deliverableMap.values());
+  } catch (err) {
+    console.warn('[team-finance-sync] fetchMemberDeliverables error:', err);
+    return [];
+  }
+}
+
+export async function recordDeliverablePayment(
+  workspaceId: string,
+  paymentData: {
+    deliverableId: string;
+    projectId?: string;
+    memberId: string;
+    memberName?: string;
+    clientName?: string;
+    deliverableTitle?: string;
+    amountPaid: number;
+    paymentMode: string;
+    referenceNo?: string;
+    paymentDate?: string;
+    notes?: string;
+    autoSyncExpense?: boolean;
+    explicitAgreed?: number;
+    explicitPaid?: number;
+  }
+): Promise<void> {
+  const {
+    deliverableId,
+    projectId,
+    memberId,
+    memberName,
+    clientName,
+    deliverableTitle,
+    amountPaid,
+    paymentMode,
+    referenceNo,
+    paymentDate,
+    notes,
+    autoSyncExpense,
+    explicitAgreed,
+    explicitPaid
+  } = paymentData;
+  const payDate = paymentDate || new Date().toISOString().split('T')[0];
+
+  // 1. Update post_production_projects if projectId is known or search for it
+  try {
+    let pId = projectId;
+    let targetProject: any = null;
+    if (pId) {
+      const { data } = await supabase.from('post_production_projects').select('*').eq('id', pId).maybeSingle();
+      targetProject = data;
+    } else {
+      const { data } = await supabase.from('post_production_projects').select('*').eq('workspace_id', workspaceId);
+      targetProject = (data || []).find((p: any) => (p.deliverables || []).some((d: any) => d.id === deliverableId));
+      if (targetProject) pId = targetProject.id;
+    }
+
+    if (targetProject && Array.isArray(targetProject.deliverables)) {
+      const updatedDeliverables = targetProject.deliverables.map((d: any) => {
+        if (d.id === deliverableId) {
+          const currentPaid = Number(d.paid_amount) || 0;
+          const newPaid = explicitPaid !== undefined ? explicitPaid : (currentPaid + amountPaid);
+          const agreed = explicitAgreed !== undefined ? explicitAgreed : (Number(d.agreed_amount) || 0);
+          const bal = Math.max(0, agreed - newPaid);
+          const pStatus = bal === 0 && agreed > 0 ? 'FULL_PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
+          return {
+            ...d,
+            agreed_amount: agreed,
+            paid_amount: newPaid,
+            balance_amount: bal,
+            payment_status: pStatus,
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return d;
+      });
+
+      await supabase.from('post_production_projects').update({
+        deliverables: updatedDeliverables,
+        updated_at: new Date().toISOString(),
+      }).eq('id', pId);
+    }
+  } catch (err) {
+    console.warn('[recordDeliverablePayment] Project update notice:', err);
+  }
+
+  // 2. Update post_production_deliverables row
+  try {
+    const { data: dRow } = await supabase.from('post_production_deliverables').select('*').eq('id', deliverableId).maybeSingle();
+    if (dRow) {
+      const currentPaid = Number(dRow.paid_amount) || 0;
+      const newPaid = explicitPaid !== undefined ? explicitPaid : (currentPaid + amountPaid);
+      const agreed = explicitAgreed !== undefined ? explicitAgreed : (Number(dRow.agreed_amount) || 0);
+      const bal = Math.max(0, agreed - newPaid);
+      const pStatus = bal === 0 && agreed > 0 ? 'FULL_PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
+      await supabase.from('post_production_deliverables').update({
+        agreed_amount: agreed,
+        paid_amount: newPaid,
+        balance_amount: bal,
+        payment_status: pStatus,
+        updated_at: new Date().toISOString(),
+      }).eq('id', deliverableId);
+    }
+  } catch (_) {}
+
+  // 3. Update partner_album_orders row if exists
+  try {
+    const { data: oRow } = await supabase
+      .from('partner_album_orders')
+      .select('*')
+      .or(`deliverable_id.eq.${deliverableId},id.eq.${deliverableId}`)
+      .maybeSingle();
+
+    if (oRow) {
+      const currentPaid = Number(oRow.paid_amount) || 0;
+      const newPaid = explicitPaid !== undefined ? explicitPaid : (currentPaid + amountPaid);
+      const agreed = explicitAgreed !== undefined ? explicitAgreed : (Number(oRow.total_amount) || 0);
+      const bal = Math.max(0, agreed - newPaid);
+      const pStatus = bal === 0 && agreed > 0 ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
+      await supabase.from('partner_album_orders').update({
+        total_amount: agreed,
+        paid_amount: newPaid,
+        balance_amount: bal,
+        payment_status: pStatus,
+        updated_at: new Date().toISOString(),
+      }).eq('id', oRow.id);
+    }
+  } catch (_) {}
+
+  // 4. Sync to Studio Owner Expenses (studio_expenses & finance_expenses)
+  if (autoSyncExpense !== false && amountPaid > 0) {
+    await syncTeamPaymentToFinanceExpense(workspaceId, {
+      title: `${memberName || 'Specialist'} - ${deliverableTitle || 'Post-Production Deliverable'}`,
+      category: 'Post-Production & Editing Fee',
+      amount: amountPaid,
+      date: payDate,
+      payment_mode: paymentMode,
+      reference_no: referenceNo,
+      notes: notes || `Payout for ${deliverableTitle || 'Deliverable'} (${clientName || 'Project'})`,
+      team_member_name: memberName || '',
+      team_member_id: memberId,
+      client_name: clientName || '',
+      project_id: projectId || undefined,
+    });
   }
 }
 
@@ -2048,7 +2423,7 @@ export async function fetchMemberFinancialSummary(
 export interface WorkspaceAggregateFinancialRecord {
   id: string;
   member_id: string;
-  record_type: 'shoot' | 'salary' | 'payout';
+  record_type: 'shoot' | 'salary' | 'payout' | 'deliverable';
   date: string; // YYYY-MM-DD or YYYY-MM
   agreed_amount: number;
   paid_amount: number;
@@ -2108,8 +2483,8 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
   }
 
   try {
-    // 0ms Single-Pass Parallel Fetch for all workspace assignments, payouts, and salaries
-    const [assignmentsRes, payoutsRes, salariesRes, slipsRes] = await Promise.allSettled([
+    // 0ms Single-Pass Parallel Fetch for all workspace assignments, payouts, salaries, and post-production deliverables
+    const [assignmentsRes, payoutsRes, salariesRes, slipsRes, ppProjectsRes, partnerOrdersRes] = await Promise.allSettled([
       supabase
         .from('fw_assignments')
         .select(`
@@ -2141,7 +2516,16 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
       supabase
         .from('team_salary_slips')
         .select('id, user_id, member_id, month_year, payout_date, base_salary, incentive_amount, deduction_amount, net_paid, status, created_at')
-        .in('member_id', uniqueIds)
+        .in('member_id', uniqueIds),
+      supabase
+        .from('post_production_projects')
+        .select('id, workspace_id, client_id, deliverables, is_deleted, created_at')
+        .eq('workspace_id', workspaceId)
+        .neq('is_deleted', true),
+      supabase
+        .from('partner_album_orders')
+        .select('*')
+        .in('partner_id', uniqueIds)
     ]);
 
     const assignmentsData = assignmentsRes.status === 'fulfilled' && assignmentsRes.value.data ? assignmentsRes.value.data : [];
@@ -2312,7 +2696,92 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
       });
     });
 
-    // 4. Strict Single Source of Truth invariant:
+    // 4. Process post_production_projects deliverables
+    const seenDeliverableIds = new Set<string>();
+    const ppProjectsData = ppProjectsRes.status === 'fulfilled' && ppProjectsRes.value.data ? ppProjectsRes.value.data : [];
+    ppProjectsData.forEach((p: any) => {
+      (p.deliverables || []).forEach((d: any) => {
+        let mid = d.assigned_member_id;
+        if (!mid || !summaryMap[mid]) {
+          if (d.assigned_to) {
+            const matched = nameToIdMap.get(d.assigned_to.trim().toLowerCase());
+            if (matched && summaryMap[matched]) mid = matched;
+          }
+        }
+        if (!mid || !summaryMap[mid]) return;
+
+        seenDeliverableIds.add(String(d.id));
+        const agreed = Number(d.agreed_amount) || 0;
+        const paid = Number(d.paid_amount) || 0;
+        const bal = Math.max(0, agreed - paid);
+        const rawDate = d.due_date || d.deadline || (p.created_at ? p.created_at.split('T')[0] : '');
+
+        summaryMap[mid].total_agreed += agreed;
+        summaryMap[mid].total_paid += paid;
+        summaryMap[mid].total_balance += bal;
+        summaryMap[mid].active_events_count += 1;
+
+        if (bal <= 0 && agreed > 0) {
+          summaryMap[mid].paid_events_count += 1;
+        } else {
+          summaryMap[mid].pending_events_count += 1;
+        }
+
+        records.push({
+          id: d.id,
+          member_id: mid,
+          record_type: 'deliverable',
+          date: rawDate,
+          agreed_amount: agreed,
+          paid_amount: paid,
+          balance_amount: bal,
+          status: d.payment_status || (bal <= 0 ? 'PAID' : 'PENDING'),
+        });
+      });
+    });
+
+    // 5. Process partner_album_orders (excluding shoot assignments)
+    const partnerOrdersData = partnerOrdersRes.status === 'fulfilled' && partnerOrdersRes.value.data ? partnerOrdersRes.value.data : [];
+    partnerOrdersData.forEach((o: any) => {
+      const isDeliverable = (o.deliverable_id || (o.category && o.category !== 'shoot') || !o.id.startsWith('shoot_'));
+      if (!isDeliverable) return;
+
+      const mid = o.partner_id;
+      if (!mid || !summaryMap[mid]) return;
+
+      const key = o.deliverable_id || o.id;
+      if (seenDeliverableIds.has(key)) return;
+      seenDeliverableIds.add(key);
+
+      const agreed = Number(o.total_amount) || 0;
+      const paid = Number(o.paid_amount) || 0;
+      const bal = Math.max(0, agreed - paid);
+      const rawDate = o.due_date || o.order_date || (o.created_at ? o.created_at.split('T')[0] : '');
+
+      summaryMap[mid].total_agreed += agreed;
+      summaryMap[mid].total_paid += paid;
+      summaryMap[mid].total_balance += bal;
+      summaryMap[mid].active_events_count += 1;
+
+      if (bal <= 0 && agreed > 0) {
+        summaryMap[mid].paid_events_count += 1;
+      } else {
+        summaryMap[mid].pending_events_count += 1;
+      }
+
+      records.push({
+        id: o.id,
+        member_id: mid,
+        record_type: 'deliverable',
+        date: rawDate,
+        agreed_amount: agreed,
+        paid_amount: paid,
+        balance_amount: bal,
+        status: o.payment_status || (bal <= 0 ? 'PAID' : 'PENDING'),
+      });
+    });
+
+    // 6. Strict Single Source of Truth invariant:
     // Balance is mathematically agreed - paid. Zero ghost balances!
     Object.values(summaryMap).forEach(s => {
       s.total_balance = Math.max(0, s.total_agreed - s.total_paid);

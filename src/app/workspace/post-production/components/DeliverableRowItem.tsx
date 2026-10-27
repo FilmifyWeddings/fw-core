@@ -13,6 +13,7 @@ import AssignCommercialsModal from './AssignCommercialsModal';
 import AttachLinksModal, { DeliverableAttachedLink } from '@/components/common/AttachLinksModal';
 import ThreeDStatusSelect from '@/components/common/ThreeDStatusSelect';
 import { detectDeliverableCategory, saveVendorAlbumOrder } from '@/lib/services/vendorDeliverablesService';
+import { syncTeamPaymentToFinanceExpense } from '@/lib/team-finance-sync';
 
 interface DeliverableRowItemProps {
   item: PostProductionDeliverable;
@@ -626,6 +627,27 @@ export default function DeliverableRowItem({
             });
           } catch (err) {
             console.warn('[DeliverableRowItem] Failed to sync to partner_album_orders:', err);
+          }
+
+          // Sync payout to Studio Owner's finance expenses if paid amount recorded
+          if (data.paidAmount > 0) {
+            try {
+              await syncTeamPaymentToFinanceExpense(workspaceId || '', {
+                title: `${data.memberName} - ${item.title}`,
+                category: 'Post-Production & Editing Fee',
+                amount: data.paidAmount,
+                date: new Date().toISOString().split('T')[0],
+                payment_mode: data.payMode || 'UPI',
+                reference_no: data.payRef || undefined,
+                notes: data.notes || `Post-Production payout for ${item.title} (${clientName || 'Project'})`,
+                team_member_name: data.memberName,
+                team_member_id: data.memberId,
+                client_name: clientName || '',
+                project_id: item.project_id || undefined,
+              });
+            } catch (expErr) {
+              console.warn('[DeliverableRowItem] Failed to sync payout to finance expense:', expErr);
+            }
           }
         }}
       />

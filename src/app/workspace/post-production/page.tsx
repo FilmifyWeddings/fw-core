@@ -1119,21 +1119,32 @@ export default function PostProductionPage() {
                     .eq('project_id', pid);
 
                   if (cleanDeliverables.length > 0) {
-                    const rowsToInsert = cleanDeliverables.map(deliv => ({
-                      project_id: pid,
-                      segment: deliv.segment || 'Wedding',
-                      category: deliv.category || 'Photos',
-                      custom_category_name: deliv.custom_category_name || null,
-                      title: deliv.title,
-                      specs: deliv.specs || deliv.count || null,
-                      status: deliv.status || 'Upcoming',
-                      assigned_member_id: deliv.assigned_member_id || null,
-                      due_date: deliv.due_date || deliv.deadline || null,
-                      notes: deliv.notes || null,
-                      is_hidden: deliv.is_hidden || false,
-                      is_custom: deliv.is_custom || false,
-                      updated_at: new Date().toISOString(),
-                    }));
+                    const rowsToInsert = cleanDeliverables.map(deliv => {
+                      const agreed = Number(deliv.agreed_amount) || 0;
+                      const paid = Number(deliv.paid_amount) || 0;
+                      const bal = Number(deliv.balance_amount ?? Math.max(0, agreed - paid)) || 0;
+                      const pStatus = deliv.payment_status || (bal === 0 && agreed > 0 ? 'FULL_PAID' : paid > 0 ? 'PARTIAL' : 'PENDING');
+                      return {
+                        id: deliv.id,
+                        project_id: pid,
+                        segment: deliv.segment || 'Wedding',
+                        category: deliv.category || 'Photos',
+                        custom_category_name: deliv.custom_category_name || null,
+                        title: deliv.title,
+                        specs: deliv.specs || deliv.count || null,
+                        status: deliv.status || 'Upcoming',
+                        assigned_member_id: deliv.assigned_member_id || null,
+                        due_date: deliv.due_date || deliv.deadline || null,
+                        notes: deliv.notes || null,
+                        is_hidden: deliv.is_hidden || false,
+                        is_custom: deliv.is_custom || false,
+                        agreed_amount: agreed,
+                        paid_amount: paid,
+                        balance_amount: bal,
+                        payment_status: pStatus,
+                        updated_at: new Date().toISOString(),
+                      };
+                    });
                     await supabase.from('post_production_deliverables').insert(rowsToInsert);
                   }
                 }
