@@ -2,9 +2,18 @@ import os
 import urllib.request
 import base64
 import numpy as np
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 import modal
-from pydantic import BaseModel
+try:
+    from pydantic import BaseModel
+except ImportError:
+    class BaseModel:  # Fallback for local CLI inspection
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
 from typing import Optional, List
 from concurrent.futures import ThreadPoolExecutor
 
@@ -57,6 +66,9 @@ class BatchExtractRequest(BaseModel):
 def decode_image_item(item: BatchExtractItem):
     """Helper to decode image bytes into numpy array concurrently."""
     try:
+        global cv2
+        if cv2 is None:
+            import cv2
         if item.image_base64:
             clean_b64 = item.image_base64.split(",")[-1]
             img_bytes = base64.b64decode(clean_b64)
@@ -150,6 +162,9 @@ class StudioCoreFaceService:
         @web_app.post("/api/ai/extract-faces")
         def extract_faces_endpoint(req: ExtractRequest):
             try:
+                global cv2
+                if cv2 is None:
+                    import cv2
                 img = None
                 b64_data = req.image_base64 or req.selfieBase64
 
