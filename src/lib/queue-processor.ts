@@ -157,7 +157,7 @@ export async function processQueueAction(
     return;
   }
 
-  // ── Step 2: Skip cancelled actions ────────────────────────────────────────
+  // ── Step 2: Skip cancelled actions & Stopped Workflows / Leads ─────────────
   const { data: recheckStatus } = await supabaseAdmin
     .from('baileys_action_queue')
     .select('status')
@@ -172,6 +172,45 @@ export async function processQueueAction(
       metadata: { action_id: id, action_type: action.action_type },
     });
     return;
+  }
+
+  // Pre-flight Guard A: If workflowLogId is stopped or cancelled in database, abort dispatch
+  const actPayload = (action.payload || {}) as Record<string, any>;
+  const wfLogId = actPayload.workflowLogId || actPayload.logId;
+  if (wfLogId) {
+    const { data: wfLog } = await supabaseAdmin
+      .from('whatsapp_workflow_logs')
+      .select('status')
+      .eq('id', wfLogId)
+      .maybeSingle();
+
+    if (wfLog && (wfLog.status === 'stopped' || wfLog.status === 'cancelled')) {
+      await supabaseAdmin.from('baileys_action_queue').update({
+        status: 'cancelled',
+        error_message: 'Skipped: workflow step is stopped in logs'
+      }).eq('id', id);
+      console.log(`[QueueProcessor] Action ${id} skipped because workflowLog ${wfLogId} is ${wfLog.status}.`);
+      return;
+    }
+  }
+
+  // Pre-flight Guard B: If target lead has stop_followup flag, abort dispatch
+  const leadId = actPayload.leadId || actPayload.lead_id;
+  if (leadId) {
+    const { data: leadRow } = await supabaseAdmin
+      .from('leads')
+      .select('raw_payload')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (leadRow?.raw_payload?.stop_followup === true || leadRow?.raw_payload?.workflow_status === 'stopped') {
+      await supabaseAdmin.from('baileys_action_queue').update({
+        status: 'cancelled',
+        error_message: 'Skipped: lead follow-up is stopped'
+      }).eq('id', id);
+      console.log(`[QueueProcessor] Action ${id} skipped because lead ${leadId} has follow-up stopped.`);
+      return;
+    }
   }
 
   try {

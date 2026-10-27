@@ -66,14 +66,31 @@ export async function GET(req: NextRequest) {
   try {
     // 1. Try PostgreSQL table
     if (normalizedEmail) {
-      const { data, error } = await supabaseAdmin
+      let { data, error } = await supabaseAdmin
         .from('gallery_album_selections')
         .select('*')
         .eq('gallery_id', galleryId)
         .eq('client_email', normalizedEmail)
         .maybeSingle();
 
-      if (!error && data) {
+      // If no exact match or record not submitted, check if ANY client selection for this gallery is submitted
+      if (!data || !data.is_submitted) {
+        const { data: anySubmitted } = await supabaseAdmin
+          .from('gallery_album_selections')
+          .select('*')
+          .eq('gallery_id', galleryId)
+          .eq('is_submitted', true)
+          .neq('client_email', '__config__')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (anySubmitted) {
+          data = anySubmitted;
+        }
+      }
+
+      if (data) {
         return NextResponse.json({
           success: true,
           selection: data,
@@ -92,9 +109,14 @@ export async function GET(req: NextRequest) {
         .order('updated_at', { ascending: false });
 
       if (!error && Array.isArray(data)) {
+        const submittedOne = data.find(s => s.is_submitted);
         return NextResponse.json({
           success: true,
           selections: data,
+          is_submitted: Boolean(submittedOne),
+          submitted_at: submittedOne?.submitted_at || null,
+          selection: submittedOne || data[0] || null,
+          selected_photo_ids: submittedOne?.selected_photo_ids || data[0]?.selected_photo_ids || [],
         });
       }
     }
@@ -166,7 +188,7 @@ export async function POST(req: NextRequest) {
         if (f) fs.writeFileSync(f, JSON.stringify(currentFallback, null, 2), 'utf8');
       } catch (_) {}
 
-      return NextResponse.json({ success: true, message: 'Selection unlocked for client editing.' });
+      return NextResponse.json({ success: true, is_unlocked: true, message: 'Selection unlocked for client editing.' });
     }
 
     // Action: Studio Owner sets Max Limit from Share Modal or Selections Tab
@@ -352,7 +374,42 @@ export async function POST(req: NextRequest) {
     }
     const photoIds = Array.isArray(selected_photo_ids) ? selected_photo_ids : [];
     const limit = Number(max_limit) || 50;
-    const isSubmitted = Boolean(is_submitted);
+
+    // Strict Anti-Tamper Guard: Check if record is ALREADY submitted and locked
+    let existingSubmitted = false;
+    let existingSubmittedAt: string | null = null;
+    try {
+      const { data: curRow } = await supabaseAdmin
+        .from('gallery_album_selections')
+        .select('is_submitted, submitted_at, selected_photo_ids')
+        .eq('gallery_id', gallery_id)
+        .eq('client_email', normalizedEmail)
+        .maybeSingle();
+
+      if (curRow?.is_submitted) {
+        existingSubmitted = true;
+        existingSubmittedAt = curRow.submitted_at;
+      }
+    } catch (_) {}
+
+    // If already submitted and incoming request is NOT an explicit submit or unlock, reject tampering and preserve locked state
+    if (existingSubmitted && action !== 'unlock' && !is_submitted) {
+      return NextResponse.json({
+        success: true,
+        message: 'Selection is locked and submitted. Contact studio owner to unlock.',
+        selection: {
+          gallery_id,
+          client_name: cleanName,
+          client_email: normalizedEmail,
+          selected_photo_ids: photoIds.length > 0 ? photoIds : [],
+          total_count: photoIds.length,
+          is_submitted: true,
+          submitted_at: existingSubmittedAt,
+        }
+      });
+    }
+
+    const isSubmitted = is_submitted !== undefined ? Boolean(is_submitted) : existingSubmitted;
 
     // Always mirror to fallback cache for instantaneous resilience
     writeFallback(gallery_id, normalizedEmail, {
@@ -363,7 +420,7 @@ export async function POST(req: NextRequest) {
       max_limit: limit,
       total_count: photoIds.length,
       is_submitted: isSubmitted,
-      submitted_at: isSubmitted ? new Date().toISOString() : null,
+      submitted_at: isSubmitted ? (existingSubmittedAt || new Date().toISOString()) : null,
     });
 
     // Save to PostgreSQL table

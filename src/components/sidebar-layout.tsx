@@ -73,6 +73,9 @@ const RESERVED_PUBLIC_ROOTS = new Set([
   'sitemap.xml',
   'support',
   'sushant-1023-fw',
+  'team',
+  'team-manager',
+  'partner',
   'terms-of-service',
   'vendor-portal',
   'workspace',
@@ -168,7 +171,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       pathname.startsWith('/workspace/attendance') ||
       pathname.startsWith('/workspace/review') ||
       pathname.startsWith('/workspace/workflows') ||
-      pathname.startsWith('/workspace/integrations')
+      pathname.startsWith('/workspace/integrations') ||
+      pathname.startsWith('/team') ||
+      pathname.startsWith('/assigned-shoots')
     ) {
       setAppMode('crm');
       try {

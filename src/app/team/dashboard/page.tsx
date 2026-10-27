@@ -23,7 +23,13 @@ import {
   FileText,
   AlertCircle,
   Briefcase,
+  Eye,
+  ExternalLink,
+  Receipt,
+  Download,
 } from 'lucide-react';
+import VendorAlbumDeliverablesModal from '@/components/vendors/VendorAlbumDeliverablesModal';
+import TeamMemberFinanceDrawer from '@/app/workspace/team/components/TeamMemberFinanceDrawer';
 
 interface AssignedShoot {
   assignment_id: string;
@@ -56,6 +62,14 @@ export default function TeamDashboardPage() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'completed' | 'all'>('upcoming');
   const [selectedStudio, setSelectedStudio] = useState<string>('all');
 
+  // Transparency Read-Only Modals for Team Members & Partners
+  const [selectedDeliverablesMember, setSelectedDeliverablesMember] = useState<any | null>(null);
+  const [isDeliverablesModalOpen, setIsDeliverablesModalOpen] = useState(false);
+  const [selectedFinanceMember, setSelectedFinanceMember] = useState<any | null>(null);
+  const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
+  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics'>('bookings');
+  const [currentMemberProfile, setCurrentMemberProfile] = useState<any | null>(null);
+
   useEffect(() => {
     async function loadCrewData() {
       try {
@@ -75,6 +89,35 @@ export default function TeamDashboardPage() {
         const json = await res.json();
         if (json.success && Array.isArray(json.shoots)) {
           setShoots(json.shoots);
+
+          // Build transparent member profile from active user session & rates
+          let rateRow: any = null;
+          try {
+            const { data: r } = await supabase
+              .from('workspace_member_rates')
+              .select('default_daily_rate, payout_frequency')
+              .eq('team_member_id', activeUser.id)
+              .maybeSingle();
+            if (r) rateRow = r;
+          } catch (_) {}
+
+          const rawName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'Team Member';
+          const cleanRate = Number(rateRow?.default_daily_rate || 0);
+          const cleanFreq = rateRow?.payout_frequency || 'daily';
+
+          setCurrentMemberProfile({
+            id: activeUser.id,
+            name: rawName,
+            email: activeUser.email || '',
+            phone: activeUser.phone || activeUser.user_metadata?.phone || '',
+            primary_role: userRole || 'Crew',
+            primary_type: 'IN_HOUSE',
+            default_daily_rate: cleanRate,
+            daily_rate: cleanRate,
+            payout_frequency: cleanFreq,
+            workspace_id: json.shoots[0]?.workspace_id || '',
+            assignments: json.shoots,
+          });
         }
       } catch (err) {
         console.error('Error loading team shoots:', err);
@@ -129,7 +172,44 @@ export default function TeamDashboardPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                if (currentMemberProfile) {
+                  setSelectedDeliverablesMember({
+                    ...currentMemberProfile,
+                    studio_name: selectedStudio !== 'all' ? selectedStudio : (shoots[0]?.studio_name || workspaceName)
+                  });
+                  setIsDeliverablesModalOpen(true);
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              title="Open full assigned shoots, deliverables & invoices in Read-Only mode"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Deliverables &amp; Invoices</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (currentMemberProfile) {
+                  setSelectedFinanceMember({
+                    ...currentMemberProfile,
+                    studio_name: selectedStudio !== 'all' ? selectedStudio : (shoots[0]?.studio_name || workspaceName)
+                  });
+                  setFinanceInitialTab('bookings');
+                  setIsFinanceDrawerOpen(true);
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-black text-amber-300 font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer border border-stone-800"
+              title="Open financial breakdown, payments, and salary slips"
+            >
+              <IndianRupee className="w-3.5 h-3.5 text-amber-400" />
+              <span>Financial Ledger</span>
+            </button>
+
             <WorkspaceSwitcher />
           </div>
         </div>
@@ -268,7 +348,20 @@ export default function TeamDashboardPage() {
             {filteredShoots.map((shoot) => (
               <div
                 key={shoot.assignment_id}
-                className="p-5 rounded-2xl bg-white border border-[#EBE7DF] hover:border-amber-300 hover:shadow-md transition-all flex flex-col justify-between group"
+                onClick={() => {
+                  const vendorObj = {
+                    ...(currentMemberProfile || {}),
+                    id: currentMemberProfile?.id || shoot.assignment_id,
+                    name: currentMemberProfile?.name || 'Assigned Crew',
+                    email: currentMemberProfile?.email || '',
+                    primary_role: shoot.role_name,
+                    workspace_id: shoot.workspace_id,
+                    studio_name: shoot.studio_name,
+                  };
+                  setSelectedDeliverablesMember(vendorObj);
+                  setIsDeliverablesModalOpen(true);
+                }}
+                className="p-5 rounded-2xl bg-white border border-[#EBE7DF] hover:border-amber-400 hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer relative"
               >
                 <div>
                   {/* Top Studio & Role Badge */}
@@ -323,13 +416,18 @@ export default function TeamDashboardPage() {
                     </span>
                   </div>
 
-                  <div className="text-right">
+                  <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
                       shoot.payment_status === 'paid' 
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                         : 'bg-amber-50 text-[#92400e] border border-amber-200'
                     }`}>
                       {shoot.payment_status?.toUpperCase()}
+                    </span>
+
+                    <span className="text-xs font-bold text-amber-700 group-hover:text-amber-800 flex items-center gap-0.5">
+                      <span>View</span>
+                      <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                     </span>
                   </div>
                 </div>
@@ -338,6 +436,40 @@ export default function TeamDashboardPage() {
             ))}
           </div>
         )}
+
+        {/* Read-Only Vendor & Crew Assignments, Deliverables & Invoicing Modal */}
+        {selectedDeliverablesMember && (
+          <VendorAlbumDeliverablesModal
+            isOpen={isDeliverablesModalOpen}
+            onClose={() => {
+              setIsDeliverablesModalOpen(false);
+              setSelectedDeliverablesMember(null);
+            }}
+            workspaceId={selectedDeliverablesMember.workspace_id || ''}
+            vendor={selectedDeliverablesMember}
+            studioName={selectedDeliverablesMember.studio_name || workspaceName || 'Partner Studio'}
+            isReadOnly={true}
+            onOpenSalaryDrawer={(m) => {
+              setSelectedFinanceMember(m || selectedDeliverablesMember);
+              setFinanceInitialTab('payroll');
+              setIsFinanceDrawerOpen(true);
+            }}
+          />
+        )}
+
+        {/* Read-Only Financial Breakdown & Salary Slips Drawer */}
+        <TeamMemberFinanceDrawer
+          isOpen={isFinanceDrawerOpen}
+          initialTab={financeInitialTab}
+          onClose={() => {
+            setIsFinanceDrawerOpen(false);
+            setSelectedFinanceMember(null);
+          }}
+          workspaceId={selectedFinanceMember?.workspace_id || ''}
+          workspaceName={selectedFinanceMember?.studio_name || workspaceName || 'StudioCore Partner Studio'}
+          member={selectedFinanceMember || currentMemberProfile}
+          isReadOnly={true}
+        />
 
       </div>
     </SidebarLayout>

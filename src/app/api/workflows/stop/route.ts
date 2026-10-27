@@ -5,63 +5,99 @@ export async function POST(req: NextRequest) {
   try {
     const { leadId, workflowId, workspaceId } = await req.json();
 
-    if (!leadId || !workflowId || (!workspaceId && !req.nextUrl.searchParams.get('workspace_id'))) {
-      return NextResponse.json({ error: 'Missing required parameters: leadId, workflowId, workspaceId' }, { status: 400 });
+    if (!leadId) {
+      return NextResponse.json({ error: 'Missing required parameter: leadId' }, { status: 400 });
     }
 
     const tenantId = workspaceId || req.nextUrl.searchParams.get('workspace_id');
     const now = new Date().toISOString();
 
-    // 1. Fetch pending logs
-    const { data: logs, error: logsError } = await supabaseAdmin
-      .from('whatsapp_workflow_logs')
-      .select('id, step_index')
-      .eq('lead_id', leadId)
-      .eq('workflow_id', workflowId)
-      .eq('status', 'pending');
+    // 1. Fetch lead details to obtain phone and current raw_payload
+    const { data: leadData } = await supabaseAdmin
+      .from('leads')
+      .select('id, phone, mobile, raw_payload, workspace_id, user_id')
+      .eq('id', leadId)
+      .maybeSingle();
 
-    if (logsError) throw logsError;
+    const rawPhone = leadData?.phone || leadData?.mobile || leadData?.raw_payload?.phone || leadData?.raw_payload?.mobile || '';
+    const cleanPhone = String(rawPhone).replace(/\D/g, '').slice(-10);
 
-    const stoppedLogIds = new Set((logs || []).map(l => l.id));
-
-    // 2. Mark whatsapp_workflow_logs as 'stopped' (NOT 'failed'!)
-    if (logs && logs.length > 0) {
+    // 2. Persistently flag the lead record as STOPPED (prevents re-triggering via subsequent CRM edits)
+    if (leadData) {
+      const existingPayload = leadData.raw_payload || {};
       await supabaseAdmin
-        .from('whatsapp_workflow_logs')
+        .from('leads')
         .update({
-          status: 'stopped',
-          error_message: 'STOPPED',
+          raw_payload: {
+            ...existingPayload,
+            stop_followup: true,
+            workflow_status: 'stopped',
+            followup_stopped_at: now
+          },
           updated_at: now
         })
-        .in('id', Array.from(stoppedLogIds));
+        .eq('id', leadId);
     }
 
-    // 3. Mark workflow_executions & execution_steps as STOPPED
+    // 3. Fetch pending workflow logs for this lead (if workflowId provided, scope to it; otherwise all)
+    let logsQuery = supabaseAdmin
+      .from('whatsapp_workflow_logs')
+      .select('id, step_index, workflow_id')
+      .eq('lead_id', leadId)
+      .eq('status', 'pending');
+
+    if (workflowId) {
+      logsQuery = logsQuery.eq('workflow_id', workflowId);
+    }
+
+    const { data: logs } = await logsQuery;
+    const stoppedLogIds = new Set((logs || []).map(l => l.id));
+
+    // 4. Mark whatsapp_workflow_logs as 'stopped'
+    let logsUpdateQuery = supabaseAdmin
+      .from('whatsapp_workflow_logs')
+      .update({
+        status: 'stopped',
+        error_message: 'STOPPED',
+        updated_at: now
+      })
+      .eq('lead_id', leadId)
+      .in('status', ['pending', 'queued', 'scheduled']);
+
+    if (workflowId) {
+      logsUpdateQuery = logsUpdateQuery.eq('workflow_id', workflowId);
+    }
+    await logsUpdateQuery;
+
+    // 5. Mark workflow_executions & execution_steps as STOPPED
     try {
-      await supabaseAdmin
+      let weq = supabaseAdmin
         .from('workflow_executions')
         .update({ status: 'STOPPED', updated_at: now })
-        .eq('lead_id', leadId)
-        .eq('workflow_id', workflowId);
-      
-      await supabaseAdmin
+        .eq('lead_id', leadId);
+      if (workflowId) weq = weq.eq('workflow_id', workflowId);
+      await weq;
+
+      let wesq = supabaseAdmin
         .from('workflow_execution_steps')
         .update({ status: 'STOPPED', error_message: 'STOPPED', updated_at: now })
         .eq('lead_id', leadId)
-        .eq('workflow_id', workflowId)
         .in('status', ['PENDING', 'pending', 'running', 'SCHEDULED', 'scheduled']);
-    } catch (e) {}
-
-    // 4. Mark workflow_runs and step runs as cancelled if any
-    try {
-      await supabaseAdmin
-        .from('workflow_runs')
-        .update({ status: 'cancelled', updated_at: now })
-        .eq('workflow_id', workflowId)
-        .in('status', ['running', 'pending', 'scheduled']);
+      if (workflowId) wesq = wesq.eq('workflow_id', workflowId);
+      await wesq;
     } catch (_) {}
 
-    // 5. Mark any pending whatsapp_automation_logs as stopped
+    // 6. Mark workflow_runs as cancelled
+    try {
+      let wrq = supabaseAdmin
+        .from('workflow_runs')
+        .update({ status: 'cancelled', updated_at: now })
+        .in('status', ['running', 'pending', 'scheduled']);
+      if (workflowId) wrq = wrq.eq('workflow_id', workflowId);
+      await wrq;
+    } catch (_) {}
+
+    // 7. Mark any pending whatsapp_automation_logs as stopped
     try {
       await supabaseAdmin
         .from('whatsapp_automation_logs')
@@ -70,14 +106,16 @@ export async function POST(req: NextRequest) {
         .eq('status', 'pending');
     } catch (_) {}
 
-    // 6. Fetch all pending/processing items in baileys_action_queue for this workspace
-    // and CANCEL any action linked to this log, workflow, or lead
+    // 8. CANCEL all pending/processing actions in baileys_action_queue matching:
+    // - payload.workflowLogId in stoppedLogIds
+    // - payload.leadId === leadId
+    // - payload.to containing cleanPhone
+    // (Notice: ZERO workspace_id mismatch filter! Cancels across workspace variants safely)
     let cancelledQueueCount = 0;
     try {
       const { data: queueItems } = await supabaseAdmin
         .from('baileys_action_queue')
         .select('id, payload')
-        .eq('workspace_id', tenantId)
         .in('status', ['pending', 'processing']);
 
       const queueIdsToCancel: string[] = [];
@@ -85,10 +123,18 @@ export async function POST(req: NextRequest) {
       for (const item of (queueItems || [])) {
         const payload = item.payload || {};
         const matchesLog = payload.workflowLogId && stoppedLogIds.has(payload.workflowLogId);
-        const matchesWorkflow = payload.workflowId === workflowId || payload.workflow_id === workflowId;
+        const matchesWorkflow = !workflowId || payload.workflowId === workflowId || payload.workflow_id === workflowId;
         const matchesLead = payload.leadId === leadId || payload.lead_id === leadId;
 
-        if (matchesLog || (matchesWorkflow && matchesLead) || (payload.workflowLogId && stoppedLogIds.has(payload.workflowLogId))) {
+        let matchesPhone = false;
+        if (cleanPhone && cleanPhone.length >= 8) {
+          const toStr = String(payload.to || payload.recipient || payload.phone || '');
+          if (toStr.includes(cleanPhone)) {
+            matchesPhone = true;
+          }
+        }
+
+        if (matchesLog || (matchesWorkflow && matchesLead) || (matchesWorkflow && matchesPhone) || (matchesLead && matchesPhone)) {
           queueIdsToCancel.push(item.id);
         }
       }
@@ -108,15 +154,16 @@ export async function POST(req: NextRequest) {
       console.warn('[stop API] baileys_action_queue purge notice:', qErr);
     }
 
-    // 7. Audit log
+    // 9. Audit log in live_logs
     try {
       await supabaseAdmin.from('live_logs').insert({
-        workspace_id: tenantId,
+        workspace_id: tenantId || leadData?.workspace_id || leadData?.user_id,
         lead_id: leadId,
         event_type: 'workflow_stopped',
-        message: `Workflow stopped for lead ${leadId}. Cancelled ${logs?.length || 0} scheduled step(s) and ${cancelledQueueCount} queued action(s).`,
+        message: `Workflow stopped for contact ${cleanPhone || leadId}. Cancelled ${logs?.length || 0} scheduled step(s) and ${cancelledQueueCount} queued action(s).`,
         metadata: {
           workflow_id: workflowId,
+          phone: cleanPhone,
           stopped_steps: logs?.length || 0,
           cancelled_queue_actions: cancelledQueueCount,
           stopped_at: now
@@ -126,7 +173,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Workflow cancelled. Stopped ${logs?.length || 0} pending step(s) and purged ${cancelledQueueCount} queued messages.`
+      message: `Workflow stopped. Cancelled ${logs?.length || 0} pending step(s) and purged ${cancelledQueueCount} queued message(s).`
     });
   } catch (err: any) {
     console.error('[stop API error]:', err);

@@ -88,6 +88,8 @@ export function WorkspaceSwitcher({ isCollapsed = false }: WorkspaceSwitcherProp
         pathname === '/workspace/'
       ) {
         router.push(`/assigned-shoots?studio=${encodeURIComponent(targetWsParam)}`);
+      } else if (pathname.startsWith('/workspace/attendance')) {
+        router.push(`/team/attendance?studio=${encodeURIComponent(targetWsParam)}`);
       } else {
         router.push(`${pathname}?studio=${encodeURIComponent(targetWsParam)}`);
       }

@@ -64,6 +64,7 @@ interface TeamMemberFinanceDrawerProps {
   initialSummary?: TeamFinancialSummary | null;
   initialTab?: 'bookings' | 'payroll' | 'analytics';
   onFinancialUpdate?: (memberId: string, updatedMetrics: Partial<TeamFinancialSummary>) => void;
+  isReadOnly?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -122,6 +123,7 @@ export default function TeamMemberFinanceDrawer({
   initialSummary,
   initialTab,
   onFinancialUpdate,
+  isReadOnly = false,
 }: TeamMemberFinanceDrawerProps) {
   const router = useRouter();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -894,16 +896,39 @@ export default function TeamMemberFinanceDrawer({
     setShowAddSalary(false);
   };
 
-  // Filtered Salary Records
+  // Filtered Salary Records - 100% crash-proof against null/undefined/non-standard month_year
   const filteredSalaries = useMemo(() => {
-    return salaryRecords.filter(s => {
+    return (salaryRecords || []).filter(s => {
+      if (!s) return false;
+      const myStr = typeof s.month_year === 'string' ? s.month_year : '';
+      const pdStr = typeof s.paid_date === 'string' ? s.paid_date : (typeof (s as any).payout_date === 'string' ? (s as any).payout_date : '');
+
       if (payrollFilterYear !== 'All') {
-        const y = s.month_year.split('-')[0] || (s.paid_date ? s.paid_date.split('-')[0] : '');
-        if (y !== payrollFilterYear) return false;
+        let y = '';
+        if (myStr.includes('-')) {
+          y = myStr.split('-')[0];
+        } else if (/\b(20\d\d)\b/.test(myStr)) {
+          const match = myStr.match(/\b(20\d\d)\b/);
+          if (match) y = match[1];
+        } else if (pdStr.includes('-')) {
+          y = pdStr.split('-')[0];
+        }
+        if (y && y !== payrollFilterYear) return false;
       }
+
       if (payrollFilterMonth !== 'All') {
-        const m = s.month_year.split('-')[1] || (s.paid_date ? s.paid_date.split('-')[1] : '');
-        if (m !== payrollFilterMonth) return false;
+        let m = '';
+        if (myStr.includes('-')) {
+          m = myStr.split('-')[1];
+        } else if (pdStr.includes('-')) {
+          m = pdStr.split('-')[1];
+        } else {
+          const foundIdx = MONTH_NAMES.findIndex(name => myStr.toLowerCase().includes(name.toLowerCase()));
+          if (foundIdx >= 0) {
+            m = String(foundIdx + 1).padStart(2, '0');
+          }
+        }
+        if (m && m !== payrollFilterMonth) return false;
       }
       return true;
     });
@@ -1130,15 +1155,25 @@ export default function TeamMemberFinanceDrawer({
                   <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 border border-amber-400/30">
                     {member.primary_role || 'Crew'}
                   </span>
-                  {Boolean(member.default_daily_rate && member.default_daily_rate > 0 && !isInHouse) && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-0.5">
-                      <IndianRupee className="w-2.5 h-2.5" />
-                      <span>{Number(member.default_daily_rate).toLocaleString('en-IN')}/day</span>
-                    </span>
-                  )}
+                  {Boolean(member.default_daily_rate && Number(member.default_daily_rate) > 0) && (() => {
+                    const isMonthlyRate = member.payout_frequency === 'monthly' || (isInHouse && member.payout_frequency !== 'daily');
+                    return (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black flex items-center gap-0.5 border ${
+                        isMonthlyRate ? 'bg-purple-500/20 text-purple-300 border-purple-400/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+                      }`}>
+                        <IndianRupee className="w-2.5 h-2.5" />
+                        <span>{Number(member.default_daily_rate).toLocaleString('en-IN')}/{isMonthlyRate ? 'month' : 'day'}</span>
+                      </span>
+                    );
+                  })()}
                   {isInHouse && (
                     <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-purple-500/20 text-purple-300 border border-purple-400/30">
                       In-House Staff
+                    </span>
+                  )}
+                  {isReadOnly && (
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-sky-500/20 text-sky-300 border border-sky-400/30 uppercase tracking-wider flex items-center gap-1">
+                      👁️ Read-Only Transparency View
                     </span>
                   )}
                 </div>
@@ -1528,39 +1563,41 @@ export default function TeamMemberFinanceDrawer({
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPaymentTarget({
-                                type: 'EVENT',
-                                id: payout.id,
-                                title: displayEvent,
-                                clientName: displayClient,
-                                totalAmount: cardAgreed,
-                                paidAmount: cardPaid,
-                                balanceAmount: cardDue,
-                                role: payout.role,
-                                projectId: payout.project_id || (payout as any).project?.id,
-                                subEventId: payout.sub_event_id || (payout as any).sub_event?.id,
-                                assignmentId: payout.id,
-                                paymentDate: (payout as any).payment_date,
-                                paymentMethod: (payout as any).payment_method,
-                                notes: (payout as any).notes
-                              });
-                              setPaymentAmount(String(cardDue > 0 ? cardDue : (cardPaid > 0 ? cardPaid : (cardAgreed > 0 ? cardAgreed : '0'))));
-                              setIsPaymentModalOpen(true);
-                            }}
-                            className={`w-full py-1.5 font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition ${
-                              isPaid
-                                ? 'bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-300/80'
-                                : cardAgreed === 0
-                                  ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
-                                  : 'bg-stone-900 hover:bg-stone-800 text-white'
-                            }`}
-                          >
-                            <CreditCard className={`w-3.5 h-3.5 ${isPaid ? 'text-emerald-600' : 'text-amber-400'}`} />
-                            <span>{isPaid ? 'Edit Payment / Commercial (Settled)' : cardAgreed === 0 ? 'Edit Commercial / Record Payment (₹0 Rate)' : 'Record Payment / Edit Fee'}</span>
-                          </button>
+                          {!isReadOnly && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPaymentTarget({
+                                  type: 'EVENT',
+                                  id: payout.id,
+                                  title: displayEvent,
+                                  clientName: displayClient,
+                                  totalAmount: cardAgreed,
+                                  paidAmount: cardPaid,
+                                  balanceAmount: cardDue,
+                                  role: payout.role,
+                                  projectId: payout.project_id || (payout as any).project?.id,
+                                  subEventId: payout.sub_event_id || (payout as any).sub_event?.id,
+                                  assignmentId: payout.id,
+                                  paymentDate: (payout as any).payment_date,
+                                  paymentMethod: (payout as any).payment_method,
+                                  notes: (payout as any).notes
+                                });
+                                setPaymentAmount(String(cardDue > 0 ? cardDue : (cardPaid > 0 ? cardPaid : (cardAgreed > 0 ? cardAgreed : '0'))));
+                                setIsPaymentModalOpen(true);
+                              }}
+                              className={`w-full py-1.5 font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition ${
+                                isPaid
+                                  ? 'bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-300/80'
+                                  : cardAgreed === 0
+                                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+                                    : 'bg-stone-900 hover:bg-stone-800 text-white'
+                              }`}
+                            >
+                              <CreditCard className={`w-3.5 h-3.5 ${isPaid ? 'text-emerald-600' : 'text-amber-400'}`} />
+                              <span>{isPaid ? 'Edit Payment / Commercial (Settled)' : cardAgreed === 0 ? 'Edit Commercial / Record Payment (₹0 Rate)' : 'Record Payment / Edit Fee'}</span>
+                            </button>
+                          )}
                         </div>
                       );
                     })
@@ -1586,17 +1623,19 @@ export default function TeamMemberFinanceDrawer({
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedSlipForEdit(null);
-                      setIsEditSlipModalOpen(true);
-                    }}
-                    className="h-8 px-3 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                    <span>+ Add Salary Slip</span>
-                  </button>
+                  {!isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSlipForEdit(null);
+                        setIsEditSlipModalOpen(true);
+                      }}
+                      className="h-8 px-3 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>+ Add Salary Slip</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* 2. Collapsible Add Salary Slip Form */}
@@ -1830,17 +1869,19 @@ export default function TeamMemberFinanceDrawer({
                         <IndianRupee className="w-8 h-8 text-stone-300 mx-auto mb-2" />
                         <p className="text-xs font-bold text-stone-600">No Salary Slips Found</p>
                         <p className="text-[11px] text-stone-400">Add the first salary slip using the button below or above.</p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedSlipForEdit(null);
-                            setIsEditSlipModalOpen(true);
-                          }}
-                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                          <span>+ Add First Salary Slip</span>
-                        </button>
+                        {!isReadOnly && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedSlipForEdit(null);
+                              setIsEditSlipModalOpen(true);
+                            }}
+                            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                            <span>+ Add First Salary Slip</span>
+                          </button>
+                        )}
                       </div>
                     ) : (
                       filteredSalaries.map((slip) => {
@@ -1880,38 +1921,42 @@ export default function TeamMemberFinanceDrawer({
                                   <Download className="w-3.5 h-3.5" />
                                 </button>
 
-                                {/* Edit Slip Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedSlipForEdit({
-                                      ...slip,
-                                      base_salary: Number(slip.base_salary) || 0,
-                                      incentive_amount: Number(slip.incentive_amount) || 0,
-                                      deduction_amount: Number(slip.deductions ?? (slip as any).deduction_amount) || 0,
-                                      deductions: Number(slip.deductions ?? (slip as any).deduction_amount) || 0,
-                                      payout_date: slip.paid_date || (slip as any).payout_date
-                                    });
-                                    setIsEditSlipModalOpen(true);
-                                  }}
-                                  className="p-1.5 rounded-lg text-stone-500 hover:text-amber-600 hover:bg-amber-50 border border-stone-200/80 hover:border-amber-300 transition cursor-pointer shadow-2xs"
-                                  title="Edit Salary Slip"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
+                                {!isReadOnly && (
+                                  <>
+                                    {/* Edit Slip Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedSlipForEdit({
+                                          ...slip,
+                                          base_salary: Number(slip.base_salary) || 0,
+                                          incentive_amount: Number(slip.incentive_amount) || 0,
+                                          deduction_amount: Number(slip.deductions ?? (slip as any).deduction_amount) || 0,
+                                          deductions: Number(slip.deductions ?? (slip as any).deduction_amount) || 0,
+                                          payout_date: slip.paid_date || (slip as any).payout_date
+                                        });
+                                        setIsEditSlipModalOpen(true);
+                                      }}
+                                      className="p-1.5 rounded-lg text-stone-500 hover:text-amber-600 hover:bg-amber-50 border border-stone-200/80 hover:border-amber-300 transition cursor-pointer shadow-2xs"
+                                      title="Edit Salary Slip"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
 
-                                {/* Delete Slip Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSlipToDelete(slip);
-                                    setIsDeleteSlipModalOpen(true);
-                                  }}
-                                  className="p-1.5 rounded-lg text-stone-500 hover:text-rose-600 hover:bg-rose-50 border border-stone-200/80 hover:border-rose-300 transition cursor-pointer shadow-2xs"
-                                  title="Delete Salary Slip"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                    {/* Delete Slip Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSlipToDelete(slip);
+                                        setIsDeleteSlipModalOpen(true);
+                                      }}
+                                      className="p-1.5 rounded-lg text-stone-500 hover:text-rose-600 hover:bg-rose-50 border border-stone-200/80 hover:border-rose-300 transition cursor-pointer shadow-2xs"
+                                      title="Delete Salary Slip"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
 
@@ -2011,9 +2056,17 @@ export default function TeamMemberFinanceDrawer({
                     <div className="text-xl font-black text-stone-900 font-mono">
                       ₹{Number(member.default_daily_rate || 0).toLocaleString('en-IN')}
                     </div>
-                    <span className="text-[10px] text-stone-400 font-medium block">
-                      Payout mode: {member.payout_frequency || 'daily'}
-                    </span>
+                    {(() => {
+                      const isMonthly = member.payout_frequency === 'monthly' || (isInHouse && member.payout_frequency !== 'daily');
+                      return (
+                        <span className="text-[10px] text-stone-500 font-bold block flex items-center gap-1">
+                          <span>Mode:</span>
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase ${isMonthly ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-800'}`}>
+                            {isMonthly ? 'Monthly (₹' + Number(member.default_daily_rate || 0).toLocaleString('en-IN') + ' / month)' : 'Daily (₹' + Number(member.default_daily_rate || 0).toLocaleString('en-IN') + ' / day)'}
+                          </span>
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   <div className="p-4 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-1">
@@ -2041,20 +2094,23 @@ export default function TeamMemberFinanceDrawer({
                     <p className="text-xs text-stone-400 py-6 text-center">No monthly payout records to display yet.</p>
                   ) : (
                     <div className="space-y-2.5 pt-1">
-                      {summary.monthly_breakdown.map((m) => {
-                        const maxVal = Math.max(...(summary.monthly_breakdown || []).map(x => x.agreed || 1), 1);
-                        const agreedPct = Math.min(100, Math.round((m.agreed / maxVal) * 100));
-                        const paidPct = Math.min(100, Math.round((m.paid / maxVal) * 100));
+                      {(summary.monthly_breakdown || []).map((m) => {
+                        const mAgreed = Number(m?.agreed) || 0;
+                        const mPaid = Number(m?.paid) || 0;
+                        const mBal = Number(m?.balance) || 0;
+                        const maxVal = Math.max(...(summary.monthly_breakdown || []).map(x => Number(x?.agreed) || 1), 1);
+                        const agreedPct = Math.min(100, Math.round((mAgreed / maxVal) * 100));
+                        const paidPct = Math.min(100, Math.round((mPaid / maxVal) * 100));
 
                         return (
                           <div key={m.month} className="space-y-1 p-2.5 rounded-xl bg-stone-50/80 border border-stone-200">
                             <div className="flex items-center justify-between text-xs font-bold">
                               <span className="text-stone-900 font-black">{m.month}</span>
                               <div className="flex items-center gap-2 text-[11px]">
-                                <span className="text-stone-500 font-mono">Agreed: ₹{m.agreed.toLocaleString('en-IN')}</span>
-                                <span className="text-emerald-700 font-black font-mono">Paid: ₹{m.paid.toLocaleString('en-IN')}</span>
-                                {m.balance > 0 && (
-                                  <span className="text-rose-700 font-black font-mono">Due: ₹{m.balance.toLocaleString('en-IN')}</span>
+                                <span className="text-stone-500 font-mono">Agreed: ₹{mAgreed.toLocaleString('en-IN')}</span>
+                                <span className="text-emerald-700 font-black font-mono">Paid: ₹{mPaid.toLocaleString('en-IN')}</span>
+                                {mBal > 0 && (
+                                  <span className="text-rose-700 font-black font-mono">Due: ₹{mBal.toLocaleString('en-IN')}</span>
                                 )}
                               </div>
                             </div>

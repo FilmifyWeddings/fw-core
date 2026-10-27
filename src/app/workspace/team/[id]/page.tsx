@@ -54,6 +54,17 @@ export default function DedicatedTeamMemberPage() {
   const fetchMember = useCallback(async () => {
     if (!memberId) return;
     try {
+      // Fetch rate and payout_frequency from workspace_member_rates first
+      let rateData: any = null;
+      try {
+        const { data: rRow } = await supabase
+          .from('workspace_member_rates')
+          .select('default_daily_rate, payout_frequency')
+          .eq('team_member_id', memberId)
+          .maybeSingle();
+        if (rRow) rateData = rRow;
+      } catch (_) {}
+
       // 1. Try querying workspace_members table
       const { data: wsMember } = await supabase
         .from('workspace_members')
@@ -62,6 +73,10 @@ export default function DedicatedTeamMemberPage() {
         .maybeSingle();
 
       if (wsMember) {
+        const isInHouse = wsMember.primary_type === 'IN_HOUSE' || wsMember.member_types?.includes('IN_HOUSE') || rateData?.payout_frequency === 'monthly' || wsMember.payout_frequency === 'monthly';
+        const cleanFreq = rateData?.payout_frequency || wsMember.payout_frequency || (isInHouse ? 'monthly' : 'daily');
+        const cleanRate = Number(rateData?.default_daily_rate || wsMember.default_daily_rate || wsMember.monthly_salary || 0);
+
         const formatted: TeamMember = {
           id: wsMember.id,
           workspace_id: wsMember.workspace_id,
@@ -72,7 +87,9 @@ export default function DedicatedTeamMemberPage() {
           role: wsMember.primary_role || 'FREELANCER',
           primary_type: wsMember.primary_type || 'IN_HOUSE',
           avatar_url: wsMember.avatar_url || '',
-          default_daily_rate: wsMember.default_daily_rate || 0,
+          default_daily_rate: cleanRate,
+          daily_rate: cleanRate,
+          payout_frequency: cleanFreq,
           roles: wsMember.roles || [wsMember.primary_role || 'FREELANCER'],
           member_types: wsMember.member_types || [wsMember.primary_type || 'IN_HOUSE'],
         };
@@ -92,6 +109,10 @@ export default function DedicatedTeamMemberPage() {
         .maybeSingle();
 
       if (fwMember) {
+        const isInHouse = fwMember.primary_type === 'IN_HOUSE' || fwMember.member_types?.includes('IN_HOUSE') || rateData?.payout_frequency === 'monthly' || fwMember.payout_frequency === 'monthly';
+        const cleanFreq = rateData?.payout_frequency || fwMember.payout_frequency || (isInHouse ? 'monthly' : 'daily');
+        const cleanRate = Number(rateData?.default_daily_rate || fwMember.default_daily_rate || 0);
+
         const formatted: TeamMember = {
           id: fwMember.id,
           workspace_id: fwMember.user_id,
@@ -102,7 +123,9 @@ export default function DedicatedTeamMemberPage() {
           role: fwMember.primary_role || 'Crew',
           primary_type: fwMember.primary_type || 'IN_HOUSE',
           avatar_url: fwMember.avatar_url || '',
-          default_daily_rate: fwMember.default_daily_rate || 0,
+          default_daily_rate: cleanRate,
+          daily_rate: cleanRate,
+          payout_frequency: cleanFreq,
           roles: [fwMember.primary_role || 'Crew'],
           member_types: fwMember.member_types || ['IN_HOUSE'],
         };

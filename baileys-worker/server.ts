@@ -1400,13 +1400,19 @@ async function executeAction(action: {
   if (checkLeadId) {
     const { data: leadRow } = await supabase
       .from('leads')
-      .select('id')
+      .select('id, raw_payload')
       .eq('id', checkLeadId)
       .maybeSingle();
 
     if (!leadRow) {
       logger.info({ actionId: action.id, checkLeadId }, '🛑 Lead was deleted from CRM. Skipping dispatch.');
       await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: lead deleted' }).eq('id', action.id);
+      return { success: true, waMessageId: null };
+    }
+
+    if (leadRow?.raw_payload?.stop_followup === true || leadRow?.raw_payload?.workflow_status === 'stopped') {
+      logger.info({ actionId: action.id, checkLeadId }, '🛑 Lead follow-up is stopped in CRM. Skipping dispatch.');
+      await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: lead follow-up stopped' }).eq('id', action.id);
       return { success: true, waMessageId: null };
     }
 

@@ -1052,13 +1052,16 @@ function GuestSlugGalleryContent() {
                 try {
                   localStorage.setItem(`studiocore_selection_submitted_${gallery.id}`, 'true');
                 } catch (_) {}
-              } else {
-                // If studio owner clicked "Unlock for Client Changes", unlock for client!
+              } else if (res.is_unlocked || (res.selection && res.selection.is_submitted === false)) {
+                // ONLY unlock if the server explicitly tells us this selection was unlocked by the studio owner
                 setIsSelectionSubmitted(false);
                 setSubmittedAt(null);
                 try {
                   localStorage.removeItem(`studiocore_selection_submitted_${gallery.id}`);
                 } catch (_) {}
+              } else if (isLocallySubmitted) {
+                // If locally submitted and server didn't find record yet, preserve locked state
+                setIsSelectionSubmitted(true);
               }
             }
           })

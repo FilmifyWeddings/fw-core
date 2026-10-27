@@ -38,6 +38,7 @@ import VendorDeliverablesFilterModal, { DeliverablesFilterState } from './Vendor
 import ThreeDMultiSelectDropdown from '@/components/common/ThreeDMultiSelectDropdown';
 import AttachLinksModal, { DeliverableAttachedLink } from '@/components/common/AttachLinksModal';
 import ThreeDStatusSelect from '@/components/common/ThreeDStatusSelect';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 // Fast Module-Level In-Memory Cache for 0ms instant loading
 const memCachedVendorOrders = new Map<string, VendorAlbumOrder[]>();
@@ -64,6 +65,7 @@ interface VendorAlbumDeliverablesModalProps {
   studioName?: string;
   onOpenSalaryDrawer?: (member: any) => void;
   isPageMode?: boolean;
+  isReadOnly?: boolean;
 }
 
 export type HubCategoryTab = 'shoot' | 'video_editing' | 'photo_editing' | 'album_design' | 'album_printing';
@@ -630,6 +632,7 @@ export default function VendorAlbumDeliverablesModal({
   studioName = 'StudioCore Partner Studio',
   onOpenSalaryDrawer,
   isPageMode = false,
+  isReadOnly = false,
 }: VendorAlbumDeliverablesModalProps) {
   // Synchronous initial cache read for 0ms instant display
   const [orders, setOrders] = useState<VendorAlbumOrder[]>(() => {
@@ -2374,6 +2377,11 @@ export default function VendorAlbumDeliverablesModal({
                       🤝 Partner / Vendor
                     </span>
                   )}
+                  {isReadOnly && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-500/20 text-sky-300 border border-sky-400/30 uppercase tracking-wider flex items-center gap-1">
+                      👁️ Read-Only Transparency View
+                    </span>
+                  )}
                   {vendor.primary_role && (
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-stone-300 border border-white/10">
                       {vendor.primary_role}
@@ -2383,9 +2391,18 @@ export default function VendorAlbumDeliverablesModal({
                 <div className="flex items-center gap-3 text-xs text-amber-200/70 mt-1 flex-wrap font-mono">
                   {vendor.phone && <span className="flex items-center gap-1">📞 {vendor.phone}</span>}
                   {vendor.email && <span className="flex items-center gap-1">✉️ {vendor.email}</span>}
-                  {(vendor.daily_rate || vendor.default_daily_rate) ? (
-                    <span className="text-amber-300 font-bold">₹{vendor.daily_rate || vendor.default_daily_rate}/day</span>
-                  ) : null}
+                  {Boolean(vendor.daily_rate || vendor.default_daily_rate || vendor.monthly_salary) && (() => {
+                    const isMonthlyRate = vendor.payout_frequency === 'monthly' || (isInHouse && vendor.payout_frequency !== 'daily');
+                    const displayRate = vendor.monthly_salary || vendor.daily_rate || vendor.default_daily_rate;
+                    return (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-300 font-bold">
+                        <span>₹{Number(displayRate).toLocaleString('en-IN')}/{isMonthlyRate ? 'month' : 'day'}</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-amber-400/20 text-amber-200 font-black uppercase tracking-wider">
+                          {isMonthlyRate ? 'Monthly' : 'Daily'}
+                        </span>
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -2578,7 +2595,7 @@ export default function VendorAlbumDeliverablesModal({
               </button>
 
               {/* Dedicated "+ Add Shoot" Button placed directly on toolbar */}
-              {activeCategoryTab === 'shoot' && (
+              {activeCategoryTab === 'shoot' && !isReadOnly && (
                 <button
                   type="button"
                   onClick={() => setIsAddShootModalOpen(true)}
@@ -2590,7 +2607,7 @@ export default function VendorAlbumDeliverablesModal({
               )}
 
               {/* Dedicated "+ Add Assignment" Button directly to the right of Download Statement */}
-              {activeCategoryTab !== 'shoot' && (
+              {activeCategoryTab !== 'shoot' && !isReadOnly && (
                 <button
                   type="button"
                   onClick={() => {
@@ -2625,7 +2642,11 @@ export default function VendorAlbumDeliverablesModal({
 
           {/* Deliverables & Assignments List (3D Creamy Cards with Progressive Lazy Rendering) */}
           <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-3 bg-[#FAF8F2]">
-            {filteredOrders.length === 0 ? (
+            {isLoading && orders.length === 0 ? (
+              <div className="py-24 flex flex-col items-center justify-center bg-white rounded-3xl border border-stone-200 shadow-xs">
+                <StudioCoreLiquidLoader label="Loading member operations & assignments..." />
+              </div>
+            ) : filteredOrders.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-3xl border border-stone-200 text-stone-400 space-y-3">
                 <BookOpen className="w-10 h-10 text-stone-300 mx-auto" />
                 <h4 className="text-sm font-black text-stone-700">
@@ -2638,7 +2659,7 @@ export default function VendorAlbumDeliverablesModal({
                     ? 'Manually add your album printing orders here.'
                     : 'Assign tasks from Post-Production or Bookings, or click "+ Add Assignment" above.'}
                 </p>
-                {activeCategoryTab === 'shoot' && (
+                {activeCategoryTab === 'shoot' && !isReadOnly && (
                   <button
                     type="button"
                     onClick={() => setIsAddShootModalOpen(true)}
@@ -2775,44 +2796,48 @@ export default function VendorAlbumDeliverablesModal({
 
                         {/* Action Buttons */}
                         <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                          {isZero ? (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenRecordPayment(order)}
-                              className="px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs bg-stone-100 text-stone-600 border border-stone-300 hover:bg-stone-200"
-                              title="Set agreed commercials & payment"
-                            >
-                              <AlertCircle className="w-3 h-3 text-stone-500" />
-                              <span>Unsettled</span>
-                            </button>
-                          ) : isFullPaid ? (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenRecordPayment(order)}
-                              className="px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100"
-                            >
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              <span>Full Paid</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenRecordPayment(order)}
-                              className="px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100"
-                            >
-                              <IndianRupee className="w-3 h-3 text-amber-600" />
-                              <span>Record Pay</span>
-                            </button>
-                          )}
+                          {!isReadOnly && (
+                            <>
+                              {isZero ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRecordPayment(order)}
+                                  className="px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs bg-stone-100 text-stone-600 border border-stone-300 hover:bg-stone-200"
+                                  title="Set agreed commercials & payment"
+                                >
+                                  <AlertCircle className="w-3 h-3 text-stone-500" />
+                                  <span>Unsettled</span>
+                                </button>
+                              ) : isFullPaid ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRecordPayment(order)}
+                                  className="px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100"
+                                >
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>Full Paid</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRecordPayment(order)}
+                                  className="px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100"
+                                >
+                                  <IndianRupee className="w-3 h-3 text-amber-600" />
+                                  <span>Record Pay</span>
+                                </button>
+                              )}
 
-                          <button
-                            type="button"
-                            onClick={() => setEditingOrder(order)}
-                            className="p-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition cursor-pointer shadow-2xs"
-                            title="Edit Couple & Event Name"
-                          >
-                            <Edit3 className="w-3.5 h-3.5 text-stone-500" />
-                          </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingOrder(order)}
+                                className="p-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition cursor-pointer shadow-2xs"
+                                title="Edit Couple & Event Name"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-stone-500" />
+                              </button>
+                            </>
+                          )}
 
                           <button
                             type="button"
@@ -3161,12 +3186,18 @@ export default function VendorAlbumDeliverablesModal({
 
                                             {/* Status Dropdown: Synced with Post-Production Settings */}
                                             <div className="shrink-0">
-                                              <ThreeDStatusSelect
-                                                currentStatus={order.order_status}
-                                                statuses={ppStatuses}
-                                                workspaceId={workspaceId}
-                                                onChange={(val) => handleStatusChange(order, val)}
-                                              />
+                                              {isReadOnly ? (
+                                                <span className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider bg-stone-100 text-stone-700 border border-stone-200 shadow-2xs">
+                                                  {order.order_status || 'Pending'}
+                                                </span>
+                                              ) : (
+                                                <ThreeDStatusSelect
+                                                  currentStatus={order.order_status}
+                                                  statuses={ppStatuses}
+                                                  workspaceId={workspaceId}
+                                                  onChange={(val) => handleStatusChange(order, val)}
+                                                />
+                                              )}
                                             </div>
                                           </div>
 
