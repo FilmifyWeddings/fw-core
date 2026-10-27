@@ -383,14 +383,25 @@ function StrictZeroKnowledgeGuestContent() {
         return;
       }
 
-      // 2. If PUBLISHED: Perform Neural Vector Match
+      // 2. If PUBLISHED: Check instant matches from registration first (avoids duplicate Modal GPU calls!)
+      if (regJson?.matched_photos) {
+        setIsFaceScannerOpen(false);
+        const resolvedPhotos = Array.isArray(regJson.matched_photos) ? regJson.matched_photos : [];
+        setMatchedPhotos(resolvedPhotos);
+        setHasSearched(true);
+        setIsVerified(true);
+        return;
+      }
+
+      // Fallback: Query match-face passing pre-extracted query_embedding
       const res = await fetch('/api/gallery/match-face', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           gallery_id: gallery.id,
           galleryId: gallery.id,
-          selfieBase64: data.selfieBase64,
+          query_embedding: regJson?.embedding || undefined,
+          selfieBase64: regJson?.embedding ? undefined : data.selfieBase64,
           threshold: 0.40,
         }),
       });

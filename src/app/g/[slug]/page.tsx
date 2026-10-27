@@ -661,14 +661,41 @@ function GuestSlugGalleryContent() {
         return;
       }
 
-      // 2. If PUBLISHED: Neural ArcFace Vector Match
+      // 2. If PUBLISHED: Check instant matches from registration first (avoids duplicate Modal GPU calls!)
+      if (regJson?.matched_photos) {
+        setIsFaceScannerOpen(false);
+        const resolvedPhotos = Array.isArray(regJson.matched_photos) ? regJson.matched_photos : [];
+        setMatchedPhotos(resolvedPhotos);
+        setHasSearched(true);
+        setIsVerified(true);
+        setIsMyPhotosActive(true);
+        if (isPrivilegedMode) {
+          setSelectedCollectionId('my_photos');
+          setShowOnlySelected(false);
+        }
+        try {
+          const profObj = {
+            id: savedGuestId,
+            name: data.name,
+            phone: data.phone,
+            email: data.email,
+            matchedPhotoIds: resolvedPhotos.map((p: any) => p.id),
+          };
+          localStorage.setItem(`studiocore_guest_profile_${gallery.id}`, JSON.stringify(profObj));
+          localStorage.setItem(`studiocore_guest_profile_${slug}`, JSON.stringify(profObj));
+        } catch (_) {}
+        return;
+      }
+
+      // Fallback: Query match-face passing pre-extracted query_embedding to prevent duplicate GPU calls
       const res = await fetch('/api/gallery/match-face', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           gallery_id: gallery.id,
           galleryId: gallery.id,
-          selfieBase64: data.selfieBase64,
+          query_embedding: regJson?.embedding || undefined,
+          selfieBase64: regJson?.embedding ? undefined : data.selfieBase64,
           threshold: 0.40,
         }),
       });

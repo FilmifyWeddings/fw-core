@@ -78,7 +78,7 @@ def decode_image_item(item: BatchExtractItem):
 @app.cls(
     gpu="L4",
     image=image,
-    scaledown_window=15,  # 15s idle timeout: stops paying immediately when upload finishes!
+    scaledown_window=300,  # 5-minute warm window: avoids cold starts for guest selfie matching!
 )
 class StudioCoreFaceService:
     @modal.enter()
@@ -119,7 +119,7 @@ class StudioCoreFaceService:
                 "provider": "CUDAExecutionProvider",
                 "engine": "insightface_arcface_512",
                 "mode": "batch_and_single",
-                "scaledown_window": 15
+                "scaledown_window": 300
             }
 
         def process_image_faces(img):

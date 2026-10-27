@@ -51,31 +51,36 @@ export async function extractFacesFromBase64(base64Payload: string): Promise<Det
   if (!base64Payload) return [];
 
   for (const endpoint of WORKER_ENDPOINTS) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 35000); // 35s to allow for Modal cold starts
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_base64: base64Payload }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: base64Payload }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
 
-      if (res.ok) {
-        const json = await res.json();
-        const rawFaces = json.faces || json.data?.faces;
-        if (rawFaces && Array.isArray(rawFaces)) {
-          return rawFaces.map((f: any) => ({
-            box: f.box || { x: 0, y: 0, w: 100, h: 100 },
-            embedding: normalizeVector(f.embedding),
-            confidence: f.confidence || 0.95,
-          }));
+        if (res.ok) {
+          const json = await res.json();
+          const rawFaces = json.faces || json.data?.faces;
+          if (rawFaces && Array.isArray(rawFaces)) {
+            return rawFaces.map((f: any) => ({
+              box: f.box || { x: 0, y: 0, w: 100, h: 100 },
+              embedding: normalizeVector(f.embedding),
+              confidence: f.confidence || 0.95,
+            }));
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[FaceAI] Worker ${endpoint} attempt ${attempt}/2 error:`, err.message);
+        if (attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
         }
       }
-    } catch (err: any) {
-      console.warn(`[FaceAI] Worker ${endpoint} error:`, err.message);
     }
   }
 
@@ -136,7 +141,7 @@ export async function extractFacesBatchFromS3Keys(
   // 2. Send batch to Modal GPU
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
     const res = await fetch(MODAL_FACE_BATCH_ENDPOINT, {
       method: 'POST',

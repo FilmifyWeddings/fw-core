@@ -112,14 +112,14 @@ export async function POST(req: NextRequest) {
     if (selfieBase64) {
       embedding = await extractEmbeddingFromBase64(selfieBase64);
     }
-    if (!embedding || embedding.length === 0) {
-      if (existingGuest?.face_embedding && Array.isArray(existingGuest.face_embedding)) {
-        embedding = existingGuest.face_embedding;
-      } else {
-        embedding = new Array(512).fill(0).map(() => (Math.random() - 0.5));
-      }
+    if ((!embedding || embedding.length !== 512) && existingGuest?.face_embedding && Array.isArray(existingGuest.face_embedding) && existingGuest.face_embedding.length === 512) {
+      embedding = existingGuest.face_embedding;
     }
-    embedding = normalizeVector(embedding);
+    if (embedding && embedding.length === 512) {
+      embedding = normalizeVector(embedding);
+    } else {
+      embedding = [];
+    }
 
     // 4.5. Compute instant matches against existing photo faces in this gallery
     const matchedPhotoIds: string[] = [];
@@ -177,6 +177,19 @@ export async function POST(req: NextRequest) {
 
       const activeRecord = updatedGuest || existingGuest;
 
+      let matchedPhotos: any[] = [];
+      if (mergedMatches.length > 0) {
+        try {
+          const { data: pData } = await supabaseAdmin
+            .from('gallery_photos')
+            .select('id, gallery_id, preview_key, thumbnail_key, original_key, width, height, created_at, is_selected')
+            .in('id', mergedMatches);
+          matchedPhotos = pData || [];
+        } catch (pErr) {
+          console.warn('[GuestRegister] Failed to fetch matched photo rows:', pErr);
+        }
+      }
+
       return NextResponse.json({
         success: true,
         isExistingGuest: true,
@@ -188,7 +201,11 @@ export async function POST(req: NextRequest) {
         gallery_title: gallery.title,
         gallery_slug: gallery.slug,
         status: gallery.status,
-        matched_photos_count: mergedMatches.length,
+        matched_photos: matchedPhotos,
+        photos: matchedPhotos,
+        matched_photos_count: matchedPhotos.length,
+        embedding: embedding.length === 512 ? embedding : null,
+        face_detected: embedding.length === 512,
       });
     }
 
@@ -236,10 +253,23 @@ export async function POST(req: NextRequest) {
       }
     } catch (_) {}
 
+    let matchedPhotos: any[] = [];
+    if (matchedPhotoIds.length > 0) {
+      try {
+        const { data: pData } = await supabaseAdmin
+          .from('gallery_photos')
+          .select('id, gallery_id, preview_key, thumbnail_key, original_key, width, height, created_at, is_selected')
+          .in('id', matchedPhotoIds);
+        matchedPhotos = pData || [];
+      } catch (pErr) {
+        console.warn('[GuestRegister] Failed to fetch matched photo rows:', pErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       isExistingGuest: false,
-      message: 'Guest pre-registered successfully',
+      message: 'Guest registered successfully',
       registration: registered || registrationRecord,
       guest: registered || registrationRecord,
       guest_id: registered?.id,
@@ -247,6 +277,11 @@ export async function POST(req: NextRequest) {
       gallery_title: gallery.title,
       gallery_slug: gallery.slug,
       status: gallery.status,
+      matched_photos: matchedPhotos,
+      photos: matchedPhotos,
+      matched_photos_count: matchedPhotos.length,
+      embedding: embedding.length === 512 ? embedding : null,
+      face_detected: embedding.length === 512,
     });
   } catch (err: any) {
     console.error('Guest registration exception:', err);
