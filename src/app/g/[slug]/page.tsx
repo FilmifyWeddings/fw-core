@@ -1002,38 +1002,75 @@ function GuestSlugGalleryContent() {
   useEffect(() => {
     if (!gallery?.id || !isSelectionMode) return;
     try {
+      let emailToLookup: string | null = null;
+      let nameToLookup: string = '';
+
       const stored = localStorage.getItem(`studiocore_selector_${gallery.id}`);
       if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed?.email) {
-          setSelectorName(parsed.name || '');
-          setSelectorEmail(parsed.email);
-          // Load selections from database
-          fetch(`/api/gallery/selections?gallery_id=${gallery.id}&email=${encodeURIComponent(parsed.email)}`)
-            .then((r) => r.json())
-            .then((res) => {
-              if (res.success) {
-                if (Array.isArray(res.selected_photo_ids)) {
-                  setSelectedForAlbum(new Set(res.selected_photo_ids));
-                }
-                if (res.is_submitted) {
-                  setIsSelectionSubmitted(true);
-                  setSubmittedAt(res.submitted_at || null);
-                } else {
-                  setIsSelectionSubmitted(false);
-                  setSubmittedAt(null);
-                }
-              }
-            })
-            .catch(() => {});
-          return;
-        }
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed?.email) {
+            emailToLookup = parsed.email;
+            nameToLookup = parsed.name || '';
+          }
+        } catch (_) {}
       }
+
+      // If not stored, check guestSavedSession or gallery default client email
+      if (!emailToLookup) {
+        emailToLookup = guestSavedSession?.email || (gallery as any)?.client_email || `${gallery?.slug || 'client'}@selection.local`;
+        nameToLookup = guestSavedSession?.name || (gallery as any)?.client_name || gallery?.title || 'Client';
+      }
+
+      if (emailToLookup) {
+        setSelectorName(nameToLookup);
+        setSelectorEmail(emailToLookup);
+
+        // Optimistic local storage lock check while fetching from server
+        const isLocallySubmitted = localStorage.getItem(`studiocore_selection_submitted_${gallery.id}`) === 'true';
+        if (isLocallySubmitted) {
+          setIsSelectionSubmitted(true);
+        }
+
+        // Load selections and authoritative lock status from database
+        fetch(`/api/gallery/selections?gallery_id=${gallery.id}&email=${encodeURIComponent(emailToLookup)}`)
+          .then((r) => r.json())
+          .then((res) => {
+            if (res.success) {
+              const ids = Array.isArray(res.selected_photo_ids)
+                ? res.selected_photo_ids
+                : (res.selection?.selected_photo_ids || []);
+              if (ids.length > 0) {
+                setSelectedForAlbum(new Set(ids));
+              }
+
+              // Check is_submitted from top-level OR nested selection object
+              const isSub = Boolean(res.is_submitted || res.selection?.is_submitted);
+              if (isSub) {
+                setIsSelectionSubmitted(true);
+                setSubmittedAt(res.submitted_at || res.selection?.submitted_at || null);
+                try {
+                  localStorage.setItem(`studiocore_selection_submitted_${gallery.id}`, 'true');
+                } catch (_) {}
+              } else {
+                // If studio owner clicked "Unlock for Client Changes", unlock for client!
+                setIsSelectionSubmitted(false);
+                setSubmittedAt(null);
+                try {
+                  localStorage.removeItem(`studiocore_selection_submitted_${gallery.id}`);
+                } catch (_) {}
+              }
+            }
+          })
+          .catch(() => {});
+        return;
+      }
+
       if (isUnlocked) {
         setShowSelectorModal(true);
       }
     } catch (_) {}
-  }, [gallery?.id, isSelectionMode, isUnlocked]);
+  }, [gallery?.id, isSelectionMode, isUnlocked, guestSavedSession]);
 
   // Sync selections to backend
   const syncSelectionToBackend = useCallback(async (newSelection: Set<string>, name: string, email: string) => {
@@ -1088,6 +1125,14 @@ function GuestSlugGalleryContent() {
         setSubmittedAt(new Date().toISOString());
         setShowSubmitConfirmModal(false);
         setShowOnlySelected(true);
+
+        // Persist selector info and locked state to localStorage
+        try {
+          localStorage.setItem(`studiocore_selector_${gallery.id}`, JSON.stringify({ name: effectiveName, email: effectiveEmail }));
+          localStorage.setItem(`studiocore_selection_submitted_${gallery.id}`, 'true');
+        } catch (_) {}
+        setSelectorName(effectiveName);
+        setSelectorEmail(effectiveEmail);
       } else {
         alert(json.error || 'Failed to submit selection. Please try again.');
       }
@@ -1133,6 +1178,15 @@ function GuestSlugGalleryContent() {
           const isSub = Boolean(json.is_submitted || json.selection?.is_submitted);
           setIsSelectionSubmitted(isSub);
           setSubmittedAt(isSub ? (json.submitted_at || json.selection?.submitted_at || null) : null);
+          if (isSub) {
+            try {
+              localStorage.setItem(`studiocore_selection_submitted_${gallery?.id}`, 'true');
+            } catch (_) {}
+          } else {
+            try {
+              localStorage.removeItem(`studiocore_selection_submitted_${gallery?.id}`);
+            } catch (_) {}
+          }
         } else {
           setSelectedForAlbum(new Set());
         }
@@ -1149,7 +1203,10 @@ function GuestSlugGalleryContent() {
   };
 
   const handleTogglePhotoSelection = useCallback((photoId: string) => {
-    if (isSelectionSubmitted) return;
+    if (isSelectionSubmitted) {
+      alert('Your photo selection has been submitted and locked. If you wish to make changes, please contact the studio owner to unlock your selection.');
+      return;
+    }
     if (!selectorEmail) {
       setShowSelectorModal(true);
       return;
@@ -3225,6 +3282,7 @@ function GuestSlugGalleryContent() {
           onToggleSelect={isSelectionMode ? handleTogglePhotoSelection : undefined}
           isSelected={selectedForAlbum.has(displayedPhotos[selectedPhotoIndex]?.id)}
           isSelectionMode={isSelectionMode}
+          isSelectionSubmitted={isSelectionSubmitted}
           allowDownloads={gallery.allow_downloads ?? true}
         />
       )}

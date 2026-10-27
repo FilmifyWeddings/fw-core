@@ -2394,11 +2394,12 @@ export default function VendorAlbumDeliverablesModal({
               {isInHouse && onOpenSalaryDrawer && (
                 <button
                   type="button"
-                  onClick={() => {
-                    onClose();
+                  onClick={(e) => {
+                    e.stopPropagation();
                     onOpenSalaryDrawer(vendor);
                   }}
                   className="px-3 py-1.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-400/30 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="Open Monthly Payroll & Salary Slips"
                 >
                   <IndianRupee className="w-3.5 h-3.5" />
                   <span>Salary Slips</span>

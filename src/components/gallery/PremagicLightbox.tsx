@@ -35,6 +35,7 @@ interface PremagicLightboxProps {
   onToggleSelect?: (photoId: string) => void;
   isSelected?: boolean;
   isSelectionMode?: boolean;
+  isSelectionSubmitted?: boolean;
   onSetCover?: (photo: LightboxPhoto) => void;
   isCover?: boolean;
   onDelete?: (photoId: string) => void;
@@ -50,6 +51,7 @@ export function PremagicLightbox({
   onToggleSelect,
   isSelected = false,
   isSelectionMode = false,
+  isSelectionSubmitted = false,
   onSetCover,
   isCover = false,
   onDelete,
@@ -450,8 +452,12 @@ export function PremagicLightbox({
               e.stopPropagation();
               onToggleSelect(currentPhoto.id);
             }}
-            className="px-5 py-2 rounded-full bg-black/80 hover:bg-black border border-white/25 transition-all duration-200 hover:scale-105 active:scale-95 shadow-2xl cursor-pointer flex items-center gap-2 text-white"
-            title={isSelected ? 'Remove from Selection' : 'Select for Album'}
+            className={`px-5 py-2 rounded-full border transition-all duration-200 shadow-2xl flex items-center gap-2 text-white ${
+              isSelectionSubmitted
+                ? 'bg-emerald-950/80 border-emerald-500/40 cursor-not-allowed opacity-90'
+                : 'bg-black/80 hover:bg-black border-white/25 hover:scale-105 active:scale-95 cursor-pointer'
+            }`}
+            title={isSelectionSubmitted ? 'Selections are locked (Already submitted to studio)' : (isSelected ? 'Remove from Selection' : 'Select for Album')}
           >
             <Heart
               className={`w-4 h-4 transition-transform duration-200 ${
@@ -461,7 +467,11 @@ export function PremagicLightbox({
               }`}
             />
             <span className="text-xs font-bold tracking-wide">
-              {isSelected ? 'Selected for Album' : 'Select Photo'}
+              {isSelectionSubmitted
+                ? 'Locked (Submitted)'
+                : isSelected
+                ? 'Selected for Album'
+                : 'Select Photo'}
             </span>
           </button>
         )}

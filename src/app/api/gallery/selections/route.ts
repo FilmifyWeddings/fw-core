@@ -78,6 +78,8 @@ export async function GET(req: NextRequest) {
           success: true,
           selection: data,
           selected_photo_ids: data.selected_photo_ids || [],
+          is_submitted: Boolean(data.is_submitted),
+          submitted_at: data.submitted_at || null,
         });
       }
     } else {
@@ -106,6 +108,8 @@ export async function GET(req: NextRequest) {
       success: true,
       selection: sel,
       selected_photo_ids: sel?.selected_photo_ids || [],
+      is_submitted: Boolean(sel?.is_submitted),
+      submitted_at: sel?.submitted_at || null,
       is_fallback: true,
     });
   }
@@ -149,6 +153,19 @@ export async function POST(req: NextRequest) {
       }
 
       await query;
+
+      try {
+        const currentFallback = readFallback(gallery_id);
+        Object.keys(currentFallback).forEach((k) => {
+          if (!emailToUnlock || k.toLowerCase() === emailToUnlock) {
+            currentFallback[k].is_submitted = false;
+            currentFallback[k].submitted_at = null;
+          }
+        });
+        const f = getFallbackFile(gallery_id);
+        if (f) fs.writeFileSync(f, JSON.stringify(currentFallback, null, 2), 'utf8');
+      } catch (_) {}
+
       return NextResponse.json({ success: true, message: 'Selection unlocked for client editing.' });
     }
 

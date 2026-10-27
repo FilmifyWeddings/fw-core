@@ -62,6 +62,7 @@ interface TeamMemberFinanceDrawerProps {
     [key: string]: any;
   } | null;
   initialSummary?: TeamFinancialSummary | null;
+  initialTab?: 'bookings' | 'payroll' | 'analytics';
   onFinancialUpdate?: (memberId: string, updatedMetrics: Partial<TeamFinancialSummary>) => void;
 }
 
@@ -119,6 +120,7 @@ export default function TeamMemberFinanceDrawer({
   workspaceName = 'Filmify Weddings',
   member,
   initialSummary,
+  initialTab,
   onFinancialUpdate,
 }: TeamMemberFinanceDrawerProps) {
   const router = useRouter();
@@ -132,7 +134,13 @@ export default function TeamMemberFinanceDrawer({
   }, []);
 
   // 3 Primary Tabs
-  const [activeTab, setActiveTab] = useState<'bookings' | 'payroll' | 'analytics'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'payroll' | 'analytics'>(initialTab || 'bookings');
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Data States
@@ -1067,7 +1075,7 @@ export default function TeamMemberFinanceDrawer({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
         {/* Floating Toast Notification */}
         <AnimatePresence>
           {toastMessage && (

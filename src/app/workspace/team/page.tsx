@@ -123,6 +123,7 @@ export default function WorkspaceTeamPage() {
   // Team & Partner Financial Engine Drawer States
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<TeamMember | null>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
+  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics'>('payroll');
   const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
@@ -1269,6 +1270,7 @@ export default function WorkspaceTeamPage() {
       {/* 3D Tactile Financial & Event Compensation Drawer */}
       <TeamMemberFinanceDrawer
         isOpen={isFinanceDrawerOpen}
+        initialTab={financeInitialTab}
         onClose={() => {
           setIsFinanceDrawerOpen(false);
           setSelectedFinanceMember(null);
@@ -1297,6 +1299,7 @@ export default function WorkspaceTeamPage() {
           studioName={workspaceName || 'StudioCore Partner Studio'}
           onOpenSalaryDrawer={(m) => {
             setSelectedFinanceMember(m);
+            setFinanceInitialTab('payroll');
             setIsFinanceDrawerOpen(true);
           }}
         />

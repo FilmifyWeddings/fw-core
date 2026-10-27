@@ -49,6 +49,7 @@ export default function DedicatedTeamMemberPage() {
   const [loading, setLoading] = useState<boolean>(!member);
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<TeamMember | null>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
+  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics'>('payroll');
 
   const fetchMember = useCallback(async () => {
     if (!memberId) return;
@@ -180,7 +181,8 @@ export default function DedicatedTeamMemberPage() {
         studioName={studioName}
         onClose={() => router.push('/workspace/team')}
         onOpenSalaryDrawer={(m) => {
-          setSelectedFinanceMember(m);
+          setSelectedFinanceMember(m || member);
+          setFinanceInitialTab('payroll');
           setIsFinanceDrawerOpen(true);
         }}
       />
@@ -188,13 +190,14 @@ export default function DedicatedTeamMemberPage() {
       {/* Financial & Event Compensation Drawer */}
       <TeamMemberFinanceDrawer
         isOpen={isFinanceDrawerOpen}
+        initialTab={financeInitialTab}
         onClose={() => {
           setIsFinanceDrawerOpen(false);
           setSelectedFinanceMember(null);
         }}
         workspaceId={effectiveWsId}
         workspaceName={studioName}
-        member={selectedFinanceMember}
+        member={selectedFinanceMember || member}
         initialSummary={null}
         onFinancialUpdate={() => {
           fetchMember();
