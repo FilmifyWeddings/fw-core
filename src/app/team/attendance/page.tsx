@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { SidebarLayout } from '@/components/sidebar-layout';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { supabase } from '@/lib/supabase';
 import { 
   Clock, Calendar, MapPin, Camera, CheckCircle2, AlertCircle, 
@@ -17,9 +18,12 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 
 export default function TeamAttendancePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { workspaceId, activeWorkspace } = useWorkspace();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const studioParam = searchParams?.get('studio') || activeWorkspace?.studioSlug || activeWorkspace?.workspaceId || workspaceId;
 
   // Link & Profile
   const [secureToken, setSecureToken] = useState<string | null>(null);
@@ -56,7 +60,7 @@ export default function TeamAttendancePage() {
         setLoading(true);
         setError(null);
 
-        const targetWs = activeWorkspace?.workspaceId || workspaceId;
+        const targetWs = studioParam;
         const url = targetWs && targetWs !== 'all' 
           ? `/api/team/attendance/me?workspace_id=${encodeURIComponent(targetWs)}` 
           : '/api/team/attendance/me';
@@ -95,7 +99,7 @@ export default function TeamAttendancePage() {
     }
 
     loadAttendanceProfile();
-  }, [workspaceId, activeWorkspace?.workspaceId]);
+  }, [studioParam, workspaceId, activeWorkspace?.workspaceId]);
 
   // Live Clocked-In Timer for Today
   const liveClockedInTimer = useMemo(() => {
@@ -358,6 +362,16 @@ export default function TeamAttendancePage() {
 
   const isTodayClockedIn = Boolean(todayRecord?.check_in_time && !todayRecord?.check_out_time);
   const isTodayCompleted = Boolean(todayRecord?.check_out_time);
+
+  if (loading && !member) {
+    return (
+      <SidebarLayout>
+        <div className="min-h-[60vh] flex items-center justify-center p-8">
+          <StudioCoreLiquidLoader label="Opening Smart Attendance Hub..." />
+        </div>
+      </SidebarLayout>
+    );
+  }
 
   return (
     <SidebarLayout>

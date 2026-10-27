@@ -39,6 +39,7 @@ import RecordPaymentModal from './RecordPaymentModal';
 import SalarySlipModal, { SalarySlipData } from './SalarySlipModal';
 import DeleteSlipConfirmModal from './DeleteSlipConfirmModal';
 import SalarySlipPdfTemplate from './SalarySlipPdfTemplate';
+import EventPayoutPdfTemplate from './EventPayoutPdfTemplate';
 
 interface TeamMemberFinanceDrawerProps {
   isOpen: boolean;
@@ -203,6 +204,8 @@ export default function TeamMemberFinanceDrawer({
   const [isDeletingSlip, setIsDeletingSlip] = useState(false);
   const [slipForPdf, setSlipForPdf] = useState<TeamSalaryRecord | null>(null);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [payoutForPdf, setPayoutForPdf] = useState<TeamEventPayout | null>(null);
+  const [isEventPdfModalOpen, setIsEventPdfModalOpen] = useState(false);
 
   // ── MONTHLY PAYROLL & SALARY SLIP FORM STATES ──
   const now = new Date();
@@ -322,8 +325,12 @@ export default function TeamMemberFinanceDrawer({
         isLab ? fetchPartnerAlbumOrders(workspaceId || '', member.id) : Promise.resolve([])
       ]);
 
-      // Process assignments
-      const rawAssigns = assignRes.status === 'fulfilled' && assignRes.value.data ? assignRes.value.data : [];
+      // Process assignments (supports DB queries or pre-hydrated member.assignments)
+      let rawAssigns = assignRes.status === 'fulfilled' && assignRes.value.data ? assignRes.value.data : [];
+      if (rawAssigns.length === 0 && Array.isArray(member.assignments) && member.assignments.length > 0) {
+        rawAssigns = member.assignments;
+      }
+
       const eventPayouts: TeamEventPayout[] = rawAssigns.map((a: any) => {
         const se = a.sub_event || a.fw_sub_events;
         const proj = a.project || a.fw_projects;
@@ -339,29 +346,29 @@ export default function TeamMemberFinanceDrawer({
 
         const clientName = resolveClientName({
           ...a,
-          client_name: a.client_name,
+          client_name: a.client_name || a.couple_name,
           project: proj,
           sub_event: se
         });
 
         return {
-          id: a.id,
+          id: a.id || a.assignment_id || `asg_${se?.id || Date.now()}`,
           workspace_id: a.workspace_id || a.user_id || workspaceId,
           member_id: member.id,
           member_name: member.name || '',
           project_id: a.project_id || se?.project_id || '',
           sub_event_id: a.sub_event_id || '',
           client_name: clientName,
-          event_name: se?.event_title || se?.name || a.sub_event_name || 'Shoot Event',
-          event_date: se?.event_date || a.sub_event_date || a.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-          role: a.required_role || member.primary_role || 'Crew',
+          event_name: se?.event_title || se?.name || a.event_name || a.sub_event_name || 'Shoot Event',
+          event_date: se?.event_date || a.event_date || a.sub_event_date || a.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+          role: a.required_role || a.role_name || a.role || member.primary_role || 'Crew',
           agreed_amount: agreed,
           paid_amount: paid,
           balance_amount: bal,
           status: pStatus,
-          venue: se?.venue_name || proj?.main_venue || '',
-          start_time: se?.start_time_12h || se?.start_time || '',
-          end_time: se?.end_time_12h || se?.end_time || '',
+          venue: se?.venue_name || proj?.main_venue || a.venue_location || a.venue || '',
+          start_time: se?.start_time_12h || se?.start_time || a.start_time || '',
+          end_time: se?.end_time_12h || se?.end_time || a.end_time || '',
           project: proj,
           sub_event: se,
           payment_date: a.payment_date,
@@ -431,6 +438,13 @@ export default function TeamMemberFinanceDrawer({
           if (mKey) seenSalaryMonths.add(mKey);
         }
       });
+
+      // Fallback to pre-hydrated member.salaries if DB returned empty for member
+      if (salaries.length === 0 && Array.isArray(member.salaries) && member.salaries.length > 0) {
+        member.salaries.forEach((s: any) => {
+          salaries.push(s as TeamSalaryRecord);
+        });
+      }
 
       const orders: PartnerAlbumOrder[] = ordersRes.status === 'fulfilled' ? (ordersRes.value || []) : [];
 
@@ -528,7 +542,8 @@ export default function TeamMemberFinanceDrawer({
       }
 
       setPayouts(instantShoots);
-      setSalaryRecords([]);
+      const instantSalaries: TeamSalaryRecord[] = Array.isArray(member.salaries) ? (member.salaries as any) : [];
+      setSalaryRecords(instantSalaries);
       setAlbumOrders([]);
 
       if (initialSummary) {
@@ -1349,14 +1364,16 @@ export default function TeamMemberFinanceDrawer({
                       Live event assignments synced from Team Manager calendar.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddEventOpen(!isAddEventOpen)}
-                    className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                    <span>+ Custom Event</span>
-                  </button>
+                  {!isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => setIsAddEventOpen(!isAddEventOpen)}
+                      className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>+ Custom Event</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Add Custom Event Inline Form */}
@@ -1603,6 +1620,20 @@ export default function TeamMemberFinanceDrawer({
                             >
                               <CreditCard className={`w-3.5 h-3.5 ${isPaid ? 'text-emerald-600' : 'text-amber-400'}`} />
                               <span>{isPaid ? 'Edit Payment / Commercial (Settled)' : cardAgreed === 0 ? 'Edit Commercial / Record Payment (₹0 Rate)' : 'Record Payment / Edit Fee'}</span>
+                            </button>
+                          )}
+
+                          {isReadOnly && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPayoutForPdf(payout);
+                                setIsEventPdfModalOpen(true);
+                              }}
+                              className="w-full py-1.5 font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300"
+                            >
+                              <Download className="w-3.5 h-3.5 text-amber-700" />
+                              <span>Download Voucher / Statement</span>
                             </button>
                           )}
                         </div>
@@ -2186,6 +2217,18 @@ export default function TeamMemberFinanceDrawer({
             setSlipForPdf(null);
           }}
           slip={slipForPdf}
+          member={member}
+          studioName={workspaceName || 'Filmify Weddings'}
+        />
+
+        {/* ── MODAL: PROFESSIONAL SHOOT & EVENT VOUCHER (PRINTABLE A4 / PDF) ── */}
+        <EventPayoutPdfTemplate
+          isOpen={isEventPdfModalOpen}
+          onClose={() => {
+            setIsEventPdfModalOpen(false);
+            setPayoutForPdf(null);
+          }}
+          payout={payoutForPdf}
           member={member}
           studioName={workspaceName || 'Filmify Weddings'}
         />

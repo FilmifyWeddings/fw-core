@@ -215,7 +215,9 @@ export default function TeamFinancePage() {
                 if (currentMemberProfile) {
                   setSelectedFinanceMember({
                     ...currentMemberProfile,
-                    studio_name: selectedStudio !== 'all' ? selectedStudio : (shoots[0]?.studio_name || workspaceName)
+                    studio_name: selectedStudio !== 'all' ? selectedStudio : (shoots[0]?.studio_name || workspaceName),
+                    assignments: shoots,
+                    salaries: salaries
                   });
                   setFinanceInitialTab('bookings');
                   setIsFinanceDrawerOpen(true);
@@ -470,17 +472,21 @@ export default function TeamFinancePage() {
                           type="button"
                           onClick={() => {
                             if (currentMemberProfile) {
-                              setSelectedDeliverablesMember({
+                              setSelectedFinanceMember({
                                 ...currentMemberProfile,
-                                studio_name: shoot.studio_name
+                                studio_name: shoot.studio_name,
+                                workspace_id: shoot.workspace_id,
+                                assignments: shoots.filter(s => s.workspace_id === shoot.workspace_id || selectedStudio === 'all'),
+                                salaries: salaries
                               });
-                              setIsDeliverablesModalOpen(true);
+                              setFinanceInitialTab('bookings');
+                              setIsFinanceDrawerOpen(true);
                             }
                           }}
-                          className="px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-950 text-xs font-bold transition flex items-center gap-1 cursor-pointer border border-amber-200"
                         >
-                          <Eye className="w-3 h-3" />
-                          <span>View Details</span>
+                          <Receipt className="w-3 h-3 text-amber-700" />
+                          <span>View Ledger &amp; Voucher</span>
                         </button>
                       </div>
                     </div>

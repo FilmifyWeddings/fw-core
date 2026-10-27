@@ -4394,6 +4394,7 @@ export default function TeamManagerPage() {
         workspaceId={workspaceId || currentUserId}
         member={selectedFinanceMember}
         initialSummary={selectedFinanceMember ? memberFinancials[selectedFinanceMember.id] : null}
+        isReadOnly={!isOwner}
       />
 
       {/* 6. Unified Filter Drawer */}

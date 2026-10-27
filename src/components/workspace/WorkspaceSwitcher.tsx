@@ -86,7 +86,8 @@ export function WorkspaceSwitcher({ isCollapsed = false }: WorkspaceSwitcherProp
         pathname === '/workspace/team' ||
         pathname === '/workspace/clients' ||
         pathname === '/workspace' ||
-        pathname === '/workspace/'
+        pathname === '/workspace/' ||
+        pathname.startsWith('/workspace/gallery')
       ) {
         router.push(`/team/dashboard?studio=${encodeURIComponent(targetWsParam)}`);
       } else if (pathname.startsWith('/workspace/attendance') || pathname.startsWith('/team/attendance')) {

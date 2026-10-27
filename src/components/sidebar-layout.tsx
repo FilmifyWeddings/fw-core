@@ -666,7 +666,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     }]),
     // 6. Smart Attendance (STRICTLY only for In-House staff under this studio owner; hidden for freelancers)
     ...(((activeWorkspace?.primary_type && ['in_house', 'in-house', 'inhouse'].includes(activeWorkspace.primary_type.toLowerCase())) ||
-        (Array.isArray(activeWorkspace?.member_types) && activeWorkspace.member_types.some(t => String(t).toLowerCase().includes('house')))) ? [{
+        (Array.isArray(activeWorkspace?.member_types) && activeWorkspace.member_types.some(t => String(t).toLowerCase().includes('house'))) ||
+        Boolean((activeWorkspace as any)?.has_attendance)) ? [{
       id: 'team-attendance',
       name: 'Smart Attendance',
       path: '/team/attendance',

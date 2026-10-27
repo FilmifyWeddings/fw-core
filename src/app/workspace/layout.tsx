@@ -24,6 +24,8 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     if (currentPath.startsWith('/workspace/team')) return true;
     if (currentPath.startsWith('/workspace/settings')) return true;
     if (currentPath.startsWith('/workspace/integrations')) return true;
+    if (currentPath.startsWith('/workspace/gallery')) return true;
+    if (currentPath.startsWith('/workspace/attendance')) return true;
     if (currentPath.startsWith('/workspace/finance') && !hasFinanceAccess) return true;
     if (currentPath.startsWith('/workspace/clients') && !hasClientsAccess) return true;
     return false;
@@ -40,9 +42,14 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
 
       if (isOwnerOnlyWorkspaceRoute) {
         const studioCode = activeWorkspace?.studioSlug || activeWorkspace?.workspaceId || '';
-        const targetUrl = studioCode 
-          ? `/assigned-shoots?studio=${encodeURIComponent(studioCode)}`
-          : '/assigned-shoots';
+        let targetUrl = '/assigned-shoots';
+        if (currentPath.startsWith('/workspace/attendance')) {
+          targetUrl = studioCode ? `/team/attendance?studio=${encodeURIComponent(studioCode)}` : '/team/attendance';
+        } else if (currentPath.startsWith('/workspace/gallery') || currentPath === '/workspace' || currentPath === '/workspace/') {
+          targetUrl = studioCode ? `/team/dashboard?studio=${encodeURIComponent(studioCode)}` : '/team/dashboard';
+        } else {
+          targetUrl = studioCode ? `/assigned-shoots?studio=${encodeURIComponent(studioCode)}` : '/assigned-shoots';
+        }
         router.replace(targetUrl);
       }
     }

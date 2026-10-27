@@ -87,38 +87,58 @@ export default function TeamDashboardPage() {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const json = await res.json();
-        if (json.success && Array.isArray(json.shoots)) {
-          setShoots(json.shoots);
+        const loadedShoots = (json.success && Array.isArray(json.shoots)) ? json.shoots : [];
+        setShoots(loadedShoots);
 
-          // Build transparent member profile from active user session & rates
-          let rateRow: any = null;
-          try {
-            const { data: r } = await supabase
-              .from('workspace_member_rates')
-              .select('default_daily_rate, payout_frequency')
-              .eq('team_member_id', activeUser.id)
-              .maybeSingle();
-            if (r) rateRow = r;
-          } catch (_) {}
+        // Fetch salary records for In-House crew
+        let loadedSalaries: any[] = [];
+        try {
+          const { data: slips } = await supabase
+            .from('team_salary_slips')
+            .select('*')
+            .eq('member_id', activeUser.id)
+            .order('month_year', { ascending: false });
+          if (slips && slips.length > 0) {
+            loadedSalaries = slips;
+          } else {
+            const { data: recs } = await supabase
+              .from('team_salary_records')
+              .select('*')
+              .eq('member_id', activeUser.id)
+              .order('month_year', { ascending: false });
+            if (recs) loadedSalaries = recs;
+          }
+        } catch (_) {}
 
-          const rawName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'Team Member';
-          const cleanRate = Number(rateRow?.default_daily_rate || 0);
-          const cleanFreq = rateRow?.payout_frequency || 'daily';
+        // Build transparent member profile from active user session & rates
+        let rateRow: any = null;
+        try {
+          const { data: r } = await supabase
+            .from('workspace_member_rates')
+            .select('default_daily_rate, payout_frequency')
+            .eq('team_member_id', activeUser.id)
+            .maybeSingle();
+          if (r) rateRow = r;
+        } catch (_) {}
 
-          setCurrentMemberProfile({
-            id: activeUser.id,
-            name: rawName,
-            email: activeUser.email || '',
-            phone: activeUser.phone || activeUser.user_metadata?.phone || '',
-            primary_role: userRole || 'Crew',
-            primary_type: 'IN_HOUSE',
-            default_daily_rate: cleanRate,
-            daily_rate: cleanRate,
-            payout_frequency: cleanFreq,
-            workspace_id: json.shoots[0]?.workspace_id || '',
-            assignments: json.shoots,
-          });
-        }
+        const rawName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'Team Member';
+        const cleanRate = Number(rateRow?.default_daily_rate || 0);
+        const cleanFreq = rateRow?.payout_frequency || 'daily';
+
+        setCurrentMemberProfile({
+          id: activeUser.id,
+          name: rawName,
+          email: activeUser.email || '',
+          phone: activeUser.phone || activeUser.user_metadata?.phone || '',
+          primary_role: userRole || 'Crew',
+          primary_type: 'IN_HOUSE',
+          default_daily_rate: cleanRate,
+          daily_rate: cleanRate,
+          payout_frequency: cleanFreq,
+          workspace_id: activeWorkspace?.workspaceId || loadedShoots[0]?.workspace_id || '',
+          assignments: loadedShoots,
+          salaries: loadedSalaries,
+        });
       } catch (err) {
         console.error('Error loading team shoots:', err);
       } finally {
@@ -149,6 +169,9 @@ export default function TeamDashboardPage() {
   const totalAgreed = shoots.reduce((acc, s) => acc + (Number(s.agreed_amount) || 0), 0);
   const totalPaid = shoots.reduce((acc, s) => acc + (Number(s.paid_amount) || 0), 0);
   const totalBalance = shoots.reduce((acc, s) => acc + (Number(s.balance_amount) || 0), 0);
+
+  const studioCode = activeWorkspace?.studioSlug || activeWorkspace?.workspaceId || '';
+  const attendanceUrl = studioCode ? `/team/attendance?studio=${encodeURIComponent(studioCode)}` : '/team/attendance';
 
   return (
     <SidebarLayout>
@@ -242,7 +265,7 @@ export default function TeamDashboardPage() {
 
           <div className="flex items-center gap-2 shrink-0">
             <Link
-              href="/team/attendance"
+              href={attendanceUrl}
               className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
             >
               <span>Open Attendance Hub</span>
@@ -358,7 +381,7 @@ export default function TeamDashboardPage() {
               <div
                 key={shoot.assignment_id}
                 onClick={() => {
-                  const vendorObj = {
+                  const memberObj = {
                     ...(currentMemberProfile || {}),
                     id: currentMemberProfile?.id || shoot.assignment_id,
                     name: currentMemberProfile?.name || 'Assigned Crew',
@@ -366,9 +389,11 @@ export default function TeamDashboardPage() {
                     primary_role: shoot.role_name,
                     workspace_id: shoot.workspace_id,
                     studio_name: shoot.studio_name,
+                    assignments: shoots.filter(s => s.workspace_id === shoot.workspace_id || selectedStudio === 'all'),
                   };
-                  setSelectedDeliverablesMember(vendorObj);
-                  setIsDeliverablesModalOpen(true);
+                  setSelectedFinanceMember(memberObj);
+                  setFinanceInitialTab('bookings');
+                  setIsFinanceDrawerOpen(true);
                 }}
                 className="p-5 rounded-2xl bg-white border border-[#EBE7DF] hover:border-amber-400 hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer relative"
               >

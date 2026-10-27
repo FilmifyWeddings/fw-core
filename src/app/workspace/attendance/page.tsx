@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Clock, Users, MapPin, CheckCircle2, XCircle, AlertTriangle, 
@@ -39,6 +41,17 @@ let memCachedAttendanceLocations: AttendanceLocation[] = [];
 let memCachedAttendanceShifts: AttendanceShift[] = [];
 
 export default function AttendancePage() {
+  const router = useRouter();
+  const { isOwner, activeWorkspace, workspaceId } = useWorkspace();
+
+  // If a non-owner/in-house staff visits /workspace/attendance, gracefully redirect to their personal Smart Attendance hub
+  useEffect(() => {
+    if (!isOwner) {
+      const studioParam = activeWorkspace?.studioSlug || activeWorkspace?.workspaceId || workspaceId || '';
+      router.replace(studioParam ? `/team/attendance?studio=${encodeURIComponent(studioParam)}` : '/team/attendance');
+    }
+  }, [isOwner, activeWorkspace, workspaceId, router]);
+
   const [activeTab, setActiveTab] = useState<'roster' | 'live' | 'matrix' | 'leaves'>('roster');
   const [loading, setLoading] = useState(() => memCachedAttendanceMembers.length === 0);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);

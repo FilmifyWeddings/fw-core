@@ -39,89 +39,100 @@ export async function GET(req: NextRequest) {
 
     const userId = activeUser.id;
     const cleanEmail = (activeUser.email || '').trim().toLowerCase();
-    const targetWsId = req.nextUrl.searchParams.get('workspace_id') || req.headers.get('x-workspace-id') || null;
+    const rawTargetWs = req.nextUrl.searchParams.get('workspace_id') || req.nextUrl.searchParams.get('studio') || req.headers.get('x-workspace-id') || null;
 
-    // 1. Resolve team member
-    let member: any = null;
-    let wsMember: any = null;
-
-    // A. If specific workspace requested (e.g. partner studio workspace), scope strictly to that workspace
-    if (targetWsId && targetWsId !== 'all') {
-      const { data: scopedFw } = await supabaseAdmin
-        .from('fw_team_members')
-        .select('*')
-        .or(`user_id.eq.${targetWsId},workspace_id.eq.${targetWsId}`)
-        .or(`auth_user_id.eq.${userId},email.ilike.${cleanEmail}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (scopedFw) {
-        member = scopedFw;
+    // Resolve studio slug to UUID if needed
+    let resolvedWsId: string | null = null;
+    if (rawTargetWs && rawTargetWs !== 'all') {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawTargetWs);
+      if (isUuid) {
+        resolvedWsId = rawTargetWs;
       } else {
-        const { data: scopedWsMem } = await supabaseAdmin
-          .from('workspace_members')
-          .select('*')
-          .eq('workspace_id', targetWsId)
-          .or(`user_id.eq.${userId},email.ilike.${cleanEmail}`)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        // Look up by studio_slug in workspaces or profiles
+        try {
+          const { data: wsRow } = await supabaseAdmin
+            .from('workspaces')
+            .select('id, owner_id')
+            .or(`studio_slug.eq.${rawTargetWs},id.eq.${rawTargetWs}`)
+            .limit(1)
+            .maybeSingle();
 
-        if (scopedWsMem) {
-          wsMember = scopedWsMem;
-        }
+          if (wsRow?.id || wsRow?.owner_id) {
+            resolvedWsId = wsRow.id || wsRow.owner_id;
+          } else {
+            const { data: profRow } = await supabaseAdmin
+              .from('profiles')
+              .select('id')
+              .eq('studio_slug', rawTargetWs)
+              .limit(1)
+              .maybeSingle();
+            if (profRow?.id) {
+              resolvedWsId = profRow.id;
+            }
+          }
+        } catch (_) {}
       }
     }
 
-    // B. Fallback to any matching record across fw_team_members if not found in scoped workspace
-    if (!member && !wsMember) {
-      const { data: generalFw } = await supabaseAdmin
-        .from('fw_team_members')
-        .select('*')
-        .or(`auth_user_id.eq.${userId},email.ilike.${cleanEmail}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    // 1. Resolve team member across fw_team_members
+    let member: any = null;
+    let wsMember: any = null;
 
-      member = generalFw;
+    const { data: allMatchingMembers } = await supabaseAdmin
+      .from('fw_team_members')
+      .select('*')
+      .or(`auth_user_id.eq.${userId},email.ilike.${cleanEmail}`)
+      .order('created_at', { ascending: false });
+
+    if (allMatchingMembers && allMatchingMembers.length > 0) {
+      if (resolvedWsId) {
+        member = allMatchingMembers.find(
+          (m: any) => String(m.workspace_id) === String(resolvedWsId) || String(m.user_id) === String(resolvedWsId)
+        ) || allMatchingMembers[0];
+      } else {
+        member = allMatchingMembers[0];
+      }
     }
 
-    // C. Check workspace_members if still not found
-    if (!member && !wsMember) {
-      const { data: generalWsMem } = await supabaseAdmin
-        .from('workspace_members')
-        .select('*')
-        .or(`user_id.eq.${userId},email.ilike.${cleanEmail}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    // 2. Fallback to workspace_members if still not found
+    const { data: allMatchingWsMembers } = await supabaseAdmin
+      .from('workspace_members')
+      .select('*')
+      .or(`user_id.eq.${userId},email.ilike.${cleanEmail}`)
+      .order('created_at', { ascending: false });
 
-      wsMember = generalWsMem;
-    }
+    if (!member && allMatchingWsMembers && allMatchingWsMembers.length > 0) {
+      if (resolvedWsId) {
+        wsMember = allMatchingWsMembers.find(
+          (wm: any) => String(wm.workspace_id) === String(resolvedWsId)
+        ) || allMatchingWsMembers[0];
+      } else {
+        wsMember = allMatchingWsMembers[0];
+      }
 
-    if (!member && wsMember) {
-      // Find or create matching fw_team_members record
-      const { data: upserted } = await supabaseAdmin
-        .from('fw_team_members')
-        .upsert({
-          id: wsMember.id,
-          user_id: wsMember.workspace_id,
-          workspace_id: wsMember.workspace_id,
-          auth_user_id: userId,
-          name: wsMember.name || activeUser.user_metadata?.full_name || 'Team Member',
-          email: cleanEmail,
-          primary_role: wsMember.primary_role || 'Staff Member',
-          roles: wsMember.roles || [wsMember.primary_role || 'Staff Member'],
-          primary_type: wsMember.primary_type || 'IN_HOUSE',
-          member_types: wsMember.member_types || ['IN_HOUSE'],
-          is_active: true,
-          active_status: true,
-        }, { onConflict: 'id' })
-        .select('*')
-        .maybeSingle();
+      if (wsMember) {
+        // Find or create matching fw_team_members record
+        const { data: upserted } = await supabaseAdmin
+          .from('fw_team_members')
+          .upsert({
+            id: wsMember.id,
+            user_id: wsMember.workspace_id,
+            workspace_id: wsMember.workspace_id,
+            auth_user_id: userId,
+            name: wsMember.name || activeUser.user_metadata?.full_name || 'Team Member',
+            email: cleanEmail,
+            primary_role: wsMember.primary_role || 'Staff Member',
+            roles: wsMember.roles || [wsMember.primary_role || 'Staff Member'],
+            primary_type: wsMember.primary_type || 'IN_HOUSE',
+            member_types: wsMember.member_types || ['IN_HOUSE'],
+            is_active: true,
+            active_status: true,
+          }, { onConflict: 'id' })
+          .select('*')
+          .maybeSingle();
 
-      member = upserted || wsMember;
+        member = upserted || wsMember;
+      }
     }
 
     if (!member) {
@@ -141,34 +152,18 @@ export async function GET(req: NextRequest) {
       member.auth_user_id = userId;
     }
 
-    const memberWorkspaceId = targetWsId && targetWsId !== 'all' ? targetWsId : (member.user_id || member.workspace_id);
+    const memberWorkspaceId = resolvedWsId || member.user_id || member.workspace_id;
 
     // Build comprehensive candidate IDs (member.id, wsMember.id, plus any other aliases in this studio)
     const candidateIds = new Set<string>([String(member.id)]);
     if (wsMember?.id) candidateIds.add(String(wsMember.id));
 
-    // Find any additional alias IDs by email / phone / name within the same studio workspace
-    try {
-      const { data: aliasRows } = await supabaseAdmin
-        .from('fw_team_members')
-        .select('id')
-        .or(`user_id.eq.${memberWorkspaceId},workspace_id.eq.${memberWorkspaceId}`)
-        .or(`email.ilike.${cleanEmail},auth_user_id.eq.${userId}`);
-
-      if (aliasRows && aliasRows.length > 0) {
-        aliasRows.forEach(a => { if (a.id) candidateIds.add(String(a.id)); });
-      }
-
-      const { data: wsAliasRows } = await supabaseAdmin
-        .from('workspace_members')
-        .select('id')
-        .eq('workspace_id', memberWorkspaceId)
-        .or(`email.ilike.${cleanEmail},user_id.eq.${userId}`);
-
-      if (wsAliasRows && wsAliasRows.length > 0) {
-        wsAliasRows.forEach(a => { if (a.id) candidateIds.add(String(a.id)); });
-      }
-    } catch (_) {}
+    if (allMatchingMembers) {
+      allMatchingMembers.forEach((a: any) => { if (a.id) candidateIds.add(String(a.id)); });
+    }
+    if (allMatchingWsMembers) {
+      allMatchingWsMembers.forEach((a: any) => { if (a.id) candidateIds.add(String(a.id)); });
+    }
 
     const candidateIdsList = Array.from(candidateIds);
 
