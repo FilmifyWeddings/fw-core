@@ -3,6 +3,12 @@ set -e
 echo "=== Starting deployment at $(date) ==="
 cd /var/www/fw-core || exit 1
 
+# Clean any stale build processes or locks immediately
+pkill -9 -f 'next build' 2>/dev/null || true
+pkill -9 -f 'next-build' 2>/dev/null || true
+rm -f /var/www/fw-core/.next/lock* 2>/dev/null || true
+rm -rf /var/www/fw-core/node_modules/.zod* /var/www/fw-core/node_modules/.*-* 2>/dev/null || true
+
 echo "Fetching latest changes..."
 git fetch origin main
 git reset --hard origin/main
@@ -47,8 +53,8 @@ fi
 
 rm -rf /var/www/fw-core/node_modules/.*-* /var/www/fw-core/node_modules/.zod* 2>/dev/null || true
 
-if [ ! -f "/var/www/fw-core/node_modules/typescript/lib/lib.es2022.d.ts" ]; then
-  echo "Repairing root TypeScript definitions in /var/www/fw-core/node_modules..."
+if [ ! -d "/var/www/fw-core/node_modules/typescript" ]; then
+  echo "Installing TypeScript in root node_modules..."
   npm install typescript@^5 --save-dev --no-audit || true
 fi
 
