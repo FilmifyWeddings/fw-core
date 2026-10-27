@@ -2190,3 +2190,170 @@ export async function batchFetchWorkspaceTeamFinancials(
 
   return summaryMap;
 }
+
+
+// ── 7. WORKSPACE-WIDE ALL TEAM MEMBERS AGGREGATE FINANCIALS (DATE-FILTERABLE) ──
+
+export interface WorkspaceAggregateFinancialRecord {
+  id: string;
+  member_id: string;
+  record_type: 'shoot' | 'salary' | 'payout';
+  date: string; // YYYY-MM-DD or YYYY-MM
+  agreed_amount: number;
+  paid_amount: number;
+  balance_amount: number;
+  status: string;
+}
+
+export async function fetchWorkspaceAllTeamAggregateFinancials(
+  workspaceId: string,
+  memberIds: string[]
+): Promise<{
+  summaryMap: Record<string, TeamFinancialSummary>;
+  records: WorkspaceAggregateFinancialRecord[];
+}> {
+  const summaryMap = await batchFetchWorkspaceTeamFinancials(workspaceId, memberIds);
+  const uniqueIds = Array.from(new Set(memberIds.filter(Boolean)));
+  const records: WorkspaceAggregateFinancialRecord[] = [];
+
+  if (!workspaceId || uniqueIds.length === 0) {
+    return { summaryMap, records };
+  }
+
+  try {
+    const [assignmentsRes, payoutsRes, salariesRes, slipsRes] = await Promise.allSettled([
+      supabase
+        .from('fw_assignments')
+        .select(`
+          id,
+          assigned_member_id,
+          agreed_amount,
+          advance_amount,
+          paid_amount,
+          balance_amount,
+          payment_status,
+          created_at,
+          workspace_id,
+          user_id,
+          project:fw_projects(id, user_id, main_date),
+          sub_event:fw_sub_events(id, event_date)
+        `)
+        .in('assigned_member_id', uniqueIds),
+      supabase
+        .from('team_event_payouts')
+        .select('id, member_id, agreed_amount, paid_amount, balance_amount, status, event_date, payment_date, created_at, workspace_id, user_id')
+        .in('member_id', uniqueIds)
+        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`),
+      supabase
+        .from('team_salary_records')
+        .select('id, member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date, created_at, workspace_id, user_id')
+        .in('member_id', uniqueIds)
+        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`),
+      supabase
+        .from('team_salary_slips')
+        .select('id, member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date, created_at, workspace_id, user_id')
+        .in('member_id', uniqueIds)
+        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
+    ]);
+
+    const rawAssignments = assignmentsRes.status === 'fulfilled' && assignmentsRes.value.data ? assignmentsRes.value.data : [];
+    const validAssignments = rawAssignments.filter((row: any) => {
+      const proj = row.project || row.fw_projects;
+      const matchWs = (row.workspace_id && row.workspace_id === workspaceId) || (row.user_id && row.user_id === workspaceId);
+      const matchProjUser = proj?.user_id && proj.user_id === workspaceId;
+      return matchWs || matchProjUser;
+    });
+
+    validAssignments.forEach((row: any) => {
+      const mid = row.assigned_member_id;
+      if (!mid) return;
+
+      const se = row.sub_event || row.fw_sub_events;
+      const proj = row.project || row.fw_projects;
+      const rawDate = se?.event_date || proj?.main_date || (row.created_at ? row.created_at.split('T')[0] : '') || '';
+
+      const rawAgreed = Number(row.agreed_amount) || 0;
+      const hasCustom = Boolean(row.custom_payout || row.custom_rate || row.is_custom_payout);
+      const agreed = hasCustom ? (Number(row.custom_payout || row.custom_rate) || rawAgreed) : rawAgreed;
+      const paid = Number(row.advance_amount ?? row.paid_amount) || 0;
+      const bal = Math.max(0, agreed - paid);
+
+      records.push({
+        id: row.id,
+        member_id: mid,
+        record_type: 'shoot',
+        date: rawDate,
+        agreed_amount: agreed,
+        paid_amount: paid,
+        balance_amount: bal,
+        status: row.payment_status || (bal <= 0 ? 'PAID' : 'PENDING'),
+      });
+    });
+
+    // Payouts
+    const payouts = payoutsRes.status === 'fulfilled' && payoutsRes.value.data ? payoutsRes.value.data : [];
+    payouts.forEach((p: any) => {
+      const mid = p.member_id;
+      if (!mid) return;
+      const rawDate = p.event_date || p.payment_date || (p.created_at ? p.created_at.split('T')[0] : '') || '';
+      const agreed = Number(p.agreed_amount) || 0;
+      const paid = Number(p.paid_amount) || 0;
+      const bal = Number(p.balance_amount) || Math.max(0, agreed - paid);
+
+      records.push({
+        id: p.id,
+        member_id: mid,
+        record_type: 'payout',
+        date: rawDate,
+        agreed_amount: agreed,
+        paid_amount: paid,
+        balance_amount: bal,
+        status: p.status || (bal <= 0 ? 'PAID' : 'PENDING'),
+      });
+    });
+
+    // Salaries
+    const processedSalaryKeys = new Set<string>();
+    const allSalaries = [
+      ...(slipsRes.status === 'fulfilled' && slipsRes.value.data ? slipsRes.value.data : []),
+      ...(salariesRes.status === 'fulfilled' && salariesRes.value.data ? salariesRes.value.data : [])
+    ];
+
+    allSalaries.forEach((s: any) => {
+      const mid = s.member_id;
+      if (!mid) return;
+      const key = `${mid}_${s.month_year}_${s.id || ''}`;
+      if (processedSalaryKeys.has(key)) return;
+      processedSalaryKeys.add(key);
+
+      const netPayable = Number(s.net_payable ?? s.base_salary) || 0;
+      const paid = Number(s.paid_amount ?? (s.payment_status === 'PAID' ? s.net_payable : 0)) || 0;
+      const bal = Math.max(0, netPayable - paid);
+
+      let dateStr = '';
+      if (s.paid_date) {
+        dateStr = s.paid_date.split('T')[0];
+      } else if (s.month_year && /^\d{4}-\d{2}/.test(s.month_year)) {
+        dateStr = `${s.month_year}-01`;
+      } else if (s.created_at) {
+        dateStr = s.created_at.split('T')[0];
+      }
+
+      records.push({
+        id: s.id || key,
+        member_id: mid,
+        record_type: 'salary',
+        date: dateStr,
+        agreed_amount: netPayable,
+        paid_amount: paid,
+        balance_amount: bal,
+        status: s.payment_status || (bal <= 0 ? 'PAID' : 'PENDING'),
+      });
+    });
+
+  } catch (err) {
+    console.warn('[fetchWorkspaceAllTeamAggregateFinancials] Warning:', err);
+  }
+
+  return { summaryMap, records };
+}

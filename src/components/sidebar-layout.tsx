@@ -585,6 +585,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     },
   ] : [
     // PARTNER / FREELANCER WORKSPACE RESTRICTED NAVIGATION
+    {
+      id: 'team-dashboard',
+      name: 'Dashboard',
+      path: '/team/dashboard',
+      icon: LayoutDashboard,
+      iconBg: 'bg-[#FEF3C7] text-[#D97706]',
+    },
     // Clients Directory (Controlled by clients_access RBAC)
     ...(permissions?.clients_access && permissions.clients_access !== 'NONE' ? [{
       id: 'clients',
@@ -618,7 +625,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: (permissions.team_manager_access === 'ALL_VIEW' || permissions.team_manager_access === 'ALL_MANAGE') ? '/team-manager' : '/assigned-shoots',
       icon: Calendar,
       iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
-    }] : []),
+    }] : [{
+      id: 'bookings',
+      name: 'Assigned Shoots',
+      path: '/assigned-shoots',
+      icon: Calendar,
+      iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
+    }]),
     // 3. Quotations
     ...(permissions?.quotations_access && permissions.quotations_access !== 'NONE' ? [{
       id: 'quotations',
@@ -637,14 +650,20 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
       }
     ] : []),
-    // 5. Finance
+    // 5. Finance & Payouts (Studio Owner's Full Finance if RBAC granted, otherwise Transparent My Finances & Payouts)
     ...(permissions?.finance_access && permissions.finance_access !== 'NONE' ? [{
       id: 'finance',
       name: 'Finance & Payments',
       path: '/workspace/finance',
       icon: IndianRupee,
       iconBg: 'bg-[#FEF9C3] text-[#A16207]',
-    }] : []),
+    }] : [{
+      id: 'team-finance',
+      name: 'Finance & Payouts',
+      path: '/team/finance',
+      icon: IndianRupee,
+      iconBg: 'bg-[#DCFCE7] text-[#15803D]',
+    }]),
     // 6. Smart Attendance (STRICTLY only for In-House staff under this studio owner; hidden for freelancers)
     ...(((activeWorkspace?.primary_type && ['in_house', 'in-house', 'inhouse'].includes(activeWorkspace.primary_type.toLowerCase())) ||
         (Array.isArray(activeWorkspace?.member_types) && activeWorkspace.member_types.some(t => String(t).toLowerCase().includes('house')))) ? [{

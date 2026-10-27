@@ -326,10 +326,18 @@ export function BulkGroupEnrollModal({
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
-                    min="1"
+                    min="0"
                     max="1440"
                     value={delayValue}
-                    onChange={e => setDelayValue(Math.max(1, parseInt(e.target.value) || 1))}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === '') {
+                        setDelayValue(0);
+                        return;
+                      }
+                      const parsed = parseInt(val, 10);
+                      setDelayValue(isNaN(parsed) ? 0 : Math.max(0, parsed));
+                    }}
                     className="w-24 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-zinc-900 dark:text-zinc-100 text-center focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                   <select

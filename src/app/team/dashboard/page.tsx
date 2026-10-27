@@ -191,6 +191,15 @@ export default function TeamDashboardPage() {
               <span>Deliverables &amp; Invoices</span>
             </button>
 
+            <Link
+              href="/team/finance"
+              className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5"
+              title="Open full transparent financial ledger and salary slips"
+            >
+              <IndianRupee className="w-3.5 h-3.5 text-emerald-200" />
+              <span>Finance &amp; Payouts</span>
+            </Link>
+
             <button
               type="button"
               onClick={() => {
@@ -206,7 +215,7 @@ export default function TeamDashboardPage() {
               className="px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-black text-amber-300 font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer border border-stone-800"
               title="Open financial breakdown, payments, and salary slips"
             >
-              <IndianRupee className="w-3.5 h-3.5 text-amber-400" />
+              <Receipt className="w-3.5 h-3.5 text-amber-400" />
               <span>Financial Ledger</span>
             </button>
 

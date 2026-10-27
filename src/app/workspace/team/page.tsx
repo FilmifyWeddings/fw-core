@@ -23,6 +23,8 @@ import VendorAlbumDeliverablesModal from '@/components/vendors/VendorAlbumDelive
 import TeamRemindersDrawer from '@/components/team/TeamRemindersDrawer';
 import { 
   batchFetchWorkspaceTeamFinancials,
+  fetchWorkspaceAllTeamAggregateFinancials,
+  WorkspaceAggregateFinancialRecord,
   fetchMemberFinancialSummary, 
   TeamFinancialSummary, 
   fetchWorkspaceMemberRatesMap, 
@@ -125,6 +127,10 @@ export default function WorkspaceTeamPage() {
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
   const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics'>('payroll');
   const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
+  const [financePeriod, setFinancePeriod] = useState<'all' | 'this_month' | 'last_month' | 'this_year' | 'custom'>('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [aggregateRecords, setAggregateRecords] = useState<WorkspaceAggregateFinancialRecord[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
 
@@ -184,8 +190,9 @@ export default function WorkspaceTeamPage() {
 
     try {
       const memberIds = membersList.map(m => m.id).filter(Boolean);
-      const summaryMap = await batchFetchWorkspaceTeamFinancials(effectiveWsId, memberIds);
+      const { summaryMap, records } = await fetchWorkspaceAllTeamAggregateFinancials(effectiveWsId, memberIds);
       setMemberFinancials(summaryMap);
+      setAggregateRecords(records);
     } catch (err) {
       console.error('[WorkspaceTeamPage] Batch financials error:', err);
     }
@@ -859,6 +866,62 @@ export default function WorkspaceTeamPage() {
     setVisibleCount(15);
   }, [selectedFilter, selectedRole, searchQuery]);
 
+  // Aggregate Financial Totals (Filterable by All Time, Month, Year, Custom Date)
+  const allTeamFinancialTotals = useMemo(() => {
+    const now = new Date();
+    const currentYearMonth = now.toISOString().substring(0, 7); // e.g. "2026-10"
+    const currentYear = String(now.getFullYear()); // e.g. "2026"
+
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevYearMonth = prevMonthDate.toISOString().substring(0, 7); // e.g. "2026-09"
+
+    // Cross-reference with filtered members in active directory tab
+    const activeMemberIds = new Set(filteredMembers.map(m => m.id));
+
+    const filtered = aggregateRecords.filter((rec) => {
+      if (activeMemberIds.size > 0 && !activeMemberIds.has(rec.member_id)) {
+        return false;
+      }
+
+      if (financePeriod === 'all') return true;
+
+      const recDate = rec.date || '';
+      if (financePeriod === 'this_month') {
+        return recDate.startsWith(currentYearMonth);
+      }
+      if (financePeriod === 'last_month') {
+        return recDate.startsWith(prevYearMonth);
+      }
+      if (financePeriod === 'this_year') {
+        return recDate.startsWith(currentYear);
+      }
+      if (financePeriod === 'custom') {
+        if (customStartDate && recDate < customStartDate) return false;
+        if (customEndDate && recDate > customEndDate) return false;
+        return true;
+      }
+      return true;
+    });
+
+    const totalAgreed = filtered.reduce((acc, r) => acc + (Number(r.agreed_amount) || 0), 0);
+    const totalPaid = filtered.reduce((acc, r) => acc + (Number(r.paid_amount) || 0), 0);
+    const totalBalance = filtered.reduce((acc, r) => acc + (Number(r.balance_amount) || 0), 0);
+    const totalCount = filtered.length;
+    const settledCount = filtered.filter(r => r.balance_amount <= 0 && r.agreed_amount > 0).length;
+    const pendingCount = filtered.filter(r => r.balance_amount > 0).length;
+    const percent = totalAgreed > 0 ? Math.min(100, Math.round((totalPaid / totalAgreed) * 100)) : 100;
+
+    return {
+      totalAgreed,
+      totalPaid,
+      totalBalance,
+      totalCount,
+      settledCount,
+      pendingCount,
+      percent,
+    };
+  }, [aggregateRecords, filteredMembers, financePeriod, customStartDate, customEndDate]);
+
   // Metrics
   const totalCount = members.length;
   const inHouseCount = members.filter(m => m.member_types?.includes('IN_HOUSE') || m.primary_type === 'IN_HOUSE').length;
@@ -984,6 +1047,141 @@ export default function WorkspaceTeamPage() {
 
       {activeTab === 'directory' ? (
         <>
+          {/* 1.5. ALL-MEMBERS AGGREGATE FINANCIAL COMMITMENT & PAYOUT SUMMARY (LIGHT LUXURY UI) */}
+          <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-zinc-200/90 shadow-2xs space-y-4 my-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shadow-2xs shrink-0">
+                  <IndianRupee className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-zinc-900 tracking-tight flex items-center gap-2">
+                    <span>Crew &amp; Partner Commercials Overview</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100/70 text-amber-900 font-bold border border-amber-200/60">
+                      Studio Total
+                    </span>
+                  </h3>
+                  <p className="text-xs text-zinc-500 font-medium">
+                    Consolidated agreed amounts, advance payouts disbursed, and pending balance across all crew members.
+                  </p>
+                </div>
+              </div>
+
+              {/* Date / Time Period Filters */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="flex items-center p-1 bg-zinc-100/90 rounded-xl text-xs font-bold">
+                  {[
+                    { id: 'all', label: 'All Time' },
+                    { id: 'this_month', label: 'This Month' },
+                    { id: 'last_month', label: 'Last Month' },
+                    { id: 'this_year', label: 'This Year' },
+                    { id: 'custom', label: 'Custom Date' },
+                  ].map((period) => (
+                    <button
+                      key={period.id}
+                      type="button"
+                      onClick={() => setFinancePeriod(period.id as any)}
+                      className={`px-2.5 sm:px-3 py-1 rounded-lg transition-all cursor-pointer text-[11px] font-bold ${
+                        financePeriod === period.id
+                          ? 'bg-zinc-900 text-white shadow-xs'
+                          : 'text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      {period.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Custom Date Inputs (if custom is selected) */}
+            {financePeriod === 'custom' && (
+              <div className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl flex flex-wrap items-center gap-3 text-xs">
+                <span className="font-bold text-amber-900">Filter Range:</span>
+                <div className="flex items-center gap-2">
+                  <label className="text-zinc-500 font-medium text-[11px]">From:</label>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="px-2.5 py-1 bg-white border border-zinc-200 rounded-lg text-xs font-mono font-bold text-zinc-800 outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-zinc-500 font-medium text-[11px]">To:</label>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="px-2.5 py-1 bg-white border border-zinc-200 rounded-lg text-xs font-mono font-bold text-zinc-800 outline-none focus:border-amber-500"
+                  />
+                </div>
+                {(customStartDate || customEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomStartDate('');
+                      setCustomEndDate('');
+                    }}
+                    className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer ml-auto"
+                  >
+                    Clear Dates
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* 3 Metric Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+              {/* Total Agreed */}
+              <div className="p-4 rounded-xl sm:rounded-2xl bg-zinc-50/80 border border-zinc-200/80 shadow-2xs">
+                <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Agreed Fee</span>
+                  <IndianRupee className="w-4 h-4 text-amber-600" />
+                </div>
+                <p className="text-2xl sm:text-3xl font-black text-zinc-900 font-mono tracking-tight">
+                  ₹{allTeamFinancialTotals.totalAgreed.toLocaleString('en-IN')}
+                </p>
+                <div className="mt-2 text-[11px] text-zinc-500 flex items-center justify-between">
+                  <span>Commitments:</span>
+                  <span className="font-bold text-zinc-700">{allTeamFinancialTotals.totalCount} item(s)</span>
+                </div>
+              </div>
+
+              {/* Total Paid */}
+              <div className="p-4 rounded-xl sm:rounded-2xl bg-zinc-50/80 border border-zinc-200/80 shadow-2xs">
+                <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Paid (Disbursed)</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                </div>
+                <p className="text-2xl sm:text-3xl font-black text-emerald-600 font-mono tracking-tight">
+                  ₹{allTeamFinancialTotals.totalPaid.toLocaleString('en-IN')}
+                </p>
+                <div className="mt-2 text-[11px] text-zinc-500 flex items-center justify-between">
+                  <span>Disbursal Progress:</span>
+                  <span className="font-bold text-emerald-700">{allTeamFinancialTotals.percent}% Settled</span>
+                </div>
+              </div>
+
+              {/* Balance Remaining ("Kitna Pay Karna Baki Hai") */}
+              <div className="p-4 rounded-xl sm:rounded-2xl bg-amber-50/50 border border-amber-200 shadow-2xs">
+                <div className="flex items-center justify-between text-amber-800 text-xs font-bold mb-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">Remaining Balance (Pay Karna Baki)</span>
+                  <Clock className="w-4 h-4 text-amber-700" />
+                </div>
+                <p className="text-2xl sm:text-3xl font-black text-amber-700 font-mono tracking-tight">
+                  ₹{allTeamFinancialTotals.totalBalance.toLocaleString('en-IN')}
+                </p>
+                <div className="mt-2 text-[11px] text-amber-900/80 flex items-center justify-between">
+                  <span>Pending Payouts:</span>
+                  <span className="font-black text-amber-800">
+                    {allTeamFinancialTotals.pendingCount > 0 ? `${allTeamFinancialTotals.pendingCount} Pending` : 'All Accounts Settled'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* 2. STATS OVERVIEW CARDS (WITH IN-HOUSE / FREELANCER / PARTNER BREAKDOWN) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 my-3">
             {[

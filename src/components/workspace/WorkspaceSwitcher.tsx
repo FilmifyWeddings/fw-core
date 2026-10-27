@@ -78,17 +78,18 @@ export function WorkspaceSwitcher({ isCollapsed = false }: WorkspaceSwitcherProp
 
     // If switching to a partner workspace and currently on an owner-only page, route to assigned shoots
     if (!ws.isOwner) {
-      if (
+      if (pathname === '/workspace/finance') {
+        router.push(`/team/finance?studio=${encodeURIComponent(targetWsParam)}`);
+      } else if (
         pathname === '/workspace/settings' || 
         pathname === '/workspace/integrations' ||
-        pathname === '/workspace/finance' ||
         pathname === '/workspace/team' ||
         pathname === '/workspace/clients' ||
         pathname === '/workspace' ||
         pathname === '/workspace/'
       ) {
-        router.push(`/assigned-shoots?studio=${encodeURIComponent(targetWsParam)}`);
-      } else if (pathname.startsWith('/workspace/attendance')) {
+        router.push(`/team/dashboard?studio=${encodeURIComponent(targetWsParam)}`);
+      } else if (pathname.startsWith('/workspace/attendance') || pathname.startsWith('/team/attendance')) {
         router.push(`/team/attendance?studio=${encodeURIComponent(targetWsParam)}`);
       } else {
         router.push(`${pathname}?studio=${encodeURIComponent(targetWsParam)}`);
