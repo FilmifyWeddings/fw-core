@@ -45,6 +45,8 @@ else
   echo "Skipping npm install (no package.json changes)..."
 fi
 
+rm -rf /var/www/fw-core/node_modules/.*-* /var/www/fw-core/node_modules/.zod* 2>/dev/null || true
+
 if [ ! -f "/var/www/fw-core/node_modules/typescript/lib/lib.es2022.d.ts" ]; then
   echo "Repairing root TypeScript definitions in /var/www/fw-core/node_modules..."
   npm install typescript@^5 --save-dev --no-audit || true
@@ -54,6 +56,9 @@ echo "Freeing memory before building application..."
 pm2 stop baileys-worker 2>/dev/null || true
 pm2 stop fw-staging 2>/dev/null || true
 pkill -9 -f 'processChild.js' 2>/dev/null || true
+pkill -9 -f 'next build' 2>/dev/null || true
+pkill -9 -f 'next-build' 2>/dev/null || true
+rm -f /var/www/fw-core/.next/lock* 2>/dev/null || true
 rm -rf /var/www/fw-core/node_modules/.es-abstract*
 NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2560" npm run build
 
