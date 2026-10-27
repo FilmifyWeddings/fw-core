@@ -616,6 +616,7 @@ function GuestSlugGalleryContent() {
 
     try {
       let savedGuestId: string = '';
+      let regJson: any = null;
       // 1. Register Guest in CRM (Uploads selfie to Backblaze B2 & saves 512-D embedding)
       try {
         const regRes = await fetch('/api/gallery/guest/register', {
@@ -629,7 +630,7 @@ function GuestSlugGalleryContent() {
             selfieBase64: data.selfieBase64,
           }),
         });
-        const regJson = await regRes.json();
+        regJson = await regRes.json();
         if (regJson?.isExistingGuest) {
           setIsAlreadyRegistered(true);
         } else {
@@ -662,10 +663,13 @@ function GuestSlugGalleryContent() {
       }
 
       // 2. If PUBLISHED: Check instant matches from registration first (avoids duplicate Modal GPU calls!)
-      if (regJson?.matched_photos) {
+      if (regJson?.matched_photos || regJson?.photos) {
         setIsFaceScannerOpen(false);
-        const resolvedPhotos = Array.isArray(regJson.matched_photos) ? regJson.matched_photos : [];
+        const resolvedPhotos = Array.isArray(regJson.matched_photos)
+          ? regJson.matched_photos
+          : (Array.isArray(regJson.photos) ? regJson.photos : []);
         setMatchedPhotos(resolvedPhotos);
+        setSelectedCollectionId('all');
         setHasSearched(true);
         setIsVerified(true);
         setIsMyPhotosActive(true);
@@ -930,7 +934,7 @@ function GuestSlugGalleryContent() {
   };
 
   const targetFullPhotos = useMemo(() => {
-    return selectedCollectionId === 'all'
+    return selectedCollectionId === 'all' || selectedCollectionId === 'selected'
       ? fullPhotos
       : fullPhotos.filter((p) => p.collection_id === selectedCollectionId);
   }, [fullPhotos, selectedCollectionId]);
@@ -1076,31 +1080,37 @@ function GuestSlugGalleryContent() {
     const cleanName = selectorName.trim() || 'Guest';
     const cleanEmail = selectorEmail.trim().toLowerCase();
 
+    // Strict Device Multi-Client Isolation: Reset in-memory state before loading new account
+    setSelectedForAlbum(new Set());
+    setIsSelectionSubmitted(false);
+    setSubmittedAt(null);
+
     try {
       localStorage.setItem(`studiocore_selector_${gallery?.id}`, JSON.stringify({ name: cleanName, email: cleanEmail }));
     } catch (_) {}
 
     setShowSelectorModal(false);
 
-    // Fetch existing selections for this email
+    // Fetch existing selections for this specific email from backend
     if (gallery?.id) {
       setIsSyncingSelection(true);
       try {
         const res = await fetch(`/api/gallery/selections?gallery_id=${gallery.id}&email=${encodeURIComponent(cleanEmail)}`);
         const json = await res.json();
         if (json.success) {
-          if (Array.isArray(json.selected_photo_ids)) {
-            setSelectedForAlbum(new Set(json.selected_photo_ids));
-          }
-          if (json.is_submitted) {
-            setIsSelectionSubmitted(true);
-            setSubmittedAt(json.submitted_at || null);
-          } else {
-            setIsSelectionSubmitted(false);
-            setSubmittedAt(null);
-          }
+          const ids = Array.isArray(json.selected_photo_ids)
+            ? json.selected_photo_ids
+            : (json.selection?.selected_photo_ids || []);
+          setSelectedForAlbum(new Set(ids));
+          const isSub = Boolean(json.is_submitted || json.selection?.is_submitted);
+          setIsSelectionSubmitted(isSub);
+          setSubmittedAt(isSub ? (json.submitted_at || json.selection?.submitted_at || null) : null);
+        } else {
+          setSelectedForAlbum(new Set());
         }
-      } catch (_) {} finally {
+      } catch (_) {
+        setSelectedForAlbum(new Set());
+      } finally {
         setIsSyncingSelection(false);
       }
     }
@@ -1132,40 +1142,43 @@ function GuestSlugGalleryContent() {
     });
   }, [isSelectionSubmitted, selectorEmail, effectiveMaxSelectionLimit, syncSelectionToBackend, selectorName]);
 
-  // LocalStorage persistence for Album Selection Mode
+  // LocalStorage persistence for Album Selection Mode (Strictly scoped by client email to avoid multi-user bleed)
   useEffect(() => {
-    if (!gallery?.id || !isSelectionMode) return;
+    if (!gallery?.id || !isSelectionMode || !selectorEmail || selectorEmail.includes('.local')) return;
     try {
-      const saved = localStorage.getItem(`studiocore_album_selection_${gallery.id}`);
+      const emailKey = selectorEmail.trim().toLowerCase();
+      const saved = localStorage.getItem(`studiocore_album_selection_${gallery.id}_${emailKey}`);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           setSelectedForAlbum(new Set(parsed));
         }
       }
     } catch (_) {}
-  }, [gallery?.id, isSelectionMode]);
+  }, [gallery?.id, isSelectionMode, selectorEmail]);
 
   useEffect(() => {
-    if (!gallery?.id || !isSelectionMode) return;
+    if (!gallery?.id || !isSelectionMode || !selectorEmail || selectorEmail.includes('.local')) return;
     try {
-      localStorage.setItem(`studiocore_album_selection_${gallery.id}`, JSON.stringify(Array.from(selectedForAlbum)));
+      const emailKey = selectorEmail.trim().toLowerCase();
+      localStorage.setItem(`studiocore_album_selection_${gallery.id}_${emailKey}`, JSON.stringify(Array.from(selectedForAlbum)));
     } catch (_) {}
-  }, [selectedForAlbum, gallery?.id, isSelectionMode]);
+  }, [selectedForAlbum, gallery?.id, isSelectionMode, selectorEmail]);
 
-  // Real-time debounced auto-sync to backend (guaranteed persistence across devices/tabs)
+  // Real-time debounced auto-sync to backend (Only syncs when real user email is provided; avoids dummy .local cards)
   useEffect(() => {
     if (!gallery?.id || !isSelectionMode) return;
+    if (!selectorEmail || !selectorEmail.includes('@') || selectorEmail.includes('.local')) return;
     const defaultName = (gallery as any)?.client_name || gallery?.title || 'Client';
-    const effectiveName = selectorName || guestSavedSession?.name || defaultName;
-    const effectiveEmail = selectorEmail || guestSavedSession?.email || (gallery as any)?.client_email || `${gallery?.slug || 'client'}@selection.local`;
+    const effectiveName = selectorName || defaultName;
+    const effectiveEmail = selectorEmail.trim().toLowerCase();
 
     const timer = setTimeout(() => {
       syncSelectionToBackend(selectedForAlbum, effectiveName, effectiveEmail);
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [selectedForAlbum, gallery?.id, isSelectionMode, selectorEmail, selectorName, guestSavedSession, syncSelectionToBackend]);
+  }, [selectedForAlbum, gallery?.id, isSelectionMode, selectorEmail, selectorName, syncSelectionToBackend]);
 
   const displayedPhotos = useMemo(() => {
     // 1. In Guest Access mode (!isPrivilegedMode): STRICT PRIVACY - ONLY show guest's matched photos!
@@ -1182,7 +1195,7 @@ function GuestSlugGalleryContent() {
     }
 
     if (isSelectionMode && (showOnlySelected || selectedCollectionId === 'selected')) {
-      return targetFullPhotos.filter((p) => selectedForAlbum.has(p.id));
+      return fullPhotos.filter((p) => selectedForAlbum.has(p.id));
     }
 
     return isUnlocked ? displayedPrivilegedPhotos : [];
@@ -1620,11 +1633,11 @@ function GuestSlugGalleryContent() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {(!isPrivilegedMode && !isGuestPreRegistration && gallery.is_face_ai_enabled !== false) && (
+            {(!isSelectionMode && !isPrivilegedMode && !isGuestPreRegistration && gallery.is_face_ai_enabled !== false) && (
               <button
                 type="button"
                 onClick={handleFindMyPhotoClick}
-                className="px-3 sm:px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm active:scale-95"
+                className="hidden sm:flex px-3 sm:px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs items-center gap-1.5 transition cursor-pointer shadow-sm active:scale-95"
                 title="AI Face Recognition - Find My Photos"
               >
                 <FaceAiFocusIcon className="w-3.5 h-3.5 text-white" />
@@ -2321,9 +2334,10 @@ function GuestSlugGalleryContent() {
             )}
 
             {/* 2. Full Access / Selection Mode: Face AI Matched Photos Tab BEFORE All Photos */}
-            {isPrivilegedMode && matchedPhotos.length > 0 && (
+            {!isSelectionMode && isPrivilegedMode && matchedPhotos.length > 0 && (
               <button
                 type="button"
+                className="hidden sm:inline-flex"
                 onClick={() => {
                   setSelectedCollectionId('my_photos');
                   setShowOnlySelected(false);
@@ -2387,8 +2401,8 @@ function GuestSlugGalleryContent() {
             })}
           </div>
 
-          {/* Right side: Action buttons (Find My Photos, Download, Share) */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Right side: Action buttons (Find My Photos, Download, Share) - Hidden on mobile, handled in sticky bottom bar */}
+          <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 shrink-0">
 
             {isPrivilegedMode && !isUnlocked && (
               <button
@@ -3205,70 +3219,90 @@ function GuestSlugGalleryContent() {
         accentColor={designPalette.accentColor}
       />
 
-      {/* 7. MOBILE APP-LIKE STICKY BOTTOM BAR (sm:hidden) */}
+      {/* 7. MOBILE APP-LIKE STICKY BOTTOM BAR (Strictly 3 buttons: Find My Photo / Guest Name -> Download -> Share) */}
       {!isGuestPreRegistration && (
         <nav
           aria-label="Mobile Navigation"
-          className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/10 py-1.5 px-3 shadow-lg flex items-center justify-around sm:hidden transition-transform duration-300"
+          className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/10 py-2 px-3 shadow-xl grid grid-cols-3 items-center sm:hidden transition-transform duration-300"
           style={{
-            backgroundColor: `${designPalette.canvasBg}F5`,
+            backgroundColor: `${designPalette.canvasBg}F8`,
             borderColor: `${designPalette.textColor}1A`,
             color: designPalette.textColor,
           }}
         >
-          <button
-            type="button"
-            onClick={handleShareClick}
-            className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90"
-          >
-            <Share2 className="w-4 h-4" />
-            <span>Share</span>
-          </button>
+          {/* Button 1: Find My Photo OR Guest Name (Count) / Album Selection */}
+          <div className="flex justify-center">
+            {isSelectionMode ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCollectionId('selected');
+                  setShowOnlySelected(true);
+                }}
+                className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition active:scale-95 ${
+                  showOnlySelected || selectedCollectionId === 'selected' ? 'text-rose-600 font-black' : 'text-zinc-700'
+                }`}
+              >
+                <Heart className={`w-4 h-4 ${selectedForAlbum.size > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
+                <span className="truncate max-w-[95px]">Selected ({selectedForAlbum.size})</span>
+              </button>
+            ) : gallery.is_face_ai_enabled !== false ? (
+              matchedPhotos.length > 0 || hasSearched ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCollectionId('all');
+                    setIsMyPhotosActive(true);
+                  }}
+                  className="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-amber-800 transition active:scale-95"
+                  title="View your matched photos"
+                >
+                  <div className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-black shadow-2xs">
+                    {(guestName || 'G').charAt(0).toUpperCase()}
+                  </div>
+                  <span className="truncate max-w-[95px] font-black text-amber-900">
+                    {guestName || 'My Photos'} ({matchedPhotos.length})
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsFaceScannerOpen(true)}
+                  className="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-amber-600 transition active:scale-95"
+                >
+                  <FaceAiFocusIcon className="w-4 h-4 text-amber-600" />
+                  <span className="truncate max-w-[95px]">Find My Photo</span>
+                </button>
+              )
+            ) : (
+              <div />
+            )}
+          </div>
 
-          {!isPrivilegedMode && gallery.is_face_ai_enabled !== false && (
+          {/* Button 2: Download */}
+          <div className="flex justify-center">
             <button
               type="button"
-              onClick={() => setIsFaceScannerOpen(true)}
-              className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-amber-700 transition active:scale-90"
+              onClick={handleDownloadAllPhotosTrigger}
+              disabled={isDownloadingAll}
+              className="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition active:scale-95 disabled:opacity-50"
             >
-              <FaceAiFocusIcon className="w-4 h-4" />
-              <span>My Photos</span>
+              <Download className="w-4 h-4" />
+              <span>Download</span>
             </button>
-          )}
+          </div>
 
-          {isPrivilegedMode && !isUnlocked && (
+          {/* Button 3: Share */}
+          <div className="flex justify-center">
             <button
               type="button"
-              onClick={() => setShowPinModal(true)}
-              className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90"
+              onClick={handleShareClick}
+              className="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition active:scale-95"
             >
-              <Lock className="w-4 h-4" />
-              <span>Private</span>
+              <Share2 className="w-4 h-4" />
+              <span>Share</span>
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={handleDownloadAllPhotosTrigger}
-            disabled={isDownloadingAll}
-            className="flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90 disabled:opacity-50"
-          >
-            <Download className="w-4 h-4" />
-            <span>Download</span>
-          </button>
-
-          {isSelectionMode && (
-            <button
-              type="button"
-              onClick={() => setShowOnlySelected(!showOnlySelected)}
-              className={`flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition active:scale-90 ${
-                showOnlySelected ? 'text-rose-600 font-bold' : 'text-zinc-600'
-              }`}
-            >
-              <Heart className={`w-4 h-4 ${selectedForAlbum.size > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
-              <span>Selected ({selectedForAlbum.size})</span>
-            </button>
-          )}
+          </div>
         </nav>
       )}
 

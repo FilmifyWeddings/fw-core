@@ -352,7 +352,7 @@ function StrictZeroKnowledgeGuestContent() {
             selfieBase64: data.selfieBase64,
           }),
         });
-        const regJson = await regRes.json();
+        regJson = await regRes.json();
         if (regJson?.isExistingGuest) {
           setIsAlreadyRegistered(true);
         } else {
@@ -384,10 +384,11 @@ function StrictZeroKnowledgeGuestContent() {
       }
 
       // 2. If PUBLISHED: Check instant matches from registration first (avoids duplicate Modal GPU calls!)
-      if (regJson?.matched_photos) {
+      if (regJson?.matched_photos || regJson?.photos) {
         setIsFaceScannerOpen(false);
-        const resolvedPhotos = Array.isArray(regJson.matched_photos) ? regJson.matched_photos : [];
+        const resolvedPhotos = Array.isArray(regJson.matched_photos) ? regJson.matched_photos : (Array.isArray(regJson.photos) ? regJson.photos : []);
         setMatchedPhotos(resolvedPhotos);
+        setSelectedCollectionId('all');
         setHasSearched(true);
         setIsVerified(true);
         return;

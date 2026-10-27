@@ -317,6 +317,22 @@ export async function POST(req: NextRequest) {
     if (!normalizedEmail || normalizedEmail === 'guest@gallery.local') {
       normalizedEmail = `${gallery_id.substring(0, 8)}@selection.local`;
     }
+    // Strict Guard: Never create or persist an anonymous .local record if 0 photos selected
+    if (normalizedEmail.includes('.local') && (!selected_photo_ids || selected_photo_ids.length === 0)) {
+      return NextResponse.json({
+        success: true,
+        message: 'Skipped empty anonymous selection creation',
+        selection: {
+          gallery_id,
+          client_name: cleanName,
+          client_email: normalizedEmail,
+          selected_photo_ids: [],
+          max_limit: Number(max_limit) || 50,
+          total_count: 0,
+          is_submitted: false,
+        }
+      });
+    }
     const photoIds = Array.isArray(selected_photo_ids) ? selected_photo_ids : [];
     const limit = Number(max_limit) || 50;
     const isSubmitted = Boolean(is_submitted);

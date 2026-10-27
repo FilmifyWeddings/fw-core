@@ -2753,7 +2753,7 @@ function AlbumStudioContent() {
                       </button>
 
                       {/* Client Vertical Cards */}
-                      {clientSelections.map((sel) => {
+                      {clientSelections.filter((sel) => !(sel.client_email && sel.client_email.includes('.local') && (!sel.selected_photo_ids || sel.selected_photo_ids.length === 0))).map((sel) => {
                         const isClientActive = selectedClientEmail === sel.client_email;
                         const count = Array.isArray(sel.selected_photo_ids) ? sel.selected_photo_ids.length : 0;
                         const displayName = (sel.client_name && sel.client_name !== 'Guest Client')
@@ -2917,7 +2917,7 @@ function AlbumStudioContent() {
                           <div className="flex-1 min-w-0">
                             <span className="block font-black text-xs text-zinc-900">Download Zip</span>
                             <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
-                              Download original photos archive directly via Cloudflare CDN / B2 integration.
+                              Download original high-resolution photos archive directly.
                             </p>
                           </div>
                         </button>

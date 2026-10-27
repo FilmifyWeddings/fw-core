@@ -377,17 +377,31 @@ export function FaceScannerModal({
     const snapCanvas = document.createElement('canvas');
     const vw = video.videoWidth || 640;
     const vh = video.videoHeight || 640;
-    snapCanvas.width = vw;
-    snapCanvas.height = vh;
+
+    // Scale down proportionally so max dimension is 640px (Ultra-fast mobile upload, tiny ~40KB payload, optimal for InsightFace 640x640)
+    const maxDim = 640;
+    let targetW = vw;
+    let targetH = vh;
+    if (targetW > maxDim || targetH > maxDim) {
+      if (targetW > targetH) {
+        targetH = Math.round((targetH * maxDim) / targetW);
+        targetW = maxDim;
+      } else {
+        targetW = Math.round((targetW * maxDim) / targetH);
+        targetH = maxDim;
+      }
+    }
+    snapCanvas.width = targetW;
+    snapCanvas.height = targetH;
     const ctx = snapCanvas.getContext('2d');
     if (!ctx) return;
 
     // Flip horizontal for natural mirror selfie
-    ctx.translate(vw, 0);
+    ctx.translate(targetW, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, vw, vh);
+    ctx.drawImage(video, 0, 0, targetW, targetH);
 
-    const base64 = snapCanvas.toDataURL('image/jpeg', 0.92);
+    const base64 = snapCanvas.toDataURL('image/jpeg', 0.82);
     setCapturedSelfie(base64);
     setCameraRequested(false);
     setIsCameraActive(false);
@@ -834,7 +848,7 @@ export function FaceScannerModal({
               {isSubmitting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                  <span>Finding My Photos... Please wait</span>
+                  <span>Finding Photos... Searching with AI</span>
                 </>
               ) : (
                 <>
