@@ -76,7 +76,7 @@ def decode_image_item(item: BatchExtractItem):
 
 # 3. GPU Worker Class running on NVIDIA L4 with CUDA
 @app.cls(
-    gpu="L4",
+    gpu=["l4", "t4", "any"],
     image=image,
     scaledown_window=300,  # 5-minute warm window: avoids cold starts for guest selfie matching!
 )
@@ -85,7 +85,7 @@ class StudioCoreFaceService:
     def setup(self):
         import insightface
         import onnxruntime as ort
-        print("[StudioCore AI] Initializing InsightFace on NVIDIA L4 GPU...")
+        print("[StudioCore AI] Initializing InsightFace on GPU (L4/T4/Any)...")
         print("[StudioCore AI] Available ONNX Providers:", ort.get_available_providers())
 
         # Initialize InsightFace with CUDA GPU Execution Provider
