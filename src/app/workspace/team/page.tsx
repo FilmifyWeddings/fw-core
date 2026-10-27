@@ -131,6 +131,7 @@ export default function WorkspaceTeamPage() {
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [aggregateRecords, setAggregateRecords] = useState<WorkspaceAggregateFinancialRecord[]>([]);
+  const [financialsLoading, setFinancialsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
 
@@ -200,9 +201,13 @@ export default function WorkspaceTeamPage() {
     const { data: { session } } = await supabase.auth.getSession();
     const currentUid = session?.user?.id;
     const effectiveWsId = workspaceId || currentUid || userEmail;
-    if (!effectiveWsId || membersList.length === 0) return;
+    if (!effectiveWsId || membersList.length === 0) {
+      setFinancialsLoading(false);
+      return;
+    }
 
     try {
+      setFinancialsLoading(true);
       const memberIds = membersList.map(m => m.id).filter(Boolean);
       const { summaryMap, records } = await fetchWorkspaceAllTeamAggregateFinancials(effectiveWsId, memberIds, membersList);
       setMemberFinancials(summaryMap);
@@ -212,6 +217,8 @@ export default function WorkspaceTeamPage() {
       } catch (_) {}
     } catch (err) {
       console.error('[WorkspaceTeamPage] Batch financials error:', err);
+    } finally {
+      setFinancialsLoading(false);
     }
   }, [workspaceId, userEmail]);
 
@@ -456,6 +463,10 @@ export default function WorkspaceTeamPage() {
     const handleFinanceUpdated = (e?: any) => {
       const detail = e?.detail;
       if (!detail?.memberId) return;
+
+      if (detail?.salaryRecord) {
+        setAggregateRecords(prev => [detail.salaryRecord, ...prev.filter(r => r.id !== detail.salaryRecord.id)]);
+      }
 
       if (detail?.summary) {
         setMemberFinancials(prev => {
@@ -928,7 +939,7 @@ export default function WorkspaceTeamPage() {
         const fin = memberFinancials[m.id];
         const agreed = fin?.total_agreed !== undefined ? Number(fin.total_agreed) : (Number(m.commercial_agreed) || 0);
         const paid = fin?.total_paid !== undefined ? Number(fin.total_paid) : (Number(m.commercial_paid) || 0);
-        const bal = fin?.total_balance !== undefined ? Number(fin.total_balance) : (Number(m.commercial_balance) || Math.max(0, agreed - paid));
+        const bal = Math.max(0, agreed - paid);
 
         totalAgreed += agreed;
         totalPaid += paid;
@@ -988,7 +999,7 @@ export default function WorkspaceTeamPage() {
 
     const totalAgreed = filtered.reduce((acc, r) => acc + (Number(r.agreed_amount) || 0), 0);
     const totalPaid = filtered.reduce((acc, r) => acc + (Number(r.paid_amount) || 0), 0);
-    const totalBalance = filtered.reduce((acc, r) => acc + (Number(r.balance_amount) || 0), 0);
+    const totalBalance = Math.max(0, totalAgreed - totalPaid);
     const totalCount = filtered.length;
     const settledCount = filtered.filter(r => r.balance_amount <= 0 && r.agreed_amount > 0).length;
     const pendingCount = filtered.filter(r => r.balance_amount > 0).length;
@@ -1208,55 +1219,61 @@ export default function WorkspaceTeamPage() {
               </div>
             )}
 
-            {/* 3 Metric Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-              {/* Total Agreed */}
-              <div className="p-4 rounded-xl sm:rounded-2xl bg-zinc-50/80 border border-zinc-200/80 shadow-2xs">
-                <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Agreed Amount</span>
-                  <IndianRupee className="w-4 h-4 text-amber-600" />
-                </div>
-                <p className="text-2xl sm:text-3xl font-black text-zinc-900 font-mono tracking-tight">
-                  ₹{allTeamFinancialTotals.totalAgreed.toLocaleString('en-IN')}
-                </p>
-                <div className="mt-2 text-[11px] text-zinc-500 flex items-center justify-between">
-                  <span>Commitments:</span>
-                  <span className="font-bold text-zinc-700">{allTeamFinancialTotals.totalCount} item(s)</span>
-                </div>
+            {/* 3 Metric Cards with Instant Studio Core Liquid Loader Sync */}
+            {financialsLoading ? (
+              <div className="p-8 rounded-xl sm:rounded-2xl bg-zinc-50/80 border border-zinc-200/80 shadow-2xs flex flex-col items-center justify-center min-h-[140px]">
+                <StudioCoreLiquidLoader label="Synchronizing payment overview..." fullscreen={false} />
               </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                {/* Total Agreed */}
+                <div className="p-4 rounded-xl sm:rounded-2xl bg-zinc-50/80 border border-zinc-200/80 shadow-2xs">
+                  <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Agreed Amount</span>
+                    <IndianRupee className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <p className="text-2xl sm:text-3xl font-black text-zinc-900 font-mono tracking-tight">
+                    ₹{allTeamFinancialTotals.totalAgreed.toLocaleString('en-IN')}
+                  </p>
+                  <div className="mt-2 text-[11px] text-zinc-500 flex items-center justify-between">
+                    <span>Commitments:</span>
+                    <span className="font-bold text-zinc-700">{allTeamFinancialTotals.totalCount} item(s)</span>
+                  </div>
+                </div>
 
-              {/* Total Paid */}
-              <div className="p-4 rounded-xl sm:rounded-2xl bg-zinc-50/80 border border-zinc-200/80 shadow-2xs">
-                <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Paid</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                {/* Total Paid */}
+                <div className="p-4 rounded-xl sm:rounded-2xl bg-zinc-50/80 border border-zinc-200/80 shadow-2xs">
+                  <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Paid</span>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <p className="text-2xl sm:text-3xl font-black text-emerald-600 font-mono tracking-tight">
+                    ₹{allTeamFinancialTotals.totalPaid.toLocaleString('en-IN')}
+                  </p>
+                  <div className="mt-2 text-[11px] text-zinc-500 flex items-center justify-between">
+                    <span>Disbursal Progress:</span>
+                    <span className="font-bold text-emerald-700">{allTeamFinancialTotals.percent}% Settled</span>
+                  </div>
                 </div>
-                <p className="text-2xl sm:text-3xl font-black text-emerald-600 font-mono tracking-tight">
-                  ₹{allTeamFinancialTotals.totalPaid.toLocaleString('en-IN')}
-                </p>
-                <div className="mt-2 text-[11px] text-zinc-500 flex items-center justify-between">
-                  <span>Disbursal Progress:</span>
-                  <span className="font-bold text-emerald-700">{allTeamFinancialTotals.percent}% Settled</span>
-                </div>
-              </div>
 
-              {/* Balance Remaining */}
-              <div className="p-4 rounded-xl sm:rounded-2xl bg-amber-50/50 border border-amber-200 shadow-2xs">
-                <div className="flex items-center justify-between text-amber-800 text-xs font-bold mb-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">Remaining Balance</span>
-                  <Clock className="w-4 h-4 text-amber-700" />
-                </div>
-                <p className="text-2xl sm:text-3xl font-black text-amber-700 font-mono tracking-tight">
-                  ₹{allTeamFinancialTotals.totalBalance.toLocaleString('en-IN')}
-                </p>
-                <div className="mt-2 text-[11px] text-amber-900/80 flex items-center justify-between">
-                  <span>Pending Payouts:</span>
-                  <span className="font-black text-amber-800">
-                    {allTeamFinancialTotals.pendingCount > 0 ? `${allTeamFinancialTotals.pendingCount} Pending` : 'All Accounts Settled'}
-                  </span>
+                {/* Balance Remaining */}
+                <div className="p-4 rounded-xl sm:rounded-2xl bg-amber-50/50 border border-amber-200 shadow-2xs">
+                  <div className="flex items-center justify-between text-amber-800 text-xs font-bold mb-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">Remaining Balance</span>
+                    <Clock className="w-4 h-4 text-amber-700" />
+                  </div>
+                  <p className="text-2xl sm:text-3xl font-black text-amber-700 font-mono tracking-tight">
+                    ₹{allTeamFinancialTotals.totalBalance.toLocaleString('en-IN')}
+                  </p>
+                  <div className="mt-2 text-[11px] text-amber-900/80 flex items-center justify-between">
+                    <span>Pending Payouts:</span>
+                    <span className="font-black text-amber-800">
+                      {allTeamFinancialTotals.pendingCount > 0 ? `${allTeamFinancialTotals.pendingCount} Pending` : 'All Accounts Settled'}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* 2. STATS OVERVIEW CARDS (WITH IN-HOUSE / FREELANCER / PARTNER BREAKDOWN) */}

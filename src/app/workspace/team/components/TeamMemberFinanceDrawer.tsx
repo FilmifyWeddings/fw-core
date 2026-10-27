@@ -757,7 +757,21 @@ export default function TeamMemberFinanceDrawer({
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('team_finance_updated', {
-        detail: { memberId: member.id, amount: net, summary: updatedSummary }
+        detail: { 
+          memberId: member.id, 
+          amount: net, 
+          summary: updatedSummary,
+          salaryRecord: {
+            id: slipId,
+            member_id: member.id,
+            record_type: 'salary',
+            date: pDate,
+            agreed_amount: net,
+            paid_amount: net,
+            balance_amount: 0,
+            status: 'PAID'
+          }
+        }
       }));
       try {
         const cacheKey = `fw_salary_slips_${member.id}`;
@@ -1270,44 +1284,6 @@ export default function TeamMemberFinanceDrawer({
                 />
               </div>
             )}
-
-            <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
-              {/* Total Agreed */}
-              <div className="p-2.5 rounded-xl bg-white border border-amber-200/90 shadow-2xs flex flex-col justify-between">
-                <span className="text-[9px] font-extrabold uppercase tracking-wider text-zinc-500 flex items-center gap-1">
-                  <Wallet className="w-2.5 h-2.5 text-amber-600" /> Total Agreed
-                </span>
-                <span className="text-xs sm:text-sm font-black text-amber-950 mt-1 font-mono">
-                  ₹{displayAgreed.toLocaleString('en-IN')}
-                </span>
-              </div>
-
-              {/* Total Paid */}
-              <div className="p-2.5 rounded-xl bg-white border border-emerald-200/90 shadow-2xs flex flex-col justify-between">
-                <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-700 flex items-center gap-1">
-                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Total Paid
-                </span>
-                <span className="text-xs sm:text-sm font-black text-emerald-900 mt-1 font-mono">
-                  ₹{displayPaid.toLocaleString('en-IN')}
-                </span>
-              </div>
-
-              {/* Balance Due */}
-              <div className={`p-2.5 rounded-xl bg-white border shadow-2xs flex flex-col justify-between ${
-                displayBalance > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'
-              }`}>
-                <span className={`text-[9px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
-                  displayBalance > 0 ? 'text-rose-700' : 'text-zinc-500'
-                }`}>
-                  <Clock className="w-2.5 h-2.5 text-rose-500" /> Balance Due
-                </span>
-                <span className={`text-xs sm:text-sm font-black mt-1 font-mono ${
-                  displayBalance > 0 ? 'text-rose-700' : 'text-zinc-700'
-                }`}>
-                  ₹{displayBalance.toLocaleString('en-IN')}
-                </span>
-              </div>
-            </div>
           </div>
 
           {/* 3 Navigation Tabs */}

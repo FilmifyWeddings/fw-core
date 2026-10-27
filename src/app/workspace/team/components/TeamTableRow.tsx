@@ -46,18 +46,20 @@ export default function TeamTableRow({
 
   const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
 
-  // Synchronized Single Source of Truth: Use fin (matches drawer 100%) or memberAssignments or member fallback
+  // Synchronized Single Source of Truth: Use fin (matches drawer 100%) or member fallback or assignments
   const outerAgreed = fin?.total_agreed !== undefined && fin?.total_agreed !== null
     ? Number(fin.total_agreed)
-    : (memberAssignments.length > 0 ? perShootAgreedTotal : (Number(member.commercial_agreed) || 0));
+    : (member.commercial_agreed !== undefined && Number(member.commercial_agreed) > 0
+        ? Number(member.commercial_agreed)
+        : (memberAssignments.length > 0 ? perShootAgreedTotal : (Number(member.commercial_agreed) || 0)));
 
   const outerPaid = fin?.total_paid !== undefined && fin?.total_paid !== null
     ? Number(fin.total_paid)
-    : (memberAssignments.length > 0 ? perShootPaidTotal : (Number(member.commercial_paid) || 0));
+    : (member.commercial_paid !== undefined && Number(member.commercial_paid) > 0
+        ? Number(member.commercial_paid)
+        : (memberAssignments.length > 0 ? perShootPaidTotal : (Number(member.commercial_paid) || 0)));
 
-  const outerBalance = fin?.total_balance !== undefined && fin?.total_balance !== null
-    ? Number(fin.total_balance)
-    : (memberAssignments.length > 0 ? perShootBalanceTotal : (Number(member.commercial_balance) || Math.max(0, outerAgreed - outerPaid)));
+  const outerBalance = Math.max(0, outerAgreed - outerPaid);
 
   console.log('ACTIVE ROW RENDER:', member.name, { outerAgreed, outerPaid, outerBalance });
 

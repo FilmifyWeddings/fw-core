@@ -63,18 +63,20 @@ export default function TeamMemberCard({
 
   const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
 
-  // Synchronized Single Source of Truth: Use agreed/paid/balance prop (matches drawer 100%) or memberAssignments or fallback
+  // Synchronized Single Source of Truth: Use agreed/paid/balance prop (matches drawer 100%) or member fallback or assignments
   const displayAgreed = agreed !== undefined && agreed !== null
     ? Number(agreed)
-    : (memberAssignments.length > 0 ? perShootAgreedTotal : (Number(member.commercial_agreed) || 0));
+    : (member.commercial_agreed !== undefined && Number(member.commercial_agreed) > 0
+        ? Number(member.commercial_agreed)
+        : (memberAssignments.length > 0 ? perShootAgreedTotal : (Number(member.commercial_agreed) || 0)));
 
   const displayPaid = paid !== undefined && paid !== null
     ? Number(paid)
-    : (memberAssignments.length > 0 ? perShootPaidTotal : (Number(member.commercial_paid) || 0));
+    : (member.commercial_paid !== undefined && Number(member.commercial_paid) > 0
+        ? Number(member.commercial_paid)
+        : (memberAssignments.length > 0 ? perShootPaidTotal : (Number(member.commercial_paid) || 0)));
 
-  const displayBalance = balance !== undefined && balance !== null
-    ? Number(balance)
-    : (memberAssignments.length > 0 ? perShootBalanceTotal : (Number(member.commercial_balance) || Math.max(0, displayAgreed - displayPaid)));
+  const displayBalance = Math.max(0, displayAgreed - displayPaid);
 
   console.log('ACTIVE ROW RENDER:', member.name, { outerAgreed: displayAgreed, outerPaid: displayPaid, outerBalance: displayBalance });
   const rolesList: string[] = (member.roles && member.roles.length > 0) ? member.roles : (member.primary_role ? [member.primary_role] : []);
