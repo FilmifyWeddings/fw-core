@@ -42,26 +42,20 @@ export default function TeamTableRow({
 
   const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
 
-  // Force outerAgreed = 0, outerPaid = 0, outerBalance = 0 whenever perShootAgreedTotal === 0 to completely eliminate the fallback on local dev.
   const isInHouse = member.primary_type === 'IN_HOUSE' || member.member_types?.includes('IN_HOUSE') || member.type === 'in-house' || member.payout_frequency === 'monthly';
 
-  const outerAgreed = (perShootAgreedTotal === 0 || (isInHouse && perShootPaidTotal === 0 && !member.commercial_agreed_explicit))
-    ? 0
-    : (memberAssignments.length > 0
-        ? perShootAgreedTotal
-        : (Number(fin?.total_agreed) || Number(member.commercial_agreed) || 0));
+  // Synchronized Single Source of Truth: Use fin (matches drawer 100%) or memberAssignments or member fallback
+  const outerAgreed = fin?.total_agreed !== undefined && fin?.total_agreed !== null
+    ? Number(fin.total_agreed)
+    : (memberAssignments.length > 0 ? perShootAgreedTotal : (Number(member.commercial_agreed) || 0));
 
-  const outerPaid = (perShootAgreedTotal === 0 && outerAgreed === 0)
-    ? 0
-    : (memberAssignments.length > 0
-        ? perShootPaidTotal
-        : (Number(fin?.total_paid) || Number(member.commercial_paid) || 0));
+  const outerPaid = fin?.total_paid !== undefined && fin?.total_paid !== null
+    ? Number(fin.total_paid)
+    : (memberAssignments.length > 0 ? perShootPaidTotal : (Number(member.commercial_paid) || 0));
 
-  const outerBalance = (perShootAgreedTotal === 0 || outerAgreed === 0)
-    ? 0
-    : (memberAssignments.length > 0
-        ? perShootBalanceTotal
-        : (fin?.total_balance !== undefined ? Number(fin.total_balance) : Math.max(0, outerAgreed - outerPaid)));
+  const outerBalance = fin?.total_balance !== undefined && fin?.total_balance !== null
+    ? Number(fin.total_balance)
+    : (memberAssignments.length > 0 ? perShootBalanceTotal : (Number(member.commercial_balance) || Math.max(0, outerAgreed - outerPaid)));
 
   console.log('ACTIVE ROW RENDER:', member.name, { outerAgreed, outerPaid, outerBalance });
 

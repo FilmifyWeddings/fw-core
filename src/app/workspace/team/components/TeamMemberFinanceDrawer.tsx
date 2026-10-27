@@ -441,13 +441,20 @@ export default function TeamMemberFinanceDrawer({
       const eventAgreed = eventPayouts.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
       const eventPaid = eventPayouts.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
       const salaryPaidTotal = salaries.reduce((a, b) => a + Number(b.paid_amount || b.net_payable || 0), 0);
+      const salaryAgreedTotal = salaries.reduce((a, b) => a + Number(b.net_payable ?? b.base_salary ?? b.paid_amount ?? 0), 0);
+      const albumAgreedTotal = orders.reduce((a, b) => a + Number(b.total_amount || 0), 0);
+      const albumPaidTotal = orders.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
+
+      const totalAgreed = eventAgreed + salaryAgreedTotal + (isLab ? albumAgreedTotal : 0);
+      const totalPaid = eventPaid + salaryPaidTotal + (isLab ? albumPaidTotal : 0);
+      const totalBalance = Math.max(0, totalAgreed - totalPaid);
 
       const computedSummary: TeamFinancialSummary = {
         member_id: member.id,
-        total_agreed: eventAgreed,
-        total_paid: eventPaid + salaryPaidTotal,
-        total_balance: Math.max(0, eventAgreed - eventPaid),
-        active_events_count: eventPayouts.length,
+        total_agreed: totalAgreed,
+        total_paid: totalPaid,
+        total_balance: totalBalance,
+        active_events_count: eventPayouts.length + (isLab ? orders.length : 0),
         paid_events_count: eventPayouts.filter(p => p.status === 'PAID' || p.status === 'completed').length,
         pending_events_count: eventPayouts.filter(p => p.status !== 'PAID' && p.status !== 'completed').length,
         monthly_breakdown: []

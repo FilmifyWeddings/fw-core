@@ -138,7 +138,7 @@ export default function WorkspaceTeamPage() {
   const [selectedVendorDeliverablesMember, setSelectedVendorDeliverablesMember] = useState<TeamMember | null>(null);
   const [isVendorDeliverablesModalOpen, setIsVendorDeliverablesModalOpen] = useState(false);
 
-  // Hydration sync: initialize cache on client mount
+  // Hydration sync: initialize cache on client mount (0ms instant display)
   useEffect(() => {
     setMounted(true);
     if (memCachedTeamMembers.length > 0) {
@@ -157,6 +157,20 @@ export default function WorkspaceTeamPage() {
         }
       } catch (_) {}
     }
+
+    // Instant 0ms hydration for financial overview
+    try {
+      const storedFin = localStorage.getItem('sc_cached_team_financials');
+      if (storedFin) {
+        const parsedFin = JSON.parse(storedFin);
+        if (parsedFin.summaryMap && Object.keys(parsedFin.summaryMap).length > 0) {
+          setMemberFinancials(parsedFin.summaryMap);
+        }
+        if (Array.isArray(parsedFin.records) && parsedFin.records.length > 0) {
+          setAggregateRecords(parsedFin.records);
+        }
+      }
+    } catch (_) {}
   }, []);
 
   // Fetch reminders count
@@ -190,9 +204,12 @@ export default function WorkspaceTeamPage() {
 
     try {
       const memberIds = membersList.map(m => m.id).filter(Boolean);
-      const { summaryMap, records } = await fetchWorkspaceAllTeamAggregateFinancials(effectiveWsId, memberIds);
+      const { summaryMap, records } = await fetchWorkspaceAllTeamAggregateFinancials(effectiveWsId, memberIds, membersList);
       setMemberFinancials(summaryMap);
       setAggregateRecords(records);
+      try {
+        localStorage.setItem('sc_cached_team_financials', JSON.stringify({ summaryMap, records }));
+      } catch (_) {}
     } catch (err) {
       console.error('[WorkspaceTeamPage] Batch financials error:', err);
     }
@@ -324,17 +341,10 @@ export default function WorkspaceTeamPage() {
               .from('team_event_payouts')
               .select('id, member_id, member_name, agreed_amount, paid_amount, balance_amount, status, workspace_id, user_id')
               .in('member_id', allMemberIds)
-              .or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`)
           ]);
 
           const rawAssigns = assignRes.status === 'fulfilled' && assignRes.value.data ? assignRes.value.data : [];
-          const assigns = rawAssigns.filter((a: any) => {
-            const proj = a.project || a.fw_projects;
-            const matchWs = (a.workspace_id && (a.workspace_id === effectiveWsId || a.workspace_id === currentUid)) || 
-                            (a.user_id && (a.user_id === effectiveWsId || a.user_id === currentUid));
-            const matchProjUser = proj?.user_id && (proj.user_id === effectiveWsId || proj.user_id === currentUid);
-            return matchWs || matchProjUser;
-          });
+          const assigns = rawAssigns;
           const payouts = payoutRes.status === 'fulfilled' && payoutRes.value.data ? payoutRes.value.data : [];
 
           const nameToMemberIdMap = new Map<string, string>();
@@ -380,21 +390,13 @@ export default function WorkspaceTeamPage() {
 
             const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
 
-            const isMemberInHouse = m.primary_type === 'IN_HOUSE' || m.member_types?.includes('IN_HOUSE') || m.payout_frequency === 'monthly';
-
-            // Outer row display:
-            // Force outerAgreed = 0, outerPaid = 0, outerBalance = 0 whenever perShootAgreedTotal === 0 to completely eliminate the fallback on local dev.
-            const outerAgreed = (perShootAgreedTotal === 0 || (isMemberInHouse && perShootPaidTotal === 0)) ? 0 : perShootAgreedTotal;
-            const outerPaid = (perShootAgreedTotal === 0 && outerAgreed === 0) ? 0 : perShootPaidTotal;
-            const outerBalance = (perShootAgreedTotal === 0 || outerAgreed === 0) ? 0 : perShootBalanceTotal;
-
             return {
               ...m,
               assignments: mAssigns,
               payouts: mPayouts,
-              commercial_agreed: outerAgreed,
-              commercial_paid: outerPaid,
-              commercial_balance: outerBalance
+              commercial_agreed: perShootAgreedTotal,
+              commercial_paid: perShootPaidTotal,
+              commercial_balance: perShootBalanceTotal
             };
           });
         } catch (commErr) {
@@ -737,12 +739,11 @@ export default function WorkspaceTeamPage() {
     }
   };
 
-  // Direct Member Action Handlers
+  // Direct Member Action Handlers (Instant 0ms Drawer)
   const handleOpenDetails = (member: TeamMember) => {
-    try {
-      sessionStorage.setItem(`sc_team_member_${member.id}`, JSON.stringify(member));
-    } catch (_) {}
-    router.push(`/workspace/team/${member.id}`);
+    setSelectedFinanceMember(member);
+    setFinanceInitialTab('bookings');
+    setIsFinanceDrawerOpen(true);
   };
 
   const handleOpenVendorDeliverables = (member: TeamMember) => {
@@ -968,30 +969,25 @@ export default function WorkspaceTeamPage() {
     <div className="min-h-screen bg-[#FAF9F6] p-3 sm:p-5 lg:p-6 space-y-4 w-full font-sans">
       
       {/* 1. TOP HEADER & NAVIGATION TABS */}
-      <div className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 border border-zinc-200 shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1.5">
-              <Users2 className="w-3.5 h-3.5" />
-              Team Directory &amp; Audit Logs
-            </span>
-            <span className="text-[11px] font-bold text-zinc-400 bg-zinc-100 px-2.5 py-0.5 rounded-full">
-              {totalCount} Active Members
+      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-zinc-200/90 shadow-2xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-lg sm:text-xl md:text-2xl font-black text-zinc-900 tracking-tight">
+              Studio Team &amp; Partners
+            </h1>
+            <span className="text-[11px] font-bold text-zinc-500 bg-zinc-100 border border-zinc-200/70 px-2.5 py-0.5 rounded-full">
+              {totalCount} Members
             </span>
           </div>
-
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-zinc-900 tracking-tight">
-            Studio Team &amp; Partners
-          </h1>
-          <p className="hidden md:block text-xs sm:text-sm text-zinc-500 font-medium max-w-2xl">
-            Manage in-house staff, freelance crew, and printing lab partners with granular RBAC permissions and a real-time audit activity log.
+          <p className="hidden md:block text-xs text-zinc-500 font-medium">
+            Manage studio crew, in-house staff, and partner labs with granular RBAC permissions.
           </p>
 
           {/* Tab Switcher */}
-          <div className="flex items-center gap-2 pt-1.5 sm:pt-2">
+          <div className="flex items-center gap-2 pt-1">
             <button
               onClick={() => setActiveTab('directory')}
-              className={`px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === 'directory'
                   ? 'bg-zinc-900 text-white shadow-xs'
                   : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
@@ -1003,7 +999,7 @@ export default function WorkspaceTeamPage() {
 
             <button
               onClick={() => setActiveTab('activity_logs')}
-              className={`px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === 'activity_logs'
                   ? 'bg-zinc-900 text-white shadow-xs'
                   : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
@@ -1015,18 +1011,17 @@ export default function WorkspaceTeamPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
-          {/* Reminders Bell Notification Button */}
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 self-start md:self-center">
+          {/* Reminders Bell Notification Button (Icon Only with Badge) */}
           <button
             type="button"
             onClick={() => setIsRemindersDrawerOpen(true)}
-            className="h-9 px-3 rounded-xl bg-white border border-stone-200 hover:bg-amber-50 text-stone-700 transition cursor-pointer shadow-2xs flex items-center gap-1.5"
+            className="relative h-9 w-9 flex items-center justify-center rounded-xl bg-white border border-stone-200 hover:bg-amber-50 text-stone-700 transition cursor-pointer shadow-2xs shrink-0"
             title="Team & Shoot Reminders"
           >
             <Bell className="w-4 h-4 text-amber-600" />
-            <span className="text-xs font-bold hidden sm:inline">Reminders</span>
             {pendingRemindersCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-600 text-white animate-pulse">
+              <span className="absolute -top-1 -right-1 px-1.5 py-0.2 min-w-4 h-4 flex items-center justify-center rounded-full text-[10px] font-black bg-rose-600 text-white animate-pulse">
                 {pendingRemindersCount}
               </span>
             )}
@@ -1040,7 +1035,7 @@ export default function WorkspaceTeamPage() {
             className="h-9 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer shrink-0"
           >
             <UserPlus className="w-4 h-4" />
-            <span>+ Add Team Member / Partner</span>
+            <span>Add Team Member / Partner</span>
           </button>
         </div>
       </div>
@@ -1056,7 +1051,7 @@ export default function WorkspaceTeamPage() {
                 </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-black text-zinc-900 tracking-tight flex items-center gap-2">
-                    <span>Crew &amp; Partner Commercials Overview</span>
+                    <span>Crew &amp; Partner Payment Overview</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100/70 text-amber-900 font-bold border border-amber-200/60">
                       Studio Total
                     </span>
@@ -1136,7 +1131,7 @@ export default function WorkspaceTeamPage() {
               {/* Total Agreed */}
               <div className="p-4 rounded-xl sm:rounded-2xl bg-zinc-50/80 border border-zinc-200/80 shadow-2xs">
                 <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Agreed Fee</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Agreed Amount</span>
                   <IndianRupee className="w-4 h-4 text-amber-600" />
                 </div>
                 <p className="text-2xl sm:text-3xl font-black text-zinc-900 font-mono tracking-tight">
@@ -1151,7 +1146,7 @@ export default function WorkspaceTeamPage() {
               {/* Total Paid */}
               <div className="p-4 rounded-xl sm:rounded-2xl bg-zinc-50/80 border border-zinc-200/80 shadow-2xs">
                 <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Paid (Disbursed)</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Paid</span>
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 </div>
                 <p className="text-2xl sm:text-3xl font-black text-emerald-600 font-mono tracking-tight">
@@ -1163,10 +1158,10 @@ export default function WorkspaceTeamPage() {
                 </div>
               </div>
 
-              {/* Balance Remaining ("Kitna Pay Karna Baki Hai") */}
+              {/* Balance Remaining */}
               <div className="p-4 rounded-xl sm:rounded-2xl bg-amber-50/50 border border-amber-200 shadow-2xs">
                 <div className="flex items-center justify-between text-amber-800 text-xs font-bold mb-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">Remaining Balance (Pay Karna Baki)</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">Remaining Balance</span>
                   <Clock className="w-4 h-4 text-amber-700" />
                 </div>
                 <p className="text-2xl sm:text-3xl font-black text-amber-700 font-mono tracking-tight">
@@ -1478,7 +1473,28 @@ export default function WorkspaceTeamPage() {
         workspaceName={workspaceName || 'Filmify Weddings'}
         member={selectedFinanceMember}
         initialSummary={selectedFinanceMember ? memberFinancials[selectedFinanceMember.id] : null}
-        onFinancialUpdate={() => {
+        onFinancialUpdate={(mid, updatedSummary) => {
+          if (mid && updatedSummary) {
+            setMemberFinancials(prev => {
+              const current = prev[mid] || {
+                member_id: mid,
+                total_agreed: 0,
+                total_paid: 0,
+                total_balance: 0,
+                active_events_count: 0,
+                paid_events_count: 0,
+                pending_events_count: 0,
+                monthly_breakdown: []
+              };
+              return {
+                ...prev,
+                [mid]: {
+                  ...current,
+                  ...updatedSummary
+                }
+              };
+            });
+          }
           loadMembers();
         }}
       />
@@ -1526,10 +1542,9 @@ export default function WorkspaceTeamPage() {
             (m.name && recipientIdOrName && recipientIdOrName.toLowerCase().includes(m.name.toLowerCase()))
           );
           if (target) {
-            try {
-              sessionStorage.setItem(`sc_team_member_${target.id}`, JSON.stringify(target));
-            } catch (_) {}
-            router.push(`/workspace/team/${target.id}`);
+            setSelectedFinanceMember(target);
+            setFinanceInitialTab('bookings');
+            setIsFinanceDrawerOpen(true);
           }
         }}
       />

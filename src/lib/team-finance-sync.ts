@@ -2041,7 +2041,8 @@ export async function fetchMemberFinancialSummary(
  */
 export async function batchFetchWorkspaceTeamFinancials(
   workspaceId: string,
-  memberIds: string[]
+  memberIds: string[],
+  membersList?: Array<{ id: string; name?: string; primary_role?: string; member_types?: string[] }>
 ): Promise<Record<string, TeamFinancialSummary>> {
   const uniqueIds = Array.from(new Set(memberIds.filter(Boolean)));
   const summaryMap: Record<string, TeamFinancialSummary> = {};
@@ -2062,55 +2063,79 @@ export async function batchFetchWorkspaceTeamFinancials(
 
   if (!workspaceId || uniqueIds.length === 0) return summaryMap;
 
+  // Build name to ID map for flexible matching
+  const nameToIdMap = new Map<string, string>();
+  if (Array.isArray(membersList)) {
+    membersList.forEach(m => {
+      if (m.name && m.id) {
+        nameToIdMap.set(m.name.trim().toLowerCase(), m.id);
+      }
+    });
+  }
+
   try {
-    const [assignmentsRes, payoutsRes, salariesRes] = await Promise.allSettled([
+    const [assignmentsRes, payoutsRes, salariesRes, slipsRes] = await Promise.allSettled([
       supabase
         .from('fw_assignments')
         .select(`
           id,
+          project_id,
+          sub_event_id,
           assigned_member_id,
+          assigned_member_name,
           agreed_amount,
           advance_amount,
           paid_amount,
           balance_amount,
           payment_status,
+          created_at,
           workspace_id,
           user_id,
-          project:fw_projects(id, user_id)
+          project:fw_projects(id, user_id, main_date),
+          sub_event:fw_sub_events(id, event_title, event_date)
         `)
         .in('assigned_member_id', uniqueIds),
       supabase
         .from('team_event_payouts')
-        .select('member_id, agreed_amount, paid_amount, balance_amount, status, event_date, workspace_id, user_id')
-        .in('member_id', uniqueIds)
-        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`),
+        .select('id, member_id, member_name, agreed_amount, paid_amount, balance_amount, status, event_date, payment_date, sub_event_id, created_at, workspace_id, user_id')
+        .in('member_id', uniqueIds),
       supabase
         .from('team_salary_records')
-        .select('member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date, workspace_id, user_id')
+        .select('id, member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date, created_at, workspace_id, user_id')
+        .in('member_id', uniqueIds),
+      supabase
+        .from('team_salary_slips')
+        .select('id, member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date, created_at, workspace_id, user_id')
         .in('member_id', uniqueIds)
-        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
     ]);
 
-    const rawAssignmentsData = assignmentsRes.status === 'fulfilled' && assignmentsRes.value.data ? assignmentsRes.value.data : [];
-    const assignmentsData = rawAssignmentsData.filter((row: any) => {
-      const proj = row.project || row.fw_projects;
-      const matchWs = (row.workspace_id && row.workspace_id === workspaceId) || (row.user_id && row.user_id === workspaceId);
-      const matchProjUser = proj?.user_id && proj.user_id === workspaceId;
-      return matchWs || matchProjUser;
-    });
+    const assignmentsData = assignmentsRes.status === 'fulfilled' && assignmentsRes.value.data ? assignmentsRes.value.data : [];
     const payoutsData = payoutsRes.status === 'fulfilled' && payoutsRes.value.data ? payoutsRes.value.data : [];
-    const salariesData = salariesRes.status === 'fulfilled' && salariesRes.value.data ? salariesRes.value.data : [];
+    const rawSalaries = [
+      ...(slipsRes.status === 'fulfilled' && slipsRes.value.data ? slipsRes.value.data : []),
+      ...(salariesRes.status === 'fulfilled' && salariesRes.value.data ? salariesRes.value.data : [])
+    ];
 
-    const memberMonthlyMap: Record<string, Record<string, { agreed: number; paid: number; balance: number }>> = {};
+    const seenSubEventsByMember: Record<string, Set<string>> = {};
     const processedAssignmentMembers = new Set<string>();
 
     // 1. Process fw_assignments (live shoot bookings)
     assignmentsData.forEach((row: any) => {
-      const mid = row.assigned_member_id;
+      let mid = row.assigned_member_id;
+      if (!mid || !summaryMap[mid]) {
+        if (row.assigned_member_name) {
+          const matched = nameToIdMap.get(row.assigned_member_name.trim().toLowerCase());
+          if (matched && summaryMap[matched]) mid = matched;
+        }
+      }
       if (!mid || !summaryMap[mid]) return;
       processedAssignmentMembers.add(mid);
 
-      // Commercials must strictly show what is explicitly saved or explicit custom payouts
+      if (row.sub_event_id) {
+        if (!seenSubEventsByMember[mid]) seenSubEventsByMember[mid] = new Set();
+        seenSubEventsByMember[mid].add(String(row.sub_event_id));
+      }
+
       const rawAgreed = Number(row.agreed_amount) || 0;
       const hasCustom = Boolean((row as any).custom_payout || (row as any).custom_rate || (row as any).is_custom_payout);
       const agreed = hasCustom ? (Number((row as any).custom_payout || (row as any).custom_rate) || rawAgreed) : rawAgreed;
@@ -2129,10 +2154,21 @@ export async function batchFetchWorkspaceTeamFinancials(
       }
     });
 
-    // 2. Process team_event_payouts (fallback if fw_assignments not present)
+    // 2. Process team_event_payouts (with deduplication against existing sub_event_ids)
     payoutsData.forEach((p: any) => {
-      const mid = p.member_id;
-      if (!mid || !summaryMap[mid] || processedAssignmentMembers.has(mid)) return;
+      let mid = p.member_id;
+      if (!mid || !summaryMap[mid]) {
+        if (p.member_name) {
+          const matched = nameToIdMap.get(p.member_name.trim().toLowerCase());
+          if (matched && summaryMap[matched]) mid = matched;
+        }
+      }
+      if (!mid || !summaryMap[mid]) return;
+
+      const pSubEventId = String(p.sub_event_id || '');
+      if (pSubEventId && seenSubEventsByMember[mid]?.has(pSubEventId)) {
+        return;
+      }
 
       const agreed = Number(p.agreed_amount) || 0;
       const paid = Number(p.paid_amount) || 0;
@@ -2150,15 +2186,22 @@ export async function batchFetchWorkspaceTeamFinancials(
       }
     });
 
-    // 3. Process team_salary_records from DB
+    // 3. Process team_salary_records and slips from DB
     const processedSalaryKeys = new Set<string>();
-    salariesData.forEach((s: any) => {
+    rawSalaries.forEach((s: any) => {
       const mid = s.member_id;
       if (!mid || !summaryMap[mid]) return;
-      processedSalaryKeys.add(`${mid}_${s.month_year}`);
+      const key = `${mid}_${s.month_year || ''}_${s.id || ''}`;
+      if (processedSalaryKeys.has(key)) return;
+      processedSalaryKeys.add(key);
 
-      const paid = Number(s.paid_amount || s.net_payable) || 0;
+      const netPayable = Number(s.net_payable ?? s.base_salary) || 0;
+      const paid = Number(s.paid_amount ?? (s.payment_status === 'PAID' ? netPayable : 0)) || 0;
+      const bal = Math.max(0, netPayable - paid);
+
+      summaryMap[mid].total_agreed += netPayable;
       summaryMap[mid].total_paid += paid;
+      summaryMap[mid].total_balance += bal;
     });
 
     // 4. Process localStorage salaries (instant client-side fallback)
@@ -2174,8 +2217,12 @@ export async function batchFetchWorkspaceTeamFinancials(
                 const sKey = `${mid}_${s.month_year}`;
                 if (!processedSalaryKeys.has(sKey)) {
                   processedSalaryKeys.add(sKey);
-                  const paid = Number(s.paid_amount || s.net_payable) || 0;
+                  const netPayable = Number(s.net_payable ?? s.base_salary) || 0;
+                  const paid = Number(s.paid_amount ?? (s.payment_status === 'PAID' ? netPayable : 0)) || 0;
+                  const bal = Math.max(0, netPayable - paid);
+                  summaryMap[mid].total_agreed += netPayable;
                   summaryMap[mid].total_paid += paid;
+                  summaryMap[mid].total_balance += bal;
                 }
               });
             }
@@ -2207,17 +2254,27 @@ export interface WorkspaceAggregateFinancialRecord {
 
 export async function fetchWorkspaceAllTeamAggregateFinancials(
   workspaceId: string,
-  memberIds: string[]
+  memberIds: string[],
+  membersList?: Array<{ id: string; name?: string; primary_role?: string; member_types?: string[] }>
 ): Promise<{
   summaryMap: Record<string, TeamFinancialSummary>;
   records: WorkspaceAggregateFinancialRecord[];
 }> {
-  const summaryMap = await batchFetchWorkspaceTeamFinancials(workspaceId, memberIds);
+  const summaryMap = await batchFetchWorkspaceTeamFinancials(workspaceId, memberIds, membersList);
   const uniqueIds = Array.from(new Set(memberIds.filter(Boolean)));
   const records: WorkspaceAggregateFinancialRecord[] = [];
 
   if (!workspaceId || uniqueIds.length === 0) {
     return { summaryMap, records };
+  }
+
+  const nameToIdMap = new Map<string, string>();
+  if (Array.isArray(membersList)) {
+    membersList.forEach(m => {
+      if (m.name && m.id) {
+        nameToIdMap.set(m.name.trim().toLowerCase(), m.id);
+      }
+    });
   }
 
   try {
@@ -2226,7 +2283,10 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
         .from('fw_assignments')
         .select(`
           id,
+          project_id,
+          sub_event_id,
           assigned_member_id,
+          assigned_member_name,
           agreed_amount,
           advance_amount,
           paid_amount,
@@ -2236,41 +2296,44 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
           workspace_id,
           user_id,
           project:fw_projects(id, user_id, main_date),
-          sub_event:fw_sub_events(id, event_date)
+          sub_event:fw_sub_events(id, event_title, event_date)
         `)
         .in('assigned_member_id', uniqueIds),
       supabase
         .from('team_event_payouts')
-        .select('id, member_id, agreed_amount, paid_amount, balance_amount, status, event_date, payment_date, created_at, workspace_id, user_id')
-        .in('member_id', uniqueIds)
-        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`),
+        .select('id, member_id, member_name, agreed_amount, paid_amount, balance_amount, status, event_date, payment_date, sub_event_id, created_at, workspace_id, user_id')
+        .in('member_id', uniqueIds),
       supabase
         .from('team_salary_records')
         .select('id, member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date, created_at, workspace_id, user_id')
-        .in('member_id', uniqueIds)
-        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`),
+        .in('member_id', uniqueIds),
       supabase
         .from('team_salary_slips')
         .select('id, member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date, created_at, workspace_id, user_id')
         .in('member_id', uniqueIds)
-        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
     ]);
 
-    const rawAssignments = assignmentsRes.status === 'fulfilled' && assignmentsRes.value.data ? assignmentsRes.value.data : [];
-    const validAssignments = rawAssignments.filter((row: any) => {
-      const proj = row.project || row.fw_projects;
-      const matchWs = (row.workspace_id && row.workspace_id === workspaceId) || (row.user_id && row.user_id === workspaceId);
-      const matchProjUser = proj?.user_id && proj.user_id === workspaceId;
-      return matchWs || matchProjUser;
-    });
+    const assignments = assignmentsRes.status === 'fulfilled' && assignmentsRes.value.data ? assignmentsRes.value.data : [];
+    const payouts = payoutsRes.status === 'fulfilled' && payoutsRes.value.data ? payoutsRes.value.data : [];
+    const seenSubEvents = new Set<string>();
 
-    validAssignments.forEach((row: any) => {
-      const mid = row.assigned_member_id;
+    assignments.forEach((row: any) => {
+      let mid = row.assigned_member_id;
+      if (!mid || !uniqueIds.includes(mid)) {
+        if (row.assigned_member_name) {
+          const matched = nameToIdMap.get(row.assigned_member_name.trim().toLowerCase());
+          if (matched) mid = matched;
+        }
+      }
       if (!mid) return;
+
+      if (row.sub_event_id) {
+        seenSubEvents.add(`${mid}_${row.sub_event_id}`);
+      }
 
       const se = row.sub_event || row.fw_sub_events;
       const proj = row.project || row.fw_projects;
-      const rawDate = se?.event_date || proj?.main_date || (row.created_at ? row.created_at.split('T')[0] : '') || '';
+      const rawDate = se?.event_date || (row as any).event_date || (row as any).due_date || proj?.main_date || (row.created_at ? row.created_at.split('T')[0] : '') || '';
 
       const rawAgreed = Number(row.agreed_amount) || 0;
       const hasCustom = Boolean(row.custom_payout || row.custom_rate || row.is_custom_payout);
@@ -2290,11 +2353,22 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
       });
     });
 
-    // Payouts
-    const payouts = payoutsRes.status === 'fulfilled' && payoutsRes.value.data ? payoutsRes.value.data : [];
+    // Payouts (deduplicate sub_events)
     payouts.forEach((p: any) => {
-      const mid = p.member_id;
+      let mid = p.member_id;
+      if (!mid || !uniqueIds.includes(mid)) {
+        if (p.member_name) {
+          const matched = nameToIdMap.get(p.member_name.trim().toLowerCase());
+          if (matched) mid = matched;
+        }
+      }
       if (!mid) return;
+
+      const pSubEventId = p.sub_event_id ? `${mid}_${p.sub_event_id}` : '';
+      if (pSubEventId && seenSubEvents.has(pSubEventId)) {
+        return; // skip duplicate
+      }
+
       const rawDate = p.event_date || p.payment_date || (p.created_at ? p.created_at.split('T')[0] : '') || '';
       const agreed = Number(p.agreed_amount) || 0;
       const paid = Number(p.paid_amount) || 0;
@@ -2322,12 +2396,12 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
     allSalaries.forEach((s: any) => {
       const mid = s.member_id;
       if (!mid) return;
-      const key = `${mid}_${s.month_year}_${s.id || ''}`;
+      const key = `${mid}_${s.month_year || ''}_${s.id || ''}`;
       if (processedSalaryKeys.has(key)) return;
       processedSalaryKeys.add(key);
 
       const netPayable = Number(s.net_payable ?? s.base_salary) || 0;
-      const paid = Number(s.paid_amount ?? (s.payment_status === 'PAID' ? s.net_payable : 0)) || 0;
+      const paid = Number(s.paid_amount ?? (s.payment_status === 'PAID' ? netPayable : 0)) || 0;
       const bal = Math.max(0, netPayable - paid);
 
       let dateStr = '';

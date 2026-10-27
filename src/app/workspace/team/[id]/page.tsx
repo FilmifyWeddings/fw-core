@@ -31,7 +31,7 @@ export default function DedicatedTeamMemberPage() {
   const memberId = Array.isArray(rawId) ? rawId[0] : (rawId as string);
 
   const { workspaceId, workspaceName, activeWorkspace, isOwner } = useWorkspace();
-  const effectiveWsId = workspaceId || activeWorkspace?.workspaceId || activeWorkspace?.studioSlug || (member as any)?.workspace_id || '';
+  const effectiveWsId = workspaceId || activeWorkspace?.workspaceId || activeWorkspace?.studioSlug || '';
   const studioName = workspaceName || activeWorkspace?.studioName || 'StudioCore Partner Studio';
 
   const [member, setMember] = useState<TeamMember | null>(() => {
