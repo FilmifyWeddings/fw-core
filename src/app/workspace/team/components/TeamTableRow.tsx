@@ -31,9 +31,13 @@ export default function TeamTableRow({
     ? member.events
     : [];
 
+  const isInHouse = member.primary_type === 'IN_HOUSE' || member.member_types?.includes('IN_HOUSE') || member.type === 'in-house' || member.payout_frequency === 'monthly';
+
   // Sum ONLY explicit event agreed amounts for per-shoot commercials:
   const perShootAgreedTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
-    return sum + (Number(item.agreed_amount) || 0);
+    const rawAmt = Number(item.agreed_amount) || 0;
+    const isSalaryRate = isInHouse && (rawAmt === Number(member.default_daily_rate) || rawAmt === Number(member.monthly_salary)) && (Number(item.paid_amount ?? item.advance_amount) || 0) === 0;
+    return sum + (isSalaryRate ? 0 : rawAmt);
   }, 0);
 
   const perShootPaidTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
@@ -41,8 +45,6 @@ export default function TeamTableRow({
   }, 0);
 
   const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
-
-  const isInHouse = member.primary_type === 'IN_HOUSE' || member.member_types?.includes('IN_HOUSE') || member.type === 'in-house' || member.payout_frequency === 'monthly';
 
   // Synchronized Single Source of Truth: Use fin (matches drawer 100%) or memberAssignments or member fallback
   const outerAgreed = fin?.total_agreed !== undefined && fin?.total_agreed !== null

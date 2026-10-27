@@ -379,9 +379,14 @@ export default function WorkspaceTeamPage() {
             const mPayouts = payoutsByMember[m.id] || [];
             const memberAssignments = mAssigns.length > 0 ? mAssigns : mPayouts;
 
+            const isInHouse = m.primary_type === 'IN_HOUSE' || m.member_types?.includes('IN_HOUSE') || m.payout_frequency === 'monthly';
+
             // Sum ONLY explicit event agreed amounts for per-shoot commercials:
+            // For in-house staff, base monthly salary should never be counted as a per-shoot payout!
             const perShootAgreedTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
-              return sum + (Number(item.agreed_amount) || 0);
+              const rawAmt = Number(item.agreed_amount) || 0;
+              const isDefaultSalary = isInHouse && (rawAmt === Number(m.default_daily_rate) || rawAmt === Number(m.monthly_salary)) && (Number(item.paid_amount ?? item.advance_amount) || 0) === 0;
+              return sum + (isDefaultSalary ? 0 : rawAmt);
             }, 0);
 
             const perShootPaidTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
@@ -450,65 +455,105 @@ export default function WorkspaceTeamPage() {
   useEffect(() => {
     const handleFinanceUpdated = (e?: any) => {
       const detail = e?.detail;
-      if (detail?.memberId) {
-        if (detail?.amount) {
-          setMemberFinancials(prev => {
-            const current = prev[detail.memberId];
-            if (current) {
-              const newPaid = current.total_paid + Number(detail.amount);
-              const newBal = Math.max(0, current.total_balance - Number(detail.amount));
-              return {
-                ...prev,
-                [detail.memberId]: {
-                  ...current,
-                  total_paid: newPaid,
-                  total_balance: newBal
-                }
-              };
-            }
-            return prev;
-          });
-        }
-        if (detail.newAgreed !== undefined || detail.newPaid !== undefined) {
-          setMembers(prev => prev.map(m => {
-            if (m.id === detail.memberId) {
-              const updatedAssigns = (m.assignments || []).map((a: any) => {
-                if (String(a.id) === String(detail.assignmentId)) {
-                  return {
-                    ...a,
-                    agreed_amount: detail.newAgreed !== undefined ? detail.newAgreed : a.agreed_amount,
-                    paid_amount: detail.newPaid !== undefined ? detail.newPaid : a.paid_amount,
-                    balance_amount: detail.newBalance !== undefined ? detail.newBalance : a.balance_amount
-                  };
-                }
-                return a;
-              });
-              const updatedPayouts = (m.payouts || []).map((p: any) => {
-                if (String(p.id) === String(detail.assignmentId)) {
-                  return {
-                    ...p,
-                    agreed_amount: detail.newAgreed !== undefined ? detail.newAgreed : p.agreed_amount,
-                    paid_amount: detail.newPaid !== undefined ? detail.newPaid : p.paid_amount,
-                    balance_amount: detail.newBalance !== undefined ? detail.newBalance : p.balance_amount
-                  };
-                }
-                return p;
-              });
-              return {
-                ...m,
-                assignments: updatedAssigns,
-                payouts: updatedPayouts
-              };
-            }
-            return m;
-          }));
-        }
+      if (!detail?.memberId) return;
+
+      if (detail?.summary) {
+        setMemberFinancials(prev => {
+          const current = prev[detail.memberId] || {
+            member_id: detail.memberId,
+            total_agreed: 0,
+            total_paid: 0,
+            total_balance: 0,
+            active_events_count: 0,
+            paid_events_count: 0,
+            pending_events_count: 0,
+            monthly_breakdown: []
+          };
+          const merged = { ...current, ...detail.summary };
+          try {
+            const stored = localStorage.getItem('sc_cached_team_financials');
+            const parsed = stored ? JSON.parse(stored) : { summaryMap: {}, records: [] };
+            parsed.summaryMap = parsed.summaryMap || {};
+            parsed.summaryMap[detail.memberId] = merged;
+            localStorage.setItem('sc_cached_team_financials', JSON.stringify(parsed));
+          } catch (_) {}
+          return {
+            ...prev,
+            [detail.memberId]: merged
+          };
+        });
+
+        setMembers(prev => prev.map(m => m.id === detail.memberId ? {
+          ...m,
+          commercial_agreed: detail.summary.total_agreed,
+          commercial_paid: detail.summary.total_paid,
+          commercial_balance: detail.summary.total_balance
+        } : m));
+      } else if (detail?.amount) {
+        setMemberFinancials(prev => {
+          const current = prev[detail.memberId];
+          if (current) {
+            const newPaid = current.total_paid + Number(detail.amount);
+            const newBal = Math.max(0, current.total_balance - Number(detail.amount));
+            const updated = {
+              ...current,
+              total_paid: newPaid,
+              total_balance: newBal
+            };
+            try {
+              const stored = localStorage.getItem('sc_cached_team_financials');
+              const parsed = stored ? JSON.parse(stored) : { summaryMap: {}, records: [] };
+              parsed.summaryMap = parsed.summaryMap || {};
+              parsed.summaryMap[detail.memberId] = updated;
+              localStorage.setItem('sc_cached_team_financials', JSON.stringify(parsed));
+            } catch (_) {}
+            return {
+              ...prev,
+              [detail.memberId]: updated
+            };
+          }
+          return prev;
+        });
       }
-      loadMembers();
+
+      if (detail.newAgreed !== undefined || detail.newPaid !== undefined) {
+        setMembers(prev => prev.map(m => {
+          if (m.id === detail.memberId) {
+            const updatedAssigns = (m.assignments || []).map((a: any) => {
+              if (String(a.id) === String(detail.assignmentId)) {
+                return {
+                  ...a,
+                  agreed_amount: detail.newAgreed !== undefined ? detail.newAgreed : a.agreed_amount,
+                  paid_amount: detail.newPaid !== undefined ? detail.newPaid : a.paid_amount,
+                  balance_amount: detail.newBalance !== undefined ? detail.newBalance : a.balance_amount
+                };
+              }
+              return a;
+            });
+            const updatedPayouts = (m.payouts || []).map((p: any) => {
+              if (String(p.id) === String(detail.assignmentId)) {
+                return {
+                  ...p,
+                  agreed_amount: detail.newAgreed !== undefined ? detail.newAgreed : p.agreed_amount,
+                  paid_amount: detail.newPaid !== undefined ? detail.newPaid : p.paid_amount,
+                  balance_amount: detail.newBalance !== undefined ? detail.newBalance : p.balance_amount
+                };
+              }
+              return p;
+            });
+            return {
+              ...m,
+              assignments: updatedAssigns,
+              payouts: updatedPayouts
+            };
+          }
+          return m;
+        }));
+      }
     };
     window.addEventListener('team_finance_updated', handleFinanceUpdated);
     return () => window.removeEventListener('team_finance_updated', handleFinanceUpdated);
-  }, [loadMembers]);
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'activity_logs') {
@@ -869,6 +914,45 @@ export default function WorkspaceTeamPage() {
 
   // Aggregate Financial Totals (Filterable by All Time, Month, Year, Custom Date)
   const allTeamFinancialTotals = useMemo(() => {
+    // Instant 0ms Fast-Path: When viewing 'all' or before aggregateRecords load from network
+    // Computes directly from memberFinancials in memory without waiting or requiring scrolling!
+    if (financePeriod === 'all' || aggregateRecords.length === 0) {
+      let totalAgreed = 0;
+      let totalPaid = 0;
+      let totalBalance = 0;
+      let totalCount = 0;
+      let settledCount = 0;
+      let pendingCount = 0;
+
+      filteredMembers.forEach((m) => {
+        const fin = memberFinancials[m.id];
+        const agreed = fin?.total_agreed !== undefined ? Number(fin.total_agreed) : (Number(m.commercial_agreed) || 0);
+        const paid = fin?.total_paid !== undefined ? Number(fin.total_paid) : (Number(m.commercial_paid) || 0);
+        const bal = fin?.total_balance !== undefined ? Number(fin.total_balance) : (Number(m.commercial_balance) || Math.max(0, agreed - paid));
+
+        totalAgreed += agreed;
+        totalPaid += paid;
+        totalBalance += bal;
+
+        if (agreed > 0 || paid > 0 || bal > 0) {
+          totalCount += 1;
+          if (bal <= 0 && agreed > 0) settledCount += 1;
+          else if (bal > 0) pendingCount += 1;
+        }
+      });
+
+      const percent = totalAgreed > 0 ? Math.min(100, Math.round((totalPaid / totalAgreed) * 100)) : 100;
+      return {
+        totalAgreed,
+        totalPaid,
+        totalBalance,
+        totalCount,
+        settledCount,
+        pendingCount,
+        percent,
+      };
+    }
+
     const now = new Date();
     const currentYearMonth = now.toISOString().substring(0, 7); // e.g. "2026-10"
     const currentYear = String(now.getFullYear()); // e.g. "2026"
@@ -883,8 +967,6 @@ export default function WorkspaceTeamPage() {
       if (activeMemberIds.size > 0 && !activeMemberIds.has(rec.member_id)) {
         return false;
       }
-
-      if (financePeriod === 'all') return true;
 
       const recDate = rec.date || '';
       if (financePeriod === 'this_month') {
@@ -921,7 +1003,7 @@ export default function WorkspaceTeamPage() {
       pendingCount,
       percent,
     };
-  }, [aggregateRecords, filteredMembers, financePeriod, customStartDate, customEndDate]);
+  }, [aggregateRecords, filteredMembers, memberFinancials, financePeriod, customStartDate, customEndDate]);
 
   // Metrics
   const totalCount = members.length;
@@ -1486,16 +1568,31 @@ export default function WorkspaceTeamPage() {
                 pending_events_count: 0,
                 monthly_breakdown: []
               };
+              const merged = {
+                ...current,
+                ...updatedSummary
+              };
+              try {
+                const stored = localStorage.getItem('sc_cached_team_financials');
+                const parsed = stored ? JSON.parse(stored) : { summaryMap: {}, records: [] };
+                parsed.summaryMap = parsed.summaryMap || {};
+                parsed.summaryMap[mid] = merged;
+                localStorage.setItem('sc_cached_team_financials', JSON.stringify(parsed));
+              } catch (_) {}
               return {
                 ...prev,
-                [mid]: {
-                  ...current,
-                  ...updatedSummary
-                }
+                [mid]: merged
               };
             });
+
+            // Instant 0ms Sync with outside member card:
+            setMembers(prev => prev.map(m => m.id === mid ? {
+              ...m,
+              commercial_agreed: updatedSummary.total_agreed,
+              commercial_paid: updatedSummary.total_paid,
+              commercial_balance: updatedSummary.total_balance
+            } : m));
           }
-          loadMembers();
         }}
       />
 

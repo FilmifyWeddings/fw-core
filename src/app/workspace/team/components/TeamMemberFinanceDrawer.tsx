@@ -452,7 +452,11 @@ export default function TeamMemberFinanceDrawer({
       setSalaryRecords(salaries);
       setAlbumOrders(orders);
 
-      const eventAgreed = eventPayouts.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
+      const eventAgreed = eventPayouts.reduce((a, b) => {
+        const rawAmt = Number(b.agreed_amount || 0);
+        const isDefaultSalary = isInHouse && (rawAmt === Number(member?.default_daily_rate) || rawAmt === Number(member?.monthly_salary)) && (Number(b.paid_amount) || 0) === 0;
+        return a + (isDefaultSalary ? 0 : rawAmt);
+      }, 0);
       const eventPaid = eventPayouts.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
       const salaryPaidTotal = salaries.reduce((a, b) => a + Number(b.paid_amount || b.net_payable || 0), 0);
       const salaryAgreedTotal = salaries.reduce((a, b) => a + Number(b.net_payable ?? b.base_salary ?? b.paid_amount ?? 0), 0);
@@ -686,145 +690,141 @@ export default function TeamMemberFinanceDrawer({
     const slipId = isUuid(slipData.id) ? slipData.id : crypto.randomUUID();
     const monthYearTitle = slipData.month_year || formatSlipTitle('', pDate);
 
-    setIsSubmittingSalary(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        showToast('Please log in to save salary slip');
-        setIsSubmittingSalary(false);
-        return;
-      }
-      const effectiveUserId = user.id;
+    const recordSlip: TeamSalaryRecord = {
+      id: slipId,
+      workspace_id: workspaceId || member.user_id || 'default',
+      member_id: member.id,
+      member_name: member.name,
+      month_year: monthYearTitle,
+      base_salary: base,
+      incentive_amount: incentive,
+      deductions: ded,
+      deduction_amount: ded,
+      net_payable: net,
+      paid_amount: net,
+      net_paid: net,
+      payment_status: 'PAID',
+      paid_date: pDate,
+      payout_date: pDate,
+      payment_mode: slipData.payment_mode || 'UPI',
+      reference_no: slipData.reference_no || '',
+      notes: slipData.notes || `Salary for ${monthYearTitle}`,
+      updated_at: new Date().toISOString()
+    };
 
-      // 1. Save to dedicated team_salary_slips table with strict user_id isolation
+    // 0ms INSTANT OPTIMISTIC UI UPDATE
+    const updatedSalaryRecords = salaryRecords.some(s => s.id === slipId)
+      ? salaryRecords.map(s => s.id === slipId ? recordSlip : s)
+      : [recordSlip, ...salaryRecords];
+
+    setSalaryRecords(updatedSalaryRecords);
+
+    // Compute updated totalAgreed, totalPaid, totalBalance
+    const eventAgreed = payouts.reduce((a, b) => {
+      const rawAmt = Number(b.agreed_amount || 0);
+      const isDefaultSalary = isInHouse && (rawAmt === Number(member?.default_daily_rate) || rawAmt === Number(member?.monthly_salary)) && (Number(b.paid_amount) || 0) === 0;
+      return a + (isDefaultSalary ? 0 : rawAmt);
+    }, 0);
+    const eventPaid = payouts.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
+    const salaryPaidTotal = updatedSalaryRecords.reduce((a, b) => a + Number(b.paid_amount || b.net_payable || 0), 0);
+    const salaryAgreedTotal = updatedSalaryRecords.reduce((a, b) => a + Number(b.net_payable ?? b.base_salary ?? b.paid_amount ?? 0), 0);
+    const albumAgreedTotal = albumOrders.reduce((a, b) => a + Number(b.total_amount || 0), 0);
+    const albumPaidTotal = albumOrders.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
+
+    const newTotalAgreed = eventAgreed + salaryAgreedTotal + (isLab ? albumAgreedTotal : 0);
+    const newTotalPaid = eventPaid + salaryPaidTotal + (isLab ? albumPaidTotal : 0);
+    const newTotalBalance = Math.max(0, newTotalAgreed - newTotalPaid);
+
+    const updatedSummary: TeamFinancialSummary = {
+      member_id: member.id,
+      total_agreed: newTotalAgreed,
+      total_paid: newTotalPaid,
+      total_balance: newTotalBalance,
+      active_events_count: payouts.length + (isLab ? albumOrders.length : 0),
+      paid_events_count: payouts.filter(p => p.status === 'PAID' || p.status === 'completed').length,
+      pending_events_count: payouts.filter(p => p.status !== 'PAID' && p.status !== 'completed').length,
+      monthly_breakdown: []
+    };
+
+    setSummary(updatedSummary);
+    onFinancialUpdate?.(member.id, updatedSummary);
+
+    // Close modals immediately in 0ms!
+    setIsEditSlipModalOpen(false);
+    setSelectedSlipForEdit(null);
+    setShowAddSalary(false);
+    showToast(slipData.id ? 'Salary slip updated successfully!' : `Payment of ₹${net.toLocaleString('en-IN')} logged & synced to Expenses!`);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('team_finance_updated', {
+        detail: { memberId: member.id, amount: net, summary: updatedSummary }
+      }));
       try {
-        const { error: slipErr } = await supabase.from('team_salary_slips').upsert({
-          id: slipId,
-          user_id: user.id,
-          member_id: member.id,
-          month_year: monthYearTitle,
-          payout_date: pDate,
-          base_salary: base,
-          incentive_amount: incentive,
-          deduction_amount: ded,
-          net_paid: net,
-          payment_mode: slipData.payment_mode || 'UPI',
-          reference_no: slipData.reference_no || '',
-          notes: slipData.notes || '',
-          status: 'Paid',
-          updated_at: new Date().toISOString()
-        });
-        if (slipErr) {
-          console.warn('[TeamMemberFinanceDrawer] DB team_salary_slips upsert note:', slipErr.message);
-        }
-      } catch (dbErr) {
-        console.warn('[TeamMemberFinanceDrawer] DB team_salary_slips upsert note:', dbErr);
-      }
-
-      // 2. Also save to team_salary_records & localStorage for complete backwards-compatibility
-      const recordSlip: TeamSalaryRecord = {
-        id: slipId,
-        workspace_id: workspaceId || effectiveUserId,
-        member_id: member.id,
-        member_name: member.name,
-        month_year: monthYearTitle,
-        base_salary: base,
-        incentive_amount: incentive,
-        deductions: ded,
-        deduction_amount: ded,
-        net_payable: net,
-        paid_amount: net,
-        net_paid: net,
-        payment_status: 'PAID',
-        paid_date: pDate,
-        payout_date: pDate,
-        payment_mode: slipData.payment_mode || 'UPI',
-        reference_no: slipData.reference_no || '',
-        notes: slipData.notes || `Salary for ${monthYearTitle}`,
-        updated_at: new Date().toISOString()
-      };
-
-      await saveSalaryRecord(workspaceId || effectiveUserId, recordSlip);
-
-      // LocalStorage redundant cache
-      if (typeof window !== 'undefined') {
-        try {
-          const cacheKey = `fw_salary_slips_${member.id}`;
-          const existing = localStorage.getItem(cacheKey);
-          let list: any[] = existing ? JSON.parse(existing) : [];
-          const idx = list.findIndex(x => x.id === slipId);
-          if (idx >= 0) list[idx] = recordSlip;
-          else list.unshift(recordSlip);
-          localStorage.setItem(cacheKey, JSON.stringify(list));
-        } catch (_) {}
-      }
-
-      // 3. Automatically sync to Studio Expenses & Ledger if enabled
-      if (autoSyncExpense) {
-        try {
-          const safeSalaryAssignmentId = `sal_${slipId.slice(0, 8)}`;
-          await syncTeamPaymentToExpensesAndAnalytics(workspaceId || effectiveUserId, {
-            paymentType: 'Salary',
-            memberName: member.name,
-            memberId: member.id,
-            memberType: 'team_member',
-            paidAmount: net,
-            paymentDate: pDate,
-            paymentMethod: slipData.payment_mode || 'UPI',
-            safeAssignmentId: safeSalaryAssignmentId,
-            notes: `Base: ₹${base.toLocaleString('en-IN')} | Incentive: ₹${incentive.toLocaleString('en-IN')} | Ded: ₹${ded.toLocaleString('en-IN')} | Ref: ${slipData.reference_no || 'N/A'}`
-          });
-        } catch (syncErr) {
-          console.info('[TeamMemberFinanceDrawer] Expense auto-sync notice:', syncErr);
-        }
-
-        try {
-          if (typeof (window as any).mutate === 'function') {
-            (window as any).mutate((key: any) => typeof key === 'string' && (key.includes('expenses') || key.includes('analytics') || key.includes('team') || key.includes('finance')), undefined, { revalidate: true });
-          }
-        } catch (_) {}
-      }
-
-      // 4. Optimistic UI update & immediate summary card refresh
-      const oldSlip = salaryRecords.find(s => s.id === slipId);
-      const oldAmount = oldSlip ? Number(oldSlip.paid_amount || oldSlip.net_payable || oldSlip.net_paid || 0) : 0;
-      const diff = net - oldAmount;
-
-      setSalaryRecords(prev => {
-        const exists = prev.some(s => s.id === slipId);
-        if (exists) {
-          return prev.map(s => s.id === slipId ? recordSlip : s);
-        }
-        return [recordSlip, ...prev];
-      });
-
-      setSummary(prev => {
-        if (!prev) return prev;
-        const updated = {
-          ...prev,
-          total_paid: Math.max(0, prev.total_paid + diff)
-        };
-        onFinancialUpdate?.(member.id, updated);
-        return updated;
-      });
-
-      showToast(slipData.id ? 'Salary slip updated successfully!' : `Payment of ₹${net.toLocaleString('en-IN')} logged & synced to Expenses!`);
-      setIsEditSlipModalOpen(false);
-      setSelectedSlipForEdit(null);
-      setShowAddSalary(false);
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('team_finance_updated', {
-          detail: { memberId: member.id, amount: net }
-        }));
-      }
-
-      loadData();
-    } catch (err) {
-      console.error('[TeamMemberFinanceDrawer] Failed to save salary slip:', err);
-    } finally {
-      setIsSubmittingSalary(false);
+        const cacheKey = `fw_salary_slips_${member.id}`;
+        localStorage.setItem(cacheKey, JSON.stringify(updatedSalaryRecords));
+      } catch (_) {}
     }
+
+    // Background asynchronous persistence (non-blocking)
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const effectiveUserId = user?.id || workspaceId;
+
+        // 1. Save to dedicated team_salary_slips table with strict user_id isolation
+        try {
+          await supabase.from('team_salary_slips').upsert({
+            id: slipId,
+            user_id: user?.id,
+            member_id: member.id,
+            month_year: monthYearTitle,
+            payout_date: pDate,
+            base_salary: base,
+            incentive_amount: incentive,
+            deduction_amount: ded,
+            net_paid: net,
+            payment_mode: slipData.payment_mode || 'UPI',
+            reference_no: slipData.reference_no || '',
+            notes: slipData.notes || '',
+            status: 'Paid',
+            updated_at: new Date().toISOString()
+          });
+        } catch (dbErr) {
+          console.warn('[TeamMemberFinanceDrawer] DB team_salary_slips upsert note:', dbErr);
+        }
+
+        // 2. Also save to team_salary_records
+        await saveSalaryRecord(workspaceId || effectiveUserId, recordSlip);
+
+        // 3. Automatically sync to Studio Expenses & Ledger if enabled
+        if (autoSyncExpense) {
+          try {
+            const safeSalaryAssignmentId = `sal_${slipId.slice(0, 8)}`;
+            await syncTeamPaymentToExpensesAndAnalytics(workspaceId || effectiveUserId, {
+              paymentType: 'Salary',
+              memberName: member.name,
+              memberId: member.id,
+              memberType: 'team_member',
+              paidAmount: net,
+              paymentDate: pDate,
+              paymentMethod: slipData.payment_mode || 'UPI',
+              safeAssignmentId: safeSalaryAssignmentId,
+              notes: `Base: ₹${base.toLocaleString('en-IN')} | Incentive: ₹${incentive.toLocaleString('en-IN')} | Ded: ₹${ded.toLocaleString('en-IN')} | Ref: ${slipData.reference_no || 'N/A'}`
+            });
+          } catch (syncErr) {
+            console.info('[TeamMemberFinanceDrawer] Expense auto-sync notice:', syncErr);
+          }
+
+          try {
+            if (typeof (window as any).mutate === 'function') {
+              (window as any).mutate((key: any) => typeof key === 'string' && (key.includes('expenses') || key.includes('analytics') || key.includes('team') || key.includes('finance')), undefined, { revalidate: true });
+            }
+          } catch (_) {}
+        }
+      } catch (err) {
+        console.error('[TeamMemberFinanceDrawer] Background salary save error:', err);
+      }
+    })();
   };
 
   // ── DELETE SALARY SLIP HANDLER (STRICT MULTI-TENANT USER_ID SCOPE) ──
@@ -1005,96 +1005,42 @@ export default function TeamMemberFinanceDrawer({
       const mType = member?.primary_type?.toLowerCase() || ((member as any)?.member_types?.includes('PARTNER') ? 'partner' : 'team_member');
       const paymentType = paymentTarget.type === 'EVENT' ? 'Shoot Fee' : paymentTarget.type === 'ALBUM' ? 'Album / Lab Fee' : 'Advance Payout';
 
-      let finalAgreed = agreedVal;
-      let finalPaid = paidVal;
-      let finalBalance = Math.max(0, agreedVal - paidVal);
+      // 0ms INSTANT OPTIMISTIC COMMERCIALS UPDATE
+      const finalAgreed = agreedVal;
+      const finalPaid = paidVal;
+      const finalBalance = Math.max(0, agreedVal - paidVal);
+      const finalStatus = (finalBalance === 0 && finalAgreed > 0) ? 'PAID' : (finalPaid > 0 ? 'PARTIAL' : 'PENDING');
 
-      if (paymentTarget.type === 'EVENT') {
-        const trancheResult = await recordCrewPayoutTranche({
-          workspaceId,
-          assignmentId: safeAssignmentId,
-          memberId: memberId!,
-          memberName: memberName,
-          projectId: paymentTarget.projectId,
-          subEventId: paymentTarget.subEventId,
-          clientName: paymentTarget.clientName,
-          eventName: paymentTarget.title,
-          installmentAmount: Math.max(0, paidVal - Number(paymentTarget.paidAmount || 0)),
-          paymentDate: pDate,
-          paymentMode: pMode,
-          referenceNo: pRef,
-          notes: pNotes,
-          currentAgreedAmount: paymentTarget.totalAmount,
-          currentPaidAmount: paymentTarget.paidAmount,
-          explicitAgreedAmount: agreedVal,
-          explicitPaidAmount: paidVal
-        });
-
-        // Immediately update this event payout in local state for 0ms visual feedback
-        finalAgreed = trancheResult.newAgreed !== undefined ? trancheResult.newAgreed : agreedVal;
-        finalPaid = trancheResult.newPaid !== undefined ? trancheResult.newPaid : paidVal;
-        finalBalance = trancheResult.newBalance !== undefined ? trancheResult.newBalance : Math.max(0, finalAgreed - finalPaid);
-        const finalStatus = (finalBalance === 0 && finalAgreed > 0) ? 'PAID' : (finalPaid > 0 ? 'PARTIAL' : 'PENDING');
-
-        setPayouts(prev => prev.map(p => {
-          if (p.id === paymentTarget.id) {
-            return {
-              ...p,
-              agreed_amount: finalAgreed,
-              paid_amount: finalPaid,
-              balance_amount: finalBalance,
-              status: finalStatus as any,
-              payment_date: pDate,
-              payment_method: pMode,
-              notes: pNotes
-            };
-          }
-          return p;
-        }));
-      } else if (paymentTarget.type === 'ALBUM') {
-        await recordAlbumOrderPayment(workspaceId, safeAssignmentId, member!.id, {
-          amount,
-          payment_date: pDate,
-          payment_mode: pMode,
-          reference_no: pRef,
-          notes: pNotes,
-          partnerName: member?.name,
-          clientName: paymentTarget.clientName
-        });
-
-        await syncTeamPaymentToExpensesAndAnalytics(workspaceId, {
-          paymentType,
-          memberName,
-          memberId,
-          memberType: mType,
-          paidAmount: amount,
-          paymentDate: pDate,
-          paymentMethod: pMode,
-          safeAssignmentId,
-          notes: pNotes || `${paymentType} for ${paymentTarget.title || 'Assignment'}`
-        });
-      }
+      // 1. Immediately update this event payout in local state for 0ms visual feedback
+      setPayouts(prev => prev.map(p => {
+        if (p.id === paymentTarget.id) {
+          return {
+            ...p,
+            agreed_amount: finalAgreed,
+            paid_amount: finalPaid,
+            balance_amount: finalBalance,
+            status: finalStatus as any,
+            payment_date: pDate,
+            payment_method: pMode,
+            notes: pNotes
+          };
+        }
+        return p;
+      }));
 
       const updatedMetrics = {
         ...summary,
-        total_paid: summary.total_paid + (finalPaid - Number(paymentTarget.paidAmount || 0)),
+        total_paid: Math.max(0, summary.total_paid + (finalPaid - Number(paymentTarget.paidAmount || 0))),
         total_balance: Math.max(0, summary.total_balance - (Number(paymentTarget.balanceAmount || 0) - finalBalance))
       };
       setSummary(updatedMetrics);
+      onFinancialUpdate?.(member!.id, updatedMetrics);
 
-      // Immediate Real-Time Cache Revalidation & Sync
-      try {
-        if (typeof (window as any).mutate === 'function') {
-          (window as any).mutate((key: any) => typeof key === 'string' && (key.includes('expenses') || key.includes('analytics') || key.includes('team') || key.includes('finance')), undefined, { revalidate: true });
-        }
-      } catch (_) {}
-      router.refresh();
-      showToast(`Commercials updated successfully! (Agreed: ₹${agreedVal.toLocaleString('en-IN')}, Paid: ₹${paidVal.toLocaleString('en-IN')})`);
-
+      // Close modal & notify immediately in 0ms!
       setIsPaymentModalOpen(false);
       setPaymentTarget(null);
+      showToast(`Commercials updated successfully! (Agreed: ₹${agreedVal.toLocaleString('en-IN')}, Paid: ₹${paidVal.toLocaleString('en-IN')})`);
 
-      // Trigger finance update event for immediate outer table synchronization
       if (typeof window !== 'undefined' && memberId) {
         window.dispatchEvent(new CustomEvent('team_finance_updated', {
           detail: {
@@ -1108,9 +1054,61 @@ export default function TeamMemberFinanceDrawer({
           }
         }));
       }
-      onFinancialUpdate?.(member!.id, updatedMetrics);
 
-      loadData();
+      // Background asynchronous DB update & sync (non-blocking)
+      (async () => {
+        try {
+          if (paymentTarget.type === 'EVENT') {
+            await recordCrewPayoutTranche({
+              workspaceId,
+              assignmentId: safeAssignmentId,
+              memberId: memberId!,
+              memberName: memberName,
+              projectId: paymentTarget.projectId,
+              subEventId: paymentTarget.subEventId,
+              clientName: paymentTarget.clientName,
+              eventName: paymentTarget.title,
+              installmentAmount: Math.max(0, paidVal - Number(paymentTarget.paidAmount || 0)),
+              paymentDate: pDate,
+              paymentMode: pMode,
+              referenceNo: pRef,
+              notes: pNotes,
+              currentAgreedAmount: paymentTarget.totalAmount,
+              currentPaidAmount: paymentTarget.paidAmount,
+              explicitAgreedAmount: agreedVal,
+              explicitPaidAmount: paidVal
+            });
+          } else if (paymentTarget.type === 'ALBUM') {
+            await recordAlbumOrderPayment(workspaceId, safeAssignmentId, member!.id, {
+              amount,
+              payment_date: pDate,
+              payment_mode: pMode,
+              reference_no: pRef,
+              notes: pNotes,
+              partnerName: member?.name,
+              clientName: paymentTarget.clientName
+            });
+
+            await syncTeamPaymentToExpensesAndAnalytics(workspaceId, {
+              paymentType,
+              memberName,
+              memberId,
+              memberType: mType,
+              paidAmount: amount,
+              paymentDate: pDate,
+              paymentMethod: pMode,
+              safeAssignmentId,
+              notes: pNotes || `${paymentType} for ${paymentTarget.title || 'Assignment'}`
+            });
+          }
+
+          if (typeof (window as any).mutate === 'function') {
+            (window as any).mutate((key: any) => typeof key === 'string' && (key.includes('expenses') || key.includes('analytics') || key.includes('team') || key.includes('finance')), undefined, { revalidate: true });
+          }
+        } catch (bgErr) {
+          console.error('[TeamMemberFinanceDrawer] Background payment sync error:', bgErr);
+        }
+      })();
     } catch (err) {
       console.error('[TeamMemberFinanceDrawer] Failed to record payment:', err);
     } finally {
@@ -1439,6 +1437,22 @@ export default function TeamMemberFinanceDrawer({
                     </button>
                   </div>
                 )}
+
+                {/* 3 Metric Pills for Shoot Bookings & Payment Ledger */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                    <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wider block">Total Agreed</span>
+                    <span className="text-xs font-black text-stone-900 font-mono">₹{displayAgreed.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="p-2.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                    <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider block">Total Paid</span>
+                    <span className="text-xs font-black text-emerald-700 font-mono">₹{displayPaid.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="p-2.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                    <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider block">Remaining Balance</span>
+                    <span className="text-xs font-black text-amber-700 font-mono">₹{displayBalance.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
 
                 {/* Search Bar for Shoots Ledger */}
                 <div className="relative">

@@ -2063,12 +2063,23 @@ export async function batchFetchWorkspaceTeamFinancials(
 
   if (!workspaceId || uniqueIds.length === 0) return summaryMap;
 
-  // Build name to ID map for flexible matching
+  // Build name to ID map & member type lookup for accurate commercial calculation
   const nameToIdMap = new Map<string, string>();
+  const memberTypeMap = new Map<string, { isInHouse: boolean; defaultRate: number }>();
   if (Array.isArray(membersList)) {
     membersList.forEach(m => {
       if (m.name && m.id) {
         nameToIdMap.set(m.name.trim().toLowerCase(), m.id);
+      }
+      if (m.id) {
+        const isIH = m.primary_type === 'IN_HOUSE' || 
+          m.member_types?.includes('IN_HOUSE') || 
+          (m as any).payout_frequency === 'monthly' || 
+          (m as any).type === 'in-house';
+        memberTypeMap.set(m.id, {
+          isInHouse: Boolean(isIH),
+          defaultRate: Number((m as any).default_daily_rate || (m as any).monthly_salary || 0)
+        });
       }
     });
   }
@@ -2136,9 +2147,11 @@ export async function batchFetchWorkspaceTeamFinancials(
         seenSubEventsByMember[mid].add(String(row.sub_event_id));
       }
 
+      const mInfo = memberTypeMap.get(mid);
       const rawAgreed = Number(row.agreed_amount) || 0;
       const hasCustom = Boolean((row as any).custom_payout || (row as any).custom_rate || (row as any).is_custom_payout);
-      const agreed = hasCustom ? (Number((row as any).custom_payout || (row as any).custom_rate) || rawAgreed) : rawAgreed;
+      const isDefaultInHouseSalary = mInfo?.isInHouse && (rawAgreed === mInfo.defaultRate && mInfo.defaultRate > 0) && (Number(row.advance_amount ?? row.paid_amount) || 0) === 0 && !hasCustom;
+      const agreed = isDefaultInHouseSalary ? 0 : (hasCustom ? (Number((row as any).custom_payout || (row as any).custom_rate) || rawAgreed) : rawAgreed);
       const paid = Number(row.advance_amount ?? row.paid_amount) || 0;
       const bal = Math.max(0, agreed - paid);
 
@@ -2170,8 +2183,11 @@ export async function batchFetchWorkspaceTeamFinancials(
         return;
       }
 
-      const agreed = Number(p.agreed_amount) || 0;
+      const mInfo = memberTypeMap.get(mid);
+      const rawAgreed = Number(p.agreed_amount) || 0;
       const paid = Number(p.paid_amount) || 0;
+      const isDefaultInHouseSalary = mInfo?.isInHouse && (rawAgreed === mInfo.defaultRate && mInfo.defaultRate > 0) && paid === 0;
+      const agreed = isDefaultInHouseSalary ? 0 : rawAgreed;
       const bal = Number(p.balance_amount) || Math.max(0, agreed - paid);
 
       summaryMap[mid].total_agreed += agreed;
@@ -2269,10 +2285,21 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
   }
 
   const nameToIdMap = new Map<string, string>();
+  const memberTypeMap = new Map<string, { isInHouse: boolean; defaultRate: number }>();
   if (Array.isArray(membersList)) {
     membersList.forEach(m => {
       if (m.name && m.id) {
         nameToIdMap.set(m.name.trim().toLowerCase(), m.id);
+      }
+      if (m.id) {
+        const isIH = m.primary_type === 'IN_HOUSE' || 
+          m.member_types?.includes('IN_HOUSE') || 
+          (m as any).payout_frequency === 'monthly' || 
+          (m as any).type === 'in-house';
+        memberTypeMap.set(m.id, {
+          isInHouse: Boolean(isIH),
+          defaultRate: Number((m as any).default_daily_rate || (m as any).monthly_salary || 0)
+        });
       }
     });
   }
@@ -2335,9 +2362,11 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
       const proj = row.project || row.fw_projects;
       const rawDate = se?.event_date || (row as any).event_date || (row as any).due_date || proj?.main_date || (row.created_at ? row.created_at.split('T')[0] : '') || '';
 
+      const mInfo = memberTypeMap.get(mid);
       const rawAgreed = Number(row.agreed_amount) || 0;
       const hasCustom = Boolean(row.custom_payout || row.custom_rate || row.is_custom_payout);
-      const agreed = hasCustom ? (Number(row.custom_payout || row.custom_rate) || rawAgreed) : rawAgreed;
+      const isDefaultInHouseSalary = mInfo?.isInHouse && (rawAgreed === mInfo.defaultRate && mInfo.defaultRate > 0) && (Number(row.advance_amount ?? row.paid_amount) || 0) === 0 && !hasCustom;
+      const agreed = isDefaultInHouseSalary ? 0 : (hasCustom ? (Number(row.custom_payout || row.custom_rate) || rawAgreed) : rawAgreed);
       const paid = Number(row.advance_amount ?? row.paid_amount) || 0;
       const bal = Math.max(0, agreed - paid);
 
@@ -2369,9 +2398,12 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
         return; // skip duplicate
       }
 
+      const mInfo = memberTypeMap.get(mid);
       const rawDate = p.event_date || p.payment_date || (p.created_at ? p.created_at.split('T')[0] : '') || '';
-      const agreed = Number(p.agreed_amount) || 0;
+      const rawAgreed = Number(p.agreed_amount) || 0;
       const paid = Number(p.paid_amount) || 0;
+      const isDefaultInHouseSalary = mInfo?.isInHouse && (rawAgreed === mInfo.defaultRate && mInfo.defaultRate > 0) && paid === 0;
+      const agreed = isDefaultInHouseSalary ? 0 : rawAgreed;
       const bal = Number(p.balance_amount) || Math.max(0, agreed - paid);
 
       records.push({
