@@ -239,12 +239,25 @@ export default function WorkspaceTeamPage() {
 
       if (fwData && fwData.length > 0) {
         for (const f of fwData) {
-          const exists = combinedMembers.some(
+          const matched = combinedMembers.find(
             c => c.id === f.id || 
                  (f.email && c.email && c.email.trim().toLowerCase() === f.email.trim().toLowerCase()) ||
                  (f.name && c.name && c.name.trim().toLowerCase() === f.name.trim().toLowerCase())
           );
-          if (!exists) {
+          const fRate = typeof wsRatesMap[f.id] === 'object' ? wsRatesMap[f.id].rate : (wsRatesMap[f.id] != null ? wsRatesMap[f.id] : (f.default_daily_rate || 0));
+          const fFreq = typeof wsRatesMap[f.id] === 'object' && wsRatesMap[f.id].frequency ? wsRatesMap[f.id].frequency : (f.payout_frequency || 'daily');
+
+          if (matched) {
+            if ((!matched.default_daily_rate || matched.default_daily_rate === 0) && fRate > 0) {
+              matched.default_daily_rate = fRate;
+            }
+            if (fFreq === 'monthly') {
+              matched.payout_frequency = 'monthly';
+            }
+            if (!matched.phone && f.phone_number) {
+              matched.phone = `${f.country_code || '+91'} ${f.phone_number}`;
+            }
+          } else {
             combinedMembers.push({
               id: f.id,
               name: f.name,
@@ -256,8 +269,8 @@ export default function WorkspaceTeamPage() {
               primary_type: f.primary_type || 'IN_HOUSE',
               avatar_url: f.avatar_url || '',
               status: 'ACTIVE',
-              default_daily_rate: typeof wsRatesMap[f.id] === 'object' ? wsRatesMap[f.id].rate : (wsRatesMap[f.id] != null ? wsRatesMap[f.id] : (f.default_daily_rate || 0)),
-              payout_frequency: typeof wsRatesMap[f.id] === 'object' && wsRatesMap[f.id].frequency ? wsRatesMap[f.id].frequency : (f.payout_frequency || 'daily'),
+              default_daily_rate: fRate,
+              payout_frequency: fFreq,
               default_currency: f.default_currency || 'INR',
             });
           }

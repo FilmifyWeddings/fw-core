@@ -74,8 +74,8 @@ export async function GET(req: NextRequest) {
       email: m.email || '',
       phone: m.phone_number || '',
       role: m.primary_role || '',
-      primary_type: m.primary_type || 'IN_HOUSE',
-      member_types: m.member_types || ['IN_HOUSE'],
+      primary_type: m.primary_type || 'FREELANCER',
+      member_types: Array.isArray(m.member_types) && m.member_types.length > 0 ? m.member_types : [(m.primary_type || 'FREELANCER')],
       auth_user_id: m.auth_user_id || null,
       user_id: m.user_id,
     }));

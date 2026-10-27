@@ -133,6 +133,148 @@ export function broadcastSettingsChange(wsId?: string, eventName: 'events_change
   } catch (_) {}
 }
 
+
+export const DEFAULT_RITUAL_TYPES: string[] = [
+  'Hindu',
+  'Muslim',
+  'Marwadi',
+  'Gujarati',
+  'Christian',
+  'South Indian',
+  'Kerala',
+  'Punjabi',
+  'Jain',
+  'Sindhi',
+  'Bengali',
+  'Buddhist',
+  'Sikh',
+  'Maharashtrian',
+  'Pahadi',
+  'Parsi',
+  'Assamese',
+  'Odia',
+  'Inter-caste',
+  'Destination',
+];
+
+export function extractRitualsFromNotes(notes?: string | null): string[] {
+  if (!notes || typeof notes !== 'string') return [];
+  const match = notes.match(/\[Ritual:\s*([^\]]+)\]/i);
+  if (!match || !match[1]) return [];
+  return match[1]
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+export function formatRitualNotes(existingNotes: string | undefined | null, rituals: string[]): string {
+  const base = (existingNotes || '').replace(/\s*\[Ritual:[^\]]*\]/gi, '').trim();
+  if (!rituals || rituals.length === 0) return base;
+  const tag = `[Ritual: ${rituals.join(', ')}]`;
+  return base ? `${base}\n${tag}` : tag;
+}
+
+export function cleanNotesForDisplay(notes?: string | null): string {
+  if (!notes || typeof notes !== 'string') return '';
+  return notes.replace(/\s*\[Ritual:[^\]]*\]/gi, '').trim();
+}
+
+export function getSubEventRituals(subEvent: any): string[] {
+  if (!subEvent) return [];
+  if (Array.isArray(subEvent.ritual_type)) {
+    return subEvent.ritual_type.filter(Boolean);
+  }
+  if (typeof subEvent.ritual_type === 'string' && subEvent.ritual_type.trim()) {
+    return subEvent.ritual_type.split(',').map((s: string) => s.trim()).filter(Boolean);
+  }
+  if (Array.isArray(subEvent.ritual_types)) {
+    return subEvent.ritual_types.filter(Boolean);
+  }
+  const fromNotes = extractRitualsFromNotes(subEvent.operational_notes || subEvent.notes);
+  if (fromNotes.length > 0) return fromNotes;
+  return [];
+}
+
+export async function fetchWorkspaceRitualTypes(workspaceId?: string): Promise<string[]> {
+  const wsId = await resolveWorkspaceId(workspaceId);
+  try {
+    if (isUuid(wsId)) {
+      const { data, error } = await supabase
+        .from('workspace_event_types')
+        .select('name')
+        .eq('workspace_id', wsId)
+        .eq('category', 'Ritual')
+        .order('display_order', { ascending: true })
+        .order('name', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const customNames = data.map(d => d.name.trim()).filter(Boolean);
+        const combined = [...DEFAULT_RITUAL_TYPES];
+        customNames.forEach(c => {
+          if (!combined.some(x => x.toLowerCase() === c.toLowerCase())) {
+            combined.push(c);
+          }
+        });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`wg_ritual_types_${wsId}`, JSON.stringify(combined));
+        }
+        return combined;
+      }
+    }
+  } catch (err: any) {
+    console.error('[WorkspaceSettings] Exception fetching ritual types:', err?.message || err);
+  }
+
+  if (typeof window !== 'undefined' && wsId) {
+    try {
+      const local = localStorage.getItem(`wg_ritual_types_${wsId}`);
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+  }
+
+  return DEFAULT_RITUAL_TYPES;
+}
+
+export async function saveWorkspaceRitualType(workspaceId?: string, name?: string): Promise<string | null> {
+  const cleanName = (name || '').trim();
+  if (!cleanName) return null;
+  const wsId = await resolveWorkspaceId(workspaceId);
+
+  try {
+    if (wsId) {
+      await fetch('/api/workspace/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: wsId,
+          name: cleanName,
+          category: 'Ritual',
+          display_order: 99
+        })
+      });
+    }
+  } catch (err: any) {
+    console.error('[WorkspaceSettings] Error saving ritual type:', err?.message || err);
+  }
+
+  if (typeof window !== 'undefined' && wsId) {
+    try {
+      const local = localStorage.getItem(`wg_ritual_types_${wsId}`);
+      const list = local ? JSON.parse(local) : [...DEFAULT_RITUAL_TYPES];
+      if (!list.some((r: string) => r.toLowerCase() === cleanName.toLowerCase())) {
+        list.push(cleanName);
+        localStorage.setItem(`wg_ritual_types_${wsId}`, JSON.stringify(list));
+      }
+    } catch (_) {}
+    window.dispatchEvent(new CustomEvent('workspace_ritual_types_updated'));
+  }
+
+  return cleanName;
+}
+
 export const DEFAULT_QUOTATION_DELIVERABLES: WorkspaceQuotationDeliverable[] = [
   { id: 'deliv_1', title: '1 Teaser Video (1-2 Min)', category: 'Video', is_default: true, display_order: 1 },
   { id: 'deliv_2', title: '1 Main Highlight Film (15-20 Min)', category: 'Video', is_default: true, display_order: 2 },

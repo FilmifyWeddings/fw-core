@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
-import { isInHouseMember } from '@/lib/team-helpers';
+import { isInHouseMember, getDedupedInHouseMembers } from '@/lib/team-helpers';
 
 export interface ProjectManagerAssignClient {
   id: string;

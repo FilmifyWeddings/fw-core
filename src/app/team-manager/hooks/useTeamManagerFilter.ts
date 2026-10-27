@@ -32,30 +32,51 @@ export function isCardFilterActive(filters?: UnifiedFilterState | null): boolean
  */
 export function isSlotAssigned(slot: any): boolean {
   if (!slot) return false;
-  const mId = slot.assigned_member_id || slot.team_member_id;
-  if (!mId) return false;
-  const str = String(mId).trim().toLowerCase();
-  if (!str || str === 'null' || str === 'undefined' || str === 'unassigned' || str === 'none') {
+
+  const cleanName = String(
+    slot.assigned_member_name ||
+    slot.fw_team_members?.name ||
+    slot.clean_name ||
+    slot.member_name ||
+    ''
+  ).trim().toLowerCase();
+
+  // If clean name is a placeholder (like "Not Fixed", "TBD", "Unassigned", etc.), it is ALWAYS UNASSIGNED
+  if (
+    cleanName === 'not fixed' ||
+    cleanName.startsWith('not fixed') ||
+    cleanName === 'tbd' ||
+    cleanName === 'unassigned' ||
+    cleanName === 'pending' ||
+    cleanName === 'date not fixed' ||
+    cleanName === 'none' ||
+    cleanName === 'null'
+  ) {
     return false;
+  }
+
+  const mId = slot.assigned_member_id || slot.team_member_id;
+  const str = mId ? String(mId).trim().toLowerCase() : '';
+
+  // If member ID is an explicit placeholder string
+  if (str === 'null' || str === 'undefined' || str === 'unassigned' || str === 'none') {
+    return false;
+  }
+
+  // If there is a valid member ID or a valid team member object
+  if (str && str.length > 0) {
+    return true;
   }
   if (slot.fw_team_members?.id) {
     return true;
   }
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-  const cleanName = String(slot.assigned_member_name || slot.fw_team_members?.name || '').trim().toLowerCase();
-  if (
-    !isUuid && (
-      cleanName === 'not fixed' ||
-      cleanName.startsWith('not fixed') ||
-      cleanName === 'tbd' ||
-      cleanName === 'unassigned' ||
-      cleanName === 'pending' ||
-      cleanName === 'date not fixed'
-    )
-  ) {
-    return false;
+
+  // If assigned_member_name exists and is a valid person's name (not empty, not placeholder)
+  if (cleanName && cleanName.length > 0) {
+    return true;
   }
-  return true;
+
+  return false;
 }
 
 /**

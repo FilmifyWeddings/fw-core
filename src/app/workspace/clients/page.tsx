@@ -17,7 +17,7 @@ import {
   ClientInsiderModal, parseClientExtended, serializeClientExtended 
 } from '@/components/clients/client-insider-modal';
 import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
-import { fetchWorkspaceTeamMembers, isInHouseMember, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import { fetchWorkspaceTeamMembers, isInHouseMember, getDedupedInHouseMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
 import AddClientModal, { AddClientFormData } from './components/AddClientModal';
 import { handleAssignClientPM } from './components/ClientRow';
@@ -407,7 +407,7 @@ export default function ClientsPage() {
           }
 
           const leadPmId = (bookedLead as any).project_manager_id || bookedLead.raw_payload?.project_manager_id || null;
-          const rawLeadPm = (bookedLead as any).project_manager_name || bookedLead.raw_payload?.project_manager_name || bookedLead.raw_payload?.lead_owner || null;
+          const rawLeadPm = (bookedLead as any).project_manager_name || bookedLead.raw_payload?.project_manager_name || null;
           const validLeadPm = (rawLeadPm && rawLeadPm.toLowerCase() !== 'unassigned') ? rawLeadPm : null;
 
           const newClientPayload: any = {
@@ -991,35 +991,9 @@ export default function ClientsPage() {
     }
   };
 
-  // 3D Cream Filter Dropdown Options (Deduplicated by PM name, linking all IDs)
+  // 3D Cream Filter Dropdown Options (Strictly In-House Team Members Only, Deduplicated by Name)
   const pmFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
-    const inHouseSet = new Set((inHouseTeamMembers || []).map(m => m.name.toLowerCase().trim()));
-    const normalizedMap = new Map<string, { displayName: string; ids: Set<string> }>();
-
-    (clients || []).forEach((c: any) => {
-      const ext = parseClientExtended(c);
-      const rawName = (c.project_manager_name || ext.project_manager_name || '').trim();
-      const rawId = (c.project_manager_id || ext.project_manager_id || '').trim();
-      if (!rawName) return;
-      const normKey = rawName.toLowerCase();
-      // Only include if in-house member or explicitly assigned PM
-      if (inHouseSet.size === 0 || inHouseSet.has(normKey)) {
-        if (!normalizedMap.has(normKey)) {
-          normalizedMap.set(normKey, { displayName: rawName, ids: new Set<string>() });
-        }
-        if (rawId) {
-          normalizedMap.get(normKey)!.ids.add(rawId);
-        }
-      }
-    });
-
-    (inHouseTeamMembers || []).forEach((tm: any) => {
-      if (tm.name && !normalizedMap.has(tm.name.toLowerCase().trim())) {
-        normalizedMap.set(tm.name.toLowerCase().trim(), { displayName: tm.name, ids: new Set([tm.id]) });
-      }
-    });
-
-    const uniquePMs = Array.from(normalizedMap.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
+    const inHouseList = getDedupedInHouseMembers(teamMembers);
 
     return [
       { value: 'all', label: 'All Managers' },
@@ -1029,13 +1003,13 @@ export default function ClientsPage() {
         badge: 'None',
         badgeClassName: 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800',
       },
-      ...uniquePMs.map(pm => ({
-        value: pm.displayName.toLowerCase(),
-        label: pm.displayName,
+      ...inHouseList.map(pm => ({
+        value: pm.name.toLowerCase().trim(),
+        label: pm.name,
         badge: 'In-House PM',
       })),
     ];
-  }, [clients, inHouseTeamMembers]);
+  }, [teamMembers]);
 
   const statusFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     const opts = [

@@ -7,6 +7,7 @@ import {
   Calendar, Users, Layers, Sparkles, Zap, ChevronDown, Check, Moon, AlertCircle, X
 } from 'lucide-react';
 import ProgramTypeSelect from './ProgramTypeSelect';
+import RitualTypeSelect from './RitualTypeSelect';
 import CalendarPicker from './CalendarPicker';
 import TimePicker12H from '@/components/ui/TimePicker12H';
 import RoleGrid from './RoleGrid';
@@ -14,6 +15,7 @@ import RoleGrid from './RoleGrid';
 export interface EventBlockData {
   id: string;
   subEventNames: string[];
+  ritualTypes?: string[];
   subEventDate: string;
   isDateTbd?: boolean;
   isOvernight?: boolean;
@@ -166,13 +168,23 @@ export default function EventBlock({
         </div>
       </div>
 
-      {/* 1. EVENT TYPE MULTI-SELECT */}
-      <ProgramTypeSelect
-        selected={block.subEventNames}
-        onChange={(names) => onUpdate(block.id, { subEventNames: names })}
-        onAddCustom={onAddCustomProgram}
-        hasError={hasProgramTypeError}
-      />
+      {/* 1. EVENT TYPE (70%) & TYPE OF RITUAL (30%) */}
+      <div className="grid grid-cols-1 md:grid-cols-10 gap-2.5 items-start">
+        <div className="md:col-span-7">
+          <ProgramTypeSelect
+            selected={block.subEventNames}
+            onChange={(names) => onUpdate(block.id, { subEventNames: names })}
+            onAddCustom={onAddCustomProgram}
+            hasError={hasProgramTypeError}
+          />
+        </div>
+        <div className="md:col-span-3">
+          <RitualTypeSelect
+            selected={block.ritualTypes || []}
+            onChange={(rituals) => onUpdate(block.id, { ritualTypes: rituals })}
+          />
+        </div>
+      </div>
 
       {/* 2. PROGRAM DATE & CHECKBOXES GROUP */}
       <div>

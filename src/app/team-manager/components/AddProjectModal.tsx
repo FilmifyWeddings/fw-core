@@ -9,7 +9,7 @@ import {
 import EventBlock, { EventBlockData } from './EventBlock';
 import { FWProject } from '@/types';
 import { supabase } from '@/lib/supabase';
-import { getRoleShortCode, parseRoleAndNumber, formatRoleWithNumber } from '@/lib/workspace-settings';
+import { getRoleShortCode, parseRoleAndNumber, formatRoleWithNumber, getSubEventRituals, cleanNotesForDisplay } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 // Robust unique UUID generator for sub-event blocks
@@ -32,6 +32,7 @@ const DEFAULT_BLOCK: EventBlockData = {
   startTime: '00:00 AM',
   endTime: '00:00 AM',
   roles: [],
+  ritualTypes: [],
   notes: '',
 };
 
@@ -171,7 +172,8 @@ export default function AddProjectModal({
             endTime: (se as any).end_time_12h || se.dismissal_estimate_time || '06:00 PM',
             shiftSlot: (se as any).shift_hours_slot || '',
             roles: mergeSubEventRoles(assignedRoles, dbRoles, crewRoles),
-            notes: se.operational_notes || '',
+            ritualTypes: getSubEventRituals(se),
+            notes: cleanNotesForDisplay(se.operational_notes || ''),
           };
         });
         setEventBlocks(blocks);

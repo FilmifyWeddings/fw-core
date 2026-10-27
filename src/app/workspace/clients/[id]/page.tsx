@@ -32,7 +32,7 @@ import { logClientAudit } from '@/lib/client-audit';
 import { 
   parseClientExtended, serializeClientExtended, type ClientEventItem, type ClientExtendedData, type StudioCommentItem 
 } from '@/components/clients/client-insider-modal';
-import { fetchWorkspaceTeamMembers, isInHouseMember, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import { fetchWorkspaceTeamMembers, isInHouseMember, getDedupedInHouseMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
 import { extractFinancialsFromQuotation, normalizeToIsoDate, normalizeSubEventTitle } from '@/lib/quotation-finance-sync';
 import type { 

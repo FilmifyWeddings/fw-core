@@ -6,7 +6,7 @@ import { Calendar, Clock, MapPin, Plus, Pencil, History } from 'lucide-react';
 import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
 import { checkProjectUnassignedWarning } from './TeamManagerProjectCard';
 import { isCardFilterActive as checkIsFilterActive, checkRoleSlotMatch, getCardHighlightClass, isPmMatch, isSubEventMatch } from '../hooks/useTeamManagerFilter';
-import { WorkspaceCrewRole, getRoleAbbr } from '@/lib/workspace-settings';
+import { WorkspaceCrewRole, getRoleAbbr, getSubEventRituals } from '@/lib/workspace-settings';
 
 export interface TeamManagerCardViewProps {
   projects: FWProject[];
@@ -245,23 +245,40 @@ export default function TeamManagerCardView({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
-                          {subEvent.roll_call_time && (
-                            <div className="flex items-center gap-1.5 text-slate-700">
-                              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                              <span>
-                                {format12HourTime(subEvent.roll_call_time)}
-                                {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
-                              </span>
+                        {(() => {
+                          const rituals = getSubEventRituals(subEvent);
+                          return (
+                            <div className="flex items-center gap-2.5 text-xs font-bold text-slate-500 flex-wrap">
+                              {subEvent.roll_call_time && (
+                                <div className="flex items-center gap-1.5 text-slate-700">
+                                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <span>
+                                    {format12HourTime(subEvent.roll_call_time)}
+                                    {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                                  </span>
+                                </div>
+                              )}
+                              {rituals.length > 0 && (
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {rituals.map((r: string) => (
+                                    <span
+                                      key={r}
+                                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200/80 shadow-2xs"
+                                    >
+                                      {r}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {subEvent.venue_name && (
+                                <div className="flex items-center gap-1.5 text-indigo-600 font-bold">
+                                  <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                                  <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
+                                </div>
+                              )}
                             </div>
-                          )}
-                          {subEvent.venue_name && (
-                            <div className="flex items-center gap-1.5 text-indigo-600 font-bold">
-                              <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
-                              <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
-                            </div>
-                          )}
-                        </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="border-t border-slate-100 my-1.5" />

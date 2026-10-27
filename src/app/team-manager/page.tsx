@@ -35,7 +35,7 @@ import { EventBlockData } from './components/EventBlock';
 import { saveOrUpdateEventPayout, batchFetchWorkspaceTeamFinancials, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary, unassignCrewSlot } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
 import DeleteMemberWarningModal from '../workspace/team/components/DeleteMemberWarningModal';
-import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, saveAllWorkspaceEventTypes, getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
+import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, saveAllWorkspaceEventTypes, getRoleShortCode, getRoleAbbr, formatRitualNotes } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 // Module-level in-memory cache for instant 0ms transitions
@@ -1390,6 +1390,7 @@ export default function TeamManagerPage() {
           const rolesToSave = block.roles || [];
           const existing = existingSubEventsList.find(se => se.id === block.id);
 
+          const combinedNotes = formatRitualNotes(block.notes, block.ritualTypes || []);
           const subEventPayload: any = {
             project_id: projectId,
             event_title: title,
@@ -1403,7 +1404,7 @@ export default function TeamManagerPage() {
             venue_map_link: block.mapLink || null,
             roll_call_time: block.startTime || '10:00 AM',
             dismissal_estimate_time: block.endTime || '06:00 PM',
-            operational_notes: block.notes || null,
+            operational_notes: combinedNotes || null,
             shift_hours_slot: block.shiftSlot || null,
             roles: rolesToSave,
             display_order: i,
@@ -1674,6 +1675,7 @@ export default function TeamManagerPage() {
             const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
             const rolesToSave = block.roles || [];
 
+            const combinedNotes = formatRitualNotes(block.notes, block.ritualTypes || []);
             const subEventPayload: any = {
               project_id: targetProjectId,
               event_title: title,
@@ -1687,7 +1689,7 @@ export default function TeamManagerPage() {
               venue_map_link: block.mapLink || null,
               roll_call_time: block.startTime || '10:00 AM',
               dismissal_estimate_time: block.endTime || '06:00 PM',
-              operational_notes: block.notes || null,
+              operational_notes: combinedNotes || null,
               shift_hours_slot: block.shiftSlot || null,
               roles: rolesToSave,
               ...(currentUserId ? { user_id: currentUserId } : {})

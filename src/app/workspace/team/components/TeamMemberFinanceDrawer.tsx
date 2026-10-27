@@ -592,12 +592,39 @@ export default function TeamMemberFinanceDrawer({
     return member.events;
   }, [member?.events]);
 
-  const events = filteredShoots.length > 0 ? filteredShoots : (shootsYearFilter === 'All' && studioShoots.length === 0 ? fallbackEvents : []);
+  // Shoot Date Range Scope Filter for Commercial Overview
+  const [shootDateScope, setShootDateScope] = useState<'all' | 'this_month' | 'this_year' | 'custom'>('all');
+  const [shootCustomStartDate, setShootCustomStartDate] = useState<string>('');
+  const [shootCustomEndDate, setShootCustomEndDate] = useState<string>('');
+
+  const scopedShoots = useMemo(() => {
+    const list = filteredShoots.length > 0 ? filteredShoots : (shootsYearFilter === 'All' && studioShoots.length === 0 ? fallbackEvents : []);
+    if (shootDateScope === 'all') return list;
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = String(now.getMonth() + 1).padStart(2, '0');
+    const monthPrefix = `${curYear}-${curMonth}`;
+    const yearPrefix = `${curYear}`;
+
+    return list.filter(s => {
+      const d = s.event_date || s.sub_event?.event_date || s.created_at || '';
+      if (!d) return false;
+      if (shootDateScope === 'this_month') return d.startsWith(monthPrefix);
+      if (shootDateScope === 'this_year') return d.startsWith(yearPrefix);
+      if (shootDateScope === 'custom') {
+        if (shootCustomStartDate && d < shootCustomStartDate) return false;
+        if (shootCustomEndDate && d > shootCustomEndDate) return false;
+        return true;
+      }
+      return true;
+    });
+  }, [filteredShoots, shootsYearFilter, studioShoots.length, fallbackEvents, shootDateScope, shootCustomStartDate, shootCustomEndDate]);
+
+  const events = scopedShoots;
 
   const computedAgreed = useMemo(() => {
     return (events || []).reduce((acc, curr) => {
       const rawAmt = Number(curr.agreed_amount) || 0;
-      // If member is in-house on monthly salary and rate matches default daily rate (synthetic 18,000 bug), ignore it as 0
       const amt = (isInHouse && rawAmt === Number(member?.default_daily_rate) && (Number(curr.paid_amount) || 0) === 0) ? 0 : rawAmt;
       return acc + amt;
     }, 0);
@@ -1134,42 +1161,89 @@ export default function TeamMemberFinanceDrawer({
             </button>
           </div>
 
-          {/* Top Quick Stats Strip */}
-          <div className="p-3 sm:p-4 grid grid-cols-3 gap-2 sm:gap-2.5 bg-amber-50/60 border-b border-amber-200/80">
-            {/* Total Agreed */}
-            <div className="p-2.5 rounded-xl bg-white border border-amber-200/90 shadow-2xs flex flex-col justify-between">
-              <span className="text-[9px] font-extrabold uppercase tracking-wider text-zinc-500 flex items-center gap-1">
-                <Wallet className="w-2.5 h-2.5 text-amber-600" /> Agreed Shoots
+          {/* Top Quick Stats Strip with Shoot Date Range Filter */}
+          <div className="p-3 sm:p-4 bg-amber-50/60 border-b border-amber-200/80 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                <Wallet className="w-3 h-3 text-amber-600" /> Commercial Overview
               </span>
-              <span className="text-xs sm:text-sm font-black text-amber-950 mt-1 font-mono">
-                ₹{displayAgreed.toLocaleString('en-IN')}
-              </span>
+              <div className="flex items-center gap-1">
+                {([
+                  { id: 'all', label: 'All Time' },
+                  { id: 'this_month', label: 'This Month' },
+                  { id: 'this_year', label: 'This Year' },
+                  { id: 'custom', label: 'Custom' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setShootDateScope(opt.id)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                      shootDateScope === opt.id
+                        ? 'bg-amber-600 text-white shadow-2xs font-black'
+                        : 'bg-white/80 text-stone-600 hover:bg-white border border-amber-200/70'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Total Paid */}
-            <div className="p-2.5 rounded-xl bg-white border border-emerald-200/90 shadow-2xs flex flex-col justify-between">
-              <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-700 flex items-center gap-1">
-                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Total Paid
-              </span>
-              <span className="text-xs sm:text-sm font-black text-emerald-900 mt-1 font-mono">
-                ₹{displayPaid.toLocaleString('en-IN')}
-              </span>
-            </div>
+            {shootDateScope === 'custom' && (
+              <div className="flex items-center gap-2 pt-0.5">
+                <input
+                  type="date"
+                  value={shootCustomStartDate}
+                  onChange={(e) => setShootCustomStartDate(e.target.value)}
+                  className="h-6 px-2 text-[10px] font-bold bg-white border border-amber-300 rounded-lg text-stone-900"
+                />
+                <span className="text-[10px] font-bold text-stone-400">to</span>
+                <input
+                  type="date"
+                  value={shootCustomEndDate}
+                  onChange={(e) => setShootCustomEndDate(e.target.value)}
+                  className="h-6 px-2 text-[10px] font-bold bg-white border border-amber-300 rounded-lg text-stone-900"
+                />
+              </div>
+            )}
 
-            {/* Balance Due */}
-            <div className={`p-2.5 rounded-xl bg-white border shadow-2xs flex flex-col justify-between ${
-              displayBalance > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'
-            }`}>
-              <span className={`text-[9px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
-                displayBalance > 0 ? 'text-rose-700' : 'text-zinc-500'
+            <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+              {/* Total Agreed */}
+              <div className="p-2.5 rounded-xl bg-white border border-amber-200/90 shadow-2xs flex flex-col justify-between">
+                <span className="text-[9px] font-extrabold uppercase tracking-wider text-zinc-500 flex items-center gap-1">
+                  <Wallet className="w-2.5 h-2.5 text-amber-600" /> Total Agreed
+                </span>
+                <span className="text-xs sm:text-sm font-black text-amber-950 mt-1 font-mono">
+                  ₹{displayAgreed.toLocaleString('en-IN')}
+                </span>
+              </div>
+
+              {/* Total Paid */}
+              <div className="p-2.5 rounded-xl bg-white border border-emerald-200/90 shadow-2xs flex flex-col justify-between">
+                <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-700 flex items-center gap-1">
+                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Total Paid
+                </span>
+                <span className="text-xs sm:text-sm font-black text-emerald-900 mt-1 font-mono">
+                  ₹{displayPaid.toLocaleString('en-IN')}
+                </span>
+              </div>
+
+              {/* Balance Due */}
+              <div className={`p-2.5 rounded-xl bg-white border shadow-2xs flex flex-col justify-between ${
+                displayBalance > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'
               }`}>
-                <Clock className="w-2.5 h-2.5 text-rose-500" /> Balance Due
-              </span>
-              <span className={`text-xs sm:text-sm font-black mt-1 font-mono ${
-                displayBalance > 0 ? 'text-rose-700' : 'text-zinc-700'
-              }`}>
-                ₹{displayBalance.toLocaleString('en-IN')}
-              </span>
+                <span className={`text-[9px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
+                  displayBalance > 0 ? 'text-rose-700' : 'text-zinc-500'
+                }`}>
+                  <Clock className="w-2.5 h-2.5 text-rose-500" /> Balance Due
+                </span>
+                <span className={`text-xs sm:text-sm font-black mt-1 font-mono ${
+                  displayBalance > 0 ? 'text-rose-700' : 'text-zinc-700'
+                }`}>
+                  ₹{displayBalance.toLocaleString('en-IN')}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1360,7 +1434,12 @@ export default function TeamMemberFinanceDrawer({
 
                 {/* Shoots Roster */}
                 <div className="space-y-2.5">
-                  {filteredShoots.length === 0 ? (
+                  {isRefreshing && studioShoots.length === 0 ? (
+                    <div className="p-8 text-center bg-white rounded-2xl border border-stone-200/90 shadow-2xs space-y-2">
+                      <div className="w-6 h-6 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                      <p className="text-xs font-bold text-stone-700">Loading shoot assignments...</p>
+                    </div>
+                  ) : filteredShoots.length === 0 ? (
                     <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 text-stone-400 space-y-1">
                       <Calendar className="w-8 h-8 text-stone-300 mx-auto mb-2" />
                       <p className="text-xs font-bold text-stone-600">No Shoot Assignments Found</p>
@@ -1831,7 +1910,7 @@ export default function TeamMemberFinanceDrawer({
                             {/* Inset 3D Financial Breakdown Pill */}
                             <div className="bg-stone-50/90 rounded-xl p-2.5 border border-stone-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
                               <span className="text-stone-600 font-semibold">
-                                Base: <strong className="text-stone-900 font-black">₹{Number(slip.base_salary).toLocaleString('en-IN')}</strong>
+                                Base: <strong className="text-stone-900 font-black">₹{Number(slip.base_salary || 0).toLocaleString('en-IN')}</strong>
                               </span>
                               <span className="text-stone-300 hidden sm:inline">|</span>
                               <span className="text-emerald-700 font-semibold">
@@ -1843,7 +1922,7 @@ export default function TeamMemberFinanceDrawer({
                               </span>
                               <span className="text-stone-300 hidden sm:inline">|</span>
                               <span className="text-emerald-900 font-extrabold bg-emerald-100/70 px-2 py-0.5 rounded-lg">
-                                Net Paid: ₹{Number(slip.paid_amount || slip.net_payable).toLocaleString('en-IN')}
+                                Net Paid: ₹{Number(slip.paid_amount || slip.net_payable || slip.net_paid || 0).toLocaleString('en-IN')}
                               </span>
                             </div>
 

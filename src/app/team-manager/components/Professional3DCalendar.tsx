@@ -85,6 +85,7 @@ function toIsoDateString(d: Date): string {
 }
 
 import { resolveSubEventAssignments, matchDateQuery, isDateSearchQuery } from '@/lib/team-helpers';
+import { getSubEventRituals, cleanNotesForDisplay } from '@/lib/workspace-settings';
 import { isSlotAssigned } from '../hooks/useTeamManagerFilter';
 
 // Event Dot Colors
@@ -689,6 +690,22 @@ export default function Professional3DCalendar({
                                     </div>
                                   )}
 
+                                  {(() => {
+                                    const rituals = getSubEventRituals(subEvent);
+                                    return rituals.length > 0 ? (
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        {rituals.map((r: string) => (
+                                          <span
+                                            key={r}
+                                            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs"
+                                          >
+                                            {r}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : null;
+                                  })()}
+
                                   {subEvent.roll_call_time && subEvent.venue_name && (
                                     <span className="text-slate-300 font-normal">|</span>
                                   )}
@@ -709,10 +726,10 @@ export default function Professional3DCalendar({
                                 </div>
                               </div>
 
-                              {subEvent.operational_notes && (
+                              {subEvent.operational_notes && cleanNotesForDisplay(subEvent.operational_notes) && (
                                 <div className="bg-amber-50/80 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-xs text-amber-950 font-medium flex items-center gap-2 my-1">
                                   <FileText className="w-4 h-4 text-amber-600 shrink-0" />
-                                  <span>{subEvent.operational_notes}</span>
+                                  <span>{cleanNotesForDisplay(subEvent.operational_notes)}</span>
                                 </div>
                               )}
 
@@ -955,9 +972,13 @@ export default function Professional3DCalendar({
                         </span>
                       )}
                     </div>
-                    {project.project_manager_name && (
+                    {project.project_manager_name ? (
                       <span className="text-[10px] font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                         PM: {project.project_manager_name}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
+                        PM: Unassigned
                       </span>
                     )}
                   </div>
@@ -1006,12 +1027,29 @@ export default function Professional3DCalendar({
                               )}
                             </div>
 
-                            {subEvent.roll_call_time && (
-                              <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200 w-fit">
-                                <Clock className="w-2.5 h-2.5" />
-                                <span>{timeDisplay}</span>
-                              </div>
-                            )}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {subEvent.roll_call_time && (
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200 w-fit">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  <span>{timeDisplay}</span>
+                                </div>
+                              )}
+                              {(() => {
+                                const rituals = getSubEventRituals(subEvent);
+                                return rituals.length > 0 ? (
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {rituals.map((r: string) => (
+                                      <span
+                                        key={r}
+                                        className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200"
+                                      >
+                                        {r}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null;
+                              })()}
+                            </div>
 
                             {/* Crew Avatars */}
                             <div className="pt-2 border-t border-slate-100">

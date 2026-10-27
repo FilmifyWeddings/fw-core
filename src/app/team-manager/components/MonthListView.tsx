@@ -43,6 +43,7 @@ interface FlattenedSubEvent {
 }
 
 import { resolveSubEventAssignments, matchDateQuery, isDateSearchQuery } from '@/lib/team-helpers';
+import { getSubEventRituals } from '@/lib/workspace-settings';
 
 export default function MonthListView({
   projects,
@@ -322,46 +323,79 @@ export default function MonthListView({
                           )}
                         </div>
 
-                        {/* LOCATION & TIME */}
-                        <div className="flex items-center gap-3 text-xs font-bold text-stone-600 flex-wrap">
-                          {subEvent.roll_call_time && (
-                            <div className="flex items-center gap-1.5 text-rose-900 bg-rose-50/80 px-3 py-1.5 rounded-xl border border-rose-200 shadow-2xs">
-                              <Clock className="w-4 h-4 text-rose-700 shrink-0" />
-                              <span>
-                                {format12HourTime(subEvent.roll_call_time)}
-                                {subEvent.dismissal_estimate_time
-                                  ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
-                                  : ''}
-                              </span>
+                        {/* LOCATION & TIME & PM & RITUAL */}
+                        {(() => {
+                          const rituals = getSubEventRituals(subEvent);
+                          return (
+                            <div className="flex items-center gap-2.5 text-xs font-bold text-stone-600 flex-wrap">
+                              {/* PM BADGE */}
+                              <div className="flex items-center gap-1.5 bg-amber-50/90 px-2.5 py-1 rounded-xl border border-amber-200/80 shadow-2xs">
+                                <span className="text-[9px] font-black uppercase tracking-wider text-amber-800">PM:</span>
+                                {project.project_manager_name ? (
+                                  <div className="flex items-center gap-1">
+                                    <div className="w-4 h-4 rounded-full bg-amber-600 text-white font-black text-[8px] flex items-center justify-center overflow-hidden shrink-0">
+                                      {project.project_manager_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                                    </div>
+                                    <span className="text-[11px] font-extrabold text-amber-950 max-w-[110px] truncate">{project.project_manager_name}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-[11px] font-medium text-amber-700/60">Unassigned</span>
+                                )}
+                              </div>
+
+                              {subEvent.roll_call_time && (
+                                <div className="flex items-center gap-1.5 text-rose-900 bg-rose-50/80 px-3 py-1.5 rounded-xl border border-rose-200 shadow-2xs">
+                                  <Clock className="w-4 h-4 text-rose-700 shrink-0" />
+                                  <span>
+                                    {format12HourTime(subEvent.roll_call_time)}
+                                    {subEvent.dismissal_estimate_time
+                                      ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
+                                      : ''}
+                                  </span>
+                                </div>
+                              )}
+
+                              {rituals.length > 0 && (
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {rituals.map((r: string) => (
+                                    <span
+                                      key={r}
+                                      className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200/80 shadow-2xs"
+                                    >
+                                      {r}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {subEvent.venue_name && (
+                                <a
+                                  href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 text-rose-700 hover:text-rose-900 font-bold bg-rose-50/50 px-3 py-1.5 rounded-xl border border-rose-200 shadow-2xs transition hover:border-rose-400"
+                                >
+                                  <MapPin className="w-4 h-4 text-rose-600 shrink-0" />
+                                  <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
+                                </a>
+                              )}
+                              {onOpenHistory && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    onOpenHistory(project, subEvent);
+                                  }}
+                                  className="p-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-800 border border-rose-200 transition-all cursor-pointer shadow-2xs flex items-center justify-center group/hist shrink-0"
+                                  title="View Sub-event History"
+                                >
+                                  <History className="w-3.5 h-3.5 text-rose-600 group-hover/hist:rotate-[-45deg] transition-transform" />
+                                </button>
+                              )}
                             </div>
-                          )}
-                          {subEvent.venue_name && (
-                            <a
-                              href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-rose-700 hover:text-rose-900 font-bold bg-rose-50/50 px-3 py-1.5 rounded-xl border border-rose-200 shadow-2xs transition hover:border-rose-400"
-                            >
-                              <MapPin className="w-4 h-4 text-rose-600 shrink-0" />
-                              <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
-                            </a>
-                          )}
-                          {onOpenHistory && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                onOpenHistory(project, subEvent);
-                              }}
-                              className="p-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-800 border border-rose-200 transition-all cursor-pointer shadow-2xs flex items-center gap-1 group/hist shrink-0"
-                              title="View Sub-event History"
-                            >
-                              <History className="w-3.5 h-3.5 text-rose-600 group-hover/hist:rotate-[-45deg] transition-transform" />
-                              <span className="text-[10px] font-black hidden sm:inline">History</span>
-                            </button>
-                          )}
-                        </div>
+                          );
+                        })()}
                       </div>
 
                       {/* CREW ALLOCATION AVATARS GRID WITH CLICKABLE ASSIGN POPOVERS */}
@@ -541,46 +575,79 @@ export default function MonthListView({
                               )}
                             </div>
 
-                            {/* LOCATION & TIME */}
-                            <div className="flex items-center gap-2 text-[11px] font-medium text-stone-600 flex-wrap">
-                              {subEvent.roll_call_time && (
-                                <div className="flex items-center gap-1 text-stone-800 bg-amber-50/80 px-2 py-1 rounded-lg border border-amber-200/80 shadow-2xs">
-                                  <Clock className="w-3 h-3 text-amber-700 shrink-0" />
-                                  <span>
-                                    {format12HourTime(subEvent.roll_call_time)}
-                                    {subEvent.dismissal_estimate_time
-                                      ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
-                                      : ''}
-                                  </span>
+                            {/* LOCATION & TIME & PM & RITUAL */}
+                            {(() => {
+                              const rituals = getSubEventRituals(subEvent);
+                              return (
+                                <div className="flex items-center gap-2 text-[11px] font-medium text-stone-600 flex-wrap">
+                                  {/* PM BADGE */}
+                                  <div className="flex items-center gap-1.5 bg-amber-50/90 px-2 py-0.5 rounded-lg border border-amber-200/80 shadow-2xs">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-amber-800">PM:</span>
+                                    {project.project_manager_name ? (
+                                      <div className="flex items-center gap-1">
+                                        <div className="w-3.5 h-3.5 rounded-full bg-amber-600 text-white font-black text-[7px] flex items-center justify-center overflow-hidden shrink-0">
+                                          {project.project_manager_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                                        </div>
+                                        <span className="text-[10px] font-extrabold text-amber-950 max-w-[100px] truncate">{project.project_manager_name}</span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] font-medium text-amber-700/60">Unassigned</span>
+                                    )}
+                                  </div>
+
+                                  {subEvent.roll_call_time && (
+                                    <div className="flex items-center gap-1 text-stone-800 bg-amber-50/80 px-2 py-1 rounded-lg border border-amber-200/80 shadow-2xs">
+                                      <Clock className="w-3 h-3 text-amber-700 shrink-0" />
+                                      <span>
+                                        {format12HourTime(subEvent.roll_call_time)}
+                                        {subEvent.dismissal_estimate_time
+                                          ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
+                                          : ''}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {rituals.length > 0 && (
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      {rituals.map((r: string) => (
+                                        <span
+                                          key={r}
+                                          className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200/80 shadow-2xs"
+                                        >
+                                          {r}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {subEvent.venue_name && (
+                                    <a
+                                      href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-semibold bg-stone-50 px-2 py-1 rounded-lg border border-stone-200 shadow-2xs transition hover:border-indigo-300"
+                                    >
+                                      <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
+                                      <span className="truncate max-w-[150px]">{subEvent.venue_name}</span>
+                                    </a>
+                                  )}
+                                  {onOpenHistory && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        onOpenHistory(project, subEvent);
+                                      }}
+                                      className="p-1.5 rounded-xl bg-white hover:bg-amber-100/70 text-slate-700 hover:text-amber-900 border border-slate-200 hover:border-amber-300 transition-all cursor-pointer shadow-2xs flex items-center justify-center group/hist shrink-0"
+                                      title="View Sub-event History"
+                                    >
+                                      <History className="w-3.5 h-3.5 text-amber-600 group-hover/hist:rotate-[-45deg] transition-transform" />
+                                    </button>
+                                  )}
                                 </div>
-                              )}
-                              {subEvent.venue_name && (
-                                <a
-                                  href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-semibold bg-stone-50 px-2 py-1 rounded-lg border border-stone-200 shadow-2xs transition hover:border-indigo-300"
-                                >
-                                  <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
-                                  <span className="truncate max-w-[150px]">{subEvent.venue_name}</span>
-                                </a>
-                              )}
-                              {onOpenHistory && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    onOpenHistory(project, subEvent);
-                                  }}
-                                  className="p-1.5 rounded-xl bg-white hover:bg-amber-100/70 text-slate-700 hover:text-amber-900 border border-slate-200 hover:border-amber-300 transition-all cursor-pointer shadow-2xs flex items-center gap-1 group/hist shrink-0"
-                                  title="View Sub-event History"
-                                >
-                                  <History className="w-3.5 h-3.5 text-amber-600 group-hover/hist:rotate-[-45deg] transition-transform" />
-                                  <span className="text-[10px] font-black hidden sm:inline">History</span>
-                                </button>
-                              )}
-                            </div>
+                              );
+                            })()}
                           </div>
 
                           {/* CREW ALLOCATION CHIPS GRID WITH CLICKABLE ASSIGN POPOVERS */}
@@ -763,46 +830,79 @@ export default function MonthListView({
                                     )}
                                   </div>
 
-                                  {/* LOCATION & TIME */}
-                                  <div className="flex items-center gap-3 text-xs font-bold text-slate-600 flex-wrap">
-                                    {subEvent.roll_call_time && (
-                                      <div className="flex items-center gap-1.5 text-slate-700 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
-                                        <Clock className="w-4 h-4 text-slate-500 shrink-0" />
-                                        <span>
-                                          {format12HourTime(subEvent.roll_call_time)}
-                                          {subEvent.dismissal_estimate_time
-                                            ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
-                                            : ''}
-                                        </span>
+                                  {/* LOCATION & TIME & PM & RITUAL */}
+                                  {(() => {
+                                    const rituals = getSubEventRituals(subEvent);
+                                    return (
+                                      <div className="flex items-center gap-2.5 text-xs font-bold text-slate-600 flex-wrap">
+                                        {/* PM BADGE */}
+                                        <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs">
+                                          <span className="text-[9px] font-black uppercase tracking-wider text-slate-600">PM:</span>
+                                          {project.project_manager_name ? (
+                                            <div className="flex items-center gap-1">
+                                              <div className="w-4 h-4 rounded-full bg-slate-600 text-white font-black text-[8px] flex items-center justify-center overflow-hidden shrink-0">
+                                                {project.project_manager_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                                              </div>
+                                              <span className="text-[11px] font-extrabold text-slate-800 max-w-[110px] truncate">{project.project_manager_name}</span>
+                                            </div>
+                                          ) : (
+                                            <span className="text-[11px] font-medium text-slate-400">Unassigned</span>
+                                          )}
+                                        </div>
+
+                                        {subEvent.roll_call_time && (
+                                          <div className="flex items-center gap-1.5 text-slate-700 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                                            <Clock className="w-4 h-4 text-slate-500 shrink-0" />
+                                            <span>
+                                              {format12HourTime(subEvent.roll_call_time)}
+                                              {subEvent.dismissal_estimate_time
+                                                ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
+                                                : ''}
+                                            </span>
+                                          </div>
+                                        )}
+
+                                        {rituals.length > 0 && (
+                                          <div className="flex items-center gap-1 flex-wrap">
+                                            {rituals.map((r: string) => (
+                                              <span
+                                                key={r}
+                                                className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200/80 shadow-2xs"
+                                              >
+                                                {r}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+
+                                        {subEvent.venue_name && (
+                                          <a
+                                            href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs transition hover:border-slate-400"
+                                          >
+                                            <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                                            <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
+                                          </a>
+                                        )}
+                                        {onOpenHistory && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              e.preventDefault();
+                                              onOpenHistory(project, subEvent);
+                                            }}
+                                            className="p-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all cursor-pointer shadow-2xs flex items-center justify-center group/hist shrink-0"
+                                            title="View Sub-event History"
+                                          >
+                                            <History className="w-3.5 h-3.5 text-slate-600 group-hover/hist:rotate-[-45deg] transition-transform" />
+                                          </button>
+                                        )}
                                       </div>
-                                    )}
-                                    {subEvent.venue_name && (
-                                      <a
-                                        href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs transition hover:border-slate-400"
-                                      >
-                                        <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-                                        <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
-                                      </a>
-                                    )}
-                                    {onOpenHistory && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          e.preventDefault();
-                                          onOpenHistory(project, subEvent);
-                                        }}
-                                        className="p-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all cursor-pointer shadow-2xs flex items-center gap-1 group/hist shrink-0"
-                                        title="View Sub-event History"
-                                      >
-                                        <History className="w-3.5 h-3.5 text-slate-600 group-hover/hist:rotate-[-45deg] transition-transform" />
-                                        <span className="text-[10px] font-black hidden sm:inline">History</span>
-                                      </button>
-                                    )}
-                                  </div>
+                                    );
+                                  })()}
                                 </div>
 
                                 {/* CREW ALLOCATION AVATARS */}

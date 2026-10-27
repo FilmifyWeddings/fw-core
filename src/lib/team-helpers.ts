@@ -19,10 +19,14 @@ export interface WorkspaceMemberOption {
  */
 export function isInHouseMember(m: any): boolean {
   if (!m) return false;
+  const cleanName = String(m.name || '').trim().toLowerCase();
+  if (!cleanName || ['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed', 'none'].includes(cleanName) || cleanName.startsWith('not fixed')) {
+    return false;
+  }
   const primaryType = String(m.primary_type || m.type || '').toUpperCase().trim();
   const typesArr = (Array.isArray(m.member_types) ? m.member_types : []).map((t) => String(t).toUpperCase().trim());
   
-  if (primaryType === 'FREELANCER' || primaryType === 'PARTNER' || primaryType === 'VENDOR') {
+  if (primaryType === 'FREELANCER' || primaryType === 'PARTNER' || primaryType === 'VENDOR' || primaryType === 'EXT_VENDOR') {
     return false;
   }
   if (
@@ -44,6 +48,28 @@ export function isInHouseMember(m: any): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * Deduplicates in-house team members strictly by normalized name.
+ * If multiple records exist for the same person (e.g. Navnath Salekar with multiple entries/roles),
+ * picks the most complete record and returns a single clean alphabetical list.
+ */
+export function getDedupedInHouseMembers<T = any>(members: T[]): T[] {
+  const map = new Map<string, T>();
+  (members || []).forEach((m: any) => {
+    if (!isInHouseMember(m)) return;
+    const norm = String(m.name || '').trim().toLowerCase();
+    if (!norm) return;
+    if (!map.has(norm)) {
+      map.set(norm, m);
+    } else {
+      const existing: any = map.get(norm);
+      if (!existing.email && m.email) map.set(norm, m);
+      else if (!existing.phone && (m.phone || m.phone_number)) map.set(norm, m);
+    }
+  });
+  return Array.from(map.values()).sort((a: any, b: any) => String(a.name || '').localeCompare(String(b.name || '')));
 }
 
 export async function fetchWorkspaceTeamMembers(workspaceId?: string): Promise<WorkspaceMemberOption[]> {

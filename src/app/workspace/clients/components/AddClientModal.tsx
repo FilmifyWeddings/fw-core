@@ -6,7 +6,7 @@ import { UserPlus, X, Check, Users, Sparkles } from 'lucide-react';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
 import type { Lead } from '@/types';
-import { isInHouseMember, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import { isInHouseMember, getDedupedInHouseMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import { safeParseCurrencyOrBudget } from '@/lib/budget-helpers';
 
 export interface AddClientFormData {
