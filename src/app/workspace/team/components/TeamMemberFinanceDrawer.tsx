@@ -9,7 +9,7 @@ import {
   User, Check, FileText, Send, Layers, Wallet, TrendingUp, History,
   Receipt, ArrowUpRight, ShieldCheck, CheckCheck, RefreshCw, SlidersHorizontal,
   Phone, Mail, BarChart3, BookOpen, MapPin, Award, ChevronDown, CheckSquare, Square,
-  Printer, Download, Search
+  Printer, Download, Search, Filter
 } from 'lucide-react';
 import { 
   TeamEventPayout, 
@@ -230,7 +230,9 @@ export default function TeamMemberFinanceDrawer({
   const [payrollFilterMonth, setPayrollFilterMonth] = useState<string>('All');
 
   // Analytics Filter Scope
-  const [analyticsYearScope, setAnalyticsYearScope] = useState<number>(now.getFullYear());
+  const [analyticsYearScope, setAnalyticsYearScope] = useState<string>('All');
+  const [analyticsCategoryScope, setAnalyticsCategoryScope] = useState<'all' | 'shoots' | 'deliverables' | 'salaries'>('all');
+  const [analyticsStatusScope, setAnalyticsStatusScope] = useState<'all' | 'completed' | 'pending'>('all');
 
   // Member Type Normalization
   const memberType = (member?.primary_type || 'FREELANCER').toUpperCase();
@@ -1214,7 +1216,7 @@ export default function TeamMemberFinanceDrawer({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-          className="w-[94vw] max-w-2xl bg-white rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col z-10 font-sans border border-slate-200"
+          className="w-[96vw] max-w-5xl bg-white rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto flex flex-col z-10 font-sans border border-slate-200"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -1334,10 +1336,10 @@ export default function TeamMemberFinanceDrawer({
           </div>
 
           {/* 4 Navigation Tabs */}
-          <div className="px-4 pt-2.5 pb-0 flex items-center gap-2 border-b border-amber-200/60 bg-[#FAF8F2] overflow-x-auto">
+          <div className="px-3 sm:px-5 pt-2.5 pb-0 flex items-center gap-1 sm:gap-3 border-b border-amber-200/60 bg-[#FAF8F2] overflow-x-auto">
             <button
               onClick={() => setActiveTab('bookings')}
-              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
+              className={`pb-2 px-2.5 sm:px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
                 activeTab === 'bookings'
                   ? 'border-amber-600 text-amber-950 font-black'
                   : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -1347,7 +1349,7 @@ export default function TeamMemberFinanceDrawer({
             </button>
             <button
               onClick={() => setActiveTab('deliverables')}
-              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
+              className={`pb-2 px-2.5 sm:px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
                 activeTab === 'deliverables'
                   ? 'border-amber-600 text-amber-950 font-black'
                   : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -1357,7 +1359,7 @@ export default function TeamMemberFinanceDrawer({
             </button>
             <button
               onClick={() => setActiveTab('payroll')}
-              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
+              className={`pb-2 px-2.5 sm:px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
                 activeTab === 'payroll'
                   ? 'border-amber-600 text-amber-950 font-black'
                   : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -1367,13 +1369,13 @@ export default function TeamMemberFinanceDrawer({
             </button>
             <button
               onClick={() => setActiveTab('analytics')}
-              className={`pb-2 px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
+              className={`pb-2 px-2.5 sm:px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
                 activeTab === 'analytics'
                   ? 'border-amber-600 text-amber-950 font-black'
                   : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              📊 3D Analytics Dashboard
+              📊 Analytics Dashboard
             </button>
           </div>
 
@@ -1729,6 +1731,29 @@ export default function TeamMemberFinanceDrawer({
                     ))}
                   </div>
                 </div>
+
+                {/* 3 Metric Pills for Post-Production Deliverables */}
+                {(() => {
+                  const delivTotalAgreed = deliverables.reduce((acc, d) => acc + (Number(d.agreed_amount) || 0), 0);
+                  const delivTotalPaid = deliverables.reduce((acc, d) => acc + (Number(d.paid_amount) || 0), 0);
+                  const delivTotalBalance = Math.max(0, delivTotalAgreed - delivTotalPaid);
+                  return (
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="p-2.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                        <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wider block">Total Agreed</span>
+                        <span className="text-xs font-black text-stone-900 font-mono">₹{delivTotalAgreed.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                        <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider block">Total Paid</span>
+                        <span className="text-xs font-black text-emerald-700 font-mono">₹{delivTotalPaid.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                        <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider block">Remaining Balance</span>
+                        <span className="text-xs font-black text-amber-700 font-mono">₹{delivTotalBalance.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Deliverables List */}
                 <div className="space-y-2.5">
@@ -2242,131 +2267,284 @@ export default function TeamMemberFinanceDrawer({
             )}
 
             {/* ══════════════════════════════════════════════════════════════
-                TAB 3: 3D PERFORMANCE ANALYTICS DASHBOARD
+                TAB 4: ANALYTICS DASHBOARD
                ══════════════════════════════════════════════════════════════ */}
-            {activeTab === 'analytics' && (
-              <div className="space-y-4">
-                {/* Analytics Scope Filter */}
-                <div className="bg-white p-3 rounded-2xl border border-stone-200 shadow-2xs flex items-center justify-between">
-                  <span className="text-xs font-black text-stone-800 flex items-center gap-1.5">
-                    <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Performance Analytics</span>
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold text-stone-400">Year:</span>
-                    <select
-                      value={analyticsYearScope}
-                      onChange={(e) => setAnalyticsYearScope(parseInt(e.target.value, 10))}
-                      className="h-7 px-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-800 cursor-pointer"
-                    >
-                      {[2024, 2025, 2026, 2027].map(y => (
-                        <option key={y} value={y}>{y}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+            {activeTab === 'analytics' && (() => {
+              // Dynamic filtered computation
+              const yScope = analyticsYearScope;
+              const cScope = analyticsCategoryScope;
+              const sScope = analyticsStatusScope;
 
-                {/* 3D KPI Cards */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-stone-900 to-amber-950 text-white shadow-md space-y-1">
-                    <span className="text-[10px] font-bold text-amber-200/80 uppercase tracking-wider block">
-                      Total Shoots / Shifts
-                    </span>
-                    <div className="text-2xl font-black text-white">{studioShoots.length}</div>
-                    <span className="text-[10px] text-amber-300/80 font-medium block">
-                      {summary.paid_events_count} Completed • {summary.pending_events_count} Upcoming
-                    </span>
-                  </div>
+              // Filter shoots
+              const matchShoot = (s: TeamEventPayout) => {
+                const sDate = s.event_date || s.created_at || '';
+                if (yScope !== 'All' && !sDate.startsWith(yScope)) return false;
+                const isPaid = s.payment_status === 'PAID' || (s.agreed_amount > 0 && s.balance_amount === 0);
+                if (sScope === 'completed' && !isPaid) return false;
+                if (sScope === 'pending' && isPaid) return false;
+                return true;
+              };
+              const anShoots = studioShoots.filter(matchShoot);
+              const shootsCompleted = anShoots.filter(s => s.payment_status === 'PAID' || (s.agreed_amount > 0 && s.balance_amount === 0)).length;
+              const shootsUpcoming = Math.max(0, anShoots.length - shootsCompleted);
 
-                  <div className="p-4 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-1">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">
-                      Total Earned &amp; Paid
+              // Filter deliverables
+              const matchDeliv = (d: TeamDeliverableAssignment) => {
+                const dDate = d.due_date || '';
+                if (yScope !== 'All' && dDate && !dDate.startsWith(yScope)) return false;
+                const isPaid = d.payment_status === 'FULL_PAID' || (d.agreed_amount > 0 && d.balance_amount === 0);
+                if (sScope === 'completed' && !isPaid) return false;
+                if (sScope === 'pending' && isPaid) return false;
+                return true;
+              };
+              const anDelivs = deliverables.filter(matchDeliv);
+              const delivDelivered = anDelivs.filter(d => (d.status || '').toLowerCase().includes('complet') || (d.status || '').toLowerCase().includes('deliver')).length;
+              const delivInProgress = anDelivs.filter(d => (d.status || '').toLowerCase().includes('progress')).length;
+              const delivUpcoming = Math.max(0, anDelivs.length - delivDelivered - delivInProgress);
+
+              // Filter salaries
+              const matchSalary = (sl: TeamSalaryRecord) => {
+                const slDate = sl.payout_date || sl.month_year || '';
+                if (yScope !== 'All' && !slDate.includes(yScope)) return false;
+                const isPaid = (sl.status || '').toUpperCase() === 'PAID' || sl.payment_status === 'PAID';
+                if (sScope === 'completed' && !isPaid) return false;
+                if (sScope === 'pending' && isPaid) return false;
+                return true;
+              };
+              const anSalaries = salaryRecords.filter(matchSalary);
+
+              // Commercial aggregates based on Category Scope
+              const includeShoots = cScope === 'all' || cScope === 'shoots';
+              const includeDelivs = cScope === 'all' || cScope === 'deliverables';
+              const includeSalaries = cScope === 'all' || cScope === 'salaries';
+
+              const shootsAgreed = includeShoots ? anShoots.reduce((a, s) => a + (Number(s.agreed_amount) || 0), 0) : 0;
+              const shootsPaid = includeShoots ? anShoots.reduce((a, s) => a + (Number(s.paid_amount) || 0), 0) : 0;
+
+              const delivAgreed = includeDelivs ? anDelivs.reduce((a, d) => a + (Number(d.agreed_amount) || 0), 0) : 0;
+              const delivPaid = includeDelivs ? anDelivs.reduce((a, d) => a + (Number(d.paid_amount) || 0), 0) : 0;
+
+              const salaryAgreed = includeSalaries ? anSalaries.reduce((a, s) => a + (Number(s.net_payable ?? s.base_salary) || 0), 0) : 0;
+              const salaryPaid = includeSalaries ? anSalaries.reduce((a, s) => a + (Number(s.net_paid ?? s.paid_amount ?? s.net_payable ?? s.base_salary) || 0), 0) : 0;
+
+              const totalAgreedAll = shootsAgreed + delivAgreed + salaryAgreed;
+              const totalPaidAll = shootsPaid + delivPaid + salaryPaid;
+              const totalBalanceAll = Math.max(0, totalAgreedAll - totalPaidAll);
+              const realizationPct = totalAgreedAll > 0 ? Math.min(100, Math.round((totalPaidAll / totalAgreedAll) * 100)) : 100;
+
+              return (
+                <div className="space-y-4">
+                  {/* Multi-Filter Controls Bar */}
+                  <div className="bg-white p-3 rounded-2xl border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-2.5">
+                    <span className="text-xs font-black text-stone-800 flex items-center gap-1.5">
+                      <Filter className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Analytics Filters</span>
                     </span>
-                    <div className="text-2xl font-black text-emerald-700 font-mono">
-                      ₹{summary.total_paid.toLocaleString('en-IN')}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Year Filter */}
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-bold text-stone-400">Year:</span>
+                        <select
+                          value={analyticsYearScope}
+                          onChange={(e) => setAnalyticsYearScope(e.target.value)}
+                          className="h-7 px-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-800 cursor-pointer"
+                        >
+                          <option value="All">All Years</option>
+                          <option value="2024">2024</option>
+                          <option value="2025">2025</option>
+                          <option value="2026">2026</option>
+                          <option value="2027">2027</option>
+                        </select>
+                      </div>
+
+                      {/* Workstream Filter */}
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-bold text-stone-400">Stream:</span>
+                        <select
+                          value={analyticsCategoryScope}
+                          onChange={(e) => setAnalyticsCategoryScope(e.target.value as any)}
+                          className="h-7 px-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-800 cursor-pointer"
+                        >
+                          <option value="all">All Workstreams</option>
+                          <option value="shoots">📸 Shoots Only</option>
+                          <option value="deliverables">🎨 Deliverables Only</option>
+                          <option value="salaries">💼 Salary Only</option>
+                        </select>
+                      </div>
+
+                      {/* Status Filter */}
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-bold text-stone-400">Status:</span>
+                        <select
+                          value={analyticsStatusScope}
+                          onChange={(e) => setAnalyticsStatusScope(e.target.value as any)}
+                          className="h-7 px-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-800 cursor-pointer"
+                        >
+                          <option value="all">All Statuses</option>
+                          <option value="completed">✓ Completed &amp; Paid</option>
+                          <option value="pending">⏳ Pending / Upcoming</option>
+                        </select>
+                      </div>
                     </div>
-                    <span className="text-[10px] text-emerald-600 font-medium block">
-                      Direct remuneration settled
-                    </span>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-1">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">
-                      Agreed Rate / Base
-                    </span>
-                    <div className="text-xl font-black text-stone-900 font-mono">
-                      ₹{Number(member.default_daily_rate || 0).toLocaleString('en-IN')}
-                    </div>
-                    {(() => {
-                      const isMonthly = member.payout_frequency === 'monthly' || (isInHouse && member.payout_frequency !== 'daily');
-                      return (
-                        <span className="text-[10px] text-stone-500 font-bold block flex items-center gap-1">
-                          <span>Mode:</span>
-                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase ${isMonthly ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-800'}`}>
-                            {isMonthly ? 'Monthly (₹' + Number(member.default_daily_rate || 0).toLocaleString('en-IN') + ' / month)' : 'Daily (₹' + Number(member.default_daily_rate || 0).toLocaleString('en-IN') + ' / day)'}
-                          </span>
+                  {/* Responsive KPI Grid: 2 on mobile, 3 on tablet, 4 on desktop */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {/* 1. Shoots KPI */}
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 text-white shadow-sm space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-amber-200 uppercase tracking-wider block">
+                          Total Shoots
                         </span>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-1">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">
-                      Reliability Score
-                    </span>
-                    <div className="text-xl font-black text-indigo-700 flex items-center gap-1">
-                      <Award className="w-5 h-5 text-indigo-500" />
-                      <span>100% Active</span>
+                        <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                      </div>
+                      <div className="text-2xl font-black text-white">{anShoots.length}</div>
+                      <span className="text-[10px] text-amber-300 font-medium block">
+                        {shootsCompleted} Completed • {shootsUpcoming} Upcoming
+                      </span>
                     </div>
-                    <span className="text-[10px] text-stone-400 font-medium block">
-                      Studio verified crew
-                    </span>
+
+                    {/* 2. Deliverables KPI */}
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-zinc-900 via-zinc-800 to-indigo-950 text-white shadow-sm space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider block">
+                          Deliverables
+                        </span>
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                      </div>
+                      <div className="text-2xl font-black text-white">{anDelivs.length}</div>
+                      <span className="text-[10px] text-indigo-300 font-medium block">
+                        {delivDelivered} Delivered • {delivInProgress} Active • {delivUpcoming} Due
+                      </span>
+                    </div>
+
+                    {/* 3. Total Earned & Paid */}
+                    <div className="p-3.5 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">
+                          Total Paid
+                        </span>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      </div>
+                      <div className="text-2xl font-black text-emerald-700 font-mono">
+                        ₹{totalPaidAll.toLocaleString('en-IN')}
+                      </div>
+                      <span className="text-[10px] text-emerald-600 font-bold block">
+                        {realizationPct}% Settled • ₹{totalAgreedAll.toLocaleString('en-IN')} Contracted
+                      </span>
+                    </div>
+
+                    {/* 4. Remaining Balance Due */}
+                    <div className="p-3.5 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">
+                          Balance Due
+                        </span>
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      </div>
+                      <div className="text-2xl font-black text-amber-700 font-mono">
+                        ₹{totalBalanceAll.toLocaleString('en-IN')}
+                      </div>
+                      <span className="text-[10px] text-stone-500 font-medium block">
+                        {totalBalanceAll === 0 ? '✓ Zero dues outstanding' : 'Pending studio clearance'}
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                {/* Monthly Financial Distribution */}
-                <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs space-y-3">
-                  <h4 className="text-xs font-black text-stone-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Month-by-Month Earnings Breakdown</span>
-                  </h4>
+                  {/* Workstream Distribution Progress Bar */}
+                  <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs space-y-2.5">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <h4 className="text-xs font-black text-stone-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Workstream Earnings Share</span>
+                      </h4>
+                      <div className="flex items-center gap-3 text-[11px] font-bold">
+                        <span className="flex items-center gap-1 text-amber-700">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                          Shoots: ₹{shootsPaid.toLocaleString('en-IN')}
+                        </span>
+                        <span className="flex items-center gap-1 text-indigo-700">
+                          <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" />
+                          Deliverables: ₹{delivPaid.toLocaleString('en-IN')}
+                        </span>
+                        <span className="flex items-center gap-1 text-emerald-700">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                          Salaries: ₹{salaryPaid.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
 
-                  {(!summary.monthly_breakdown || summary.monthly_breakdown.length === 0) ? (
-                    <p className="text-xs text-stone-400 py-6 text-center">No monthly payout records to display yet.</p>
-                  ) : (
-                    <div className="space-y-2.5 pt-1">
-                      {(summary.monthly_breakdown || []).map((m) => {
-                        const mAgreed = Number(m?.agreed) || 0;
-                        const mPaid = Number(m?.paid) || 0;
-                        const mBal = Number(m?.balance) || 0;
-                        const maxVal = Math.max(...(summary.monthly_breakdown || []).map(x => Number(x?.agreed) || 1), 1);
-                        const agreedPct = Math.min(100, Math.round((mAgreed / maxVal) * 100));
-                        const paidPct = Math.min(100, Math.round((mPaid / maxVal) * 100));
+                    {/* Progress Bar */}
+                    <div className="h-3 w-full bg-stone-100 rounded-full overflow-hidden flex shadow-inner">
+                      {totalPaidAll > 0 ? (
+                        <>
+                          <div
+                            style={{ width: `${Math.round((shootsPaid / totalPaidAll) * 100)}%` }}
+                            className="bg-amber-500 h-full transition-all duration-500"
+                            title={`Shoots: ₹${shootsPaid.toLocaleString('en-IN')}`}
+                          />
+                          <div
+                            style={{ width: `${Math.round((delivPaid / totalPaidAll) * 100)}%` }}
+                            className="bg-indigo-500 h-full transition-all duration-500"
+                            title={`Deliverables: ₹${delivPaid.toLocaleString('en-IN')}`}
+                          />
+                          <div
+                            style={{ width: `${Math.round((salaryPaid / totalPaidAll) * 100)}%` }}
+                            className="bg-emerald-500 h-full transition-all duration-500"
+                            title={`Salary: ₹${salaryPaid.toLocaleString('en-IN')}`}
+                          />
+                        </>
+                      ) : (
+                        <div className="w-full bg-stone-200 h-full" />
+                      )}
+                    </div>
+                  </div>
 
-                        return (
-                          <div key={m.month} className="space-y-1 p-2.5 rounded-xl bg-stone-50/80 border border-stone-200">
-                            <div className="flex items-center justify-between text-xs font-bold">
-                              <span className="text-stone-900 font-black">{m.month}</span>
-                              <div className="flex items-center gap-2 text-[11px]">
-                                <span className="text-stone-500 font-mono">Agreed: ₹{mAgreed.toLocaleString('en-IN')}</span>
-                                <span className="text-emerald-700 font-black font-mono">Paid: ₹{mPaid.toLocaleString('en-IN')}</span>
-                                {mBal > 0 && (
-                                  <span className="text-rose-700 font-black font-mono">Due: ₹{mBal.toLocaleString('en-IN')}</span>
-                                )}
+                  {/* Monthly Financial Breakdown */}
+                  <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs space-y-3">
+                    <h4 className="text-xs font-black text-stone-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Monthly Earnings &amp; Settlements</span>
+                    </h4>
+
+                    {(!summary.monthly_breakdown || summary.monthly_breakdown.length === 0) ? (
+                      <p className="text-xs text-stone-400 py-6 text-center">No monthly payout records to display yet.</p>
+                    ) : (
+                      <div className="space-y-2.5 pt-1">
+                        {(summary.monthly_breakdown || []).map((m) => {
+                          const mAgreed = Number(m?.agreed) || 0;
+                          const mPaid = Number(m?.paid) || 0;
+                          const mBal = Number(m?.balance) || 0;
+                          const maxVal = Math.max(...(summary.monthly_breakdown || []).map(x => Number(x?.agreed) || 1), 1);
+                          const agreedPct = Math.min(100, Math.round((mAgreed / maxVal) * 100));
+                          const paidPct = Math.min(100, Math.round((mPaid / maxVal) * 100));
+
+                          return (
+                            <div key={m.month} className="space-y-1 p-2.5 rounded-xl bg-stone-50/80 border border-stone-200">
+                              <div className="flex items-center justify-between text-xs font-bold">
+                                <span className="text-stone-900 font-black">{m.month}</span>
+                                <div className="flex items-center gap-2 text-[11px]">
+                                  <span className="text-stone-500 font-mono">Agreed: ₹{mAgreed.toLocaleString('en-IN')}</span>
+                                  <span className="text-emerald-700 font-black font-mono">Paid: ₹{mPaid.toLocaleString('en-IN')}</span>
+                                  {mBal > 0 && (
+                                    <span className="text-rose-700 font-black font-mono">Due: ₹{mBal.toLocaleString('en-IN')}</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="h-2 w-full bg-stone-200 rounded-full overflow-hidden flex">
+                                <div style={{ width: `${paidPct}%` }} className="bg-emerald-500 h-full" />
+                                <div style={{ width: `${Math.max(0, agreedPct - paidPct)}%` }} className="bg-amber-400 h-full" />
                               </div>
                             </div>
-                            <div className="h-2 w-full bg-stone-200 rounded-full overflow-hidden flex">
-                              <div style={{ width: `${paidPct}%` }} className="bg-emerald-500 h-full" />
-                              <div style={{ width: `${Math.max(0, agreedPct - paidPct)}%` }} className="bg-amber-400 h-full" />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
           </div>
         </motion.div>

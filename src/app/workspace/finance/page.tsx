@@ -1234,7 +1234,7 @@ export default function FinancePage() {
           .from('studio_expenses')
           .select(`
             *,
-            project:fw_projects(id, client_name, title),
+            project:fw_projects(id, client_name),
             member:fw_team_members(id, name, primary_role)
           `)
           .order('expense_date', { ascending: false });
@@ -1246,7 +1246,7 @@ export default function FinancePage() {
         const { data: studioExpData, error: studioExpErr } = await studioExpQuery;
         if (!studioExpErr && studioExpData) {
           studioExpenseList = studioExpData.map((se: any) => {
-            const clientName = se.project?.client_name || se.project?.title || '';
+            const clientName = se.project?.client_name || se.client_name || (se.notes?.match(/for ([^(•]+)/)?.[1] || '').trim();
             const memberName = se.member?.name || (se.title ? se.title.split(' - ')[0] : 'Crew Member');
             const notesStr = se.notes
               ? `${se.notes}${se.reference_no ? ` • UTR: ${se.reference_no}` : ''}`
@@ -3787,8 +3787,15 @@ export default function FinancePage() {
                             </td>
                             <td className="py-3 px-2">
                               <div className="font-bold text-slate-900">{exp.title}</div>
+                              {exp.client?.name && (
+                                <div className="mt-0.5">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                    📁 Client: {exp.client.name}
+                                  </span>
+                                </div>
+                              )}
                               {exp.notes && (
-                                <div className="text-[10px] text-slate-400 font-medium line-clamp-1">{exp.notes}</div>
+                                <div className="text-[10px] text-slate-400 font-medium line-clamp-1 mt-0.5">{exp.notes}</div>
                               )}
                             </td>
                             <td className="py-3 px-2 text-slate-600 font-medium">{exp.paid_to || '—'}</td>
@@ -3844,6 +3851,11 @@ export default function FinancePage() {
                           <span className="font-bold text-slate-900 truncate">{exp.title}</span>
                           <span className="text-[11px] text-slate-500 font-medium shrink-0">Paid to: {exp.paid_to || '—'}</span>
                         </div>
+                        {exp.client?.name && (
+                          <div className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 inline-block">
+                            📁 Client: {exp.client.name}
+                          </div>
+                        )}
                         {exp.notes && (
                           <div className="text-[10px] text-slate-400 font-medium line-clamp-1">{exp.notes}</div>
                         )}

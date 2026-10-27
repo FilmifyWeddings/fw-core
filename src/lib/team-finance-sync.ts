@@ -1947,13 +1947,15 @@ export async function syncTeamPaymentToFinanceExpense(
 
     // 1. Insert into studio_expenses so Studio Owner's /workspace/finance displays it immediately
     try {
-      await supabase.from('studio_expenses').insert([{
-        id: expId,
+      const isUUID = (str: any) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+      const validExpenseUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined;
+
+      const studioExpRecord: any = {
         user_id: effectiveWsId,
-        project_id: expenseData.project_id || null,
-        member_id: expenseData.team_member_id || null,
-        assignment_id: expenseData.assignment_id || expenseData.linked_event_id || null,
-        category: expenseData.category || 'Crew & Freelancer Payout',
+        project_id: isUUID(expenseData.project_id) ? expenseData.project_id : null,
+        member_id: isUUID(expenseData.team_member_id) ? expenseData.team_member_id : null,
+        assignment_id: isUUID(expenseData.assignment_id || expenseData.linked_event_id) ? (expenseData.assignment_id || expenseData.linked_event_id) : null,
+        category: expenseData.category || 'Crew Payout',
         title: expenseData.title,
         amount: amt,
         expense_date: payDate,
@@ -1963,7 +1965,12 @@ export async function syncTeamPaymentToFinanceExpense(
         is_synced_payout: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-      }]);
+      };
+      if (validExpenseUuid) {
+        studioExpRecord.id = validExpenseUuid;
+      }
+
+      await supabase.from('studio_expenses').insert([studioExpRecord]);
     } catch (sExpErr) {
       console.warn('[team-finance-sync] studio_expenses insert notice:', sExpErr);
     }
@@ -2029,7 +2036,7 @@ export async function fetchMemberDeliverables(
       })(),
       supabase
         .from('fw_projects')
-        .select('id, client_name'),
+        .select('id, client_id, client_name'),
       (() => {
         let q = supabase
           .from('partner_album_orders')
@@ -2050,6 +2057,7 @@ export async function fetchMemberDeliverables(
     if (fwProjectsRes.status === 'fulfilled' && fwProjectsRes.value.data) {
       fwProjectsRes.value.data.forEach((p: any) => {
         if (p.id && p.client_name) clientMap.set(p.id, p.client_name);
+        if (p.client_id && p.client_name) clientMap.set(p.client_id, p.client_name);
       });
     }
 
@@ -2058,7 +2066,7 @@ export async function fetchMemberDeliverables(
     // 1. Process post_production_projects.deliverables
     if (ppProjectsRes.status === 'fulfilled' && ppProjectsRes.value.data) {
       ppProjectsRes.value.data.forEach((p: any) => {
-        const clientName = clientMap.get(p.id) || clientMap.get(p.client_id) || 'Client Project';
+        const clientName = clientMap.get(p.client_id) || clientMap.get(p.id) || (p as any).client_name || 'Client Project';
         (p.deliverables || []).forEach((d: any) => {
           if (d.assigned_member_id && targetIds.has(d.assigned_member_id)) {
             const rawAgreed = Number(d.agreed_amount) || 0;

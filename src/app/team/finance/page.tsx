@@ -133,10 +133,9 @@ export default function TeamFinancePage() {
       } catch (_) {}
       setSalaries(slipRows);
 
-      // 3. Fetch Post-Production Deliverables assigned to this user
-      const effectiveWs = activeWorkspace?.workspaceId || (wmRes.data?.[0]?.workspace_id) || (ftmRes.data?.[0]?.workspace_id) || loadedShoots[0]?.workspace_id || '';
+      // 3. Fetch Post-Production Deliverables assigned to this user across workspaces
       try {
-        const fetchedDelivs = await fetchMemberDeliverables(effectiveWs, allMemberIds);
+        const fetchedDelivs = await fetchMemberDeliverables('all', allMemberIds);
         setDeliverables(fetchedDelivs);
       } catch (dErr) {
         console.warn('[Team Finance] Deliverables fetch notice:', dErr);
@@ -429,11 +428,17 @@ export default function TeamFinancePage() {
                       className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-2xs hover:border-amber-300 transition-all flex flex-col justify-between gap-4"
                     >
                       <div>
-                        {/* Studio Tag & Payment Status */}
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-zinc-100 text-zinc-700 border border-zinc-200">
-                            {shoot.studio_name || 'StudioCore'}
-                          </span>
+                        {/* Status & Studio Tag */}
+                        <div className="flex items-center justify-between gap-2 mb-2.5">
+                          {uniqueStudios.length > 1 ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-zinc-100 text-zinc-700 border border-zinc-200">
+                              {shoot.studio_name}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-zinc-400">
+                              Assignment #{idx + 1}
+                            </span>
+                          )}
                           <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black border ${
                             isSettled
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -443,15 +448,18 @@ export default function TeamFinancePage() {
                           </span>
                         </div>
 
-                        {/* Event & Couple */}
-                        <h4 className="text-base font-black text-zinc-900">
-                          {shoot.event_name || 'Wedding Event'}
-                        </h4>
-                        <p className="text-xs font-semibold text-zinc-500 mt-0.5">
+                        {/* Couple Name (Large & Bold) */}
+                        <h4 className="text-base sm:text-lg font-black text-zinc-900 tracking-tight leading-snug">
                           {shoot.couple_name || shoot.client_name || 'Client Shoot'}
+                        </h4>
+
+                        {/* Sub-event Name Underneath */}
+                        <p className="text-xs font-bold text-amber-800 flex items-center gap-1 mt-0.5">
+                          <span>📅</span>
+                          <span>{shoot.event_name || 'Shoot Function'}</span>
                         </p>
 
-                        {/* Details Grid */}
+                        {/* Details Grid: Date, Location, Timing, Assigned Role */}
                         <div className="mt-3.5 grid grid-cols-2 gap-2 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
                           <div className="flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
@@ -465,52 +473,37 @@ export default function TeamFinancePage() {
                             <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                             <span className="truncate">{shoot.venue_location || 'Venue Details via Studio'}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 col-span-2 text-amber-800 font-bold">
+                          <div className="flex items-center gap-1.5 col-span-2 text-amber-900 font-bold bg-amber-50/80 px-2.5 py-1 rounded-lg border border-amber-200/60">
                             <User className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            <span>Assigned Role: {shoot.role_name}</span>
+                            <span>Assigned Role: {shoot.role_name || 'Crew Member'}</span>
                           </div>
                         </div>
                       </div>
 
                       {/* Bottom Commercials Summary Bar */}
                       <div className="pt-3 border-t border-zinc-100 flex items-center justify-between">
-                        <div className="flex items-center gap-3 text-xs">
+                        <div className="flex items-center gap-4 text-xs">
                           <div>
                             <span className="text-[10px] text-zinc-400 uppercase font-black block">Agreed</span>
-                            <span className="font-black text-zinc-900 font-mono">₹{agreed.toLocaleString('en-IN')}</span>
+                            <span className="font-black text-zinc-900 font-mono text-sm">₹{agreed.toLocaleString('en-IN')}</span>
                           </div>
-                          <div className="text-zinc-300">|</div>
+                          <div className="text-zinc-200">|</div>
                           <div>
                             <span className="text-[10px] text-zinc-400 uppercase font-black block">Paid</span>
-                            <span className="font-black text-emerald-600 font-mono">₹{paid.toLocaleString('en-IN')}</span>
+                            <span className="font-black text-emerald-600 font-mono text-sm">₹{paid.toLocaleString('en-IN')}</span>
                           </div>
-                          <div className="text-zinc-300">|</div>
+                          <div className="text-zinc-200">|</div>
                           <div>
                             <span className="text-[10px] text-zinc-400 uppercase font-black block">Balance</span>
-                            <span className="font-black text-amber-600 font-mono">₹{balance.toLocaleString('en-IN')}</span>
+                            <span className="font-black text-amber-600 font-mono text-sm">₹{balance.toLocaleString('en-IN')}</span>
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (currentMemberProfile) {
-                              setSelectedFinanceMember({
-                                ...currentMemberProfile,
-                                studio_name: shoot.studio_name,
-                                workspace_id: shoot.workspace_id,
-                                assignments: shoots.filter(s => s.workspace_id === shoot.workspace_id || selectedStudio === 'all'),
-                                salaries: salaries
-                              });
-                              setFinanceInitialTab('bookings');
-                              setIsFinanceDrawerOpen(true);
-                            }
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-950 text-xs font-bold transition flex items-center gap-1 cursor-pointer border border-amber-200"
-                        >
-                          <Receipt className="w-3 h-3 text-amber-700" />
-                          <span>View Ledger &amp; Voucher</span>
-                        </button>
+                        <span className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
+                          isSettled ? 'text-emerald-700 bg-emerald-50' : 'text-amber-800 bg-amber-50'
+                        }`}>
+                          {isSettled ? 'Settled' : 'Due'}
+                        </span>
                       </div>
                     </div>
                   );
@@ -568,27 +561,35 @@ export default function TeamFinancePage() {
                             </span>
                           </div>
 
-                          {/* Deliverable Title & Client */}
-                          <h4 className="text-base font-black text-zinc-900">
-                            {deliv.title}
-                          </h4>
-                          <p className="text-xs font-semibold text-zinc-500 mt-0.5">
+                          {/* Client Name (Large & Bold) */}
+                          <h4 className="text-base sm:text-lg font-black text-zinc-900 tracking-tight leading-snug">
                             {deliv.client_name || 'Client Project'}
+                          </h4>
+
+                          {/* Deliverable Title Underneath */}
+                          <p className="text-xs font-bold text-amber-800 flex items-center gap-1.5 mt-0.5">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>{deliv.title}</span>
                           </p>
 
-                          {/* Details Grid */}
+                          {/* Details Grid: Due Date, Status, Specs, Segment/Category */}
                           <div className="mt-3.5 grid grid-cols-2 gap-2 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
                             <div className="flex items-center gap-1.5">
                               <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                               <span className="font-bold">Due: {deliv.due_date || 'TBD'}</span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                              <span className="font-bold text-amber-900">Status: {deliv.status}</span>
+                              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                              <span className="font-bold text-zinc-800">Status: {deliv.status}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 col-span-2 text-zinc-600">
+                              <span className="font-bold text-stone-500">Segment &amp; Category:</span>
+                              <span className="font-medium text-stone-800">{deliv.segment || 'Wedding'} • {deliv.category || 'Deliverable'}</span>
                             </div>
                             {deliv.specs && (
                               <div className="flex items-center gap-1.5 col-span-2 text-zinc-600">
-                                <span className="font-medium">Specs: {deliv.specs}</span>
+                                <span className="font-bold text-stone-500">Specs:</span>
+                                <span className="font-medium text-stone-800">{deliv.specs}</span>
                               </div>
                             )}
                           </div>
@@ -596,43 +597,28 @@ export default function TeamFinancePage() {
 
                         {/* Bottom Commercials Summary Bar */}
                         <div className="pt-3 border-t border-zinc-100 flex items-center justify-between">
-                          <div className="flex items-center gap-3 text-xs">
+                          <div className="flex items-center gap-4 text-xs">
                             <div>
                               <span className="text-[10px] text-zinc-400 uppercase font-black block">Agreed</span>
-                              <span className="font-black text-zinc-900 font-mono">₹{agreed.toLocaleString('en-IN')}</span>
+                              <span className="font-black text-zinc-900 font-mono text-sm">₹{agreed.toLocaleString('en-IN')}</span>
                             </div>
-                            <div className="text-zinc-300">|</div>
+                            <div className="text-zinc-200">|</div>
                             <div>
                               <span className="text-[10px] text-zinc-400 uppercase font-black block">Paid</span>
-                              <span className="font-black text-emerald-600 font-mono">₹{paid.toLocaleString('en-IN')}</span>
+                              <span className="font-black text-emerald-600 font-mono text-sm">₹{paid.toLocaleString('en-IN')}</span>
                             </div>
-                            <div className="text-zinc-300">|</div>
+                            <div className="text-zinc-200">|</div>
                             <div>
                               <span className="text-[10px] text-zinc-400 uppercase font-black block">Balance</span>
-                              <span className="font-black text-amber-600 font-mono">₹{balance.toLocaleString('en-IN')}</span>
+                              <span className="font-black text-amber-600 font-mono text-sm">₹{balance.toLocaleString('en-IN')}</span>
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (currentMemberProfile) {
-                                setSelectedFinanceMember({
-                                  ...currentMemberProfile,
-                                  studio_name: selectedStudio !== 'all' ? selectedStudio : (shoots[0]?.studio_name || workspaceName),
-                                  workspace_id: deliv.workspace_id,
-                                  assignments: shoots,
-                                  salaries: salaries
-                                });
-                                setFinanceInitialTab('deliverables');
-                                setIsFinanceDrawerOpen(true);
-                              }
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-950 text-xs font-bold transition flex items-center gap-1 cursor-pointer border border-amber-200"
-                          >
-                            <Receipt className="w-3 h-3 text-amber-700" />
-                            <span>View Ledger</span>
-                          </button>
+                          <span className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
+                            isSettled ? 'text-emerald-700 bg-emerald-50' : agreed === 0 ? 'text-zinc-600 bg-zinc-100' : 'text-amber-800 bg-amber-50'
+                          }`}>
+                            {isSettled ? 'Settled' : agreed === 0 ? 'Rate TBD' : 'Due'}
+                          </span>
                         </div>
                       </div>
                     );
@@ -654,76 +640,131 @@ export default function TeamFinancePage() {
                 </p>
               </div>
             ) : (
-              <div className="bg-white rounded-2xl border border-[#EBE7DF] overflow-hidden shadow-2xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-zinc-50 text-zinc-500 font-black uppercase text-[10px] border-b border-zinc-200">
-                      <tr>
-                        <th className="p-3.5">Month / Year</th>
-                        <th className="p-3.5">Base Salary</th>
-                        <th className="p-3.5">Incentives</th>
-                        <th className="p-3.5">Deductions</th>
-                        <th className="p-3.5">Net Paid</th>
-                        <th className="p-3.5">Payment Date</th>
-                        <th className="p-3.5">Status</th>
-                        <th className="p-3.5 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {salaries.map((s, idx) => {
-                        const netPayable = Number(s.net_payable ?? s.base_salary) || 0;
-                        const isPaid = s.payment_status === 'PAID' || s.status === 'PAID';
+              <div className="space-y-3">
+                {/* Desktop Table View (hidden on mobile) */}
+                <div className="hidden md:block bg-white rounded-2xl border border-[#EBE7DF] overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-zinc-50 text-zinc-500 font-black uppercase text-[10px] border-b border-zinc-200">
+                        <tr>
+                          <th className="p-3.5">Month / Year</th>
+                          <th className="p-3.5">Base Salary</th>
+                          <th className="p-3.5">Incentives</th>
+                          <th className="p-3.5">Deductions</th>
+                          <th className="p-3.5">Net Paid</th>
+                          <th className="p-3.5">Payment Date</th>
+                          <th className="p-3.5">Status</th>
+                          <th className="p-3.5 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {salaries.map((s, idx) => {
+                          const netPayable = Number(s.net_paid ?? s.net_payable ?? s.base_salary) || 0;
+                          const isPaid = (s.status || s.payment_status || '').toUpperCase() === 'PAID';
 
-                        return (
-                          <tr key={s.id || idx} className="hover:bg-zinc-50/70 transition">
-                            <td className="p-3.5 font-black text-zinc-900 font-mono">
-                              {s.month_year || 'Current Month'}
-                            </td>
-                            <td className="p-3.5 text-zinc-700 font-mono font-bold">
-                              ₹{(Number(s.base_salary) || 0).toLocaleString('en-IN')}
-                            </td>
-                            <td className="p-3.5 text-emerald-600 font-mono font-bold">
-                              +₹{(Number(s.incentive_amount) || 0).toLocaleString('en-IN')}
-                            </td>
-                            <td className="p-3.5 text-rose-500 font-mono font-bold">
-                              -₹{(Number(s.deductions ?? s.deduction_amount) || 0).toLocaleString('en-IN')}
-                            </td>
-                            <td className="p-3.5 text-zinc-900 font-mono font-black text-sm">
-                              ₹{netPayable.toLocaleString('en-IN')}
-                            </td>
-                            <td className="p-3.5 text-zinc-500">
-                              {s.paid_date || s.payout_date || 'Processing'}
-                            </td>
-                            <td className="p-3.5">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                                isPaid
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : 'bg-amber-50 text-amber-700 border-amber-200'
-                              }`}>
-                                {isPaid ? 'PAID' : 'PENDING'}
-                              </span>
-                            </td>
-                            <td className="p-3.5 text-right">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (currentMemberProfile) {
-                                    setSelectedFinanceMember(currentMemberProfile);
-                                    setFinanceInitialTab('payroll');
-                                    setIsFinanceDrawerOpen(true);
-                                  }
-                                }}
-                                className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-200 transition inline-flex items-center gap-1 cursor-pointer"
-                              >
-                                <Download className="w-3 h-3 text-amber-700" />
-                                <span>Download Slip</span>
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                          return (
+                            <tr key={s.id || idx} className="hover:bg-zinc-50/70 transition">
+                              <td className="p-3.5 font-black text-zinc-900 font-mono">
+                                {s.month_year || 'Current Month'}
+                              </td>
+                              <td className="p-3.5 text-zinc-700 font-mono font-bold">
+                                ₹{(Number(s.base_salary) || 0).toLocaleString('en-IN')}
+                              </td>
+                              <td className="p-3.5 text-emerald-600 font-mono font-bold">
+                                +₹{(Number(s.incentive_amount) || 0).toLocaleString('en-IN')}
+                              </td>
+                              <td className="p-3.5 text-rose-500 font-mono font-bold">
+                                -₹{(Number(s.deductions ?? s.deduction_amount) || 0).toLocaleString('en-IN')}
+                              </td>
+                              <td className="p-3.5 text-zinc-900 font-mono font-black text-sm">
+                                ₹{netPayable.toLocaleString('en-IN')}
+                              </td>
+                              <td className="p-3.5 text-zinc-500">
+                                {s.paid_date || s.payout_date || 'Processing'}
+                              </td>
+                              <td className="p-3.5">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                  isPaid
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {isPaid ? 'PAID' : 'PENDING'}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (currentMemberProfile) {
+                                      setSelectedFinanceMember(currentMemberProfile);
+                                      setFinanceInitialTab('payroll');
+                                      setIsFinanceDrawerOpen(true);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-200 transition inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Download className="w-3 h-3 text-amber-700" />
+                                  <span>Download Slip</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Mobile / Tablet Responsive Cards View */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:hidden">
+                  {salaries.map((s, idx) => {
+                    const netPayable = Number(s.net_paid ?? s.net_payable ?? s.base_salary) || 0;
+                    const isPaid = (s.status || s.payment_status || '').toUpperCase() === 'PAID';
+
+                    return (
+                      <div key={s.id || idx} className="p-4 bg-white rounded-2xl border border-[#EBE7DF] shadow-2xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-zinc-900 text-sm font-mono">{s.month_year || 'Monthly Slip'}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                            isPaid
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}>
+                            {isPaid ? 'PAID' : 'PENDING'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline justify-between pt-1 border-t border-zinc-100">
+                          <div>
+                            <span className="text-[10px] text-zinc-400 uppercase font-bold block">Net Salary Paid</span>
+                            <span className="text-lg font-black text-zinc-900 font-mono">₹{netPayable.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-zinc-400 block">Date</span>
+                            <span className="text-xs font-semibold text-zinc-600">{s.paid_date || s.payout_date || 'Processing'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs text-zinc-500 pt-2 border-t border-zinc-100">
+                          <span>Base: ₹{(Number(s.base_salary) || 0).toLocaleString('en-IN')}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (currentMemberProfile) {
+                                setSelectedFinanceMember(currentMemberProfile);
+                                setFinanceInitialTab('payroll');
+                                setIsFinanceDrawerOpen(true);
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-200 transition inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Download className="w-3 h-3 text-amber-700" />
+                            <span>Slip</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
