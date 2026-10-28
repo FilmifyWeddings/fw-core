@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
     const response = NextResponse.json({
       success: true,
       email: MASTER_ADMIN_EMAIL,
+      token,
       message: 'Triple-Lock Super Admin vault access granted',
     });
 
