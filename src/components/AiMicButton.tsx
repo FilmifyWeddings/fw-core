@@ -348,14 +348,14 @@ export default function AiMicButton({
         whileTap={{ scale: 0.95 }}
         whileHover={{ scale: 1.03 }}
         onClick={handleOpenModal}
-        className={`group relative inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full font-extrabold text-xs bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 hover:from-amber-500 hover:via-amber-400 hover:to-yellow-500 text-stone-950 shadow-md shadow-amber-500/25 border border-amber-300 transition-all duration-200 cursor-pointer select-none active:scale-95 ${className}`}
+        className={`group relative inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl font-bold text-xs bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 hover:from-amber-500 hover:via-amber-400 hover:to-yellow-500 text-stone-950 shadow-xs border border-amber-300 transition-all duration-200 cursor-pointer select-none active:scale-95 shrink-0 ${className}`}
         title="AI Voice Recording & Smart Transcription"
       >
-        <span className="w-5 h-5 rounded-full bg-stone-950/12 dark:bg-stone-950/20 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-110 transition-transform">
+        <span className="w-4.5 h-4.5 rounded-full bg-stone-950/15 dark:bg-stone-950/20 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-110 transition-transform">
           <Mic className="w-3.5 h-3.5 text-stone-950 stroke-[2.5]" />
         </span>
-        <span className="font-black tracking-tight text-[12px]">{buttonText}</span>
-        <Sparkles className="w-3 h-3 text-amber-950/70 group-hover:rotate-12 transition-transform shrink-0" />
+        <span className="font-black tracking-tight text-[11px] sm:text-[12px] whitespace-nowrap">{buttonText}</span>
+        <Sparkles className="w-3 h-3 text-amber-950/70 group-hover:rotate-12 transition-transform shrink-0 hidden sm:inline-block" />
       </motion.button>
 
       {/* ─────────────────────────────────────────────────────────────

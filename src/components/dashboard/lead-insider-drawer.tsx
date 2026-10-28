@@ -6,7 +6,7 @@ import {
   X, Check, User, DollarSign, IndianRupee, Globe, FileText, Lock, Users, Briefcase, Plus, Calendar, Tag, Mail, Phone,
   FileIcon, ChevronRight, CheckSquare, AlarmClock, Trash2, Edit2, Clock, Shield, MoreVertical, MessageCircle, ArrowUpRight, Sparkles,
   CornerDownRight, CheckCircle2, MessageSquare, Reply, AlertCircle, ArrowLeft, ArrowRight, Gift,
-  FolderOpen, Archive, Search, RefreshCw, Activity, UserCheck
+  FolderOpen, Archive, Search, RefreshCw, Activity, UserCheck, Send, PhoneCall, Zap, ExternalLink
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -15,6 +15,7 @@ import { CRMDropdown } from './crm-dropdown';
 import LeadOwnerSelect from '@/app/workspace/leads/components/LeadOwnerSelect';
 import AiMicButton from '@/components/AiMicButton';
 import { LeadDrawerQuotationsTab } from './lead-drawer-quotations-tab';
+import { RealWhatsAppIcon } from './lead-table';
 
 interface LeadInsiderDrawerProps {
   lead: Lead | null;
@@ -172,7 +173,7 @@ export function LeadInsiderDrawer({
   initialQuotations = [],
   onQuotationChange
 }: LeadInsiderDrawerProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'comments_timeline' | 'quotes' | 'activity_log'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'comments_timeline' | 'quotes' | 'actions' | 'activity_log'>('overview');
   const [isMounted, setIsMounted] = useState(false);
   const [commentText, setCommentText] = useState('');
 
@@ -271,6 +272,239 @@ export function LeadInsiderDrawer({
       setFollowupTime('12:00');
     }
   }, [lead?.comments, lead?.id]);
+
+  
+  const renderActionsTab = () => {
+    if (!lead) return null;
+    const rawPhone = lead.phone ? String(lead.phone).replace(/[^0-9]/g, '') : '';
+    const cleanWaPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+    const hasGroup = Boolean(lead.whatsapp_group_id);
+    const waStat = hasGroup ? waStatuses?.[lead.id]?.welcome : null;
+    const isWelcomeSent = waStat?.status === 'sent' || (!waStat && hasGroup && Boolean(lead.wa_welcome_sent || lead.raw_payload?.wa_welcome_sent));
+    const isWelcomePending = waStat?.status === 'pending';
+    const isWelcomeFailed = waStat?.status === 'failed';
+
+    const fStat = hasGroup ? waStatuses?.[lead.id]?.followup : null;
+    const isFollowupFailed = fStat?.status === 'failed' || (fStat?.failedSteps && fStat.failedSteps > 0);
+    const isFollowupRunning = fStat?.status === 'running' || (fStat?.pendingSteps && fStat.pendingSteps > 0);
+    const isFollowupCompleted = fStat?.status === 'completed' && !isFollowupRunning && !isFollowupFailed;
+
+    const actionTools = [
+      {
+        id: 'whatsapp_welcome',
+        key: 'whatsapp',
+        title: 'WhatsApp Welcome Sequence',
+        subtitle: 'Official greeting, portfolio gallery & automated intro sequence',
+        badge: !hasGroup ? 'Group Needed' : isWelcomeFailed ? 'Failed' : isWelcomePending ? 'Queued' : isWelcomeSent ? 'Sent' : 'Ready',
+        badgeColor: !hasGroup 
+          ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 border-slate-200 dark:border-zinc-700'
+          : isWelcomeFailed 
+            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900'
+            : isWelcomePending
+              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900'
+              : isWelcomeSent
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900'
+                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900',
+        iconBg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800/60',
+        icon: (
+          <div className="relative flex items-center justify-center w-5 h-5">
+            <Send className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <div className="absolute -bottom-1 -right-1 bg-white dark:bg-zinc-900 rounded-full p-[0.5px] shadow-2xs leading-none">
+              <RealWhatsAppIcon className="w-2.5 h-2.5" />
+            </div>
+          </div>
+        ),
+        btnText: isWelcomeSent ? 'View Welcome Timeline' : 'Send Welcome Message',
+        onClick: () => {
+          if (onOpenWelcomeTimeline) onOpenWelcomeTimeline(lead);
+          else if (onOpenGroupModal) onOpenGroupModal(lead);
+        }
+      },
+      {
+        id: 'whatsapp_followup',
+        key: 'followup',
+        title: 'WhatsApp Follow-up Automation',
+        subtitle: 'Multi-touch scheduled client reminders & sequence tracking',
+        badge: !hasGroup ? 'Group Needed' : isFollowupFailed ? 'Failed' : isFollowupRunning ? 'Running' : isFollowupCompleted ? 'Completed' : 'Ready',
+        badgeColor: !hasGroup
+          ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 border-slate-200 dark:border-zinc-700'
+          : isFollowupFailed
+            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900'
+            : isFollowupRunning
+              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900'
+              : isFollowupCompleted
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900'
+                : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-900',
+        iconBg: 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-300 dark:border-purple-800/60',
+        icon: (
+          <div className="relative flex items-center justify-center w-5 h-5">
+            <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            <div className="absolute -bottom-1 -right-1 bg-white dark:bg-zinc-900 rounded-full p-[0.5px] shadow-2xs leading-none">
+              <RealWhatsAppIcon className="w-2.5 h-2.5" />
+            </div>
+          </div>
+        ),
+        btnText: isFollowupRunning || isFollowupCompleted ? 'View Follow-up Flow' : 'Setup Follow-up Flow',
+        onClick: () => {
+          if (onOpenFollowupTimeline) onOpenFollowupTimeline(lead);
+          else if (onOpenGroupModal) onOpenGroupModal(lead);
+        }
+      },
+      {
+        id: 'direct_whatsapp',
+        key: 'whatsapp_direct',
+        title: 'Direct WhatsApp Chat',
+        subtitle: cleanWaPhone ? `Chat on WhatsApp (+${cleanWaPhone})` : 'Open direct client conversation',
+        badge: cleanWaPhone ? 'Direct' : 'No Phone',
+        badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900',
+        iconBg: 'bg-emerald-500/15 text-[#25D366] border-emerald-300 dark:border-emerald-800/60',
+        icon: <RealWhatsAppIcon className="w-5 h-5" />,
+        btnText: 'Open WhatsApp Chat',
+        onClick: () => {
+          if (cleanWaPhone) {
+            window.open(`https://wa.me/${cleanWaPhone}`, '_blank', 'noopener,noreferrer');
+          }
+        }
+      },
+      {
+        id: 'quotation_mgmt',
+        key: 'quotation',
+        title: 'Quotation / Proposal',
+        subtitle: 'Build custom packages, event line-items & professional PDF quotes',
+        badge: lead.final_quotation_id ? 'Finalized' : 'Available',
+        badgeColor: lead.final_quotation_id ? 'bg-emerald-500/10 text-emerald-600 border-emerald-200' : 'bg-amber-500/10 text-amber-600 border-amber-200',
+        iconBg: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-800/60',
+        icon: <FileText className="w-5 h-5" />,
+        btnText: 'Open Quotation Builder',
+        onClick: () => {
+          if (onOpenQuotationModal) onOpenQuotationModal(lead);
+          else setActiveTab('quotes');
+        }
+      },
+      {
+        id: 'phone_call',
+        key: 'call',
+        title: 'Device Dialer Call',
+        subtitle: lead.phone ? `Direct mobile call to ${lead.phone}` : 'No phone number configured',
+        badge: lead.phone ? 'Phone Active' : 'Missing',
+        badgeColor: lead.phone ? 'bg-blue-500/10 text-blue-600 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200',
+        iconBg: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-800/60',
+        icon: <PhoneCall className="w-5 h-5" />,
+        btnText: 'Call Client Now',
+        onClick: () => {
+          if (lead.phone) window.location.href = `tel:${lead.phone}`;
+        }
+      },
+      {
+        id: 'email_outreach',
+        key: 'mail',
+        title: 'Direct Email Lead',
+        subtitle: lead.email ? `Send pre-addressed email to ${lead.email}` : 'No email address registered',
+        badge: lead.email ? 'Email Active' : 'Missing',
+        badgeColor: lead.email ? 'bg-indigo-500/10 text-indigo-600 border-indigo-200' : 'bg-slate-100 text-slate-500 border-slate-200',
+        iconBg: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-300 dark:border-indigo-800/60',
+        icon: <Mail className="w-5 h-5" />,
+        btnText: 'Compose Email',
+        onClick: () => {
+          if (lead.email) window.location.href = `mailto:${lead.email}`;
+        }
+      },
+      {
+        id: 'google_contacts',
+        key: 'google_contact',
+        title: 'Google Contacts Sync',
+        subtitle: 'Sync lead name, number and studio tag to Google account',
+        badge: 'Studio Sync',
+        badgeColor: 'bg-sky-500/10 text-sky-600 border-sky-200',
+        iconBg: 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-300 dark:border-sky-800/60',
+        icon: <UserCheck className="w-5 h-5" />,
+        btnText: 'Sync to Google Contacts',
+        onClick: () => {
+          if (onOpenGoogleSync) onOpenGoogleSync(lead);
+        }
+      },
+      {
+        id: 'assign_group',
+        key: 'group',
+        title: 'WhatsApp Group Link',
+        subtitle: lead.whatsapp_group_name ? `Linked: ${lead.whatsapp_group_name}` : 'Connect lead to dedicated shoot group',
+        badge: lead.whatsapp_group_id ? 'Group Linked' : 'Unassigned',
+        badgeColor: lead.whatsapp_group_id ? 'bg-emerald-500/10 text-emerald-600 border-emerald-200' : 'bg-amber-500/10 text-amber-600 border-amber-200',
+        iconBg: 'bg-teal-500/15 text-teal-600 dark:text-teal-400 border-teal-300 dark:border-teal-800/60',
+        icon: <Users className="w-5 h-5" />,
+        btnText: lead.whatsapp_group_id ? 'Change Assigned Group' : 'Assign WhatsApp Group',
+        onClick: () => {
+          if (onOpenGroupModal) onOpenGroupModal(lead);
+        }
+      }
+    ];
+
+    const visibleTools = actionTools.filter(tool => {
+      if (quickActionsConfig && quickActionsConfig[tool.key] === false) return false;
+      return true;
+    });
+
+    return (
+      <div className="space-y-4">
+        <div className="p-3.5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 rounded-2xl flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 fill-amber-500 text-amber-500" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-xs font-black text-slate-900 dark:text-white block truncate">
+                Studio Lead Actions Hub
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-zinc-400 font-semibold block truncate">
+                1-Click outreach & automation tools for {lead.name}
+              </span>
+            </div>
+          </div>
+          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 shrink-0">
+            {visibleTools.length} Tools
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3">
+          {visibleTools.map(tool => (
+            <div
+              key={tool.id}
+              onClick={tool.onClick}
+              className="p-3.5 rounded-2xl bg-white dark:bg-[#141312] border border-slate-200/90 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-600 shadow-xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between gap-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${tool.iconBg} group-hover:scale-105 transition-transform shadow-2xs`}>
+                    {tool.icon}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs font-extrabold text-slate-900 dark:text-white block group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                      {tool.title}
+                    </span>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium line-clamp-1 mt-0.5">
+                      {tool.subtitle}
+                    </p>
+                  </div>
+                </div>
+
+                <span className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg border uppercase tracking-wider shrink-0 ${tool.badgeColor}`}>
+                  {tool.badge}
+                </span>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 dark:border-zinc-850 flex items-center justify-between">
+                <span className="text-[10px] font-extrabold text-amber-600 dark:text-amber-400 flex items-center gap-1 group-hover:underline">
+                  <span>{tool.btnText}</span>
+                  <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                </span>
+                <span className="text-[9px] text-slate-400 font-mono">1-Tap</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   if (!lead) return null;
 
@@ -1028,14 +1262,14 @@ export function LeadInsiderDrawer({
           <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider block text-left">Start New Discussion Thread</span>
           
           <div className="space-y-2">
-            <div className="flex gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <input 
                 type="text" 
-                placeholder="Type a comments logger..."
+                placeholder="Type a comment or note..."
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
-                className="flex-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-3 rounded-xl text-xs focus:outline-none placeholder-slate-400 dark:placeholder-zinc-650"
+                className="flex-1 min-w-0 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 px-3 py-2 sm:py-2.5 rounded-xl text-xs focus:outline-none placeholder-slate-400 dark:placeholder-zinc-650"
               />
               <AiMicButton
                 size="md"
@@ -1045,21 +1279,24 @@ export function LeadInsiderDrawer({
                 }
               />
               <button
+                type="button"
                 onClick={() => setEnableFollowup(!enableFollowup)}
                 title="Set Follow-up Reminder"
-                className={`p-3 rounded-xl border transition-colors ${
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl border flex items-center justify-center shrink-0 transition-all ${
                   enableFollowup 
-                    ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 font-bold animate-pulse' 
-                    : 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-850 text-slate-500'
+                    ? 'bg-orange-500/15 border-orange-500/40 text-orange-500 font-bold ring-2 ring-orange-500/20' 
+                    : 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-850 text-slate-500 hover:text-slate-800 dark:hover:text-zinc-300'
                 }`}
               >
-                <AlarmClock className="w-4 h-4" />
+                <AlarmClock className="w-4 h-4 shrink-0" />
               </button>
               <button 
+                type="button"
                 onClick={handleAddComment}
-                className="px-4 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-zinc-250 text-white dark:text-black font-black rounded-xl text-xs transition-colors shadow-xs"
+                title="Send / Log Comment"
+                className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-black font-black rounded-xl transition-all shadow-xs flex items-center justify-center shrink-0 active:scale-95 cursor-pointer"
               >
-                Log Thread
+                <Send className="w-4 h-4 shrink-0" />
               </button>
             </div>
 
@@ -1562,6 +1799,7 @@ export function LeadInsiderDrawer({
               { id: 'overview', label: 'Details', icon: Briefcase },
               { id: 'comments_timeline', label: 'Comments', icon: MessageSquare },
               { id: 'quotes', label: 'Quotations', icon: FileText },
+              { id: 'actions', label: 'Actions', icon: Zap },
               { id: 'activity_log', label: 'Audit Log', icon: Activity }
             ].map(t => {
               const Icon = t.icon;
@@ -2198,6 +2436,19 @@ export function LeadInsiderDrawer({
                       onLeadUpdate={(leadId, fields) => handleFieldChange(fields)}
                       onCloseDrawer={onClose}
                     />
+                  </motion.div>
+                )}
+
+                {/* TAB 4: ACTIONS HUB */}
+                {activeTab === 'actions' && (
+                  <motion.div
+                    key="actions"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 5 }}
+                    className="space-y-4"
+                  >
+                    {renderActionsTab()}
                   </motion.div>
                 )}
 

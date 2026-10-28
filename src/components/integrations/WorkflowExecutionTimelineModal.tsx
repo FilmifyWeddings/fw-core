@@ -322,7 +322,7 @@ export function WorkflowExecutionTimelineModal({
 
   if (!activeWorkflow) {
     return (
-      <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
+      <div className="fixed inset-0 z-[1000001] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
         <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 flex flex-col items-center gap-4 text-center max-w-sm shadow-2xl relative">
           <button
             onClick={onClose}

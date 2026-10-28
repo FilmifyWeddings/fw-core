@@ -131,7 +131,7 @@ function PremiumTooltip({ content, children }: { content: string; children: Reac
   );
 }
 
-function RealWhatsAppIcon({ className = "w-2 h-2" }: { className?: string }) {
+export function RealWhatsAppIcon({ className = "w-2 h-2" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="#25D366">
       <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
@@ -3294,7 +3294,7 @@ export function LeadTable({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 mt-2.5 w-72 max-h-[420px] overflow-y-auto z-[999999] rounded-2xl bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 shadow-xl dark:shadow-2xl backdrop-blur-md space-y-4 text-[#1A1A1A] dark:text-[#F5F5F5]"
+                      className="max-sm:fixed max-sm:inset-x-3 max-sm:top-20 max-sm:w-auto max-sm:max-w-md max-sm:mx-auto max-sm:z-[1000000] sm:absolute sm:right-0 sm:mt-2.5 sm:w-72 max-h-[420px] overflow-y-auto z-[999999] rounded-2xl bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 shadow-xl dark:shadow-2xl backdrop-blur-md space-y-4 text-[#1A1A1A] dark:text-[#F5F5F5]"
                     >
                       {/* Contact subtext layout config */}
                       <div className="space-y-1.5 pb-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
@@ -3592,11 +3592,11 @@ export function LeadTable({
                 {/* 3. BOTTOM ROW: Status Pill Dropdown (Left) + Deal Value & 4 Action Icons (Right) */}
                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
                   {/* Status Dropdown Pill */}
-                  <div className="min-w-0 flex-1 max-w-[130px]">
+                  <div className="min-w-0 flex-1">
                     <CRMDropdown
                       value={resolveLeadStageValue(lead)}
                       placeholder="Select status"
-                      compact={true}
+                      compact={false}
                       disabled={isReadOnly}
                       className="w-full"
                       customAddTitle="Add Custom Status"
@@ -3667,118 +3667,48 @@ export function LeadTable({
                     />
                   </div>
 
-                  {/* Right: Deal Budget & 4 Action Icons (WhatsApp, Call, Comment, Quotation) */}
+                  {/* Right: 4 Action Icons strictly on Mobile: Call, Direct WhatsApp, Comments, Quotation (No budget amount) */}
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white font-mono mr-0.5">
-                      {getBudgetValue(lead)}
-                    </span>
+                    {/* 1. Call Action */}
+                    <a 
+                      href={`tel:${lead.phone}`}
+                      className="w-8 h-8 rounded-full bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center transition-all active:scale-95 border border-blue-200 dark:border-blue-900/50 cursor-pointer shrink-0"
+                      title={`Call ${lead.name}`}
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                    </a>
 
-                    {/* WhatsApp Welcome Message Quick Action */}
-                    {quickActionsConfig.whatsapp !== false && (() => {
-                      const hasGroup = Boolean(lead.whatsapp_group_id);
-                      const waStat = hasGroup ? waStatuses[lead.id]?.welcome : null;
-                      const isFailed = waStat?.status === 'failed';
-                      const isPending = waStat?.status === 'pending';
-                      const isSent = waStat?.status === 'sent' || (!waStat && hasGroup && Boolean(lead.wa_welcome_sent || lead.raw_payload?.wa_welcome_sent));
-
-                      const colorClass = !hasGroup
-                        ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700'
-                        : isFailed
-                          ? 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800'
-                          : isPending
-                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
-                            : isSent
-                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                              : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700';
-
+                    {/* 2. Direct WhatsApp Action (Opens https://wa.me/ directly) */}
+                    {(() => {
+                      const rawPhone = lead.phone ? String(lead.phone).replace(/[^0-9]/g, '') : '';
+                      const waPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
                       return (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenWelcomeTimeline(lead)}
-                          className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${colorClass}`}
-                          title={!hasGroup ? "WhatsApp Welcome Message: Unassigned" : "WhatsApp Welcome Message"}
+                        <a
+                          href={`https://wa.me/${waPhone}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-8 h-8 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-[#25D366] flex items-center justify-center transition-all active:scale-95 border border-emerald-300 dark:border-emerald-800 cursor-pointer shrink-0"
+                          title={`WhatsApp ${lead.name}`}
                         >
-                          <div className="relative flex items-center justify-center w-4 h-4">
-                            <Send className="w-3.5 h-3.5" />
-                            <div className="absolute -bottom-1 -right-1 bg-white dark:bg-zinc-900 rounded-full p-[0.5px] shadow-2xs leading-none">
-                              <RealWhatsAppIcon className="w-2 h-2" />
-                            </div>
-                          </div>
-                        </button>
+                          <RealWhatsAppIcon className="w-4 h-4" />
+                        </a>
                       );
                     })()}
 
-                    {/* WA Follow-up Quick Action */}
-                    {quickActionsConfig.followup !== false && (() => {
-                      const hasGroup = Boolean(lead.whatsapp_group_id);
-                      const fStat = hasGroup ? waStatuses[lead.id]?.followup : null;
-                      const isFailed = fStat?.status === 'failed' || (fStat?.failedSteps && fStat.failedSteps > 0);
-                      const isRunning = fStat?.status === 'running' || (fStat?.pendingSteps && fStat.pendingSteps > 0);
-                      const isCompleted = fStat?.status === 'completed' && !isRunning && !isFailed;
-
-                      const colorClass = !hasGroup
-                        ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700'
-                        : isFailed
-                          ? 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800'
-                          : isRunning
-                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
-                            : isCompleted
-                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                              : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700';
-
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenFollowupTimeline(lead)}
-                          className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${colorClass}`}
-                          title={!hasGroup ? "WA Follow-up: Unassigned" : "WA Follow-up Timeline"}
-                        >
-                          <div className="relative flex items-center justify-center w-4 h-4">
-                            <Clock className="w-3.5 h-3.5" />
-                            <div className="absolute -bottom-1 -right-1 bg-white dark:bg-zinc-900 rounded-full p-[0.5px] shadow-2xs leading-none">
-                              <RealWhatsAppIcon className="w-2 h-2" />
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })()}
-
-                    {/* Call Quick Action */}
-                    {quickActionsConfig.call !== false && (
-                      <a 
-                        href={`tel:${lead.phone}`}
-                        className="w-7.5 h-7.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center transition-all active:scale-95 border border-blue-200 dark:border-blue-900/50"
-                        title={`Call ${lead.name}`}
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-
-                    {/* Mail Quick Action */}
-                    {quickActionsConfig.email !== false && (
-                      <a 
-                        href={`mailto:${lead.email}`}
-                        className="w-7.5 h-7.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 flex items-center justify-center transition-all active:scale-95 border border-slate-200 dark:border-zinc-700"
-                        title={`Email ${lead.name}`}
-                      >
-                        <Mail className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-
-                    {/* Comments & Reminders Quick Action */}
+                    {/* 3. Comments & Notes Action (Opens drawer in comments mode) */}
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedLead(lead);
                         setDrawerMode('comments');
                       }}
-                      className="w-7.5 h-7.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 flex items-center justify-center transition-all active:scale-95 border border-slate-200 dark:border-zinc-700"
+                      className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 flex items-center justify-center transition-all active:scale-95 border border-slate-200 dark:border-zinc-700 cursor-pointer shrink-0"
                       title="Comments & Notes"
                     >
                       <MessageSquare className="w-3.5 h-3.5" />
                     </button>
 
-                    {/* Quotation Quick Icon (3-State: Default dark gray, Draft orange, Final green) */}
+                    {/* 4. Quotation Action (3-State: Final green, Drafts amber, Create gray) */}
                     {(() => {
                       const qSummary = quotationSummaryMap[lead.id];
                       const isFinal = Boolean(
@@ -3800,30 +3730,13 @@ export function LeadTable({
                         <button
                           type="button"
                           onClick={() => setQuotationModalLead(lead)}
-                          className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${mobileBtnStyle}`}
+                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${mobileBtnStyle} shrink-0`}
                           title={isFinal ? `Final Quotation (V${qSummary?.finalVersion || 1})` : hasQuotes ? `Quotations (${qSummary?.count})` : 'Create Quotation'}
                         >
                           <FileText className="w-3.5 h-3.5" />
                         </button>
                       );
                     })()}
-
-                    {/* 3-Dots Context Menu Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleRowActionMenu(lead, e.currentTarget);
-                      }}
-                      className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer border ${
-                        rowActionMenu?.lead.id === lead.id
-                          ? 'border-[#D4AF37] dark:border-[#C5A059] bg-amber-50 dark:bg-amber-950/40 text-[#D4AF37] dark:text-[#C5A059] ring-2 ring-[#D4AF37]/30'
-                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-700'
-                      }`}
-                      title="More Actions"
-                    >
-                      <MoreHorizontal className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -5536,6 +5449,13 @@ export function LeadTable({
             initialQuotations={selectedLead ? (quotationSummaryMap[selectedLead.id]?.versions || []) : []}
             onQuotationChange={handleQuotationChange}
             isReadOnly={isReadOnly}
+            quickActionsConfig={quickActionsConfig}
+            waStatuses={waStatuses}
+            onOpenWelcomeTimeline={handleOpenWelcomeTimeline}
+            onOpenFollowupTimeline={handleOpenFollowupTimeline}
+            onOpenGoogleSync={(l) => { setGoogleModalLead(l); setIsGoogleModalOpen(true); }}
+            onOpenQuotationModal={(l) => setQuotationModalLead(l)}
+            onOpenGroupModal={(l) => setAssignGroupModalState({ isOpen: true, lead: l, targetAction: 'view' })}
           />
         )}
       </AnimatePresenceComponent>

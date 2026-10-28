@@ -1761,9 +1761,18 @@ export default function LeadsPage() {
                       )}
                     </button>
 
-                    {/* Centered Notifications Modal Popup with Backdrop */}
+                  </div>
+                </div>
+              </div>
+            </div>
+            )}
+          />
+          </React.Suspense>
+        )}
+
+                            {/* Centered Notifications Modal Popup with Backdrop */}
                     {showNotifications && (
-                      <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
+                      <div className="fixed inset-0 z-[1000002] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
                         <div 
                           className="w-full max-w-md max-h-[85vh] overflow-hidden rounded-3xl bg-white dark:bg-[#1C1A18] border border-slate-200 dark:border-zinc-800 shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-150"
                           onClick={(e) => e.stopPropagation()}
@@ -1807,7 +1816,7 @@ export default function LeadsPage() {
                             {notifications.length === 0 ? (
                               <div className="text-center py-10 text-xs text-slate-400">
                                 <Bell className="w-8 h-8 mx-auto text-slate-300 dark:text-zinc-700 mb-2 opacity-50" />
-                                No active reminders triggered yet.
+                                No active reminders scheduled.
                               </div>
                             ) : (
                               notifications.map(n => (
@@ -1866,14 +1875,6 @@ export default function LeadsPage() {
                         </div>
                       </div>
                     )}
-                  </div>
-                </div>
-              </div>
-            </div>
-            )}
-          />
-          </React.Suspense>
-        )}
 
         <MasterSettingsHub
           isOpen={settingsOpen}

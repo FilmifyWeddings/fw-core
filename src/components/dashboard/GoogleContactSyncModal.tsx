@@ -155,7 +155,7 @@ export function GoogleContactSyncModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="fixed inset-0 z-[1000001] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
