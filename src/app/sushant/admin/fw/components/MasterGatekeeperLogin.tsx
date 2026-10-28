@@ -114,11 +114,14 @@ export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLog
             <div className="relative">
               <input
                 type="email"
+                name="superadmin_vault_email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter Master Executive Email..."
                 className="w-full px-4 py-3 rounded-xl bg-[#FAF8F5] border border-[#EAE5DA] text-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition placeholder:text-slate-400 placeholder:font-normal"
-                autoComplete="email"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 required
               />
             </div>
@@ -133,11 +136,14 @@ export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLog
             <div className="relative">
               <input
                 type={showPin ? 'text' : 'password'}
+                name="superadmin_vault_pin"
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
                 placeholder="Enter Master PIN..."
                 className="w-full pl-4 pr-11 py-3 rounded-xl bg-[#FAF8F5] border border-[#EAE5DA] text-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition placeholder:text-slate-400 placeholder:font-normal"
-                autoComplete="current-password"
+                autoComplete="new-password"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 required
               />
               <button
@@ -160,11 +166,14 @@ export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLog
             <div className="relative">
               <input
                 type={showSecretCode ? 'text' : 'password'}
+                name="superadmin_vault_code"
                 value={secretCode}
                 onChange={(e) => setSecretCode(e.target.value)}
                 placeholder="Enter Authorization Secret Code..."
                 className="w-full pl-4 pr-11 py-3 rounded-xl bg-[#FAF8F5] border border-[#EAE5DA] text-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition placeholder:text-slate-400 placeholder:font-normal"
-                autoComplete="off"
+                autoComplete="new-password"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 required
               />
               <button
