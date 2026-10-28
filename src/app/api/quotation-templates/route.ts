@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
         .in('template_id', templateIds);
 
       if (docsErr) {
-        console.error('[Quotation Documents Fetch Error]:', docsErr);
+        console.error('[Quotation Documents Fetch Error]:', docsErr.code || docsErr.message?.slice(0, 200) || 'Query error');
       }
 
       if (docsData) {
