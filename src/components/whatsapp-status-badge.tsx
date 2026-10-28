@@ -17,6 +17,11 @@ export function WhatsappStatusBadge({ workspaceId, className = '', showLabel = t
     let isMounted = true;
 
     const fetchState = async () => {
+      // Skip fetching if the browser tab is not visible / minimized
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
@@ -52,8 +57,25 @@ export function WhatsappStatusBadge({ workspaceId, className = '', showLabel = t
       }
     };
 
+    // 1. Initial fetch on mount
     fetchState();
-    const interval = setInterval(fetchState, 4000);
+
+    // 2. Safe gentle fallback polling (60s) - Realtime WebSocket handles instant live updates
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchState();
+      }
+    }, 60000);
+
+    // 3. Immediately re-sync when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchState();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
 
     // Unique channel topic per badge instance to prevent "Cannot add callbacks after subscribe()" error
     const uniqueChannelName = `wa-badge-${workspaceId || 'anon'}-${Math.random().toString(36).substring(2, 9)}`;
@@ -83,6 +105,9 @@ export function WhatsappStatusBadge({ workspaceId, className = '', showLabel = t
     return () => {
       isMounted = false;
       clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
       if (channel) {
         try {
           supabase.removeChannel(channel);

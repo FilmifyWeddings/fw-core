@@ -125,8 +125,29 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
 
     checkStatus();
     checkWorker();
-    const interval = setInterval(() => { checkStatus(); checkWorker(); }, 15000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        checkStatus();
+        checkWorker();
+      }
+    }, 30000);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        checkStatus();
+        checkWorker();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+    };
   }, [userId]);
 
   return (
