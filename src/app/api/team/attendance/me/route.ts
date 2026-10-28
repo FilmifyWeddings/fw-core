@@ -48,26 +48,55 @@ export async function GET(req: NextRequest) {
       if (isUuid) {
         resolvedWsId = rawTargetWs;
       } else {
-        // Look up by studio_slug in workspaces or profiles
         try {
-          const { data: wsRow } = await supabaseAdmin
-            .from('workspaces')
-            .select('id, owner_id')
-            .or(`studio_slug.eq.${rawTargetWs},id.eq.${rawTargetWs}`)
+          // Look up by studio_slug or studio_code in profiles
+          const { data: profRow } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .or(`studio_slug.eq.${rawTargetWs},studio_code.eq.${rawTargetWs}`)
             .limit(1)
             .maybeSingle();
 
-          if (wsRow?.id || wsRow?.owner_id) {
-            resolvedWsId = wsRow.id || wsRow.owner_id;
+          if (profRow?.id) {
+            resolvedWsId = profRow.id;
           } else {
-            const { data: profRow } = await supabaseAdmin
-              .from('profiles')
-              .select('id')
-              .eq('studio_slug', rawTargetWs)
+            // Check workspaces table using 'slug' column
+            const { data: wsRow } = await supabaseAdmin
+              .from('workspaces')
+              .select('id, owner_id')
+              .or(`slug.eq.${rawTargetWs},id.eq.${rawTargetWs}`)
               .limit(1)
               .maybeSingle();
-            if (profRow?.id) {
-              resolvedWsId = profRow.id;
+
+            if (wsRow?.id || wsRow?.owner_id) {
+              resolvedWsId = wsRow.id || wsRow.owner_id;
+            }
+          }
+
+          // Fallback: match hex suffix (e.g. filmify-weddings-f9359a -> f9359a)
+          if (!resolvedWsId) {
+            const hexMatch = rawTargetWs.match(/[0-9a-f]{6,}$/i) || rawTargetWs.match(/[0-9a-f]{6,}/i);
+            if (hexMatch) {
+              const hexPrefix = hexMatch[0].toLowerCase();
+              const { data: profHex } = await supabaseAdmin
+                .from('profiles')
+                .select('id')
+                .ilike('id', `${hexPrefix}%`)
+                .limit(1)
+                .maybeSingle();
+              if (profHex?.id) {
+                resolvedWsId = profHex.id;
+              } else {
+                const { data: wsHex } = await supabaseAdmin
+                  .from('workspaces')
+                  .select('id, owner_id')
+                  .or(`id.ilike.${hexPrefix}%,owner_id.ilike.${hexPrefix}%`)
+                  .limit(1)
+                  .maybeSingle();
+                if (wsHex?.id || wsHex?.owner_id) {
+                  resolvedWsId = wsHex.id || wsHex.owner_id;
+                }
+              }
             }
           }
         } catch (_) {}
@@ -88,8 +117,9 @@ export async function GET(req: NextRequest) {
       if (resolvedWsId) {
         member = allMatchingMembers.find(
           (m: any) => String(m.workspace_id) === String(resolvedWsId) || String(m.user_id) === String(resolvedWsId)
-        ) || allMatchingMembers[0];
-      } else {
+        );
+      }
+      if (!member) {
         member = allMatchingMembers[0];
       }
     }
@@ -105,8 +135,9 @@ export async function GET(req: NextRequest) {
       if (resolvedWsId) {
         wsMember = allMatchingWsMembers.find(
           (wm: any) => String(wm.workspace_id) === String(resolvedWsId)
-        ) || allMatchingWsMembers[0];
-      } else {
+        );
+      }
+      if (!wsMember) {
         wsMember = allMatchingWsMembers[0];
       }
 
@@ -154,40 +185,51 @@ export async function GET(req: NextRequest) {
 
     const memberWorkspaceId = resolvedWsId || member.user_id || member.workspace_id;
 
-    // Build comprehensive candidate IDs (member.id, wsMember.id, plus any other aliases in this studio)
+    // Build candidate IDs strictly scoped to THIS workspace/studio
     const candidateIds = new Set<string>([String(member.id)]);
-    if (wsMember?.id) candidateIds.add(String(wsMember.id));
+    if (wsMember?.id && (String(wsMember.workspace_id) === String(memberWorkspaceId) || !resolvedWsId)) {
+      candidateIds.add(String(wsMember.id));
+    }
 
     if (allMatchingMembers) {
-      allMatchingMembers.forEach((a: any) => { if (a.id) candidateIds.add(String(a.id)); });
+      allMatchingMembers.forEach((a: any) => {
+        if (a.id && (String(a.workspace_id) === String(memberWorkspaceId) || String(a.user_id) === String(memberWorkspaceId))) {
+          candidateIds.add(String(a.id));
+        }
+      });
     }
     if (allMatchingWsMembers) {
-      allMatchingWsMembers.forEach((a: any) => { if (a.id) candidateIds.add(String(a.id)); });
+      allMatchingWsMembers.forEach((a: any) => {
+        if (a.id && String(a.workspace_id) === String(memberWorkspaceId)) {
+          candidateIds.add(String(a.id));
+        }
+      });
     }
 
     const candidateIdsList = Array.from(candidateIds);
 
-    // 2. Fetch existing personal attendance link matching ANY of the candidate IDs in this studio
+    // 2. Fetch existing personal attendance link strictly matching member.id or candidate IDs for this studio
     let { data: link } = await supabaseAdmin
       .from('attendance_member_links')
       .select('*')
-      .in('member_id', candidateIdsList)
+      .eq('member_id', member.id)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    // If still not found, check by workspace_id
-    if (!link) {
-      const { data: wsScopedLink } = await supabaseAdmin
+    if (!link && candidateIdsList.length > 0) {
+      const { data: scopedLink } = await supabaseAdmin
         .from('attendance_member_links')
         .select('*')
-        .or(`user_id.eq.${memberWorkspaceId},workspace_id.eq.${memberWorkspaceId}`)
         .in('member_id', candidateIdsList)
+        .or(`user_id.eq.${memberWorkspaceId},workspace_id.eq.${memberWorkspaceId}`)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (wsScopedLink) link = wsScopedLink;
+      if (scopedLink) link = scopedLink;
     }
 
     // Only create a brand new link if none exists anywhere for this member

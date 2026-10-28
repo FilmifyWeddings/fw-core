@@ -285,23 +285,134 @@ export async function GET(request: NextRequest) {
     }
 
 
-    // 9. Fetch Attendance Records (supporting past months calendar switcher)
-    const monthParam = req.nextUrl.searchParams.get('month');
-    let historyQuery = supabaseAdmin
+    // 9. Fetch Attendance Records & Logs (supporting past months calendar switcher or date range)
+    const monthParam = searchParams.get('month');
+    const startDateParam = searchParams.get('startDate') || searchParams.get('start_date');
+    const endDateParam = searchParams.get('endDate') || searchParams.get('end_date');
+
+    let recQuery = supabaseAdmin
       .from('attendance_records')
       .select('*')
       .in('member_id', memberAliasIds)
       .order('date', { ascending: false });
 
-    if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
-      historyQuery = historyQuery.gte('date', `${monthParam}-01`).lte('date', `${monthParam}-31`);
+    let logQuery = supabaseAdmin
+      .from('attendance_logs')
+      .select('*')
+      .in('member_id', memberAliasIds)
+      .order('date', { ascending: false });
+
+    if (startDateParam && endDateParam) {
+      recQuery = recQuery.gte('date', startDateParam).lte('date', endDateParam);
+      logQuery = logQuery.gte('date', startDateParam).lte('date', endDateParam);
+    } else if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+      recQuery = recQuery.gte('date', `${monthParam}-01`).lte('date', `${monthParam}-31`);
+      logQuery = logQuery.gte('date', `${monthParam}-01`).lte('date', `${monthParam}-31`);
     } else {
-      // Default: past 730 days (2 years) so that any month selected in UI displays immediately
+      // Default: past 730 days (2 years) so that any month/preset selected in UI displays immediately
       const pastDate = new Date();
       pastDate.setFullYear(pastDate.getFullYear() - 2);
-      historyQuery = historyQuery.gte('date', pastDate.toISOString().split('T')[0]);
+      const minDate = pastDate.toISOString().split('T')[0];
+      recQuery = recQuery.gte('date', minDate);
+      logQuery = logQuery.gte('date', minDate);
     }
-    const { data: monthlyHistory } = await historyQuery;
+
+    const [{ data: recData }, { data: logData }] = await Promise.all([
+      recQuery,
+      logQuery
+    ]);
+
+    const mergedMap = new Map<string, any>();
+    (recData || []).forEach((r: any) => {
+      const recInPhoto = r.check_in_photo || r.check_in_selfie || r.check_in_photo_path || r.selfie_url || r.photo_path || null;
+      const recOutPhoto = r.check_out_photo || r.check_out_selfie || r.punch_out_selfie || r.check_out_photo_path || null;
+
+      mergedMap.set(r.date, {
+        ...r,
+        punch_in_time: r.punch_in_time || r.check_in_time,
+        punch_out_time: r.punch_out_time || r.check_out_time,
+        punch_in_lat: r.punch_in_lat || r.check_in_lat || null,
+        punch_in_lng: r.punch_in_lng || r.check_in_lng || null,
+        punch_out_lat: r.punch_out_lat || r.check_out_lat || null,
+        punch_out_lng: r.punch_out_lng || r.check_out_lng || null,
+        selfie_url: recInPhoto,
+        check_in_photo: recInPhoto,
+        check_in_selfie: recInPhoto,
+        check_out_selfie_url: recOutPhoto,
+        check_out_photo: recOutPhoto,
+        check_out_selfie: recOutPhoto,
+        location_address: r.location_address || r.location_name || null,
+        check_out_address: r.check_out_address || r.location_address || r.location_name || null,
+      });
+    });
+
+    (logData || []).forEach((log: any) => {
+      const existing = mergedMap.get(log.date);
+      const logInPhoto = log.selfie_url || log.punch_in_selfie || log.check_in_selfie || log.check_in_photo || null;
+      const logOutPhoto = log.check_out_selfie_url || log.punch_out_selfie || log.check_out_photo_path || log.check_out_selfie || null;
+
+      if (existing) {
+        existing.log_id = log.id;
+        if (log.punch_in_time) {
+          existing.punch_in_time = log.punch_in_time;
+          if (!existing.check_in_time) existing.check_in_time = log.punch_in_time;
+        }
+        if (log.punch_out_time) {
+          existing.punch_out_time = log.punch_out_time;
+          if (!existing.check_out_time) existing.check_out_time = log.punch_out_time;
+        }
+        if (log.total_work_minutes !== undefined && log.total_work_minutes !== null) {
+          existing.total_work_minutes = log.total_work_minutes;
+          if (!existing.work_duration_minutes) existing.work_duration_minutes = log.total_work_minutes;
+        }
+        if (log.punch_in_lat) existing.punch_in_lat = log.punch_in_lat;
+        if (log.punch_in_lng) existing.punch_in_lng = log.punch_in_lng;
+        if (log.punch_out_lat) existing.punch_out_lat = log.punch_out_lat;
+        if (log.punch_out_lng) existing.punch_out_lng = log.punch_out_lng;
+        if (log.early_minutes) existing.early_minutes = log.early_minutes;
+        if (log.late_minutes) existing.late_minutes = log.late_minutes;
+        if (log.overtime_minutes) existing.overtime_minutes = log.overtime_minutes;
+        if (logInPhoto && !existing.selfie_url) existing.selfie_url = logInPhoto;
+        if (logInPhoto && !existing.check_in_photo) existing.check_in_photo = logInPhoto;
+        if (logOutPhoto && !existing.check_out_selfie_url) existing.check_out_selfie_url = logOutPhoto;
+        if (logOutPhoto && !existing.check_out_photo) existing.check_out_photo = logOutPhoto;
+        if (log.location_address && !existing.location_address) existing.location_address = log.location_address;
+        if (log.check_out_address && !existing.check_out_address) existing.check_out_address = log.check_out_address;
+      } else {
+        mergedMap.set(log.date, {
+          id: log.id,
+          log_id: log.id,
+          member_id: member.id,
+          date: log.date,
+          status: (log.status || 'present').toLowerCase(),
+          check_in_time: log.punch_in_time,
+          punch_in_time: log.punch_in_time,
+          check_out_time: log.punch_out_time,
+          punch_out_time: log.punch_out_time,
+          punch_in_lat: log.punch_in_lat,
+          punch_in_lng: log.punch_in_lng,
+          punch_out_lat: log.punch_out_lat,
+          punch_out_lng: log.punch_out_lng,
+          early_minutes: log.early_minutes,
+          late_minutes: log.late_minutes,
+          overtime_minutes: log.overtime_minutes,
+          selfie_url: logInPhoto,
+          check_in_photo: logInPhoto,
+          check_in_selfie: logInPhoto,
+          check_out_selfie_url: logOutPhoto,
+          check_out_photo: logOutPhoto,
+          check_out_selfie: logOutPhoto,
+          location_address: log.location_address || null,
+          check_out_address: log.check_out_address || null,
+          work_duration_minutes: log.total_work_minutes || 0,
+          total_work_minutes: log.total_work_minutes || 0,
+          is_geofence_exempt: log.is_geofence_exempt || false,
+          notes: log.notes
+        });
+      }
+    });
+
+    const monthlyHistory = Array.from(mergedMap.values()).sort((a, b) => b.date.localeCompare(a.date));
 
     // 10. Fetch Recent Leave Requests
     const { data: recentLeaves } = await supabaseAdmin

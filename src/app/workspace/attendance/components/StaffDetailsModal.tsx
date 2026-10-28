@@ -19,6 +19,7 @@ interface StaffDetailsModalProps {
   shifts?: AttendanceShift[];
   onAttendanceChanged?: () => Promise<void> | void;
   onUpdateRecord?: (recordId: string, updates: Partial<AttendanceRecord>) => Promise<void>;
+  readOnly?: boolean;
 }
 
 type DatePreset = 'today' | 'week' | 'month' | '3months' | 'custom';
@@ -88,7 +89,8 @@ export default function StaffDetailsModal({
   records = [],
   shifts = [],
   onAttendanceChanged,
-  onUpdateRecord
+  onUpdateRecord,
+  readOnly = false
 }: StaffDetailsModalProps) {
   const [datePreset, setDatePreset] = useState<DatePreset>('month');
   const [startDate, setStartDate] = useState<string>(() => {
@@ -1171,6 +1173,7 @@ export default function StaffDetailsModal({
                                 No Check-In Recorded
                               </span>
                               {/* Admin Manual Regularization Selector */}
+                              {!readOnly && (
                               <div className="flex items-center gap-1.5 bg-white/95 px-2 py-1 rounded-xl border border-slate-200 shadow-2xs">
                                 <span className="text-[10px] font-black uppercase text-slate-400 hidden sm:inline">Mark:</span>
                                 <div className="relative inline-flex items-center">
@@ -1211,6 +1214,7 @@ export default function StaffDetailsModal({
                                   )}
                                 </div>
                               </div>
+                              )}
                             </div>
                           </div>
 
@@ -1282,6 +1286,7 @@ export default function StaffDetailsModal({
                               </span>
                             )}
                             {/* Admin Manual Regularization Selector */}
+                            {!readOnly && (
                             <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-xl border border-slate-200 shadow-2xs">
                               <span className="text-[10px] font-black uppercase text-slate-400 hidden sm:inline">Change:</span>
                               <div className="relative inline-flex items-center">
@@ -1317,6 +1322,7 @@ export default function StaffDetailsModal({
                                 )}
                               </div>
                             </div>
+                              )}
                           </div>
                         </div>
 
