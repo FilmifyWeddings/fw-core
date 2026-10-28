@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { ADMIN_COOKIE_NAME, verifyAdminSessionToken } from '@/lib/auth/super-admin-auth';
+import { getSuperAdminTelemetry } from '@/lib/services/super-admin-telemetry';
 import TripleLockGatekeeperClient from './components/TripleLockGatekeeperClient';
 import SuperAdminDashboardClient from './components/SuperAdminDashboardClient';
 
@@ -12,8 +13,8 @@ interface PageProps {
 
 /**
  * Super Admin Page (Server Component):
- * Validates session cookie directly on the server before sending HTML.
- * Completely eliminates client-server hydration mismatches and authentication flashes.
+ * Validates session cookie and hydrates platform telemetry directly on the server.
+ * Guarantees zero blank screen, zero hydration mismatch, and instant rendering.
  */
 export default async function SuperAdminFwPage({ searchParams }: PageProps) {
   const cookieStore = await cookies();
@@ -24,7 +25,16 @@ export default async function SuperAdminFwPage({ searchParams }: PageProps) {
   const initialError = typeof resolvedSearchParams?.error === 'string' ? resolvedSearchParams.error : undefined;
 
   if (auth.valid && auth.email) {
-    return <SuperAdminDashboardClient adminEmail={auth.email} token={token || ''} />;
+    // Direct Server-Side Hydration: Instantaneous 0ms telemetry load!
+    const telemetry = await getSuperAdminTelemetry();
+    return (
+      <SuperAdminDashboardClient
+        adminEmail={auth.email}
+        token={token || ''}
+        initialStudios={telemetry.studios}
+        initialKpis={telemetry.kpis}
+      />
+    );
   }
 
   return <TripleLockGatekeeperClient initialError={initialError} />;

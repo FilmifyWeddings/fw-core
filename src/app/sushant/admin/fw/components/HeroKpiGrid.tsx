@@ -26,6 +26,7 @@ interface HeroKpiGridProps {
     whatsAppConnectedCount: number;
     whatsAppTotalMessages: number;
   };
+  isLoading?: boolean;
 }
 
 function formatCurrency(amount: number): string {
@@ -35,7 +36,23 @@ function formatCurrency(amount: number): string {
   return `₹${amount.toLocaleString('en-IN')}`;
 }
 
-export default function HeroKpiGrid({ kpis }: HeroKpiGridProps) {
+export default function HeroKpiGrid({ kpis, isLoading = false }: HeroKpiGridProps) {
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4 animate-pulse">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={`kpi-skel-${i}`} className="p-4 sm:p-5 rounded-2xl bg-white border border-[#EAE5DA] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="h-2.5 bg-slate-200 rounded w-20" />
+              <div className="w-8 h-8 rounded-lg bg-slate-100" />
+            </div>
+            <div className="h-7 bg-slate-200 rounded w-24" />
+            <div className="h-3 bg-slate-100 rounded w-32" />
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4">
       

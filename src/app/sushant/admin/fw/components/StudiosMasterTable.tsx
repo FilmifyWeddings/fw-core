@@ -90,8 +90,9 @@ export interface StudioItem {
 
 interface StudiosMasterTableProps {
   studios: StudioItem[];
+  isLoading?: boolean;
   onInspectStudio: (studio: StudioItem) => void;
-  onRefresh: () => void;
+  onRefresh?: () => void;
 }
 
 type TabKey = 'all' | 'paid' | 'trial' | 'active_today' | 'blocked';
@@ -120,6 +121,7 @@ function formatCurrency(amount: number): string {
 
 export default function StudiosMasterTable({
   studios,
+  isLoading = false,
   onInspectStudio,
   onRefresh,
 }: StudiosMasterTableProps) {
@@ -242,7 +244,28 @@ export default function StudiosMasterTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredStudios.length === 0 ? (
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={`skel-${i}`} className="animate-pulse">
+                  <td className="py-3 px-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-slate-200" />
+                      <div className="space-y-1.5 flex-1">
+                        <div className="h-3 bg-slate-200 rounded w-28" />
+                        <div className="h-2.5 bg-slate-100 rounded w-20" />
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3 px-3"><div className="h-3 bg-slate-200 rounded w-24" /></td>
+                  <td className="py-3 px-3"><div className="h-5 bg-slate-200 rounded-full w-14" /></td>
+                  <td className="py-3 px-3"><div className="h-3 bg-slate-200 rounded w-20" /></td>
+                  <td className="py-3 px-3"><div className="h-3 bg-slate-200 rounded w-16" /></td>
+                  <td className="py-3 px-3"><div className="h-5 bg-slate-200 rounded-full w-20" /></td>
+                  <td className="py-3 px-3"><div className="h-3 bg-slate-200 rounded w-16" /></td>
+                  <td className="py-3 px-3 text-right"><div className="h-6 bg-slate-200 rounded-lg w-16 ml-auto" /></td>
+                </tr>
+              ))
+            ) : filteredStudios.length === 0 ? (
               <tr>
                 <td colSpan={8} className="py-12 text-center text-slate-400">
                   <Building2 className="w-8 h-8 mx-auto text-slate-300 mb-2" />

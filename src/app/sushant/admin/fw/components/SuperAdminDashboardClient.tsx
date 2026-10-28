@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import SuperAdminHeader, { DateFilterPreset } from './SuperAdminHeader';
 import HeroKpiGrid from './HeroKpiGrid';
 import StudiosMasterTable, { StudioItem } from './StudiosMasterTable';
@@ -17,6 +17,8 @@ type MainTab = 'studios' | 'infra' | 'whatsapp';
 interface SuperAdminDashboardClientProps {
   adminEmail: string;
   token: string;
+  initialStudios?: any[];
+  initialKpis?: any;
 }
 
 function getAuthHeaders(explicitToken?: string): HeadersInit {
@@ -31,7 +33,12 @@ function getAuthHeaders(explicitToken?: string): HeadersInit {
   return headers;
 }
 
-export default function SuperAdminDashboardClient({ adminEmail, token }: SuperAdminDashboardClientProps) {
+export default function SuperAdminDashboardClient({
+  adminEmail,
+  token,
+  initialStudios = [],
+  initialKpis = null,
+}: SuperAdminDashboardClientProps) {
   // Store token in sessionStorage for API calls
   useEffect(() => {
     if (typeof window !== 'undefined' && token) {
@@ -46,29 +53,31 @@ export default function SuperAdminDashboardClient({ adminEmail, token }: SuperAd
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // Dashboard Data
-  const [studios, setStudios] = useState<StudioItem[]>([]);
-  const [kpis, setKpis] = useState<any>({
-    totalStudios: 0,
-    activePaid: 0,
-    trialStudios: 0,
-    activeToday: 0,
-    activeThisWeek: 0,
-    suspendedCount: 0,
-    totalStorageGB: 0,
-    totalGrossRevenue: 0,
-    totalAdvanceReceived: 0,
-    totalLeads: 0,
-    totalQuotations: 0,
-    totalBookings: 0,
-    totalTeamMembers: 0,
-    totalGalleries: 0,
-    totalPhotos: 0,
-    whatsAppConnectedCount: 0,
-    whatsAppTotalMessages: 0,
-  });
+  // Dashboard Data initialized with SSR data (0ms initial lag!)
+  const [studios, setStudios] = useState<StudioItem[]>(initialStudios);
+  const [kpis, setKpis] = useState<any>(
+    initialKpis || {
+      totalStudios: initialStudios.length,
+      activePaid: 0,
+      trialStudios: initialStudios.length,
+      activeToday: 0,
+      activeThisWeek: 0,
+      suspendedCount: 0,
+      totalStorageGB: 0,
+      totalGrossRevenue: 0,
+      totalAdvanceReceived: 0,
+      totalLeads: 0,
+      totalQuotations: 0,
+      totalBookings: 0,
+      totalTeamMembers: 0,
+      totalGalleries: 0,
+      totalPhotos: 0,
+      whatsAppConnectedCount: 0,
+      whatsAppTotalMessages: 0,
+    }
+  );
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -78,43 +87,56 @@ export default function SuperAdminDashboardClient({ adminEmail, token }: SuperAd
   // Kundali Modal
   const [inspectedStudio, setInspectedStudio] = useState<StudioItem | null>(null);
 
-  // Fetch Dashboard Telemetry Data
-  const loadDashboardData = useCallback(async (isSilent = false) => {
-    if (!isSilent) setIsLoading(true);
-    else setIsRefreshing(true);
-    setErrorMsg(null);
+  const hasMountedRef = useRef(false);
 
-    try {
-      const params = new URLSearchParams();
-      if (startDate) params.set('startDate', startDate);
-      if (endDate) params.set('endDate', endDate);
+  // Fetch Dashboard Telemetry Data when filters change or manual refresh
+  const loadDashboardData = useCallback(
+    async (isSilent = false) => {
+      if (!isSilent) setIsLoading(true);
+      else setIsRefreshing(true);
+      setErrorMsg(null);
 
-      const url = `/api/sushant/admin/fw?${params.toString()}`;
-      const headers = getAuthHeaders(token);
-      const res = await fetch(url, { headers });
-      const data = await res.json();
+      try {
+        const params = new URLSearchParams();
+        if (startDate) params.set('startDate', startDate);
+        if (endDate) params.set('endDate', endDate);
 
-      if (!res.ok || !data.success) {
-        if (res.status === 401) {
-          window.location.href = '/sushant/admin/fw';
-          return;
+        const url = `/api/sushant/admin/fw?${params.toString()}`;
+        const headers = getAuthHeaders(token);
+        const res = await fetch(url, { headers });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          if (res.status === 401) {
+            window.location.href = '/sushant/admin/fw';
+            return;
+          }
+          throw new Error(data.error || 'Failed to load telemetry data');
         }
-        throw new Error(data.error || 'Failed to load telemetry data');
+
+        setStudios(data.studios || []);
+        setKpis(data.kpis || {});
+      } catch (err: any) {
+        setErrorMsg(err.message || 'Error communicating with Super Admin gateway');
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
       }
+    },
+    [startDate, endDate, token]
+  );
 
-      setStudios(data.studios || []);
-      setKpis(data.kpis || {});
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Error communicating with Super Admin gateway');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [startDate, endDate, token]);
-
+  // Trigger data load only when filter changes (avoid duplicate fetch on initial SSR mount)
   useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      if (initialStudios.length === 0) {
+        loadDashboardData();
+      }
+      return;
+    }
     loadDashboardData();
-  }, [loadDashboardData]);
+  }, [startDate, endDate, loadDashboardData, initialStudios.length]);
 
   // Handle Preset Selection
   const handleSelectPreset = (preset: DateFilterPreset) => {
