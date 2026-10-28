@@ -42,6 +42,51 @@ function TripleLockGatekeeper({ onSuccess }: { onSuccess: (email: string, token?
   const [isLoading, setIsLoading] = useState(false);
   const [lockoutSec, setLockoutSec] = useState<number | null>(null);
 
+  // Auto-detect native GET form submission parameters from URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const qEmail = params.get('superadmin_vault_email') || '';
+      const qPin = params.get('superadmin_vault_pin') || '';
+      const qCode = params.get('superadmin_vault_code') || '';
+      const qError = params.get('error');
+
+      if (qError) {
+        setErrorMsg(decodeURIComponent(qError));
+      }
+
+      if (qEmail && qPin && qCode) {
+        setEmail(qEmail);
+        setPin(qPin);
+        setSecretCode(qCode);
+
+        // Immediate verification with query parameters
+        (async () => {
+          try {
+            setIsLoading(true);
+            const res = await fetch('/api/sushant/admin/fw/auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: qEmail.trim(), pin: qPin.trim(), secretCode: qCode.trim() }),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              window.history.replaceState({}, '', '/sushant/admin/fw');
+              onSuccess(data.email || qEmail.trim(), data.token);
+            } else {
+              setErrorMsg(data.error || 'Triple-lock authentication failed.');
+            }
+          } catch (_) {
+            setErrorMsg('Connection error during verification.');
+          } finally {
+            setIsLoading(false);
+          }
+        })();
+      }
+    } catch (_) {}
+  }, [onSuccess]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -122,8 +167,8 @@ function TripleLockGatekeeper({ onSuccess }: { onSuccess: (email: string, token?
           </div>
         )}
 
-        {/* Triple-Lock Challenge Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Triple-Lock Challenge Form with Native POST Fallback */}
+        <form action="/api/sushant/admin/fw/form-login" method="POST" onSubmit={handleSubmit} className="space-y-4">
           
           {/* Key 1: Master Executive Email */}
           <div className="space-y-1.5">

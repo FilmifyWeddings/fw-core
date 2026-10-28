@@ -93,13 +93,13 @@ export async function POST(req: NextRequest) {
       message: 'Triple-Lock Super Admin vault access granted',
     });
 
-    // Set HttpOnly, Secure, SameSite=Strict cookie
+    // Set HttpOnly, Secure, SameSite=Lax cookie (Lax reliably preserves cookie across redirects)
     response.cookies.set({
       name: ADMIN_COOKIE_NAME,
       value: token,
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 12 * 3600,
       path: '/',
     });
