@@ -83,18 +83,112 @@ export async function proxy(request: NextRequest) {
     // Luxury Branded Event Gallery Rewrite
     // Pattern 1: /{studio_slug}/{couple_slug}/{unique_code} -> /g/{couple_slug}-{unique_code}
     const pathSegments = pathname.split('/').filter(Boolean);
+    const RESERVED_SUB_PATHS = new Set([
+      'admin',
+      'api',
+      'assigned-shoots',
+      'attendance',
+      'auth',
+      'bee-queen-curtail',
+      'blocked',
+      'book-demo',
+      'bookings',
+      'broadcast-campaigns',
+      'clear-cookies',
+      'clients',
+      'dashboard',
+      'data-deletion',
+      'deliverables',
+      'downloads',
+      'features',
+      'finance',
+      'fix-431',
+      'forgot-password',
+      'free-trial',
+      'g',
+      'gallery',
+      'home',
+      'home2',
+      'instant-import',
+      'integration-showcase',
+      'integrations',
+      'leads',
+      'login',
+      'logout',
+      'p',
+      'partner',
+      'partner-portal',
+      'pdf-preview',
+      'portal',
+      'post-production',
+      'pricing',
+      'privacy-policy',
+      'quotations',
+      'r',
+      'reset-password',
+      'review',
+      'robots.txt',
+      'sarajosmith',
+      'settings',
+      'shoots',
+      'signup',
+      'single-send',
+      'sitemap.xml',
+      'smart-attendance',
+      'support',
+      'sushant-1023-fw',
+      'team',
+      'team-manager',
+      'terms-of-service',
+      'vendor-portal',
+      'workspace',
+      '_next',
+      'favicon.ico',
+    ]);
+
     if (
       pathSegments.length === 3 &&
       !pathSegments[0].includes('.') &&
       !RESERVED_ROOT_PATHS.has(pathSegments[0].toLowerCase())
     ) {
-      const [studio, couple, code] = pathSegments;
-      const rewriteUrl = request.nextUrl.clone();
-      rewriteUrl.pathname = `/g/${couple}-${code}`;
-      rewriteUrl.searchParams.set('studio', studio);
-      rewriteUrl.searchParams.set('couple', couple);
-      rewriteUrl.searchParams.set('code', code);
-      return NextResponse.rewrite(rewriteUrl);
+      const [studio, second, third] = pathSegments;
+      const secondLower = second.toLowerCase();
+
+      // If second segment is a known application route, route to proper portal page with studio param
+      if (secondLower === 'team' && third.toLowerCase() === 'attendance') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/team/attendance';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+      if (secondLower === 'team' && third.toLowerCase() === 'dashboard') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/team/dashboard';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+      if (secondLower === 'team' && third.toLowerCase() === 'finance') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/team/finance';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+      if (secondLower === 'workspace') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = `/workspace/${third}`;
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+
+      // If not an application route, rewrite to branded event gallery
+      if (!RESERVED_SUB_PATHS.has(secondLower)) {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = `/g/${second}-${third}`;
+        rewriteUrl.searchParams.set('studio', studio);
+        rewriteUrl.searchParams.set('couple', second);
+        rewriteUrl.searchParams.set('code', third);
+        return NextResponse.rewrite(rewriteUrl);
+      }
     }
 
     // Pattern 2: Subdomain routing: {studio_slug}.studiocore.in/{couple_slug}/{unique_code}
@@ -105,7 +199,8 @@ export async function proxy(request: NextRequest) {
       isSubdomain &&
       pathSegments.length === 2 &&
       !pathSegments[0].includes('.') &&
-      !RESERVED_ROOT_PATHS.has(pathSegments[0].toLowerCase())
+      !RESERVED_ROOT_PATHS.has(pathSegments[0].toLowerCase()) &&
+      !RESERVED_SUB_PATHS.has(pathSegments[0].toLowerCase())
     ) {
       const studio = hostParts[0];
       const [couple, code] = pathSegments;
@@ -117,19 +212,68 @@ export async function proxy(request: NextRequest) {
       return NextResponse.rewrite(rewriteUrl);
     }
 
-    // Pattern 3: /{studio_slug}/{couple_slug} -> /g/{couple_slug}
+    // Pattern 3: /{studio_slug}/{route_or_couple_slug}
     if (
       pathSegments.length === 2 &&
       !isSubdomain &&
       !pathSegments[0].includes('.') &&
       !RESERVED_ROOT_PATHS.has(pathSegments[0].toLowerCase())
     ) {
-      const [studio, couple] = pathSegments;
-      const rewriteUrl = request.nextUrl.clone();
-      rewriteUrl.pathname = `/g/${couple}`;
-      rewriteUrl.searchParams.set('studio', studio);
-      rewriteUrl.searchParams.set('couple', couple);
-      return NextResponse.rewrite(rewriteUrl);
+      const [studio, second] = pathSegments;
+      const secondLower = second.toLowerCase();
+
+      // If second segment is a known application route, route to proper portal page with studio param
+      if (secondLower === 'attendance' || secondLower === 'smart-attendance') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/team/attendance';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+      if (secondLower === 'dashboard') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/team/dashboard';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+      if (secondLower === 'finance') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/team/finance';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+      if (secondLower === 'post-production') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/workspace/post-production';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+      if (secondLower === 'assigned-shoots' || secondLower === 'shoots') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/assigned-shoots';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+      if (secondLower === 'team' || secondLower === 'team-manager') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/workspace/team';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+      if (secondLower === 'workspace') {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = '/workspace';
+        rewriteUrl.searchParams.set('studio', studio);
+        return NextResponse.rewrite(rewriteUrl);
+      }
+
+      // If NOT a reserved application route, rewrite to client gallery
+      if (!RESERVED_SUB_PATHS.has(secondLower)) {
+        const rewriteUrl = request.nextUrl.clone();
+        rewriteUrl.pathname = `/g/${second}`;
+        rewriteUrl.searchParams.set('studio', studio);
+        rewriteUrl.searchParams.set('couple', second);
+        return NextResponse.rewrite(rewriteUrl);
+      }
     }
 
     // Proactively prune stale/orphaned auth token chunks & duplicate legacy cookies on every incoming request

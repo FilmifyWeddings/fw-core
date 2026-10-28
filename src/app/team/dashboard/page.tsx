@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -27,6 +27,8 @@ import {
   ExternalLink,
   Receipt,
   Download,
+  Film,
+  FolderOpen
 } from 'lucide-react';
 import VendorAlbumDeliverablesModal from '@/components/vendors/VendorAlbumDeliverablesModal';
 import TeamMemberFinanceDrawer from '@/app/workspace/team/components/TeamMemberFinanceDrawer';
@@ -56,9 +58,12 @@ interface AssignedShoot {
 
 export default function TeamDashboardPage() {
   const router = useRouter();
-  const { workspaceName, isOwner, userRole, availableWorkspaces, activeWorkspace } = useWorkspace();
+  const { workspaceName, isOwner, userRole, activeWorkspace } = useWorkspace();
   const [shoots, setShoots] = useState<AssignedShoot[]>([]);
+  const [deliverables, setDeliverables] = useState<any[]>([]);
+  const [salaries, setSalaries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dashboardTab, setDashboardTab] = useState<'shoots' | 'deliverables' | 'salaries'>('shoots');
   const [activeTab, setActiveTab] = useState<'upcoming' | 'completed' | 'all'>('upcoming');
   const [selectedStudio, setSelectedStudio] = useState<string>('all');
 
@@ -67,12 +72,13 @@ export default function TeamDashboardPage() {
   const [isDeliverablesModalOpen, setIsDeliverablesModalOpen] = useState(false);
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<any | null>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
-  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics'>('bookings');
+  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics' | 'deliverables'>('bookings');
   const [currentMemberProfile, setCurrentMemberProfile] = useState<any | null>(null);
 
   useEffect(() => {
     async function loadCrewData() {
       try {
+        setLoading(true);
         const { data: { session } } = await supabase.auth.getSession();
         const { data: { user } } = await supabase.auth.getUser();
         const activeUser = session?.user || user;
@@ -83,92 +89,100 @@ export default function TeamDashboardPage() {
         }
 
         const token = session?.access_token;
-        const res = await fetch('/api/team/shoots', {
+        const targetWs = activeWorkspace?.workspaceId || activeWorkspace?.studioSlug;
+        const url = targetWs && targetWs !== 'all'
+          ? `/api/team/portal-data?workspace_id=${encodeURIComponent(targetWs)}`
+          : '/api/team/portal-data';
+
+        const res = await fetch(url, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const json = await res.json();
-        const loadedShoots = (json.success && Array.isArray(json.shoots)) ? json.shoots : [];
+
+        let loadedShoots = [];
+        let loadedDelivs = [];
+        let loadedSalaries = [];
+        let profile = null;
+
+        if (json.success) {
+          loadedShoots = Array.isArray(json.shoots) ? json.shoots : [];
+          loadedDelivs = Array.isArray(json.deliverables) ? json.deliverables : [];
+          loadedSalaries = Array.isArray(json.salaries) ? json.salaries : [];
+          profile = json.memberProfile || null;
+        }
+
         setShoots(loadedShoots);
+        setDeliverables(loadedDelivs);
+        setSalaries(loadedSalaries);
 
-        // Fetch salary records for In-House crew
-        let loadedSalaries: any[] = [];
-        try {
-          const { data: slips } = await supabase
-            .from('team_salary_slips')
-            .select('*')
-            .eq('member_id', activeUser.id)
-            .order('month_year', { ascending: false });
-          if (slips && slips.length > 0) {
-            loadedSalaries = slips;
-          } else {
-            const { data: recs } = await supabase
-              .from('team_salary_records')
-              .select('*')
-              .eq('member_id', activeUser.id)
-              .order('month_year', { ascending: false });
-            if (recs) loadedSalaries = recs;
-          }
-        } catch (_) {}
-
-        // Build transparent member profile from active user session & rates
-        let rateRow: any = null;
-        try {
-          const { data: r } = await supabase
-            .from('workspace_member_rates')
-            .select('default_daily_rate, payout_frequency')
-            .eq('team_member_id', activeUser.id)
-            .maybeSingle();
-          if (r) rateRow = r;
-        } catch (_) {}
-
-        const rawName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'Team Member';
-        const cleanRate = Number(rateRow?.default_daily_rate || 0);
-        const cleanFreq = rateRow?.payout_frequency || 'daily';
+        const rawName = profile?.name || activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'Team Member';
+        const cleanRate = Number(profile?.default_daily_rate || 0);
+        const cleanFreq = profile?.payout_frequency || 'daily';
 
         setCurrentMemberProfile({
-          id: activeUser.id,
+          id: profile?.id || activeUser.id,
           name: rawName,
-          email: activeUser.email || '',
-          phone: activeUser.phone || activeUser.user_metadata?.phone || '',
-          primary_role: userRole || 'Crew',
-          primary_type: 'IN_HOUSE',
+          email: profile?.email || activeUser.email || '',
+          phone: profile?.phone || activeUser.phone || activeUser.user_metadata?.phone || '',
+          primary_role: profile?.primary_role || userRole || 'Crew',
+          primary_type: profile?.primary_type || 'IN_HOUSE',
           default_daily_rate: cleanRate,
           daily_rate: cleanRate,
           payout_frequency: cleanFreq,
           workspace_id: activeWorkspace?.workspaceId || loadedShoots[0]?.workspace_id || '',
           assignments: loadedShoots,
           salaries: loadedSalaries,
+          deliverables: loadedDelivs,
         });
       } catch (err) {
-        console.error('Error loading team shoots:', err);
+        console.error('Error loading team portal data:', err);
       } finally {
         setLoading(false);
       }
     }
 
     loadCrewData();
-  }, [router]);
+  }, [router, activeWorkspace?.workspaceId]);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date());
 
   const uniqueStudios = Array.from(new Set(shoots.map(s => s.studio_name).filter(Boolean)));
 
-  const filteredShoots = shoots.filter((s) => {
-    const matchesStudio = selectedStudio === 'all' || s.studio_name === selectedStudio;
-    if (!matchesStudio) return false;
+  const filteredShoots = useMemo(() => {
+    return shoots.filter((s) => {
+      const matchesStudio = selectedStudio === 'all' || s.studio_name === selectedStudio;
+      if (!matchesStudio) return false;
 
-    if (activeTab === 'upcoming') {
-      return s.event_date >= today || s.event_date === 'TBD';
-    }
-    if (activeTab === 'completed') {
-      return s.event_date < today && s.event_date !== 'TBD';
-    }
-    return true;
-  });
+      if (activeTab === 'upcoming') {
+        return s.event_date >= today || s.event_date === 'TBD';
+      }
+      if (activeTab === 'completed') {
+        return s.event_date < today && s.event_date !== 'TBD';
+      }
+      return true;
+    });
+  }, [shoots, selectedStudio, activeTab, today]);
 
-  const totalAgreed = shoots.reduce((acc, s) => acc + (Number(s.agreed_amount) || 0), 0);
-  const totalPaid = shoots.reduce((acc, s) => acc + (Number(s.paid_amount) || 0), 0);
-  const totalBalance = shoots.reduce((acc, s) => acc + (Number(s.balance_amount) || 0), 0);
+  // Combined Financial Metrics across Shoots + Deliverables + Salaries
+  const totalShootAgreed = filteredShoots.reduce((acc, s) => acc + (Number(s.agreed_amount) || 0), 0);
+  const totalShootPaid = filteredShoots.reduce((acc, s) => acc + (Number(s.paid_amount) || 0), 0);
+  const totalShootBalance = filteredShoots.reduce((acc, s) => acc + (Number(s.balance_amount) || 0), 0);
+
+  const totalDelivAgreed = deliverables.reduce((acc, d) => acc + (Number(d.agreed_amount) || 0), 0);
+  const totalDelivPaid = deliverables.reduce((acc, d) => acc + (Number(d.paid_amount) || 0), 0);
+  const totalDelivBalance = deliverables.reduce((acc, d) => acc + (Number(d.balance_amount) || 0), 0);
+
+  const totalSalaryAgreed = salaries.reduce((acc, s) => acc + (Number(s.base_salary) || 0), 0);
+  const totalSalaryPaid = salaries.reduce((acc, s) => acc + (Number(s.net_paid ?? s.net_payable ?? s.base_salary) || 0), 0);
+
+  const grandAgreed = totalShootAgreed + totalDelivAgreed + totalSalaryAgreed;
+  const grandPaid = totalShootPaid + totalDelivPaid + totalSalaryPaid;
+  const grandBalance = totalShootBalance + totalDelivBalance;
 
   const studioCode = activeWorkspace?.studioSlug || activeWorkspace?.workspaceId || '';
   const attendanceUrl = studioCode ? `/team/attendance?studio=${encodeURIComponent(studioCode)}` : '/team/attendance';
@@ -182,16 +196,16 @@ export default function TeamDashboardPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-[#92400e] border border-amber-200 font-black">
-                Crew & Freelancer Portal
+                Crew &amp; Freelancer Portal
               </span>
               <span className="text-xs text-zinc-400">•</span>
               <span className="text-xs font-bold text-zinc-500">{userRole || 'Crew Member'}</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-serif font-black text-zinc-900 tracking-tight">
-              My Assigned Shoots & Schedule
+              My Assigned Work &amp; Schedule
             </h1>
             <p className="text-xs sm:text-sm text-zinc-500 mt-1 font-medium">
-              View live call times, venue locations, assigned roles, and payout statuses across all partner studios.
+              View live call times, post-production edits, monthly salary slips, and payment statuses.
             </p>
           </div>
 
@@ -254,8 +268,8 @@ export default function TeamDashboardPage() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-black text-emerald-950">Daily Smart Attendance & Punch</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-200/60 text-emerald-900 font-bold">New</span>
+                <h3 className="text-sm font-black text-emerald-950">Daily Smart Attendance &amp; Punch</h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-200/60 text-emerald-900 font-bold">Live</span>
               </div>
               <p className="text-xs text-emerald-800/80 mt-0.5">
                 Mark your daily shift punch-in/out, live timer, and view complete monthly calendar attendance.
@@ -278,196 +292,408 @@ export default function TeamDashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
             <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
-              <span>TOTAL ASSIGNED SHOOTS</span>
+              <span>TOTAL ASSIGNED WORK</span>
               <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
                 <Calendar className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-3xl font-black text-zinc-900 font-serif">{shoots.length}</p>
-            <p className="text-xs text-zinc-400 mt-1 font-medium">Events assigned across {uniqueStudios.length || 1} studio(s)</p>
+            <p className="text-3xl font-black text-zinc-900 font-serif">
+              {shoots.length + deliverables.length}
+            </p>
+            <p className="text-xs text-zinc-500 mt-1 font-medium">
+              {shoots.length} Shoots • {deliverables.length} Deliverables • {salaries.length} Salary Slips
+            </p>
           </div>
 
           <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
             <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
-              <span>TOTAL EARNINGS / AGREED FEE</span>
+              <span>TOTAL AGREED COMMERCIALS</span>
               <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
                 <IndianRupee className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-3xl font-black text-emerald-600 font-serif">₹{totalAgreed.toLocaleString('en-IN')}</p>
-            <p className="text-xs text-emerald-600/80 mt-1 font-bold">₹{totalPaid.toLocaleString('en-IN')} Received</p>
+            <p className="text-3xl font-black text-emerald-600 font-serif">₹{grandAgreed.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-emerald-600/80 mt-1 font-bold">₹{grandPaid.toLocaleString('en-IN')} Received</p>
           </div>
 
           <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
             <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
-              <span>PENDING PAYOUT BALANCE</span>
+              <span>PENDING BALANCE (AANA BAKI)</span>
               <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
                 <Clock className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-3xl font-black text-[#b45309] font-serif">₹{totalBalance.toLocaleString('en-IN')}</p>
-            <p className="text-xs text-zinc-400 mt-1 font-medium">To be released by studio owners</p>
-          </div>
-        </div>
-
-        {/* Filter Bar & Tabs */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
-          {/* Tabs */}
-          <div className="flex p-1 bg-white border border-[#EBE7DF] rounded-xl text-xs font-bold shadow-2xs">
-            <button
-              onClick={() => setActiveTab('upcoming')}
-              className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-                activeTab === 'upcoming' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
-              }`}
-            >
-              Upcoming ({shoots.filter(s => s.event_date >= today || s.event_date === 'TBD').length})
-            </button>
-            <button
-              onClick={() => setActiveTab('completed')}
-              className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-                activeTab === 'completed' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
-              }`}
-            >
-              Completed ({shoots.filter(s => s.event_date < today && s.event_date !== 'TBD').length})
-            </button>
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-                activeTab === 'all' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
-              }`}
-            >
-              All Events ({shoots.length})
-            </button>
-          </div>
-
-          {/* Studio Filter Dropdown */}
-          {uniqueStudios.length > 1 && (
-            <div className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-              <Filter className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Studio:</span>
-              <select
-                value={selectedStudio}
-                onChange={(e) => setSelectedStudio(e.target.value)}
-                className="px-3 py-1.5 rounded-xl bg-white border border-[#EBE7DF] text-xs font-bold text-zinc-800 outline-none cursor-pointer"
-              >
-                <option value="all">All Studios ({uniqueStudios.length})</option>
-                {uniqueStudios.map(st => (
-                  <option key={st} value={st}>{st}</option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-
-        {/* Shoot Cards Grid */}
-        {loading ? (
-          <div className="p-16 text-center text-zinc-500">
-            <div className="w-8 h-8 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-xs font-bold">Loading your assigned shoots...</p>
-          </div>
-        ) : filteredShoots.length === 0 ? (
-          <div className="p-16 rounded-3xl bg-white border border-[#EBE7DF] text-center shadow-xs">
-            <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-[#b45309] mx-auto mb-3">
-              <Camera className="w-7 h-7" />
-            </div>
-            <h3 className="text-lg font-bold text-zinc-900 font-serif">No Assigned Shoots Found</h3>
-            <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto font-medium">
-              You do not have any shoots in this category. When a studio owner assigns you to a wedding event in Team Manager, it will appear here automatically.
+            <p className="text-3xl font-black text-[#b45309] font-serif">₹{grandBalance.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-zinc-400 mt-1 font-medium">
+              {grandBalance > 0 ? 'Pending disbursement from studio' : 'All payouts fully cleared'}
             </p>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredShoots.map((shoot) => (
-              <div
-                key={shoot.assignment_id}
-                onClick={() => {
-                  const memberObj = {
-                    ...(currentMemberProfile || {}),
-                    id: currentMemberProfile?.id || shoot.assignment_id,
-                    name: currentMemberProfile?.name || 'Assigned Crew',
-                    email: currentMemberProfile?.email || '',
-                    primary_role: shoot.role_name,
-                    workspace_id: shoot.workspace_id,
-                    studio_name: shoot.studio_name,
-                    assignments: shoots.filter(s => s.workspace_id === shoot.workspace_id || selectedStudio === 'all'),
-                  };
-                  setSelectedFinanceMember(memberObj);
-                  setFinanceInitialTab('bookings');
-                  setIsFinanceDrawerOpen(true);
-                }}
-                className="p-5 rounded-2xl bg-white border border-[#EBE7DF] hover:border-amber-400 hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer relative"
-              >
-                <div>
-                  {/* Top Studio & Role Badge */}
-                  <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#F0ECE4]">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-                        <Building2 className="w-3.5 h-3.5" />
-                      </div>
-                      <span className="text-xs font-bold text-zinc-800">{shoot.studio_name}</span>
-                    </div>
-                    <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[#92400e] font-black">
-                      {shoot.role_name}
-                    </span>
-                  </div>
+        </div>
 
-                  {/* Couple Name & Event Title */}
-                  <h3 className="text-base font-black text-zinc-900 tracking-tight font-serif leading-tight group-hover:text-[#b45309] transition-colors">
-                    {shoot.couple_name}
-                  </h3>
-                  <p className="text-xs font-bold text-amber-700 mt-0.5">{shoot.event_name}</p>
+        {/* Primary Navigation Tabs: Shoots vs Post-Production vs Salary Slips */}
+        <div className="flex items-center gap-1.5 p-1 bg-white border border-[#EBE7DF] rounded-xl overflow-x-auto shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setDashboardTab('shoots')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              dashboardTab === 'shoots' ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Assigned Shoots ({shoots.length})</span>
+          </button>
 
-                  {/* Schedule & Venue Details */}
-                  <div className="mt-4 space-y-2 text-xs text-zinc-600">
-                    <div className="flex items-center gap-2.5">
-                      <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                      <span className="font-semibold text-zinc-800">{shoot.event_date}</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                      <span>{shoot.start_time} - {shoot.end_time}</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                      <span className="truncate">{shoot.venue_location}</span>
-                    </div>
-                  </div>
+          <button
+            type="button"
+            onClick={() => setDashboardTab('deliverables')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              dashboardTab === 'deliverables' ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Post-Production &amp; Edits ({deliverables.length})</span>
+          </button>
 
-                  {shoot.notes && (
-                    <div className="mt-3 p-2.5 rounded-xl bg-[#FAF9F6] border border-[#EBE7DF] text-[11px] text-zinc-600">
-                      <span className="font-bold text-zinc-700 block mb-0.5">Notes:</span>
-                      <span>{shoot.notes}</span>
-                    </div>
-                  )}
-                </div>
+          <button
+            type="button"
+            onClick={() => setDashboardTab('salaries')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              dashboardTab === 'salaries' ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Salary Slips ({salaries.length})</span>
+          </button>
+        </div>
 
-                {/* Footer Payout Info */}
-                <div className="mt-5 pt-3 border-t border-[#F0ECE4] flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-zinc-400 font-bold block">FEE / PAYOUT</span>
-                    <span className="text-sm font-black text-emerald-600">
-                      ₹{(Number(shoot.agreed_amount) || 0).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                      shoot.payment_status === 'paid' 
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                        : 'bg-amber-50 text-[#92400e] border border-amber-200'
-                    }`}>
-                      {shoot.payment_status?.toUpperCase()}
-                    </span>
-
-                    <span className="text-xs font-bold text-amber-700 group-hover:text-amber-800 flex items-center gap-0.5">
-                      <span>View</span>
-                      <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                    </span>
-                  </div>
-                </div>
-
+        {/* TAB 1: Assigned Shoots List */}
+        {dashboardTab === 'shoots' && (
+          <div className="space-y-4">
+            {/* Sub-Filter Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex p-1 bg-white border border-[#EBE7DF] rounded-xl text-xs font-bold shadow-2xs">
+                <button
+                  onClick={() => setActiveTab('upcoming')}
+                  className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                    activeTab === 'upcoming' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
+                  }`}
+                >
+                  Upcoming ({shoots.filter(s => s.event_date >= today || s.event_date === 'TBD').length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('completed')}
+                  className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                    activeTab === 'completed' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
+                  }`}
+                >
+                  Completed ({shoots.filter(s => s.event_date < today && s.event_date !== 'TBD').length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('all')}
+                  className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                    activeTab === 'all' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
+                  }`}
+                >
+                  All ({shoots.length})
+                </button>
               </div>
-            ))}
+
+              {uniqueStudios.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-400 font-bold uppercase">Studio:</span>
+                  <select
+                    value={selectedStudio}
+                    onChange={(e) => setSelectedStudio(e.target.value)}
+                    className="px-3 py-1.5 bg-white border border-[#EBE7DF] rounded-xl text-xs font-bold text-zinc-700 shadow-2xs focus:outline-none"
+                  >
+                    <option value="all">All Studios</option>
+                    {uniqueStudios.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {loading ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF]">
+                <div className="animate-spin w-8 h-8 border-3 border-amber-600 border-t-transparent rounded-full mx-auto mb-3" />
+                <p className="text-xs font-bold text-zinc-500">Loading your assignments...</p>
+              </div>
+            ) : filteredShoots.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3">
+                <Briefcase className="w-10 h-10 text-zinc-300 mx-auto" />
+                <h3 className="text-base font-black text-zinc-700">No Shoots Found</h3>
+                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                  {activeTab === 'upcoming' 
+                    ? 'You have no upcoming shoots scheduled at this moment.' 
+                    : 'No shoots found under the selected filter.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredShoots.map((shoot) => (
+                  <div
+                    key={shoot.assignment_id}
+                    onClick={() => {
+                      if (currentMemberProfile) {
+                        setSelectedDeliverablesMember({
+                          ...currentMemberProfile,
+                          studio_name: shoot.studio_name || workspaceName
+                        });
+                        setIsDeliverablesModalOpen(true);
+                      }
+                    }}
+                    className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between group cursor-pointer"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600 border border-zinc-200">
+                          {shoot.studio_name}
+                        </span>
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                          {shoot.role_name}
+                        </span>
+                      </div>
+
+                      <h3 className="text-base font-serif font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
+                        {shoot.couple_name}
+                      </h3>
+                      <p className="text-xs font-bold text-amber-700 mt-0.5">{shoot.event_name}</p>
+
+                      <div className="mt-4 space-y-2 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                          <span className="font-bold">{shoot.event_date}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                          <span>{shoot.start_time || 'TBD'} - {shoot.end_time || 'TBD'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                          <span className="truncate">{shoot.venue_location || 'Venue TBD'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-zinc-400 uppercase font-black block">Agreed Fee</span>
+                        <span className="text-sm font-black text-zinc-900 font-mono">
+                          ₹{shoot.agreed_amount?.toLocaleString('en-IN') || 0}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                          shoot.payment_status === 'paid' 
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                            : 'bg-amber-50 text-[#92400e] border border-amber-200'
+                        }`}>
+                          {shoot.payment_status?.toUpperCase()}
+                        </span>
+
+                        <span className="text-xs font-bold text-amber-700 group-hover:text-amber-800 flex items-center gap-0.5">
+                          <span>View</span>
+                          <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: Post-Production Deliverables List */}
+        {dashboardTab === 'deliverables' && (
+          <div className="space-y-4">
+            {deliverables.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3">
+                <Sparkles className="w-10 h-10 text-zinc-300 mx-auto" />
+                <h3 className="text-base font-black text-zinc-700">No Post-Production Deliverables Assigned</h3>
+                <p className="text-xs text-zinc-500 max-w-md mx-auto">
+                  When projects or deliverables (teaser, film, photos, albums) are assigned to you by the studio owner, they will be listed here with live statuses and due dates.
+                </p>
+                <Link
+                  href="/workspace/post-production"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition shadow-xs mt-2"
+                >
+                  <Film className="w-3.5 h-3.5" />
+                  <span>Open Post-Production Suite</span>
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {deliverables.map((deliv) => {
+                  const agreed = Number(deliv.agreed_amount) || 0;
+                  const paid = Number(deliv.paid_amount) || 0;
+                  const balance = Number(deliv.balance_amount) || 0;
+                  const isSettled = balance <= 0 && agreed > 0;
+
+                  return (
+                    <div
+                      key={deliv.id}
+                      className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between gap-3 group"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-zinc-100 text-zinc-700 border border-zinc-200">
+                            {deliv.segment || 'Wedding'} • {deliv.category || 'Deliverable'}
+                          </span>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                            isSettled
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : agreed === 0
+                              ? 'bg-zinc-50 text-zinc-600 border-zinc-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}>
+                            {isSettled ? '✓ Fully Paid' : agreed === 0 ? 'Rate TBD' : `Pending ₹${balance.toLocaleString('en-IN')}`}
+                          </span>
+                        </div>
+
+                        <h3 className="text-base font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
+                          {deliv.client_name || 'Client Project'}
+                        </h3>
+                        <p className="text-xs font-bold text-amber-700 flex items-center gap-1 mt-0.5">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>{deliv.title}</span>
+                        </p>
+
+                        <div className="mt-3.5 space-y-2 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
+                          <div className="flex items-center justify-between">
+                            <span className="text-zinc-500 font-medium">Due Date:</span>
+                            <span className="font-bold text-zinc-800">{deliv.due_date || 'TBD'}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-zinc-500 font-medium">Production Status:</span>
+                            <span className="font-bold text-amber-800">{deliv.status}</span>
+                          </div>
+                          {deliv.specs && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-zinc-500 font-medium">Specs:</span>
+                              <span className="font-bold text-zinc-800">{deliv.specs}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-2 pt-3 border-t border-zinc-100 flex items-center justify-between">
+                        <div className="flex items-center gap-3 text-xs">
+                          <div>
+                            <span className="text-[9px] text-zinc-400 uppercase font-black block">Agreed</span>
+                            <span className="font-black text-zinc-900 font-mono text-sm">₹{agreed.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="text-zinc-200">|</div>
+                          <div>
+                            <span className="text-[9px] text-zinc-400 uppercase font-black block">Paid</span>
+                            <span className="font-black text-emerald-600 font-mono text-sm">₹{paid.toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+
+                        <Link
+                          href="/workspace/post-production"
+                          className="px-3 py-1 rounded-lg bg-zinc-900 hover:bg-black text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                        >
+                          <span>Open Suite</span>
+                          <ExternalLink className="w-3 h-3 text-zinc-400" />
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: Salary Slips List */}
+        {dashboardTab === 'salaries' && (
+          <div className="space-y-4">
+            {salaries.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3">
+                <FileText className="w-10 h-10 text-zinc-300 mx-auto" />
+                <h3 className="text-base font-black text-zinc-700">No Salary Slips Generated Yet</h3>
+                <p className="text-xs text-zinc-500 max-w-md mx-auto">
+                  When your studio owner generates a monthly salary slip or payout voucher, it will automatically appear here with a 1-click download button.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-[#EBE7DF] overflow-hidden shadow-2xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-zinc-50 text-zinc-500 font-black uppercase text-[10px] border-b border-zinc-200">
+                      <tr>
+                        <th className="p-3.5">Month / Year</th>
+                        <th className="p-3.5">Base Salary</th>
+                        <th className="p-3.5">Incentives</th>
+                        <th className="p-3.5">Deductions</th>
+                        <th className="p-3.5">Net Paid</th>
+                        <th className="p-3.5">Payment Date</th>
+                        <th className="p-3.5">Status</th>
+                        <th className="p-3.5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {salaries.map((s, idx) => {
+                        const netPayable = Number(s.net_paid ?? s.net_payable ?? s.base_salary) || 0;
+                        const isPaid = (s.status || s.payment_status || '').toUpperCase() === 'PAID';
+
+                        return (
+                          <tr key={s.id || idx} className="hover:bg-zinc-50/70 transition">
+                            <td className="p-3.5 font-black text-zinc-900 font-mono">
+                              {s.month_year || 'Current Month'}
+                            </td>
+                            <td className="p-3.5 text-zinc-700 font-mono font-bold">
+                              ₹{(Number(s.base_salary) || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td className="p-3.5 text-emerald-600 font-mono font-bold">
+                              +₹{(Number(s.incentive_amount) || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td className="p-3.5 text-rose-500 font-mono font-bold">
+                              -₹{(Number(s.deductions ?? s.deduction_amount) || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td className="p-3.5 text-zinc-900 font-mono font-black text-sm">
+                              ₹{netPayable.toLocaleString('en-IN')}
+                            </td>
+                            <td className="p-3.5 text-zinc-500">
+                              {s.paid_date || s.payout_date || 'Processing'}
+                            </td>
+                            <td className="p-3.5">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                isPaid
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                              }`}>
+                                {isPaid ? 'PAID' : 'PENDING'}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (currentMemberProfile) {
+                                    setSelectedFinanceMember(currentMemberProfile);
+                                    setFinanceInitialTab('payroll');
+                                    setIsFinanceDrawerOpen(true);
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-200 transition inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Download className="w-3 h-3 text-amber-700" />
+                                <span>Download Slip</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

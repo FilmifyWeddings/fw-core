@@ -69,12 +69,36 @@ export async function GET(request: NextRequest) {
       .update({ last_accessed_at: new Date().toISOString() })
       .eq('id', link.id);
 
-    // 2. Fetch Employee Profile
-    const { data: member } = await supabaseAdmin
+    // 2. Fetch Employee Profile (from fw_team_members or workspace_members for in-house crew)
+    let member: any = null;
+    const { data: fwMember } = await supabaseAdmin
       .from('fw_team_members')
       .select('*')
       .eq('id', link.member_id)
-      .single();
+      .maybeSingle();
+
+    if (fwMember) {
+      member = fwMember;
+    } else {
+      const { data: wsMember } = await supabaseAdmin
+        .from('workspace_members')
+        .select('*')
+        .eq('id', link.member_id)
+        .maybeSingle();
+
+      if (wsMember) {
+        member = {
+          ...wsMember,
+          primary_role: wsMember.primary_role || wsMember.role || 'Staff Member',
+          role: wsMember.primary_role || wsMember.role || 'Staff Member',
+          primary_type: wsMember.primary_type || 'IN_HOUSE',
+          member_type: wsMember.primary_type || 'IN_HOUSE',
+          phone: wsMember.phone || '',
+          name: wsMember.name || 'Team Member',
+          email: wsMember.email || '',
+        };
+      }
+    }
 
     if (!member) {
       return NextResponse.json({ error: 'Employee profile not found' }, { status: 404 });
@@ -87,19 +111,30 @@ export async function GET(request: NextRequest) {
       day: '2-digit'
     }).format(new Date());
 
-    // Resolve any member aliases so no punch records are omitted
+    // Resolve any member aliases across fw_team_members & workspace_members so no punch records are omitted
     const memberAliasIds = [link.member_id];
-    if (member.email || member.name) {
-      const { data: aliasMembers } = await supabaseAdmin
-        .from('fw_team_members')
-        .select('id')
-        .eq('user_id', link.user_id)
-        .or(`email.ilike.${member.email || 'none'},name.ilike.${member.name || 'none'}`);
-      if (aliasMembers) {
-        aliasMembers.forEach((a: any) => {
-          if (a.id && !memberAliasIds.includes(a.id)) memberAliasIds.push(a.id);
-        });
-      }
+    if (member?.id && !memberAliasIds.includes(member.id)) {
+      memberAliasIds.push(member.id);
+    }
+    const searchEmail = (member?.email || '').trim().toLowerCase();
+    const searchName = (member?.name || '').trim();
+
+    if (searchEmail || searchName) {
+      const orCondition = searchEmail && searchName 
+        ? `email.ilike.${searchEmail},name.ilike.${searchName}`
+        : searchEmail ? `email.ilike.${searchEmail}` : `name.ilike.${searchName}`;
+
+      const [aliasFw, aliasWs] = await Promise.all([
+        supabaseAdmin.from('fw_team_members').select('id').or(orCondition),
+        supabaseAdmin.from('workspace_members').select('id').or(orCondition)
+      ]);
+
+      (aliasFw.data || []).forEach((a: any) => {
+        if (a.id && !memberAliasIds.includes(a.id)) memberAliasIds.push(a.id);
+      });
+      (aliasWs.data || []).forEach((a: any) => {
+        if (a.id && !memberAliasIds.includes(a.id)) memberAliasIds.push(a.id);
+      });
     }
 
     // 3. Fetch Today's Attendance Record for this member (supporting aliases)
@@ -250,14 +285,23 @@ export async function GET(request: NextRequest) {
     }
 
 
-    // 9. Fetch Current Month Attendance Records (Complete columns including photos & GPS)
-    const startOfMonth = `${todayDate.substring(0, 7)}-01`;
-    const { data: monthlyHistory } = await supabaseAdmin
+    // 9. Fetch Attendance Records (supporting past months calendar switcher)
+    const monthParam = req.nextUrl.searchParams.get('month');
+    let historyQuery = supabaseAdmin
       .from('attendance_records')
       .select('*')
       .in('member_id', memberAliasIds)
-      .gte('date', startOfMonth)
       .order('date', { ascending: false });
+
+    if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+      historyQuery = historyQuery.gte('date', `${monthParam}-01`).lte('date', `${monthParam}-31`);
+    } else {
+      // Default: past 730 days (2 years) so that any month selected in UI displays immediately
+      const pastDate = new Date();
+      pastDate.setFullYear(pastDate.getFullYear() - 2);
+      historyQuery = historyQuery.gte('date', pastDate.toISOString().split('T')[0]);
+    }
+    const { data: monthlyHistory } = await historyQuery;
 
     // 10. Fetch Recent Leave Requests
     const { data: recentLeaves } = await supabaseAdmin

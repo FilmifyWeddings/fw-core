@@ -87,82 +87,44 @@ export default function TeamFinancePage() {
       }
 
       // 1. Resolve all linked member IDs across workspace_members and fw_team_members
-      const [wmRes, ftmRes] = await Promise.all([
-        supabase
-          .from('workspace_members')
-          .select('id, workspace_id, role, full_name')
-          .or(`user_id.eq.${activeUser.id},email.ilike.${activeUser.email}`),
-        supabase
-          .from('fw_team_members')
-          .select('id, workspace_id, role_name, name')
-          .or(`user_id.eq.${activeUser.id},auth_user_id.eq.${activeUser.id},email.ilike.${activeUser.email}`)
-      ]);
-
-      const allMemberIds = Array.from(new Set([
-        activeUser.id,
-        ...(wmRes.data || []).map((m: any) => m.id),
-        ...(ftmRes.data || []).map((m: any) => m.id),
-      ].filter(Boolean)));
-
       const token = session?.access_token;
-      const res = await fetch('/api/team/shoots', {
+      const targetWs = activeWorkspace?.workspaceId || activeWorkspace?.studioSlug;
+      const url = targetWs && targetWs !== 'all'
+        ? `/api/team/portal-data?workspace_id=${encodeURIComponent(targetWs)}`
+        : '/api/team/portal-data';
+
+      const res = await fetch(url, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const json = await res.json();
-      const loadedShoots = (json.success && Array.isArray(json.shoots)) ? json.shoots : [];
-      setShoots(loadedShoots);
 
-      // 2. Fetch Salary Slips from team_salary_slips & team_salary_records
-      let slipRows: any[] = [];
-      try {
-        const { data: slips } = await supabase
-          .from('team_salary_slips')
-          .select('*')
-          .in('member_id', allMemberIds)
-          .order('payout_date', { ascending: false });
-        if (slips && slips.length > 0) {
-          slipRows = slips;
-        } else {
-          const { data: recs } = await supabase
-            .from('team_salary_records')
-            .select('*')
-            .in('member_id', allMemberIds)
-            .order('month_year', { ascending: false });
-          if (recs) slipRows = recs;
-        }
-      } catch (_) {}
-      setSalaries(slipRows);
+      let loadedShoots = [];
+      let slipRows = [];
+      let fetchedDelivs = [];
+      let profile = null;
 
-      // 3. Fetch Post-Production Deliverables assigned to this user across workspaces
-      try {
-        const fetchedDelivs = await fetchMemberDeliverables('all', allMemberIds);
-        setDeliverables(fetchedDelivs);
-      } catch (dErr) {
-        console.warn('[Team Finance] Deliverables fetch notice:', dErr);
+      if (json.success) {
+        loadedShoots = Array.isArray(json.shoots) ? json.shoots : [];
+        slipRows = Array.isArray(json.salaries) ? json.salaries : [];
+        fetchedDelivs = Array.isArray(json.deliverables) ? json.deliverables : [];
+        profile = json.memberProfile || null;
       }
 
-      // Rate details
-      let rateRow: any = null;
-      try {
-        const { data: r } = await supabase
-          .from('workspace_member_rates')
-          .select('default_daily_rate, payout_frequency')
-          .in('team_member_id', allMemberIds)
-          .maybeSingle();
-        if (r) rateRow = r;
-      } catch (_) {}
+      setShoots(loadedShoots);
+      setSalaries(slipRows);
+      setDeliverables(fetchedDelivs);
 
-      const rawName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'Team Member';
-      const cleanRate = Number(rateRow?.default_daily_rate || 0);
-      const cleanFreq = rateRow?.payout_frequency || 'daily';
+      const rawName = profile?.name || activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'Team Member';
+      const cleanRate = Number(profile?.default_daily_rate || 0);
+      const cleanFreq = profile?.payout_frequency || 'daily';
 
       setCurrentMemberProfile({
-        id: allMemberIds[0] || activeUser.id,
+        id: profile?.id || activeUser.id,
         name: rawName,
-        email: activeUser.email || '',
-        phone: activeUser.phone || activeUser.user_metadata?.phone || '',
-        primary_role: userRole || 'Crew',
-        primary_type: 'IN_HOUSE',
+        email: profile?.email || activeUser.email || '',
+        phone: profile?.phone || activeUser.phone || activeUser.user_metadata?.phone || '',
+        primary_role: profile?.primary_role || userRole || 'Crew',
+        primary_type: profile?.primary_type || 'IN_HOUSE',
         default_daily_rate: cleanRate,
         daily_rate: cleanRate,
         payout_frequency: cleanFreq,

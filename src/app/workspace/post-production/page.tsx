@@ -38,7 +38,7 @@ let memCachedPostProdQuotations: any[] = [];
 export default function PostProductionPage() {
   const { workspaceId, userName, userRole, isOwner, permissions, userId, activeWorkspace } = useWorkspace();
 
-  const ppAccess = isOwner ? 'ALL_MANAGE' : (permissions?.post_production_access || 'NONE');
+  const ppAccess = isOwner ? 'ALL_MANAGE' : (permissions?.post_production_access || 'ASSIGNED_VIEW');
   const canManagePostProduction = isOwner || ppAccess === 'ALL_MANAGE' || ppAccess === 'FULL_ACCESS';
   const isAllView = !isOwner && ppAccess === 'ALL_VIEW';
   const isAssignedView = !isOwner && (ppAccess === 'ASSIGNED_VIEW' || ppAccess === 'ASSIGNED_ONLY');

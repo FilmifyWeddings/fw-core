@@ -641,7 +641,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       iconBg: 'bg-[#FEF3C7] text-[#B45309]',
     }] : []),
     // 4. Post-Production
-    ...(permissions?.post_production_access && permissions.post_production_access !== 'NONE' ? [
+    ...(permissions?.post_production_access !== 'NONE' ? [
       {
         id: 'post-production',
         name: 'Post-Production',

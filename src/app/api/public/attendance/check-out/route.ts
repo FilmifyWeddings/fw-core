@@ -29,12 +29,35 @@ export async function POST(request: NextRequest) {
       day: '2-digit'
     }).format(new Date());
 
-    // 2. Fetch today's record & member profile
+    // 2. Fetch today's record & member profile (supporting aliases and workspace_members)
+    let member: any = null;
+    const { data: fwMember } = await supabaseAdmin
+      .from('fw_team_members')
+      .select('id, name, shift_start, shift_end, custom_data, email')
+      .eq('id', link.member_id)
+      .maybeSingle();
+
+    if (fwMember) {
+      member = fwMember;
+    } else {
+      const { data: wsMember } = await supabaseAdmin
+        .from('workspace_members')
+        .select('id, name, custom_data, email')
+        .eq('id', link.member_id)
+        .maybeSingle();
+      if (wsMember) member = wsMember;
+    }
+
+    const candidateIds = [link.member_id];
+    if (member?.id && !candidateIds.includes(member.id)) candidateIds.push(member.id);
+
     const { data: record, error: recErr } = await supabaseAdmin
       .from('attendance_records')
       .select('*')
-      .eq('member_id', link.member_id)
+      .in('member_id', candidateIds)
       .eq('date', todayDate)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (recErr || !record || !record.check_in_time) {
@@ -47,12 +70,6 @@ export async function POST(request: NextRequest) {
         record
       }, { status: 400 });
     }
-
-    const { data: member } = await supabaseAdmin
-      .from('fw_team_members')
-      .select('id, name, shift_start, shift_end, custom_data')
-      .eq('id', link.member_id)
-      .maybeSingle();
 
     // 3. Close any open break if active
     const { data: openBreak } = await supabaseAdmin

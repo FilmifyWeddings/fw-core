@@ -838,6 +838,42 @@ export default function WorkspaceTeamPage() {
     return Array.from(roleSet).sort();
   }, [members]);
 
+  // Period Specific Stats per Member (when date filter is active)
+  const periodMemberStats = useMemo(() => {
+    if (financePeriod === 'all' || aggregateRecords.length === 0) return null;
+    const now = new Date();
+    const currentYearMonth = now.toISOString().substring(0, 7);
+    const currentYear = String(now.getFullYear());
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevYearMonth = prevMonthDate.toISOString().substring(0, 7);
+
+    const statsMap: Record<string, { total_agreed: number; total_paid: number; total_balance: number; count: number }> = {};
+
+    aggregateRecords.forEach((rec) => {
+      const recDate = rec.date || '';
+      let matches = false;
+      if (financePeriod === 'this_month') matches = recDate.startsWith(currentYearMonth);
+      else if (financePeriod === 'last_month') matches = recDate.startsWith(prevYearMonth);
+      else if (financePeriod === 'this_year') matches = recDate.startsWith(currentYear);
+      else if (financePeriod === 'custom') {
+        matches = (!customStartDate || recDate >= customStartDate) && (!customEndDate || recDate <= customEndDate);
+      }
+      if (matches && rec.member_id) {
+        if (!statsMap[rec.member_id]) {
+          statsMap[rec.member_id] = { total_agreed: 0, total_paid: 0, total_balance: 0, count: 0 };
+        }
+        const agreed = Number(rec.agreed_amount) || 0;
+        const paid = Number(rec.paid_amount) || 0;
+        statsMap[rec.member_id].total_agreed += agreed;
+        statsMap[rec.member_id].total_paid += paid;
+        statsMap[rec.member_id].total_balance += Math.max(0, agreed - paid);
+        statsMap[rec.member_id].count += 1;
+      }
+    });
+
+    return statsMap;
+  }, [aggregateRecords, financePeriod, customStartDate, customEndDate]);
+
   // 1. Robust Universal Search (Name, Role, Phone, Email) & Multi-Criteria Filtering
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
@@ -911,9 +947,17 @@ export default function WorkspaceTeamPage() {
         }
       }
 
+      // 4. Period Filter: When filtering by a date window, only show members with activity in that period!
+      if (periodMemberStats !== null) {
+        const stats = periodMemberStats[member.id];
+        if (!stats || (stats.total_agreed === 0 && stats.total_paid === 0 && stats.total_balance === 0 && stats.count === 0)) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [members, selectedFilter, selectedRole, searchQuery]);
+  }, [members, selectedFilter, selectedRole, searchQuery, periodMemberStats]);
 
   // Incremental Batch Scroll (15 Members at a Time)
   const [visibleCount, setVisibleCount] = useState(15);
@@ -921,7 +965,7 @@ export default function WorkspaceTeamPage() {
 
   useEffect(() => {
     setVisibleCount(15);
-  }, [selectedFilter, selectedRole, searchQuery]);
+  }, [selectedFilter, selectedRole, searchQuery, financePeriod, customStartDate, customEndDate]);
 
   // Aggregate Financial Totals (Filterable by All Time, Month, Year, Custom Date)
   const allTeamFinancialTotals = useMemo(() => {
@@ -1379,7 +1423,7 @@ export default function WorkspaceTeamPage() {
               {/* 1. Mobile Member Cards (Ultra-Compact Mobile Layout) */}
               <div className="md:hidden space-y-2.5 mt-4">
                 {displayedMembers.map((member) => {
-                  const fin = memberFinancials[member.id];
+                  const fin = (periodMemberStats && periodMemberStats[member.id]) ? periodMemberStats[member.id] : memberFinancials[member.id];
                   return (
                     <TeamMemberCard
                       key={member.id}
@@ -1409,17 +1453,20 @@ export default function WorkspaceTeamPage() {
 
                 {/* Row List */}
                 <div className="divide-y divide-slate-100">
-                  {displayedMembers.map((member) => (
+                  {displayedMembers.map((member) => {
+                    const fin = (periodMemberStats && periodMemberStats[member.id]) ? (periodMemberStats[member.id] as any) : memberFinancials[member.id];
+                    return (
                     <TeamTableRow
                       key={member.id}
                       member={member}
-                      fin={memberFinancials[member.id]}
+                      fin={fin}
                       handleOpenDetails={handleOpenDetails}
                       handleOpenVendorDeliverables={handleOpenVendorDeliverables}
                       handleEditMember={handleEditMember}
                       handleDeleteMember={handleDeleteMember}
                     />
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1563,6 +1610,11 @@ export default function WorkspaceTeamPage() {
       <TeamMemberFinanceDrawer
         isOpen={isFinanceDrawerOpen}
         initialTab={financeInitialTab}
+        dateFilter={{
+          period: financePeriod,
+          startDate: customStartDate,
+          endDate: customEndDate
+        }}
         onClose={() => {
           setIsFinanceDrawerOpen(false);
           setSelectedFinanceMember(null);

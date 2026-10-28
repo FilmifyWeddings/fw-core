@@ -22,12 +22,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired attendance link' }, { status: 404 });
     }
 
-    // 2. Fetch Employee Profile
-    const { data: member } = await supabaseAdmin
+    // 2. Fetch Employee Profile (from fw_team_members or workspace_members)
+    let member: any = null;
+    const { data: fwMember } = await supabaseAdmin
       .from('fw_team_members')
       .select('*')
       .eq('id', link.member_id)
-      .single();
+      .maybeSingle();
+
+    if (fwMember) {
+      member = fwMember;
+    } else {
+      const { data: wsMember } = await supabaseAdmin
+        .from('workspace_members')
+        .select('*')
+        .eq('id', link.member_id)
+        .maybeSingle();
+
+      if (wsMember) {
+        member = {
+          ...wsMember,
+          primary_role: wsMember.primary_role || wsMember.role || 'Staff Member',
+          role: wsMember.primary_role || wsMember.role || 'Staff Member',
+          primary_type: wsMember.primary_type || 'IN_HOUSE',
+          member_type: wsMember.primary_type || 'IN_HOUSE',
+          phone: wsMember.phone || '',
+          name: wsMember.name || 'Team Member',
+          email: wsMember.email || '',
+        };
+      }
+    }
 
     if (!member) {
       return NextResponse.json({ error: 'Staff member profile not found' }, { status: 404 });

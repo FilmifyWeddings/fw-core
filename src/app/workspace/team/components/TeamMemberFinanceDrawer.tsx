@@ -69,6 +69,11 @@ interface TeamMemberFinanceDrawerProps {
   initialTab?: 'bookings' | 'payroll' | 'analytics' | 'deliverables';
   onFinancialUpdate?: (memberId: string, updatedMetrics: Partial<TeamFinancialSummary>) => void;
   isReadOnly?: boolean;
+  dateFilter?: {
+    period: 'all' | 'this_month' | 'last_month' | 'this_year' | 'custom';
+    startDate?: string;
+    endDate?: string;
+  };
 }
 
 const MONTH_NAMES = [
@@ -128,6 +133,7 @@ export default function TeamMemberFinanceDrawer({
   initialTab,
   onFinancialUpdate,
   isReadOnly = false,
+  dateFilter,
 }: TeamMemberFinanceDrawerProps) {
   const router = useRouter();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -642,9 +648,34 @@ export default function TeamMemberFinanceDrawer({
   }, [member?.events]);
 
   // Shoot Date Range Scope Filter for Commercial Overview
-  const [shootDateScope, setShootDateScope] = useState<'all' | 'this_month' | 'this_year' | 'custom'>('all');
+  const [shootDateScope, setShootDateScope] = useState<'all' | 'this_month' | 'last_month' | 'this_year' | 'custom'>('all');
   const [shootCustomStartDate, setShootCustomStartDate] = useState<string>('');
   const [shootCustomEndDate, setShootCustomEndDate] = useState<string>('');
+
+  // Sync date filter from parent page whenever provided
+  useEffect(() => {
+    if (dateFilter?.period) {
+      setShootDateScope(dateFilter.period);
+      if (dateFilter.startDate) setShootCustomStartDate(dateFilter.startDate);
+      if (dateFilter.endDate) setShootCustomEndDate(dateFilter.endDate);
+
+      const now = new Date();
+      if (dateFilter.period === 'this_year') {
+        setPayrollFilterYear(String(now.getFullYear()));
+        setPayrollFilterMonth('All');
+      } else if (dateFilter.period === 'this_month') {
+        setPayrollFilterYear(String(now.getFullYear()));
+        setPayrollFilterMonth(String(now.getMonth() + 1).padStart(2, '0'));
+      } else if (dateFilter.period === 'last_month') {
+        const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        setPayrollFilterYear(String(prev.getFullYear()));
+        setPayrollFilterMonth(String(prev.getMonth() + 1).padStart(2, '0'));
+      } else if (dateFilter.period === 'all') {
+        setPayrollFilterYear('All');
+        setPayrollFilterMonth('All');
+      }
+    }
+  }, [dateFilter, isOpen]);
 
   const scopedShoots = useMemo(() => {
     const list = filteredShoots.length > 0 ? filteredShoots : (shootsYearFilter === 'All' && studioShoots.length === 0 ? fallbackEvents : []);
@@ -654,11 +685,14 @@ export default function TeamMemberFinanceDrawer({
     const curMonth = String(now.getMonth() + 1).padStart(2, '0');
     const monthPrefix = `${curYear}-${curMonth}`;
     const yearPrefix = `${curYear}`;
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthPrefix = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
     return list.filter(s => {
       const d = s.event_date || s.sub_event?.event_date || s.created_at || '';
       if (!d) return false;
       if (shootDateScope === 'this_month') return d.startsWith(monthPrefix);
+      if (shootDateScope === 'last_month') return d.startsWith(prevMonthPrefix);
       if (shootDateScope === 'this_year') return d.startsWith(yearPrefix);
       if (shootDateScope === 'custom') {
         if (shootCustomStartDate && d < shootCustomStartDate) return false;
