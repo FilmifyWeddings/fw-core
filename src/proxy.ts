@@ -45,6 +45,7 @@ const RESERVED_ROOT_PATHS = new Set([
   'sitemap.xml',
   'support',
   'sushant-1023-fw',
+  'sushant',
   'team',
   'team-manager',
   'partner',
