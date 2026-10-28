@@ -239,7 +239,7 @@ function TripleLockGatekeeper({ onSuccess }: { onSuccess: (email: string, token?
 }
 
 export default function SuperAdminFwPage() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [adminEmail, setAdminEmail] = useState<string>('');
 
   // Date Filter states
@@ -386,20 +386,6 @@ export default function SuperAdminFwPage() {
     }
     setIsAuthenticated(false);
   };
-
-  // Still checking session
-  if (isAuthenticated === null) {
-    return (
-      <div className="min-h-screen bg-[#FAF8F5] flex flex-col items-center justify-center space-y-3 font-sans">
-        <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center animate-pulse shadow-md">
-          <Shield className="w-6 h-6" />
-        </div>
-        <p className="text-xs font-black text-slate-500 uppercase tracking-widest">
-          Authenticating Vault Access...
-        </p>
-      </div>
-    );
-  }
 
   // Not authenticated -> Show Luxury Master Challenge Gatekeeper
   if (!isAuthenticated) {

@@ -73,6 +73,7 @@ const RESERVED_PUBLIC_ROOTS = new Set([
   'sitemap.xml',
   'support',
   'sushant-1023-fw',
+  'sushant',
   'team',
   'team-manager',
   'partner',
@@ -752,7 +753,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname.startsWith('/admin/workspace/quotations/builder') ||
     pathname.startsWith('/bee-queen-curtail') ||
     pathname === '/sarajosmith' ||
-    pathname.startsWith('/sarajosmith');
+    pathname.startsWith('/sarajosmith') ||
+    pathname.startsWith('/sushant');
 
   if (isStandalonePage) {
     return <div className="min-h-screen w-full bg-[#FFFDF8] text-zinc-900">{children}</div>;
