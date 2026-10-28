@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   ADMIN_COOKIE_NAME,
-  getMasterPassphrase,
-  getAllowedAdminEmails,
+  MASTER_ADMIN_EMAIL,
+  verifyTripleLockCredentials,
   checkRateLimit,
   recordFailedAttempt,
   resetRateLimit,
@@ -21,7 +21,7 @@ function getClientIp(req: NextRequest): string {
 }
 
 /**
- * GET: Check if current session is active
+ * GET: Check if current session is active and valid
  */
 export async function GET(req: NextRequest) {
   const auth = await verifySuperAdminSession(req);
@@ -32,7 +32,10 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST: Authenticate Super Admin with Passphrase + Master Email
+ * POST: Authenticate Super Admin with Strict Triple-Lock:
+ * 1. Master Email (sushantnawale1cr@gmail.com)
+ * 2. Master PIN (Sush102310#)
+ * 3. Authorization Secret Code (Shiva)
  */
 export async function POST(req: NextRequest) {
   try {
@@ -43,7 +46,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: `Too many failed attempts. Security lock active for ${Math.ceil(rateCheck.remainingSec / 60)} minutes.`,
+          error: `Vault locked. Too many failed attempts. Security lock active for ${Math.ceil(rateCheck.remainingSec / 60)} minutes.`,
           locked: true,
           remainingSec: rateCheck.remainingSec,
         },
@@ -52,23 +55,16 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { email, passphrase, pin } = body;
+    const { email, pin, passphrase, secretCode } = body;
 
-    const masterPass = getMasterPassphrase();
-    const allowedEmails = getAllowedAdminEmails();
-    const providedSecret = (passphrase || pin || '').trim();
     const providedEmail = (email || '').trim().toLowerCase();
+    const providedPin = (pin || passphrase || '').trim();
+    const providedSecret = (secretCode || '').trim();
 
-    // Check passphrase: accepts master passphrase or master security PIN (102300 or env PIN)
-    const validPassphrase =
-      providedSecret === masterPass ||
-      providedSecret === '102300' ||
-      providedSecret === (process.env.NEXT_PUBLIC_ADMIN_PIN || '102300');
+    // Strict Triple-Lock Verification (All 3 must match simultaneously)
+    const isTripleValid = verifyTripleLockCredentials(providedEmail, providedPin, providedSecret);
 
-    // Email check: if provided, verify against allowed emails
-    const validEmail = !providedEmail || allowedEmails.includes(providedEmail) || providedEmail.includes('sushant');
-
-    if (!validPassphrase || !validEmail) {
+    if (!isTripleValid) {
       const failed = recordFailedAttempt(ip);
       const remainingTries = Math.max(0, 5 - failed.attempts);
 
@@ -76,8 +72,8 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           error: failed.isLocked
-            ? 'Account locked for 15 minutes due to multiple failed attempts.'
-            : `Invalid Master Passphrase or Email. ${remainingTries} attempts remaining before temporary lockout.`,
+            ? 'Vault locked for 15 minutes due to multiple failed verification attempts.'
+            : `Triple-Lock verification failed. Please verify Email, Master PIN, and Authorization Secret Code. (${remainingTries} attempts remaining before temporary lockout)`,
           attemptsRemaining: remainingTries,
           locked: failed.isLocked,
         },
@@ -85,16 +81,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Success: Reset rate limit
+    // Success: Reset rate limit for this IP
     resetRateLimit(ip);
 
-    const authenticatedEmail = providedEmail || 'sushantnawale700@gmail.com';
-    const token = createAdminSessionToken(authenticatedEmail, 12); // 12 hours duration
+    const token = createAdminSessionToken(MASTER_ADMIN_EMAIL, 12); // 12 hours duration
 
     const response = NextResponse.json({
       success: true,
-      email: authenticatedEmail,
-      message: 'Super Admin authentication successful',
+      email: MASTER_ADMIN_EMAIL,
+      message: 'Triple-Lock Super Admin vault access granted',
     });
 
     // Set HttpOnly, Secure, SameSite=Strict cookie

@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Shield, Lock, KeyRound, Eye, EyeOff, AlertTriangle, ArrowRight, Sparkles } from 'lucide-react';
+import { 
+  Shield, Lock, KeyRound, Mail, Eye, 
+  EyeOff, AlertTriangle, ArrowRight, Sparkles, Key 
+} from 'lucide-react';
 
 interface MasterGatekeeperLoginProps {
   onSuccess: (email: string) => void;
@@ -9,16 +12,21 @@ interface MasterGatekeeperLoginProps {
 
 export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLoginProps) {
   const [email, setEmail] = useState('');
-  const [passphrase, setPassphrase] = useState('');
-  const [showPassphrase, setShowPassphrase] = useState(false);
+  const [pin, setPin] = useState('');
+  const [secretCode, setSecretCode] = useState('');
+
+  const [showPin, setShowPin] = useState(false);
+  const [showSecretCode, setShowSecretCode] = useState(false);
+
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [lockoutSec, setLockoutSec] = useState<number | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!passphrase.trim()) {
-      setErrorMsg('Master passphrase or PIN is required.');
+
+    if (!email.trim() || !pin.trim() || !secretCode.trim()) {
+      setErrorMsg('All 3 authentication keys (Master Email, Master PIN, and Authorization Secret Code) are required.');
       return;
     }
 
@@ -29,7 +37,11 @@ export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLog
       const res = await fetch('/api/sushant/admin/fw/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), passphrase: passphrase.trim() }),
+        body: JSON.stringify({ 
+          email: email.trim(), 
+          pin: pin.trim(), 
+          secretCode: secretCode.trim() 
+        }),
       });
 
       const data = await res.json();
@@ -38,10 +50,10 @@ export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLog
         if (data.locked && data.remainingSec) {
           setLockoutSec(data.remainingSec);
         }
-        throw new Error(data.error || 'Authentication challenge failed.');
+        throw new Error(data.error || 'Triple-lock authentication failed.');
       }
 
-      onSuccess(data.email || email);
+      onSuccess(data.email || email.trim());
     } catch (err: any) {
       setErrorMsg(err.message || 'Access denied.');
     } finally {
@@ -64,13 +76,13 @@ export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLog
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/60 text-amber-900 text-[10px] font-black tracking-wider uppercase mb-1">
               <Sparkles className="w-3 h-3 text-amber-600" />
-              <span>Zero-Trust Gatekeeper</span>
+              <span>Triple-Lock Zero-Trust Vault</span>
             </div>
             <h1 className="text-2xl font-black text-[#1E2229] tracking-tight">
               StudioCore Super Admin
             </h1>
             <p className="text-xs text-slate-500 mt-1 font-medium">
-              Restricted platform vault. Authorized executive credentials required.
+              High-security executive portal. 3-tier credentials required.
             </p>
           </div>
         </div>
@@ -90,48 +102,83 @@ export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLog
           </div>
         )}
 
-        {/* Challenge Form */}
+        {/* Triple-Lock Challenge Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          
+          {/* Key 1: Master Executive Email */}
           <div className="space-y-1.5">
-            <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-              Master Executive Email
+            <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+              <Mail className="w-3.5 h-3.5 text-amber-600" />
+              <span>1. Master Executive Email</span>
             </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="sushantnawale700@gmail.com"
-              className="w-full px-4 py-3 rounded-xl bg-[#FAF8F5] border border-[#EAE5DA] text-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
-              autoComplete="email"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                Master Passphrase or 6-Digit PIN
-              </label>
-            </div>
             <div className="relative">
               <input
-                type={showPassphrase ? 'text' : 'password'}
-                value={passphrase}
-                onChange={(e) => setPassphrase(e.target.value)}
-                placeholder="Enter master passphrase or PIN..."
-                className="w-full pl-4 pr-11 py-3 rounded-xl bg-[#FAF8F5] border border-[#EAE5DA] text-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter Master Executive Email..."
+                className="w-full px-4 py-3 rounded-xl bg-[#FAF8F5] border border-[#EAE5DA] text-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition placeholder:text-slate-400 placeholder:font-normal"
+                autoComplete="email"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Key 2: Master Security PIN */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 text-amber-600" />
+              <span>2. Master Security PIN</span>
+            </label>
+            <div className="relative">
+              <input
+                type={showPin ? 'text' : 'password'}
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder="Enter Master PIN..."
+                className="w-full pl-4 pr-11 py-3 rounded-xl bg-[#FAF8F5] border border-[#EAE5DA] text-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition placeholder:text-slate-400 placeholder:font-normal"
                 autoComplete="current-password"
                 required
               />
               <button
                 type="button"
-                onClick={() => setShowPassphrase(!showPassphrase)}
+                onClick={() => setShowPin(!showPin)}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                aria-label="Toggle PIN visibility"
               >
-                {showPassphrase ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
 
+          {/* Key 3: Authorization Secret Code */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+              <span>3. Authorization Secret Code</span>
+            </label>
+            <div className="relative">
+              <input
+                type={showSecretCode ? 'text' : 'password'}
+                value={secretCode}
+                onChange={(e) => setSecretCode(e.target.value)}
+                placeholder="Enter Authorization Secret Code..."
+                className="w-full pl-4 pr-11 py-3 rounded-xl bg-[#FAF8F5] border border-[#EAE5DA] text-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition placeholder:text-slate-400 placeholder:font-normal"
+                autoComplete="off"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecretCode(!showSecretCode)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                aria-label="Toggle Secret Code visibility"
+              >
+                {showSecretCode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Submit Button */}
           <button
             type="submit"
             disabled={isLoading || (lockoutSec !== null && lockoutSec > 0)}
@@ -140,11 +187,11 @@ export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLog
             {isLoading ? (
               <span className="flex items-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Verifying Cryptographic Credentials...</span>
+                <span>Verifying Triple-Lock Security...</span>
               </span>
             ) : (
               <>
-                <span>Access Super Admin Vault</span>
+                <span>Unlock Super Admin Vault</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
@@ -153,7 +200,7 @@ export default function MasterGatekeeperLogin({ onSuccess }: MasterGatekeeperLog
 
         <div className="pt-2 text-center border-t border-slate-100">
           <p className="text-[11px] text-slate-400 font-medium">
-            Protected with Rate-Limiting, IP Auditing & Signed Session Cookies.
+            3-Factor Authorization · Rate-Limited · Signed HMAC Session
           </p>
         </div>
       </div>

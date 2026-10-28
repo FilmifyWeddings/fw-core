@@ -1,16 +1,12 @@
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
-import { supabaseAdmin } from '@/lib/supabase';
-import { isSuperAdmin } from '@/lib/auth/admin-guard';
 
 export const ADMIN_COOKIE_NAME = 'fw_admin_session';
 
-// Master Allowed Emails
-const BASE_SUPER_ADMIN_EMAILS = [
-  'sushantnawale700@gmail.com',
-  'sushant@studiocore.in',
-  'info@filmifyweddings.com',
-];
+// Strict Triple-Lock Master Credentials (Single Source of Truth)
+export const MASTER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_MASTER_EMAIL || 'sushantnawale1cr@gmail.com').toLowerCase().trim();
+export const MASTER_ADMIN_PIN = process.env.SUPER_ADMIN_MASTER_PIN || 'Sush102310#';
+export const MASTER_SECRET_CODE = process.env.SUPER_ADMIN_SECRET_CODE || 'Shiva';
 
 // In-Memory Rate Limiter Map for IP protection
 interface RateLimitRecord {
@@ -23,16 +19,39 @@ function getSecretKey(): string {
   return process.env.SUPER_ADMIN_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'fw_super_admin_vault_secret_2026';
 }
 
-export function getMasterPassphrase(): string {
-  return process.env.SUPER_ADMIN_PASSPHRASE || 'sushant@fw2026';
+/**
+ * Constant-time comparison to protect against timing attacks
+ */
+export function secureTimingCompare(a: string | undefined | null, b: string | undefined | null): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
-export function getAllowedAdminEmails(): string[] {
-  const envEmails = (process.env.SUPER_ADMIN_EMAILS || '')
-    .split(',')
-    .map(e => e.trim().toLowerCase())
-    .filter(Boolean);
-  return Array.from(new Set([...BASE_SUPER_ADMIN_EMAILS, ...envEmails]));
+/**
+ * Verify the exact 3 master credentials:
+ * 1. Master Email === sushantnawale1cr@gmail.com
+ * 2. Master PIN === Sush102310#
+ * 3. Secret Code === Shiva
+ */
+export function verifyTripleLockCredentials(
+  email: string | undefined,
+  pin: string | undefined,
+  secretCode: string | undefined
+): boolean {
+  if (!email || !pin || !secretCode) return false;
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedPin = pin.trim();
+  const normalizedSecret = secretCode.trim();
+
+  const isEmailValid = secureTimingCompare(normalizedEmail, MASTER_ADMIN_EMAIL);
+  const isPinValid = secureTimingCompare(normalizedPin, MASTER_ADMIN_PIN);
+  const isSecretValid = secureTimingCompare(normalizedSecret, MASTER_SECRET_CODE);
+
+  return isEmailValid && isPinValid && isSecretValid;
 }
 
 /**
@@ -115,12 +134,17 @@ export function verifyAdminSessionToken(tokenString: string | null | undefined):
       .update(payloadB64)
       .digest('base64url');
 
-    if (signature !== expectedSig) {
+    if (!secureTimingCompare(signature, expectedSig)) {
       return { valid: false };
     }
 
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
     if (!payload || !payload.expiresAt || Date.now() > payload.expiresAt) {
+      return { valid: false };
+    }
+
+    // Must strictly be the verified master email
+    if (payload.email !== MASTER_ADMIN_EMAIL) {
       return { valid: false };
     }
 
@@ -131,7 +155,7 @@ export function verifyAdminSessionToken(tokenString: string | null | undefined):
 }
 
 /**
- * Comprehensive Multi-Layer Gatekeeper verification for API requests
+ * Comprehensive Gatekeeper verification for API requests
  */
 export async function verifySuperAdminSession(req: NextRequest): Promise<{ authorized: boolean; email?: string; error?: string }> {
   try {
@@ -152,20 +176,6 @@ export async function verifySuperAdminSession(req: NextRequest): Promise<{ autho
       if (verified.valid && verified.email) {
         return { authorized: true, email: verified.email };
       }
-
-      // 2b. Also check if Bearer token is a valid Supabase JWT for superadmin user
-      try {
-        const { data: { user } } = await supabaseAdmin.auth.getUser(bearerToken);
-        if (user && user.email && isSuperAdmin(user.email, user.id)) {
-          return { authorized: true, email: user.email };
-        }
-      } catch (_) {}
-    }
-
-    // 3. Check custom header for internal microservice calls
-    const secretKeyHeader = req.headers.get('x-superadmin-key');
-    if (secretKeyHeader && secretKeyHeader === getMasterPassphrase()) {
-      return { authorized: true, email: 'master@studiocore.in' };
     }
 
     return { authorized: false, error: 'Unauthorized: Super Admin access required' };

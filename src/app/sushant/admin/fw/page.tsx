@@ -17,7 +17,7 @@ type MainTab = 'studios' | 'infra' | 'whatsapp';
 
 export default function SuperAdminFwPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [adminEmail, setAdminEmail] = useState<string>('sushantnawale700@gmail.com');
+  const [adminEmail, setAdminEmail] = useState<string>('');
 
   // Date Filter states
   const [datePreset, setDatePreset] = useState<DateFilterPreset>('all');
