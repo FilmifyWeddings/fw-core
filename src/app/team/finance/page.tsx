@@ -416,7 +416,7 @@ export default function TeamFinancePage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredShoots.map((shoot) => {
+                {filteredShoots.map((shoot, idx) => {
                   const agreed = Number(shoot.agreed_amount) || 0;
                   const paid = Number(shoot.paid_amount) || 0;
                   const balance = Number(shoot.balance_amount) || 0;

@@ -56,7 +56,7 @@ interface AssignedShoot {
 
 export default function TeamDashboardPage() {
   const router = useRouter();
-  const { workspaceName, isOwner, userRole, availableWorkspaces } = useWorkspace();
+  const { workspaceName, isOwner, userRole, availableWorkspaces, activeWorkspace } = useWorkspace();
   const [shoots, setShoots] = useState<AssignedShoot[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'completed' | 'all'>('upcoming');

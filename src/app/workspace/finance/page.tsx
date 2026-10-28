@@ -346,6 +346,7 @@ export default function FinancePage() {
   const [locationFilter, setLocationFilter] = useState('all');
   const [paymentModeFilter, setPaymentModeFilter] = useState('all');
   const [revenueTypeFilter, setRevenueTypeFilter] = useState<'ALL' | 'NEW_BOOKING' | 'DUE_BALANCE'>('ALL');
+  const [clientFilter, setClientFilter] = useState('all');
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const filterDropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -2214,6 +2215,134 @@ export default function FinancePage() {
             updated_at: new Date().toISOString()
           })
           .eq('id', updatedExp.id);
+
+        // ── TWO-WAY SYNC TO ORIGIN SOURCES (SHOOT, DELIVERABLE, SALARY) ──
+        const targetExp = expenses.find(e => e.id === updatedExp.id);
+        const targetAssignmentId = (targetExp as any)?.assignment_id || (updatedExp as any).assignment_id;
+        const targetMemberId = updatedExp.team_member_id || (targetExp as any)?.team_member_id || (targetExp as any)?.member_id;
+        const expCatLower = (updatedExp.category || '').toLowerCase();
+
+        // 1. Shoot Event Assignment
+        if (targetAssignmentId) {
+          try {
+            const { data: assignRow } = await supabase
+              .from('fw_assignments')
+              .select('*')
+              .eq('id', targetAssignmentId)
+              .maybeSingle();
+
+            if (assignRow) {
+              const agreed = Number(assignRow.agreed_amount) || 0;
+              const newBal = Math.max(0, agreed - amt);
+              const pStatus = newBal === 0 && agreed > 0 ? 'completed' : 'pending';
+              await supabase
+                .from('fw_assignments')
+                .update({
+                  paid_amount: amt,
+                  balance_amount: newBal,
+                  payment_status: pStatus,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', targetAssignmentId);
+            }
+
+            await supabase
+              .from('crew_assignments_finance')
+              .update({
+                advance_paid_amount: amt,
+                payment_status: amt > 0 ? 'paid' : 'pending',
+                payment_method: updatedExp.payment_mode,
+                payment_date: updatedExp.payment_date,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', targetAssignmentId);
+
+            await supabase
+              .from('team_event_payouts')
+              .update({
+                paid_amount: amt,
+                payment_status: amt > 0 ? 'PAID' : 'PENDING',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', targetAssignmentId);
+          } catch (syncErr) {
+            console.warn('[Finance] Error syncing edited expense to shoot assignment:', syncErr);
+          }
+        }
+
+        // 2. Post-Production Deliverable or Album Order
+        if (expCatLower.includes('post') || expCatLower.includes('edit') || expCatLower.includes('album')) {
+          try {
+            const { data: dRow } = await supabase
+              .from('post_production_deliverables')
+              .select('*')
+              .or(`id.eq.${targetAssignmentId || 'none'},title.ilike.%${updatedExp.title}%`)
+              .maybeSingle();
+
+            if (dRow) {
+              const agreed = Number(dRow.agreed_amount) || 0;
+              const newBal = Math.max(0, agreed - amt);
+              await supabase
+                .from('post_production_deliverables')
+                .update({
+                  paid_amount: amt,
+                  balance_amount: newBal,
+                  payment_status: newBal === 0 && agreed > 0 ? 'FULL_PAID' : 'PARTIAL',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', dRow.id);
+            }
+
+            const { data: oRow } = await supabase
+              .from('partner_album_orders')
+              .select('*')
+              .or(`id.eq.${targetAssignmentId || 'none'},deliverable_id.eq.${targetAssignmentId || 'none'}`)
+              .maybeSingle();
+
+            if (oRow) {
+              const agreed = Number(oRow.total_amount) || 0;
+              const newBal = Math.max(0, agreed - amt);
+              await supabase
+                .from('partner_album_orders')
+                .update({
+                  paid_amount: amt,
+                  balance_amount: newBal,
+                  payment_status: newBal === 0 && agreed > 0 ? 'PAID' : 'PARTIAL',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', oRow.id);
+            }
+          } catch (syncErr) {
+            console.warn('[Finance] Error syncing edited expense to deliverable:', syncErr);
+          }
+        }
+
+        // 3. Staff Salary Slip
+        if (expCatLower.includes('salary') || expCatLower.includes('payroll')) {
+          try {
+            if (targetMemberId) {
+              await supabase
+                .from('team_salary_slips')
+                .update({
+                  net_paid: amt,
+                  paid_amount: amt,
+                  payment_mode: updatedExp.payment_mode,
+                  paid_date: updatedExp.payment_date,
+                  status: 'Paid',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('member_id', targetMemberId);
+            }
+          } catch (syncErr) {
+            console.warn('[Finance] Error syncing edited expense to salary slip:', syncErr);
+          }
+        }
+
+        // Dispatch window events so Team Drawer and other tabs update instantly
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('team_finance_updated'));
+          window.dispatchEvent(new CustomEvent('finance_updated'));
+        }
       }
 
       logAudit(
@@ -2239,17 +2368,146 @@ export default function FinancePage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      setExpenses(prev => prev.filter(e => e.id !== id));
+      // ── TWO-WAY SYNC ON DELETE: REVERT MATCHING ORIGIN TO UNPAID / DUE ──
+      const targetAssignmentId = (target as any)?.assignment_id;
+      const targetMemberId = target.team_member_id || (target as any)?.member_id;
+      const catLower = (target.category || '').toLowerCase();
 
       if (workspaceId !== 'ws_demo') {
+        // 1. Revert shoot assignment in fw_assignments, crew_assignments_finance & team_event_payouts
+        if (targetAssignmentId) {
+          try {
+            const { data: assignRow } = await supabase
+              .from('fw_assignments')
+              .select('*')
+              .eq('id', targetAssignmentId)
+              .maybeSingle();
+
+            if (assignRow) {
+              const agreed = Number(assignRow.agreed_amount) || 0;
+              await supabase
+                .from('fw_assignments')
+                .update({
+                  paid_amount: 0,
+                  balance_amount: agreed,
+                  payment_status: 'pending',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', targetAssignmentId);
+            }
+
+            await supabase
+              .from('crew_assignments_finance')
+              .update({
+                advance_paid_amount: 0,
+                payment_status: 'pending',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', targetAssignmentId);
+
+            const { data: epRow } = await supabase
+              .from('team_event_payouts')
+              .select('*')
+              .eq('id', targetAssignmentId)
+              .maybeSingle();
+
+            if (epRow) {
+              await supabase
+                .from('team_event_payouts')
+                .update({
+                  paid_amount: 0,
+                  balance_amount: epRow.agreed_amount || 0,
+                  payment_status: 'PENDING',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', targetAssignmentId);
+            }
+          } catch (syncErr) {
+            console.warn('[Finance] Error reverting shoot assignment payment on delete:', syncErr);
+          }
+        }
+
+        // 2. Revert post-production deliverable or partner album order
+        if (catLower.includes('post') || catLower.includes('edit') || catLower.includes('album')) {
+          try {
+            const { data: dRow } = await supabase
+              .from('post_production_deliverables')
+              .select('*')
+              .or(`id.eq.${targetAssignmentId || 'none'},title.ilike.%${target.title}%`)
+              .maybeSingle();
+
+            if (dRow) {
+              const agreed = Number(dRow.agreed_amount) || 0;
+              await supabase
+                .from('post_production_deliverables')
+                .update({
+                  paid_amount: 0,
+                  balance_amount: agreed,
+                  payment_status: 'PENDING',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', dRow.id);
+            }
+
+            const { data: oRow } = await supabase
+              .from('partner_album_orders')
+              .select('*')
+              .or(`id.eq.${targetAssignmentId || 'none'},deliverable_id.eq.${targetAssignmentId || 'none'}`)
+              .maybeSingle();
+
+            if (oRow) {
+              const agreed = Number(oRow.total_amount) || 0;
+              await supabase
+                .from('partner_album_orders')
+                .update({
+                  paid_amount: 0,
+                  balance_amount: agreed,
+                  payment_status: 'PENDING',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', oRow.id);
+            }
+          } catch (syncErr) {
+            console.warn('[Finance] Error reverting deliverable payment on delete:', syncErr);
+          }
+        }
+
+        // 3. Revert salary slip to Pending
+        if (catLower.includes('salary') || catLower.includes('payroll')) {
+          try {
+            if (targetMemberId) {
+              await supabase
+                .from('team_salary_slips')
+                .update({
+                  status: 'Pending',
+                  net_paid: 0,
+                  paid_amount: 0,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('member_id', targetMemberId);
+            }
+          } catch (syncErr) {
+            console.warn('[Finance] Error reverting salary slip on delete:', syncErr);
+          }
+        }
+
+        // Delete the expense row from finance_expenses and studio_expenses
         await supabase.from('finance_expenses').delete().eq('id', id);
         await supabase.from('studio_expenses').delete().eq('id', id);
+
+        // Dispatch events for immediate visual update
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('team_finance_updated'));
+          window.dispatchEvent(new CustomEvent('finance_updated'));
+        }
       }
+
+      setExpenses(prev => prev.filter(e => e.id !== id));
 
       logAudit(
         'ADJUSTMENT',
         target.amount,
-        `Deleted expense: "${target.title}" (₹${target.amount.toLocaleString('en-IN')})`,
+        `Deleted expense & reverted payout to Due: "${target.title}" (₹${target.amount.toLocaleString('en-IN')})`,
         target.client_id
       );
 
@@ -2296,9 +2554,10 @@ export default function FinancePage() {
     if (locationFilter !== 'all') count++;
     if (paymentModeFilter !== 'all') count++;
     if (teamMemberFilter !== 'all') count++;
+    if (clientFilter !== 'all') count++;
     if (dateRangePreset !== 'all' || (startDate && endDate)) count++;
     return count;
-  }, [categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, dateRangePreset, startDate, endDate]);
+  }, [categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, clientFilter, dateRangePreset, startDate, endDate]);
 
   const resetAllFilters = () => {
     setCategoryFilter('all');
@@ -2306,6 +2565,7 @@ export default function FinancePage() {
     setLocationFilter('all');
     setPaymentModeFilter('all');
     setTeamMemberFilter('all');
+    setClientFilter('all');
     setRevenueTypeFilter('ALL');
     setDateRangePreset('all');
     setStartDate('');
@@ -2607,11 +2867,12 @@ export default function FinancePage() {
       const title = exp.title?.toLowerCase() || '';
       const paidTo = exp.paid_to?.toLowerCase() || '';
       const cat = exp.category?.toLowerCase() || '';
+      const clientName = exp.client?.name?.toLowerCase() || '';
 
       let matchesSearch = true;
       if (query) {
         const queryTokens = query.split(/\s+/).filter(Boolean);
-        const searchableText = `${title} ${paidTo} ${cat} ${exp.notes || ''}`.toLowerCase();
+        const searchableText = `${title} ${paidTo} ${cat} ${clientName} ${exp.notes || ''}`.toLowerCase();
         if (searchableText.includes(query)) {
           matchesSearch = true;
         } else if (queryTokens.length <= 2) {
@@ -2621,17 +2882,52 @@ export default function FinancePage() {
           matchesSearch = matchedCount >= Math.ceil(queryTokens.length * 0.5) || queryTokens.every(tok => searchableText.includes(tok));
         }
       }
-      const matchesCategory = categoryFilter === 'all' || exp.category === categoryFilter;
+
+      // Category matching
+      let matchesCategory = true;
+      if (categoryFilter !== 'all') {
+        const cLower = categoryFilter.toLowerCase();
+        const expCat = (exp.category || '').toLowerCase();
+        if (cLower === 'crew payout') {
+          matchesCategory = expCat.includes('crew') || expCat.includes('shoot') || expCat.includes('photo') || expCat.includes('cinema');
+        } else if (cLower === 'post-production payout') {
+          matchesCategory = expCat.includes('post') || expCat.includes('edit') || expCat.includes('album');
+        } else if (cLower === 'staff salary payout') {
+          matchesCategory = expCat.includes('salary') || expCat.includes('payroll');
+        } else {
+          matchesCategory = expCat === cLower;
+        }
+      }
+
+      // Mode matching
       const matchesMode = paymentModeFilter === 'all' || normalizePaymentMode(exp.payment_mode) === normalizePaymentMode(paymentModeFilter);
 
+      // Date matching
       let matchesDate = true;
-      const expDate = (exp.payment_date || '').split('T')[0];
+      const expDate = (exp.payment_date || (exp as any).expense_date || '').split('T')[0];
       if (startDate && expDate && expDate < startDate) matchesDate = false;
       if (endDate && expDate && expDate > endDate) matchesDate = false;
 
-      return matchesSearch && matchesCategory && matchesMode && matchesDate;
+      // Team Member matching
+      let matchesTeamMember = true;
+      if (teamMemberFilter && teamMemberFilter !== 'all') {
+        const tmLower = teamMemberFilter.toLowerCase();
+        const expMemberId = exp.team_member_id || (exp as any).member_id;
+        const expPaidTo = (exp.paid_to || '').toLowerCase();
+        matchesTeamMember = expMemberId === teamMemberFilter || expPaidTo === tmLower || expPaidTo.includes(tmLower);
+      }
+
+      // Client matching
+      let matchesClient = true;
+      if (clientFilter && clientFilter !== 'all') {
+        const expClientId = exp.client_id || exp.client?.id;
+        const expClientName = (exp.client?.name || '').toLowerCase();
+        matchesClient = expClientId === clientFilter || expClientName === clientFilter.toLowerCase() || (exp.notes || '').toLowerCase().includes(clientFilter.toLowerCase());
+      }
+
+      return matchesSearch && matchesCategory && matchesMode && matchesDate && matchesTeamMember && matchesClient;
     });
-  }, [expenses, searchQuery, categoryFilter, paymentModeFilter, startDate, endDate]);
+  }, [expenses, searchQuery, categoryFilter, paymentModeFilter, teamMemberFilter, clientFilter, startDate, endDate]);
 
   // 5 Top KPI Metric Cards calculations (Dynamically synchronized directly with filtered cards below)
   const isDateActive = Boolean(dateRangePreset !== 'all' || startDate || endDate);
@@ -2977,7 +3273,7 @@ export default function FinancePage() {
                 <CreditCard className="w-3.5 h-3.5 sm:w-5 sm:h-5 stroke-[2.2]" />
               </div>
               <div className="min-w-0 flex-1">
-                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Team & Ops</span>
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Expenses</span>
                 <p className="text-sm sm:text-2xl font-black text-slate-900 tracking-tight font-sans truncate">
                   {totalExpensesAmount !== null ? `₹${totalExpensesAmount.toLocaleString('en-IN')}` : '—'}
                 </p>
@@ -3365,6 +3661,7 @@ export default function FinancePage() {
               <FinanceFiltersModal
                 isOpen={isFilterDropdownOpen}
                 onClose={() => setIsFilterDropdownOpen(false)}
+                activeTab={activeTab}
                 activeFiltersCount={activeFiltersCount}
                 resetAllFilters={resetAllFilters}
                 dateRangePreset={dateRangePreset}
@@ -3375,12 +3672,17 @@ export default function FinancePage() {
                 setEndDate={setEndDate}
                 teamMemberFilter={teamMemberFilter}
                 setTeamMemberFilter={setTeamMemberFilter}
+                teamMembersDetailed={workspaceMembers as any}
                 teamMembersList={effectiveTeamMembers}
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
                 categoryFilter={categoryFilter}
                 setCategoryFilter={setCategoryFilter}
                 uniqueCategories={uniqueCategories}
+                expenseCategories={expenseCategories}
+                clientFilter={clientFilter}
+                setClientFilter={setClientFilter}
+                clientsList={clients.map(c => ({ id: c.id, name: c.name }))}
                 locationFilter={locationFilter}
                 setLocationFilter={setLocationFilter}
                 uniqueLocations={uniqueLocations}
@@ -3768,6 +4070,7 @@ export default function FinancePage() {
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                          <th className="pb-3 px-2">Client Name</th>
                           <th className="pb-3 px-2">Category</th>
                           <th className="pb-3 px-2">Title / Description</th>
                           <th className="pb-3 px-2">Paid To</th>
@@ -3781,24 +4084,26 @@ export default function FinancePage() {
                         {filteredExpenses.map((exp) => (
                           <tr key={exp.id} className="hover:bg-slate-50/80 transition">
                             <td className="py-3 px-2">
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-orange-50 text-orange-800 border border-orange-200">
+                              {exp.client?.name ? (
+                                <span className="inline-flex items-center gap-1 font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 text-xs">
+                                  📁 {exp.client.name}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-medium">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-2">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-orange-50 text-orange-800 border border-orange-200 inline-block">
                                 {exp.category}
                               </span>
                             </td>
                             <td className="py-3 px-2">
                               <div className="font-bold text-slate-900">{exp.title}</div>
-                              {exp.client?.name && (
-                                <div className="mt-0.5">
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                                    📁 Client: {exp.client.name}
-                                  </span>
-                                </div>
-                              )}
                               {exp.notes && (
                                 <div className="text-[10px] text-slate-400 font-medium line-clamp-1 mt-0.5">{exp.notes}</div>
                               )}
                             </td>
-                            <td className="py-3 px-2 text-slate-600 font-medium">{exp.paid_to || '—'}</td>
+                            <td className="py-3 px-2 text-slate-700 font-semibold">{exp.paid_to || '—'}</td>
                             <td className="py-3 px-2 text-slate-500 font-mono">
                               {exp.payment_date ? new Date(exp.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                             </td>
@@ -3838,24 +4143,33 @@ export default function FinancePage() {
                   <div className="block md:hidden space-y-2.5">
                     {filteredExpenses.map((exp) => (
                       <div key={exp.id} className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
+                        {/* 1. Client Name Badge Prominent at Top */}
                         <div className="flex items-center justify-between gap-2">
-                          <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-orange-50 text-orange-800 border border-orange-200 truncate max-w-[170px]">
-                            {exp.category}
-                          </span>
+                          {exp.client?.name ? (
+                            <span className="inline-flex items-center gap-1 font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 text-[10px] truncate max-w-[200px]">
+                              📁 Client: {exp.client.name}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-medium text-[10px]">No Client Linked</span>
+                          )}
                           <span className="font-mono font-black text-slate-900 text-sm">
                             ₹{(Number(exp.amount) || 0).toLocaleString('en-IN')}
                           </span>
                         </div>
 
-                        <div className="flex items-baseline justify-between gap-2 text-slate-700">
-                          <span className="font-bold text-slate-900 truncate">{exp.title}</span>
-                          <span className="text-[11px] text-slate-500 font-medium shrink-0">Paid to: {exp.paid_to || '—'}</span>
+                        {/* 2. Category & Title */}
+                        <div className="space-y-1">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-50 text-orange-800 border border-orange-200 inline-block">
+                            {exp.category}
+                          </span>
+                          <div className="font-bold text-slate-900">{exp.title}</div>
                         </div>
-                        {exp.client?.name && (
-                          <div className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 inline-block">
-                            📁 Client: {exp.client.name}
-                          </div>
-                        )}
+
+                        {/* 3. Paid To */}
+                        <div className="text-[11px] text-slate-600 font-medium">
+                          Paid to: <strong className="text-slate-900 font-bold">{exp.paid_to || '—'}</strong>
+                        </div>
+
                         {exp.notes && (
                           <div className="text-[10px] text-slate-400 font-medium line-clamp-1">{exp.notes}</div>
                         )}

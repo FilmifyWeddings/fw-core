@@ -1210,17 +1210,17 @@ export default function TeamMemberFinanceDrawer({
           className="absolute inset-0 bg-transparent transition-opacity"
         />
 
-        {/* Centered Modal Content */}
+        {/* Centered Modal Content - Enhanced Full Responsive Dimensions */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-          className="w-[96vw] max-w-5xl bg-white rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto flex flex-col z-10 font-sans border border-slate-200"
+          className="w-[98vw] max-w-6xl xl:max-w-7xl bg-white rounded-3xl shadow-2xl max-h-[94vh] h-[92vh] flex flex-col overflow-hidden z-10 font-sans border border-slate-200"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
-          <div className="p-4 sm:p-5 bg-gradient-to-r from-stone-900 via-zinc-900 to-amber-950 text-white flex items-center justify-between shadow-md rounded-t-2xl shrink-0">
+          {/* Header - Fixed Non-Scrolling Top Strip */}
+          <div className="p-4 sm:p-5 bg-gradient-to-r from-stone-900 via-zinc-900 to-amber-950 text-white flex items-center justify-between shadow-md rounded-t-3xl shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border-2 border-amber-400/40 overflow-hidden flex items-center justify-center shrink-0">
                 {member.avatar_url ? (
@@ -1280,15 +1280,15 @@ export default function TeamMemberFinanceDrawer({
 
             <button
               onClick={onClose}
-              className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition shadow-xs"
+              className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition shadow-xs"
               title="Close Drawer"
             >
               <X className="w-4 h-4 stroke-[2.5]" />
             </button>
           </div>
 
-          {/* Top Quick Stats Strip with Shoot Date Range Filter */}
-          <div className="p-3 sm:p-4 bg-amber-50/60 border-b border-amber-200/80 space-y-2">
+          {/* Top Quick Stats Strip with Shoot Date Range Filter - Fixed Non-Scrolling */}
+          <div className="p-3 sm:p-4 bg-gradient-to-r from-amber-50/80 via-orange-50/50 to-amber-50/80 border-b border-amber-200/80 space-y-2 shrink-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
                 <Wallet className="w-3 h-3 text-amber-600" /> Commercial Overview
@@ -1304,10 +1304,10 @@ export default function TeamMemberFinanceDrawer({
                     key={opt.id}
                     type="button"
                     onClick={() => setShootDateScope(opt.id)}
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
                       shootDateScope === opt.id
                         ? 'bg-amber-600 text-white shadow-2xs font-black'
-                        : 'bg-white/80 text-stone-600 hover:bg-white border border-amber-200/70'
+                        : 'bg-white/90 text-stone-600 hover:bg-white border border-amber-200/70'
                     }`}
                   >
                     {opt.label}
@@ -1335,52 +1335,61 @@ export default function TeamMemberFinanceDrawer({
             )}
           </div>
 
-          {/* 4 Navigation Tabs */}
-          <div className="px-3 sm:px-5 pt-2.5 pb-0 flex items-center gap-1 sm:gap-3 border-b border-amber-200/60 bg-[#FAF8F2] overflow-x-auto">
+          {/* 4 Navigation Tabs - Fixed Non-Scrolling & Responsive Pill Bar */}
+          <div className="px-3 sm:px-6 py-2.5 bg-stone-100/80 border-b border-stone-200/80 flex items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto">
             <button
               onClick={() => setActiveTab('bookings')}
-              className={`pb-2 px-2.5 sm:px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
+              className={`py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
                 activeTab === 'bookings'
-                  ? 'border-amber-600 text-amber-950 font-black'
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
+                  ? 'bg-amber-600 text-white shadow-xs font-black'
+                  : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200/80 hover:bg-stone-50'
               }`}
             >
-              📅 Bookings &amp; Events ({filteredShoots.length})
+              <span>📅 Bookings &amp; Events</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${activeTab === 'bookings' ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'}`}>
+                {filteredShoots.length}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab('deliverables')}
-              className={`pb-2 px-2.5 sm:px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
+              className={`py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
                 activeTab === 'deliverables'
-                  ? 'border-amber-600 text-amber-950 font-black'
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
+                  ? 'bg-amber-600 text-white shadow-xs font-black'
+                  : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200/80 hover:bg-stone-50'
               }`}
             >
-              🎨 Post-Production &amp; Edits ({deliverables.length})
+              <span>🎨 Post-Production &amp; Edits</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${activeTab === 'deliverables' ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'}`}>
+                {deliverables.length}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab('payroll')}
-              className={`pb-2 px-2.5 sm:px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
+              className={`py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
                 activeTab === 'payroll'
-                  ? 'border-amber-600 text-amber-950 font-black'
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
+                  ? 'bg-amber-600 text-white shadow-xs font-black'
+                  : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200/80 hover:bg-stone-50'
               }`}
             >
-              💵 Monthly Payroll &amp; Salary ({salaryRecords.length})
+              <span>💵 Monthly Payroll &amp; Salary</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${activeTab === 'payroll' ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'}`}>
+                {salaryRecords.length}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab('analytics')}
-              className={`pb-2 px-2.5 sm:px-3 text-xs font-bold transition border-b-2 cursor-pointer shrink-0 ${
+              className={`py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
                 activeTab === 'analytics'
-                  ? 'border-amber-600 text-amber-950 font-black'
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
+                  ? 'bg-amber-600 text-white shadow-xs font-black'
+                  : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200/80 hover:bg-stone-50'
               }`}
             >
-              📊 Analytics Dashboard
+              <span>📊 Analytics Dashboard</span>
             </button>
           </div>
 
-          {/* Body Content */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+          {/* Body Content - Scrollable Interior with Guaranteed Fixed Tabs */}
+          <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6 space-y-4">
             
             {/* ══════════════════════════════════════════════════════════════
                 TAB 1: BOOKINGS & EVENTS (SHOOTS)
@@ -1732,24 +1741,24 @@ export default function TeamMemberFinanceDrawer({
                   </div>
                 </div>
 
-                {/* 3 Metric Pills for Post-Production Deliverables */}
+                {/* 3 Metric Pills for Post-Production Deliverables - Matched with Bookings Ledger */}
                 {(() => {
                   const delivTotalAgreed = deliverables.reduce((acc, d) => acc + (Number(d.agreed_amount) || 0), 0);
                   const delivTotalPaid = deliverables.reduce((acc, d) => acc + (Number(d.paid_amount) || 0), 0);
                   const delivTotalBalance = Math.max(0, delivTotalAgreed - delivTotalPaid);
                   return (
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="p-2.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
-                        <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wider block">Total Agreed</span>
-                        <span className="text-xs font-black text-stone-900 font-mono">₹{delivTotalAgreed.toLocaleString('en-IN')}</span>
+                    <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                      <div className="p-3 bg-white rounded-2xl border border-stone-200/90 shadow-2xs">
+                        <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">Total Agreed</span>
+                        <span className="text-xs sm:text-sm font-black text-stone-900 font-mono">₹{delivTotalAgreed.toLocaleString('en-IN')}</span>
                       </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
-                        <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider block">Total Paid</span>
-                        <span className="text-xs font-black text-emerald-700 font-mono">₹{delivTotalPaid.toLocaleString('en-IN')}</span>
+                      <div className="p-3 bg-white rounded-2xl border border-emerald-200/90 shadow-2xs bg-emerald-50/20">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Total Paid</span>
+                        <span className="text-xs sm:text-sm font-black text-emerald-700 font-mono">₹{delivTotalPaid.toLocaleString('en-IN')}</span>
                       </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
-                        <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider block">Remaining Balance</span>
-                        <span className="text-xs font-black text-amber-700 font-mono">₹{delivTotalBalance.toLocaleString('en-IN')}</span>
+                      <div className="p-3 bg-white rounded-2xl border border-amber-200/90 shadow-2xs bg-amber-50/20">
+                        <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider block">Remaining Balance</span>
+                        <span className="text-xs sm:text-sm font-black text-amber-700 font-mono">₹{delivTotalBalance.toLocaleString('en-IN')}</span>
                       </div>
                     </div>
                   );

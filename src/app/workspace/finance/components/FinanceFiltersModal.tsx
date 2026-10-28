@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Filter, Calendar, Users } from 'lucide-react';
+import { Filter, Calendar, Users, Folder, Search, Check, ChevronDown, Building2, Handshake } from 'lucide-react';
 
 export const formatLocalDate = (d: Date): string => {
   const year = d.getFullYear();
@@ -11,9 +11,21 @@ export const formatLocalDate = (d: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+export interface DetailedTeamMember {
+  id?: string;
+  name: string;
+  avatar_url?: string;
+  primary_role?: string;
+  role?: string;
+  primary_type?: string;
+  member_types?: string[];
+  payout_frequency?: string;
+}
+
 export interface FinanceFiltersModalProps {
   isOpen: boolean;
   onClose: () => void;
+  activeTab?: 'invoices' | 'expenses' | 'analytics';
   activeFiltersCount: number;
   resetAllFilters: () => void;
   dateRangePreset: string;
@@ -24,12 +36,17 @@ export interface FinanceFiltersModalProps {
   setEndDate: (val: string) => void;
   teamMemberFilter: string;
   setTeamMemberFilter: (val: string) => void;
+  teamMembersDetailed?: DetailedTeamMember[];
   teamMembersList: string[];
   statusFilter: string;
   setStatusFilter: (val: any) => void;
   categoryFilter: string;
   setCategoryFilter: (val: string) => void;
   uniqueCategories: string[];
+  expenseCategories?: string[];
+  clientFilter?: string;
+  setClientFilter?: (val: string) => void;
+  clientsList?: Array<{ id: string; name: string }>;
   locationFilter: string;
   setLocationFilter: (val: string) => void;
   uniqueLocations: string[];
@@ -42,6 +59,7 @@ export interface FinanceFiltersModalProps {
 export function FinanceFiltersModal({
   isOpen,
   onClose,
+  activeTab = 'invoices',
   activeFiltersCount,
   resetAllFilters,
   dateRangePreset,
@@ -52,20 +70,145 @@ export function FinanceFiltersModal({
   setEndDate,
   teamMemberFilter,
   setTeamMemberFilter,
-  teamMembersList,
+  teamMembersDetailed = [],
+  teamMembersList = [],
   statusFilter,
   setStatusFilter,
   categoryFilter,
   setCategoryFilter,
-  uniqueCategories,
+  uniqueCategories = [],
+  expenseCategories = [],
+  clientFilter = 'all',
+  setClientFilter,
+  clientsList = [],
   locationFilter,
   setLocationFilter,
-  uniqueLocations,
+  uniqueLocations = [],
   paymentModeFilter,
   setPaymentModeFilter,
   revenueTypeFilter = 'ALL',
   setRevenueTypeFilter,
 }: FinanceFiltersModalProps) {
+  // States for custom dropdown popovers
+  const [isTeamDropdownOpen, setIsTeamDropdownOpen] = useState(false);
+  const [teamSearchQuery, setTeamSearchQuery] = useState('');
+  const teamDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const clientDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown popovers on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (teamDropdownRef.current && !teamDropdownRef.current.contains(e.target as Node)) {
+        setIsTeamDropdownOpen(false);
+      }
+      if (clientDropdownRef.current && !clientDropdownRef.current.contains(e.target as Node)) {
+        setIsClientDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Segregate Team Members into In-House vs Freelancers & Partners
+  const { inHouseMembers, freelancerMembers } = useMemo(() => {
+    const inHouse: DetailedTeamMember[] = [];
+    const freelancers: DetailedTeamMember[] = [];
+    const seenNames = new Set<string>();
+
+    teamMembersDetailed.forEach((m) => {
+      const name = m.name?.trim();
+      if (!name || seenNames.has(name.toLowerCase())) return;
+      seenNames.add(name.toLowerCase());
+
+      const isInHouse =
+        m.primary_type === 'IN_HOUSE' ||
+        m.member_types?.includes('IN_HOUSE') ||
+        m.payout_frequency === 'monthly';
+
+      if (isInHouse) {
+        inHouse.push(m);
+      } else {
+        freelancers.push(m);
+      }
+    });
+
+    // Also include any names in teamMembersList that were not in teamMembersDetailed
+    teamMembersList.forEach((raw) => {
+      const clean = raw.replace(/\s*\([^)]*\)/g, '').trim();
+      if (!clean || seenNames.has(clean.toLowerCase())) return;
+      seenNames.add(clean.toLowerCase());
+      freelancers.push({
+        id: clean,
+        name: clean,
+        primary_role: raw.includes('(') ? raw.split('(')[1].replace(')', '').trim() : 'Crew',
+      });
+    });
+
+    return { inHouseMembers: inHouse, freelancerMembers: freelancers };
+  }, [teamMembersDetailed, teamMembersList]);
+
+  // Filtered members by search query
+  const filteredInHouse = useMemo(() => {
+    if (!teamSearchQuery.trim()) return inHouseMembers;
+    const q = teamSearchQuery.toLowerCase();
+    return inHouseMembers.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        (m.primary_role || m.role || '').toLowerCase().includes(q)
+    );
+  }, [inHouseMembers, teamSearchQuery]);
+
+  const filteredFreelancers = useMemo(() => {
+    if (!teamSearchQuery.trim()) return freelancerMembers;
+    const q = teamSearchQuery.toLowerCase();
+    return freelancerMembers.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        (m.primary_role || m.role || '').toLowerCase().includes(q)
+    );
+  }, [freelancerMembers, teamSearchQuery]);
+
+  // Selected Team Member Label
+  const selectedMemberDisplay = useMemo(() => {
+    if (teamMemberFilter === 'all') return '👥 All Team Members';
+    if (teamMemberFilter === 'unassigned') return '👤 Unassigned Only';
+    const found = teamMembersDetailed.find(
+      (m) => m.id === teamMemberFilter || m.name.toLowerCase() === teamMemberFilter.toLowerCase()
+    );
+    return found?.name || teamMemberFilter;
+  }, [teamMemberFilter, teamMembersDetailed]);
+
+  // Filtered clients list
+  const filteredClients = useMemo(() => {
+    if (!clientSearchQuery.trim()) return clientsList;
+    const q = clientSearchQuery.toLowerCase();
+    return clientsList.filter((c) => c.name.toLowerCase().includes(q));
+  }, [clientsList, clientSearchQuery]);
+
+  const selectedClientDisplay = useMemo(() => {
+    if (!clientFilter || clientFilter === 'all') return '📁 All Clients';
+    const found = clientsList.find((c) => c.id === clientFilter || c.name === clientFilter);
+    return found ? found.name : clientFilter;
+  }, [clientFilter, clientsList]);
+
+  // Combined Category options for expenses mode
+  const effectiveExpenseCategories = useMemo(() => {
+    const base = [
+      'Post-Production Payout',
+      'Staff Salary Payout',
+      'Crew Payout',
+      'Photographer Payout',
+      'Cinematographer Payout',
+      'Album Printing Fee',
+      'Travel & Conveyance',
+      'Studio Rent & Utilities',
+    ];
+    return Array.from(new Set([...base, ...expenseCategories]));
+  }, [expenseCategories]);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -82,7 +225,8 @@ export function FinanceFiltersModal({
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                <Filter className="w-3.5 h-3.5 text-orange-600" /> Filter Criteria
+                <Filter className="w-3.5 h-3.5 text-orange-600" />
+                <span>{activeTab === 'expenses' ? 'Team Payouts Filters' : 'Filter Criteria'}</span>
               </h4>
               {activeFiltersCount > 0 && (
                 <button
@@ -196,107 +340,368 @@ export function FinanceFiltersModal({
                   />
                 </div>
               </div>
+            </div>
 
-              {statusFilter === 'overall_turnover' ? (
-                <p className="text-[10px] text-amber-900 font-semibold leading-tight pt-0.5">
-                  ⚡ Matches contract first payment step (Token / Advance booking date) for Overall Turnover.
-                </p>
-              ) : statusFilter === 'received' ? (
-                <p className="text-[10px] text-emerald-800 font-semibold leading-tight pt-0.5">
-                  ⚡ Matches milestone payment received dates in selected period for Payment Received.
-                </p>
-              ) : statusFilter === 'paid' ? (
-                <p className="text-[10px] text-purple-900 font-semibold leading-tight pt-0.5">
-                  ⚡ Matches final payment milestone completion date in selected period for Fully Paid.
-                </p>
-              ) : statusFilter === 'pending' ? (
-                <p className="text-[10px] text-amber-800 font-semibold leading-tight pt-0.5">
-                  ⚡ Matches unpaid milestone due dates in selected period for Pending Due.
-                </p>
-              ) : statusFilter === 'overdue_only' ? (
-                <p className="text-[10px] text-rose-800 font-semibold leading-tight pt-0.5">
-                  ⚡ Matches unpaid milestones due before {startDate || 'today'} for Overdue Dues.
-                </p>
-              ) : (
-                <p className="text-[10px] text-slate-600 font-semibold leading-tight pt-0.5">
-                  ⚡ All Status view: Invoices by booking date, collections by payment date, dues by due date.
-                </p>
+            {/* 👥 THREADED TEAM MEMBER DROPDOWN WITH AVATARS */}
+            <div className="relative" ref={teamDropdownRef}>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Users className="w-3 h-3 text-purple-600" /> Team Member
+                </span>
+                {teamMemberFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setTeamMemberFilter('all')}
+                    className="text-[10px] font-bold text-amber-600 hover:underline"
+                  >
+                    Clear
+                  </button>
+                )}
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setIsTeamDropdownOpen((prev) => !prev)}
+                className="w-full px-3 py-2 bg-slate-50 hover:bg-white border border-slate-200 focus:border-amber-500 rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between gap-2 shadow-2xs cursor-pointer transition text-left"
+              >
+                <span className="truncate">{selectedMemberDisplay}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              </button>
+
+              {/* Threaded Dropdown Popover */}
+              {isTeamDropdownOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-60 overflow-hidden flex flex-col p-1.5 space-y-1">
+                  {/* Search Input */}
+                  <div className="relative p-1">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search member or role..."
+                      value={teamSearchQuery}
+                      onChange={(e) => setTeamSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Scrollable list */}
+                  <div className="overflow-y-auto flex-1 space-y-1">
+                    {/* All Team Members */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTeamMemberFilter('all');
+                        setIsTeamDropdownOpen(false);
+                      }}
+                      className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                        teamMemberFilter === 'all'
+                          ? 'bg-amber-500 text-white shadow-2xs'
+                          : 'hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>👥</span> All Team Members
+                      </span>
+                      {teamMemberFilter === 'all' && <Check className="w-3.5 h-3.5" />}
+                    </button>
+
+                    {/* Unassigned Only (For Invoices Tab) */}
+                    {activeTab === 'invoices' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTeamMemberFilter('unassigned');
+                          setIsTeamDropdownOpen(false);
+                        }}
+                        className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                          teamMemberFilter === 'unassigned'
+                            ? 'bg-rose-500 text-white shadow-2xs'
+                            : 'hover:bg-rose-50 text-rose-700'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span>👤</span> Unassigned Only
+                        </span>
+                        {teamMemberFilter === 'unassigned' && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+
+                    {/* GROUP 1: 🏢 IN-HOUSE TEAM MEMBERS (AT THE TOP) */}
+                    {filteredInHouse.length > 0 && (
+                      <div className="pt-1.5">
+                        <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-50 rounded-md flex items-center gap-1">
+                          <Building2 className="w-3 h-3" />
+                          <span>In-House Team Members ({filteredInHouse.length})</span>
+                        </div>
+                        <div className="mt-1 space-y-0.5">
+                          {filteredInHouse.map((m) => {
+                            const isSelected =
+                              teamMemberFilter === m.id ||
+                              teamMemberFilter.toLowerCase() === m.name.toLowerCase();
+                            const initials = m.name.slice(0, 2).toUpperCase();
+
+                            return (
+                              <button
+                                key={m.id || m.name}
+                                type="button"
+                                onClick={() => {
+                                  setTeamMemberFilter(m.id || m.name);
+                                  setIsTeamDropdownOpen(false);
+                                }}
+                                className={`w-full px-2 py-1.5 rounded-lg text-left text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-amber-500 text-white shadow-2xs'
+                                    : 'hover:bg-amber-50/70 text-slate-800'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {m.avatar_url ? (
+                                    <img
+                                      src={m.avatar_url}
+                                      alt={m.name}
+                                      className="w-5 h-5 rounded-full object-cover shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-5 h-5 rounded-full bg-purple-100 text-purple-800 text-[9px] font-black flex items-center justify-center shrink-0 border border-purple-200">
+                                      {initials}
+                                    </div>
+                                  )}
+                                  <div className="truncate min-w-0">
+                                    <span className="truncate block font-extrabold">{m.name}</span>
+                                    <span className={`text-[9px] block truncate ${isSelected ? 'text-white/80' : 'text-purple-600 font-semibold'}`}>
+                                      {m.primary_role || m.role || 'In-House Staff'}
+                                    </span>
+                                  </div>
+                                </div>
+                                {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* GROUP 2: 🤝 FREELANCERS & PARTNERS (UNDERNEATH) */}
+                    {filteredFreelancers.length > 0 && (
+                      <div className="pt-2">
+                        <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 rounded-md flex items-center gap-1">
+                          <Handshake className="w-3 h-3" />
+                          <span>Freelancers &amp; Partners ({filteredFreelancers.length})</span>
+                        </div>
+                        <div className="mt-1 space-y-0.5">
+                          {filteredFreelancers.map((m) => {
+                            const isSelected =
+                              teamMemberFilter === m.id ||
+                              teamMemberFilter.toLowerCase() === m.name.toLowerCase();
+                            const initials = m.name.slice(0, 2).toUpperCase();
+
+                            return (
+                              <button
+                                key={m.id || m.name}
+                                type="button"
+                                onClick={() => {
+                                  setTeamMemberFilter(m.id || m.name);
+                                  setIsTeamDropdownOpen(false);
+                                }}
+                                className={`w-full px-2 py-1.5 rounded-lg text-left text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-amber-500 text-white shadow-2xs'
+                                    : 'hover:bg-amber-50/70 text-slate-800'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {m.avatar_url ? (
+                                    <img
+                                      src={m.avatar_url}
+                                      alt={m.name}
+                                      className="w-5 h-5 rounded-full object-cover shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black flex items-center justify-center shrink-0 border border-emerald-200">
+                                      {initials}
+                                    </div>
+                                  )}
+                                  <div className="truncate min-w-0">
+                                    <span className="truncate block font-extrabold">{m.name}</span>
+                                    <span className={`text-[9px] block truncate ${isSelected ? 'text-white/80' : 'text-emerald-700 font-semibold'}`}>
+                                      {m.primary_role || m.role || 'Crew / Freelancer'}
+                                    </span>
+                                  </div>
+                                </div>
+                                {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 
-            {/* 👥 TEAM MEMBER */}
+            {/* 📁 CLIENT FILTER DROPDOWN (DEDICATED FOR EXPENSES TAB) */}
+            {activeTab === 'expenses' && setClientFilter && (
+              <div className="relative" ref={clientDropdownRef}>
+                <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Folder className="w-3 h-3 text-amber-600" /> Client
+                  </span>
+                  {clientFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => setClientFilter('all')}
+                      className="text-[10px] font-bold text-amber-600 hover:underline"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setIsClientDropdownOpen((prev) => !prev)}
+                  className="w-full px-3 py-2 bg-slate-50 hover:bg-white border border-slate-200 focus:border-amber-500 rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between gap-2 shadow-2xs cursor-pointer transition text-left"
+                >
+                  <span className="truncate">{selectedClientDisplay}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                </button>
+
+                {/* Client Dropdown Popover with Search */}
+                {isClientDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-56 overflow-hidden flex flex-col p-1.5 space-y-1">
+                    <div className="relative p-1">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Search client directory..."
+                        value={clientSearchQuery}
+                        onChange={(e) => setClientSearchQuery(e.target.value)}
+                        className="w-full pl-8 pr-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="overflow-y-auto flex-1 space-y-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setClientFilter('all');
+                          setIsClientDropdownOpen(false);
+                        }}
+                        className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                          clientFilter === 'all'
+                            ? 'bg-amber-500 text-white shadow-2xs'
+                            : 'hover:bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        <span>📁 All Clients</span>
+                        {clientFilter === 'all' && <Check className="w-3.5 h-3.5" />}
+                      </button>
+
+                      {filteredClients.map((client) => {
+                        const isSelected = clientFilter === client.id || clientFilter === client.name;
+                        return (
+                          <button
+                            key={client.id}
+                            type="button"
+                            onClick={() => {
+                              setClientFilter(client.id);
+                              setIsClientDropdownOpen(false);
+                            }}
+                            className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                              isSelected
+                                ? 'bg-amber-500 text-white shadow-2xs'
+                                : 'hover:bg-amber-50/70 text-slate-800'
+                            }`}
+                          >
+                            <span className="truncate">📁 {client.name}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* PAYMENT STATUS FILTER (FOR INVOICES TAB) */}
+            {activeTab !== 'expenses' && (
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 block mb-1">Payment Status</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">⚡ All Status</option>
+                  <option value="overall_turnover">📈 Overall Turnover</option>
+                  <option value="received">💰 Payment Received</option>
+                  <option value="paid">✅ Fully Paid</option>
+                  <option value="pending">⏳ Pending Due</option>
+                  <option value="overdue_only">⚠️ Overdue Dues Only</option>
+                  <option value="trash">🗑️ Trash (Archived / Soft-Deleted)</option>
+                </select>
+              </div>
+            )}
+
+            {/* CATEGORY FILTER */}
             <div>
-              <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center gap-1">
-                <Users className="w-3 h-3 text-purple-600" /> Team Member
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                {activeTab === 'expenses' ? 'Category' : 'Event Category'}
               </label>
-              <select
-                value={teamMemberFilter}
-                onChange={(e) => setTeamMemberFilter(e.target.value)}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
-              >
-                <option value="all">👥 All Team Members</option>
-                <option value="unassigned">👤 Unassigned Only</option>
-                {teamMembersList.map(member => (
-                  <option key={member} value={member}>{member}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Status Filter */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-700 block mb-1">Payment Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-              >
-                <option value="all">⚡ All Status</option>
-                <option value="overall_turnover">📈 Overall Turnover</option>
-                <option value="received">💰 Payment Received</option>
-                <option value="paid">✅ Fully Paid</option>
-                <option value="pending">⏳ Pending Due</option>
-                <option value="overdue_only">⚠️ Overdue Dues Only</option>
-                <option value="trash">🗑️ Trash (Archived / Soft-Deleted)</option>
-              </select>
-            </div>
-
-            {/* Event Category */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-700 block mb-1">Event Category</label>
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
+                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
               >
-                <option value="all">📂 All Event Categories</option>
-                {uniqueCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
+                {activeTab === 'expenses' ? (
+                  <>
+                    <option value="all">📂 All Categories</option>
+                    {effectiveExpenseCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <option value="all">📂 All Event Categories</option>
+                    {uniqueCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
             </div>
 
-            {/* Location / City */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-700 block mb-1">Location / City</label>
-              <select
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
-              >
-                <option value="all">📍 All Locations / Cities</option>
-                {uniqueLocations.map(loc => (
-                  <option key={loc} value={loc}>{loc}</option>
-                ))}
-              </select>
-            </div>
+            {/* LOCATION / CITY (HIDDEN FOR EXPENSES TAB) */}
+            {activeTab !== 'expenses' && (
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 block mb-1">Location / City</label>
+                <select
+                  value={locationFilter}
+                  onChange={(e) => setLocationFilter(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">📍 All Locations / Cities</option>
+                  {uniqueLocations.map((loc) => (
+                    <option key={loc} value={loc}>
+                      {loc}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-            {/* Payment Channel */}
+            {/* PAYMENT MODE CHANNEL (FOR BOTH INVOICES & EXPENSES) */}
             <div>
               <label className="text-[11px] font-bold text-slate-700 block mb-1">Payment Mode Channel</label>
               <select
                 value={paymentModeFilter}
                 onChange={(e) => setPaymentModeFilter(e.target.value)}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
+                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
               >
                 <option value="all">💳 All Channels</option>
                 <option value="UPI">UPI (GooglePay / PhonePe)</option>
