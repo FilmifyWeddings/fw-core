@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Sparkles,
+  AlertCircle,
   Camera,
   Upload,
   ArrowLeft,
@@ -374,6 +375,9 @@ function AlbumStudioContent() {
   const [uploadTargetCollection, setUploadTargetCollection] = useState<string>('all');
   const [duplicateFiles, setDuplicateFiles] = useState<File[]>([]);
   const [showDuplicatePrompt, setShowDuplicatePrompt] = useState(false);
+  const [pendingSelectedFiles, setPendingSelectedFiles] = useState<File[]>([]);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [showFaceAiConfirmModal, setShowFaceAiConfirmModal] = useState(false);
   const [showDesktopAppModal, setShowDesktopAppModal] = useState(false);
   const [isDesktopEngineActive, setIsDesktopEngineActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -406,17 +410,20 @@ function AlbumStudioContent() {
     };
   }, []);
 
-  // Intelligent Duplicate Detection for Photo Uploads
+  // Intelligent Duplicate Detection for Photo Uploads (Strictly Collection-Scoped)
   const handleSelectUploadFiles = useCallback((selectedFiles: File[], targetColId?: string) => {
     if (!selectedFiles || selectedFiles.length === 0) return;
 
-    const colId = targetColId !== undefined ? targetColId : uploadTargetCollection;
-    const targetCol = colId !== 'all' ? colId : (collections[0]?.id || undefined);
+    const resolvedColId = targetColId !== undefined
+      ? targetColId
+      : (uploadTargetCollection !== 'all' ? uploadTargetCollection : (selectedCollectionId !== 'all' ? selectedCollectionId : (collections[0]?.id || undefined)));
 
-    // Existing photos in target collection (or entire gallery if 'all')
+    const targetCol = resolvedColId !== 'all' ? resolvedColId : (collections[0]?.id || undefined);
+
+    // Existing photos in target collection strictly (photos in other collections are NEVER flagged as duplicates)
     const existingPhotoNames = new Set<string>();
     photos.forEach((p) => {
-      if (targetCol && colId !== 'all' && p.collection_id !== targetCol) return;
+      if (targetCol && p.collection_id !== targetCol) return;
       if (p.file_name) {
         existingPhotoNames.add(p.file_name.trim().toLowerCase());
       }
@@ -435,15 +442,33 @@ function AlbumStudioContent() {
       }
     });
 
-    setUploadFiles(selectedFiles);
+    setPendingSelectedFiles(selectedFiles);
     if (dupes.length > 0) {
       setDuplicateFiles(dupes);
-      setShowDuplicatePrompt(true);
+      setShowDuplicateModal(true);
     } else {
       setDuplicateFiles([]);
-      setShowDuplicatePrompt(false);
+      setShowDuplicateModal(false);
+      setUploadFiles(selectedFiles);
+      setIsUploadModalOpen(true);
     }
-  }, [photos, uploadTargetCollection, collections]);
+  }, [photos, uploadTargetCollection, selectedCollectionId, collections]);
+
+  const handleSkipDuplicates = () => {
+    const dupeNames = new Set(duplicateFiles.map((f) => f.name.trim().toLowerCase()));
+    const nonDupes = pendingSelectedFiles.filter((f) => !dupeNames.has(f.name.trim().toLowerCase()));
+    setShowDuplicateModal(false);
+    if (nonDupes.length > 0) {
+      setUploadFiles(nonDupes);
+      setIsUploadModalOpen(true);
+    }
+  };
+
+  const handleUploadAnyway = () => {
+    setShowDuplicateModal(false);
+    setUploadFiles(pendingSelectedFiles);
+    setIsUploadModalOpen(true);
+  };
 
   // 1. Safe Multi-Tier Gallery Fetch & Auto-Highlights Initialization
   const loadData = useCallback(async () => {
@@ -892,12 +917,19 @@ function AlbumStudioContent() {
     }
   };
 
-  // Face AI Toggle Handler (Optimistic & Background Trigger)
+  // Face AI Toggle Handler (Optimistic & Background Trigger with Confirmation Modal)
   const handleToggleFaceAi = async (overrideVal?: boolean) => {
     if (!gallery || isTogglingFaceAi) return;
     const currentVal = gallery.is_face_ai_enabled !== false;
     const nextVal = overrideVal !== undefined ? overrideVal : !currentVal;
 
+    // If turning ON, show creamy confirmation modal first
+    if (nextVal && overrideVal !== true) {
+      setShowFaceAiConfirmModal(true);
+      return;
+    }
+
+    setShowFaceAiConfirmModal(false);
     setIsTogglingFaceAi(true);
     setGallery((prev) => (prev ? { ...prev, is_face_ai_enabled: nextVal } : null));
     setIsFaceAiEnabledState(nextVal);
@@ -912,12 +944,10 @@ function AlbumStudioContent() {
       if (!data.success) {
         throw new Error(data.error || 'Failed to update Face AI');
       }
-      if (nextVal) {
-        alert('✨ Face AI Enabled! Background facial indexing has been initiated for all photos in this event.');
-      }
+      // Re-fetch data silently in background to update indexed faces & matched guests
+      loadData();
     } catch (err: any) {
       console.error('Error toggling Face AI:', err);
-      alert(`Failed to update Face AI: ${err.message}`);
       setGallery((prev) => (prev ? { ...prev, is_face_ai_enabled: currentVal } : null));
       setIsFaceAiEnabledState(currentVal);
     } finally {
@@ -2553,7 +2583,21 @@ function AlbumStudioContent() {
               )}
 
               {/* Photo Cards Grid (Screenshot Match: 4-Column Grid) */}
-              {filteredPhotos.length === 0 ? (
+              {loading ? (
+                <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E7E2D8] shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#F2EEE6]">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+                      <span className="text-xs font-bold text-zinc-600">Loading collection photos...</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
+                    {Array.from({ length: 15 }).map((_, i) => (
+                      <div key={i} className="aspect-square bg-[#FAF9F5] rounded-2xl animate-pulse border border-[#E7E2D8]/60" />
+                    ))}
+                  </div>
+                </div>
+              ) : filteredPhotos.length === 0 ? (
                 <div className="bg-white rounded-3xl p-16 text-center border border-[#E7E2D8] space-y-4 shadow-2xs">
                   <div className="w-16 h-16 rounded-3xl bg-[#FAF9F5] text-amber-600 border border-[#E7E2D8] flex items-center justify-center mx-auto shadow-2xs">
                     <ImageIcon className="w-8 h-8" />
@@ -3153,18 +3197,15 @@ function AlbumStudioContent() {
                 </p>
               </div>
 
-              {/* 4 Real-time Stat Tiles */}
+              {/* Real-time Stat Tiles (Accurate Real Telemetry) */}
               {(() => {
                 const guestsWithSelfie = registeredGuests.filter((g) => g.selfie_url || g.face_embedding).length;
                 const totalGuestMatchedPhotos = registeredGuests.reduce((acc, g) => acc + (Array.isArray(g.matched_photo_ids) ? g.matched_photo_ids.length : 0), 0);
-                const sentCount = registeredGuests.filter((g) => g.notification_status === 'SENT').length;
-                const failedCount = registeredGuests.filter((g) => g.notification_status === 'FAILED').length;
-                const pendingCount = registeredGuests.filter((g) => !g.notification_status || g.notification_status === 'PENDING').length;
-                const realViews = (gallery as any).views_count || Math.max(photos.length * 2, registeredGuests.length * 4 + 18);
+                const realViews = Number((gallery as any)?.views_count ?? 0);
 
                 return (
                   <>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
                       <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Portal Views</span>
                         <div className="text-2xl font-black text-zinc-900 font-mono">
@@ -3180,6 +3221,12 @@ function AlbumStudioContent() {
                       </div>
 
                       <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Unique Faces</span>
+                        <div className="text-2xl font-black text-zinc-900 font-mono">{people.length}</div>
+                        <span className="text-[10px] font-bold text-violet-600">Detected in Photos</span>
+                      </div>
+
+                      <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Matched Photos</span>
                         <div className="text-2xl font-black text-zinc-900 font-mono">{totalGuestMatchedPhotos}</div>
                         <span className="text-[10px] font-bold text-emerald-600">Across All Guests</span>
@@ -3190,37 +3237,6 @@ function AlbumStudioContent() {
                         <div className="text-2xl font-black text-zinc-900 font-mono">{totalSizeDisplay}</div>
                         <span className="text-[10px] font-bold text-amber-600">Cloud Vault</span>
                       </div>
-                    </div>
-
-                    {/* Notification Intelligence Status Card */}
-                    <div className="bg-white rounded-3xl p-5 border border-[#E7E2D8] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Send className="w-4 h-4 text-amber-600" />
-                          <h4 className="text-sm font-bold text-zinc-900">Notification Delivery Intelligence</h4>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 text-xs">
-                          <span className="text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                            ✓✓ Sent: {sentCount}
-                          </span>
-                          <span className="text-rose-700 font-semibold bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
-                            ⚠️ Failed: {failedCount}
-                          </span>
-                          <span className="text-amber-700 font-semibold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                            ⏳ Pending: {pendingCount}
-                          </span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleResendNotifications()}
-                        disabled={isResendingNotification || registeredGuests.length === 0}
-                        className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 shadow-2xs"
-                      >
-                        <RotateCcw className={`w-3.5 h-3.5 ${isResendingNotification ? 'animate-spin' : ''}`} />
-                        <span>{isResendingNotification ? 'Resending...' : failedCount > 0 ? `Resend Failed (${failedCount})` : 'Resend All Notifications'}</span>
-                      </button>
                     </div>
 
                     {/* Registered Guests & Face Scans */}
@@ -3319,36 +3335,6 @@ function AlbumStudioContent() {
                                 </div>
 
                                 <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
-                                  {status === 'SENT' ? (
-                                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] flex items-center gap-1">
-                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                      <span>Delivered</span>
-                                    </span>
-                                  ) : status === 'FAILED' ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[10px]">
-                                        ⚠️ Failed
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleResendNotifications(guest.id);
-                                        }}
-                                        disabled={isResendingThis}
-                                        className="p-1 rounded-md text-amber-700 hover:bg-amber-50 border border-amber-200 transition"
-                                        title="Resend notification"
-                                      >
-                                        <RotateCcw className={`w-3 h-3 ${isResendingThis ? 'animate-spin' : ''}`} />
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px] flex items-center gap-1">
-                                      <Clock className="w-3 h-3 text-amber-600" />
-                                      <span>Pending</span>
-                                    </span>
-                                  )}
-
                                   <span className="text-[11px] font-mono text-zinc-400">
                                     {guest.created_at ? new Date(guest.created_at).toLocaleDateString() : 'Recent'}
                                   </span>
@@ -3383,7 +3369,7 @@ function AlbumStudioContent() {
                     Event Settings
                   </h2>
                   <p className="text-xs text-zinc-400 mt-0.5">
-                    Configure titles, custom links, PIN codes, and security.
+                    Configure title, event date, and guest download permissions.
                   </p>
                 </div>
 
@@ -3399,45 +3385,14 @@ function AlbumStudioContent() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-700 mb-1">Event Date</label>
-                      <input
-                        type="date"
-                        value={eventDateInput}
-                        onChange={(e) => setEventDateInput(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-700 mb-1">URL Slug (/g/[slug])</label>
-                      <input
-                        type="text"
-                        value={slugInput}
-                        onChange={(e) => setSlugInput(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
-                        className="w-full px-3.5 py-2.5 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-xs font-mono font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* PIN Code Protection */}
-                  <div className="p-4 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8] space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-bold text-zinc-800">
-                      <Lock className="w-4 h-4 text-amber-600" />
-                      <span>PIN Code Protection (Optional)</span>
-                    </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Event Date</label>
                     <input
-                      type="text"
-                      maxLength={6}
-                      value={pinCodeInput}
-                      placeholder="Leave blank for public access, or enter 4-6 digit PIN"
-                      onChange={(e) => setPinCodeInput(e.target.value.replace(/[^0-9]/g, ''))}
-                      className="w-full px-3.5 py-2 bg-white rounded-xl border border-[#E7E2D8] text-xs font-mono font-bold text-zinc-900"
+                      type="date"
+                      value={eventDateInput}
+                      onChange={(e) => setEventDateInput(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500"
                     />
-                    <p className="text-[11px] text-zinc-400">
-                      When set, guests must enter this PIN code before viewing photos.
-                    </p>
                   </div>
 
                   {/* Allow Downloads Toggle */}
@@ -4717,6 +4672,159 @@ function AlbumStudioContent() {
                     <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          FACE AI ENABLE CONFIRMATION MODAL (3D CREAM LUXURY DESIGN)
+      ───────────────────────────────────────────────────────────── */}
+      {showFaceAiConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-[#FAF9F5] rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E7E2D8] shadow-2xl space-y-6 animate-in zoom-in-95">
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100/70 border border-amber-200/80 text-amber-800 flex items-center justify-center shadow-xs">
+                <Sparkles className="w-6 h-6 text-amber-600" />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFaceAiConfirmModal(false)}
+                className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/50 rounded-full transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider border border-amber-200">
+                AI Face Intelligence
+              </span>
+              <h3 
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                className="text-2xl font-medium text-zinc-900 tracking-tight"
+              >
+                Enable Face AI for this Event?
+              </h3>
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                Face AI will automatically analyze, detect, and index every face in your event photos into private VIP collections. Guests who scanned your QR standee will instantly receive their personalized photos.
+              </p>
+            </div>
+
+            <div className="space-y-2.5 p-4 rounded-2xl bg-white/80 border border-[#E7E2D8] text-xs text-zinc-700">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-600 font-bold">✓</span>
+                <span>Automatic background facial indexing</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-amber-600 font-bold">✓</span>
+                <span>Instant guest selfie matching &amp; delivery</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-amber-600 font-bold">✓</span>
+                <span>100% private &amp; encrypted embeddings</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowFaceAiConfirmModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleFaceAi(true)}
+                disabled={isTogglingFaceAi}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-black transition cursor-pointer shadow-md shadow-amber-600/20 flex items-center gap-2"
+              >
+                {isTogglingFaceAi ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Enabling Face AI...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Confirm &amp; Enable Face AI</span>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          DUPLICATE PHOTO UPLOAD WARNING MODAL (COLLECTION-SCOPED)
+      ───────────────────────────────────────────────────────────── */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-[#FAF9F5] rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E7E2D8] shadow-2xl space-y-6 animate-in zoom-in-95">
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100/70 border border-amber-200/80 text-amber-800 flex items-center justify-center shadow-xs">
+                <AlertCircle className="w-6 h-6 text-amber-600" />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDuplicateModal(false)}
+                className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/50 rounded-full transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider border border-amber-200">
+                Collection Duplicate Check
+              </span>
+              <h3 
+                style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+                className="text-2xl font-medium text-zinc-900 tracking-tight"
+              >
+                Duplicate Photos Detected
+              </h3>
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                <strong className="text-amber-800">{duplicateFiles.length} photo{duplicateFiles.length > 1 ? 's' : ''}</strong> already exist in this collection. Would you like to skip duplicates or upload anyway?
+              </p>
+            </div>
+
+            {/* Scrollable List of Duplicate Filenames */}
+            <div className="max-h-36 overflow-y-auto rounded-2xl bg-white/80 border border-[#E7E2D8] p-3 space-y-1.5 text-xs text-zinc-700">
+              {duplicateFiles.map((f, idx) => (
+                <div key={idx} className="flex items-center justify-between gap-2 py-1 border-b border-zinc-100 last:border-b-0">
+                  <span className="truncate font-mono text-[11px] text-zinc-800">{f.name}</span>
+                  <span className="shrink-0 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                    Exists
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDuplicateModal(false)}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSkipDuplicates}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition cursor-pointer shadow-sm"
+              >
+                Skip Duplicates ({duplicateFiles.length})
+              </button>
+              <button
+                type="button"
+                onClick={handleUploadAnyway}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-black text-white text-xs font-bold transition cursor-pointer"
+              >
+                Upload Anyway
               </button>
             </div>
           </div>

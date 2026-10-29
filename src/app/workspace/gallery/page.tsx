@@ -557,23 +557,23 @@ export default function MyEventsPage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4">
             {filteredGalleries.map((gallery) => {
               const publicLink = getPublicUrl(gallery.slug);
               const eventTypeLabel = gallery.event_type || 'Wedding';
               const isPrivate = !!gallery.pin_code;
               const formattedDate = gallery.event_date
                 ? new Date(gallery.event_date).toLocaleDateString('en-US', {
-                    month: 'long',
+                    month: 'short',
                     day: 'numeric',
                     year: 'numeric',
                   })
-                : 'Date Pending';
+                : 'Pending';
 
               return (
                 <div
                   key={gallery.id}
-                  className="group bg-white rounded-3xl border border-[#E7E2D8] shadow-2xs overflow-hidden flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:border-amber-400/80"
+                  className="group bg-white rounded-2xl border border-[#E7E2D8] shadow-2xs overflow-hidden flex flex-col justify-between transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-amber-400/80"
                 >
                   {/* Card Cover (16:10 Landscape Proportions) - Clickable to open project */}
                   <Link 
@@ -581,13 +581,13 @@ export default function MyEventsPage() {
                     className="block relative aspect-[16/10] bg-[#F5F2EB] border-b border-[#E7E2D8] overflow-hidden cursor-pointer"
                     title={`Open ${gallery.title}`}
                   >
-                    {/* Underlying placeholder: shown while loading or if cover image is missing/broken */}
+                    {/* Underlying placeholder */}
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-[#FAF9F5] to-[#EFECE4] text-zinc-400">
-                      <div className="w-12 h-12 rounded-2xl bg-white/80 border border-[#E7E2D8] flex items-center justify-center shadow-2xs mb-1.5">
-                        <Camera className="w-6 h-6 text-amber-600/70" />
+                      <div className="w-8 h-8 rounded-xl bg-white/80 border border-[#E7E2D8] flex items-center justify-center shadow-2xs mb-1">
+                        <Camera className="w-4 h-4 text-amber-600/70" />
                       </div>
-                      <span className="text-[10px] font-bold tracking-wider uppercase text-zinc-400">
-                        Cover Photo
+                      <span className="text-[9px] font-bold tracking-wider uppercase text-zinc-400">
+                        Cover
                       </span>
                     </div>
 
@@ -603,7 +603,7 @@ export default function MyEventsPage() {
                     <div className="absolute inset-0 z-20 bg-gradient-to-b from-black/40 via-transparent to-transparent pointer-events-none" />
 
                     {/* Status Pill Badge (PUBLISHED / UNPUBLISHED / EXPIRED) */}
-                    <div className="absolute top-3.5 left-3.5 right-3.5 z-30 flex items-center justify-between pointer-events-none">
+                    <div className="absolute top-2 left-2 right-2 z-30 flex items-center justify-between pointer-events-none">
                       {(() => {
                         const s = gallery.status?.toUpperCase();
                         const isExpired = s === 'EXPIRED';
@@ -611,88 +611,88 @@ export default function MyEventsPage() {
 
                         if (isExpired) {
                           return (
-                            <span className="px-2.5 py-1 rounded-md backdrop-blur-md text-[10px] font-bold tracking-wider uppercase border shadow-xs bg-rose-600/90 text-white border-white/40">
+                            <span className="px-1.5 py-0.5 rounded-md backdrop-blur-md text-[9px] font-bold tracking-wider uppercase border shadow-xs bg-rose-600/90 text-white border-white/40">
                               EXPIRED
                             </span>
                           );
                         }
                         if (isPublished) {
                           return (
-                            <span className="px-2.5 py-1 rounded-md backdrop-blur-md text-[10px] font-bold tracking-wider uppercase border shadow-xs bg-emerald-600/90 text-white border-white/60">
-                              PUBLISHED
+                            <span className="px-1.5 py-0.5 rounded-md backdrop-blur-md text-[9px] font-bold tracking-wider uppercase border shadow-xs bg-emerald-600/90 text-white border-white/60">
+                              LIVE
                             </span>
                           );
                         }
                         return (
-                          <span className="px-2.5 py-1 rounded-md backdrop-blur-md text-[10px] font-bold tracking-wider uppercase border shadow-xs bg-amber-500/90 text-white border-white/40">
-                            UNPUBLISHED
+                          <span className="px-1.5 py-0.5 rounded-md backdrop-blur-md text-[9px] font-bold tracking-wider uppercase border shadow-xs bg-amber-500/90 text-white border-white/40">
+                            DRAFT
                           </span>
                         );
                       })()}
 
                       {/* Event Type / Tag */}
-                      <span className="px-2.5 py-1 rounded-md bg-black/50 backdrop-blur-md text-white text-[10px] font-medium border border-white/20">
+                      <span className="px-1.5 py-0.5 rounded-md bg-black/50 backdrop-blur-md text-white text-[9px] font-medium border border-white/20 truncate max-w-[80px]">
                         {eventTypeLabel}
                       </span>
                     </div>
                   </Link>
 
-                  {/* Card Body (High-End Editorial Typography - Image 2) */}
-                  <div className="p-5 space-y-3.5 flex-1 flex flex-col justify-between">
+                  {/* Card Body (Compact & High-End Typography) */}
+                  <div className="p-2.5 sm:p-3 space-y-2 flex-1 flex flex-col justify-between">
                     <div>
-                      {/* 🌟 CARD NAME IN EDITORIAL SERIF FONT */}
+                      {/* CARD NAME IN EDITORIAL SERIF FONT */}
                       <Link 
                         href={`/workspace/gallery/${gallery.id}`}
                         className="block group-hover:text-amber-800 transition"
                       >
                         <h3 
                           style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
-                          className="text-xl sm:text-2xl font-normal text-zinc-900 tracking-tight leading-snug line-clamp-1"
+                          className="text-xs sm:text-sm font-semibold text-zinc-900 tracking-tight leading-snug line-clamp-1"
                           title={gallery.title}
                         >
                           {gallery.title}
                         </h3>
                       </Link>
 
-                      {/* Sub-line (Slug / Couple name) in clean subtle italic font */}
-                      <p className="text-xs text-zinc-400 font-normal italic truncate mt-0.5">
+                      {/* Sub-line */}
+                      <p className="text-[10px] text-zinc-400 font-normal italic truncate mt-0.5">
                         /g/{gallery.slug}
                       </p>
 
                       {/* Metadata Row: Date & Photos */}
-                      <div className="flex items-center gap-3 text-xs text-zinc-500 font-medium pt-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-zinc-400" />
-                          <span>{formattedDate}</span>
+                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-medium pt-1.5 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-zinc-400" />
+                          <span className="truncate max-w-[70px]">{formattedDate}</span>
                         </div>
                         <span className="text-zinc-300">•</span>
-                        <div className="flex items-center gap-1.5 font-bold text-zinc-700">
-                          <ImageIcon className="w-3.5 h-3.5 text-amber-600" />
-                          <span>{gallery.photo_count || 0} photos</span>
+                        <div className="flex items-center gap-1 font-bold text-zinc-700">
+                          <ImageIcon className="w-3 h-3 text-amber-600" />
+                          <span>{gallery.photo_count || 0}</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Storage Line (Image 2 style) */}
-                    <div className="space-y-3">
-                      <div className="border-t border-[#F2EEE6] pt-2.5 flex items-center justify-between text-xs">
-                        <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                    {/* Storage & Actions */}
+                    <div className="space-y-2">
+                      <div className="border-t border-[#F2EEE6] pt-1.5 flex items-center justify-between text-[10px]">
+                        <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-400">
                           Storage
                         </span>
-                        <span className="font-mono font-semibold text-zinc-600 text-xs">
+                        <span className="font-mono font-semibold text-zinc-600 text-[10px]">
                           {formatStorageSize(gallery)}
                         </span>
                       </div>
 
                       {/* Card Action Pill Buttons */}
-                      <div className="pt-2 flex items-center justify-between gap-2 border-t border-[#F2EEE6]">
-                        <div className="flex items-center gap-2">
+                      <div className="pt-1.5 flex items-center justify-between gap-1 border-t border-[#F2EEE6]">
+                        <div className="flex items-center gap-1">
                           <Link
                             href={`/workspace/gallery/${gallery.id}`}
-                            className="py-1.5 px-3.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer select-none"
+                            className="py-1 px-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-[10px] transition flex items-center gap-1 shadow-2xs cursor-pointer select-none"
                           >
-                            <ImageIcon className="w-3.5 h-3.5" />
-                            <span>Manage</span>
+                            <ImageIcon className="w-3 h-3" />
+                            <span>Open</span>
                           </Link>
 
                           <button
@@ -701,31 +701,30 @@ export default function MyEventsPage() {
                               setStandeeGallery(gallery);
                               setIsStandeeModalOpen(true);
                             }}
-                            className="py-1.5 px-3 rounded-full bg-white hover:bg-[#FAF9F5] text-zinc-800 border border-[#E7E2D8] font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer select-none"
+                            className="py-1 px-2 rounded-full bg-white hover:bg-[#FAF9F5] text-zinc-800 border border-[#E7E2D8] font-bold text-[10px] transition flex items-center gap-1 shadow-2xs cursor-pointer select-none"
                             title="Table Standee & QR"
                           >
-                            <QrCode className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Standee</span>
+                            <QrCode className="w-3 h-3 text-amber-600" />
                           </button>
                         </div>
 
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0.5">
                           <a
                             href={publicLink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded-full text-zinc-400 hover:text-amber-700 hover:bg-amber-50 transition cursor-pointer"
+                            className="p-1 rounded-full text-zinc-400 hover:text-amber-700 hover:bg-amber-50 transition cursor-pointer"
                             title="Open Client Live Portal"
                           >
-                            <ExternalLink className="w-3.5 h-3.5" />
+                            <ExternalLink className="w-3 h-3" />
                           </a>
                           <button
                             type="button"
                             onClick={() => handleDeleteGallery(gallery.id, gallery.title)}
-                            className="p-1.5 rounded-full text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                            className="p-1 rounded-full text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                             title="Delete Gallery"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
                       </div>

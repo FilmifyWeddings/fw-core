@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
-import { extractFacesFromS3Key, extractFacesBatchFromS3Keys } from '@/lib/faceAI';
+import { extractFacesFromS3Key, extractFacesBatchFromS3Keys, cosineSimilarity, normalizeVector } from '@/lib/faceAI';
 import { deleteGalleryObjects, deleteGalleryPrefix } from '@/lib/storage/galleryB2Client';
 
 export const dynamic = 'force-dynamic';
@@ -805,11 +805,30 @@ export async function PATCH(req: NextRequest) {
             .eq('gallery_id', id);
 
           const indexedIds = new Set((existingFaces || []).map((f) => f.photo_id));
-          const unindexed = photos.filter((p) => (p.face_count === null || p.face_count === undefined) && !indexedIds.has(p.id) && (p.preview_key || p.thumbnail_key));
+          // Index any photo whose face embeddings are not yet present in photo_faces
+          const unindexed = photos.filter((p) => !indexedIds.has(p.id) && (p.preview_key || p.thumbnail_key));
 
           if (unindexed.length === 0) return;
 
           console.log(`[FaceAI Toggle] Background indexing ${unindexed.length} unindexed photos for event ${id}...`);
+
+          // Fetch registered guests for automatic matching
+          const { data: guests } = await supabaseAdmin
+            .from('event_guest_registrations')
+            .select('id, face_embedding, matched_photo_ids')
+            .eq('gallery_id', id);
+
+          const validGuests = (guests || []).map((g) => {
+            const rawEmb = Array.isArray(g.face_embedding)
+              ? g.face_embedding
+              : (typeof g.face_embedding === 'string' ? JSON.parse(g.face_embedding) : null);
+            return {
+              id: g.id,
+              vector: (rawEmb && rawEmb.length === 512) ? normalizeVector(rawEmb) : null,
+              matchedSet: new Set<string>(Array.isArray(g.matched_photo_ids) ? g.matched_photo_ids : []),
+              hasNewMatch: false,
+            };
+          }).filter((g) => g.vector !== null);
 
           // Rule 2 & 3: High-speed Batch Face Indexing (batches of 16, 640px thumbnail)
           const BATCH_SIZE = 16;
@@ -835,6 +854,17 @@ export async function PATCH(req: NextRequest) {
                     bounding_box: f.box,
                     embedding: f.embedding,
                   });
+
+                  // Match face against registered guests!
+                  for (const g of validGuests) {
+                    if (f.embedding && f.embedding.length === 512) {
+                      const sim = cosineSimilarity(g.vector, f.embedding);
+                      if (sim >= 0.48) {
+                        g.matchedSet.add(p.id);
+                        g.hasNewMatch = true;
+                      }
+                    }
+                  }
                 }
                 photoUpdatePromises.push(
                   supabaseAdmin.from('gallery_photos').update({ face_count: faces.length }).eq('id', p.id)
@@ -851,7 +881,21 @@ export async function PATCH(req: NextRequest) {
             }
             await Promise.all(photoUpdatePromises);
           }
-          console.log(`[FaceAI Toggle] Completed background indexing for event ${id}`);
+
+          // Persist all guest matches so guests like Sankalp see their photos immediately!
+          for (const g of validGuests) {
+            if (g.hasNewMatch) {
+              await supabaseAdmin
+                .from('event_guest_registrations')
+                .update({
+                  matched_photo_ids: Array.from(g.matchedSet),
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', g.id);
+            }
+          }
+
+          console.log(`[FaceAI Toggle] Completed background indexing and guest re-sync for event ${id}`);
         } catch (bgErr) {
           console.warn(`[FaceAI Toggle] Background indexing failed for event ${id}:`, bgErr);
         }

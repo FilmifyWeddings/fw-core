@@ -1607,7 +1607,7 @@ function GuestSlugGalleryContent() {
                 className="text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed"
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
               >
-                We will notify you on WhatsApp as soon as your photos are ready.
+                We will notify you via Email as soon as your photos are ready.
               </p>
             </div>
 
@@ -1618,19 +1618,19 @@ function GuestSlugGalleryContent() {
                 <span>Instant Notification Guaranteed</span>
               </div>
               <p className="text-xs text-zinc-600 leading-relaxed font-medium">
-                As soon as the photos are published by the studio, you will receive an instant notification with your personal photo album directly on:
+                As soon as the photos are published by the studio, you will receive an instant email notification with your private AI-matched photo collection directly at:
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                {guestPhone && (
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold font-mono">
-                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>WhatsApp: {guestPhone}</span>
+                {guestEmail && (
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold">
+                    <Mail className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Email: {guestEmail}</span>
                   </span>
                 )}
-                {guestEmail && (
+                {guestPhone && (
                   <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 text-xs font-medium">
-                    <Mail className="w-3.5 h-3.5 text-zinc-500" />
-                    <span>{guestEmail}</span>
+                    <Phone className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>{guestPhone}</span>
                   </span>
                 )}
               </div>
