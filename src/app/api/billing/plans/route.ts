@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { SUBSCRIPTION_TIERS, SubscriptionTier } from '@/lib/billing/plans';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -9,7 +10,7 @@ export const dynamic = 'force-dynamic';
  * Public endpoint to fetch dynamically configured pricing tiers & features.
  * Used by UpgradePlanModal, Pricing Page, and Studio Settings.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const { data: dbPlans, error } = await supabaseAdmin
       .from('subscription_plans')
