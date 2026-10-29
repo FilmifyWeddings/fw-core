@@ -317,9 +317,9 @@ export async function GET(
         `);
 
       if (clientRow.lead_id) {
-        projQuery = projQuery.or(`client_id.eq.${clientRow.id},lead_id.eq.${clientRow.lead_id},client_name.ilike.%${clientRow.name.trim()}%`);
+        projQuery = projQuery.or(`client_id.eq.${clientRow.id},lead_id.eq.${clientRow.lead_id}`);
       } else {
-        projQuery = projQuery.or(`client_id.eq.${clientRow.id},client_name.ilike.%${clientRow.name.trim()}%`);
+        projQuery = projQuery.eq('client_id', clientRow.id);
       }
 
       const { data: pData } = await projQuery.maybeSingle();

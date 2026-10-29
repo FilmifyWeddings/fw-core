@@ -35,46 +35,43 @@ export const handleUpdateBookingPM = async (
 
   // 2. Dual-sync to Client Directory (workspace_clients)
   try {
-    let clientQuery = supabase.from('workspace_clients').select('id, name, notes');
     if (clientId) {
-      clientQuery = clientQuery.eq('id', clientId);
-    } else if (clientName) {
-      clientQuery = clientQuery.ilike('name', clientName.trim());
-    }
-    const { data: matchedClients } = await clientQuery;
+      const { data: matchedClients } = await supabase
+        .from('workspace_clients')
+        .select('id, name, notes')
+        .eq('id', clientId);
 
-    if (matchedClients && matchedClients.length > 0) {
-      for (const c of matchedClients) {
-        let updatedNotes = c.notes;
-        try {
-          const ext = parseClientExtended(c as any);
-          const updatedExt = {
-            ...ext,
-            project_manager_id: pmId || '',
-            project_manager_name: pmName || '',
-          };
-          updatedNotes = serializeClientExtended(updatedExt);
-        } catch (e) {}
+      if (matchedClients && matchedClients.length > 0) {
+        for (const c of matchedClients) {
+          let updatedNotes = c.notes;
+          try {
+            const ext = parseClientExtended(c as any);
+            const updatedExt = {
+              ...ext,
+              project_manager_id: pmId || '',
+              project_manager_name: pmName || '',
+            };
+            updatedNotes = serializeClientExtended(updatedExt);
+          } catch (e) {}
 
-        const { error: cErr } = await supabase
-          .from('workspace_clients')
-          .update({
-            project_manager_id: pmId,
-            project_manager_name: pmName,
-            notes: updatedNotes,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', c.id);
-
-        if (cErr) {
-          await supabase
+          const { error: cErr } = await supabase
             .from('workspace_clients')
-            .update({ notes: updatedNotes, updated_at: new Date().toISOString() })
+            .update({
+              project_manager_id: pmId,
+              project_manager_name: pmName,
+              notes: updatedNotes,
+              updated_at: new Date().toISOString(),
+            })
             .eq('id', c.id);
+
+          if (cErr) {
+            await supabase
+              .from('workspace_clients')
+              .update({ notes: updatedNotes, updated_at: new Date().toISOString() })
+              .eq('id', c.id);
+          }
         }
-      }
-    } else {
-      if (clientId) {
+      } else {
         await supabase
           .from('workspace_clients')
           .update({
@@ -83,15 +80,6 @@ export const handleUpdateBookingPM = async (
             updated_at: new Date().toISOString(),
           })
           .eq('id', clientId);
-      } else if (clientName) {
-        await supabase
-          .from('workspace_clients')
-          .update({
-            project_manager_id: pmId,
-            project_manager_name: pmName,
-            updated_at: new Date().toISOString(),
-          })
-          .ilike('name', clientName.trim());
       }
     }
   } catch (syncErr) {

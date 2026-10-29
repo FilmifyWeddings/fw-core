@@ -947,7 +947,7 @@ export default function ClientsPage() {
           await supabase
             .from('fw_projects')
             .update({ status: 'active', updated_at: new Date().toISOString() })
-            .or(`client_id.eq.${clientId},client_name.ilike.%${client.name.trim()}%`);
+            .eq('client_id', clientId);
         } catch (_) {}
       }
 

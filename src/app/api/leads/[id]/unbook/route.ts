@@ -72,17 +72,6 @@ export async function POST(
           .eq('client_id', resolvedClientId);
       }
 
-      if (clientName) {
-        await supabaseAdmin
-          .from('fw_projects')
-          .update({
-            status: 'active',
-            is_archived: false,
-            updated_at: nowIso
-          })
-          .ilike('client_name', `%${clientName}%`);
-      }
-
       return NextResponse.json({ success: true, restored: true, clientId: resolvedClientId });
     }
 
@@ -131,17 +120,6 @@ export async function POST(
             updated_at: nowIso
           })
           .eq('client_id', resolvedClientId);
-      }
-
-      if (clientName) {
-        await supabaseAdmin
-          .from('fw_projects')
-          .update({
-            status: 'trash',
-            is_archived: true,
-            updated_at: nowIso
-          })
-          .ilike('client_name', `%${clientName}%`);
       }
 
       return NextResponse.json({ success: true, trashed: true, clientId: resolvedClientId });

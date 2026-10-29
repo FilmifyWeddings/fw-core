@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { syncBookedLeadOrFinalQuotation, normalizeSubEventTitle } from '@/lib/quotation-finance-sync';
+import { getDisambiguatedClientName } from '@/lib/name-disambiguation';
 
 export const runtime = 'nodejs';
 
@@ -216,15 +217,17 @@ export async function POST(
       clientPayload.project_manager_phone = resolvedPmPhone;
     }
 
+    let finalClientName = coupleName.trim();
     if (workspaceClientId) {
       await supabaseAdmin
         .from('workspace_clients')
         .update(clientPayload)
         .eq('id', workspaceClientId);
     } else {
+      finalClientName = await getDisambiguatedClientName(supabaseAdmin, workspaceId, coupleName.trim());
       const { data: newClient } = await supabaseAdmin
         .from('workspace_clients')
-        .insert({ ...clientPayload, created_at: nowIso })
+        .insert({ ...clientPayload, name: finalClientName, created_at: nowIso })
         .select('id')
         .single();
       workspaceClientId = newClient?.id || null;
@@ -377,14 +380,15 @@ export async function POST(
           const { data: existingProjs } = await supabaseAdmin
             .from('fw_projects')
             .select('id')
-            .or(`client_id.eq.${workspaceClientId},client_name.ilike.%${coupleName.trim()}%`);
+            .eq('user_id', workspaceId)
+            .eq('client_id', workspaceClientId);
 
           if (existingProjs && existingProjs.length > 0) {
             await supabaseAdmin
               .from('fw_projects')
               .update({
                 client_id: workspaceClientId,
-                client_name: coupleName.trim(),
+                client_name: finalClientName,
                 main_date: eventDate || nowIso.split('T')[0],
                 main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
                 status: 'active',
@@ -398,7 +402,7 @@ export async function POST(
               .insert({
                 user_id: workspaceId,
                 client_id: workspaceClientId,
-                client_name: coupleName.trim(),
+                client_name: finalClientName,
                 main_date: eventDate || nowIso.split('T')[0],
                 main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
                 status: 'active',
