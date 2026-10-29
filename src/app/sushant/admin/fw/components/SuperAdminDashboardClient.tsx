@@ -86,6 +86,7 @@ export default function SuperAdminDashboardClient({
 
   // Kundali Modal
   const [inspectedStudio, setInspectedStudio] = useState<StudioItem | null>(null);
+  const [inspectedStudioTab, setInspectedStudioTab] = useState<'overview' | 'crm' | 'team' | 'media' | 'integrations' | 'overrides'>('overview');
 
   const hasMountedRef = useRef(false);
 
@@ -278,7 +279,10 @@ export default function SuperAdminDashboardClient({
           <StudiosMasterTable 
             studios={studios} 
             isLoading={isLoading} 
-            onInspectStudio={(s) => setInspectedStudio(s)}
+            onInspectStudio={(s, tab) => {
+              setInspectedStudio(s);
+              setInspectedStudioTab(tab || 'overview');
+            }}
           />
         )}
 
@@ -297,6 +301,7 @@ export default function SuperAdminDashboardClient({
       {inspectedStudio && (
         <StudioKundaliModal
           studio={inspectedStudio}
+          initialTab={inspectedStudioTab}
           onClose={() => setInspectedStudio(null)}
           onStudioUpdated={() => loadDashboardData(true)}
         />

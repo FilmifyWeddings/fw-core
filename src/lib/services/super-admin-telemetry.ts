@@ -18,7 +18,24 @@ export interface StudioTelemetryItem {
   platform_role: string;
   subscription_plan: string;
   subscription_expires_at: string;
+  days_remaining: number;
+  is_expiring_soon: boolean;
   is_platform_blocked: boolean;
+  custom_overrides?: {
+    storage_quota_gb?: number | null;
+    team_members_limit?: number | null;
+    events_per_month_limit?: number | null;
+    ai_scans_limit?: number | null;
+    features?: {
+      ai_face_search?: boolean;
+      video_review?: boolean;
+      team_payroll?: boolean;
+      whatsapp_automation?: boolean;
+      white_label?: boolean;
+      client_portal?: boolean;
+    };
+    admin_notes?: string;
+  };
   created_at: string;
   last_active_at: string;
   is_active_today: boolean;
@@ -82,12 +99,22 @@ export interface StudioTelemetryItem {
 
 export interface GlobalTelemetryKPIs {
   totalStudios: number;
+  newSignupsThisMonth: number;
   activePaid: number;
   trialStudios: number;
+  monthlyRecurringRevenue: number;
+  expiringIn7Days: number;
+  paidBreakdown: {
+    starter: number;
+    pro: number;
+    enterprise: number;
+    vip: number;
+  };
   activeToday: number;
   activeThisWeek: number;
   suspendedCount: number;
   totalStorageGB: number;
+  totalStorageAllocatedGB: number;
   totalGrossRevenue: number;
   totalAdvanceReceived: number;
   totalLeads: number;
@@ -313,6 +340,13 @@ export async function getSuperAdminTelemetry(
   let paidCount = 0;
   let trialCount = 0;
   let suspendedCount = 0;
+  let newSignupsThisMonth = 0;
+  let monthlyRecurringRevenue = 0;
+  let expiringIn7DaysCount = 0;
+  let totalStorageAllocatedGlobalGB = 0;
+  const paidBreakdown = { starter: 0, pro: 0, enterprise: 0, vip: 0 };
+  const thirtyDaysAgo = now - 30 * 24 * 3600 * 1000;
+
   let totalStorageBytesGlobal = 0;
   let totalGrossRevenueGlobal = 0;
   let totalAdvanceReceivedGlobal = 0;
@@ -348,16 +382,47 @@ export async function getSuperAdminTelemetry(
       profile.studio_code ||
       `studio-${profile.id.slice(0, 6)}`;
 
-    let plan = (profile.subscription_plan || 'trial').toLowerCase();
-    if (!['trial', 'pro', 'business', 'enterprise'].includes(plan)) plan = 'trial';
+    let plan = (profile.subscription_plan || profile.subscription_tier || 'trial').toLowerCase();
+    if (!['trial', 'starter', 'pro', 'business', 'enterprise', 'vip'].includes(plan)) plan = 'trial';
 
     const isBlocked = !!profile.is_platform_blocked;
     if (isBlocked) suspendedCount++;
-    if (['pro', 'business', 'enterprise'].includes(plan)) paidCount++;
-    else trialCount++;
+
+    const isPaid = ['starter', 'pro', 'business', 'enterprise', 'vip'].includes(plan);
+    if (isPaid) {
+      paidCount++;
+      if (plan === 'starter') {
+        paidBreakdown.starter++;
+        monthlyRecurringRevenue += 799;
+      } else if (plan === 'pro') {
+        paidBreakdown.pro++;
+        monthlyRecurringRevenue += 1799;
+      } else if (plan === 'business' || plan === 'enterprise') {
+        paidBreakdown.enterprise++;
+        monthlyRecurringRevenue += 3499;
+      } else if (plan === 'vip') {
+        paidBreakdown.vip++;
+      }
+    } else {
+      trialCount++;
+    }
 
     // Timestamps & Active calculations
     const createdAt = profile.created_at || authUser?.created_at || new Date().toISOString();
+    const createdTime = new Date(createdAt).getTime();
+    if (!isNaN(createdTime) && createdTime >= thirtyDaysAgo) {
+      newSignupsThisMonth++;
+    }
+
+    const expiresAt =
+      profile.subscription_expires_at || new Date(now + 14 * 24 * 3600 * 1000).toISOString();
+    const expiresTime = new Date(expiresAt).getTime();
+    const daysRemaining = isNaN(expiresTime) ? 14 : Math.ceil((expiresTime - now) / (1000 * 3600 * 24));
+    const isExpiringSoon = daysRemaining <= 7 && daysRemaining >= 0;
+    if (isExpiringSoon && isPaid) {
+      expiringIn7DaysCount++;
+    }
+
     const lastActiveAt =
       profile.last_active_at ||
       authUser?.last_sign_in_at ||
@@ -420,8 +485,10 @@ export async function getSuperAdminTelemetry(
     totalStorageBytesGlobal += totalTenantStorageBytes;
 
     const storageQuotaGB =
+      Number(profile.custom_overrides?.storage_quota_gb) ||
       Number(profile.storage_quota_gb) ||
-      (plan === 'enterprise' ? 1000 : plan === 'business' ? 250 : plan === 'pro' ? 100 : 15);
+      (plan === 'enterprise' ? 600 : plan === 'vip' ? 1000 : plan === 'business' ? 250 : plan === 'pro' ? 150 : plan === 'starter' ? 30 : 10);
+    totalStorageAllocatedGlobalGB += storageQuotaGB;
 
     // WhatsApp Telemetry (Baileys Session)
     const waSession = baileysMap[profile.id] || (wsId ? baileysMap[wsId] : null);
@@ -458,9 +525,11 @@ export async function getSuperAdminTelemetry(
       website_url: profile.website_url || '',
       platform_role: profile.platform_role || 'owner',
       subscription_plan: plan,
-      subscription_expires_at:
-        profile.subscription_expires_at || new Date(now + 14 * 24 * 3600 * 1000).toISOString(),
+      subscription_expires_at: expiresAt,
+      days_remaining: daysRemaining,
+      is_expiring_soon: isExpiringSoon,
       is_platform_blocked: isBlocked,
+      custom_overrides: profile.custom_overrides || null,
       created_at: createdAt,
       last_active_at: lastActiveAt,
       is_active_today: isActiveToday,
@@ -533,12 +602,17 @@ export async function getSuperAdminTelemetry(
 
   const kpis: GlobalTelemetryKPIs = {
     totalStudios: studios.length,
+    newSignupsThisMonth,
     activePaid: paidCount,
     trialStudios: trialCount,
+    monthlyRecurringRevenue,
+    expiringIn7Days: expiringIn7DaysCount,
+    paidBreakdown,
     activeToday: activeTodayCount,
     activeThisWeek: activeWeekCount,
     suspendedCount,
     totalStorageGB: Math.round((totalStorageBytesGlobal / (1024 * 1024 * 1024)) * 10) / 10,
+    totalStorageAllocatedGB: totalStorageAllocatedGlobalGB,
     totalGrossRevenue: totalGrossRevenueGlobal,
     totalAdvanceReceived: totalAdvanceReceivedGlobal,
     totalLeads: totalLeadsGlobal,

@@ -1,20 +1,22 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, Copy, Check, Building2, User, Mail, Phone, 
   Calendar, Shield, ShieldAlert, HardDrive, DollarSign, 
   MessageSquare, Globe, LogOut, Clock, Sparkles, 
   ExternalLink, ChevronRight, AlertTriangle, RefreshCw, 
-  Camera, Film, Users2 
+  Camera, Film, Users2, Zap, CheckCircle2, Lock, Unlock, Crown
 } from 'lucide-react';
 import { StudioItem } from './StudiosMasterTable';
 
 interface StudioKundaliModalProps {
   studio: StudioItem | null;
-  isOpen: boolean;
+  isOpen?: boolean;
+  initialTab?: KundaliTab;
   onClose: () => void;
-  onRefreshData: () => void;
+  onRefreshData?: () => void;
+  onStudioUpdated?: () => void;
 }
 
 type KundaliTab = 'overview' | 'crm' | 'team' | 'media' | 'integrations' | 'overrides';
@@ -26,19 +28,83 @@ function formatCurrency(amount: number): string {
 
 export default function StudioKundaliModal({
   studio,
-  isOpen,
+  isOpen = true,
+  initialTab = 'overview',
   onClose,
   onRefreshData,
+  onStudioUpdated,
 }: StudioKundaliModalProps) {
-  const [activeTab, setActiveTab] = useState<KundaliTab>('overview');
+  const [activeTab, setActiveTab] = useState<KundaliTab>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, studio?.id]);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Override form states
+  // Master God-Mode Form States
   const [customPlan, setCustomPlan] = useState<string>('trial');
+  const [customExpiresAt, setCustomExpiresAt] = useState<string>('');
   const [customStorageGb, setCustomStorageGb] = useState<number>(50);
-  const [customWhatsappQuota, setCustomWhatsappQuota] = useState<number>(5000);
+  const [isBlocked, setIsBlocked] = useState<boolean>(false);
+  const [featureOverrides, setFeatureOverrides] = useState({
+    ai_face_search: true,
+    video_review: true,
+    team_payroll: true,
+    whatsapp_automation: true,
+    white_label: false,
+    client_portal: true,
+  });
+  const [customLimits, setCustomLimits] = useState({
+    team_members: 5,
+    events_per_month: 25,
+    ai_scans: 10000,
+  });
+  const [adminNotes, setAdminNotes] = useState<string>('');
+
+  // Sync state whenever selected studio changes
+  useEffect(() => {
+    if (studio) {
+      setCustomPlan(studio.subscription_plan || 'trial');
+      setCustomExpiresAt(
+        studio.subscription_expires_at
+          ? new Date(studio.subscription_expires_at).toISOString().slice(0, 10)
+          : ''
+      );
+      setCustomStorageGb(studio.media?.allocated_quota_gb || 50);
+      setIsBlocked(Boolean(studio.is_platform_blocked));
+
+      const overrides = (studio as any).custom_overrides || {};
+      const f = overrides.features || {};
+      setFeatureOverrides({
+        ai_face_search: f.ai_face_search ?? true,
+        video_review: f.video_review ?? true,
+        team_payroll: f.team_payroll ?? true,
+        whatsapp_automation: f.whatsapp_automation ?? true,
+        white_label: f.white_label ?? false,
+        client_portal: f.client_portal ?? true,
+      });
+
+      const lim = overrides.custom_limits || {};
+      setCustomLimits({
+        team_members: lim.team_members ?? (studio.subscription_plan === 'starter' ? 1 : studio.subscription_plan === 'pro' ? 5 : 99),
+        events_per_month: lim.events_per_month ?? (studio.subscription_plan === 'starter' ? 5 : studio.subscription_plan === 'pro' ? 25 : 999),
+        ai_scans: lim.ai_scans ?? (studio.subscription_plan === 'starter' ? 1500 : studio.subscription_plan === 'pro' ? 10000 : 99999),
+      });
+
+      setAdminNotes(overrides.admin_notes || '');
+    }
+  }, [studio]);
+
+  const handleAddDays = (days: number) => {
+    const currentBase = customExpiresAt ? new Date(customExpiresAt).getTime() : Date.now();
+    const base = currentBase > Date.now() ? currentBase : Date.now();
+    const newDate = new Date(base + days * 24 * 60 * 60 * 1000);
+    setCustomExpiresAt(newDate.toISOString().slice(0, 10));
+  };
 
   if (!isOpen || !studio) return null;
 
@@ -66,7 +132,8 @@ export default function StudioKundaliModal({
         throw new Error(data.error || 'Failed to apply override');
       }
       setStatusMsg({ type: 'success', text: data.message || 'Override applied successfully!' });
-      onRefreshData();
+      if (onRefreshData) onRefreshData();
+      if (onStudioUpdated) onStudioUpdated();
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err.message || 'Action failed' });
     } finally {
@@ -357,68 +424,355 @@ export default function StudioKundaliModal({
             </div>
           )}
 
-          {/* TAB 6: QUOTAS & OVERRIDES */}
+          {/* TAB 6: GOD-MODE GOVERNANCE CONSOLE */}
           {activeTab === 'overrides' && (
             <div className="space-y-4">
+              
+              {/* Status & Notification Banner */}
+              {statusMsg && (
+                <div className={`p-4 rounded-2xl flex items-center justify-between text-xs font-bold ${
+                  statusMsg.type === 'success' 
+                    ? 'bg-emerald-50 text-emerald-900 border border-emerald-300' 
+                    : 'bg-rose-50 text-rose-900 border border-rose-300'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {statusMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-rose-600" />}
+                    <span>{statusMsg.text}</span>
+                  </div>
+                  <button type="button" onClick={() => setStatusMsg(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* 1. Subscription Plan Tier */}
+              <div className="p-5 bg-white border border-[#EAE5DA] rounded-3xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-black text-slate-900 block flex items-center gap-1.5">
+                      <Crown className="w-4 h-4 text-amber-500" /> Subscription Plan Tier
+                    </span>
+                    <span className="text-[11px] text-slate-500">Overrides the tenant's current billing plan.</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 uppercase">
+                    Active: {customPlan.toUpperCase()}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                  {[
+                    { id: 'trial', name: 'Free Trial', price: '₹0 (14d)', quota: '10GB' },
+                    { id: 'starter', name: 'Starter Solo', price: '₹799/mo', quota: '30GB' },
+                    { id: 'pro', name: 'Studio Pro', price: '₹1,799/mo', quota: '150GB', popular: true },
+                    { id: 'enterprise', name: 'Agency Ent.', price: '₹3,499/mo', quota: '600GB' },
+                    { id: 'vip', name: 'Lifetime VIP', price: 'Founder Gift', quota: '1TB' },
+                  ].map((p) => {
+                    const isSelected = customPlan === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setCustomPlan(p.id);
+                          if (p.id === 'starter') {
+                            setCustomStorageGb(30);
+                            setCustomLimits(prev => ({ ...prev, team_members: 1, events_per_month: 5 }));
+                          } else if (p.id === 'pro') {
+                            setCustomStorageGb(150);
+                            setCustomLimits(prev => ({ ...prev, team_members: 5, events_per_month: 25 }));
+                          } else if (p.id === 'enterprise') {
+                            setCustomStorageGb(600);
+                            setCustomLimits(prev => ({ ...prev, team_members: 99, events_per_month: 999 }));
+                          } else if (p.id === 'vip') {
+                            setCustomStorageGb(1000);
+                            setCustomLimits(prev => ({ ...prev, team_members: 999, events_per_month: 999 }));
+                          }
+                        }}
+                        className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
+                          isSelected 
+                            ? 'bg-amber-50/80 border-amber-500 shadow-xs ring-2 ring-amber-500/20' 
+                            : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
+                        }`}
+                      >
+                        {p.popular && (
+                          <span className="absolute -top-2 right-2 px-1.5 py-0.2 bg-amber-500 text-white text-[9px] font-black rounded-md uppercase">
+                            Popular
+                          </span>
+                        )}
+                        <div>
+                          <span className={`text-xs font-black block ${isSelected ? 'text-amber-950' : 'text-slate-800'}`}>
+                            {p.name}
+                          </span>
+                          <span className="text-[10px] text-slate-500 block font-medium mt-0.5">{p.price}</span>
+                        </div>
+                        <span className="text-[10px] font-mono font-bold text-amber-700 mt-2 block">{p.quota}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Subscription Validity & Expiry Extender */}
+              <div className="p-5 bg-white border border-[#EAE5DA] rounded-3xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-black text-slate-900 block flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-emerald-600" /> Subscription Expiry & Validity Extender
+                    </span>
+                    <span className="text-[11px] text-slate-500">Add bonus days or set exact expiry date.</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-slate-800 font-mono">
+                      {customExpiresAt ? new Date(customExpiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No Expiry Set'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] font-bold text-slate-500 mr-1">Quick Add:</span>
+                    {[
+                      { label: '+2 Days', days: 2 },
+                      { label: '+7 Days', days: 7 },
+                      { label: '+15 Days', days: 15 },
+                      { label: '+30 Days (1 Mo)', days: 30 },
+                      { label: '+90 Days (3 Mo)', days: 90 },
+                      { label: '+1 Year', days: 365 },
+                    ].map((btn) => (
+                      <button
+                        key={btn.label}
+                        type="button"
+                        onClick={() => handleAddDays(btn.days)}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold transition cursor-pointer"
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-2 ml-auto">
+                    <span className="text-[11px] font-bold text-slate-500">Custom Date:</span>
+                    <input
+                      type="date"
+                      value={customExpiresAt}
+                      onChange={(e) => setCustomExpiresAt(e.target.value)}
+                      className="px-3 py-1.5 bg-[#FAF9F5] border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:border-emerald-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Storage Quota Allowance (Backblaze B2) */}
+              <div className="p-5 bg-white border border-[#EAE5DA] rounded-3xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-black text-slate-900 block flex items-center gap-1.5">
+                      <HardDrive className="w-4 h-4 text-indigo-600" /> B2 Cloud Storage Quota
+                    </span>
+                    <span className="text-[11px] text-slate-500">Enter custom GB limit or select a preset chip.</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-600">Custom Limit:</span>
+                    <div className="relative flex items-center">
+                      <input
+                        type="number"
+                        min="5"
+                        max="5000"
+                        value={customStorageGb}
+                        onChange={(e) => setCustomStorageGb(Math.max(5, Number(e.target.value)))}
+                        className="w-24 px-3 py-1.5 bg-[#FAF9F5] border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-hidden focus:border-indigo-600 text-right pr-8"
+                      />
+                      <span className="absolute right-2 text-xs font-bold text-slate-400 pointer-events-none">GB</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {[30, 50, 100, 150, 250, 500, 1000].map(gb => (
+                    <button
+                      key={gb}
+                      type="button"
+                      onClick={() => setCustomStorageGb(gb)}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                        customStorageGb === gb 
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs' 
+                          : 'bg-slate-50 hover:bg-indigo-50 hover:text-indigo-950 border-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {gb >= 1000 ? `${gb / 1000} TB` : `${gb} GB`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 4. Granular Feature Toggles (6 Switches) */}
+              <div className="p-5 bg-white border border-[#EAE5DA] rounded-3xl space-y-3">
+                <div>
+                  <span className="text-xs font-black text-slate-900 block flex items-center gap-1.5">
+                    <Zap className="w-4 h-4 text-purple-600" /> Granular Feature Switches
+                  </span>
+                  <span className="text-[11px] text-slate-500">Turn specific features ON or OFF for this workspace regardless of base tier.</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                  {[
+                    { key: 'ai_face_search', label: '3D AI Face Search', icon: Sparkles, desc: 'Modal GPU face clustering & guest selfie match' },
+                    { key: 'video_review', label: 'Video Proofing Portal', icon: Film, desc: 'Client review cards & frame comments' },
+                    { key: 'team_payroll', label: 'Team Payroll & Staff', icon: Users2, desc: 'In-house staff, freelancers & commercial payouts' },
+                    { key: 'whatsapp_automation', label: 'WhatsApp Workflows', icon: MessageSquare, desc: 'Auto-lead enrollment & dispatch sequences' },
+                    { key: 'white_label', label: 'White-Label Branding', icon: Shield, desc: 'Remove "Powered by StudioCore" watermark' },
+                    { key: 'client_portal', label: 'Branded Client Portal', icon: Globe, desc: 'Client moodboards & selection portals' },
+                  ].map((feat) => {
+                    const isEnabled = Boolean((featureOverrides as any)[feat.key]);
+                    const Icon = feat.icon;
+                    return (
+                      <div
+                        key={feat.key}
+                        onClick={() => {
+                          setFeatureOverrides(prev => ({
+                            ...prev,
+                            [feat.key]: !isEnabled,
+                          }));
+                        }}
+                        className={`p-3 rounded-2xl border transition cursor-pointer flex items-start gap-3 select-none ${
+                          isEnabled 
+                            ? 'bg-purple-50/70 border-purple-300 ring-1 ring-purple-300/40' 
+                            : 'bg-slate-50/60 border-slate-200 hover:bg-slate-100/60'
+                        }`}
+                      >
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                          isEnabled ? 'bg-purple-600 text-white border-purple-700' : 'bg-slate-200 text-slate-400 border-slate-300'
+                        }`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs font-black truncate ${isEnabled ? 'text-purple-950' : 'text-slate-600'}`}>
+                              {feat.label}
+                            </span>
+                            <span className={`px-2 py-0.2 rounded-full text-[9px] font-black uppercase ${
+                              isEnabled ? 'bg-purple-200 text-purple-900' : 'bg-slate-200 text-slate-600'
+                            }`}>
+                              {isEnabled ? 'ON' : 'OFF'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">{feat.desc}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 5. Custom Limits & Audit Notes */}
               <div className="p-5 bg-white border border-[#EAE5DA] rounded-3xl space-y-4">
-                <span className="text-xs font-black text-slate-900 block">1-Click Quota Bumps & Tier Overrides</span>
-                
-                {/* Bump Storage Quota */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-700">Storage Quota Allowance (Current: {studio.media.allocated_quota_gb} GB)</label>
-                  <div className="flex gap-2">
-                    {[50, 100, 250, 500, 1000].map(gb => (
-                      <button
-                        key={gb}
-                        type="button"
-                        onClick={() => handleExecuteOverride('bump_quota', { storageQuotaGb: gb })}
-                        disabled={isUpdating}
-                        className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-amber-100 hover:text-amber-950 border border-slate-200 text-xs font-bold transition cursor-pointer"
-                      >
-                        Set {gb} GB
-                      </button>
-                    ))}
+                <span className="text-xs font-black text-slate-900 block">Custom Quotas & Administrative Record</span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">Max Team Seats</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="999"
+                      value={customLimits.team_members}
+                      onChange={(e) => setCustomLimits(prev => ({ ...prev, team_members: Number(e.target.value) }))}
+                      className="w-full px-3 py-2 bg-[#FAF9F5] border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">Max Events / Month</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="9999"
+                      value={customLimits.events_per_month}
+                      onChange={(e) => setCustomLimits(prev => ({ ...prev, events_per_month: Number(e.target.value) }))}
+                      className="w-full px-3 py-2 bg-[#FAF9F5] border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">Monthly AI Scans Limit</label>
+                    <input
+                      type="number"
+                      min="100"
+                      max="999999"
+                      value={customLimits.ai_scans}
+                      onChange={(e) => setCustomLimits(prev => ({ ...prev, ai_scans: Number(e.target.value) }))}
+                      className="w-full px-3 py-2 bg-[#FAF9F5] border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900"
+                    />
                   </div>
                 </div>
 
-                {/* Bump WhatsApp Credits */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-700">WhatsApp Monthly Message Credits (Current: {studio.integrations.whatsapp.quota_allowance})</label>
-                  <div className="flex gap-2">
-                    {[5000, 10000, 25000, 50000].map(credits => (
-                      <button
-                        key={credits}
-                        type="button"
-                        onClick={() => handleExecuteOverride('bump_quota', { whatsappQuota: credits })}
-                        disabled={isUpdating}
-                        className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-emerald-100 hover:text-emerald-950 border border-slate-200 text-xs font-bold transition cursor-pointer"
-                      >
-                        +{credits.toLocaleString('en-IN')} Msgs
-                      </button>
-                    ))}
-                  </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Founder / Admin Notes</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Granted special 150GB quota & VIP features for annual partnership"
+                    value={adminNotes}
+                    onChange={(e) => setAdminNotes(e.target.value)}
+                    className="w-full px-4 py-2 bg-[#FAF9F5] border border-slate-200 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400"
+                  />
                 </div>
 
-                {/* Account Suspension / Unlock */}
+                {/* Suspension Zone */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                   <div>
-                    <span className="text-xs font-black text-slate-900 block">Platform Suspension</span>
-                    <span className="text-[11px] text-slate-500">Locking prevents tenant from signing in or generating quotations.</span>
+                    <span className="text-xs font-black text-slate-900 block">Platform Suspension Switch</span>
+                    <span className="text-[11px] text-slate-500">Instantly revoke studio login access across all crew members.</span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleExecuteOverride('toggle_block', { isBlocked: !studio.is_platform_blocked })}
-                    disabled={isUpdating}
+                    onClick={() => setIsBlocked(!isBlocked)}
                     className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
-                      studio.is_platform_blocked
+                      isBlocked
                         ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                        : 'bg-rose-600 hover:bg-rose-700 text-white'
+                        : 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200'
                     }`}
                   >
-                    {studio.is_platform_blocked ? 'Unlock & Restore Access' : 'Suspend Studio Access'}
+                    {isBlocked ? '✓ Account Blocked (Click to Unlock)' : '🚫 Suspend Studio Access'}
                   </button>
                 </div>
               </div>
+
+              {/* Master Save Button Bar */}
+              <div className="p-4 bg-amber-500/10 border border-amber-300 rounded-2xl flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-black text-amber-950 block">Apply All God-Mode Changes</span>
+                  <span className="text-[11px] text-amber-800">Saves plan, storage, expiry, features, and custom limits atomically.</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={isUpdating}
+                  onClick={() => {
+                    handleExecuteOverride('save_god_mode', {
+                      plan: customPlan,
+                      expiresAt: customExpiresAt ? new Date(customExpiresAt + 'T23:59:59.999Z').toISOString() : undefined,
+                      storageQuotaGb: Number(customStorageGb),
+                      isBlocked,
+                      features: featureOverrides,
+                      customLimits,
+                      adminNotes,
+                    });
+                  }}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-xs hover:from-amber-600 hover:to-orange-600 shadow-md transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isUpdating ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Saving to Database...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 fill-white" />
+                      Apply God-Mode Overrides
+                    </>
+                  )}
+                </button>
+              </div>
+
             </div>
           )}
 

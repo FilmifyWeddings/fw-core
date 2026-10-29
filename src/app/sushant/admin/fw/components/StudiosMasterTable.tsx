@@ -5,7 +5,7 @@ import {
   Building2, Search, Filter, ShieldCheck, 
   ExternalLink, User, Phone, Mail, ChevronRight, 
   HardDrive, MessageSquare, AlertCircle, Eye, 
-  CheckCircle2, ArrowUpDown, Lock, Sparkles 
+  CheckCircle2, ArrowUpDown, Lock, Sparkles, Zap
 } from 'lucide-react';
 
 export interface StudioItem {
@@ -26,7 +26,10 @@ export interface StudioItem {
   platform_role: string;
   subscription_plan: string;
   subscription_expires_at: string;
+  days_remaining?: number;
+  is_expiring_soon?: boolean;
   is_platform_blocked: boolean;
+  custom_overrides?: any;
   created_at: string;
   last_active_at: string;
   is_active_today: boolean;
@@ -91,11 +94,11 @@ export interface StudioItem {
 interface StudiosMasterTableProps {
   studios: StudioItem[];
   isLoading?: boolean;
-  onInspectStudio: (studio: StudioItem) => void;
+  onInspectStudio: (studio: StudioItem, initialTab?: 'overview' | 'crm' | 'team' | 'media' | 'integrations' | 'overrides') => void;
   onRefresh?: () => void;
 }
 
-type TabKey = 'all' | 'paid' | 'trial' | 'active_today' | 'blocked';
+type TabKey = 'all' | 'paid' | 'expiring_soon' | 'trial' | 'active_today' | 'blocked';
 type SortKey = 'active' | 'name' | 'plan' | 'revenue' | 'storage';
 
 function formatRelativeTime(dateString: string | null | undefined): string {
@@ -134,7 +137,10 @@ export default function StudiosMasterTable({
       .filter((s) => {
         // Tab filter
         if (activeTab === 'paid') {
-          if (!['pro', 'business', 'enterprise'].includes(s.subscription_plan)) return false;
+          if (!['starter', 'pro', 'business', 'enterprise', 'vip'].includes(s.subscription_plan)) return false;
+        } else if (activeTab === 'expiring_soon') {
+          const days = s.days_remaining ?? Math.ceil((new Date(s.subscription_expires_at).getTime() - Date.now()) / (1000 * 3600 * 24));
+          if (days > 7 || days < 0) return false;
         } else if (activeTab === 'trial') {
           if (s.subscription_plan !== 'trial') return false;
         } else if (activeTab === 'active_today') {
@@ -174,8 +180,12 @@ export default function StudiosMasterTable({
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold">
           {[
             { id: 'all', label: 'All Studios', count: studios.length },
-            { id: 'paid', label: 'Paid Tier', count: studios.filter(s => ['pro', 'business', 'enterprise'].includes(s.subscription_plan)).length },
-            { id: 'trial', label: 'Trial', count: studios.filter(s => s.subscription_plan === 'trial').length },
+            { id: 'paid', label: 'Paid Tier', count: studios.filter(s => ['starter', 'pro', 'business', 'enterprise', 'vip'].includes(s.subscription_plan)).length },
+            { id: 'expiring_soon', label: '⚠️ Expiring in 7d', count: studios.filter(s => {
+              const d = s.days_remaining ?? Math.ceil((new Date(s.subscription_expires_at).getTime() - Date.now()) / (1000 * 3600 * 24));
+              return d <= 7 && d >= 0 && s.subscription_plan !== 'trial';
+            }).length },
+            { id: 'trial', label: 'Free Trial', count: studios.filter(s => s.subscription_plan === 'trial').length },
             { id: 'active_today', label: 'Active Today', count: studios.filter(s => s.is_active_today).length },
             { id: 'blocked', label: 'Suspended', count: studios.filter(s => s.is_platform_blocked).length },
           ].map(tab => (
@@ -342,14 +352,22 @@ export default function StudiosMasterTable({
                   {/* 3. Plan & Status */}
                   <td className="py-3 px-3">
                     <div className="space-y-1">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider inline-block border ${
-                        s.subscription_plan === 'enterprise' ? 'bg-purple-100 text-purple-900 border-purple-300' :
-                        s.subscription_plan === 'business' ? 'bg-indigo-100 text-indigo-900 border-indigo-300' :
-                        s.subscription_plan === 'pro' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' :
-                        'bg-amber-100 text-amber-900 border-amber-300'
-                      }`}>
-                        {s.subscription_plan}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider inline-block border ${
+                          s.subscription_plan === 'enterprise' ? 'bg-purple-100 text-purple-900 border-purple-300' :
+                          s.subscription_plan === 'vip' ? 'bg-amber-400 text-slate-950 border-amber-500 font-extrabold' :
+                          s.subscription_plan === 'pro' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' :
+                          s.subscription_plan === 'starter' ? 'bg-blue-100 text-blue-900 border-blue-300' :
+                          'bg-amber-100 text-amber-900 border-amber-300'
+                        }`}>
+                          {s.subscription_plan}
+                        </span>
+                        {s.is_expiring_soon && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+                            {s.days_remaining}d left
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-slate-400 font-medium">
                         Expires: {new Date(s.subscription_expires_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                       </p>
@@ -434,16 +452,28 @@ export default function StudiosMasterTable({
                     </div>
                   </td>
 
-                  {/* 8. Action: Inspect Studio */}
+                  {/* 8. Action: Inspect Studio & God-Mode */}
                   <td className="py-3 px-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => onInspectStudio(s)}
-                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-500 hover:text-white border border-[#EAE5DA] text-slate-700 text-xs font-black transition-all shadow-2xs group-hover:border-amber-300 inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Inspect</span>
-                    </button>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onInspectStudio(s, 'overview')}
+                        className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-[#EAE5DA] text-slate-700 text-xs font-bold transition shadow-2xs inline-flex items-center gap-1 cursor-pointer"
+                        title="View Full Studio Kundali"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Inspect</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onInspectStudio(s, 'overrides')}
+                        className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-black transition shadow-xs hover:from-amber-600 hover:to-orange-600 inline-flex items-center gap-1 cursor-pointer"
+                        title="Open God-Mode Overrides"
+                      >
+                        <Zap className="w-3.5 h-3.5 fill-white" />
+                        <span>God-Mode</span>
+                      </button>
+                    </div>
                   </td>
 
                 </tr>
