@@ -217,7 +217,3 @@ export default function HeroKpiGrid({ kpis, isLoading = false }: HeroKpiGridProp
     </div>
   );
 }
-
-    </div>
-  );
-}
