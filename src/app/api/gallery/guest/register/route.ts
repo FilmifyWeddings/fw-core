@@ -77,14 +77,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Upload compressed selfie to Backblaze B2 (tiny KB size WebP)
+    // 3 & 4. Concurrently upload compressed selfie to Backblaze B2 and extract 512-D Embedding
     let selfie_url: string | null = null;
-    if (selfieBase64 && selfieBase64.startsWith('data:image')) {
+    let embedding: number[] = [];
+
+    const uploadSelfieTask = async () => {
+      if (!selfieBase64 || !selfieBase64.startsWith('data:image')) return null;
       try {
         const base64Data = selfieBase64.replace(/^data:image\/[a-z0-9]+;base64,/, '');
         const rawBuffer = Buffer.from(base64Data, 'base64');
-
-        // Compress to 360x360 WebP using sharp (~12-15KB)
         let webpBuffer = rawBuffer;
         try {
           webpBuffer = await sharp(rawBuffer)
@@ -101,17 +102,30 @@ export async function POST(req: NextRequest) {
           ContentType: 'image/webp',
         });
         await galleryB2Client.send(putCmd);
-        selfie_url = `/api/gallery/image?key=${encodeURIComponent(selfieKey)}`;
+        return `/api/gallery/image?key=${encodeURIComponent(selfieKey)}`;
       } catch (uploadErr) {
         console.warn('[GuestRegister] Failed to upload selfie to Backblaze B2:', uploadErr);
+        return null;
       }
-    }
+    };
 
-    // 4. Extract 512-D Vector Embedding from Selfie
-    let embedding: number[] = [];
-    if (selfieBase64) {
-      embedding = await extractEmbeddingFromBase64(selfieBase64);
-    }
+    const extractEmbeddingTask = async () => {
+      if (!selfieBase64) return [];
+      try {
+        return await extractEmbeddingFromBase64(selfieBase64);
+      } catch (e) {
+        console.warn('[GuestRegister] Embedding extraction error:', e);
+        return [];
+      }
+    };
+
+    const [uploadRes, embRes] = await Promise.all([
+      uploadSelfieTask(),
+      extractEmbeddingTask()
+    ]);
+    selfie_url = uploadRes;
+    embedding = embRes || [];
+
     if ((!embedding || embedding.length !== 512) && existingGuest?.face_embedding && Array.isArray(existingGuest.face_embedding) && existingGuest.face_embedding.length === 512) {
       embedding = existingGuest.face_embedding;
     }
@@ -121,33 +135,54 @@ export async function POST(req: NextRequest) {
       embedding = [];
     }
 
-    // 4.5. Compute instant matches against existing photo faces in this gallery
+    // 4.5. Compute instant matches against existing photo faces in this gallery (Only if published!)
     const matchedPhotoIds: string[] = [];
-    if (embedding && embedding.length === 512) {
+    const isGalleryPublished = gallery.status !== 'UNPUBLISHED';
+    if (isGalleryPublished && embedding && embedding.length === 512) {
+      // Try high-speed pgvector RPC first (< 20ms)
+      let rpcSuccess = false;
       try {
-        const { data: existingFaces } = await supabaseAdmin
-          .from('photo_faces')
-          .select('photo_id, embedding')
-          .eq('gallery_id', gallery.id);
+        const { data: rpcMatches, error: rpcErr } = await supabaseAdmin.rpc('match_guest_faces', {
+          query_embedding: embedding,
+          match_gallery_id: gallery.id,
+          match_threshold: 0.40,
+          match_limit: 500,
+        });
+        if (!rpcErr && Array.isArray(rpcMatches) && rpcMatches.length > 0) {
+          rpcSuccess = true;
+          for (const m of rpcMatches) {
+            if (m.photo_id) matchedPhotoIds.push(m.photo_id);
+          }
+        }
+      } catch (_) {}
 
-        if (existingFaces && existingFaces.length > 0) {
-          const matchedSet = new Set<string>();
-          for (const ef of existingFaces) {
-            const efEmb = Array.isArray(ef.embedding)
-              ? ef.embedding
-              : (typeof ef.embedding === 'string' ? JSON.parse(ef.embedding) : null);
+      // Fallback: In-memory cosine similarity
+      if (!rpcSuccess && matchedPhotoIds.length === 0) {
+        try {
+          const { data: existingFaces } = await supabaseAdmin
+            .from('photo_faces')
+            .select('photo_id, embedding')
+            .eq('gallery_id', gallery.id);
 
-            if (efEmb && efEmb.length === 512) {
-              const sim = cosineSimilarity(embedding, efEmb);
-              if (sim >= 0.40) {
-                matchedSet.add(ef.photo_id);
+          if (existingFaces && existingFaces.length > 0) {
+            const matchedSet = new Set<string>();
+            for (const ef of existingFaces) {
+              const efEmb = Array.isArray(ef.embedding)
+                ? ef.embedding
+                : (typeof ef.embedding === 'string' ? JSON.parse(ef.embedding) : null);
+
+              if (efEmb && efEmb.length === 512) {
+                const sim = cosineSimilarity(embedding, efEmb);
+                if (sim >= 0.40) {
+                  matchedSet.add(ef.photo_id);
+                }
               }
             }
+            matchedPhotoIds.push(...Array.from(matchedSet));
           }
-          matchedPhotoIds.push(...Array.from(matchedSet));
+        } catch (err) {
+          console.warn('[GuestRegister] Error matching against existing gallery faces:', err);
         }
-      } catch (err) {
-        console.warn('[GuestRegister] Error matching against existing gallery faces:', err);
       }
     }
 
@@ -242,20 +277,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: regErr.message }, { status: 500 });
     }
 
-    // 6. Update aggregate count on event_galleries
-    try {
-      const { count } = await supabaseAdmin
-        .from('event_guest_registrations')
-        .select('*', { count: 'exact', head: true })
-        .eq('gallery_id', gallery.id);
+    // 6. Update aggregate count on event_galleries asynchronously (fire-and-forget)
+    (async () => {
+      try {
+        const { count } = await supabaseAdmin
+          .from('event_guest_registrations')
+          .select('*', { count: 'exact', head: true })
+          .eq('gallery_id', gallery.id);
 
-      if (typeof count === 'number') {
-        await supabaseAdmin
-          .from('event_galleries')
-          .update({ total_registered_guests: count })
-          .eq('id', gallery.id);
-      }
-    } catch (_) {}
+        if (typeof count === 'number') {
+          await supabaseAdmin
+            .from('event_galleries')
+            .update({ total_registered_guests: count })
+            .eq('id', gallery.id);
+        }
+      } catch (_) {}
+    })();
 
     let matchedPhotos: any[] = [];
     if (matchedPhotoIds.length > 0) {

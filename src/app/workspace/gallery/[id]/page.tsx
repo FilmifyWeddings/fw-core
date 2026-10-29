@@ -274,6 +274,7 @@ function AlbumStudioContent() {
   // Local Folder Picker & Copy State (Fast & Recommended, 0 bandwidth)
   const [isLocalFolderModalOpen, setIsLocalFolderModalOpen] = useState(false);
   const [localFolderStatus, setLocalFolderStatus] = useState<'idle' | 'scanning' | 'copying' | 'completed' | 'error'>('idle');
+  const [copiedFolderName, setCopiedFolderName] = useState('Album Selection');
   const [localFolderProgress, setLocalFolderProgress] = useState<{
     total: number;
     scanned: number;
@@ -1468,6 +1469,15 @@ function AlbumStudioContent() {
         currentFile: 'Scanning local directories...',
       });
 
+      // Resolve target folder name: Couple Name - Selected - Selector Name
+      const coupleName = (gallery?.title || (gallery as any)?.couple_name || 'Event').trim();
+      const selectorName = (clientSelections.find((c) => c.client_email === selectedClientEmail)?.client_name || 'Client').trim();
+      const destinationFolderName = `${coupleName} - Selected - ${selectorName}`
+        .replace(/[/\\?%*:|"<>]/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim();
+      setCopiedFolderName(destinationFolderName);
+
       // 2. Index local files recursively
       const fileIndex = new Map<string, { handle: any; dirHandle: any; path: string }>();
       let scannedCount = 0;
@@ -1484,13 +1494,22 @@ function AlbumStudioContent() {
               }));
             }
             const lowerName = entry.name.toLowerCase().trim();
-            fileIndex.set(lowerName, { handle: entry, dirHandle, path: currentPath });
-
             const baseName = lowerName.replace(/\.[^/.]+$/, '');
+            const cleanAlpha = baseName.replace(/[^a-z0-9]/g, '');
+
+            fileIndex.set(lowerName, { handle: entry, dirHandle, path: currentPath });
             if (!fileIndex.has(baseName)) {
               fileIndex.set(baseName, { handle: entry, dirHandle, path: currentPath });
             }
-          } else if (entry.kind === 'directory' && entry.name !== 'Album Selection') {
+            if (cleanAlpha && !fileIndex.has(cleanAlpha)) {
+              fileIndex.set(cleanAlpha, { handle: entry, dirHandle, path: currentPath });
+            }
+          } else if (
+            entry.kind === 'directory' &&
+            entry.name !== destinationFolderName &&
+            entry.name !== 'Album Selection' &&
+            !entry.name.includes('- Selected -')
+          ) {
             await scanDirectory(entry, `${currentPath}${entry.name}/`);
           }
         }
@@ -1498,8 +1517,8 @@ function AlbumStudioContent() {
 
       await scanDirectory(rootDirHandle, '');
 
-      // 3. Create or access "Album Selection" destination directory
-      const albumSelectionDir = await rootDirHandle.getDirectoryHandle('Album Selection', { create: true });
+      // 3. Create or access destination directory: Couple Name - Selected - Selector Name
+      const albumSelectionDir = await rootDirHandle.getDirectoryHandle(destinationFolderName, { create: true });
 
       setLocalFolderStatus('copying');
       let matchedCount = 0;
@@ -1510,9 +1529,10 @@ function AlbumStudioContent() {
         const p = targetPhotos[i];
         const rawFilename = getCleanFilename(p.original_key || p.file_name || '').toLowerCase().trim();
         const baseFilename = rawFilename.replace(/\.[^/.]+$/, '');
+        const cleanAlpha = baseFilename.replace(/[^a-z0-9]/g, '');
 
-        // Match against local files
-        const matched = fileIndex.get(rawFilename) || fileIndex.get(baseFilename);
+        // Match against local files with robust alphanumeric fallback
+        const matched = fileIndex.get(rawFilename) || fileIndex.get(baseFilename) || fileIndex.get(cleanAlpha);
 
         const colName = collections.find((c) => c.id === p.collection_id)?.name || 'General';
         const cleanColName = colName.replace(/[/\\?%*:|"<>]/g, '_').trim() || 'General';
@@ -1540,6 +1560,23 @@ function AlbumStudioContent() {
             copiedCount++;
           } catch (copyErr) {
             console.warn('Error copying local file:', matched.handle.name, copyErr);
+          }
+        } else {
+          // Cloud fallback: If the high-res file is not found in the local root folder, fetch from cloud storage
+          try {
+            const downloadUrl = `/api/gallery/image?key=${encodeURIComponent(p.original_key || p.preview_key)}`;
+            const res = await fetch(downloadUrl);
+            if (res.ok) {
+              const blob = await res.blob();
+              const fallbackFilename = getCleanFilename(p.original_key || `photo_${i + 1}.jpg`);
+              const destFileHandle = await targetSubDir.getFileHandle(fallbackFilename, { create: true });
+              const writable = await destFileHandle.createWritable();
+              await blob.stream().pipeTo(writable);
+              matchedCount++;
+              copiedCount++;
+            }
+          } catch (cloudErr) {
+            console.warn('Cloud fallback download error:', p.id, cloudErr);
           }
         }
 
@@ -4742,7 +4779,7 @@ function AlbumStudioContent() {
             {localFolderStatus === 'copying' && (
               <div className="space-y-4 py-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-zinc-700">Extracting to 'Album Selection' folder</span>
+                  <span className="font-bold text-zinc-700">Extracting to &apos;{copiedFolderName}&apos;</span>
                   <span className="font-mono font-black text-amber-700">
                     {localFolderProgress.copied} / {localFolderProgress.total} photos
                   </span>
@@ -4767,9 +4804,9 @@ function AlbumStudioContent() {
                   <Check className="w-6 h-6 stroke-[3px]" />
                 </div>
                 <div>
-                  <p className="font-black text-base text-zinc-900">Album Selection Created Successfully!</p>
+                  <p className="font-black text-base text-zinc-900">Selection Folder Created Successfully!</p>
                   <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-                    Found and copied <strong>{localFolderProgress.copied}</strong> of <strong>{localFolderProgress.total}</strong> original high-res photos into your local <strong className="text-zinc-800">Album Selection/</strong> sub-folders at native disk speed.
+                    Found and copied <strong>{localFolderProgress.copied}</strong> of <strong>{localFolderProgress.total}</strong> original high-res photos into your local <strong className="text-zinc-800">{copiedFolderName}/</strong> sub-folders at native disk speed.
                   </p>
                 </div>
                 <button

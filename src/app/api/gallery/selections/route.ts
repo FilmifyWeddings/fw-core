@@ -66,29 +66,12 @@ export async function GET(req: NextRequest) {
   try {
     // 1. Try PostgreSQL table
     if (normalizedEmail) {
-      let { data, error } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from('gallery_album_selections')
         .select('*')
         .eq('gallery_id', galleryId)
         .eq('client_email', normalizedEmail)
         .maybeSingle();
-
-      // If no exact match or record not submitted, check if ANY client selection for this gallery is submitted
-      if (!data || !data.is_submitted) {
-        const { data: anySubmitted } = await supabaseAdmin
-          .from('gallery_album_selections')
-          .select('*')
-          .eq('gallery_id', galleryId)
-          .eq('is_submitted', true)
-          .neq('client_email', '__config__')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (anySubmitted) {
-          data = anySubmitted;
-        }
-      }
 
       if (data) {
         return NextResponse.json({
@@ -99,6 +82,15 @@ export async function GET(req: NextRequest) {
           submitted_at: data.submitted_at || null,
         });
       }
+
+      // If no record exists for this specific email, return empty selection
+      return NextResponse.json({
+        success: true,
+        selection: null,
+        selected_photo_ids: [],
+        is_submitted: false,
+        submitted_at: null,
+      });
     } else {
       // List all selections for studio workspace (excluding internal configuration record)
       const { data, error } = await supabaseAdmin

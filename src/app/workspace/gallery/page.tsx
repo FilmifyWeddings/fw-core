@@ -787,54 +787,11 @@ export default function MyEventsPage() {
                   setCreateForm((prev) => ({
                     ...prev,
                     title,
-                    slug: isSlugManuallyEdited ? prev.slug : autoSlug,
+                    slug: autoSlug,
                   }));
                 }}
                 className="w-full px-4 py-2.5 bg-[#FBF9F5] rounded-2xl border border-[#E7E2D8] text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition"
               />
-            </div>
-
-            {/* Custom URL Slug */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-bold text-zinc-700">Custom URL Slug *</label>
-                {isSlugManuallyEdited && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSlugManuallyEdited(false);
-                      const autoSlug = createForm.title
-                        .toLowerCase()
-                        .replace(/[^a-z0-9]+/g, '-')
-                        .replace(/^-+|-+$/g, '');
-                      setCreateForm((prev) => ({ ...prev, slug: autoSlug }));
-                    }}
-                    className="text-[10px] text-amber-600 hover:text-amber-700 font-bold cursor-pointer"
-                  >
-                    Reset to Auto
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center">
-                <span className="px-3 py-2.5 bg-[#F4F1EA] border border-r-0 border-[#E7E2D8] rounded-l-2xl text-xs text-zinc-500 font-mono">
-                  studiocore.in/g/
-                </span>
-                <input
-                  type="text"
-                  required
-                  placeholder="rohit-anjali"
-                  value={createForm.slug}
-                  onChange={(e) => {
-                    const val = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
-                    setIsSlugManuallyEdited(val.length > 0);
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      slug: val,
-                    }));
-                  }}
-                  className="w-full px-3.5 py-2.5 bg-[#FBF9F5] rounded-r-2xl border border-[#E7E2D8] text-xs font-mono font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition"
-                />
-              </div>
             </div>
 
             {/* Event Date */}
