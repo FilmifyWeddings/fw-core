@@ -286,6 +286,29 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Zero-overhead on public landing and auth pages
+    const path = typeof window !== 'undefined' ? window.location.pathname : '';
+    const isPublic = 
+      !path || 
+      path === '/' || 
+      path === '/login' || 
+      path.startsWith('/login') || 
+      path === '/signup' || 
+      path.startsWith('/signup') || 
+      path === '/pricing' || 
+      path === '/features' ||
+      path === '/book-demo' ||
+      path === '/free-trial' ||
+      path.startsWith('/g/') || 
+      path.startsWith('/p/') || 
+      path.startsWith('/r/') || 
+      path.startsWith('/sushant');
+
+    if (isPublic) {
+      setLoading(false);
+      return;
+    }
+
     refreshContext();
 
     const handleProfileUpdated = () => {

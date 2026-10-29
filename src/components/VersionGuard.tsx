@@ -1,9 +1,27 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, RefreshCw, AlertCircle, ArrowUpCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+
+function isPublicRoute(pathname: string): boolean {
+  if (!pathname || pathname === '/') return true;
+  return (
+    pathname === '/' ||
+    pathname === '/login' ||
+    pathname.startsWith('/login') ||
+    pathname === '/signup' ||
+    pathname.startsWith('/signup') ||
+    pathname === '/pricing' ||
+    pathname === '/features' ||
+    pathname.startsWith('/g/') ||
+    pathname.startsWith('/p/') ||
+    pathname.startsWith('/r/') ||
+    pathname.startsWith('/sushant')
+  );
+}
 
 export function VersionGuard({ children }: { children: React.ReactNode }) {
   // 1. Disable in Development Mode: strictly runs ONLY in production
@@ -15,6 +33,8 @@ export function VersionGuard({ children }: { children: React.ReactNode }) {
 }
 
 function VersionGuardInner({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname() || '';
+  const isPublic = isPublicRoute(pathname);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = useState<string>('');
@@ -22,10 +42,13 @@ function VersionGuardInner({ children }: { children: React.ReactNode }) {
   const currentVersionRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // 1. Fetch active version on mount
+    // Never run version poll or realtime WebSocket on public marketing pages
+    if (isPublic) return;
+
+    // 1. Fetch active version on mount with safe 4s timeout
     const fetchActiveVersion = async () => {
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('app_versions')
           .select('version_number, release_notes')
           .eq('is_active', true)
@@ -36,7 +59,7 @@ function VersionGuardInner({ children }: { children: React.ReactNode }) {
           currentVersionRef.current = data.version_number;
         }
       } catch (err) {
-        console.error('Error fetching active version:', err);
+        console.warn('Silent note: active version check bypassed:', err);
       }
     };
 

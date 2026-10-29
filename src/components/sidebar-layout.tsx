@@ -84,10 +84,53 @@ const RESERVED_PUBLIC_ROOTS = new Set([
   'favicon.ico',
 ]);
 
+export function isPublicStandaloneRoute(pathname: string): boolean {
+  if (!pathname || pathname === '/') return true;
+  const pathSegments = pathname.split('/').filter(Boolean);
+  const isBrandedGallery =
+    pathSegments.length >= 2 &&
+    !pathSegments[0].includes('.') &&
+    !RESERVED_PUBLIC_ROOTS.has(pathSegments[0].toLowerCase());
+
+  return (
+    isBrandedGallery ||
+    pathname === '/' ||
+    pathname === '/login' ||
+    pathname.startsWith('/login') ||
+    pathname === '/forgot-password' ||
+    pathname.startsWith('/forgot-password') ||
+    pathname === '/reset-password' ||
+    pathname.startsWith('/reset-password') ||
+    pathname === '/team/login' ||
+    pathname.startsWith('/team/login') ||
+    pathname === '/features' ||
+    pathname === '/pricing' ||
+    pathname === '/book-demo' ||
+    pathname === '/free-trial' ||
+    pathname === '/privacy-policy' ||
+    pathname.startsWith('/privacy-policy') ||
+    pathname === '/terms-of-service' ||
+    pathname.startsWith('/terms-of-service') ||
+    pathname === '/data-deletion' ||
+    pathname.startsWith('/data-deletion') ||
+    pathname.startsWith('/pdf-preview') ||
+    pathname.startsWith('/p/') ||
+    pathname.startsWith('/g/') ||
+    pathname.startsWith('/r/') ||
+    pathname.startsWith('/review') ||
+    pathname.startsWith('/attendance/') ||
+    pathname.startsWith('/bee-queen-curtail') ||
+    pathname === '/sarajosmith' ||
+    pathname.startsWith('/sarajosmith') ||
+    pathname.startsWith('/sushant')
+  );
+}
+
 export function SidebarLayout({ children }: SidebarLayoutProps) {
   const router = useRouter();
   const rawPathname = usePathname();
   const pathname = rawPathname || '';
+  const isStandalonePage = isPublicStandaloneRoute(pathname);
   const searchParams = useSearchParams();
   const { isOwner, userRole, permissions, availableWorkspaces, activeWorkspace } = useWorkspace();
   const hasFetchedRef = useRef(false);
@@ -209,6 +252,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   // Load user profile & collapsed preference
   const fetchUserProfile = useCallback(async (force = false) => {
+    if (isStandalonePage) return;
     if (!force && hasFetchedRef.current) return;
     hasFetchedRef.current = true;
 
@@ -366,10 +410,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       }
     }
 
-    fetchUserProfile();
+    if (!isStandalonePage) {
+      fetchUserProfile();
+    }
 
     // Listen for custom profile update events
     const handleProfileUpdate = (e: any) => {
+      if (isStandalonePage) return;
       const p = e.detail;
       if (p) {
         if (p.studioName) setWorkspaceName(p.studioName);
@@ -383,48 +430,22 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     return () => {
       window.removeEventListener('sc_profile_updated', handleProfileUpdate);
     };
-  }, [fetchUserProfile]);
+  }, [fetchUserProfile, isStandalonePage]);
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(collapsed));
   }, [collapsed]);
 
+  // Clean idle prefetch - eliminates aggressive 13-route network bursts on page load
   useEffect(() => {
-    // Pre-warm all core workspace routes for instant millisecond transitions
-    const coreRoutes = [
-      '/workspace',
-      '/leads',
-      '/team-manager',
-      '/quotations',
-      '/workspace/post-production',
-      '/workspace/team',
-      '/workspace/finance',
-      '/workspace/clients',
-      '/workspace/gallery',
-      '/workspace/attendance',
-      '/workspace/integrations',
-      '/workspace/settings',
-      '/support',
-    ];
-    coreRoutes.forEach((route) => {
-      try {
-        router.prefetch(route);
-        const formatted = formatPathWithStudio(route);
-        if (formatted && formatted !== route) {
-          router.prefetch(formatted);
-        }
-      } catch (_) {}
-    });
-
-    // Idle background pre-warming of critical caches
+    if (isStandalonePage) return;
     const timer = setTimeout(() => {
-      import('@/lib/post-production-settings').then(m => {
-        m.fetchPostProductionSettings().catch(() => {});
-      }).catch(() => {});
-    }, 1500);
-
+      try {
+        router.prefetch('/workspace');
+      } catch (_) {}
+    }, 2500);
     return () => clearTimeout(timer);
-  }, [router]);
+  }, [isStandalonePage, router]);
 
   useEffect(() => {
     if (pathname.startsWith('/leads')) {

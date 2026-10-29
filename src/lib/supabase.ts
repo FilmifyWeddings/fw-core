@@ -34,10 +34,26 @@ export function clearAllSupabaseAuthCookies() {
   } catch (_) {}
 }
 
+// Resilient fetch wrapper with 7-second hard abort to prevent indefinite hanging on degraded networks
+const customResilientFetch = (url: RequestInfo | URL, options: RequestInit = {}) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 7000); // 7s circuit-breaker timeout
+  const originalSignal = options.signal;
+  if (originalSignal) {
+    originalSignal.addEventListener('abort', () => controller.abort());
+  }
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => {
+    clearTimeout(timeoutId);
+  });
+};
+
 // Standard client for client-side or scoped user actions with native @supabase/ssr cookie sync
 export const supabase = typeof window !== 'undefined'
   ? createBrowserClient(supabaseUrl, supabaseAnonKey, {
       isSingleton: true,
+      global: {
+        fetch: customResilientFetch,
+      },
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -50,7 +66,11 @@ export const supabase = typeof window !== 'undefined'
         maxAge: 60 * 60 * 24 * 365, // 365 days persistent session (prevents mobile/iOS session cookie wipe)
       },
     })
-  : createClient(supabaseUrl, supabaseAnonKey);
+  : createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        fetch: customResilientFetch,
+      },
+    });
 
 // Admin client for backend operations (webhooks, cron tasks) that bypass RLS
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {

@@ -197,8 +197,27 @@ export function WorkspaceDataProvider({ children }: { children: React.ReactNode 
     }
   }, [effectiveWsId, workspaceMembers.length, loadMembersCatalog, loadRolesCatalog, loadEventTypesCatalog, loadSettingsCatalog]);
 
-  // Initial mount trigger
+  // Initial mount trigger: strictly runs on authenticated workspace routes only
   useEffect(() => {
+    const path = typeof window !== 'undefined' ? window.location.pathname : '';
+    const isPublic = 
+      !path || 
+      path === '/' || 
+      path === '/login' || 
+      path.startsWith('/login') || 
+      path === '/signup' || 
+      path.startsWith('/signup') || 
+      path === '/pricing' || 
+      path === '/features' ||
+      path === '/book-demo' ||
+      path === '/free-trial' ||
+      path.startsWith('/g/') || 
+      path.startsWith('/p/') || 
+      path.startsWith('/r/') || 
+      path.startsWith('/sushant');
+
+    if (isPublic) return;
+
     if (effectiveWsId && !initialLoadDone.current) {
       initialLoadDone.current = true;
       refreshCatalog('all');
