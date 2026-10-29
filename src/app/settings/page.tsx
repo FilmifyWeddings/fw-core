@@ -61,6 +61,7 @@ import {
 import CrewRolesSettings from '@/app/workspace/settings/components/CrewRolesSettings';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import PostProductionSettingsTab from '@/app/workspace/settings/components/PostProductionSettingsTab';
+import SubscriptionManagementCard from '@/components/billing/SubscriptionManagementCard';
 
 function InstagramIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -136,7 +137,7 @@ const DRIVE_TYPES = [
   { id: 'OTHER', label: 'Other / Pen Drive', desc: 'Portable Transfer Media', badge: 'Media' },
 ];
 
-type SettingsTab = 'profile' | 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'storage' | 'finance';
+type SettingsTab = 'profile' | 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'storage' | 'finance' | 'billing';
 type QuoteSubTab = 'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms';
 
 interface DropdownItem {
@@ -317,6 +318,12 @@ const SETTINGS_NAV_ITEMS: {
     title: 'Finance & Invoices',
     subtitle: 'Bank details, UPI QR, tax percentages, and accounts.',
     icon: Coins,
+  },
+  {
+    id: 'billing',
+    title: 'Subscription & Cloud Plans',
+    subtitle: 'Manage active plan, B2 storage quota, crew seats, and tax invoices.',
+    icon: Sparkles,
   },
 ];
 
@@ -5057,6 +5064,14 @@ export default function SettingsPage() {
                   {renderGoogleOptionList(expenseCategories, setExpenseCategories, 'expense', 'Add another item')}
                 </div>
               </div>
+            )}
+
+            {/* 4. SUBSCRIPTION & BILLING PLANS */}
+            {activeTab === 'billing' && (
+              <SubscriptionManagementCard
+                userId={userId || undefined}
+                workspaceId={effectiveWsId || undefined}
+              />
             )}
               </div>
             )}

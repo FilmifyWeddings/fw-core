@@ -18,6 +18,7 @@ import OnboardingCelebrationModal from '@/components/workspace/OnboardingCelebra
 import MandatoryGoogleOnboardingModal from '@/components/auth/MandatoryGoogleOnboardingModal';
 import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
+import UpgradePlanModal from '@/components/billing/UpgradePlanModal';
 
 interface SidebarLayoutProps {
   children: React.ReactNode;
@@ -184,6 +185,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [workspaceName, setWorkspaceName] = useState<string>('');
   const [userAvatarUrl, setUserAvatarUrl] = useState<string>('');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState<boolean>(false);
+  const [subscriptionPlan, setSubscriptionPlan] = useState<string>('trial');
   const [showOnboardingCelebration, setShowOnboardingCelebration] = useState<boolean>(false);
   const [showGoogleOnboarding, setShowGoogleOnboarding] = useState<boolean>(false);
   const [googleOnboardingRole, setGoogleOnboardingRole] = useState<'owner' | 'team_member'>('owner');
@@ -314,6 +317,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               if (finalStudio) setWorkspaceName(finalStudio);
               if (finalName) setUserName(finalName);
               if (finalAvatar) setUserAvatarUrl(finalAvatar);
+              if (p.subscriptionPlan) setSubscriptionPlan(p.subscriptionPlan);
 
               if (typeof window !== 'undefined') {
                 if (finalStudio) {
@@ -970,6 +974,22 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         <div className="p-3 border-t border-[#F0ECE4] shrink-0 bg-[#FCFBF9]">
           {!collapsed ? (
             <div className="space-y-2">
+              {/* Luxury Subscription Badge Pill */}
+              <div 
+                onClick={() => setShowUpgradeModal(true)}
+                className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-amber-50 to-orange-50/50 border border-amber-300/60 hover:border-amber-400 hover:shadow-xs transition group cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Sparkles className="w-3.5 h-3.5 text-[#D9822B] fill-[#D9822B] shrink-0" />
+                  <span className="text-[11px] font-extrabold text-amber-950 uppercase tracking-wider truncate">
+                    {subscriptionPlan === 'trial' ? 'Free Trial' : `${subscriptionPlan} Plan`}
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-[#D9822B] group-hover:text-amber-700 transition flex items-center shrink-0">
+                  Upgrade <ChevronRight className="w-3 h-3 ml-0.5" />
+                </span>
+              </div>
+
               <div 
                 onClick={() => setShowProfileModal(true)}
                 className="w-full flex items-center justify-between p-2 rounded-2xl bg-zinc-50/80 hover:bg-amber-50/60 border border-zinc-200/80 transition group cursor-pointer text-left"
@@ -1009,6 +1029,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
+              <button
+                onClick={() => setShowUpgradeModal(true)}
+                className="w-9 h-9 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-[#D9822B] flex items-center justify-center transition cursor-pointer"
+                title="Upgrade Studio Plan"
+              >
+                <Sparkles className="w-4 h-4 fill-[#D9822B]" />
+              </button>
+
               <button
                 onClick={() => setShowProfileModal(true)}
                 className="w-9 h-9 rounded-full relative cursor-pointer group"
@@ -1271,6 +1299,17 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         userFullName={userName}
         initialRole={googleOnboardingRole}
         onComplete={handleGoogleOnboardingComplete}
+      />
+
+      {/* Luxury Animated Upgrade Plan Modal */}
+      <UpgradePlanModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        currentPlanId={subscriptionPlan}
+        userId={userId || undefined}
+        onSuccess={(newPlan) => {
+          setSubscriptionPlan(newPlan.toLowerCase());
+        }}
       />
     </div>
   );

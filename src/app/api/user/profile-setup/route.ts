@@ -64,6 +64,9 @@ export async function GET(req: NextRequest) {
         phoneVerified: !!(profile?.phone_verified || userMeta.phone_verified),
         platformRole: profile?.platform_role || userMeta.role || userMeta.platform_role || 'owner',
         authProvider: profile?.auth_provider || userMeta.auth_provider || '',
+        subscriptionPlan: profile?.subscription_plan || profile?.subscription_tier || 'trial',
+        subscriptionStatus: profile?.subscription_status || 'active',
+        subscriptionExpiresAt: profile?.subscription_expires_at || null,
       },
     });
   } catch (err: any) {
