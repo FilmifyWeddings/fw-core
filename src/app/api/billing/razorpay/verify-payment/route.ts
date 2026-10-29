@@ -53,13 +53,39 @@ export async function POST(req: NextRequest) {
       studioName = profile.studio_name || studioName;
     }
 
-    // 2. Validate Tier
-    const targetTier = SUBSCRIPTION_TIERS.find((t) => t.id === planId);
-    if (!targetTier) {
-      return NextResponse.json({ success: false, error: `Invalid planId: ${planId}` }, { status: 400 });
-    }
+    // 2. Validate Tier (Dynamic DB first, static fallback)
+    let planName = '';
+    let priceRupees = 0;
+    let planStorageGB = 30;
+    let planTeamSeats = 1;
+    let planEventsPerMonth = 5;
+    let planAiScans = 1500;
 
-    const priceRupees = billingCycle === 'yearly' ? targetTier.priceYearly : targetTier.priceMonthly;
+    const { data: dbPlan } = await supabaseAdmin
+      .from('subscription_plans')
+      .select('*')
+      .eq('id', planId)
+      .maybeSingle();
+
+    if (dbPlan) {
+      planName = dbPlan.name;
+      priceRupees = billingCycle === 'yearly' ? dbPlan.price_yearly : dbPlan.price_monthly;
+      planStorageGB = Math.round((Number(dbPlan.storage_bytes_limit) || 0) / (1024 * 1024 * 1024)) || 30;
+      planTeamSeats = Number(dbPlan.team_members_limit) || 1;
+      planEventsPerMonth = Number(dbPlan.events_per_month_limit) || 5;
+      planAiScans = Number(dbPlan.ai_face_scans_limit) || 1500;
+    } else {
+      const targetTier = SUBSCRIPTION_TIERS.find((t) => t.id === planId);
+      if (!targetTier) {
+        return NextResponse.json({ success: false, error: `Invalid planId: ${planId}` }, { status: 400 });
+      }
+      planName = targetTier.name;
+      priceRupees = billingCycle === 'yearly' ? targetTier.priceYearly : targetTier.priceMonthly;
+      planStorageGB = targetTier.storageGB;
+      planTeamSeats = targetTier.teamSeats;
+      planEventsPerMonth = targetTier.eventsPerMonth;
+      planAiScans = targetTier.aiScans;
+    }
 
     // 3. Signature Verification (if live keys present)
     const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
@@ -95,11 +121,10 @@ export async function POST(req: NextRequest) {
     // 5. Update Profile with Plan & Limits
     const updatedOverrides = {
       ...(profile?.custom_overrides || {}),
-      // Set storage & seat quotas from plan if not custom overridden
-      storage_quota_gb: profile?.custom_overrides?.storage_quota_gb || targetTier.storageGB,
-      team_members_limit: profile?.custom_overrides?.team_members_limit || targetTier.teamSeats,
-      events_per_month_limit: profile?.custom_overrides?.events_per_month_limit || targetTier.eventsPerMonth,
-      ai_scans_limit: profile?.custom_overrides?.ai_scans_limit || targetTier.aiScans,
+      storage_quota_gb: profile?.custom_overrides?.storage_quota_gb || planStorageGB,
+      team_members_limit: profile?.custom_overrides?.team_members_limit || planTeamSeats,
+      events_per_month_limit: profile?.custom_overrides?.events_per_month_limit || planEventsPerMonth,
+      ai_scans_limit: profile?.custom_overrides?.ai_scans_limit || planAiScans,
     };
 
     const { error: updateErr } = await supabaseAdmin
@@ -161,7 +186,7 @@ export async function POST(req: NextRequest) {
         invoice_number: invoiceNumber,
         workspace_id: userId,
         subscription_id: subRecord?.id || null,
-        plan_name: targetTier.name,
+        plan_name: planName,
         amount_subtotal: amountSubtotal,
         tax_rate_percent: 18.00,
         tax_amount: taxAmount,
@@ -182,10 +207,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Successfully upgraded to ${targetTier.name}!`,
+      message: `Successfully upgraded to ${planName}!`,
       plan: {
-        id: targetTier.id,
-        name: targetTier.name,
+        id: planId,
+        name: planName,
         billingCycle,
         expiresAt: newExpiresAt.toISOString(),
         daysRemaining: Math.ceil((newExpiresAt.getTime() - now) / 86400000),

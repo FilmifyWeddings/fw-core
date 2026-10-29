@@ -7,12 +7,13 @@ import StudiosMasterTable, { StudioItem } from './StudiosMasterTable';
 import Pm2HeartbeatWidget from './Pm2HeartbeatWidget';
 import WhatsAppTelemetryView from './WhatsAppTelemetryView';
 import StudioKundaliModal from './StudioKundaliModal';
+import PlansManagerView from './PlansManagerView';
 import { 
   Building2, Activity, MessageSquare, 
-  Server, AlertCircle 
+  Server, AlertCircle, Sparkles 
 } from 'lucide-react';
 
-type MainTab = 'studios' | 'infra' | 'whatsapp';
+type MainTab = 'studios' | 'plans' | 'whatsapp' | 'infra';
 
 interface SuperAdminDashboardClientProps {
   adminEmail: string;
@@ -244,6 +245,18 @@ export default function SuperAdminDashboardClient({
             </button>
 
             <button
+              onClick={() => setActiveMainTab('plans')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                activeMainTab === 'plans'
+                  ? 'bg-white text-slate-900 shadow-sm border border-[#EAE5DA]'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-[#D9822B]" />
+              <span>SaaS Pricing & Plans</span>
+            </button>
+
+            <button
               onClick={() => setActiveMainTab('whatsapp')}
               className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
                 activeMainTab === 'whatsapp'
@@ -284,6 +297,10 @@ export default function SuperAdminDashboardClient({
               setInspectedStudioTab(tab || 'overview');
             }}
           />
+        )}
+
+        {activeMainTab === 'plans' && (
+          <PlansManagerView />
         )}
 
         {activeMainTab === 'whatsapp' && (

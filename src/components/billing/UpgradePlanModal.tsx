@@ -24,6 +24,7 @@ export default function UpgradePlanModal({
   userId,
   onSuccess,
 }: UpgradePlanModalProps) {
+  const [tiers, setTiers] = useState<SubscriptionTier[]>(SUBSCRIPTION_TIERS);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('yearly');
   const [selectedPlanId, setSelectedPlanId] = useState<string>(
     currentPlanId === 'trial' || currentPlanId === 'starter' ? 'pro' : currentPlanId
@@ -36,9 +37,28 @@ export default function UpgradePlanModal({
     invoiceNumber: string;
   } | null>(null);
 
+  React.useEffect(() => {
+    let isMounted = true;
+    async function fetchDynamicPlans() {
+      try {
+        const res = await fetch('/api/billing/plans');
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.success && Array.isArray(json.plans) && json.plans.length > 0 && isMounted) {
+            setTiers(json.plans);
+          }
+        }
+      } catch (err) {
+        console.warn('Using default billing plans', err);
+      }
+    }
+    fetchDynamicPlans();
+    return () => { isMounted = false; };
+  }, []);
+
   if (!isOpen) return null;
 
-  const selectedTier = SUBSCRIPTION_TIERS.find((t) => t.id === selectedPlanId) || SUBSCRIPTION_TIERS[1];
+  const selectedTier = tiers.find((t) => t.id === selectedPlanId) || tiers[1] || tiers[0];
 
   const handleCheckout = async (tier: SubscriptionTier) => {
     setLoading(true);
@@ -282,7 +302,7 @@ export default function UpgradePlanModal({
 
               {/* Pricing Cards Grid */}
               <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-5">
-                {SUBSCRIPTION_TIERS.map((tier) => {
+                {tiers.map((tier) => {
                   const isCurrent = currentPlanId === tier.id;
                   const isSelected = selectedPlanId === tier.id;
                   const price = billingCycle === 'yearly' ? tier.priceYearly : tier.priceMonthly;

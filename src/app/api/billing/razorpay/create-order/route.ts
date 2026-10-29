@@ -41,13 +41,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Lookup Plan Specs
-    const targetTier = SUBSCRIPTION_TIERS.find((t) => t.id === planId);
-    if (!targetTier) {
-      return NextResponse.json({ success: false, error: `Invalid planId: ${planId}` }, { status: 400 });
+    // 2. Lookup Plan Specs (Dynamic DB first, static fallback)
+    let planName = '';
+    let priceRupees = 0;
+
+    const { data: dbPlan } = await supabaseAdmin
+      .from('subscription_plans')
+      .select('*')
+      .eq('id', planId)
+      .maybeSingle();
+
+    if (dbPlan) {
+      planName = dbPlan.name;
+      priceRupees = billingCycle === 'yearly' ? dbPlan.price_yearly : dbPlan.price_monthly;
+    } else {
+      const targetTier = SUBSCRIPTION_TIERS.find((t) => t.id === planId);
+      if (!targetTier) {
+        return NextResponse.json({ success: false, error: `Invalid planId: ${planId}` }, { status: 400 });
+      }
+      planName = targetTier.name;
+      priceRupees = billingCycle === 'yearly' ? targetTier.priceYearly : targetTier.priceMonthly;
     }
 
-    const priceRupees = billingCycle === 'yearly' ? targetTier.priceYearly : targetTier.priceMonthly;
     const amountPaise = priceRupees * 100;
 
     // 3. Razorpay Credentials
@@ -90,8 +105,8 @@ export async function POST(req: NextRequest) {
         keyId,
         demoMode: false,
         plan: {
-          id: targetTier.id,
-          name: targetTier.name,
+          id: planId,
+          name: planName,
           priceRupees,
           billingCycle,
         },
@@ -112,8 +127,8 @@ export async function POST(req: NextRequest) {
       keyId: 'rzp_test_mock_mode_active',
       demoMode: true,
       plan: {
-        id: targetTier.id,
-        name: targetTier.name,
+        id: planId,
+        name: planName,
         priceRupees,
         billingCycle,
       },
