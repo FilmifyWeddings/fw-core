@@ -21,6 +21,7 @@ export default function TripleLockGatekeeperClient({ initialError }: TripleLockG
 
   const [errorMsg, setErrorMsg] = useState<string | null>(initialError || null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [lockoutSec, setLockoutSec] = useState<number | null>(null);
 
   useEffect(() => {
@@ -68,18 +69,22 @@ export default function TripleLockGatekeeperClient({ initialError }: TripleLockG
         throw new Error(data.error || 'Triple-lock authentication failed.');
       }
 
-      // Success: Save token into sessionStorage for multi-layer support
+      // Success: Instant positive visual feedback & save token
+      setIsLoading(false);
+      setIsSuccess(true);
+
       if (typeof window !== 'undefined' && data.token) {
         try {
           sessionStorage.setItem('fw_admin_token', data.token);
         } catch (_) {}
       }
 
-      // Hard reload directly to dashboard with authenticated cookie
+      // Smooth direct navigation to dashboard
       window.location.href = '/sushant/admin/fw';
     } catch (err: any) {
       setErrorMsg(err.message || 'Access denied.');
       setIsLoading(false);
+      setIsSuccess(false);
     }
   };
 
@@ -219,10 +224,19 @@ export default function TripleLockGatekeeperClient({ initialError }: TripleLockG
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isLoading || (lockoutSec !== null && lockoutSec > 0)}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-sm font-black tracking-wide shadow-md shadow-amber-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+            disabled={isLoading || isSuccess || (lockoutSec !== null && lockoutSec > 0)}
+            className={`w-full py-3.5 rounded-xl text-white text-sm font-black tracking-wide shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed mt-2 ${
+              isSuccess
+                ? 'bg-emerald-600 shadow-emerald-500/25 ring-2 ring-emerald-400'
+                : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/25'
+            }`}
           >
-            {isLoading ? (
+            {isSuccess ? (
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Access Granted! Opening Super Admin Vault...</span>
+              </span>
+            ) : isLoading ? (
               <span className="flex items-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 <span>Verifying Triple-Lock Security...</span>

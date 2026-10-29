@@ -25,14 +25,26 @@ export default async function SuperAdminFwPage({ searchParams }: PageProps) {
   const initialError = typeof resolvedSearchParams?.error === 'string' ? resolvedSearchParams.error : undefined;
 
   if (auth.valid && auth.email) {
-    // Direct Server-Side Hydration: Instantaneous 0ms telemetry load!
-    const telemetry = await getSuperAdminTelemetry();
+    // Ultra-Fast Resilient Server Hydration: 2.5s maximum timeout
+    // Guarantees page opens immediately with zero hang, even if Supabase is restarting or under load
+    let telemetry: { studios: any[]; kpis: any } = { studios: [], kpis: null };
+    try {
+      telemetry = await Promise.race([
+        getSuperAdminTelemetry(),
+        new Promise<any>((_, reject) =>
+          setTimeout(() => reject(new Error('Telemetry SSR timeout')), 2500)
+        ),
+      ]);
+    } catch (err: any) {
+      console.warn('[SuperAdmin SSR] Hydration timeout or error, delegating to client-side stream:', err?.message || err);
+    }
+
     return (
       <SuperAdminDashboardClient
         adminEmail={auth.email}
         token={token || ''}
-        initialStudios={telemetry.studios}
-        initialKpis={telemetry.kpis}
+        initialStudios={telemetry.studios || []}
+        initialKpis={telemetry.kpis || null}
       />
     );
   }
