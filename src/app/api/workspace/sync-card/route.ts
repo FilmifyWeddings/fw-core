@@ -153,10 +153,7 @@ export async function POST(req: NextRequest) {
       if (projectId) {
         await pQuery.eq('id', projectId);
       } else if (targetClient?.id) {
-        await pQuery.or(`client_id.eq.${targetClient.id},client_name.ilike.%${targetClient.name.trim()}%`);
-      } else if (oldName || newName) {
-        const targetName = (newName || oldName || '').trim();
-        await pQuery.ilike('client_name', `%${targetName}%`);
+        await pQuery.eq('client_id', targetClient.id);
       }
 
       // 1C. Update Post-Production (`post_production_projects`)
@@ -253,18 +250,11 @@ export async function POST(req: NextRequest) {
         updatedClient = data;
       }
       if (!updatedClient && projectId) {
-        const { data: p } = await supabaseAdmin.from('fw_projects').select('client_id, client_name').eq('id', projectId).maybeSingle();
+        const { data: p } = await supabaseAdmin.from('fw_projects').select('client_id').eq('id', projectId).maybeSingle();
         if (p?.client_id) {
           const { data } = await clientTargetQuery.eq('id', p.client_id).maybeSingle();
           updatedClient = data;
-        } else if (p?.client_name) {
-          const { data } = await clientTargetQuery.ilike('name', p.client_name.trim()).maybeSingle();
-          updatedClient = data;
         }
-      }
-      if (!updatedClient && cleanOldName) {
-        const { data } = await clientTargetQuery.ilike('name', cleanOldName).maybeSingle();
-        updatedClient = data;
       }
 
       if (updatedClient) {
@@ -290,7 +280,7 @@ export async function POST(req: NextRequest) {
         const { data: p } = await supabaseAdmin
           .from('fw_projects')
           .select('id')
-          .or(`client_id.eq.${updatedClient.id},client_name.ilike.%${cleanOldName || updatedClient.name}%`)
+          .eq('client_id', updatedClient.id)
           .maybeSingle();
         if (p?.id) targetProjectId = p.id;
       }
@@ -312,23 +302,6 @@ export async function POST(req: NextRequest) {
             updated_at: nowIso
           })
           .eq('project_id', targetProjectId);
-      } else if (cleanOldName) {
-        // Fallback update by old client_name across projects
-        await supabaseAdmin
-          .from('fw_projects')
-          .update({
-            client_name: cleanNewName,
-            updated_at: nowIso
-          })
-          .ilike('client_name', cleanOldName);
-
-        await supabaseAdmin
-          .from('fw_assignments')
-          .update({
-            client_name: cleanNewName,
-            updated_at: nowIso
-          })
-          .ilike('client_name', cleanOldName);
       }
 
       // 2C. Update Post-Production (`post_production_projects`)

@@ -185,6 +185,7 @@ export function LeadQuotationModal({
 
       const sessionCache = safeSessionGet(cacheKey);
       const sessionHasFinal = Array.isArray(sessionCache) && sessionCache.some((item: any) => item.is_final);
+      const rawPayloadVersions = (lead as any).raw_payload?.quotation_versions || (lead as any).quotation_versions || [];
 
       // Best candidate for instant display strictly scoped to this lead to prevent cross-lead leakage
       const rawCandidates = 
@@ -193,6 +194,7 @@ export function LeadQuotationModal({
         (Array.isArray(localQuotesCache) && localQuotesCache.length > 0) ? localQuotesCache :
         (Array.isArray(initialQuotations) && initialQuotations.length > 0) ? initialQuotations :
         (Array.isArray(localSummaryVersions) && localSummaryVersions.length > 0) ? localSummaryVersions :
+        (Array.isArray(rawPayloadVersions) && rawPayloadVersions.length > 0) ? rawPayloadVersions :
         [];
 
       const candidateVersions = (rawCandidates || []).filter((item: any) => !item.lead_id || item.lead_id === lead.id);
@@ -327,7 +329,7 @@ export function LeadQuotationModal({
         }));
         setQuotations(reconciled);
         setLoading(false);
-      } else {
+      } else if (quotations.length === 0) {
         setLoading(true);
       }
     }
@@ -1296,7 +1298,7 @@ export function LeadQuotationModal({
 
       {/* ─── 3D CONFIRMATION MODAL: MARK AS FINAL QUOTATION ─── */}
       {confirmingFinalQuotation && (
-        <div className="fixed inset-0 z-[100002] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[1000010] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
           <motion.div
             initial={{ opacity: 0, scale: 0.92, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1357,7 +1359,7 @@ export function LeadQuotationModal({
 
       {/* ─── 3D UNMARK MODAL: UNLOCK FINAL QUOTATION ─── */}
       {unmarkingFinalQuotation && (
-        <div className="fixed inset-0 z-[100002] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[1000010] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
           <motion.div
             initial={{ opacity: 0, scale: 0.92, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1405,7 +1407,7 @@ export function LeadQuotationModal({
 
       {/* Share Link Drawer Modal */}
       {activeShareModal && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[1000010] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
           <div className="w-full max-w-sm bg-white dark:bg-[#1C1A18] rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 text-center">
             <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-6 h-6" />

@@ -2,6 +2,7 @@ import type { ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
 import { supabaseAdmin } from '@/lib/supabase';
 import { SUPER_ADMIN_ID } from '@/lib/auth/admin-guard';
 import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
+import { getDisambiguatedClientName } from '@/lib/name-disambiguation';
 
 export interface ExtractedQuotationFinancials {
   base_package_price: number;
@@ -945,21 +946,18 @@ export async function syncQuotationToTeamManagerEvents(
       }
     }
 
-    // 1. Find or create master project in fw_projects scoped by user_id / workspaceId
+    // 1. Find or create master project in fw_projects scoped strictly by workspaceId and clientId
     let targetProjectId: string | null = null;
-
-    let projQuery = supabaseClient
-      .from('fw_projects')
-      .select('id, client_name, project_manager_name, project_manager_id, client_id')
-      .eq('user_id', workspaceId);
+    let existingProjects: any[] = [];
 
     if (clientId) {
-      projQuery = projQuery.or(`client_id.eq.${clientId},client_name.ilike.%${clientName.trim()}%`);
-    } else {
-      projQuery = projQuery.ilike('client_name', `%${clientName.trim()}%`);
+      const { data } = await supabaseClient
+        .from('fw_projects')
+        .select('id, client_name, project_manager_name, project_manager_id, client_id')
+        .eq('user_id', workspaceId)
+        .eq('client_id', clientId);
+      existingProjects = data || [];
     }
-
-    const { data: existingProjects } = await projQuery;
 
     const firstSubEventDate = uniqueEvents[0]?.event_date || fallbackEventDate || new Date().toISOString().split('T')[0];
     const firstSubEventVenue = (uniqueEvents[0]?.venue_name && String(uniqueEvents[0].venue_name).trim()) || (fallbackVenue && String(fallbackVenue).trim()) || 'Studio Venue / TBD';
@@ -1345,16 +1343,6 @@ export async function syncBookedLeadOrFinalQuotation({
         existingWsClient = existingWsClients?.[0];
       }
 
-      if (!existingWsClient && coupleName) {
-        const { data: clientByName } = await supabaseClient
-          .from('workspace_clients')
-          .select('id, name, notes, project_manager_id, project_manager_name, project_manager_email, project_manager_phone, handled_by, client_code, portal_token, portal_pin')
-          .eq('workspace_id', workspaceId)
-          .ilike('name', coupleName.trim())
-          .maybeSingle();
-        if (clientByName) existingWsClient = clientByName;
-      }
-
       // Extract sub-events from final quotation if present, or leave strictly empty
       const quoteSubEvents = finalDoc?.content_json
         ? extractSubEventsFromQuotation(finalDoc.content_json, eventDate, mainVenue)
@@ -1432,30 +1420,18 @@ export async function syncBookedLeadOrFinalQuotation({
           .update(wsClientPayload)
           .eq('id', workspaceClientId);
       } else if (isBookedStage) {
-        const { data: clientByName } = await supabaseClient
+        // Disambiguate name so multiple clients with the same name are segregated
+        const disambiguatedClientName = await getDisambiguatedClientName(supabaseClient, workspaceId, coupleName.trim());
+        const { data: newWsClient } = await supabaseClient
           .from('workspace_clients')
+          .insert({
+            ...wsClientPayload,
+            name: disambiguatedClientName,
+            created_at: now
+          })
           .select('id')
-          .eq('workspace_id', workspaceId)
-          .ilike('name', coupleName.trim())
-          .maybeSingle();
-
-        if (clientByName?.id) {
-          workspaceClientId = clientByName.id;
-          await supabaseClient
-            .from('workspace_clients')
-            .update({ ...wsClientPayload, id: workspaceClientId })
-            .eq('id', workspaceClientId);
-        } else {
-          const { data: newWsClient } = await supabaseClient
-            .from('workspace_clients')
-            .insert({
-              ...wsClientPayload,
-              created_at: now
-            })
-            .select('id')
-            .single();
-          workspaceClientId = newWsClient?.id || null;
-        }
+          .single();
+        workspaceClientId = newWsClient?.id || null;
       }
 
       // Also ensure any client record with this lead_id is updated to the finalized package amounts
@@ -1621,12 +1597,16 @@ export async function syncBookedLeadOrFinalQuotation({
             isBookedStage
           );
         } else if (workspaceId && isBookedStage) {
-          // Create master project if doesn't exist
-          const { data: existingProjs } = await supabaseClient
-            .from('fw_projects')
-            .select('id')
-            .eq('user_id', workspaceId)
-            .or(`client_id.eq.${workspaceClientId},client_name.ilike.%${coupleName.trim()}%`);
+          // Create master project if doesn't exist (strictly match by client_id, never hijack another project)
+          let existingProjs: any[] = [];
+          if (workspaceClientId) {
+            const { data } = await supabaseClient
+              .from('fw_projects')
+              .select('id')
+              .eq('user_id', workspaceId)
+              .eq('client_id', workspaceClientId);
+            existingProjs = data || [];
+          }
 
           if (!existingProjs || existingProjs.length === 0) {
             const { data: createdProj } = await supabaseClient

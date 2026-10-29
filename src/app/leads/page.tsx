@@ -10,6 +10,7 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { LeadTable } from '@/components/dashboard/lead-table';
 import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
 import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, findFinalQuotationForLead, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { getDisambiguatedLeadName, getDisambiguatedClientName } from '@/lib/name-disambiguation';
 import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { LeadBookingConfirmationModal, LeadUnbookingTrashModal } from '@/components/modals/LeadStageConfirmModals';
@@ -280,6 +281,17 @@ export default function LeadsPage() {
       const effectiveWs = workspaceId || uId;
       setUserId(effectiveWs);
       setIsDemoMode(false);
+      // Immediately hydrate from localStorage for effectiveWs for 0ms optimistic render
+      try {
+        const stored = localStorage.getItem(`sc_cached_leads_${effectiveWs}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setLeads(parsed);
+            setLoading(false);
+          }
+        }
+      } catch (_) {}
       if (leadsAccess !== 'NONE' || isOwner) {
         await loadLeadsAndPreferences(effectiveWs);
       } else {
@@ -515,7 +527,7 @@ export default function LeadsPage() {
             }
           }
         } catch (_) {}
-        if (memCachedLeads.length === 0) {
+        if (memCachedLeads.length === 0 && leads.length === 0) {
           setLoading(true);
         }
       }
@@ -609,6 +621,7 @@ export default function LeadsPage() {
       }
 
       if (pageNum === 0) {
+        setLoading(false);
         setLeads(() => {
           memCachedLeads = sanitizedLeads;
           memCachedWorkspaceId = targetUserId;
@@ -793,24 +806,13 @@ export default function LeadsPage() {
       if (quoteFinancials?.event_date) parsedEventDate = quoteFinancials.event_date;
       if (quoteFinancials?.event_type) eventType = quoteFinancials.event_type;
 
-      // 3. Check if client already exists for this lead (by lead_id, or direct id match, or couple name match)
+      // 3. Check if client already exists for this lead (strictly by lead_id or direct id match)
       const { data: existingClients } = await supabase
         .from('workspace_clients')
         .select('id, name')
         .or(`lead_id.eq.${leadId},id.eq.${leadId}`);
 
       let matchedClient = existingClients?.[0];
-
-      if (!matchedClient && clientName) {
-        const { data: clientByName } = await supabase
-          .from('workspace_clients')
-          .select('id, name')
-          .eq('workspace_id', currentWorkspaceId)
-          .ilike('name', clientName.trim())
-          .maybeSingle();
-        if (clientByName) matchedClient = clientByName;
-      }
-
       let targetClientId: string | null = null;
 
       if (matchedClient?.id) {
@@ -830,11 +832,12 @@ export default function LeadsPage() {
           })
           .eq('id', targetClientId);
       } else {
+        const disambiguatedClientName = await getDisambiguatedClientName(supabase, currentWorkspaceId, clientName);
         const clientPayload = {
           user_id: currentWorkspaceId,
           workspace_id: currentWorkspaceId,
           lead_id: leadId,
-          name: clientName,
+          name: disambiguatedClientName,
           phone: clientPhone,
           email: clientEmail,
           event_type: eventType,
@@ -1008,7 +1011,8 @@ export default function LeadsPage() {
             const { data: existingFwProjects } = await supabase
               .from('fw_projects')
               .select('id')
-              .or(`client_id.eq.${targetClientId},client_name.ilike.%${clientName}%`);
+              .eq('user_id', currentWorkspaceId)
+              .eq('client_id', targetClientId);
 
             if (existingFwProjects && existingFwProjects.length > 0) {
               await supabase
@@ -1417,25 +1421,6 @@ export default function LeadsPage() {
             .eq('client_id', resolvedClientId);
         }
 
-        // Also clean up by clientName if any unlinked fw_projects exist
-        if (clientName) {
-          const { data: projs } = await supabase
-            .from('fw_projects')
-            .select('id')
-            .ilike('client_name', `%${clientName}%`);
-          if (projs && projs.length > 0) {
-            const pIds = projs.map(p => p.id);
-            await supabase
-              .from('fw_projects')
-              .update({
-                status: 'trash',
-                is_archived: true,
-                updated_at: nowIso
-              })
-              .in('id', pIds);
-          }
-        }
-
         // Authoritative server-side unbook call via supabaseAdmin (bypasses RLS)
         try {
           await fetch(`/api/leads/${leadId}/unbook`, {
@@ -1574,11 +1559,12 @@ export default function LeadsPage() {
     } else {
       try {
         const targetWorkspace = workspaceId || userId;
+        const disambiguatedLeadName = await getDisambiguatedLeadName(supabase, targetWorkspace, newLead.name);
         const { data, error } = await supabase
           .from('leads')
           .insert([{
             workspace_id: targetWorkspace,
-            name: newLead.name,
+            name: disambiguatedLeadName,
             email: newLead.email,
             phone: newLead.phone,
             source: newLead.source,
