@@ -738,45 +738,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   const menuItems = (isOwner && appMode === 'gallery') ? galleryMenuItems : baseMenuItems;
 
-  const pathSegments = pathname.split('/').filter(Boolean);
-  const isBrandedGallery =
-    pathSegments.length >= 2 &&
-    !pathSegments[0].includes('.') &&
-    !RESERVED_PUBLIC_ROOTS.has(pathSegments[0].toLowerCase());
-
-  const isStandalonePage = 
-    isBrandedGallery ||
-    pathname === '/' ||
-    pathname === '/login' ||
-    pathname === '/forgot-password' ||
-    pathname.startsWith('/forgot-password') ||
-    pathname === '/reset-password' ||
-    pathname.startsWith('/reset-password') ||
-    pathname === '/team/login' ||
-    pathname.startsWith('/team/login') ||
-    pathname === '/features' ||
-    pathname === '/pricing' ||
-    pathname === '/book-demo' ||
-    pathname === '/free-trial' ||
-    pathname === '/privacy-policy' ||
-    pathname.startsWith('/privacy-policy') ||
-    pathname === '/terms-of-service' ||
-    pathname.startsWith('/terms-of-service') ||
-    pathname === '/data-deletion' ||
-    pathname.startsWith('/data-deletion') ||
-    pathname.startsWith('/pdf-preview') ||
-    pathname.startsWith('/p/') ||
-    pathname.startsWith('/g/') ||
-    pathname.startsWith('/r/') ||
-    pathname.startsWith('/review/') ||
-    pathname.startsWith('/attendance/') ||
-    pathname.startsWith('/workspace/quotations/builder') ||
-    pathname.startsWith('/admin/workspace/quotations/builder') ||
-    pathname.startsWith('/bee-queen-curtail') ||
-    pathname === '/sarajosmith' ||
-    pathname.startsWith('/sarajosmith') ||
-    pathname.startsWith('/sushant');
-
   if (isStandalonePage) {
     return <div className="min-h-screen w-full bg-[#FFFDF8] text-zinc-900">{children}</div>;
   }
