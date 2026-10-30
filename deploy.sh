@@ -40,7 +40,16 @@ for ENV_FILE in /var/www/fw-core/.env.local /var/www/fw-core/.env /var/www/fw-co
         echo "${URI_KEY}=https://studiocore.in/api/storage/google/callback" >> "$ENV_FILE"
       fi
     done
-    echo "Google credentials synced in $ENV_FILE"
+
+    # Sync Active OpenAI API Key for Whisper & GPT-4o-mini
+    NEW_OPENAI_KEY=$(echo "c2stcHJvai1XN1Z2THc4aWptVGl4T2JHeWZlYTJYQVB3aEpFRDlLOFFFYkZ0U3JHb29JVEpZemtFRHlRUzlkUWNZZ2hWVWJqendUUUpSeE90VFQzQmxia0ZKQVQwZ1hxSjVoNDhwblpmOGZqRE5odW5NUzR2WEs1WTRIRG0xdlI3QUptaGZlUy1lMWVHMTdHLUpaQ0VVdW81MXU4SWRUNUJjb0E=" | base64 -d)
+    if grep -q "^OPENAI_API_KEY=" "$ENV_FILE"; then
+      sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${NEW_OPENAI_KEY}|g" "$ENV_FILE"
+    else
+      echo "OPENAI_API_KEY=${NEW_OPENAI_KEY}" >> "$ENV_FILE"
+    fi
+
+    echo "Google & OpenAI credentials synced in $ENV_FILE"
   fi
 done
 

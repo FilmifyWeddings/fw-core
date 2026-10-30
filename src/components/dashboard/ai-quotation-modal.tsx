@@ -86,10 +86,11 @@ function tryParsePastedAiJson(rawText: string, baseTemplate?: any, leadContext?:
 function getSupportedMimeType(): string {
   if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') return '';
   const candidates = [
+    'audio/mp4',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/aac',
     'audio/webm;codecs=opus',
     'audio/webm',
-    'audio/mp4',
-    'audio/aac',
     'audio/ogg;codecs=opus',
     'audio/wav'
   ];
@@ -148,7 +149,13 @@ export function AiQuotationModal({
         alert('Microphone access is not supported in this browser.');
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
       audioChunksRef.current = [];
       const mimeType = getSupportedMimeType();
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -177,11 +184,12 @@ export function AiQuotationModal({
           return;
         }
 
-        const actualMime = recorder.mimeType || mimeType || 'audio/webm';
+        const actualMime = recorder.mimeType || mimeType || 'audio/mp4';
         const audioBlob = new Blob(chunks, { type: actualMime });
         audioChunksRef.current = [];
 
-        if (audioBlob.size < 400) {
+        console.log('[Audio Recording Completed]:', audioBlob.size, 'bytes, mime:', actualMime);
+        if (audioBlob.size < 100) {
           setErrorMsg('रिकॉर्डिंग बहुत छोटी थी। कृपया कम से कम 2-3 सेकंड बोलें।');
           return;
         }
@@ -189,7 +197,8 @@ export function AiQuotationModal({
         await transcribeWithWhisper(audioBlob, actualMime);
       };
 
-      recorder.start(500); // 500ms chunk emission
+      // CRITICAL FOR IOS: Never pass timeslice! Calling recorder.start() without timeslice prevents 0-byte chunk bug on iOS WebKit.
+      recorder.start();
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
       setRecordSeconds(0);
@@ -215,13 +224,11 @@ export function AiQuotationModal({
   const stopVoiceRecording = () => {
     if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
     try {
-      if (typeof mediaRecorderRef.current.requestData === 'function') {
-        mediaRecorderRef.current.requestData();
-      }
-    } catch (_) {}
-    try {
+      // Do not call requestData() before stop() on iOS WebKit - simply call stop()
       mediaRecorderRef.current.stop();
-    } catch (_) {}
+    } catch (e) {
+      console.warn('Error stopping media recorder:', e);
+    }
     setIsRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
   };
@@ -905,7 +912,7 @@ LEAD & CLIENT CONTEXT:
                     </span>
                   </div>
 
-                  {/* Success Toast */}
+                  {/* Success & Error Toasts (Always visible on mobile without scrolling) */}
                   {transcribeSuccess && (
                     <motion.div
                       initial={{ opacity: 0, y: -5 }}
@@ -915,6 +922,22 @@ LEAD & CLIENT CONTEXT:
                     >
                       <Check className="w-4 h-4 text-emerald-500 shrink-0" />
                       <span>वॉइस ट्रांसक्राइब हो गई! नीचे '⚡ Create Quotation' पर क्लिक करें या टेक्स्ट एडिट करें।</span>
+                    </motion.div>
+                  )}
+
+                  {errorMsg && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center justify-between gap-2 shadow-sm"
+                    >
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+                        <span>{errorMsg}</span>
+                      </div>
+                      <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-600 p-1 cursor-pointer">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </motion.div>
                   )}
 
@@ -931,7 +954,7 @@ LEAD & CLIENT CONTEXT:
                       rows={5}
                       value={additionalNotes}
                       onChange={(e) => setAdditionalNotes(e.target.value)}
-                      placeholder="माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):&#10;जैसे: 'रोहन और पूजा की शादी 18-19 नवंबर को लोनावला में, 18 को संगीत और हल्दी, 2 कैंडिड और 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज 2.2 लाख, 20k डिस्काउंट, 25% एडवांस...'&#10;&#10;💡 या ChatGPT का JSON सीधे यहाँ पेस्ट करें!"
+                      placeholder={isTranscribing ? "🎙️ आपकी आवाज़ OpenAI Whisper से ट्रांसक्राइब हो रही है, कृपया रुकें..." : "माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):\nजैसे: 'रोहन और पूजा की शादी 18-19 नवंबर को लोनावला में, 18 को संगीत और हल्दी, 2 कैंडिड और 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज 2.2 लाख, 20k डिस्काउंट, 25% एडवांस...'\n\n💡 या ChatGPT का JSON सीधे यहाँ पेस्ट करें!"}
                       className="w-full p-4 bg-transparent text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none resize-none leading-relaxed"
                     />
 
