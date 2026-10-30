@@ -37,7 +37,8 @@ interface AiQuotationModalProps {
 function tryParsePastedAiJson(rawText: string, baseTemplate?: any, leadContext?: any): any | null {
   if (!rawText || !rawText.trim()) return null;
 
-  // 1. Fast sanitized JSON parse
+  // 1. Fast sanitized JSON parse (<1ms)
+  // When user pastes structured JSON directly (from ChatGPT or prompt copy), return immediately!
   const parsed = sanitizeAndParseJson(rawText);
   if (parsed && typeof parsed === 'object') {
     let root = parsed;
@@ -57,30 +58,9 @@ function tryParsePastedAiJson(rawText: string, baseTemplate?: any, leadContext?:
     }
   }
 
-  // 2. Fast client-side heuristic regex extractor (<5ms)
-  try {
-    const contextData = {
-      lead_info: {
-        lead_id: leadContext?.id || 'lead',
-        name: leadContext?.name || '',
-        phone: leadContext?.phone || '',
-        email: leadContext?.email || ''
-      },
-      raw_form_fields: leadContext?.raw_payload || {},
-      meta_fields: {},
-      notes_and_comments: '',
-      additional_user_notes: rawText
-    };
-    const extracted = fallbackHeuristicExtractor(contextData);
-    const mapped = mapAiOutputToQuotationDocument(extracted, baseTemplate || DEFAULT_AIRY_PROPOSAL, contextData);
-    if (mapped?.document) {
-      return mapped.document;
-    }
-  } catch (err) {
-    console.warn('[tryParsePastedAiJson fallback error]:', err);
-  }
-
-  return normalizeQuotationData({}, baseTemplate || DEFAULT_AIRY_PROPOSAL);
+  // If input is natural language / spoken voice notes (not valid structured JSON), return null
+  // so the caller invokes OpenAI GPT-4o-mini route (/api/quotations/ai-extract) with 100% full extraction!
+  return null;
 }
 
 
@@ -508,6 +488,30 @@ LEAD & CLIENT CONTEXT:
     setGenerating(true);
     setErrorMsg(null);
     try {
+      const notes = additionalNotes.trim();
+
+      // FAST PATH: Synchronously parse pasted AI JSON in 0ms before any network calls!
+      const clientParsedDoc = tryParsePastedAiJson(notes, baseTemplateDoc || currentDocumentData, effectiveLead);
+      if (clientParsedDoc) {
+        setExtractedDoc(clientParsedDoc);
+        const coupleName = clientParsedDoc.cover?.coupleName || 'Client';
+        const totalAmount = (clientParsedDoc.pricingPage?.basePrice || 0) - (clientParsedDoc.pricingPage?.discountAmount || 0);
+        setSummary({
+          coupleName,
+          weddingDate: clientParsedDoc.functionsPage?.items?.[0]?.date || 'Date TBD',
+          location: clientParsedDoc.cover?.locationName || 'Location TBD',
+          functionsCount: clientParsedDoc.functionsPage?.items?.length || 0,
+          functionsList: (clientParsedDoc.functionsPage?.items || []).map((f: any) => f.name),
+          photographers: 2,
+          cinematographers: 2,
+          totalInvestment: `₹${totalAmount.toLocaleString('en-IN')}`
+        });
+        setMissingInfo([]);
+        setConflicts([]);
+        setStep('preview');
+        return;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
@@ -557,6 +561,22 @@ LEAD & CLIENT CONTEXT:
     // ⚡ INSTANT 0ms OPTIMISTIC BUILDER APPLY (Inside Builder):
     if (quotationId && onApplied) {
       const mergedDoc = normalizeQuotationData(docToApply, currentDocumentData || baseTemplateDoc);
+      const docCouple = (docToApply?.cover?.coupleName || mergedDoc?.cover?.coupleName || '').trim();
+      const coupleName = (docCouple && !isPlaceholderCoupleName(docCouple)) 
+        ? docCouple 
+        : (effectiveLead?.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : 'Quotation');
+      if (!mergedDoc.cover) mergedDoc.cover = {};
+      mergedDoc.cover.coupleName = coupleName;
+      if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = docToApply.cover.groomName;
+      if (docToApply?.cover?.brideName) mergedDoc.cover.brideName = docToApply.cover.brideName;
+      if (effectiveLead.location && !mergedDoc.cover.locationName) {
+        mergedDoc.cover.locationName = effectiveLead.location;
+      }
+      const eventType = (docToApply?.cover?.eventType || mergedDoc?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+      const quotationTitle = `${coupleName} - ${eventType}`;
+      mergedDoc.designName = quotationTitle;
+      mergedDoc.title = quotationTitle;
+
       try {
         sessionStorage.setItem(`current_quotation_doc_${quotationId}`, JSON.stringify(mergedDoc));
         sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quotationId, document: mergedDoc }));
@@ -639,6 +659,11 @@ LEAD & CLIENT CONTEXT:
       mergedDoc.cover.locationName = effectiveLead.location;
     }
 
+    const eventType = (docToApply?.cover?.eventType || mergedDoc?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+    const quotationTitle = `${coupleName} - ${eventType}`;
+    mergedDoc.designName = quotationTitle;
+    mergedDoc.title = quotationTitle;
+
     // 2. Prime sessionStorage & localStorage immediately (0ms hydration in builder)
     try {
       sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(mergedDoc));
@@ -652,7 +677,7 @@ LEAD & CLIENT CONTEXT:
           lead_id: lId,
           version: nextVersion,
           version_label: `V${nextVersion}`,
-          title: `${coupleName} - Quotation V${nextVersion}`,
+          title: quotationTitle,
           couple_name: coupleName,
           is_final: false,
           created_at: new Date().toISOString()

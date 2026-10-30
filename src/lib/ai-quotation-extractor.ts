@@ -778,8 +778,13 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     if (baseSchema.primaryFont) normalizedFinalDoc.primaryFont = baseSchema.primaryFont;
     if (baseSchema.secondaryFont) normalizedFinalDoc.secondaryFont = baseSchema.secondaryFont;
     if (baseSchema.colorPalette && !normalizedFinalDoc.colorPalette) normalizedFinalDoc.colorPalette = baseSchema.colorPalette;
-    if (baseSchema.designName && !normalizedFinalDoc.designName) normalizedFinalDoc.designName = baseSchema.designName;
   }
+
+  // Consistent title naming everywhere: "${coupleName} - ${eventType}"
+  const eventType = (doc.cover?.eventType || baseSchema?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+  const calculatedTitle = `${coupleName} - ${eventType}`;
+  normalizedFinalDoc.designName = calculatedTitle;
+  normalizedFinalDoc.title = calculatedTitle;
 
   return {
     document: normalizedFinalDoc,

@@ -3146,12 +3146,12 @@ function StudioCoreAiryBuilderContent() {
 
       const sanitizedData = await optimizeObjectForPDF(data);
 
-      // Construct lightweight JSON payload (< 500KB)
+      const exportFileName = `${(data.designName || data.title || `Quotation-${routeId || 'document'}`).replace(/\.pdf$/i, '')}.pdf`;
       const payload = {
         quotationId: routeId,
         templateId: routeId,
         content_json: sanitizedData,
-        filename: `Quotation-${routeId || 'document'}.pdf`
+        filename: exportFileName
       };
 
       const payloadString = JSON.stringify(payload);
@@ -3193,7 +3193,7 @@ function StudioCoreAiryBuilderContent() {
       setExportStatusText('100% Complete! Downloading PDF...');
 
       const url = window.URL.createObjectURL(blob);
-      const fileName = `Quotation-${routeId || 'document'}.pdf`;
+      const fileName = exportFileName;
 
       const a = document.createElement('a');
       a.href = url;

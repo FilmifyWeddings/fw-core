@@ -221,8 +221,8 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    const eventType = clonedDoc.cover?.eventType || 'Wedding';
-    const quotationTitle = `${effectiveCoupleName} - ${eventType} Quotation`;
+    const eventType = (clonedDoc.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+    const quotationTitle = `${effectiveCoupleName} - ${eventType}`;
     clonedDoc.designName = quotationTitle;
     clonedDoc.title = quotationTitle;
 
@@ -304,7 +304,7 @@ export async function POST(req: NextRequest) {
           template_id: quotationId,
           version: nextVersion,
           version_label: `V${nextVersion}`,
-          title: clonedDoc.designName || `${leadName} - Quotation V${nextVersion}`,
+          title: quotationTitle,
           is_final: false,
           created_at: new Date().toISOString()
         };

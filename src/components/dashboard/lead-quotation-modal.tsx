@@ -226,7 +226,7 @@ export function LeadQuotationModal({
           id: item.id || item.template_id,
           version: item.version || 1,
           version_label: item.version_label || `V${item.version || 1}`,
-          title: item.title || `${item.couple_name || lead.name || 'Quotation'} - Quotation V${item.version || 1}`,
+          title: item.title || `${item.couple_name || lead.name || 'Quotation'} - Wedding`,
           is_final: Boolean(
             (targetFinalId && (
               item.template_id === targetFinalId || 
@@ -600,7 +600,12 @@ export function LeadQuotationModal({
       clonedDoc.cover.locationName = lead.location || lead.raw_payload?.location;
     }
 
-    setOpeningQuotation({ id: qId, title: `${openingCouple} - Quotation V${nextVersion}`, step: 'Hydrating Builder Canvas...' });
+    const eventType = (clonedDoc.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+    const quotationTitle = `${openingCouple} - ${eventType}`;
+    clonedDoc.designName = quotationTitle;
+    clonedDoc.title = quotationTitle;
+
+    setOpeningQuotation({ id: qId, title: quotationTitle, step: 'Hydrating Builder Canvas...' });
 
     // Synchronously prime sessionStorage & localStorage (<1ms)
     try {
@@ -614,7 +619,7 @@ export function LeadQuotationModal({
         lead_id: lead.id,
         version: nextVersion,
         version_label: `V${nextVersion}`,
-        title: `${openingCouple} - Quotation V${nextVersion}`,
+        title: quotationTitle,
         couple_name: openingCouple,
         is_final: false,
         created_at: new Date().toISOString()
@@ -853,7 +858,8 @@ export function LeadQuotationModal({
       setExportProgress(60);
       setExportStatusText('Rendering 100% Identical Vector A4 Pages...');
 
-      const filename = `${q.title || 'Quotation'}_V${q.version}.pdf`;
+      const cleanTitle = (q.title || `${q.couple_name || lead.name || 'Quotation'} - Wedding`).replace(/\.pdf$/i, '').trim();
+      const filename = `${cleanTitle}.pdf`;
 
       try {
         // Primary: Exact same client canvas exporter as the public view
@@ -1317,9 +1323,11 @@ export function LeadQuotationModal({
         onApplied={(updatedDoc, targetQId) => {
           setAiModalOpen(false);
           const openingCouple = updatedDoc?.cover?.coupleName || lead?.raw_payload?.couple_name || lead?.client_name || lead?.name || 'Quotation';
+          const eventType = (updatedDoc?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+          const quotationTitle = `${openingCouple} - ${eventType}`;
           setOpeningQuotation({
             id: targetQId,
-            title: `${openingCouple} - Quotation Document`,
+            title: quotationTitle,
             step: 'Opening AI Generated Quotation in Builder...'
           });
           if (updatedDoc) {

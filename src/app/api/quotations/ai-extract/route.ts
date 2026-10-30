@@ -172,13 +172,16 @@ Analyze the client requirements, notes, or spoken conversation provided and conv
 ==================================================
 🌟 CRITICAL TOP PRIORITY OVERRIDE MANDATES (MUST FOLLOW):
 
-1. COUPLE NAME & ROLES (HIGHEST PRIORITY):
+1. COUPLE NAME, EVENT TYPE & ROLES (HIGHEST PRIORITY):
 - If user notes, prompt, or speech mentions ANY couple name (e.g. "सागर और रिद्धि" / "Sagar & Riddhi", "रोहन और सिमरन", "Atharva & Sakshi"):
   THIS STRICTLY AND ABSOLUTELY OVERRIDES any existing lead name or default template name!
 - ALWAYS transliterate/translate names into clean Latin/English Title Case:
   * coupleName: "Sagar & Riddhi"
   * groomName: "Sagar"
   * brideName: "Riddhi"
+- EVENT TYPE (cover.eventType):
+  * Concise standard event type: e.g. "Wedding", "Pre-Wedding & Wedding", "Engagement", or "Reception".
+  * NEVER append the word "Quotation" to eventType (e.g. "Wedding", NOT "Wedding Quotation").
 - NEVER output Devanagari script for coupleName, groomName, brideName, or ceremony names. Always output polished English!
 - Only use lead_info.name if NO couple name is stated anywhere in the user notes.
 
