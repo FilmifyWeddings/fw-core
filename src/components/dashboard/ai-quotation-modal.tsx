@@ -11,8 +11,9 @@ import {
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
-import { QuotationTemplateSelector, StudioTemplateItem } from './quotation-template-selector';
+import { QuotationTemplateSelector, StudioTemplateItem, getSynchronousCachedTemplates } from './quotation-template-selector';
 import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument } from '@/lib/ai-quotation-extractor';
+import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
 import { 
   consolidateSameDateFunctions, 
   resolvePrimaryCoverLocation, 
@@ -282,6 +283,15 @@ export function AiQuotationModal({
   const [missingInfo, setMissingInfo] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<any[]>([]);
 
+  const effectiveLead: any = lead || {
+    id: quotationId || 'draft',
+    name: currentDocumentData?.cover?.coupleName || 'Client',
+    phone: '',
+    email: '',
+    raw_payload: {},
+    comments: []
+  };
+
   const activeTemplateObj = availableTemplates?.find(t => t.id === (activeTemplateId || selectedTemplateId)) || availableTemplates?.find(t => t.is_default) || availableTemplates?.[0];
   let resolvedBaseDoc = activeTemplateObj?.content_json || currentDocumentData || null;
   if (!resolvedBaseDoc && typeof window !== 'undefined') {
@@ -296,15 +306,6 @@ export function AiQuotationModal({
   const baseTemplateDoc = resolvedBaseDoc;
 
   if (!isOpen) return null;
-
-  const effectiveLead: any = lead || {
-    id: quotationId || 'draft',
-    name: currentDocumentData?.cover?.coupleName || 'Client',
-    phone: '',
-    email: '',
-    raw_payload: {},
-    comments: []
-  };
 
   const handleCopySystemPrompt = () => {
     const rawPayload = effectiveLead.raw_payload || {};
