@@ -25,7 +25,7 @@ export interface DetailedTeamMember {
 export interface FinanceFiltersModalProps {
   isOpen: boolean;
   onClose: () => void;
-  activeTab?: 'invoices' | 'expenses' | 'analytics';
+  activeTab?: 'invoices' | 'expenses' | 'analytics' | 'clients';
   activeFiltersCount: number;
   resetAllFilters: () => void;
   dateRangePreset: string;
@@ -92,6 +92,7 @@ export function FinanceFiltersModal({
   setRevenueTypeFilter,
 }: FinanceFiltersModalProps) {
   // States for custom dropdown popovers
+  const isInvoiceTab = activeTab !== 'expenses';
   const [isTeamDropdownOpen, setIsTeamDropdownOpen] = useState(false);
   const [teamSearchQuery, setTeamSearchQuery] = useState('');
   const teamDropdownRef = useRef<HTMLDivElement>(null);
@@ -357,7 +358,7 @@ export function FinanceFiltersModal({
             <div className="relative" ref={teamDropdownRef}>
               <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center justify-between">
                 <span className="flex items-center gap-1">
-                  <Users className="w-3 h-3 text-purple-600" /> {activeTab === 'invoices' ? 'Handled By' : 'Team Member'}
+                  <Users className="w-3 h-3 text-purple-600" /> {isInvoiceTab ? 'Handled By' : 'Team Member'}
                 </span>
                 {teamMemberFilter !== 'all' && (
                   <button
@@ -387,7 +388,7 @@ export function FinanceFiltersModal({
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
-                      placeholder={activeTab === 'invoices' ? 'Search handled by staff...' : 'Search member or role...'}
+                      placeholder={isInvoiceTab ? 'Search handled by staff...' : 'Search member or role...'}
                       value={teamSearchQuery}
                       onChange={(e) => setTeamSearchQuery(e.target.value)}
                       className="w-full pl-8 pr-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none"
@@ -410,13 +411,13 @@ export function FinanceFiltersModal({
                       }`}
                     >
                       <span className="flex items-center gap-2">
-                        <span>👥</span> {activeTab === 'invoices' ? 'All Handled By' : 'All Team Members'}
+                        <span>👥</span> {isInvoiceTab ? 'All Handled By' : 'All Team Members'}
                       </span>
                       {teamMemberFilter === 'all' && <Check className="w-3.5 h-3.5" />}
                     </button>
 
                     {/* Unassigned Only (For Invoices Tab) */}
-                    {activeTab === 'invoices' && (
+                    {isInvoiceTab && (
                       <button
                         type="button"
                         onClick={() => {
@@ -436,7 +437,70 @@ export function FinanceFiltersModal({
                       </button>
                     )}
 
-                    {/* GROUP 1: 🏢 IN-HOUSE TEAM MEMBERS (AT THE TOP) */}
+                    {isInvoiceTab ? (
+                      /* 👤 HANDLED BY STAFF LIST (ASSIGNED MEMBERS ONLY) */
+                      <div className="pt-1.5">
+                        <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-50 rounded-md flex items-center gap-1">
+                          <Users className="w-3 h-3" />
+                          <span>Assigned Handled By Staff ({filteredHandledBy.length})</span>
+                        </div>
+                        {filteredHandledBy.length === 0 ? (
+                          <div className="px-3 py-3 text-xs text-slate-400 font-medium text-center">
+                            No staff currently assigned in handled by
+                          </div>
+                        ) : (
+                          <div className="mt-1 space-y-0.5">
+                            {filteredHandledBy.map((name) => {
+                              const isSelected = teamMemberFilter.toLowerCase() === name.toLowerCase();
+                              const memberInfo = teamMembersDetailed.find(
+                                (m) => m.name.toLowerCase() === name.toLowerCase()
+                              );
+                              const initials = name.slice(0, 2).toUpperCase();
+
+                              return (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => {
+                                    setTeamMemberFilter(name);
+                                    setIsTeamDropdownOpen(false);
+                                  }}
+                                  className={`w-full px-2 py-1.5 rounded-lg text-left text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-amber-500 text-white shadow-2xs'
+                                      : 'hover:bg-amber-50/70 text-slate-800'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {memberInfo?.avatar_url ? (
+                                      <img
+                                        src={memberInfo.avatar_url}
+                                        alt={name}
+                                        className="w-5 h-5 rounded-full object-cover shrink-0"
+                                      />
+                                    ) : (
+                                      <div className="w-5 h-5 rounded-full bg-purple-100 text-purple-800 text-[9px] font-black flex items-center justify-center shrink-0 border border-purple-200">
+                                        {initials}
+                                      </div>
+                                    )}
+                                    <div className="truncate min-w-0">
+                                      <span className="truncate block font-extrabold">{name}</span>
+                                      <span className={`text-[9px] block truncate ${isSelected ? 'text-white/80' : 'text-purple-600 font-semibold'}`}>
+                                        {memberInfo?.primary_role || memberInfo?.role || 'Handled By'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* 🏢 TEAM MEMBERS LIST (FOR TEAM PAYOUTS & EXPENSES - 100% UNTOUCHED) */
+                      <>
+                        {/* GROUP 1: 🏢 IN-HOUSE TEAM MEMBERS (AT THE TOP) */}
                     {filteredInHouse.length > 0 && (
                       <div className="pt-1.5">
                         <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-50 rounded-md flex items-center gap-1">
@@ -544,6 +608,8 @@ export function FinanceFiltersModal({
                           })}
                         </div>
                       </div>
+                    )}
+                      </>
                     )}
                   </div>
                 </div>
