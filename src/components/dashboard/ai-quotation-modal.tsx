@@ -166,7 +166,7 @@ export function AiQuotationModal({
         }
       };
 
-      recorder.onstop = async () => {
+            recorder.onstop = async () => {
         try {
           stream.getTracks().forEach((track) => track.stop());
         } catch (_) {}
@@ -177,6 +177,9 @@ export function AiQuotationModal({
           audioChunksRef.current = [];
           return;
         }
+
+        // Resilient delay for iOS WebKit to flush dataavailable event
+        await new Promise((r) => setTimeout(r, 150));
 
         const chunks = audioChunksRef.current;
         if (!chunks || chunks.length === 0) {
@@ -237,9 +240,13 @@ export function AiQuotationModal({
     setIsTranscribing(true);
     setErrorMsg(null);
     try {
-      const fd = new FormData();
-      const ext = (detectedMime.includes('mp4') || detectedMime.includes('aac') || detectedMime.includes('m4a')) ? 'mp4' : 'webm';
-      fd.append('audio', audioBlob, `voice_input.${ext}`);
+            const fd = new FormData();
+      const isMp4 = detectedMime.includes('mp4') || detectedMime.includes('aac') || detectedMime.includes('m4a');
+      const ext = isMp4 ? 'mp4' : 'webm';
+      const file = new File([audioBlob], `voice_input.${ext}`, {
+        type: isMp4 ? 'audio/mp4' : 'audio/webm'
+      });
+      fd.append('audio', file, `voice_input.${ext}`);
       const res = await fetch('/api/ai/transcribe-audio', {
         method: 'POST',
         body: fd
@@ -619,9 +626,14 @@ LEAD & CLIENT CONTEXT:
     mergedDoc.lead_id = lId;
     mergedDoc.lead_version = nextVersion;
 
-    const coupleName = mergedDoc?.cover?.coupleName || effectiveLead.name || 'Quotation';
+        const docCouple = (docToApply?.cover?.coupleName || mergedDoc?.cover?.coupleName || '').trim();
+    const coupleName = (docCouple && !isPlaceholderCoupleName(docCouple)) 
+      ? docCouple 
+      : (effectiveLead?.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : 'Quotation');
     if (!mergedDoc.cover) mergedDoc.cover = {};
     mergedDoc.cover.coupleName = coupleName;
+    if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = docToApply.cover.groomName;
+    if (docToApply?.cover?.brideName) mergedDoc.cover.brideName = docToApply.cover.brideName;
     if (effectiveLead.location && !mergedDoc.cover.locationName) {
       mergedDoc.cover.locationName = effectiveLead.location;
     }
@@ -1039,15 +1051,35 @@ LEAD & CLIENT CONTEXT:
                             <span>Transcribing with Whisper...</span>
                           </div>
                         ) : (
-                          /* ChatGPT Mic Button */
-                          <button
-                            type="button"
-                            onClick={startVoiceRecording}
-                            className="w-9 h-9 rounded-full bg-zinc-900 hover:bg-black dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-md cursor-pointer"
-                            title="बोलकर कोटेशन बनाएँ (OpenAI Whisper Voice Mode)"
-                          >
-                            <Mic className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            {additionalNotes.trim().length > 0 && (
+                              <button
+                                type="button"
+                                onClick={handleQuickCreateAndOpen}
+                                disabled={generating}
+                                className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                                title="Create Quotation with AI"
+                              >
+                                {generating ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                    <span>Create</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={startVoiceRecording}
+                              disabled={generating}
+                              className="w-9 h-9 rounded-full bg-zinc-900 hover:bg-black dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-md cursor-pointer disabled:opacity-50"
+                              title="बोलकर कोटेशन बनाएँ (OpenAI Whisper Voice Mode)"
+                            >
+                              <Mic className="w-4 h-4" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>

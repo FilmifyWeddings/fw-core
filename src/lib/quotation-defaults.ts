@@ -828,10 +828,21 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   };
 
   // 3. Normalize Cover Page (with single primary location resolver)
-  const coverSrc = loaded.cover || pagesObj.cover || {};
-  const groomName = coverSrc.groomName ?? (d.cover?.groomName || 'Rahul');
-  const brideName = coverSrc.brideName ?? (d.cover?.brideName || 'Neha');
-  const coupleName = coverSrc.coupleName || (coverSrc.groomName && coverSrc.brideName ? `${coverSrc.groomName} & ${coverSrc.brideName}` : (loaded.client?.client_name || d.cover?.coupleName || 'Couple Name'));
+  const coverSrc = loaded.cover || pagesObj.cover || {};
+  const rawCoupleCandidate = (coverSrc.coupleName || loaded.client?.client_name || '').trim();
+  let derivedGroom = '';
+  let derivedBride = '';
+  if (rawCoupleCandidate && rawCoupleCandidate.includes('&')) {
+    const parts = rawCoupleCandidate.split('&').map((s) => s.trim());
+    derivedGroom = parts[0] || '';
+    derivedBride = parts[1] || '';
+  } else if (rawCoupleCandidate) {
+    derivedGroom = rawCoupleCandidate.split(' ')[0] || rawCoupleCandidate;
+    derivedBride = 'Partner';
+  }
+  const groomName = coverSrc.groomName || derivedGroom || d.cover?.groomName || 'Groom';
+  const brideName = coverSrc.brideName || derivedBride || d.cover?.brideName || 'Bride';
+  const coupleName = coverSrc.coupleName || (groomName && brideName ? `${groomName} & ${brideName}` : (d.cover?.coupleName || 'Couple Name'));
   const eventType = coverSrc.eventType ?? coverSrc.title ?? coverSrc.event_type ?? d.cover?.eventType ?? 'Wedding Photography & Films';
   
   const rawLoc = coverSrc.locationName !== undefined ? coverSrc.locationName : (coverSrc.wedding_location || coverSrc.city || d.cover?.locationName || '');

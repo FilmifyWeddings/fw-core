@@ -165,101 +165,87 @@ async function performAiExtraction(contextData: any, baseDoc: any) {
   const promptText = `
 You are StudioCore AI — an intelligent quotation data extraction assistant for professional wedding photographers.
 
-Analyze the following lead and quotation context:
+==================================================
+🎯 YOUR TASK:
+Analyze the client requirements, notes, or spoken conversation provided and convert them into a 100% structured StudioCore Quotation JSON document.
 
-${JSON.stringify(leanPromptContext, null, 2)}
+==================================================
+🌟 CRITICAL TOP PRIORITY OVERRIDE MANDATES (MUST FOLLOW):
 
-MULTILINGUAL & INDIAN WEDDING CULTURE MANDATE:
-- The input notes or voice speech can be in Hindi, Marathi, English, Gujarati, Hinglish, or a mixed blend of Indian languages.
-- You MUST comprehend Indian cultural wedding ceremonies and translate function names into clean, elegant professional English:
-  * "हळद" / "हल्दी" / "Pithi" -> "Haldi Ceremony" (or "Haldi + Sangeet" if on the same date)
-  * "संगीत" / "Sangeet" -> "Sangeet Night"
-  * "मेहंदी" / "Mehendi" -> "Mehendi Ceremony"
-  * "लग्न" / "शादी" / "Phere" / "Vivah" / "Barat" -> "Wedding Ceremony"
-  * "साखरपुडा" / "सगाई" / "Ring Ceremony" / "Roka" -> "Engagement Ceremony"
-  * "रिसेप्शन" / "Reception" -> "Reception"
-  * "प्री-वेडिंग" / "Pre-wedding shoot" -> Put in shootDetails
-- Extract couple names accurately from Indian language sentences:
-  * e.g. "अथर्व आणि साक्षी" / "अथर्व और साक्षी" -> coupleName: "Atharva & Sakshi", groomName: "Atharva", brideName: "Sakshi"
-- Indian Number & Currency Parsing:
-  * "2.5 लाख" / "2.5L" / "अडीच लाख" -> 250000
-  * "3 लाख" / "3L" -> 300000
-  * "50 हजार" / "50k" -> 50000
-  * "80k" -> 80000
-- Crew Roles Translation:
-  * "कैंडिड" / "Candid" -> "Candid Photographer"
-  * "सिनेमैटो" / "Cinematography" / "Cinematographer" -> "Cinematographer"
-  * "ड्रोन" / "Drone" -> "Drone Pilot"
-  * "ट्रैडिशनल" / "Traditional" -> "Traditional Photographer"
+1. COUPLE NAME & ROLES (HIGHEST PRIORITY):
+- If user notes, prompt, or speech mentions ANY couple name (e.g. "सागर और रिद्धि" / "Sagar & Riddhi", "रोहन और सिमरन", "Atharva & Sakshi"):
+  THIS STRICTLY AND ABSOLUTELY OVERRIDES any existing lead name or default template name!
+- ALWAYS transliterate/translate names into clean Latin/English Title Case:
+  * coupleName: "Sagar & Riddhi"
+  * groomName: "Sagar"
+  * brideName: "Riddhi"
+- NEVER output Devanagari script for coupleName, groomName, brideName, or ceremony names. Always output polished English!
+- Only use lead_info.name if NO couple name is stated anywhere in the user notes.
 
-PAGE-BY-PAGE RULES & MAPPING:
-1. COVER (cover):
-- coupleName: Exact couple name (e.g. "Sagar & Vruddhi").
-- groomName: Groom name (e.g. "Sagar").
-- brideName: Bride name (e.g. "Vruddhi").
-- eventType: Title (e.g. "Wedding", "Pre-Wedding", "Pre-Wedding & Wedding", "Engagement", "Reception", "Maternity").
-- locationName: SINGLE PRIMARY COVER LOCATION ONLY!
-  * Strict Priority Order for Cover Location:
-    1. Main Wedding ceremony venue/city (HIGHEST PRIORITY - e.g. "Taj Lake Palace, Udaipur").
-    2. Reception or Engagement venue (if no Wedding venue specified).
-    3. First mentioned venue/city.
-  * NEVER concatenate multiple different event locations onto the cover page (NEVER output "Home, Sangeet Hall, Taj Lake Palace").
-  * Individual event venues must stay inside their respective function cards in functionsPage.items!
-  * If NOT mentioned anywhere, keep EMPTY string "" (DO NOT invent fake locations).
+2. INDIAN CEREMONY NAMES & MULTI-DAY RESOLUTION:
+- ALWAYS translate Hindi/Marathi/regional function names to clean standard English:
+  * "वेडिंग" / "शादी" / "लग्न" / "फेरे" / "Barat" -> "Wedding Ceremony"
+  * "हल्दी" / "हळद" / "Pithi" -> "Haldi Ceremony"
+  * "घर पे एंट्री शूट" / "एंट्री" / "गृह प्रवेश" / "घर का शूट" -> "Home Entry Shoot"
+  * "संगीत" -> "Sangeet Night"
+  * "मेहंदी" -> "Mehendi Ceremony"
+  * "सगाई" / "रिंग सेरेमनी" / "साखरपुडा" / "Roka" -> "Engagement Ceremony"
+  * "रिसेप्शन" -> "Reception"
+- DATES RESOLUTION & STRICT FORMAT:
+  * Every date MUST strictly be formatted as "DD - MMM - YYYY" (e.g. "11 - Nov - 2026", "12 - Nov - 2026", "13 - Nov - 2026").
+  * Default year is 2026.
+  * Multi-day relative dates resolution: If user says "11 नवंबर" and then "नेक्स्ट डे पे हल्दी" (next day Haldi) and "उसके नेक्स्ट डे पे घर पे शूट" (next day after that home shoot):
+    - Wedding Ceremony: "11 - Nov - 2026"
+    - Haldi Ceremony: "12 - Nov - 2026"
+    - Home Entry Shoot: "13 - Nov - 2026"
+- TIMINGS & TIMES:
+  * Convert times to standard 12-hour format with AM/PM (e.g. startTime: "11:00 AM", endTime: "11:00 PM", or "07:00 PM" - "11:00 PM").
+  * For duration-only shoots like "घर पे 2 आवर्स का शूट", put startTime: "", endTime: "", and notes: "2 Hours Duration Coverage".
 
-2. ABOUT US: Keep template defaults.
+3. CREW REQUIREMENTS NORMALIZATION:
+- In functionsPage.items, each item MUST have:
+  "requirements": [ { "name": string, "qty": number } ]
+- Use exact standardized role names:
+  * "Traditional Photographer"
+  * "Traditional Videographer"
+  * "Candid Photographer"
+  * "Cinematographer"
+  * "Drone Pilot"
+  * "Semi Cinematic"
+  * "Semi Standard"
+  * "Social Media Person"
+  * "Reel Creator"
+- If user mentions "कैन्डिड फोटोग्राफी, सिनेमैटोग्राफी, ट्रेडिशनल वीडियो और ट्रेडिशनल फोटो", output:
+  [
+    { "name": "Traditional Photographer", "qty": 1 },
+    { "name": "Traditional Videographer", "qty": 1 },
+    { "name": "Candid Photographer", "qty": 1 },
+    { "name": "Cinematographer", "qty": 1 }
+  ]
 
-3. PRE-WEDDING SHOOT (shootDetails) - DEDICATED SEPARATE PAGE:
-- If pre-wedding (or "previewing" / "pre wedding") is mentioned or requested:
-  - visible: true
-  - daysText: e.g. "1 Day Shoot" (Default) or "2 Days Shoot"
-  - crewText: "Candid Photography\\nCinematography\\nDrone Pilot"
-  - deliverablesText: Expected pre-wedding deliverables (e.g. "Full Ultra HD Super-Fine Raw Photos\\nApprox. 50 High Resolution Edited Images\\n1 Teaser Video Reel")
-  - showExclusionsNote: true
-- CRITICAL PRE-WEDDING ISOLATION RULE: Pre-Wedding has its own separate dedicated page (shootDetails)! ALL pre-wedding coverage details and ALL pre-wedding deliverables MUST be placed SOLELY on this shootDetails page!
+4. DELIVERABLES (deliverablesPage):
+- selectedItems: Array of professional English strings (e.g. "Cinematic Wedding Highlight Film", "Cinematic Wedding Teaser", "Professionally Designed Wedding Album", "Mini Photo Book", "All Raw Photographs", "1 Year Google Drive Access").
+- NEVER include pre-wedding deliverables here; those belong solely on shootDetails.
 
-4. FUNCTIONS & COVERAGE (functionsPage) - MAIN WEDDING FUNCTIONS ONLY:
-- STRICT NEGATIVE RULE: NEVER add "Pre-Wedding" as an item inside functionsPage.items! Pre-wedding must NEVER appear as an event card under Functions & Coverage. Functions & Coverage is ONLY for wedding events (e.g. Haldi, Mehendi, Sangeet, Wedding Ceremony, Reception).
-- CRITICAL SAME-DATE EVENT CONSOLIDATION MANDATE (MUST FOLLOW):
-  * If two or more ceremonies/events occur on the SAME DATE or SAME DAY (for example: "22 February ko Haldi aur Sangeet hai", or "Haldi + Sangeet on 22 Feb", or Mehendi & Ring Ceremony on same date):
-    YOU MUST COMBINE THEM INTO ONE SINGLE FUNCTION CARD!
-    Name it by joining ceremony names with " + " (e.g. "Haldi + Sangeet", "Mehendi + Sangeet", "Puja + Haldi").
-    DO NOT create separate cards for events occurring on the same date! Combine their crew requirements into that single card.
-  * ONLY create separate cards for events that occur on DIFFERENT DATES (e.g. 21 Feb Mehendi card, 22 Feb Haldi + Sangeet card, 23 Feb Wedding card).
-  * REAL CEREMONY NAMES MANDATE: NEVER output generic names like "Event 1", "Event 2", "Function 1", "Function 2". ALWAYS extract and use the real event names (Haldi, Mehendi, Sangeet, Ring Ceremony, Wedding, Reception, Cocktail, Mayra, Ganesh Puja, etc.).
-- items: Array of event objects:
-  - id: Unique string "func_1", "func_2", etc.
-  - name: Function name. Combine multi-events on same date/slot with " + " (e.g. "Haldi + Sangeet").
-  - date: CRITICAL DATE FORMAT MANDATE: Every date MUST strictly be formatted as "DD - MMM - YYYY" (e.g. "13 - Dec - 2026", "22 - Feb - 2026"). NEVER output ISO dates like 2026-12-13. If not specified, "Date Not Fixed" with dateNotFixed: true.
-  - startTime / endTime: Exact time if specified, else EMPTY string "".
-  - location: Venue or city if specified, else EMPTY string "".
-  - notes: Special notes if specified, else EMPTY string "".
-  - requirements: Array of { name: string, qty: number } using standard normalized names:
-    * "Cinematographer", "Traditional Photographer", "Candid Photographer", "Traditional Videographer", "Semi Cinematic", "Semi Standard", "Social Media Person", "Reel Creator", "Live Videography", "Drone Pilot", "Assistant", "Team Manager", "Makeup Artist", "Family Photographer".
-    * If user mentions "semi-kinematic" or "semi-cinematic", output exact name "Semi Cinematic".
-    * If user mentions "semi-standard" or "semi-traditional", output exact name "Semi Standard".
-    * If multiple ceremonies on this card require crew, SUM the quantities together.
-
-5. DELIVERABLES (deliverablesPage) - MAIN WEDDING DELIVERABLES ONLY:
-- STRICT NEGATIVE RULE: NEVER include any pre-wedding deliverables (e.g. pre-wedding photos, pre-wedding teaser, pre-wedding reels) in deliverablesPage.selectedItems! All pre-wedding deliverables belong SOLELY on shootDetails.deliverablesText.
-- selectedItems: Array of deliverable strings requested by user for the wedding functions.
-
-6. SPECIAL VALUE ADDITIONS (specialValueAdditions):
-- selectedItems: Array of complimentary bonus items. If none, empty array [].
-
-7. PRICING (pricingPage):
+5. PRICING (pricingPage):
 - STRICT PRICING & DISCOUNT LOGIC (REGULAR PRICE VS BEST OFFER PRICE):
-  * regularPrice (or basePrice): The gross standard regular package price before discount (Integer, e.g. 180000). Inspect context (e.g. "₹1,50,000", "2.5L" -> 250000; "90k" -> 90000).
-  * bestPrice (or offerPrice): The best offer price given to client (Integer, e.g. 150000).
-  * discountAmount: Difference between regularPrice and bestPrice (e.g. 180000 - 150000 = 30000). If NO discount/offer mentioned, discountAmount MUST STRICTLY BE 0.
-  * Net Total Calculation: Net Amount = basePrice - discountAmount + travelCharges + accommodationCharges.
-- gstPct, travelCharges, accommodationCharges, additionalCharges: Numbers, default 0 if not mentioned.
-- showExclusionsNote: true.
+  * basePrice (regularPrice): The gross standard regular package price before discount (Integer, e.g. 120000).
+  * discountAmount: Difference between basePrice and best offer price (e.g. 120000 - 90000 = 30000).
+  * If user mentions "एक लाख बीस हजार का कोटेशन लेकिन 90,000 में दे रहे हैं" -> basePrice: 120000, discountAmount: 30000.
+  * If NO discount/offer mentioned, discountAmount MUST STRICTLY BE 0.
+  * showExclusionsNote: true.
+  * note: Summary of pricing (e.g. "Special offer package of ₹90,000 for Sagar & Riddhi").
 
-8. PAYMENT TERMS & SCHEDULE (paymentTermsPage):
-- steps: Array of [{ name: string, pct: string, amount: number, status: "Pending" }]. Calculate amounts based on percentage breakdown if given.
-- CRITICAL STATUS RULE: All steps MUST strictly have status "Pending". NEVER default step 1 or any milestone to "Completed" unless the user's prompt or notes explicitly states that the advance or milestone was already received or paid!
+6. PAYMENT TERMS (paymentTermsPage):
+- steps: Array of payment milestones with custom percentages & amounts based on net price.
+  * e.g. [{ "name": "Advance Token", "pct": "30%", "amount": 27000, "status": "Pending" }, { "name": "On Wedding Day", "pct": "50%", "amount": 45000, "status": "Pending" }, { "name": "On Final Delivery", "pct": "20%", "amount": 18000, "status": "Pending" }]
+  * All step statuses MUST strictly be "Pending".
 
+7. PRE-WEDDING SHOOT (shootDetails) - DEDICATED SEPARATE PAGE:
+- If and ONLY IF pre-wedding is requested, set visible: true.
+- If user did NOT explicitly request a pre-wedding shoot, keep visible: false!
+
+==================================================
 OUTPUT FORMAT:
 Return ONLY a valid JSON object matching:
 {
@@ -303,7 +289,10 @@ Return ONLY a valid JSON object matching:
         },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
-          messages: [{ role: 'system', content: promptText }],
+          messages: [
+            { role: 'system', content: promptText },
+            { role: 'user', content: `Please extract structured quotation JSON from this context:\n${JSON.stringify(leanPromptContext, null, 2)}` }
+          ],
           response_format: { type: 'json_object' },
           temperature: 0.1,
           max_tokens: 1500
@@ -323,6 +312,14 @@ Return ONLY a valid JSON object matching:
       }
     } catch (e: any) {
       console.warn('[OpenAI Call Exception/Timeout]:', e?.message || e);
+    }
+  }
+
+  // Pre-wedding strict isolation check: if user did not ask for pre-wedding, keep shootDetails.visible = false
+  if (aiRawOutput?.shootDetails) {
+    const hasPreWedKeyword = /\b(pre-wedding|prewedding|pre wedding|previewing)\b/i.test(userNotes);
+    if (!hasPreWedKeyword) {
+      aiRawOutput.shootDetails.visible = false;
     }
   }
 
