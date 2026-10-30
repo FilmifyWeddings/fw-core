@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sparkles, X, Check, AlertTriangle, ArrowRight, Loader2, 
   FileText, Calendar, MapPin, Users, DollarSign, Camera, Video, MessageSquare,
-  Mic, MicOff, Volume2
+  Mic, MicOff, Volume2, Square
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -82,6 +82,25 @@ function tryParsePastedAiJson(rawText: string, baseTemplate?: any, leadContext?:
   return normalizeQuotationData({}, baseTemplate || DEFAULT_AIRY_PROPOSAL);
 }
 
+
+function getSupportedMimeType(): string {
+  if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') return '';
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/aac',
+    'audio/ogg;codecs=opus',
+    'audio/wav'
+  ];
+  for (const mime of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(mime)) return mime;
+    } catch (_) {}
+  }
+  return '';
+}
+
 export function AiQuotationModal({
   isOpen,
   onClose,
@@ -104,9 +123,11 @@ export function AiQuotationModal({
   // 🎙️ OpenAI Whisper MediaRecorder State
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcribeSuccess, setTranscribeSuccess] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const isCancelledRef = useRef<boolean>(false);
   const timerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -119,6 +140,9 @@ export function AiQuotationModal({
   }, []);
 
   const startVoiceRecording = async () => {
+    setErrorMsg(null);
+    setTranscribeSuccess(false);
+    isCancelledRef.current = false;
     try {
       if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
         alert('Microphone access is not supported in this browser.');
@@ -126,9 +150,7 @@ export function AiQuotationModal({
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm')
-        ? 'audio/webm'
-        : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
+      const mimeType = getSupportedMimeType();
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
 
       recorder.ondataavailable = (e) => {
@@ -138,15 +160,36 @@ export function AiQuotationModal({
       };
 
       recorder.onstop = async () => {
-        stream.getTracks().forEach((track) => track.stop());
+        try {
+          stream.getTracks().forEach((track) => track.stop());
+        } catch (_) {}
         if (timerRef.current) clearInterval(timerRef.current);
-        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        if (audioBlob.size > 300) {
-          await transcribeWithWhisper(audioBlob);
+
+        if (isCancelledRef.current) {
+          isCancelledRef.current = false;
+          audioChunksRef.current = [];
+          return;
         }
+
+        const chunks = audioChunksRef.current;
+        if (!chunks || chunks.length === 0) {
+          setErrorMsg('कोई आवाज़ रिकॉर्ड नहीं हुई। कृपया दोबारा बोलें।');
+          return;
+        }
+
+        const actualMime = recorder.mimeType || mimeType || 'audio/webm';
+        const audioBlob = new Blob(chunks, { type: actualMime });
+        audioChunksRef.current = [];
+
+        if (audioBlob.size < 400) {
+          setErrorMsg('रिकॉर्डिंग बहुत छोटी थी। कृपया कम से कम 2-3 सेकंड बोलें।');
+          return;
+        }
+
+        await transcribeWithWhisper(audioBlob, actualMime);
       };
 
-      recorder.start(250);
+      recorder.start(500); // 500ms chunk emission
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
       setRecordSeconds(0);
@@ -159,20 +202,37 @@ export function AiQuotationModal({
     }
   };
 
-  const stopVoiceRecording = () => {
+  const cancelVoiceRecording = () => {
+    isCancelledRef.current = true;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+      try { mediaRecorderRef.current.stop(); } catch (_) {}
     }
+    audioChunksRef.current = [];
     setIsRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
   };
 
-  const transcribeWithWhisper = async (audioBlob: Blob) => {
+  const stopVoiceRecording = () => {
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
+    try {
+      if (typeof mediaRecorderRef.current.requestData === 'function') {
+        mediaRecorderRef.current.requestData();
+      }
+    } catch (_) {}
+    try {
+      mediaRecorderRef.current.stop();
+    } catch (_) {}
+    setIsRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
+
+  const transcribeWithWhisper = async (audioBlob: Blob, detectedMime: string = '') => {
     setIsTranscribing(true);
     setErrorMsg(null);
     try {
       const fd = new FormData();
-      fd.append('audio', audioBlob, 'voice_quotation.webm');
+      const ext = (detectedMime.includes('mp4') || detectedMime.includes('aac') || detectedMime.includes('m4a')) ? 'mp4' : 'webm';
+      fd.append('audio', audioBlob, `voice_input.${ext}`);
       const res = await fetch('/api/ai/transcribe-audio', {
         method: 'POST',
         body: fd
@@ -180,8 +240,11 @@ export function AiQuotationModal({
       const data = await res.json();
       if (res.ok && data.text) {
         setAdditionalNotes((prev: string) => {
-          return prev.trim() ? `${prev.trim()}\n${data.text}` : data.text;
+          const trimmed = prev.trim();
+          return trimmed ? `${trimmed}\n\n${data.text}` : data.text;
         });
+        setTranscribeSuccess(true);
+        setTimeout(() => setTranscribeSuccess(false), 5000);
       } else {
         throw new Error(data.error || 'Could not transcribe audio');
       }
@@ -666,125 +729,26 @@ LEAD & CLIENT CONTEXT:
     setErrorMsg(null);
     try {
       const notes = additionalNotes.trim();
+
+      if (!notes) {
+        setErrorMsg('कृपया पहले माइक से बोलें या कोटेशन की कुछ डिटेल्स लिखें (या Paste करें) ताकि AI कोटेशन बना सके!');
+        return;
+      }
+
+      setGenerating(true);
+
       // FAST PATH 1: Synchronously parse pasted AI JSON in 0ms before any network calls!
       const clientParsedDoc = tryParsePastedAiJson(notes, baseTemplateDoc || currentDocumentData, effectiveLead);
-
       if (clientParsedDoc) {
         setExtractedDoc(clientParsedDoc);
         await applyDocAndNavigate(clientParsedDoc);
         return;
       }
 
-      setGenerating(true);
+      // 2. Full AI Extraction via OpenAI GPT-4o-mini
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      // FAST PATH 2: If creating for a new lead and have plain notes, call create-for-lead directly with additionalNotes
-      if (!quotationId && effectiveLead.id && effectiveLead.id !== 'draft') {
-        const createRes = await fetch('/api/quotations/create-for-lead', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            leadId: effectiveLead.id,
-            clientName: effectiveLead.raw_payload?.couple_name || effectiveLead.raw_payload?.couple_names || (effectiveLead as any).couple_names || effectiveLead.client_name || effectiveLead.name,
-            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || undefined,
-            additionalNotes: notes || undefined
-          })
-        });
-
-        const createText = await createRes.text();
-        let createJson: any = {};
-        try {
-          createJson = createText ? JSON.parse(createText) : {};
-        } catch (_) {}
-
-        if (!createRes.ok || !createJson.success) {
-          throw new Error(createJson.error || 'Failed to initialize quotation for lead');
-        }
-
-        const targetQId = createJson.quotationId || createJson.templateId;
-        const finalDoc = createJson.document;
-
-        if (targetQId && targetQId !== 'draft') {
-          try {
-            if (finalDoc) {
-              sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(finalDoc));
-              sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: finalDoc }));
-            }
-            const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-            await cacheDocumentLocal(targetQId, finalDoc, 1);
-
-            // Ensure effectiveLead is preserved in sc_cached_leads before navigating
-            const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
-            if (cachedLeadsStr) {
-              const cachedLeads = JSON.parse(cachedLeadsStr);
-              if (Array.isArray(cachedLeads) && !cachedLeads.some((l: any) => l.id === effectiveLead.id)) {
-                cachedLeads.unshift(effectiveLead);
-                localStorage.setItem('sc_cached_leads', JSON.stringify(cachedLeads));
-              }
-            }
-
-            const lId = effectiveLead.id;
-            const coupleName = finalDoc?.cover?.coupleName || effectiveLead.name || 'Quotation';
-            const newVer = {
-              id: targetQId,
-              template_id: targetQId,
-              version: 1,
-              version_label: 'V1',
-              title: `${coupleName} - Quotation V1`,
-              couple_name: coupleName,
-              is_final: false,
-              created_at: new Date().toISOString()
-            };
-
-            // Update lead_quotes_cache in both sessionStorage & localStorage
-            let existingCache: any[] = [];
-            try {
-              const scRaw = sessionStorage.getItem(`lead_quotes_cache_${lId}`) || localStorage.getItem(`lead_quotes_cache_${lId}`);
-              if (scRaw) existingCache = JSON.parse(scRaw);
-            } catch (_) {}
-            const updatedCache = [newVer, ...existingCache.filter((v: any) => v.id !== targetQId && v.template_id !== targetQId)];
-            sessionStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
-            localStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
-
-            // ⚡ Instant 0ms CRM icon update in localStorage
-            const stored = localStorage.getItem('sc_quotation_summary_map');
-            const map = stored ? JSON.parse(stored) : {};
-            const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
-            map[lId] = {
-              count: Math.max(prev.count || 0, 1),
-              hasFinal: prev.hasFinal || false,
-              finalVersion: prev.finalVersion,
-              versions: [newVer, ...(prev.versions || []).filter((v: any) => v.template_id !== targetQId && v.id !== targetQId)]
-            };
-            localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
-            window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));
-
-            // ⚡ Multi-device instant broadcast sync across all PCs (<50ms)
-            broadcastQuotationSync(lead?.workspace_id, {
-              leadId: lId,
-              quotationId: targetQId,
-              action: 'create',
-              isFinal: false
-            });
-          } catch (_) {}
-        }
-
-        if (onApplied) {
-          onApplied(finalDoc, targetQId);
-        } else if (targetQId && targetQId !== 'draft') {
-          router.push(`/workspace/quotations/builder/templet/${targetQId}`);
-          onClose();
-        } else {
-          onClose();
-        }
-        return;
-      }
-
-      // FALLBACK PATH: Existing quotation version update
       const res = await fetch('/api/quotations/ai-extract', {
         method: 'POST',
         headers: {
@@ -794,8 +758,8 @@ LEAD & CLIENT CONTEXT:
         body: JSON.stringify({
           leadId: effectiveLead.id,
           quotationId: quotationId || null,
-          explicitTemplateId: activeTemplateId || selectedTemplateId || null,
-          currentDocument: currentDocumentData || null,
+          explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
+          currentDocument: baseTemplateDoc || currentDocumentData || null,
           additionalNotes: notes
         })
       });
@@ -805,7 +769,7 @@ LEAD & CLIENT CONTEXT:
       try {
         json = text ? JSON.parse(text) : {};
       } catch (parseErr) {
-        throw new Error('AI Quotation server is initializing. Please try again.');
+        throw new Error('AI Quotation server is initializing. Please try again in a moment.');
       }
 
       if (!res.ok || !json.success || !json.extractedDocument) {
@@ -929,84 +893,141 @@ LEAD & CLIENT CONTEXT:
                   </div>
                 )}
 
-                {/* 🎙️ Voice & Text Input Section */}
-                <div className="space-y-2">
+                {/* 🎙️ ChatGPT-Style Voice & Text Input Section */}
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
+                    <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-500" />
                       <span>Requirements & Details (Voice or Text)</span>
                     </label>
-
-                    {/* OpenAI Whisper Mic Button */}
-                    <button
-                      type="button"
-                      onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
-                      disabled={isTranscribing}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs ${
-                        isRecording
-                          ? 'bg-rose-500 hover:bg-rose-600 text-white animate-pulse ring-4 ring-rose-500/20'
-                          : isTranscribing
-                          ? 'bg-amber-100 text-amber-800 cursor-wait'
-                          : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700/50'
-                      }`}
-                      title={isRecording ? 'Click to stop and transcribe' : 'Record voice note (OpenAI Whisper)'}
-                    >
-                      {isRecording ? (
-                        <>
-                          <MicOff className="w-3.5 h-3.5 text-white" />
-                          <span>Stop & Transcribe ({String(Math.floor(recordSeconds / 60)).padStart(2, '0')}:{String(recordSeconds % 60).padStart(2, '0')})</span>
-                          {/* Live Audio Wave Animation */}
-                          <span className="flex items-center gap-0.5 ml-1">
-                            <span className="w-1 h-3 bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                            <span className="w-1 h-4 bg-white rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                            <span className="w-1 h-2 bg-white rounded-full animate-bounce"></span>
-                            <span className="w-1 h-3.5 bg-white rounded-full animate-bounce [animation-delay:-0.2s]"></span>
-                          </span>
-                        </>
-                      ) : isTranscribing ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
-                          <span>Transcribing with Whisper...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Mic className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                          <span>🎙️ Record Voice (Whisper)</span>
-                        </>
-                      )}
-                    </button>
+                    <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500">
+                      OpenAI Whisper + GPT-4o-mini
+                    </span>
                   </div>
 
-                  {/* Active Recording Notice */}
-                  {isRecording && (
-                    <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 flex items-center justify-between text-xs text-rose-800 dark:text-rose-300">
-                      <span className="flex items-center gap-2 font-medium">
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
-                        </span>
-                        Recording in progress... बोलिए (हिंदी, मराठी, English) — Stop करने पर Whisper तुरंत टेक्स्ट बनाएगा
-                      </span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
-                        {String(Math.floor(recordSeconds / 60)).padStart(2, '0')}:{String(recordSeconds % 60).padStart(2, '0')}
-                      </span>
-                    </div>
+                  {/* Success Toast */}
+                  {transcribeSuccess && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-2"
+                    >
+                      <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>वॉइस ट्रांसक्राइब हो गई! नीचे '⚡ Create Quotation' पर क्लिक करें या टेक्स्ट एडिट करें।</span>
+                    </motion.div>
                   )}
 
-                  <textarea
-                    rows={5}
-                    value={additionalNotes}
-                    onChange={(e) => setAdditionalNotes(e.target.value)}
-                    placeholder="🎙️ माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):&#10;जैसे: 'अथर्व और साक्षी की शादी 15 दिसंबर को पुणे में, 14 को हल्दी और संगीत, 2 कैंडिड, 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज ₹2.5 लाख, 50k टोकन एडवांस...'&#10;&#10;💡 या अगर ChatGPT से JSON बनाया है, तो सीधे यहाँ पेस्ट करें!"
-                    className={`w-full p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 resize-none transition-all ${
-                      isRecording
-                        ? 'border-rose-400 focus:ring-rose-500/50 bg-rose-50/20'
-                        : 'border-zinc-200 dark:border-zinc-800 focus:ring-amber-500/50'
-                    }`}
-                  />
-                  <div className="flex items-center justify-between text-[10px] text-zinc-400 dark:text-zinc-500">
-                    <span>✨ Powered by OpenAI Whisper & GPT-4o-mini (Supports Marathi, Hindi, English)</span>
-                    <span>{additionalNotes.length} chars</span>
+                  {/* ChatGPT-Style Input Card */}
+                  <div className={`relative rounded-2xl border transition-all duration-200 bg-white dark:bg-zinc-900 ${
+                    isRecording 
+                      ? 'border-rose-500 ring-4 ring-rose-500/20 shadow-lg' 
+                      : isTranscribing
+                      ? 'border-amber-500 ring-4 ring-amber-500/20'
+                      : 'border-zinc-200 dark:border-zinc-800 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 shadow-xs'
+                  }`}>
+                    {/* Textarea */}
+                    <textarea
+                      rows={5}
+                      value={additionalNotes}
+                      onChange={(e) => setAdditionalNotes(e.target.value)}
+                      placeholder="माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):&#10;जैसे: 'रोहन और पूजा की शादी 18-19 नवंबर को लोनावला में, 18 को संगीत और हल्दी, 2 कैंडिड और 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज 2.2 लाख, 20k डिस्काउंट, 25% एडवांस...'&#10;&#10;💡 या ChatGPT का JSON सीधे यहाँ पेस्ट करें!"
+                      className="w-full p-4 bg-transparent text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none resize-none leading-relaxed"
+                    />
+
+                    {/* ChatGPT Bottom Action Bar */}
+                    <div className="flex items-center justify-between p-3 border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-zinc-900/60 rounded-b-2xl">
+                      {/* Left: Copy Prompt / Info */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopySystemPrompt}
+                          className="px-2.5 py-1.5 rounded-xl bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                          title="Copy Master JSON Prompt to paste in ChatGPT"
+                        >
+                          {promptCopied ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-500" />
+                              <span className="text-emerald-600 dark:text-emerald-400">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <FileText className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Copy AI Prompt</span>
+                            </>
+                          )}
+                        </button>
+
+                        {additionalNotes.length > 0 && (
+                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">
+                            {additionalNotes.length} chars
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Right: ChatGPT Voice Controls */}
+                      <div className="flex items-center gap-2">
+                        {isRecording ? (
+                          <div className="flex items-center gap-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 px-3 py-1.5 rounded-full">
+                            {/* Red Pulsing Dot */}
+                            <span className="relative flex h-2.5 w-2.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
+                            </span>
+
+                            {/* Live Audio Waveform Bars (ChatGPT style) */}
+                            <div className="flex items-center gap-1">
+                              <span className="w-1 h-3.5 bg-rose-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                              <span className="w-1 h-5 bg-rose-600 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                              <span className="w-1 h-2.5 bg-rose-400 rounded-full animate-bounce"></span>
+                              <span className="w-1 h-4 bg-rose-500 rounded-full animate-bounce [animation-delay:-0.2s]"></span>
+                              <span className="w-1 h-3 bg-rose-600 rounded-full animate-bounce [animation-delay:-0.35s]"></span>
+                            </div>
+
+                            {/* Timer */}
+                            <span className="text-[11px] font-black text-rose-700 dark:text-rose-300 tabular-nums">
+                              {String(Math.floor(recordSeconds / 60)).padStart(2, '0')}:{String(recordSeconds % 60).padStart(2, '0')}
+                            </span>
+
+                            {/* Cancel Button */}
+                            <button
+                              type="button"
+                              onClick={cancelVoiceRecording}
+                              className="w-6 h-6 rounded-full bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 flex items-center justify-center transition-all cursor-pointer ml-1"
+                              title="Cancel recording"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Stop & Transcribe Button */}
+                            <button
+                              type="button"
+                              onClick={stopVoiceRecording}
+                              className="px-3 py-1 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm active:scale-95 transition-all cursor-pointer"
+                              title="Stop and Transcribe"
+                            >
+                              <Square className="w-3 h-3 fill-current" />
+                              <span>Done</span>
+                            </button>
+                          </div>
+                        ) : isTranscribing ? (
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-bold animate-pulse">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                            <span>Transcribing with Whisper...</span>
+                          </div>
+                        ) : (
+                          /* ChatGPT Mic Button */
+                          <button
+                            type="button"
+                            onClick={startVoiceRecording}
+                            className="w-9 h-9 rounded-full bg-zinc-900 hover:bg-black dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-md cursor-pointer"
+                            title="बोलकर कोटेशन बनाएँ (OpenAI Whisper Voice Mode)"
+                          >
+                            <Mic className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -308,7 +308,7 @@ Return ONLY a valid JSON object matching:
           temperature: 0.1,
           max_tokens: 1500
         }),
-        signal: AbortSignal.timeout(10000)
+        signal: AbortSignal.timeout(30000)
       });
       if (res.ok) {
         const json = await res.json();
