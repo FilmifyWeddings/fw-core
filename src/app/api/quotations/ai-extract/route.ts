@@ -169,6 +169,29 @@ Analyze the following lead and quotation context:
 
 ${JSON.stringify(leanPromptContext, null, 2)}
 
+MULTILINGUAL & INDIAN WEDDING CULTURE MANDATE:
+- The input notes or voice speech can be in Hindi, Marathi, English, Gujarati, Hinglish, or a mixed blend of Indian languages.
+- You MUST comprehend Indian cultural wedding ceremonies and translate function names into clean, elegant professional English:
+  * "हळद" / "हल्दी" / "Pithi" -> "Haldi Ceremony" (or "Haldi + Sangeet" if on the same date)
+  * "संगीत" / "Sangeet" -> "Sangeet Night"
+  * "मेहंदी" / "Mehendi" -> "Mehendi Ceremony"
+  * "लग्न" / "शादी" / "Phere" / "Vivah" / "Barat" -> "Wedding Ceremony"
+  * "साखरपुडा" / "सगाई" / "Ring Ceremony" / "Roka" -> "Engagement Ceremony"
+  * "रिसेप्शन" / "Reception" -> "Reception"
+  * "प्री-वेडिंग" / "Pre-wedding shoot" -> Put in shootDetails
+- Extract couple names accurately from Indian language sentences:
+  * e.g. "अथर्व आणि साक्षी" / "अथर्व और साक्षी" -> coupleName: "Atharva & Sakshi", groomName: "Atharva", brideName: "Sakshi"
+- Indian Number & Currency Parsing:
+  * "2.5 लाख" / "2.5L" / "अडीच लाख" -> 250000
+  * "3 लाख" / "3L" -> 300000
+  * "50 हजार" / "50k" -> 50000
+  * "80k" -> 80000
+- Crew Roles Translation:
+  * "कैंडिड" / "Candid" -> "Candid Photographer"
+  * "सिनेमैटो" / "Cinematography" / "Cinematographer" -> "Cinematographer"
+  * "ड्रोन" / "Drone" -> "Drone Pilot"
+  * "ट्रैडिशनल" / "Traditional" -> "Traditional Photographer"
+
 PAGE-BY-PAGE RULES & MAPPING:
 1. COVER (cover):
 - coupleName: Exact couple name (e.g. "Sagar & Vruddhi").
@@ -267,11 +290,49 @@ Return ONLY a valid JSON object matching:
 `;
 
   let aiRawOutput: any = null;
-  const openAiKey = process.env.OPENAI_API_KEY || '';
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
+  const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // Try OpenAI API with strict 3-second timeout
-  if (openAiKey) {
+  // 1. PRIMARY ENGINE: Google Gemini Flash (Sub-second response, outstanding Indian multilingual understanding)
+  if (geminiKey) {
+    const geminiModels = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash'];
+    for (const model of geminiModels) {
+      if (aiRawOutput) break;
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText + "\nRespond strictly in valid JSON matching the exact schema above." }] }],
+            generationConfig: { 
+              responseMimeType: 'application/json',
+              temperature: 0.1
+            }
+          }),
+          signal: AbortSignal.timeout(8000)
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              aiRawOutput = JSON.parse(jsonMatch[0]);
+              console.log(`[AI Extract] Successfully generated via Gemini (${model}) in real-time`);
+              break;
+            }
+          }
+        } else {
+          console.warn(`[Gemini ${model} Status]:`, res.status);
+        }
+      } catch (e: any) {
+        console.warn(`[Gemini ${model} Exception/Timeout]:`, e?.message || e);
+      }
+    }
+  }
+
+  // 2. SECONDARY FALLBACK ENGINE: OpenAI GPT-4o-mini (Zero downtime guarantee)
+  if (!aiRawOutput && openAiKey) {
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -284,42 +345,20 @@ Return ONLY a valid JSON object matching:
           messages: [{ role: 'system', content: promptText }],
           response_format: { type: 'json_object' },
           temperature: 0.1,
-          max_tokens: 1200
+          max_tokens: 1400
         }),
-        signal: AbortSignal.timeout(3000)
+        signal: AbortSignal.timeout(8000)
       });
       if (res.ok) {
         const json = await res.json();
         const content = json.choices?.[0]?.message?.content;
-        if (content) aiRawOutput = JSON.parse(content);
-      }
-    } catch (e) {
-      console.warn('[OpenAI Call Warning/Timeout]:', e);
-    }
-  }
-
-  // Try Gemini API if OpenAI failed or key absent with strict 3-second timeout
-  if (!aiRawOutput && geminiKey) {
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText + "\nRespond strictly in valid JSON." }] }],
-          generationConfig: { responseMimeType: 'application/json' }
-        }),
-        signal: AbortSignal.timeout(3000)
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) aiRawOutput = JSON.parse(jsonMatch[0]);
+        if (content) {
+          aiRawOutput = JSON.parse(content);
+          console.log('[AI Extract] Successfully generated via OpenAI fallback');
         }
       }
     } catch (e) {
-      console.warn('[Gemini Call Warning/Timeout]:', e);
+      console.warn('[OpenAI Call Warning/Timeout]:', e);
     }
   }
 

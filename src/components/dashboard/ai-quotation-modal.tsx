@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sparkles, X, Check, AlertTriangle, ArrowRight, Loader2, 
-  FileText, Calendar, MapPin, Users, DollarSign, Camera, Video, MessageSquare
+  FileText, Calendar, MapPin, Users, DollarSign, Camera, Video, MessageSquare,
+  Mic, MicOff, Volume2
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -99,6 +100,78 @@ export function AiQuotationModal({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [promptCopied, setPromptCopied] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(selectedTemplateId || '');
+
+  // 🎙️ Live Voice Speech-to-Text Recognition State
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRec) {
+        setSpeechSupported(true);
+      }
+    }
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (_) {}
+      }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (_) {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    if (typeof window === 'undefined') return;
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRec();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'hi-IN'; // Highly accurate for Hindi, Marathi, Hinglish, and English terminology
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let currentTranscript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          currentTranscript += event.results[i][0].transcript + ' ';
+        }
+        if (currentTranscript.trim()) {
+          setAdditionalNotes(currentTranscript.trim());
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('[Speech Recognition Error]:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      console.error('[Speech Start Error]:', err);
+      setIsListening(false);
+    }
+  };
 
   useEffect(() => {
     if (selectedTemplateId) {
@@ -836,24 +909,77 @@ LEAD & CLIENT CONTEXT:
                   </div>
                 )}
 
-                {/* Optional Additional Notes Input */}
-                <div className="space-y-1.5">
+                {/* 🎙️ Voice & Text Input Section */}
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
                       <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
-                      <span>Add anything else for AI (Optional)</span>
+                      <span>Requirements & Details (Voice or Text)</span>
                     </label>
+
+                    {/* Mic Recording Button with Audio Wave */}
+                    <button
+                      type="button"
+                      onClick={toggleListening}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs ${
+                        isListening
+                          ? 'bg-rose-500 hover:bg-rose-600 text-white animate-pulse ring-4 ring-rose-500/20'
+                          : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700/50'
+                      }`}
+                      title={isListening ? 'Click to stop recording' : 'Click to speak in Hindi / Marathi / English'}
+                    >
+                      {isListening ? (
+                        <>
+                          <MicOff className="w-3.5 h-3.5 text-white" />
+                          <span>Stop Recording</span>
+                          {/* Live Audio Wave Animation */}
+                          <span className="flex items-center gap-0.5 ml-1">
+                            <span className="w-1 h-3 bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                            <span className="w-1 h-4 bg-white rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                            <span className="w-1 h-2 bg-white rounded-full animate-bounce"></span>
+                            <span className="w-1 h-3.5 bg-white rounded-full animate-bounce [animation-delay:-0.2s]"></span>
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>🎙️ Click to Speak (बोलें)</span>
+                        </>
+                      )}
+                    </button>
                   </div>
+
+                  {/* Live Recording Active Banner */}
+                  {isListening && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 flex items-center justify-between text-xs text-rose-800 dark:text-rose-300">
+                      <span className="flex items-center gap-2 font-medium">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                        </span>
+                        Listening... बोलिए (हिंदी, मराठी, English मिक्स बोल सकते हैं)
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                        Live Voice Active
+                      </span>
+                    </div>
+                  )}
+
                   <textarea
-                    rows={4}
+                    rows={5}
                     value={additionalNotes}
                     onChange={(e) => setAdditionalNotes(e.target.value)}
-                    placeholder="Paste WhatsApp messages, client requirements, additional notes, pricing, functions, or deliverables..."
-                    className="w-full p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none"
+                    placeholder="🎙️ माइक चालू करके बोलें या यहाँ लिखें (हिंदी, मराठी, English):&#10;जैसे: 'अथर्व और साक्षी की शादी 15 दिसंबर को पुणे में, 14 को हल्दी और संगीत, 2 कैंडिड, 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज ₹2.5 लाख, 50k टोकन एडवांस...'&#10;&#10;💡 या अगर ChatGPT से JSON बनाया है, तो सीधे यहाँ पेस्ट करें!"
+                    className={`w-full p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 resize-none transition-all ${
+                      isListening
+                        ? 'border-rose-400 focus:ring-rose-500/50 bg-rose-50/20'
+                        : 'border-zinc-200 dark:border-zinc-800 focus:ring-amber-500/50'
+                    }`}
                   />
-                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500">
-                    StudioCore automatically includes all existing lead details. You don&apos;t have to re-paste saved data.
-                  </p>
+                  <div className="flex items-center justify-between text-[10px] text-zinc-400 dark:text-zinc-500">
+                    <span>✨ Gemini AI भारतीय भाषाओं (हल्दी, संगीत, लग्न, फेरे, विधी) को 100% सही समझकर प्रोफेशनल इंग्लिश में मैप करेगा।</span>
+                    <span>{additionalNotes.length} chars</span>
+                  </div>
                 </div>
               </div>
             ) : (
