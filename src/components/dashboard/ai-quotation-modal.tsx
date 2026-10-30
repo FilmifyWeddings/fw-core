@@ -11,6 +11,7 @@ import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 import { QuotationTemplateSelector, StudioTemplateItem } from './quotation-template-selector';
+import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument } from '@/lib/ai-quotation-extractor';
 import { 
   consolidateSameDateFunctions, 
   resolvePrimaryCoverLocation, 
@@ -31,18 +32,53 @@ interface AiQuotationModalProps {
   onApplied?: (updatedDoc: any, targetQuotationId: string) => void;
 }
 
-function tryParsePastedAiJson(rawText: string, baseTemplate?: any): any | null {
-  const parsed = sanitizeAndParseJson(rawText);
-  if (!parsed || typeof parsed !== 'object') return null;
+function tryParsePastedAiJson(rawText: string, baseTemplate?: any, leadContext?: any): any | null {
+  if (!rawText || !rawText.trim()) return null;
 
-  const root = parsed.quotation || parsed;
-  if (root.cover || root.functionsPage || root.pricingPage || root.pages || root.shootDetails) {
-    // Ultra-fast 0ms normalization: formats all dates to "DD - MMM - YYYY", separates regular price vs best price,
-    // consolidates same-date functions, and merges onto the active base template cleanly
-    const normalized = normalizeQuotationData(root, baseTemplate || DEFAULT_AIRY_PROPOSAL);
-    return normalized;
+  // 1. Fast sanitized JSON parse
+  const parsed = sanitizeAndParseJson(rawText);
+  if (parsed && typeof parsed === 'object') {
+    let root = parsed;
+    if (root.quotation && typeof root.quotation === 'object') root = root.quotation;
+    if (root.proposal && typeof root.proposal === 'object') root = root.proposal;
+    if (root.quotation_details && typeof root.quotation_details === 'object') root = root.quotation_details;
+    if (root.data && typeof root.data === 'object' && !root.cover && !root.functionsPage) root = root.data;
+
+    const hasAnyContent = Boolean(
+      root.cover || root.functionsPage || root.pricingPage || root.shootDetails ||
+      root.deliverablesPage || root.pages || root.events || root.functions ||
+      root.deliverables || root.services || root.pricing || root.package || root.client
+    );
+
+    if (hasAnyContent) {
+      return normalizeQuotationData(root, baseTemplate || DEFAULT_AIRY_PROPOSAL);
+    }
   }
-  return null;
+
+  // 2. Fast client-side heuristic regex extractor (<5ms)
+  try {
+    const contextData = {
+      lead_info: {
+        lead_id: leadContext?.id || 'lead',
+        name: leadContext?.name || '',
+        phone: leadContext?.phone || '',
+        email: leadContext?.email || ''
+      },
+      raw_form_fields: leadContext?.raw_payload || {},
+      meta_fields: {},
+      notes_and_comments: '',
+      additional_user_notes: rawText
+    };
+    const extracted = fallbackHeuristicExtractor(contextData);
+    const mapped = mapAiOutputToQuotationDocument(extracted, baseTemplate || DEFAULT_AIRY_PROPOSAL, contextData);
+    if (mapped?.document) {
+      return mapped.document;
+    }
+  } catch (err) {
+    console.warn('[tryParsePastedAiJson fallback error]:', err);
+  }
+
+  return normalizeQuotationData({}, baseTemplate || DEFAULT_AIRY_PROPOSAL);
 }
 
 export function AiQuotationModal({
@@ -337,9 +373,7 @@ LEAD & CLIENT CONTEXT:
   const applyDocAndNavigate = async (docToApply: any) => {
     if (!docToApply) return;
 
-    // ⚡ INSTANT 0ms OPTIMISTIC BUILDER APPLY:
-    // If inside Quotation Builder with an active quotationId & onApplied callback,
-    // apply data immediately to canvas in 0ms without any network blocking or delay!
+    // ⚡ INSTANT 0ms OPTIMISTIC BUILDER APPLY (Inside Builder):
     if (quotationId && onApplied) {
       const mergedDoc = normalizeQuotationData(docToApply, currentDocumentData || baseTemplateDoc);
       try {
@@ -375,138 +409,115 @@ LEAD & CLIENT CONTEXT:
       return;
     }
 
-    setApplying(true);
-    setErrorMsg(null);
+    // ⚡ INSTANT OPTIMISTIC CREATION FOR LEAD (<50ms):
+    // 1. Generate quotationId immediately so navigation is never blocked by database roundtrips!
+    const leadShort = String(effectiveLead.id || 'LEAD').replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
+    const randSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const targetQId = quotationId || `FW-Q-${leadShort}-V1-${randSuffix}`;
+
+    const mergedDoc = normalizeQuotationData(docToApply, baseTemplateDoc || currentDocumentData);
+    const coupleName = mergedDoc?.cover?.coupleName || effectiveLead.name || 'Quotation';
+    const lId = effectiveLead.id;
+
+    // 2. Prime sessionStorage & localStorage immediately (0ms hydration in builder)
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
+      sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(mergedDoc));
+      sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: mergedDoc }));
+      localStorage.setItem(`wg_proposal_draft_${targetQId}`, JSON.stringify(mergedDoc));
 
-      // If no quotationId exists and we have a real lead, first create one for lead using selectedTemplateId
-      let targetQId = quotationId;
-      if (!targetQId && effectiveLead.id && effectiveLead.id !== 'draft') {
-        const createRes = await fetch('/api/quotations/create-for-lead', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            leadId: effectiveLead.id,
-            clientName: docToApply?.cover?.coupleName || effectiveLead.name,
-            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || undefined,
-            initialDocument: docToApply
-          })
-        });
-        const createText = await createRes.text();
-        let createJson: any = {};
+      if (lId && lId !== 'draft') {
+        const newVer = {
+          id: targetQId,
+          template_id: targetQId,
+          version: 1,
+          version_label: 'V1',
+          title: `${coupleName} - Quotation V1`,
+          couple_name: coupleName,
+          is_final: false,
+          created_at: new Date().toISOString()
+        };
+
+        let existingCache: any[] = [];
         try {
-          createJson = createText ? JSON.parse(createText) : {};
+          const scRaw = sessionStorage.getItem(`lead_quotes_cache_${lId}`) || localStorage.getItem(`lead_quotes_cache_${lId}`);
+          if (scRaw) existingCache = JSON.parse(scRaw);
         } catch (_) {}
-        if (!createRes.ok || !createJson.success) {
-          throw new Error(createJson.error || 'Failed to initialize quotation draft for lead');
-        }
-        targetQId = createJson.quotationId || createJson.templateId;
-      }
+        const updatedCache = [newVer, ...existingCache.filter((v: any) => v.id !== targetQId && v.template_id !== targetQId)];
+        sessionStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
+        localStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
 
-      // Apply extracted document directly only if targetQId was an existing quotation
-      const isNewCreation = !quotationId && Boolean(effectiveLead.id && effectiveLead.id !== 'draft');
-      let finalDoc = docToApply;
+        const stored = localStorage.getItem('sc_quotation_summary_map');
+        const map = stored ? JSON.parse(stored) : {};
+        const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
+        map[lId] = {
+          count: Math.max(prev.count || 0, 1),
+          hasFinal: prev.hasFinal || false,
+          finalVersion: prev.finalVersion,
+          versions: [newVer, ...(prev.versions || []).filter((v: any) => v.template_id !== targetQId && v.id !== targetQId)]
+        };
+        localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+        window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));
 
-      if (!isNewCreation && targetQId && targetQId !== 'draft') {
-        const applyRes = await fetch('/api/quotations/ai-apply', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            quotationId: targetQId,
-            document: docToApply
-          })
+        broadcastQuotationSync(lead?.workspace_id, {
+          leadId: lId,
+          quotationId: targetQId,
+          action: 'create',
+          isFinal: false
         });
-
-        const applyText = await applyRes.text();
-        let applyJson: any = {};
-        try {
-          applyJson = applyText ? JSON.parse(applyText) : {};
-        } catch (_) {}
-        if (!applyRes.ok || !applyJson.success) {
-          throw new Error(applyJson.error || 'Failed to apply AI data to quotation');
-        }
-        if (applyJson.document) finalDoc = applyJson.document;
       }
+    } catch (_) {}
 
-      // Prime local indexedDB and sessionStorage cache for instant builder hydration
-      if (targetQId && targetQId !== 'draft') {
-        try {
-          if (finalDoc) {
-            sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(finalDoc));
-            sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: finalDoc }));
-          }
-          const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-          await cacheDocumentLocal(targetQId, finalDoc, 1);
-          if (effectiveLead.id && effectiveLead.id !== 'draft') {
-            const lId = effectiveLead.id;
-            const coupleName = docToApply?.cover?.coupleName || effectiveLead.name || 'Quotation';
-            const newVer = {
-              id: targetQId,
-              template_id: targetQId,
-              version: 1,
-              version_label: 'V1',
-              title: `${coupleName} - Quotation V1`,
-              couple_name: coupleName,
-              is_final: false,
-              created_at: new Date().toISOString()
-            };
+    // 3. Immediately trigger navigation or callback in <50ms!
+    if (onApplied) {
+      onApplied(mergedDoc, targetQId);
+    } else if (targetQId && targetQId !== 'draft') {
+      router.push(`/workspace/quotations/builder/templet/${targetQId}`);
+      onClose();
+    } else {
+      onClose();
+    }
 
-            // Update lead_quotes_cache in both sessionStorage & localStorage
-            let existingCache: any[] = [];
-            try {
-              const scRaw = sessionStorage.getItem(`lead_quotes_cache_${lId}`) || localStorage.getItem(`lead_quotes_cache_${lId}`);
-              if (scRaw) existingCache = JSON.parse(scRaw);
-            } catch (_) {}
-            const updatedCache = [newVer, ...existingCache.filter((v: any) => v.id !== targetQId && v.template_id !== targetQId)];
-            sessionStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
-            localStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
+    // 4. Non-blocking background cloud persistence (Supabase single source of truth)
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
 
-            // ⚡ Instant 0ms CRM icon update in localStorage
-            const stored = localStorage.getItem('sc_quotation_summary_map');
-            const map = stored ? JSON.parse(stored) : {};
-            const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
-            map[lId] = {
-              count: Math.max(prev.count || 0, 1),
-              hasFinal: prev.hasFinal || false,
-              finalVersion: prev.finalVersion,
-              versions: [newVer, ...(prev.versions || []).filter((v: any) => v.template_id !== targetQId && v.id !== targetQId)]
-            };
-            localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
-            window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));
-
-            // ⚡ Multi-device instant broadcast sync across all PCs (<50ms)
-            broadcastQuotationSync(lead?.workspace_id, {
+        if (!quotationId && lId && lId !== 'draft') {
+          await fetch('/api/quotations/create-for-lead', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
               leadId: lId,
               quotationId: targetQId,
-              action: 'create',
-              isFinal: false
-            });
-          }
-        } catch (e) {}
-      }
+              clientName: coupleName,
+              explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || undefined,
+              initialDocument: mergedDoc
+            })
+          });
+        } else if (targetQId && targetQId !== 'draft') {
+          await fetch('/api/quotations/ai-apply', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              quotationId: targetQId,
+              document: mergedDoc
+            })
+          });
+        }
 
-      if (onApplied) {
-        onApplied(finalDoc || docToApply, targetQId || quotationId || 'draft');
-      } else if (targetQId && targetQId !== 'draft') {
-        router.push(`/workspace/quotations/builder/templet/${targetQId}`);
-        onClose();
-      } else {
-        onClose();
+        const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
+        await cacheDocumentLocal(targetQId, mergedDoc, 1);
+      } catch (e) {
+        console.warn('[AI Background Persist Error]:', e);
       }
-    } catch (err: any) {
-      console.error('[AI Apply Error]:', err);
-      setErrorMsg(err.message || 'Failed to apply quotation changes.');
-    } finally {
-      setApplying(false);
-    }
+    })();
   };
 
   const handleApply = async () => {
@@ -518,7 +529,7 @@ LEAD & CLIENT CONTEXT:
     try {
       const notes = additionalNotes.trim();
       // FAST PATH 1: Synchronously parse pasted AI JSON in 0ms before any network calls!
-      const clientParsedDoc = tryParsePastedAiJson(notes, baseTemplateDoc || currentDocumentData);
+      const clientParsedDoc = tryParsePastedAiJson(notes, baseTemplateDoc || currentDocumentData, effectiveLead);
 
       if (clientParsedDoc) {
         setExtractedDoc(clientParsedDoc);

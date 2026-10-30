@@ -59,10 +59,17 @@ export async function POST(req: NextRequest) {
       workspaceId = profile.id;
     }
 
-    // 2. Resolve template (explicitly chosen template or user default fallback)
-    const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId, explicitTemplateId);
-    const sourceTemplateId = resolved.templateId;
-    const templateDoc = resolved.document || DEFAULT_AIRY_PROPOSAL;
+    // 2. Fast template resolution: if initialDocument provided by client, skip slow DB lookups!
+    let sourceTemplateId = explicitTemplateId || GLOBAL_SYSTEM_TEMPLATE_ID;
+    let templateDoc = DEFAULT_AIRY_PROPOSAL;
+
+    if (body.initialDocument && typeof body.initialDocument === 'object') {
+      templateDoc = body.initialDocument;
+    } else {
+      const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId, explicitTemplateId);
+      sourceTemplateId = resolved.templateId;
+      templateDoc = resolved.document || DEFAULT_AIRY_PROPOSAL;
+    }
 
     // Calculate max version
     let maxVersion = 0;
@@ -137,7 +144,7 @@ export async function POST(req: NextRequest) {
       : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[1].trim() : 'Partner');
 
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const quotationId = `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
+    const quotationId = body.quotationId || `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
 
     const baseSourceDoc = initialDoc ? normalizeQuotationData(initialDoc, templateDoc) : templateDoc;
     const clonedDoc = JSON.parse(JSON.stringify(baseSourceDoc || DEFAULT_AIRY_PROPOSAL));

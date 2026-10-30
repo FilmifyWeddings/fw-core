@@ -669,49 +669,83 @@ export function formatQuotationDate(raw: string | null | undefined): string {
   return str;
 }
 
-export function sanitizeAndParseJson(rawText: string): any | null {
-  if (!rawText || !rawText.trim()) return null;
-  let text = rawText.trim();
-
-  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  if (text.includes('```')) {
-    text = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-  }
-
-  text = text.replace(/[\uFEFF\u200B\u200C\u200D\u2060]/g, '');
-  text = text.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
-  text = text.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'");
-
-  const startIdx = text.indexOf('{');
-  const endIdx = text.lastIndexOf('}');
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    return null;
-  }
-
-  let candidate = text.substring(startIdx, endIdx + 1);
-
-  try {
-    const parsed = JSON.parse(candidate);
-    if (parsed && typeof parsed === 'object') return parsed;
-  } catch (_) {}
-
-  let repaired = candidate.replace(/,\s*([}\]])/g, '$1');
-  repaired = repaired.replace(/(^|[^:])\/\/[^"\n\r]*/g, '$1');
-
-  try {
-    const parsed = JSON.parse(repaired);
-    if (parsed && typeof parsed === 'object') return parsed;
-  } catch (_) {}
-
-  try {
-    const sanitized = repaired
-      .replace(/[\r\n\t]/g, ' ')
-      .replace(/,\s*([}\]])/g, '$1');
-    const parsed = JSON.parse(sanitized);
-    if (parsed && typeof parsed === 'object') return parsed;
-  } catch (_) {}
-
-  return null;
+export function sanitizeAndParseJson(rawText: string): any | null {
+  if (!rawText || !rawText.trim()) return null;
+  let text = rawText.trim();
+
+  // 1. Strip markdown fences (including language tag or whitespace)
+  const fenceMatch = text.match(/\`\`\`(?:json)?([\s\S]*?)\`\`\`/i);
+  if (fenceMatch && fenceMatch[1]) {
+    text = fenceMatch[1].trim();
+  } else {
+    text = text.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/i, '');
+    if (text.includes('```')) {
+      text = text.replace(/\`\`\`(?:json)?/gi, '').replace(/\`\`\`/g, '').trim();
+    }
+  }
+
+  // 2. Normalize smart quotes and hidden zero-width unicode
+  text = text.replace(/[\uFEFF\u200B\u200C\u200D\u2060]/g, '');
+  text = text.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+  text = text.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'");
+
+  const startIdx = text.indexOf('{');
+  const endIdx = text.lastIndexOf('}');
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
+    return null;
+  }
+
+  let candidate = text.substring(startIdx, endIdx + 1);
+
+  // Quick direct parse
+  try {
+    const parsed = JSON.parse(candidate);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {}
+
+  // Strip single-line and multi-line comments
+  candidate = candidate.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\r\n]*/g, '$1');
+
+  // Remove trailing commas before } or ]
+  candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+
+  try {
+    const parsed = JSON.parse(candidate);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {}
+
+  // Convert single-quoted keys/strings: 'key': 'val' -> "key": "val"
+  try {
+    let singleQuoteFixed = candidate.replace(/'([^'\\\\]*(?:\\.[^'\\\\]*)*)'/g, '"$1"');
+    singleQuoteFixed = singleQuoteFixed.replace(/,\s*([}\]])/g, '$1');
+    const parsed = JSON.parse(singleQuoteFixed);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {}
+
+  // Escape literal unescaped newlines/tabs inside string literals
+  try {
+    let inString = false;
+    let escaped = false;
+    let out = '';
+    for (let i = 0; i < candidate.length; i++) {
+      const c = candidate[i];
+      if (c === '"' && !escaped) {
+        inString = !inString;
+        out += c;
+      } else if (inString && (c === '\n' || c === '\r')) {
+        out += (c === '\n' ? '\\n' : '');
+      } else if (inString && c === '\t') {
+        out += '\\t';
+      } else {
+        out += c;
+      }
+      escaped = (c === '\\' && !escaped);
+    }
+    const parsed = JSON.parse(out.replace(/,\s*([}\]])/g, '$1'));
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {}
+
+  return null;
 }
 
 /**

@@ -38,6 +38,7 @@ export interface FinanceFiltersModalProps {
   setTeamMemberFilter: (val: string) => void;
   teamMembersDetailed?: DetailedTeamMember[];
   teamMembersList: string[];
+  handledByList?: string[];
   statusFilter: string;
   setStatusFilter: (val: any) => void;
   categoryFilter: string;
@@ -72,6 +73,7 @@ export function FinanceFiltersModal({
   setTeamMemberFilter,
   teamMembersDetailed = [],
   teamMembersList = [],
+  handledByList = [],
   statusFilter,
   setStatusFilter,
   categoryFilter,
@@ -160,6 +162,13 @@ export function FinanceFiltersModal({
         (m.primary_role || m.role || '').toLowerCase().includes(q)
     );
   }, [inHouseMembers, teamSearchQuery]);
+
+  const filteredHandledBy = useMemo(() => {
+    const list = handledByList && handledByList.length > 0 ? handledByList : [];
+    if (!teamSearchQuery.trim()) return list;
+    const q = teamSearchQuery.toLowerCase();
+    return list.filter((name) => name.toLowerCase().includes(q));
+  }, [handledByList, teamSearchQuery]);
 
   const filteredFreelancers = useMemo(() => {
     if (!teamSearchQuery.trim()) return freelancerMembers;
@@ -638,34 +647,10 @@ export function FinanceFiltersModal({
                   <option value="all">⚡ All Status</option>
                   <option value="overall_turnover">📈 Overall Turnover</option>
                   <option value="received">💰 Payment Received</option>
-                  <option value="partially_paid">🌓 Partially Paid</option>
                   <option value="paid">✅ Fully Paid</option>
                   <option value="pending">⏳ Pending Due</option>
                   <option value="overdue_only">⚠️ Overdue Dues Only</option>
                   <option value="trash">🗑️ Trash (Archived / Soft-Deleted)</option>
-                </select>
-              </div>
-            )}
-
-            {/* REVENUE TYPE / PAYMENT NATURE FILTER (FOR INVOICES TAB) */}
-            {activeTab !== 'expenses' && setRevenueTypeFilter && (
-              <div>
-                <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center justify-between">
-                  <span>Revenue Type / Payment Nature</span>
-                  {revenueTypeFilter && revenueTypeFilter !== 'ALL' && (
-                    <span className="text-[9px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-md border border-amber-300">
-                      Active
-                    </span>
-                  )}
-                </label>
-                <select
-                  value={revenueTypeFilter || 'ALL'}
-                  onChange={(e) => setRevenueTypeFilter(e.target.value as any)}
-                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-                >
-                  <option value="ALL">💰 All Payments (Default)</option>
-                  <option value="NEW_BOOKING">✨ New Booking / Advance</option>
-                  <option value="DUE_BALANCE">⚖️ Due Balance / Milestone Clearances</option>
                 </select>
               </div>
             )}

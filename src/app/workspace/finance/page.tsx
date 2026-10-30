@@ -2546,6 +2546,20 @@ export default function FinancePage() {
     return Array.from(locs).sort();
   }, [clients, financeRecords]);
 
+  const assignedHandledByList = useMemo(() => {
+    const set = new Set<string>();
+    financeRecords.forEach((r) => {
+      const h = (r as any).handled_by || (r.client as any)?.handled_by;
+      if (h && typeof h === 'string') {
+        const clean = h.trim();
+        if (clean && clean.toLowerCase() !== 'unassigned' && clean.toLowerCase() !== 'none') {
+          set.add(clean);
+        }
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [financeRecords]);
+
   // Check active filter count
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -3674,6 +3688,7 @@ export default function FinancePage() {
                 setTeamMemberFilter={setTeamMemberFilter}
                 teamMembersDetailed={workspaceMembers as any}
                 teamMembersList={effectiveTeamMembers}
+                handledByList={assignedHandledByList}
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
                 categoryFilter={categoryFilter}
