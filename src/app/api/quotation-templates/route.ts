@@ -61,31 +61,35 @@ export async function GET(req: NextRequest) {
         .or(`workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}`)
         .order('updated_at', { ascending: false });
 
-      // 2. ONLY active published system templates (draft/unpublished are strictly hidden)
-      const { data: activeSysTmpls } = await supabaseAdmin
-        .from('quotation_templates')
-        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
-        .eq('is_system_template', true)
-        .eq('status', 'published')
-        .not('status', 'in', '("archived","deleted")')
-        .not('id', 'ilike', 'FW-Q-%')
-        .not('id', 'ilike', 'FW-L-%')
-        .order('is_default', { ascending: false })
-        .order('updated_at', { ascending: false });
-
+      // 2. Studio Owners see ONLY their custom templates if they exist; NEVER demo templates!
       const seen = new Set<string>();
-      (userTemplates || []).forEach(t => {
-        if (!seen.has(t.id)) {
-          seen.add(t.id);
-          validTemplates.push(t);
-        }
-      });
-      (activeSysTmpls || []).forEach(t => {
-        if (!seen.has(t.id)) {
-          seen.add(t.id);
-          validTemplates.push(t);
-        }
-      });
+      if (userTemplates && userTemplates.length > 0) {
+        userTemplates.forEach(t => {
+          if (!seen.has(t.id)) {
+            seen.add(t.id);
+            validTemplates.push(t);
+          }
+        });
+      } else {
+        // ONLY fallback to published system templates if studio has zero custom templates
+        const { data: activeSysTmpls } = await supabaseAdmin
+          .from('quotation_templates')
+          .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+          .eq('is_system_template', true)
+          .eq('status', 'published')
+          .not('status', 'in', '("archived","deleted")')
+          .not('id', 'ilike', 'FW-Q-%')
+          .not('id', 'ilike', 'FW-L-%')
+          .order('is_default', { ascending: false })
+          .order('updated_at', { ascending: false });
+
+        (activeSysTmpls || []).forEach(t => {
+          if (!seen.has(t.id)) {
+            seen.add(t.id);
+            validTemplates.push(t);
+          }
+        });
+      }
     }
 
     const templateIds = validTemplates.map(t => t.id);
@@ -96,7 +100,7 @@ export async function GET(req: NextRequest) {
     if (templateIds.length > 0) {
       const { data: docsData, error: docsErr } = await supabaseAdmin
         .from('quotation_documents')
-        .select('template_id, content_json, lead_id')
+        .select('template_id, content_json, document_json, lead_id')
         .in('template_id', templateIds);
 
       if (docsErr) {
@@ -105,13 +109,34 @@ export async function GET(req: NextRequest) {
 
       if (docsData) {
         docsData.forEach(d => {
-          if (d.template_id && d.content_json) {
-            docsMap[d.template_id] = d.content_json;
+          const docContent = d.content_json || d.document_json;
+          if (d.template_id && docContent) {
+            docsMap[d.template_id] = docContent;
           }
-          if (d.lead_id || d.content_json?.lead_id) {
+          if (d.lead_id || (docContent && (docContent as any).lead_id)) {
             leadDocsSet.add(d.template_id);
           }
         });
+      }
+
+      // Fallback check in quotations table for any templates whose doc was saved there
+      const missingIds = templateIds.filter(id => !docsMap[id]);
+      if (missingIds.length > 0) {
+        try {
+          const { data: qRows } = await supabaseAdmin
+            .from('quotations')
+            .select('quotation_number, id, content_json, canvas_data')
+            .or(`quotation_number.in.(${missingIds.join(',')}),id.in.(${missingIds.join(',')})`);
+          if (qRows) {
+            qRows.forEach(q => {
+              const qContent = q.content_json || q.canvas_data;
+              if (qContent) {
+                if (q.quotation_number && !docsMap[q.quotation_number]) docsMap[q.quotation_number] = qContent;
+                if (q.id && !docsMap[q.id]) docsMap[q.id] = qContent;
+              }
+            });
+          }
+        } catch (_) {}
       }
     }
 

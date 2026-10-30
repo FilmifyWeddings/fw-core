@@ -2286,7 +2286,25 @@ function StudioCoreAiryBuilderContent() {
     }
     return false;
   });
-  const [isCanonicalLoaded, setIsCanonicalLoaded] = useState<boolean>(false);
+  const [isCanonicalLoaded, setIsCanonicalLoaded] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const tid = templateId || window.location.pathname.split('/').filter(Boolean).pop() || '';
+        if (tid) {
+          const direct = sessionStorage.getItem(`current_quotation_doc_${tid}`);
+          if (direct && isDocumentValid(JSON.parse(direct))) return true;
+          const draft = localStorage.getItem(`wg_proposal_draft_${tid}`);
+          if (draft && isDocumentValid(JSON.parse(draft))) return true;
+        }
+        const activeRaw = sessionStorage.getItem('current_active_quotation_doc');
+        if (activeRaw) {
+          const active = JSON.parse(activeRaw);
+          if (active?.document && isDocumentValid(active.document)) return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  });
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -3248,6 +3266,7 @@ function StudioCoreAiryBuilderContent() {
               if (localNormalized.secondaryFont) preloadActiveFont(localNormalized.secondaryFont);
               setRawData(localNormalized);
               setIsDataReady(true);
+              setIsCanonicalLoaded(true);
             }
           } catch (_) {}
         }
@@ -3286,8 +3305,8 @@ function StudioCoreAiryBuilderContent() {
           // CANONICAL SUPABASE DB DOCUMENT (Primary Source of Truth)
           loadedData = normalizeQuotationData(docContent);
           currentVersionRef.current = json.document?.version || 1;
-        } else if (isDocumentValid(latestDataRef.current) && latestDataRef.current.designName !== 'Personalised Wedding Quotation') {
-          // SAFE GUARD: Never overwrite copied or local document with empty demo template!
+        } else if (isDocumentValid(latestDataRef.current)) {
+          // SAFE GUARD: Never overwrite local pre-seeded quotation document with demo template!
           loadedData = latestDataRef.current;
         } else if (isDocumentValid(cachedLocal?.documentJson)) {
           loadedData = normalizeQuotationData(cachedLocal?.documentJson);
@@ -5674,9 +5693,13 @@ function StudioCoreAiryBuilderContent() {
   );
 
   // Render Guard: Strictly NEVER flash default or demo proposal while canonical document is loading
-  const isPreseededForRoute = typeof window !== 'undefined' && Boolean(sessionStorage.getItem(`current_quotation_doc_${routeId}`));
+  const isPreseededForRoute = typeof window !== 'undefined' && Boolean(
+    sessionStorage.getItem(`current_quotation_doc_${routeId}`) ||
+    localStorage.getItem(`wg_proposal_draft_${routeId}`) ||
+    (sessionStorage.getItem('current_active_quotation_doc') && isDocumentValid(data))
+  );
 
-  if (!isCanonicalLoaded && !isPreseededForRoute) {
+  if (!isCanonicalLoaded && !isPreseededForRoute && !isDataReady) {
     return (
       <div className="h-screen w-screen bg-[#FDFBF7] flex flex-col items-center justify-center space-y-4 select-none">
         <div className="relative">

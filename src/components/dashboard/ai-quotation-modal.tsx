@@ -112,8 +112,18 @@ export function AiQuotationModal({
   const [missingInfo, setMissingInfo] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<any[]>([]);
 
-  const activeTemplateObj = availableTemplates?.find(t => t.id === (activeTemplateId || selectedTemplateId)) || availableTemplates?.[0];
-  const baseTemplateDoc = activeTemplateObj?.content_json || currentDocumentData || null;
+  const activeTemplateObj = availableTemplates?.find(t => t.id === (activeTemplateId || selectedTemplateId)) || availableTemplates?.find(t => !t.is_system_template) || availableTemplates?.[0];
+  let resolvedBaseDoc = activeTemplateObj?.content_json || currentDocumentData || null;
+  if (!resolvedBaseDoc && typeof window !== 'undefined') {
+    try {
+      const cachedTmpls = getSynchronousCachedTemplates(effectiveLead?.workspace_id);
+      const foundCached = cachedTmpls.find(t => t.id === (activeTemplateId || selectedTemplateId)) || cachedTmpls.find(t => !t.is_system_template) || cachedTmpls[0];
+      if (foundCached?.content_json) {
+        resolvedBaseDoc = foundCached.content_json;
+      }
+    } catch (_) {}
+  }
+  const baseTemplateDoc = resolvedBaseDoc;
 
   if (!isOpen) return null;
 
@@ -410,14 +420,48 @@ LEAD & CLIENT CONTEXT:
     }
 
     // ⚡ INSTANT OPTIMISTIC CREATION FOR LEAD (<50ms):
-    // 1. Generate quotationId immediately so navigation is never blocked by database roundtrips!
-    const leadShort = String(effectiveLead.id || 'LEAD').replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
-    const randSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const targetQId = quotationId || `FW-Q-${leadShort}-V1-${randSuffix}`;
+    const lId = effectiveLead.id;
+    const leadShort = String(lId || 'LEAD').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+    const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+
+    // 1. Calculate next version dynamically from local caches
+    let nextVersion = 1;
+    if (lId && lId !== 'draft') {
+      try {
+        const scRaw = sessionStorage.getItem(`lead_quotes_cache_${lId}`) || localStorage.getItem(`lead_quotes_cache_${lId}`);
+        if (scRaw) {
+          const parsed = JSON.parse(scRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            nextVersion = Math.max(...parsed.map((v: any) => Number(v.version) || 0)) + 1;
+          }
+        }
+        if (nextVersion === 1) {
+          const stored = localStorage.getItem('sc_quotation_summary_map');
+          if (stored) {
+            const map = JSON.parse(stored);
+            if (map[lId]?.versions?.length > 0) {
+              nextVersion = Math.max(...map[lId].versions.map((v: any) => Number(v.version) || 0)) + 1;
+            } else if (map[lId]?.count > 0) {
+              nextVersion = (map[lId].count || 0) + 1;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    const targetQId = quotationId || `FW-Q-${leadShort}-V${nextVersion}-${randSuffix}`;
 
     const mergedDoc = normalizeQuotationData(docToApply, baseTemplateDoc || currentDocumentData);
+    mergedDoc.id = targetQId;
+    mergedDoc.lead_id = lId;
+    mergedDoc.lead_version = nextVersion;
+
     const coupleName = mergedDoc?.cover?.coupleName || effectiveLead.name || 'Quotation';
-    const lId = effectiveLead.id;
+    if (!mergedDoc.cover) mergedDoc.cover = {};
+    mergedDoc.cover.coupleName = coupleName;
+    if (effectiveLead.location && !mergedDoc.cover.locationName) {
+      mergedDoc.cover.locationName = effectiveLead.location;
+    }
 
     // 2. Prime sessionStorage & localStorage immediately (0ms hydration in builder)
     try {
@@ -429,9 +473,10 @@ LEAD & CLIENT CONTEXT:
         const newVer = {
           id: targetQId,
           template_id: targetQId,
-          version: 1,
-          version_label: 'V1',
-          title: `${coupleName} - Quotation V1`,
+          lead_id: lId,
+          version: nextVersion,
+          version_label: `V${nextVersion}`,
+          title: `${coupleName} - Quotation V${nextVersion}`,
           couple_name: coupleName,
           is_final: false,
           created_at: new Date().toISOString()
@@ -450,7 +495,7 @@ LEAD & CLIENT CONTEXT:
         const map = stored ? JSON.parse(stored) : {};
         const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
         map[lId] = {
-          count: Math.max(prev.count || 0, 1),
+          count: (prev.count || 0) + 1,
           hasFinal: prev.hasFinal || false,
           finalVersion: prev.finalVersion,
           versions: [newVer, ...(prev.versions || []).filter((v: any) => v.template_id !== targetQId && v.id !== targetQId)]

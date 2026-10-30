@@ -243,7 +243,11 @@ export async function GET(
       return NextResponse.json({ error: 'Lead ID is required' }, { status: 400 });
     }
 
+    const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+    const leadShort6 = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6);
+
     // 1. Fetch lead details, quotation documents, responses & legacy quotes in parallel for ultra-fast response
+    // Includes FW-Q- (Create with AI / New Version), FW-L- (Lead proposals), and explicit lead_id matches!
     const [leadRes, docsRes, responsesRes, quotesRes] = await Promise.all([
       supabaseAdmin
         .from('leads')
@@ -253,7 +257,7 @@ export async function GET(
       supabaseAdmin
         .from('quotation_documents')
         .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-        .eq('lead_id', leadId),
+        .or(`lead_id.eq.${leadId},template_id.ilike.%FW-Q-${leadShortId}%,template_id.ilike.%FW-Q-${leadShort6}%,template_id.ilike.%FW-L-${leadShortId}%,template_id.ilike.%${leadShortId}%`),
       supabaseAdmin
         .from('quotation_responses')
         .select('quotation_id, lead_version, response_type, client_name, client_notes, budget_amount, created_at')
@@ -261,7 +265,7 @@ export async function GET(
       supabaseAdmin
         .from('quotations')
         .select('id, quotation_number, title, status, client_name, client_notes, content_json, public_token, is_final, created_at, updated_at')
-        .eq('client_id', leadId)
+        .or(`client_id.eq.${leadId},quotation_number.ilike.%${leadShortId}%,quotation_number.ilike.%${leadShort6}%`)
     ]);
 
     const effectiveLead = leadRes.data || {
@@ -275,21 +279,14 @@ export async function GET(
     };
 
     // 2. Process quotation documents specifically for this lead
-    let matchedDocs = docsRes.data || [];
-
-    if (!matchedDocs || matchedDocs.length === 0) {
-      const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-      const { data: fallbackDocs } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-        .ilike('template_id', `%FW-L-${leadShortId}%`);
-      
-      // Strictly verify that any fallback doc belongs to this lead only!
-      matchedDocs = (fallbackDocs || []).filter((doc: any) => {
-        const docLeadId = doc.lead_id || doc.content_json?.lead_id;
-        return !docLeadId || docLeadId === leadId;
-      });
-    }
+    let matchedDocs = (docsRes.data || []).filter((doc: any) => {
+      const docLeadId = doc.lead_id || doc.content_json?.lead_id;
+      if (docLeadId) return docLeadId === leadId;
+      if (doc.template_id) {
+        return doc.template_id.includes(leadShortId) || doc.template_id.includes(leadShort6);
+      }
+      return true;
+    });
 
     const allResponses = responsesRes.data || [];
     const allQuotes = quotesRes.data || [];
@@ -320,7 +317,9 @@ export async function GET(
 
     const formattedQuotations = sortedByAge.map((doc: any, idx: number) => {
       const content = doc.content_json || {};
-      const explicitVer = doc.lead_version || content.lead_version || (doc.version > 1 ? doc.version : null);
+      const tidVerMatch = typeof doc.template_id === 'string' ? doc.template_id.match(/-V(\d+)-/i) : null;
+      const tidVer = tidVerMatch ? parseInt(tidVerMatch[1], 10) : null;
+      const explicitVer = doc.lead_version || content.lead_version || tidVer || (doc.version > 1 ? doc.version : null);
       const leadVer = (explicitVer && typeof explicitVer === 'number' && explicitVer > 0)
         ? explicitVer
         : (idx + 1);
