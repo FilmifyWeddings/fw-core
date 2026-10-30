@@ -22,7 +22,10 @@ export async function GET(req: NextRequest) {
     }
     cleanKey = cleanKey.replace(/^\/+/, '');
 
-    const safeFilename = filename.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
+    let safeFilename = filename.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
+    if (safeFilename.toLowerCase().endsWith('.webp')) {
+      safeFilename = safeFilename.replace(/\.webp$/i, '.jpg');
+    }
     const disposition = `attachment; filename="${safeFilename}"`;
 
     try {
@@ -61,7 +64,10 @@ export async function POST(req: NextRequest) {
     }
     cleanKey = cleanKey.replace(/^\/+/, '');
 
-    const safeFilename = downloadName.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
+    let safeFilename = downloadName.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
+    if (safeFilename.toLowerCase().endsWith('.webp')) {
+      safeFilename = safeFilename.replace(/\.webp$/i, '.jpg');
+    }
     const disposition = `attachment; filename="${safeFilename}"`;
 
     try {

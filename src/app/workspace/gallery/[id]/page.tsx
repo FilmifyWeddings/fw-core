@@ -1263,11 +1263,14 @@ function AlbumStudioContent() {
     }
   };
 
-  // Download High-Res Original Photo directly from originals/ folder
+  // Download High-Res Photo (Always in universal 4K .jpg format)
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     try {
       const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
-      const cleanName = getCleanFilename(photo.original_key) || `photo_${photo.id.slice(0, 8)}.jpg`;
+      let cleanName = getCleanFilename(photo.original_key || photo.preview_key || '') || `photo_${photo.id.slice(0, 8)}.jpg`;
+      if (cleanName.toLowerCase().endsWith('.webp')) {
+        cleanName = cleanName.replace(/\.webp$/i, '.jpg');
+      }
       const res = await fetch(
         `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanName)}`
       );
@@ -1286,7 +1289,10 @@ function AlbumStudioContent() {
       }
     } catch (_) {
       const targetKey = photo.original_key || photo.preview_url;
-      const cleanName = getCleanFilename(photo.original_key) || `photo_${photo.id.slice(0, 8)}.jpg`;
+      let cleanName = getCleanFilename(photo.original_key || '') || `photo_${photo.id.slice(0, 8)}.jpg`;
+      if (cleanName.toLowerCase().endsWith('.webp')) {
+        cleanName = cleanName.replace(/\.webp$/i, '.jpg');
+      }
       window.open(`/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName)}`, '_blank');
     }
   };
@@ -1330,7 +1336,10 @@ function AlbumStudioContent() {
             const overallIdx = i + chunkIdx;
             const colName = collections.find((c) => c.id === photo.collection_id)?.name || 'General';
             const cleanCol = colName.replace(/[/\\?%*:|"<>]/g, '_').trim() || 'General';
-            const filename = getCleanFilename(photo.original_key || photo.file_name || `photo_${overallIdx + 1}.jpg`);
+            let filename = getCleanFilename(photo.original_key || photo.file_name || `photo_${overallIdx + 1}.jpg`);
+            if (filename.toLowerCase().endsWith('.webp')) {
+              filename = filename.replace(/\.webp$/i, '.jpg');
+            }
 
             setZipProgress({
               current: overallIdx + 1,

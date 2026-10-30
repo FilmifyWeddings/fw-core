@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
     // 3. Generate Backblaze B2 Presigned Upload URLs in parallel
     const timestamp = Date.now();
     const isBatch = Array.isArray(body.files);
+    const includeOriginals = body.includeOriginals === true;
 
     const results = await Promise.all(
       rawFiles.map(async (fileItem, index) => {
@@ -69,15 +70,25 @@ export async function POST(req: NextRequest) {
         const randomSuffix = Math.random().toString(36).substring(2, 7);
         const baseName = fname.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
-        const originalKey = `galleries/${targetWorkspaceId}/${galleryId}/original/${timestamp}_${randomSuffix}_${baseName}.jpg`;
-        const previewKey = `galleries/${targetWorkspaceId}/${galleryId}/previews/${timestamp}_${randomSuffix}_${baseName}.webp`;
+        // Previews are 4K JPEG for ultra-fast hardware SIMD encoding and universal .jpg downloads!
+        const previewKey = `galleries/${targetWorkspaceId}/${galleryId}/previews/${timestamp}_${randomSuffix}_${baseName}.jpg`;
         const thumbKey = `galleries/${targetWorkspaceId}/${galleryId}/thumbs/${timestamp}_${randomSuffix}_${baseName}.webp`;
+        const originalKey = includeOriginals 
+          ? `galleries/${targetWorkspaceId}/${galleryId}/original/${timestamp}_${randomSuffix}_${baseName}.jpg`
+          : previewKey;
 
-        const [originalUploadUrl, previewUploadUrl, thumbUploadUrl] = await Promise.all([
-          getGalleryPresignedUploadUrl(originalKey, ftype, 3600, B2_GALLERY_BUCKET_NAME),
-          getGalleryPresignedUploadUrl(previewKey, 'image/webp', 3600, B2_GALLERY_BUCKET_NAME),
+        const urlPromises: Promise<string | null>[] = [
+          getGalleryPresignedUploadUrl(previewKey, 'image/jpeg', 3600, B2_GALLERY_BUCKET_NAME),
           getGalleryPresignedUploadUrl(thumbKey, 'image/webp', 3600, B2_GALLERY_BUCKET_NAME),
-        ]);
+        ];
+
+        if (includeOriginals) {
+          urlPromises.push(getGalleryPresignedUploadUrl(originalKey, ftype, 3600, B2_GALLERY_BUCKET_NAME));
+        } else {
+          urlPromises.push(Promise.resolve(null));
+        }
+
+        const [previewUploadUrl, thumbUploadUrl, originalUploadUrl] = await Promise.all(urlPromises);
 
         return {
           filename: fname,
