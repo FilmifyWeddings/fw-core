@@ -70,25 +70,18 @@ export async function POST(req: NextRequest) {
         const randomSuffix = Math.random().toString(36).substring(2, 7);
         const baseName = fname.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
-        // Previews are 4K JPEG for ultra-fast hardware SIMD encoding and universal .jpg downloads!
+        // 1. Preview: 2048px JPEG (~300-350 KB) for instant millisecond lightbox popup swiping
         const previewKey = `galleries/${targetWorkspaceId}/${galleryId}/previews/${timestamp}_${randomSuffix}_${baseName}.jpg`;
+        // 2. Thumbnail: 480px WebP (~15 KB) for high-speed gallery grid scrolling
         const thumbKey = `galleries/${targetWorkspaceId}/${galleryId}/thumbs/${timestamp}_${randomSuffix}_${baseName}.webp`;
-        const originalKey = includeOriginals 
-          ? `galleries/${targetWorkspaceId}/${galleryId}/original/${timestamp}_${randomSuffix}_${baseName}.jpg`
-          : previewKey;
+        // 3. Original: If includeOriginals, raw camera master. If !includeOriginals, ~1 MB 4K Ultra Sharp JPEG!
+        const originalKey = `galleries/${targetWorkspaceId}/${galleryId}/original/${timestamp}_${randomSuffix}_${baseName}.jpg`;
 
-        const urlPromises: Promise<string | null>[] = [
+        const [previewUploadUrl, thumbUploadUrl, originalUploadUrl] = await Promise.all([
           getGalleryPresignedUploadUrl(previewKey, 'image/jpeg', 3600, B2_GALLERY_BUCKET_NAME),
           getGalleryPresignedUploadUrl(thumbKey, 'image/webp', 3600, B2_GALLERY_BUCKET_NAME),
-        ];
-
-        if (includeOriginals) {
-          urlPromises.push(getGalleryPresignedUploadUrl(originalKey, ftype, 3600, B2_GALLERY_BUCKET_NAME));
-        } else {
-          urlPromises.push(Promise.resolve(null));
-        }
-
-        const [previewUploadUrl, thumbUploadUrl, originalUploadUrl] = await Promise.all(urlPromises);
+          getGalleryPresignedUploadUrl(originalKey, includeOriginals ? ftype : 'image/jpeg', 3600, B2_GALLERY_BUCKET_NAME),
+        ]);
 
         return {
           filename: fname,

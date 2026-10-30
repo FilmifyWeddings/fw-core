@@ -68,20 +68,20 @@ export function UploadSettingsModal({
     const totalOriginalBytes = files.reduce((acc, f) => acc + f.size, 0) || (fileCount * 20 * 1024 * 1024);
     const avgOriginalMb = totalOriginalBytes > 0 ? totalOriginalBytes / (1024 * 1024) : fileCount * 20;
 
-    let perPhotoCompressedKb = 650; // 100% 4K WebP
+    let perPhotoCompressedKb = 1350; // ~1.0 MB 4K Master + ~350 KB Lightbox Preview
     let qualityTitle = '4K Ultra HD Sharpness';
-    let resolutionDesc = '3840px (Ultra 4K UHD)';
-    let visualDesc = 'Same resolution as camera sensor. Retains full sharpness, eyelashes & fabric details with 85% reduced size.';
+    let resolutionDesc = '3840px (Ultra 4K UHD Master ~1 MB)';
+    let visualDesc = 'Full sensor sharpness & fabric details in ~1 MB 4K JPG + instant ~300 KB popup lightbox preview.';
 
     if (qualityLevel === 30) {
-      perPhotoCompressedKb = 180;
+      perPhotoCompressedKb = 350;
       qualityTitle = 'Web Fast / Proofing';
-      resolutionDesc = '1600px (Light HD)';
+      resolutionDesc = '1440px (Light HD)';
       visualDesc = 'Ultra-light previews for instant WhatsApp sharing and quick mobile client proofing. Lowest cloud storage.';
     } else if (qualityLevel === 50) {
-      perPhotoCompressedKb = 380;
+      perPhotoCompressedKb = 650;
       qualityTitle = 'HD Balanced';
-      resolutionDesc = '2560px (2.5K QHD)';
+      resolutionDesc = '1800px (Balanced HD)';
       visualDesc = 'Balanced clarity for laptops, social media, and client tablets with fast streaming.';
     }
 
