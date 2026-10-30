@@ -112,12 +112,12 @@ export function AiQuotationModal({
   const [missingInfo, setMissingInfo] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<any[]>([]);
 
-  const activeTemplateObj = availableTemplates?.find(t => t.id === (activeTemplateId || selectedTemplateId)) || availableTemplates?.find(t => !t.is_system_template) || availableTemplates?.[0];
+  const activeTemplateObj = availableTemplates?.find(t => t.id === (activeTemplateId || selectedTemplateId)) || availableTemplates?.find(t => t.is_default) || availableTemplates?.[0];
   let resolvedBaseDoc = activeTemplateObj?.content_json || currentDocumentData || null;
   if (!resolvedBaseDoc && typeof window !== 'undefined') {
     try {
       const cachedTmpls = getSynchronousCachedTemplates(effectiveLead?.workspace_id);
-      const foundCached = cachedTmpls.find(t => t.id === (activeTemplateId || selectedTemplateId)) || cachedTmpls.find(t => !t.is_system_template) || cachedTmpls[0];
+      const foundCached = cachedTmpls.find(t => t.id === (activeTemplateId || selectedTemplateId)) || cachedTmpls.find(t => t.is_default) || cachedTmpls[0];
       if (foundCached?.content_json) {
         resolvedBaseDoc = foundCached.content_json;
       }

@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       validTemplates = adminTemplates || [];
     } else {
       // Regular Studio Owners see:
-      // 1. Their own workspace templates
+      // 1. Their own workspace templates (with user default first)
       const { data: userTemplates } = await supabaseAdmin
         .from('quotation_templates')
         .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
@@ -59,48 +59,43 @@ export async function GET(req: NextRequest) {
         .not('id', 'ilike', 'FW-L-%')
         .eq('is_system_template', false)
         .or(`workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}`)
+        .order('is_default', { ascending: false })
         .order('updated_at', { ascending: false });
 
-      // 2. Studio Owners see ONLY their custom templates if they exist; NEVER demo templates!
-      const seen = new Set<string>();
-      if (userTemplates && userTemplates.length > 0) {
-        userTemplates.forEach(t => {
-          if (!seen.has(t.id)) {
-            seen.add(t.id);
-            validTemplates.push(t);
-          }
-        });
-      } else {
-        // ONLY fallback to published system templates if studio has zero custom templates
-        const { data: activeSysTmpls } = await supabaseAdmin
-          .from('quotation_templates')
-          .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
-          .eq('is_system_template', true)
-          .eq('status', 'published')
-          .not('status', 'in', '("archived","deleted")')
-          .not('id', 'ilike', 'FW-Q-%')
-          .not('id', 'ilike', 'FW-L-%')
-          .order('is_default', { ascending: false })
-          .order('updated_at', { ascending: false });
+      // 2. Published system templates (e.g. "Premium" FW-USER-SJ05RN)
+      const { data: activeSysTmpls } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+        .eq('is_system_template', true)
+        .eq('status', 'published')
+        .not('status', 'in', '("archived","deleted")')
+        .not('id', 'ilike', 'FW-Q-%')
+        .not('id', 'ilike', 'FW-L-%')
+        .order('updated_at', { ascending: false });
 
-        (activeSysTmpls || []).forEach(t => {
-          if (!seen.has(t.id)) {
-            seen.add(t.id);
-            validTemplates.push(t);
-          }
-        });
-      }
+      const seen = new Set<string>();
+      (userTemplates || []).forEach(t => {
+        if (!seen.has(t.id)) {
+          seen.add(t.id);
+          validTemplates.push(t);
+        }
+      });
+      (activeSysTmpls || []).forEach(t => {
+        if (!seen.has(t.id)) {
+          seen.add(t.id);
+          validTemplates.push(t);
+        }
+      });
     }
 
     const templateIds = validTemplates.map(t => t.id);
 
     // Fetch document content_json using supabaseAdmin (bypasses RLS)
     const docsMap: Record<string, any> = {};
-    const leadDocsSet = new Set<string>();
     if (templateIds.length > 0) {
       const { data: docsData, error: docsErr } = await supabaseAdmin
         .from('quotation_documents')
-        .select('template_id, content_json, document_json, lead_id')
+        .select('template_id, content_json, lead_id')
         .in('template_id', templateIds);
 
       if (docsErr) {
@@ -109,12 +104,8 @@ export async function GET(req: NextRequest) {
 
       if (docsData) {
         docsData.forEach(d => {
-          const docContent = d.content_json || d.document_json;
-          if (d.template_id && docContent) {
-            docsMap[d.template_id] = docContent;
-          }
-          if (d.lead_id || (docContent && (docContent as any).lead_id)) {
-            leadDocsSet.add(d.template_id);
+          if (d.template_id && d.content_json) {
+            docsMap[d.template_id] = d.content_json;
           }
         });
       }
@@ -144,11 +135,11 @@ export async function GET(req: NextRequest) {
 
     const results = validTemplates
       .filter(t => {
-        // Exclude lead-specific quotation instances and records with lead_id
+        // Exclude lead-specific quotation instances
         if (t.id.startsWith('FW-Q-') || t.id.startsWith('FW-L-')) return false;
-        if (leadDocsSet.has(t.id)) return false;
-        if (docsMap[t.id]?.lead_id) return false;
-        return true;
+        // Require valid content_json so empty or ghost templates are never returned
+        const hasContent = Boolean(docsMap[t.id]);
+        return hasContent;
       })
       .map(t => {
         let isDefault = false;

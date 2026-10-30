@@ -142,6 +142,7 @@ let memCachedQuotations: SavedQuotation[] = [];
 let memCachedUserImages: UserGalleryImage[] = [];
 
 const ARCHIVED_LEAD_DESIGNS = new Set([
+  'FW-USER-KNENG01',
   'FW-USER-OKOTVH',
   'FW-USER-52NYUK',
   'FW-USER-SFZNFD',
@@ -971,6 +972,7 @@ export default function WorkspaceQuotationsGalleryPage() {
 
         const filteredTmplData = (tmplData || []).filter((t: any) => {
           if (!t.id) return false;
+          if (ARCHIVED_LEAD_DESIGNS.has(String(t.id))) return false;
           // Exclude lead quotation instances from Your Designs gallery
           if (t.id.startsWith('FW-Q-') || t.id.startsWith('FW-L-')) return false;
           return true;

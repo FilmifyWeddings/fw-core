@@ -284,16 +284,14 @@ export function LeadQuotationModal({
       const json = await res.json().catch(() => ({}));
 
       if (json.success && Array.isArray(json.templates) && json.templates.length > 0) {
-        const userOnly = json.templates.filter((t: StudioTemplateItem) => !t.is_system_template && t.user_id !== 'SYSTEM');
-        const cleanTemplates = userOnly.length > 0 ? userOnly : json.templates;
-        setAvailableTemplates(cleanTemplates);
-        persistTemplatesToCache(cleanTemplates, currentUserId);
+        setAvailableTemplates(json.templates);
+        persistTemplatesToCache(json.templates, currentUserId);
 
         setSelectedTemplateId(prev => {
-          if (prev && cleanTemplates.some((t: StudioTemplateItem) => t.id === prev)) {
+          if (prev && json.templates.some((t: StudioTemplateItem) => t.id === prev)) {
             return prev; // Strictly preserve current user selection!
           }
-          const activeDefault = cleanTemplates.find((t: StudioTemplateItem) => t.is_default) || cleanTemplates[0];
+          const activeDefault = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
           return activeDefault ? activeDefault.id : prev;
         });
       }

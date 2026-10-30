@@ -28,10 +28,7 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
   
   // 1. Direct memory cache (fastest, 0ms)
   if (memoryTemplatesCache[wsKey] && memoryTemplatesCache[wsKey].length > 0) {
-    const mem = memoryTemplatesCache[wsKey];
-    const userOnly = mem.filter(t => !t.is_system_template && t.user_id !== 'SYSTEM');
-    if (userOnly.length > 0) return userOnly;
-    return mem;
+    return memoryTemplatesCache[wsKey];
   }
 
   // 2. LocalStorage & SessionStorage cache (strictly scoped to active studio)
@@ -49,19 +46,15 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Strictly filter out lead quotations and any items with lead_id
+            // Strictly filter out lead quotations
             const clean = parsed.filter((t: any) => {
               if (!t || !t.id) return false;
               if (String(t.id).startsWith('FW-Q-') || String(t.id).startsWith('FW-L-')) return false;
-              if (t.lead_id || t.content_json?.lead_id) return false;
               return true;
             });
             if (clean.length > 0) {
-              // ⚡ STRICT RULE: If studio owner has custom saved templates, NEVER return demo templates!
-              const userOnly = clean.filter((t: any) => !t.is_system_template && t.user_id !== 'SYSTEM');
-              const finalTemplates = userOnly.length > 0 ? userOnly : clean;
-              memoryTemplatesCache[wsKey] = finalTemplates;
-              return finalTemplates;
+              memoryTemplatesCache[wsKey] = clean;
+              return clean;
             }
           }
         }
