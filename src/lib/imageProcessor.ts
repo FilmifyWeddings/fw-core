@@ -222,6 +222,8 @@ export function uploadBlobToPresignedUrl(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    // Generous 120-second timeout to support slow/busy Wi-Fi connections
+    xhr.timeout = 120000;
 
     if (signal) {
       if (signal.aborted) {
@@ -252,8 +254,8 @@ export function uploadBlobToPresignedUrl(
       }
     };
 
-    xhr.onerror = () => reject(new Error('Network error during storage upload'));
-    xhr.ontimeout = () => reject(new Error('Storage upload timed out'));
+    xhr.onerror = () => reject(new Error('Network error during storage upload (Wi-Fi dropped)'));
+    xhr.ontimeout = () => reject(new Error('Storage upload timed out (slow Wi-Fi)'));
 
     xhr.send(blob);
   });
@@ -288,160 +290,6 @@ export async function batchUploadPhotos(
   const errors: string[] = [];
   const pendingRegistration: any[] = [];
 
-  // 0. Check if StudioCore Native Desktop Engine is running locally on 127.0.0.1:41789
-  let isDesktopEngineActive = false;
-  if (typeof window !== 'undefined') {
-    try {
-      const probe = await fetch('http://127.0.0.1:41789/status', {
-        method: 'GET',
-        mode: 'cors',
-        signal: AbortSignal.timeout(1200),
-      });
-      if (probe.ok) {
-        const pData = await probe.json();
-        if (pData.status === 'online') {
-          isDesktopEngineActive = true;
-        }
-      }
-    } catch (_) {}
-  }
-
-  // 0B. If Desktop Engine is active, pipe uploads directly to the native sliding-window turbo engine!
-  if (isDesktopEngineActive) {
-    console.log('[ImageProcessor] ⚡ StudioCore Native Desktop Engine detected on 127.0.0.1:41789! Routing via smooth sliding-window turbo pipeline...');
-    if (onProgress && files.length > 0) {
-      onProgress(0, total, 5, `[Turbo Engine] Uploading ${files[0].name}...`);
-    }
-    const SLIDING_CONCURRENCY = 6;
-    let fileIndex = 0;
-
-    const worker = async () => {
-      while (fileIndex < files.length) {
-        if (signal?.aborted) throw new Error('Upload cancelled by user');
-        const currentIndex = fileIndex++;
-        const file = files[currentIndex];
-        if (!file) break;
-
-        if (onProgress) {
-          const pct = Math.max(5, Math.round((completed / total) * 100));
-          onProgress(completed, total, pct, `[Turbo Engine] Uploading ${file.name}...`);
-        }
-
-        try {
-          const res = await fetch('http://127.0.0.1:41789/api/upload-file', {
-            method: 'POST',
-            mode: 'cors',
-            headers: {
-              'x-gallery-id': galleryId,
-              'x-filename': file.name,
-              'x-filesize': file.size.toString(),
-              'x-filetype': file.type || 'image/jpeg',
-              'x-workspace-id': workspaceId || '',
-              'x-collection-id': collectionId && collectionId !== 'all' ? collectionId : '',
-              'x-api-origin': typeof window !== 'undefined' ? window.location.origin : 'https://studiocore.in',
-            },
-            body: file,
-            signal,
-          });
-          const resJson = await res.json();
-          if (resJson.success) {
-            completed++;
-            if (onProgress) {
-              onProgress(completed, total, Math.round((completed / total) * 100), file.name);
-            }
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(
-                new CustomEvent('studiocore:gallery_photos_refresh', {
-                  detail: { galleryId },
-                })
-              );
-            }
-            continue;
-          } else {
-            console.warn(`[DesktopEngine] Upload failed for ${file.name}: ${resJson.error}. Falling back to browser pipeline...`);
-          }
-        } catch (err: any) {
-          console.warn(`[DesktopEngine] Loopback error for ${file.name}: ${err.message}. Falling back to browser pipeline...`);
-        }
-
-        // Seamless In-Flight Fallback: If desktop engine ever fails, upload directly via browser pipeline!
-        try {
-          if (onProgress) {
-            onProgress(completed, total, Math.max(5, Math.round((completed / total) * 100)), `[Cloud Fallback] Uploading ${file.name}...`);
-          }
-          const variants = await generateImageVariants(file, qualityLevel);
-          const cleanName = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
-          const urlRes = await fetch('/api/gallery/upload-url', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              galleryId,
-              filename: cleanName,
-              originalType: file.type || 'image/jpeg',
-              workspaceId,
-            }),
-            signal,
-          });
-          const urlJson = await urlRes.json();
-          if (!urlJson.success) throw new Error(urlJson.error || 'Failed to get upload URLs');
-
-          const uploadJobs = [
-            uploadBlobToPresignedUrl(urlJson.previewUploadUrl, variants.preview, 'image/webp', undefined, signal),
-            uploadBlobToPresignedUrl(urlJson.thumbUploadUrl, variants.thumb, 'image/webp', undefined, signal),
-          ];
-
-          if (includeOriginals && urlJson.originalUploadUrl) {
-            uploadJobs.push(
-              uploadBlobToPresignedUrl(urlJson.originalUploadUrl, file, file.type || 'image/jpeg', undefined, signal)
-            );
-          }
-
-          await Promise.all(uploadJobs);
-
-          const regRes = await fetch('/api/gallery/photos/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              galleryId,
-              photos: [{
-                gallery_id: galleryId,
-                collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
-                original_key: includeOriginals ? urlJson.originalKey : urlJson.previewKey,
-                preview_key: urlJson.previewKey,
-                thumbnail_key: urlJson.thumbKey,
-                width: variants.width,
-                height: variants.height,
-                size_bytes: includeOriginals ? file.size : variants.preview.size,
-              }],
-            }),
-            signal,
-          });
-          const regJson = await regRes.json();
-          if (regJson.success) {
-            completed++;
-            if (onProgress) {
-              onProgress(completed, total, Math.round((completed / total) * 100), file.name);
-            }
-          } else {
-            errors.push(`${file.name}: ${regJson.error || 'Registration failed'}`);
-          }
-        } catch (fbErr: any) {
-          errors.push(`${file.name}: ${fbErr.message}`);
-        }
-      }
-    };
-
-    // Run 6 concurrent workers in sliding window
-    const workers = Array.from({ length: Math.min(SLIDING_CONCURRENCY, files.length) }, () => worker());
-    await Promise.all(workers);
-
-    return {
-      success: errors.length === 0,
-      uploadedCount: completed,
-      errors,
-    };
-  }
-
   const manifest = getUploadedManifest(galleryId);
 
   // Helper to register pending photos in chunks and stream them to UI live!
@@ -471,10 +319,11 @@ export async function batchUploadPhotos(
     }
   };
 
-  // Adaptive parallel concurrency: 6 files simultaneously on Desktop, 4 on Mobile for optimal speed & memory
-  const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
-  const CONCURRENCY = isMobile ? 4 : 6;
+  // Adaptive parallel concurrency: 3 files simultaneously (6 parallel streams)
+  // Perfectly tuned for Indian home/office Wi-Fi (30-100 Mbps) to eliminate TCP bufferbloat & socket drops
+  const CONCURRENCY = 3;
   const MAX_RETRY_ATTEMPTS = 5;
+  const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
   const REGISTRATION_BATCH_SIZE = isMobile ? 8 : 16;
 
   if (onProgress && files.length > 0) {
@@ -518,6 +367,15 @@ export async function batchUploadPhotos(
 
     await Promise.all(
       batch.map(async (file) => {
+        // Instant Manifest Check: If file is already uploaded to this gallery, skip in 0ms!
+        if (isPhotoInManifest(galleryId, file.name, file.size)) {
+          completed++;
+          if (onProgress) {
+            onProgress(completed, total, Math.round((completed / total) * 100), `${file.name} (Previously Uploaded)`);
+          }
+          return;
+        }
+
         let attempts = 0;
         let lastErr: any = null;
 
