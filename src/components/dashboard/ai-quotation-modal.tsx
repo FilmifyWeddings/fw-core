@@ -336,6 +336,45 @@ LEAD & CLIENT CONTEXT:
 
   const applyDocAndNavigate = async (docToApply: any) => {
     if (!docToApply) return;
+
+    // ⚡ INSTANT 0ms OPTIMISTIC BUILDER APPLY:
+    // If inside Quotation Builder with an active quotationId & onApplied callback,
+    // apply data immediately to canvas in 0ms without any network blocking or delay!
+    if (quotationId && onApplied) {
+      const mergedDoc = normalizeQuotationData(docToApply, currentDocumentData || baseTemplateDoc);
+      try {
+        sessionStorage.setItem(`current_quotation_doc_${quotationId}`, JSON.stringify(mergedDoc));
+        sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quotationId, document: mergedDoc }));
+      } catch (_) {}
+
+      onApplied(mergedDoc, quotationId);
+      onClose();
+
+      // Silent background cloud persistence
+      (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token || '';
+          await fetch('/api/quotations/ai-apply', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              quotationId,
+              document: mergedDoc
+            })
+          });
+          const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
+          await cacheDocumentLocal(quotationId, mergedDoc, 1);
+        } catch (e) {
+          console.warn('[AI Apply Background Persist]:', e);
+        }
+      })();
+      return;
+    }
+
     setApplying(true);
     setErrorMsg(null);
     try {
@@ -475,21 +514,21 @@ LEAD & CLIENT CONTEXT:
   };
 
   const handleQuickCreateAndOpen = async () => {
-    setGenerating(true);
     setErrorMsg(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
-
       const notes = additionalNotes.trim();
+      // FAST PATH 1: Synchronously parse pasted AI JSON in 0ms before any network calls!
       const clientParsedDoc = tryParsePastedAiJson(notes, baseTemplateDoc || currentDocumentData);
 
-      // FAST PATH 1: If user pasted valid JSON directly from ChatGPT, map and apply in 0ms!
       if (clientParsedDoc) {
         setExtractedDoc(clientParsedDoc);
         await applyDocAndNavigate(clientParsedDoc);
         return;
       }
+
+      setGenerating(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
 
       // FAST PATH 2: If creating for a new lead and have plain notes, call create-for-lead directly with additionalNotes
       if (!quotationId && effectiveLead.id && effectiveLead.id !== 'draft') {

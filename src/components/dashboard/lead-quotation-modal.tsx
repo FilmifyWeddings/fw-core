@@ -199,6 +199,22 @@ export function LeadQuotationModal({
 
       const candidateVersions = (rawCandidates || []).filter((item: any) => !item.lead_id || item.lead_id === lead.id);
 
+      // Check if we already know this lead has 0 quotations from summary map or lead payload
+      let knownHasZero = false;
+      try {
+        const smStr = localStorage.getItem('sc_quotation_summary_map');
+        if (smStr) {
+          const parsedSm = JSON.parse(smStr);
+          if (parsedSm[lead.id]) {
+            if (parsedSm[lead.id].count === 0 || (Array.isArray(parsedSm[lead.id].versions) && parsedSm[lead.id].versions.length === 0)) {
+              knownHasZero = true;
+            }
+          }
+        }
+      } catch (_) {}
+
+      const hasDefinitiveZeroKnowledge = knownHasZero || (Array.isArray(initialQuotations) && initialQuotations.length === 0 && Boolean((lead as any).raw_payload || lead.id));
+
       if (candidateVersions.length > 0) {
         const reconciled = candidateVersions.map((item: any) => ({
           ...item,
@@ -219,13 +235,17 @@ export function LeadQuotationModal({
         }));
         setQuotations(reconciled);
         setLoading(false);
+      } else if (hasDefinitiveZeroKnowledge) {
+        // ⚡ INSTANT 0ms ZERO STATE! If this lead has 0 quotations, show "No quotation created yet" immediately with 0ms delay!
+        setQuotations([]);
+        setLoading(false);
       } else {
         setQuotations([]);
         setLoading(true);
       }
 
       // Silent background refresh to fetch public tokens and update badges
-      loadQuotations(candidateVersions.length > 0);
+      loadQuotations(candidateVersions.length > 0 || hasDefinitiveZeroKnowledge);
       loadAvailableTemplates();
     } else {
       setQuotations([]);
@@ -334,15 +354,20 @@ export function LeadQuotationModal({
       }
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
       const res = await fetch(`/api/leads/${lead.id}/quotations`, {
+        signal: controller.signal,
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
+      clearTimeout(timeoutId);
 
       const text = await res.text();
       let json: any = {};
@@ -384,8 +409,11 @@ export function LeadQuotationModal({
         setQuotations([]);
       }
     } catch (err: any) {
-      console.error('[LeadQuotationModal] Fetch error:', err);
+      if (err.name !== 'AbortError') {
+        console.error('[LeadQuotationModal] Fetch error:', err);
+      }
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };

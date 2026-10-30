@@ -171,15 +171,17 @@ export function FinanceFiltersModal({
     );
   }, [freelancerMembers, teamSearchQuery]);
 
-  // Selected Team Member Label
+  // Selected Team Member / Handled By Label
   const selectedMemberDisplay = useMemo(() => {
-    if (teamMemberFilter === 'all') return '👥 All Team Members';
+    if (teamMemberFilter === 'all') {
+      return activeTab === 'invoices' ? '👥 All Handled By' : '👥 All Team Members';
+    }
     if (teamMemberFilter === 'unassigned') return '👤 Unassigned Only';
     const found = teamMembersDetailed.find(
       (m) => m.id === teamMemberFilter || m.name.toLowerCase() === teamMemberFilter.toLowerCase()
     );
     return found?.name || teamMemberFilter;
-  }, [teamMemberFilter, teamMembersDetailed]);
+  }, [teamMemberFilter, teamMembersDetailed, activeTab]);
 
   // Filtered clients list
   const filteredClients = useMemo(() => {
@@ -346,7 +348,7 @@ export function FinanceFiltersModal({
             <div className="relative" ref={teamDropdownRef}>
               <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center justify-between">
                 <span className="flex items-center gap-1">
-                  <Users className="w-3 h-3 text-purple-600" /> Team Member
+                  <Users className="w-3 h-3 text-purple-600" /> {activeTab === 'invoices' ? 'Handled By' : 'Team Member'}
                 </span>
                 {teamMemberFilter !== 'all' && (
                   <button
@@ -376,7 +378,7 @@ export function FinanceFiltersModal({
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
-                      placeholder="Search member or role..."
+                      placeholder={activeTab === 'invoices' ? 'Search handled by staff...' : 'Search member or role...'}
                       value={teamSearchQuery}
                       onChange={(e) => setTeamSearchQuery(e.target.value)}
                       className="w-full pl-8 pr-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none"
@@ -399,7 +401,7 @@ export function FinanceFiltersModal({
                       }`}
                     >
                       <span className="flex items-center gap-2">
-                        <span>👥</span> All Team Members
+                        <span>👥</span> {activeTab === 'invoices' ? 'All Handled By' : 'All Team Members'}
                       </span>
                       {teamMemberFilter === 'all' && <Check className="w-3.5 h-3.5" />}
                     </button>
@@ -636,10 +638,34 @@ export function FinanceFiltersModal({
                   <option value="all">⚡ All Status</option>
                   <option value="overall_turnover">📈 Overall Turnover</option>
                   <option value="received">💰 Payment Received</option>
+                  <option value="partially_paid">🌓 Partially Paid</option>
                   <option value="paid">✅ Fully Paid</option>
                   <option value="pending">⏳ Pending Due</option>
                   <option value="overdue_only">⚠️ Overdue Dues Only</option>
                   <option value="trash">🗑️ Trash (Archived / Soft-Deleted)</option>
+                </select>
+              </div>
+            )}
+
+            {/* REVENUE TYPE / PAYMENT NATURE FILTER (FOR INVOICES TAB) */}
+            {activeTab !== 'expenses' && setRevenueTypeFilter && (
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center justify-between">
+                  <span>Revenue Type / Payment Nature</span>
+                  {revenueTypeFilter && revenueTypeFilter !== 'ALL' && (
+                    <span className="text-[9px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-md border border-amber-300">
+                      Active
+                    </span>
+                  )}
+                </label>
+                <select
+                  value={revenueTypeFilter || 'ALL'}
+                  onChange={(e) => setRevenueTypeFilter(e.target.value as any)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">💰 All Payments (Default)</option>
+                  <option value="NEW_BOOKING">✨ New Booking / Advance</option>
+                  <option value="DUE_BALANCE">⚖️ Due Balance / Milestone Clearances</option>
                 </select>
               </div>
             )}
