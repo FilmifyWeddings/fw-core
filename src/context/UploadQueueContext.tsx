@@ -3,6 +3,11 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { batchUploadPhotos, getUploadedManifest } from '../lib/imageProcessor';
 
+export interface UploadOptions {
+  qualityLevel?: 30 | 50 | 100;
+  includeOriginals?: boolean;
+}
+
 export interface UploadJob {
   id: string;
   galleryId: string;
@@ -18,6 +23,9 @@ export interface UploadJob {
   abortController?: AbortController;
   startedAt: number;
   completedAt?: number;
+  qualityLevel?: 30 | 50 | 100;
+  includeOriginals?: boolean;
+  stage?: 'previews' | 'originals' | 'completed';
 }
 
 export interface InterruptedJobInfo {
@@ -42,7 +50,8 @@ interface UploadQueueContextType {
     collectionId: string | undefined,
     collectionName: string,
     files: File[],
-    workspaceId?: string
+    workspaceId?: string,
+    options?: UploadOptions
   ) => string;
   cancelJob: (jobId: string) => void;
   retryJob: (jobId: string) => void;
@@ -163,7 +172,16 @@ export function UploadQueueProvider({ children }: { children: React.ReactNode })
         },
         nextJob.collectionId,
         undefined,
-        controller.signal
+        controller.signal,
+        {
+          qualityLevel: nextJob.qualityLevel || 100,
+          includeOriginals: nextJob.includeOriginals ?? false,
+          onStageChange: (stage) => {
+            setJobs((prev) =>
+              prev.map((j) => (j.id === nextJob.id ? { ...j, stage } : j))
+            );
+          },
+        }
       );
 
       // Mark completed or failed with accurate counts and error preservation
@@ -220,7 +238,8 @@ export function UploadQueueProvider({ children }: { children: React.ReactNode })
       collectionId: string | undefined,
       collectionName: string,
       files: File[],
-      workspaceId?: string
+      workspaceId?: string,
+      options?: UploadOptions
     ): string => {
       if (files.length === 0) return '';
 
@@ -237,6 +256,9 @@ export function UploadQueueProvider({ children }: { children: React.ReactNode })
         status: 'queued',
         errors: [],
         startedAt: Date.now(),
+        qualityLevel: options?.qualityLevel ?? 100,
+        includeOriginals: options?.includeOriginals ?? false,
+        stage: 'previews',
       };
 
       setJobs((prev) => [...prev, newJob]);

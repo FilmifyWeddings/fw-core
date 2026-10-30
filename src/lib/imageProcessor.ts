@@ -59,9 +59,27 @@ export function isPhotoInManifest(galleryId: string, filename: string, sizeBytes
  * Generates 1920px Preview (WebP 80%) and 400px Thumbnail (WebP 70%) in the browser.
  * Memory-safe: aggressively closes bitmaps and resets canvas buffers to 1x1 to force GPU VRAM deallocation.
  */
-export async function generateImageVariants(file: File): Promise<ImageVariants> {
+export async function generateImageVariants(
+  file: File,
+  qualityLevel: 30 | 50 | 100 = 100
+): Promise<ImageVariants> {
   let width = 1920;
   let height = 1080;
+
+  // Determine dimension and WebP quality based on selected preset
+  let maxPreviewDim = 3840; // 100% = True 4K Ultra Sharp
+  let previewQuality = 0.82; // Retains full sensor sharpness & color depth
+
+  if (qualityLevel === 30) {
+    maxPreviewDim = 1600;
+    previewQuality = 0.55;
+  } else if (qualityLevel === 50) {
+    maxPreviewDim = 2560;
+    previewQuality = 0.70;
+  }
+
+  // Micro-sleep to yield main thread back to browser scheduler (0% UI freeze)
+  await new Promise((r) => setTimeout(r, 8));
 
   try {
     if (typeof createImageBitmap === 'function') {
@@ -69,9 +87,9 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
       width = bitmap.width;
       height = bitmap.height;
 
-      // 1. Generate 2048px 2K Preview Blob (PhotoOwl Style High-Res ~115KB)
+      // 1. Generate 4K / HD Preview Blob
       const previewCanvas = document.createElement('canvas');
-      const previewScale = Math.min(2048 / Math.max(bitmap.width, bitmap.height), 1);
+      const previewScale = Math.min(maxPreviewDim / Math.max(bitmap.width, bitmap.height), 1);
       previewCanvas.width = Math.max(1, Math.round(bitmap.width * previewScale));
       previewCanvas.height = Math.max(1, Math.round(bitmap.height * previewScale));
       const pCtx = previewCanvas.getContext('2d', { alpha: false });
@@ -84,7 +102,7 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
         previewCanvas.toBlob(
           (b) => (b ? resolve(b) : reject(new Error('Preview conversion failed'))),
           'image/webp',
-          0.78
+          previewQuality
         );
       });
 
@@ -92,7 +110,7 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
       previewCanvas.width = 1;
       previewCanvas.height = 1;
 
-      // 2. Generate 480px Grid Thumbnail Blob (PhotoOwl Style Low-Res ~9.9KB)
+      // 2. Generate 480px Grid Thumbnail Blob (Ultra-light ~12KB)
       const thumbCanvas = document.createElement('canvas');
       const thumbScale = Math.min(480 / Math.max(bitmap.width, bitmap.height), 1);
       thumbCanvas.width = Math.max(1, Math.round(bitmap.width * thumbScale));
@@ -146,13 +164,13 @@ export async function generateImageVariants(file: File): Promise<ImageVariants> 
 
       // 1. Preview
       const previewCanvas = document.createElement('canvas');
-      const pScale = Math.min(2048 / Math.max(width, height), 1);
+      const pScale = Math.min(maxPreviewDim / Math.max(width, height), 1);
       previewCanvas.width = Math.max(1, Math.round(width * pScale));
       previewCanvas.height = Math.max(1, Math.round(height * pScale));
       const pCtx = previewCanvas.getContext('2d', { alpha: false });
       pCtx?.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height);
       const previewBlob = await new Promise<Blob>((res) =>
-        previewCanvas.toBlob((b) => res(b!), 'image/webp', 0.78)
+        previewCanvas.toBlob((b) => res(b!), 'image/webp', previewQuality)
       );
       previewCanvas.width = 1;
       previewCanvas.height = 1;
@@ -247,14 +265,24 @@ export function uploadBlobToPresignedUrl(
  * - Incremental registration in chunks of 3-5 photos.
  * - LocalStorage manifest tracking allows skipping already uploaded photos on resume.
  */
+export interface BatchUploadOptions {
+  qualityLevel?: 30 | 50 | 100;
+  includeOriginals?: boolean;
+  onStageChange?: (stage: 'previews' | 'originals') => void;
+}
+
 export async function batchUploadPhotos(
   galleryId: string,
   files: File[],
   onProgress?: UploadProgressCallback,
   collectionId?: string,
   workspaceId?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: BatchUploadOptions
 ): Promise<{ success: boolean; uploadedCount: number; errors: string[] }> {
+  const qualityLevel = options?.qualityLevel ?? 100;
+  const includeOriginals = options?.includeOriginals ?? false;
+
   let completed = 0;
   const total = files.length;
   const errors: string[] = [];
@@ -341,7 +369,7 @@ export async function batchUploadPhotos(
           if (onProgress) {
             onProgress(completed, total, Math.max(5, Math.round((completed / total) * 100)), `[Cloud Fallback] Uploading ${file.name}...`);
           }
-          const variants = await generateImageVariants(file);
+          const variants = await generateImageVariants(file, qualityLevel);
           const cleanName = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
           const urlRes = await fetch('/api/gallery/upload-url', {
             method: 'POST',
@@ -357,11 +385,18 @@ export async function batchUploadPhotos(
           const urlJson = await urlRes.json();
           if (!urlJson.success) throw new Error(urlJson.error || 'Failed to get upload URLs');
 
-          await Promise.all([
-            uploadBlobToPresignedUrl(urlJson.originalUploadUrl, file, file.type || 'image/jpeg', undefined, signal),
+          const uploadJobs = [
             uploadBlobToPresignedUrl(urlJson.previewUploadUrl, variants.preview, 'image/webp', undefined, signal),
             uploadBlobToPresignedUrl(urlJson.thumbUploadUrl, variants.thumb, 'image/webp', undefined, signal),
-          ]);
+          ];
+
+          if (includeOriginals && urlJson.originalUploadUrl) {
+            uploadJobs.push(
+              uploadBlobToPresignedUrl(urlJson.originalUploadUrl, file, file.type || 'image/jpeg', undefined, signal)
+            );
+          }
+
+          await Promise.all(uploadJobs);
 
           const regRes = await fetch('/api/gallery/photos/register', {
             method: 'POST',
@@ -371,12 +406,12 @@ export async function batchUploadPhotos(
               photos: [{
                 gallery_id: galleryId,
                 collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
-                original_key: urlJson.originalKey,
+                original_key: includeOriginals ? urlJson.originalKey : urlJson.previewKey,
                 preview_key: urlJson.previewKey,
                 thumbnail_key: urlJson.thumbKey,
                 width: variants.width,
                 height: variants.height,
-                size_bytes: file.size,
+                size_bytes: includeOriginals ? file.size : variants.preview.size,
               }],
             }),
             signal,
@@ -493,7 +528,7 @@ export async function batchUploadPhotos(
             }
 
             // 2. Client-Side WebP Conversion (Memory-safe OffscreenCanvas)
-            const variants = await generateImageVariants(file);
+            const variants = await generateImageVariants(file, qualityLevel);
 
             // 3. Resolve Presigned URLs (from batch cache or individual fallback)
             let presignedData = batchUrlMap.get(file.name);
@@ -521,15 +556,23 @@ export async function batchUploadPhotos(
             const { originalUploadUrl, previewUploadUrl, thumbUploadUrl, originalKey, previewKey, thumbKey } = presignedData;
 
             if (onProgress) {
-              onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} to Cloud...`);
+              const modeLabel = includeOriginals ? 'Master + 4K' : `${qualityLevel}% 4K`;
+              onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} (${modeLabel})...`);
             }
 
             // 4. Direct Storage Parallel Uploads via Presigned URLs
-            await Promise.all([
-              uploadBlobToPresignedUrl(originalUploadUrl, variants.original, file.type || 'image/jpeg', undefined, signal),
+            const uploadJobs = [
               uploadBlobToPresignedUrl(previewUploadUrl, variants.preview, 'image/webp', undefined, signal),
               uploadBlobToPresignedUrl(thumbUploadUrl, variants.thumb, 'image/webp', undefined, signal),
-            ]);
+            ];
+
+            if (includeOriginals && originalUploadUrl) {
+              uploadJobs.push(
+                uploadBlobToPresignedUrl(originalUploadUrl, variants.original, file.type || 'image/jpeg', undefined, signal)
+              );
+            }
+
+            await Promise.all(uploadJobs);
 
             // Record in manifest for crash protection & auto-resume
             recordUploadedToManifest(galleryId, file.name, file.size);
@@ -538,12 +581,12 @@ export async function batchUploadPhotos(
             pendingRegistration.push({
               gallery_id: galleryId,
               collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
-              original_key: originalKey,
+              original_key: includeOriginals ? originalKey : previewKey,
               preview_key: previewKey,
               thumbnail_key: thumbKey,
               width: variants.width,
               height: variants.height,
-              size_bytes: variants.sizeBytes,
+              size_bytes: includeOriginals ? variants.sizeBytes : variants.preview.size,
             });
 
             completed++;

@@ -71,6 +71,7 @@ import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothIm
 import GalleryDesignStudio from '@/components/gallery/GalleryDesignStudio';
 import GalleryShareModal from '@/components/gallery/GalleryShareModal';
 import { FaceAiFocusIcon } from '@/components/gallery/CoverPresetEffects';
+import { UploadSettingsModal } from '@/components/gallery/UploadSettingsModal';
 
 interface EventGallery {
   id: string;
@@ -1205,8 +1206,8 @@ function AlbumStudioContent() {
     }
   };
 
-  // Background Upload
-  const handleStartUpload = () => {
+  // Background Upload with 4K Quality & Optimization
+  const handleStartUpload = (options?: { qualityLevel: 30 | 50 | 100; includeOriginals: boolean }) => {
     if (!gallery || uploadFiles.length === 0) return;
 
     const targetCol = uploadTargetCollection !== 'all' ? uploadTargetCollection : (collections[0]?.id || undefined);
@@ -1216,7 +1217,7 @@ function AlbumStudioContent() {
     setUploadFiles([]);
     setIsUploadModalOpen(false);
 
-    enqueueUpload(gallery.id, targetCol, targetColName, filesToUpload, effectiveWsId);
+    enqueueUpload(gallery.id, targetCol, targetColName, filesToUpload, effectiveWsId, options);
   };
 
   // Delete Photo
@@ -3616,254 +3617,41 @@ function AlbumStudioContent() {
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          4. PHOTO UPLOADER MODAL (BACKGROUND FLOATING DRAWER + DUPLICATE GUARD)
+            {/* ─────────────────────────────────────────────────────────────
+          4. PHOTO UPLOADER MODAL (WITH 4K QUALITY SLIDER & STORAGE OPTIMIZATION)
       ───────────────────────────────────────────────────────────── */}
-      {isUploadModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full border border-[#E7E2D8] shadow-2xl space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-zinc-900">Upload Photos</h3>
-                <p className="text-[11px] text-zinc-500 font-medium">Add photos to your event gallery collection</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsUploadModalOpen(false);
-                  setShowDuplicatePrompt(false);
-                  setDuplicateFiles([]);
-                }}
-                className="p-1.5 text-zinc-400 hover:text-zinc-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* STUDIOCORE DESKTOP UPLOADER STATUS CARD */}
-            {isDesktopEngineActive ? (
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-300/80 flex items-center justify-between gap-3 shadow-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-white/90 border border-emerald-200 p-1 flex items-center justify-center shadow-xs shrink-0">
-                    <img
-                      src="/images/studiocore-uploader-logo.png"
-                      alt="StudioCore Uploader"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black text-zinc-900">StudioCore Desktop Engine Active</span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-extrabold uppercase tracking-wide flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                        Connected (Port 41789)
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-zinc-600 font-normal leading-tight mt-0.5">
-                      Local desktop engine connected. Photos will stream directly at turbo speed with zero drops.
-                    </p>
-                  </div>
-                </div>
-                <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300/80 text-emerald-800 text-xs font-bold shrink-0 flex items-center gap-2 shadow-2xs">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
-                  </span>
-                  <span>Online &amp; Ready</span>
-                </div>
-              </div>
-            ) : (
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-transparent border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-white/90 border border-amber-200 p-1 flex items-center justify-center shadow-xs shrink-0">
-                    <img
-                      src="/images/studiocore-uploader-logo.png"
-                      alt="StudioCore Uploader"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black text-zinc-900">StudioCore Desktop Uploader</span>
-                      <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[9px] font-black uppercase tracking-wider shadow-2xs">
-                        NEW BETA
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-zinc-600 font-normal leading-tight mt-0.5 max-w-md">
-                      Upload ultra-high resolution galleries at up to 20x turbo speed with zero browser limits or drops.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                  <a
-                    href="/api/gallery/uploader-download?os=win"
-                    download="StudioCore-Uploader-Setup.exe"
-                    className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer group"
-                    title="Download StudioCore Uploader for Windows"
-                  >
-                    <svg className="w-3.5 h-3.5 fill-current text-sky-400 group-hover:scale-110 transition" viewBox="0 0 88 88">
-                      <path d="M0 12.402l35.687-4.86.016 34.423-35.67.203zm35.67 33.529l.028 34.453L0 75.48V46.065zm4.326-39.525L87.914 0v41.525l-47.918.278zm47.918 45.457L40.024 88V46.529l47.918-.11z" />
-                    </svg>
-                    <span>Download Windows App</span>
-                  </a>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 mb-1">Target Collection / Album</label>
-                <select
-                  value={uploadTargetCollection}
-                  onChange={(e) => {
-                    const newCol = e.target.value;
-                    setUploadTargetCollection(newCol);
-                    if (uploadFiles.length > 0) {
-                      handleSelectUploadFiles(uploadFiles, newCol);
-                    }
-                  }}
-                  className="w-full px-3.5 py-2 bg-[#FAF9F5] rounded-xl border border-[#E7E2D8] text-xs font-bold text-zinc-800 cursor-pointer"
-                >
-                  <option value="all">Default / Main Album</option>
-                  {collections.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                    handleSelectUploadFiles(Array.from(e.dataTransfer.files));
-                  }
-                }}
-                className="border-2 border-dashed border-[#D5CFBE] hover:border-amber-500 bg-[#FAF9F5] rounded-3xl p-8 text-center cursor-pointer transition-all space-y-3"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
-                  <Upload className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-zinc-800">
-                    Click or drag and drop photos here
-                  </p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    Supports high-res JPG, PNG, WebP up to 100MB per file
-                  </p>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      handleSelectUploadFiles(Array.from(e.target.files));
-                    }
-                  }}
-                />
-              </div>
-
-              {/* DUPLICATE PHOTO DETECTION INTERACTIVE PROMPT */}
-              {showDuplicatePrompt && duplicateFiles.length > 0 && (
-                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-3 animate-in fade-in duration-200">
-                  <div className="flex items-start gap-2.5">
-                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-black text-amber-950">
-                          Duplicate Photos Detected ({duplicateFiles.length})
-                        </h4>
-                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
-                          Already in album
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-amber-800 leading-relaxed mt-1">
-                        {duplicateFiles.length} photo{duplicateFiles.length > 1 ? 's' : ''} with identical filenames already exist in this collection (e.g. <strong>{duplicateFiles.slice(0, 2).map((f) => f.name).join(', ')}</strong>{duplicateFiles.length > 2 ? ` and ${duplicateFiles.length - 2} more` : ''}).
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const dupeNames = new Set(duplicateFiles.map((d) => d.name.toLowerCase()));
-                        const uniqueFiles = uploadFiles.filter((f) => !dupeNames.has(f.name.toLowerCase()));
-                        setUploadFiles(uniqueFiles);
-                        setShowDuplicatePrompt(false);
-                        setDuplicateFiles([]);
-                      }}
-                      className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Skip Duplicates ({duplicateFiles.length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowDuplicatePrompt(false);
-                      }}
-                      className="py-2 px-3 rounded-xl bg-zinc-200 hover:bg-zinc-300 text-zinc-800 font-bold text-xs transition cursor-pointer"
-                    >
-                      <span>Upload Anyway (Keep Both)</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {uploadFiles.length > 0 && (
-                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-900 font-bold">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{uploadFiles.length} photos ready for upload</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUploadFiles([]);
-                      setShowDuplicatePrompt(false);
-                      setDuplicateFiles([]);
-                    }}
-                    className="text-[10px] text-rose-600 hover:underline cursor-pointer"
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  type="button"
-                  disabled={uploadFiles.length === 0}
-                  onClick={handleStartUpload}
-                  className="flex-1 py-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-zinc-300 disabled:to-zinc-300 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Upload ({uploadFiles.length})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsUploadModalOpen(false);
-                    setShowDuplicatePrompt(false);
-                    setDuplicateFiles([]);
-                  }}
-                  className="px-5 py-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <UploadSettingsModal
+        isOpen={isUploadModalOpen}
+        onClose={() => {
+          setIsUploadModalOpen(false);
+          setShowDuplicatePrompt(false);
+          setDuplicateFiles([]);
+        }}
+        collections={collections}
+        targetCollection={uploadTargetCollection}
+        setTargetCollection={setUploadTargetCollection}
+        files={uploadFiles}
+        onSelectFiles={(files) => handleSelectUploadFiles(files)}
+        onClearFiles={() => {
+          setUploadFiles([]);
+          setShowDuplicatePrompt(false);
+          setDuplicateFiles([]);
+        }}
+        onStartUpload={handleStartUpload}
+        isDesktopEngineActive={isDesktopEngineActive}
+        duplicateFiles={duplicateFiles}
+        showDuplicatePrompt={showDuplicatePrompt}
+        onSkipDuplicates={() => {
+          const dupeNames = new Set(duplicateFiles.map((f) => f.name.toLowerCase()));
+          const uniqueFiles = uploadFiles.filter((f) => !dupeNames.has(f.name.toLowerCase()));
+          setUploadFiles(uniqueFiles);
+          setShowDuplicatePrompt(false);
+          setDuplicateFiles([]);
+        }}
+        onUploadAllAnyway={() => {
+          setShowDuplicatePrompt(false);
+        }}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           4B. STUDIOCORE DESKTOP UPLOADER APP MODAL

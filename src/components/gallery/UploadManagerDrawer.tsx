@@ -302,9 +302,18 @@ function JobItem({
     <div className="p-3 rounded-2xl bg-white border border-[#E7E2D8] shadow-2xs space-y-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 overflow-hidden">
-          <span className="text-[11px] font-black text-zinc-900 truncate max-w-[170px]">
+          <span className="text-[11px] font-black text-zinc-900 truncate max-w-[140px]">
             📁 {job.collectionName}
           </span>
+          {job.includeOriginals ? (
+            <span className="text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 shrink-0">
+              Master + 4K
+            </span>
+          ) : (
+            <span className="text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+              {job.qualityLevel || 100}% 4K
+            </span>
+          )}
           <span
             className={`text-[9.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
               isPartial
