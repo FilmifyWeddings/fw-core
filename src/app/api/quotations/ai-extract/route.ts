@@ -290,49 +290,10 @@ Return ONLY a valid JSON object matching:
 `;
 
   let aiRawOutput: any = null;
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
   const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // 1. PRIMARY ENGINE: Google Gemini Flash (Sub-second response, outstanding Indian multilingual understanding)
-  if (geminiKey) {
-    const geminiModels = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash'];
-    for (const model of geminiModels) {
-      if (aiRawOutput) break;
-      try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: promptText + "\nRespond strictly in valid JSON matching the exact schema above." }] }],
-            generationConfig: { 
-              responseMimeType: 'application/json',
-              temperature: 0.1
-            }
-          }),
-          signal: AbortSignal.timeout(8000)
-        });
-        if (res.ok) {
-          const json = await res.json();
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              aiRawOutput = JSON.parse(jsonMatch[0]);
-              console.log(`[AI Extract] Successfully generated via Gemini (${model}) in real-time`);
-              break;
-            }
-          }
-        } else {
-          console.warn(`[Gemini ${model} Status]:`, res.status);
-        }
-      } catch (e: any) {
-        console.warn(`[Gemini ${model} Exception/Timeout]:`, e?.message || e);
-      }
-    }
-  }
-
-  // 2. SECONDARY FALLBACK ENGINE: OpenAI GPT-4o-mini (Zero downtime guarantee)
-  if (!aiRawOutput && openAiKey) {
+  // 1. PRIMARY ENGINE: OpenAI GPT-4o-mini (Industry Standard Quotation Intelligence)
+  if (openAiKey) {
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -345,20 +306,23 @@ Return ONLY a valid JSON object matching:
           messages: [{ role: 'system', content: promptText }],
           response_format: { type: 'json_object' },
           temperature: 0.1,
-          max_tokens: 1400
+          max_tokens: 1500
         }),
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(10000)
       });
       if (res.ok) {
         const json = await res.json();
         const content = json.choices?.[0]?.message?.content;
         if (content) {
           aiRawOutput = JSON.parse(content);
-          console.log('[AI Extract] Successfully generated via OpenAI fallback');
+          console.log('[AI Extract] Successfully generated via OpenAI GPT-4o-mini');
         }
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        console.warn('[OpenAI Call Error]:', res.status, errJson?.error?.code || errJson?.error?.message);
       }
-    } catch (e) {
-      console.warn('[OpenAI Call Warning/Timeout]:', e);
+    } catch (e: any) {
+      console.warn('[OpenAI Call Exception/Timeout]:', e?.message || e);
     }
   }
 

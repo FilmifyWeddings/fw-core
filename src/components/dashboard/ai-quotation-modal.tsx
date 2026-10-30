@@ -101,75 +101,95 @@ export function AiQuotationModal({
   const [promptCopied, setPromptCopied] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(selectedTemplateId || '');
 
-  // 🎙️ Live Voice Speech-to-Text Recognition State
-  const [isListening, setIsListening] = useState(false);
-  const [speechSupported, setSpeechSupported] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  // 🎙️ OpenAI Whisper MediaRecorder State
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<any>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRec) {
-        setSpeechSupported(true);
-      }
-    }
     return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (_) {}
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try { mediaRecorderRef.current.stop(); } catch (_) {}
       }
     };
   }, []);
 
-  const toggleListening = () => {
-    if (isListening) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (_) {}
-      }
-      setIsListening(false);
-      return;
-    }
-
-    if (typeof window === 'undefined') return;
-    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRec) {
-      alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
-      return;
-    }
-
+  const startVoiceRecording = async () => {
     try {
-      const recognition = new SpeechRec();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'hi-IN'; // Highly accurate for Hindi, Marathi, Hinglish, and English terminology
+      if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        alert('Microphone access is not supported in this browser.');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
 
-      recognition.onstart = () => {
-        setIsListening(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        let currentTranscript = '';
-        for (let i = 0; i < event.results.length; i++) {
-          currentTranscript += event.results[i][0].transcript + ' ';
-        }
-        if (currentTranscript.trim()) {
-          setAdditionalNotes(currentTranscript.trim());
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
         }
       };
 
-      recognition.onerror = (event: any) => {
-        console.warn('[Speech Recognition Error]:', event.error);
-        setIsListening(false);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (timerRef.current) clearInterval(timerRef.current);
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        if (audioBlob.size > 300) {
+          await transcribeWithWhisper(audioBlob);
+        }
       };
 
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
+      recorder.start(250);
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordSeconds(0);
+      timerRef.current = setInterval(() => {
+        setRecordSeconds((s) => s + 1);
+      }, 1000);
     } catch (err: any) {
-      console.error('[Speech Start Error]:', err);
-      setIsListening(false);
+      console.error('[Microphone Permission Error]:', err);
+      alert('Microphone access was denied. Please allow microphone permissions in your browser.');
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
+
+  const transcribeWithWhisper = async (audioBlob: Blob) => {
+    setIsTranscribing(true);
+    setErrorMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append('audio', audioBlob, 'voice_quotation.webm');
+      const res = await fetch('/api/ai/transcribe-audio', {
+        method: 'POST',
+        body: fd
+      });
+      const data = await res.json();
+      if (res.ok && data.text) {
+        setAdditionalNotes((prev: string) => {
+          return prev.trim() ? `${prev.trim()}\n${data.text}` : data.text;
+        });
+      } else {
+        throw new Error(data.error || 'Could not transcribe audio');
+      }
+    } catch (err: any) {
+      console.warn('[Whisper Transcribe Notice]:', err);
+      setErrorMsg(err.message || 'Audio transcription unavailable. You can type or paste notes directly.');
+    } finally {
+      setIsTranscribing(false);
     }
   };
 
@@ -917,21 +937,24 @@ LEAD & CLIENT CONTEXT:
                       <span>Requirements & Details (Voice or Text)</span>
                     </label>
 
-                    {/* Mic Recording Button with Audio Wave */}
+                    {/* OpenAI Whisper Mic Button */}
                     <button
                       type="button"
-                      onClick={toggleListening}
+                      onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
+                      disabled={isTranscribing}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs ${
-                        isListening
+                        isRecording
                           ? 'bg-rose-500 hover:bg-rose-600 text-white animate-pulse ring-4 ring-rose-500/20'
+                          : isTranscribing
+                          ? 'bg-amber-100 text-amber-800 cursor-wait'
                           : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700/50'
                       }`}
-                      title={isListening ? 'Click to stop recording' : 'Click to speak in Hindi / Marathi / English'}
+                      title={isRecording ? 'Click to stop and transcribe' : 'Record voice note (OpenAI Whisper)'}
                     >
-                      {isListening ? (
+                      {isRecording ? (
                         <>
                           <MicOff className="w-3.5 h-3.5 text-white" />
-                          <span>Stop Recording</span>
+                          <span>Stop & Transcribe ({String(Math.floor(recordSeconds / 60)).padStart(2, '0')}:{String(recordSeconds % 60).padStart(2, '0')})</span>
                           {/* Live Audio Wave Animation */}
                           <span className="flex items-center gap-0.5 ml-1">
                             <span className="w-1 h-3 bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></span>
@@ -940,27 +963,32 @@ LEAD & CLIENT CONTEXT:
                             <span className="w-1 h-3.5 bg-white rounded-full animate-bounce [animation-delay:-0.2s]"></span>
                           </span>
                         </>
+                      ) : isTranscribing ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                          <span>Transcribing with Whisper...</span>
+                        </>
                       ) : (
                         <>
                           <Mic className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                          <span>🎙️ Click to Speak (बोलें)</span>
+                          <span>🎙️ Record Voice (Whisper)</span>
                         </>
                       )}
                     </button>
                   </div>
 
-                  {/* Live Recording Active Banner */}
-                  {isListening && (
+                  {/* Active Recording Notice */}
+                  {isRecording && (
                     <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 flex items-center justify-between text-xs text-rose-800 dark:text-rose-300">
                       <span className="flex items-center gap-2 font-medium">
                         <span className="relative flex h-2.5 w-2.5">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
                         </span>
-                        Listening... बोलिए (हिंदी, मराठी, English मिक्स बोल सकते हैं)
+                        Recording in progress... बोलिए (हिंदी, मराठी, English) — Stop करने पर Whisper तुरंत टेक्स्ट बनाएगा
                       </span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
-                        Live Voice Active
+                        {String(Math.floor(recordSeconds / 60)).padStart(2, '0')}:{String(recordSeconds % 60).padStart(2, '0')}
                       </span>
                     </div>
                   )}
@@ -969,15 +997,15 @@ LEAD & CLIENT CONTEXT:
                     rows={5}
                     value={additionalNotes}
                     onChange={(e) => setAdditionalNotes(e.target.value)}
-                    placeholder="🎙️ माइक चालू करके बोलें या यहाँ लिखें (हिंदी, मराठी, English):&#10;जैसे: 'अथर्व और साक्षी की शादी 15 दिसंबर को पुणे में, 14 को हल्दी और संगीत, 2 कैंडिड, 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज ₹2.5 लाख, 50k टोकन एडवांस...'&#10;&#10;💡 या अगर ChatGPT से JSON बनाया है, तो सीधे यहाँ पेस्ट करें!"
+                    placeholder="🎙️ माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):&#10;जैसे: 'अथर्व और साक्षी की शादी 15 दिसंबर को पुणे में, 14 को हल्दी और संगीत, 2 कैंडिड, 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज ₹2.5 लाख, 50k टोकन एडवांस...'&#10;&#10;💡 या अगर ChatGPT से JSON बनाया है, तो सीधे यहाँ पेस्ट करें!"
                     className={`w-full p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 resize-none transition-all ${
-                      isListening
+                      isRecording
                         ? 'border-rose-400 focus:ring-rose-500/50 bg-rose-50/20'
                         : 'border-zinc-200 dark:border-zinc-800 focus:ring-amber-500/50'
                     }`}
                   />
                   <div className="flex items-center justify-between text-[10px] text-zinc-400 dark:text-zinc-500">
-                    <span>✨ Gemini AI भारतीय भाषाओं (हल्दी, संगीत, लग्न, फेरे, विधी) को 100% सही समझकर प्रोफेशनल इंग्लिश में मैप करेगा।</span>
+                    <span>✨ Powered by OpenAI Whisper & GPT-4o-mini (Supports Marathi, Hindi, English)</span>
                     <span>{additionalNotes.length} chars</span>
                   </div>
                 </div>
