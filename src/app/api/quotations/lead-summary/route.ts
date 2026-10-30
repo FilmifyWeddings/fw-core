@@ -55,12 +55,16 @@ export async function GET(req: NextRequest) {
       : null;
 
     // Parallel fetch: quotation_documents (metadata scoped to workspace), quotations, and leads
+    const docOrFilter = validUuidCandidates.length > 0
+      ? `${wsOrFilter},workspace_id.is.null,user_id.in.(${validUuidCandidates.join(',')})`
+      : wsOrFilter;
+
     const [docsRes, quotesRes, leadsRes] = await Promise.all([
-      wsOrFilter
+      docOrFilter
         ? supabaseAdmin
             .from('quotation_documents')
             .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at')
-            .or(wsOrFilter)
+            .or(docOrFilter)
         : supabaseAdmin
             .from('quotation_documents')
             .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at')

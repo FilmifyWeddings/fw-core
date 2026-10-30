@@ -420,6 +420,30 @@ export async function GET(
     // Sort versions descending for modal display: V3, V2, V1
     formattedQuotations.sort((a, b) => b.version - a.version);
 
+    // Non-blocking sync of versions into lead.raw_payload for instant 0ms retrieval
+    try {
+      const existingRaw = effectiveLead.raw_payload || {};
+      const existingVers = Array.isArray(existingRaw.quotation_versions) ? existingRaw.quotation_versions : [];
+      if (existingVers.length !== formattedQuotations.length) {
+        const lightweightVersions = formattedQuotations.map(q => ({
+          id: q.id,
+          template_id: q.template_id,
+          version: q.version,
+          version_label: q.version_label,
+          title: q.title,
+          is_final: q.is_final,
+          created_at: q.created_at,
+          updated_at: q.updated_at
+        }));
+        supabaseAdmin.from('leads').update({
+          raw_payload: {
+            ...existingRaw,
+            quotation_versions: lightweightVersions
+          }
+        }).eq('id', leadId).then(() => {});
+      }
+    } catch (_) {}
+
     return NextResponse.json({
       success: true,
       lead: { id: effectiveLead.id, name: effectiveLead.name, email: effectiveLead.email, phone: effectiveLead.phone },
@@ -669,6 +693,40 @@ export async function POST(
     } catch (finErr) {
       console.warn('[leads/[id]/quotations] extractFinancials note:', finErr);
     }
+
+    bgPromises.push(
+      (async () => {
+        try {
+          const { data: curLead } = await supabaseAdmin
+            .from('leads')
+            .select('raw_payload')
+            .eq('id', leadId)
+            .maybeSingle();
+
+          const curRaw = curLead?.raw_payload || {};
+          const prevVers = Array.isArray(curRaw.quotation_versions) ? curRaw.quotation_versions : [];
+          const newVerEntry = {
+            id: savedDoc?.id || newTemplateId,
+            template_id: newTemplateId,
+            version: nextLeadVersion,
+            version_label: `V${nextLeadVersion}`,
+            title: quotationTitle,
+            is_final: false,
+            created_at: now,
+            updated_at: now
+          };
+          const updatedVers = [newVerEntry, ...prevVers.filter((v: any) => v.template_id !== newTemplateId)];
+
+          await supabaseAdmin.from('leads').update({
+            quotation_id: newTemplateId,
+            raw_payload: {
+              ...curRaw,
+              quotation_versions: updatedVers
+            }
+          }).eq('id', leadId);
+        } catch (_) {}
+      })()
+    );
 
     bgPromises.push(
       (async () => {

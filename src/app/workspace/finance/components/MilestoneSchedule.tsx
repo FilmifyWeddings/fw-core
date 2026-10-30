@@ -25,6 +25,9 @@ export interface MilestoneScheduleProps {
   onDeleteMilestone: (recordId: string, milestoneId: string) => void;
   onSaveNewTemplate?: (name: string) => void;
   isReadOnly?: boolean;
+  statusFilter?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export function MilestoneSchedule({
@@ -38,7 +41,11 @@ export function MilestoneSchedule({
   onDeleteMilestone,
   onSaveNewTemplate,
   isReadOnly = false,
+  statusFilter,
+  startDate,
+  endDate,
 }: MilestoneScheduleProps) {
+  const [showAllSteps, setShowAllSteps] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [editingRemarkMilestoneId, setEditingRemarkMilestoneId] = useState<string | null>(null);
   const [remarkDraft, setRemarkDraft] = useState<string>('');
@@ -65,6 +72,22 @@ export function MilestoneSchedule({
   const finalTotal = Number(record.final_total_amount) || 0;
   const milestoneSum = milestones.reduce((sum, m) => sum + (Math.round(Number(m.amount)) || 0), 0);
   const milestoneGap = finalTotal - milestoneSum;
+
+  const isDatePendingFilter = statusFilter === 'pending' && Boolean(startDate || endDate);
+  const visibleMilestones = React.useMemo(() => {
+    if (isDatePendingFilter && !showAllSteps) {
+      const filtered = milestones.filter(m => {
+        const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+        if (isPaid) return false;
+        if (!m.due_date) return false;
+        if (startDate && m.due_date < startDate) return false;
+        if (endDate && m.due_date > endDate) return false;
+        return true;
+      });
+      if (filtered.length > 0) return filtered;
+    }
+    return milestones;
+  }, [milestones, isDatePendingFilter, showAllSteps, startDate, endDate]);
 
   return (
     <div className="space-y-3">
@@ -120,8 +143,37 @@ export function MilestoneSchedule({
             <span className="w-6 text-right shrink-0"></span>
           </div>
 
+          {/* Date-Range Pending Filter Notification Banner */}
+          {isDatePendingFilter && milestones.length > visibleMilestones.length && (
+            <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-900 text-xs font-semibold mb-1">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
+                Showing {visibleMilestones.length} pending milestone(s) due within {startDate || ''} ➔ {endDate || ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAllSteps(true)}
+                className="text-[11px] font-bold text-orange-700 hover:text-orange-950 underline cursor-pointer"
+              >
+                View all ({milestones.length})
+              </button>
+            </div>
+          )}
+          {isDatePendingFilter && showAllSteps && (
+            <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold mb-1">
+              <span>Viewing all {milestones.length} milestones (unfiltered)</span>
+              <button
+                type="button"
+                onClick={() => setShowAllSteps(false)}
+                className="text-[11px] font-bold text-orange-600 hover:text-orange-800 underline cursor-pointer"
+              >
+                Show filtered only ({visibleMilestones.length})
+              </button>
+            </div>
+          )}
+
           {/* Milestone Rows */}
-          {milestones.map((ms) => {
+          {visibleMilestones.map((ms) => {
             const isPaid = ms.status === 'completed' || ms.status === 'paid' || (ms.status as string) === 'Completed';
             const isOverdue = !isPaid && ms.due_date && ms.due_date < todayStr;
             const overdueDays = isOverdue 

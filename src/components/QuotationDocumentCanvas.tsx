@@ -104,7 +104,7 @@ import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
 import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
-import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
+import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady, preloadActiveFont } from '@/lib/font-loader';
 import { toPng, toJpeg } from 'html-to-image';
 import { PDFDocument } from 'pdf-lib';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
@@ -1385,6 +1385,12 @@ export default function QuotationDocumentCanvas({
 }) {
   const loadedData = documentData || {};
   const data = normalizeQuotationData(loadedData);
+
+  useEffect(() => {
+    loadCustomFontsFromAPI();
+    if (data?.primaryFont) preloadActiveFont(data.primaryFont);
+    if (data?.secondaryFont) preloadActiveFont(data.secondaryFont);
+  }, [data?.primaryFont, data?.secondaryFont]);
   const activeTheme = getThemeFromKey(data.theme || data.look || data.colorPalette || data.palette);
   const pageBgColor = activeTheme.background;
   const textColor = activeTheme.text;

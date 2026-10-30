@@ -162,6 +162,21 @@ export function ClientFinanceCard({
 
   const recAmt = dynamicReceived;
   const pendAmt = Math.max(0, finalTotal - recAmt);
+
+  const dateRangePendingAmount = useMemo(() => {
+    if (statusFilter === 'pending' && (startDate || endDate)) {
+      const pendingInRange = (milestones || []).filter(m => {
+        const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+        if (isPaid) return false;
+        if (!m.due_date) return false;
+        if (startDate && m.due_date < startDate) return false;
+        if (endDate && m.due_date > endDate) return false;
+        return true;
+      });
+      return pendingInRange.reduce((sum, m) => sum + (Math.round(Number(m.amount)) || 0), 0);
+    }
+    return pendAmt;
+  }, [milestones, statusFilter, startDate, endDate, pendAmt]);
   const milestoneGap = finalTotal - milestoneSum;
   const isUnsettled = (finalTotal <= 0 && recAmt <= 0) || (record as any).payment_status === 'unsettled';
 
@@ -345,7 +360,7 @@ export function ClientFinanceCard({
             ) : pendAmt > 0 ? (
               <div>
                 <span className="text-xs sm:text-sm font-mono font-black text-rose-600 block leading-tight">
-                  ₹{pendAmt.toLocaleString('en-IN')} Due
+                  ₹{dateRangePendingAmount.toLocaleString('en-IN')} Due
                 </span>
                 <span className="text-[10px] text-slate-400 font-mono block hidden sm:block">
                   of ₹{finalTotal.toLocaleString('en-IN')}
@@ -666,6 +681,9 @@ export function ClientFinanceCard({
                   onDeleteMilestone={onDeleteMilestone}
                   onSaveNewTemplate={onSaveNewTemplate}
                   isReadOnly={isReadOnly}
+                  statusFilter={statusFilter}
+                  startDate={startDate}
+                  endDate={endDate}
                 />
 
                 {/* Bottom 3 Summary Metric Cards */}
@@ -687,7 +705,7 @@ export function ClientFinanceCard({
                   <div className="p-2 bg-rose-50/70 rounded-xl border border-rose-200/80 text-center">
                     <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-rose-800 block">Pending</span>
                     <span className="font-mono font-bold text-xs sm:text-sm text-rose-600 mt-0.5 block truncate">
-                      ₹{pendAmt.toLocaleString('en-IN')}
+                      ₹{dateRangePendingAmount.toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>

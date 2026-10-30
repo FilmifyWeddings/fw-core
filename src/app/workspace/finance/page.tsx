@@ -2824,17 +2824,17 @@ export default function FinancePage() {
       }
 
       if (statusFilter === 'pending') {
-        const hasPendingMilestones = milestones.some(m => !isMilestonePaid(m));
-        const hasPendingAmt = Number(rec.pending_amount) > 0;
-        if (!hasPendingMilestones && !hasPendingAmt) return false;
-
         if (isDateActive) {
+          // STRICT: Must have at least one pending milestone due within the date range!
           const hasDueInRange = milestones.some(m => {
             if (isMilestonePaid(m)) return false;
             return isInRange(m.due_date);
           });
-          const firstDate = getFirstStepDate(rec);
-          if (!hasDueInRange && !(hasPendingAmt && isInRange(firstDate))) return false;
+          if (!hasDueInRange) return false;
+        } else {
+          const hasPendingMilestones = milestones.some(m => !isMilestonePaid(m));
+          const hasPendingAmt = Number(rec.pending_amount) > 0;
+          if (!hasPendingMilestones && !hasPendingAmt) return false;
         }
         return true;
       }
@@ -3044,9 +3044,11 @@ export default function FinancePage() {
         const pendingMilestonesSum = matchingPending.reduce((mSum, m) => mSum + (Number(m.amount) || 0), 0);
         if (pendingMilestonesSum > 0) return acc + pendingMilestonesSum;
 
-        const firstDate = getFirstStepDate(r);
-        if (isInRange(firstDate)) {
-          return acc + (Number(r.pending_amount) || 0);
+        if (statusFilter !== 'pending') {
+          const firstDate = getFirstStepDate(r);
+          if (isInRange(firstDate)) {
+            return acc + (Number(r.pending_amount) || 0);
+          }
         }
         return acc;
       }, 0);

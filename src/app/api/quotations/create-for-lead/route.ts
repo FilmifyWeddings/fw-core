@@ -296,12 +296,27 @@ export async function POST(req: NextRequest) {
         });
 
         // Also update lead's quotation_id and raw_payload so lead-summary reflects this immediately
+        const prevVersions = Array.isArray(effectiveLead.raw_payload?.quotation_versions)
+          ? effectiveLead.raw_payload.quotation_versions
+          : [];
+        const newVerItem = {
+          id: quotationId,
+          template_id: quotationId,
+          version: nextVersion,
+          version_label: `V${nextVersion}`,
+          title: clonedDoc.designName || `${leadName} - Quotation V${nextVersion}`,
+          is_final: false,
+          created_at: new Date().toISOString()
+        };
+        const updatedVersions = [newVerItem, ...prevVersions.filter((v: any) => v.template_id !== quotationId)];
+
         await supabaseAdmin.from('leads').update({
           quotation_id: quotationId,
           raw_payload: {
             ...(effectiveLead.raw_payload || {}),
             quotation_id: quotationId,
-            couple_name: leadName
+            couple_name: leadName,
+            quotation_versions: updatedVersions
           },
           updated_at: new Date().toISOString()
         }).eq('id', leadId);

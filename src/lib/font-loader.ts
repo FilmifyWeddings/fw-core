@@ -65,6 +65,7 @@ let combinedStyleElement: HTMLStyleElement | null = null;
 /**
  * Registers font CSS definitions into a single combined style block in document.head
  * Uses browser-native lazy font fetching with font-display: swap (Zero upfront downloads!)
+ * Injects font-weight: 100 900 to ensure bold, black and regular variants all match.
  */
 export function registerFontFace(font: FontItem): void {
   if (typeof window === 'undefined' || !font.fileUrl) return;
@@ -83,11 +84,12 @@ export function registerFontFace(font: FontItem): void {
     }
   }
 
+  // Register font-family with universal weight range 100-900 so headings with font-black / font-bold match
   combinedStyleElement.innerHTML += `
     @font-face {
       font-family: '${cleanFamilyName}';
       src: url('${font.fileUrl}') format('${fontFormat}');
-      font-weight: normal;
+      font-weight: 100 900;
       font-style: normal;
       font-display: swap;
     }
@@ -109,25 +111,40 @@ export function registerAllFonts(fonts: FontItem[]): void {
 export async function preloadActiveFont(fontNameOrFamily: string): Promise<void> {
   if (typeof window === 'undefined' || !fontNameOrFamily) return;
 
-  const cleanName = fontNameOrFamily.replace(/['",]/g, '').trim();
+  // Extract clean font name (e.g. "'Hakuna', sans-serif" -> "Hakuna")
+  const cleanName = fontNameOrFamily.split(',')[0].replace(/['"]/g, '').trim();
+  if (!cleanName) return;
+
   const fontItem = STATIC_CUSTOM_FONTS.find(
     f => f.name.toLowerCase() === cleanName.toLowerCase() || f.family.toLowerCase().includes(cleanName.toLowerCase())
   );
 
-  if (fontItem && fontItem.fileUrl && 'FontFace' in window) {
-    try {
-      const fontFormat = fontItem.format || (fontItem.fileUrl.endsWith('.otf') ? 'opentype' : 'truetype');
-      const fontFace = new FontFace(fontItem.name, `url('${fontItem.fileUrl}') format('${fontFormat}')`);
-      const loaded = await fontFace.load();
-      document.fonts.add(loaded);
-    } catch (err) {
-      console.warn(`[FontLoader] Error preloading active font ${cleanName}:`, err);
+  if (fontItem && fontItem.fileUrl) {
+    registerFontFace(fontItem);
+
+    if ('FontFace' in window) {
+      try {
+        const fontFormat = fontItem.format || (fontItem.fileUrl.endsWith('.otf') ? 'opentype' : 'truetype');
+        const fontFace = new FontFace(
+          fontItem.name,
+          `url('${fontItem.fileUrl}') format('${fontFormat}')`,
+          { weight: '100 900', style: 'normal' }
+        );
+        const loaded = await fontFace.load();
+        document.fonts.add(loaded);
+      } catch (err) {
+        console.warn(`[FontLoader] Error preloading active font ${cleanName}:`, err);
+      }
     }
-  } else if (typeof document !== 'undefined' && 'fonts' in document) {
+  }
+
+  // Pre-warm browser font cache for this family across regular and bold weights
+  if (typeof document !== 'undefined' && 'fonts' in document) {
     try {
-      await Promise.all([
+      await Promise.allSettled([
         document.fonts.load(`16px "${cleanName}"`),
-        document.fonts.load(`bold 16px "${cleanName}"`)
+        document.fonts.load(`bold 16px "${cleanName}"`),
+        document.fonts.load(`900 16px "${cleanName}"`)
       ]);
     } catch (_) {}
   }

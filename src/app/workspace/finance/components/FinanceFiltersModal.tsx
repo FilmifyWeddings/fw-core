@@ -184,14 +184,14 @@ export function FinanceFiltersModal({
   // Selected Team Member / Handled By Label
   const selectedMemberDisplay = useMemo(() => {
     if (teamMemberFilter === 'all') {
-      return activeTab === 'invoices' ? '👥 All Handled By' : '👥 All Team Members';
+      return isInvoiceTab ? '👥 All Handled By' : '👥 All Team Members';
     }
     if (teamMemberFilter === 'unassigned') return '👤 Unassigned Only';
     const found = teamMembersDetailed.find(
       (m) => m.id === teamMemberFilter || m.name.toLowerCase() === teamMemberFilter.toLowerCase()
     );
     return found?.name || teamMemberFilter;
-  }, [teamMemberFilter, teamMembersDetailed, activeTab]);
+  }, [teamMemberFilter, teamMembersDetailed, isInvoiceTab]);
 
   // Filtered clients list
   const filteredClients = useMemo(() => {

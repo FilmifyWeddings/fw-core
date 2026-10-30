@@ -3008,8 +3008,8 @@ function StudioCoreAiryBuilderContent() {
   }, []);
 
   useEffect(() => {
-    if (data?.primaryFont) registerFontFace({ name: data.primaryFont.replace(/['"]/g, '').split(',')[0], family: data.primaryFont, category: 'Luxury Serif' });
-    if (data?.secondaryFont) registerFontFace({ name: data.secondaryFont.replace(/['"]/g, '').split(',')[0], family: data.secondaryFont, category: 'Minimal Sans-Serif' });
+    if (data?.primaryFont) preloadActiveFont(data.primaryFont);
+    if (data?.secondaryFont) preloadActiveFont(data.secondaryFont);
   }, [data?.primaryFont, data?.secondaryFont]);
 
   // Load functions & crew roles from centralized settings and keep synced
@@ -3709,14 +3709,28 @@ function StudioCoreAiryBuilderContent() {
 
           if (snapshotData.lead_id) {
             try {
-              sessionStorage.removeItem(`lead_quotes_cache_${snapshotData.lead_id}`);
-              localStorage.removeItem(`lead_quotes_cache_${snapshotData.lead_id}`);
-              const smStr = localStorage.getItem('sc_quotation_summary_map');
-              if (smStr) {
-                const sm = JSON.parse(smStr);
-                if (sm[snapshotData.lead_id]) {
-                  delete sm[snapshotData.lead_id];
-                  localStorage.setItem('sc_quotation_summary_map', JSON.stringify(sm));
+              const leadCacheKey = `lead_quotes_cache_${snapshotData.lead_id}`;
+              const cachedRaw = sessionStorage.getItem(leadCacheKey) || localStorage.getItem(leadCacheKey);
+              if (cachedRaw) {
+                const list = JSON.parse(cachedRaw);
+                if (Array.isArray(list)) {
+                  const targetIdx = list.findIndex((q: any) => q.template_id === routeId || q.id === routeId);
+                  const updatedItem = {
+                    ...(targetIdx >= 0 ? list[targetIdx] : {}),
+                    id: routeId,
+                    template_id: routeId,
+                    lead_id: snapshotData.lead_id,
+                    version: snapshotData.lead_version || (targetIdx >= 0 ? list[targetIdx].version : 1),
+                    title: snapshotData.designName || snapshotData.title || `Quotation ${routeId}`,
+                    updated_at: new Date().toISOString()
+                  };
+                  if (targetIdx >= 0) {
+                    list[targetIdx] = updatedItem;
+                  } else {
+                    list.unshift(updatedItem);
+                  }
+                  sessionStorage.setItem(leadCacheKey, JSON.stringify(list));
+                  localStorage.setItem(leadCacheKey, JSON.stringify(list));
                 }
               }
             } catch (_) {}

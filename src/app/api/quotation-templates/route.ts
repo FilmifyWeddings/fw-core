@@ -174,13 +174,27 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Ensure Default template is at the top of the array
-    results.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
+    // Deduplicate templates by normalized title/id to prevent duplicate cards
+    const titleSeen = new Map<string, any>();
+    for (const t of results) {
+      const normalizedTitle = (t.title || '').trim().toLowerCase();
+      if (!titleSeen.has(normalizedTitle)) {
+        titleSeen.set(normalizedTitle, t);
+      } else {
+        const existing = titleSeen.get(normalizedTitle);
+        // Prefer default template or newer template
+        if (t.is_default && !existing.is_default) {
+          titleSeen.set(normalizedTitle, t);
+        }
+      }
+    }
+    const deduplicatedResults = Array.from(titleSeen.values());
+    deduplicatedResults.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
 
     return NextResponse.json({
       success: true,
       activeDefaultTemplateId: activeDefaultId,
-      templates: results
+      templates: deduplicatedResults
     });
   } catch (error: any) {
     console.error('Error fetching quotation templates:', error);
