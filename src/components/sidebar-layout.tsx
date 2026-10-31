@@ -758,7 +758,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         suppressHydrationWarning
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        className={`fixed top-0 bottom-0 left-0 z-50 hidden lg:flex flex-col bg-white border-r border-[#EBE7DF] transition-all duration-300 ease-in-out ${
+        className={`fixed top-0 bottom-0 left-0 z-[9999] hidden lg:flex flex-col bg-white border-r border-[#EBE7DF] transition-all duration-300 ease-in-out ${
           isHovered ? 'w-64 shadow-2xl' : (collapsed ? 'w-20 shadow-xs' : 'w-64 shadow-xs')
         }`}
       >
@@ -1116,7 +1116,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {mobileDrawerOpen && (
-          <div className="lg:hidden fixed inset-0 z-50 flex">
+          <div className="lg:hidden fixed inset-0 z-[9999] flex">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

@@ -151,16 +151,56 @@ const ARCHIVED_LEAD_DESIGNS = new Set([
   'FW-USER-9YDTLG'
 ]);
 
+function getSynchronousCachedQuotations(): { items: SavedQuotation[]; hasCache: boolean } {
+  if (typeof window === 'undefined') return { items: [], hasCache: false };
+  if (memCachedQuotations && memCachedQuotations.length > 0) {
+    return { items: memCachedQuotations, hasCache: true };
+  }
+  try {
+    const activeUid = localStorage.getItem('wg_last_active_user_id') || localStorage.getItem('sc_active_workspace_id');
+    let cachedDataStr = activeUid ? localStorage.getItem(`wg_quotations_cache_${activeUid}`) : null;
+    if (!cachedDataStr) {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('wg_quotations_cache_') && k !== 'wg_quotations_cache') {
+          cachedDataStr = localStorage.getItem(k);
+          break;
+        }
+      }
+    }
+    if (!cachedDataStr && activeUid) {
+      cachedDataStr = localStorage.getItem(`studio_templates_cache_${activeUid}`);
+    }
+    if (cachedDataStr) {
+      const parsed = JSON.parse(cachedDataStr);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const filtered = parsed.filter((item: any) => {
+          const idStr = String(item.quotation_number || item.id);
+          if (ARCHIVED_LEAD_DESIGNS.has(idStr)) return false;
+          if (idStr.startsWith('FW-Q-') || idStr.startsWith('FW-L-')) return false;
+          return true;
+        });
+        if (filtered.length > 0) {
+          memCachedQuotations = filtered;
+          return { items: filtered, hasCache: true };
+        }
+      }
+    }
+  } catch (_) {}
+  return { items: [], hasCache: false };
+}
+
 export default function WorkspaceQuotationsGalleryPage() {
   const router = useRouter();
 
-  // Quotation Designs State (SSR-safe initial values)
-  const [quotations, setQuotations] = useState<SavedQuotation[]>([]);
+  // Quotation Designs State (0ms Instant Hydration from Memory / LocalStorage)
+  const cachedInit = useMemo(() => getSynchronousCachedQuotations(), []);
+  const [quotations, setQuotations] = useState<SavedQuotation[]>(() => cachedInit.items);
 
   // User Session & Security
   const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(() => !cachedInit.hasCache);
   const [mounted, setMounted] = useState<boolean>(false);
 
   // Dynamic Data States
@@ -743,17 +783,21 @@ export default function WorkspaceQuotationsGalleryPage() {
   useEffect(() => {
     window.addEventListener('focus', syncWithLocalDrafts);
     window.addEventListener('pageshow', syncWithLocalDrafts);
+    window.addEventListener('storage', syncWithLocalDrafts);
     window.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         syncWithLocalDrafts();
       }
     });
     window.addEventListener('wg_quotations_updated', syncWithLocalDrafts);
+    window.addEventListener('quotation_template_updated', syncWithLocalDrafts);
 
     return () => {
       window.removeEventListener('focus', syncWithLocalDrafts);
       window.removeEventListener('pageshow', syncWithLocalDrafts);
+      window.removeEventListener('storage', syncWithLocalDrafts);
       window.removeEventListener('wg_quotations_updated', syncWithLocalDrafts);
+      window.removeEventListener('quotation_template_updated', syncWithLocalDrafts);
     };
   }, [syncWithLocalDrafts]);
 
@@ -1062,6 +1106,22 @@ export default function WorkspaceQuotationsGalleryPage() {
     }
 
     loadUserDataSilently();
+
+    // ⚡ Supabase Realtime Sync: When a template is saved or edited from another PC/tab, update in real time!
+    const realtimeChannel = supabase
+      .channel('quotation_templates_realtime_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'quotation_templates' },
+        () => {
+          loadUserDataSilently();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(realtimeChannel);
+    };
   }, []);
 
   useEffect(() => {

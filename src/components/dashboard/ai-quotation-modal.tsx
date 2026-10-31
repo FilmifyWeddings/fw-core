@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sparkles, X, Check, AlertTriangle, ArrowRight, Loader2, 
   FileText, Calendar, MapPin, Users, DollarSign, Camera, Video, MessageSquare,
-  Mic, MicOff, Volume2, Square
+  Mic, MicOff, Volume2, Square, Copy
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -888,42 +888,6 @@ LEAD & CLIENT CONTEXT:
 
             {step === 'input' ? (
               <div className="space-y-4">
-                {/* Lead Summary Overview */}
-                <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/15 dark:bg-zinc-900/60 dark:border-zinc-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                      Lead Information
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300 text-[10px] font-bold">
-                      Ready for Extraction
-                    </span>
-                  </div>
-
-                  <div className="text-sm font-extrabold text-zinc-900 dark:text-white flex items-center gap-2">
-                    <Users className="w-4 h-4 text-amber-500" />
-                    <span>{lead?.name || 'Valued Client'}</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 pt-1">
-                    <div className="flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>Client details</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>Event & date info</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>Lead notes</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>{quotationId ? 'Current quotation draft' : 'Default template schema'}</span>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Selected Studio Template Design */}
                 {!quotationId && (
                   <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/5 dark:bg-zinc-900/60 border border-amber-500/20 dark:border-zinc-800">
@@ -949,16 +913,13 @@ LEAD & CLIENT CONTEXT:
                   </div>
                 )}
 
-                {/* 🎙️ ChatGPT-Style Voice & Text Input Section */}
+                {/* 🎙️ Voice & Text Input Section */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-amber-500" />
-                      <span>Requirements & Details (Voice or Text)</span>
+                      <span>Requirements & Details</span>
                     </label>
-                    <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500">
-                      OpenAI Whisper + GPT-4o-mini
-                    </span>
                   </div>
 
                   {/* Success & Error Toasts (Always visible on mobile without scrolling) */}
@@ -1014,50 +975,45 @@ LEAD & CLIENT CONTEXT:
                         <button
                           type="button"
                           onClick={handleCopySystemPrompt}
-                          className="px-2.5 py-1.5 rounded-xl bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                          className="px-2.5 py-1.5 rounded-xl bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
                           title="Copy Master JSON Prompt to paste in ChatGPT"
                         >
                           {promptCopied ? (
                             <>
-                              <Check className="w-3.5 h-3.5 text-emerald-500" />
+                              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                               <span className="text-emerald-600 dark:text-emerald-400">Copied!</span>
                             </>
                           ) : (
                             <>
-                              <FileText className="w-3.5 h-3.5 text-amber-500" />
-                              <span>Copy AI Prompt</span>
+                              <Copy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span>Copy Prompt</span>
                             </>
                           )}
                         </button>
 
                         {additionalNotes.length > 0 && (
-                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">
+                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium hidden sm:inline">
                             {additionalNotes.length} chars
                           </span>
                         )}
                       </div>
 
-                      {/* Right: ChatGPT Voice Controls */}
+                      {/* Right: ChatGPT / Antigravity Voice Controls */}
                       <div className="flex items-center gap-2">
                         {isRecording ? (
-                          <div className="flex items-center gap-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 px-3 py-1.5 rounded-full">
-                            {/* Red Pulsing Dot */}
-                            <span className="relative flex h-2.5 w-2.5">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
-                            </span>
-
-                            {/* Live Audio Waveform Bars (ChatGPT style) */}
-                            <div className="flex items-center gap-1">
-                              <span className="w-1 h-3.5 bg-rose-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                              <span className="w-1 h-5 bg-rose-600 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                              <span className="w-1 h-2.5 bg-rose-400 rounded-full animate-bounce"></span>
-                              <span className="w-1 h-4 bg-rose-500 rounded-full animate-bounce [animation-delay:-0.2s]"></span>
-                              <span className="w-1 h-3 bg-rose-600 rounded-full animate-bounce [animation-delay:-0.35s]"></span>
+                          <div className="flex items-center gap-2.5 bg-gradient-to-r from-zinc-900 to-zinc-800 dark:from-zinc-950 dark:to-zinc-900 text-white border border-zinc-700/60 px-3 py-1.5 rounded-full shadow-lg">
+                            {/* Live Audio Frequency Waveform Visualizer (Antigravity Voice Style) */}
+                            <div className="flex items-center gap-1 px-1">
+                              <span className="w-1 h-3 bg-amber-400 rounded-full animate-[pulse_0.6s_ease-in-out_infinite] [animation-delay:-0.3s]"></span>
+                              <span className="w-1 h-5 bg-gradient-to-t from-orange-500 to-amber-300 rounded-full animate-[pulse_0.4s_ease-in-out_infinite] [animation-delay:-0.15s]"></span>
+                              <span className="w-1 h-2.5 bg-amber-400 rounded-full animate-[pulse_0.5s_ease-in-out_infinite]"></span>
+                              <span className="w-1 h-4 bg-orange-400 rounded-full animate-[pulse_0.35s_ease-in-out_infinite] [animation-delay:-0.2s]"></span>
+                              <span className="w-1 h-3 bg-amber-300 rounded-full animate-[pulse_0.55s_ease-in-out_infinite] [animation-delay:-0.35s]"></span>
+                              <span className="w-1 h-1.5 bg-amber-500 rounded-full animate-[pulse_0.45s_ease-in-out_infinite]"></span>
                             </div>
 
                             {/* Timer */}
-                            <span className="text-[11px] font-black text-rose-700 dark:text-rose-300 tabular-nums">
+                            <span className="text-[11px] font-black text-amber-300 tracking-wider tabular-nums font-mono">
                               {String(Math.floor(recordSeconds / 60)).padStart(2, '0')}:{String(recordSeconds % 60).padStart(2, '0')}
                             </span>
 
@@ -1065,7 +1021,7 @@ LEAD & CLIENT CONTEXT:
                             <button
                               type="button"
                               onClick={cancelVoiceRecording}
-                              className="w-6 h-6 rounded-full bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 flex items-center justify-center transition-all cursor-pointer ml-1"
+                              className="w-6 h-6 rounded-full bg-zinc-700 hover:bg-zinc-600 text-zinc-300 hover:text-white flex items-center justify-center transition-all cursor-pointer ml-0.5"
                               title="Cancel recording"
                             >
                               <X className="w-3.5 h-3.5" />
@@ -1075,17 +1031,17 @@ LEAD & CLIENT CONTEXT:
                             <button
                               type="button"
                               onClick={stopVoiceRecording}
-                              className="px-3 py-1 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm active:scale-95 transition-all cursor-pointer"
+                              className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm active:scale-95 transition-all cursor-pointer"
                               title="Stop and Transcribe"
                             >
-                              <Square className="w-3 h-3 fill-current" />
+                              <Square className="w-2.5 h-2.5 fill-current" />
                               <span>Done</span>
                             </button>
                           </div>
                         ) : isTranscribing ? (
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-bold animate-pulse">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                            <span>Transcribing with Whisper...</span>
+                          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-bold animate-pulse">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500 shrink-0" />
+                            <span>Fetching...</span>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
@@ -1214,35 +1170,14 @@ LEAD & CLIENT CONTEXT:
           <div className="p-4 bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
             {step === 'input' ? (
               <>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    disabled={generating}
-                    className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800 transition-colors"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCopySystemPrompt}
-                    className="px-3.5 py-2.5 rounded-xl bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                    title="Copy complete multi-page AI system prompt with client metadata"
-                  >
-                    {promptCopied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-500" />
-                        <span className="text-emerald-600 dark:text-emerald-400">Prompt Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Copy AI Prompt</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={generating}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
 
                 <div className="flex items-center gap-2">
                   <button
@@ -1257,11 +1192,7 @@ LEAD & CLIENT CONTEXT:
                         <span>{quotationId ? 'Applying to Quotation...' : 'Opening Design...'}</span>
                       </>
                     ) : (
-                      <>
-                        <Sparkles className="w-4 h-4 text-white" />
-                        <span>{quotationId ? '⚡ Apply to Quotation' : '⚡ Create Quotation'}</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </>
+                      <span>{quotationId ? 'Apply to Quotation' : 'Create Quotation'}</span>
                     )}
                   </button>
                 </div>

@@ -36,7 +36,7 @@ export function isMemberSalesPerson(member: any): boolean {
   if (String(member.role_code || '').trim().toUpperCase() === 'SP') return true;
   if (Array.isArray(member.role_codes) && member.role_codes.some((c: string) => String(c || '').trim().toUpperCase() === 'SP')) return true;
 
-  // 3. Check array of roles safely - strictly Sales Person / Sales Representative / SP
+  // 3. Check array of roles safely - matches Sales Person, Sales Head, Sales, SP, etc.
   const rolesArray: string[] = Array.isArray(member.roles)
     ? [...member.roles]
     : [];
@@ -44,15 +44,13 @@ export function isMemberSalesPerson(member: any): boolean {
   if (member.primary_role && typeof member.primary_role === 'string') {
     rolesArray.push(member.primary_role);
   }
+  if (member.role && typeof member.role === 'string') {
+    rolesArray.push(member.role);
+  }
 
   return rolesArray.some((r: string) => {
     const clean = String(r || '').trim().toLowerCase();
-    return clean === 'sales person' ||
-           clean === 'salesperson' ||
-           clean === 'sales rep' ||
-           clean === 'sales representative' ||
-           clean === 'sales executive' ||
-           clean === 'sp';
+    return clean.includes('sales') || clean === 'sp' || clean.includes('(sp)');
   });
 }
 
@@ -93,16 +91,22 @@ export default function LeadOwnerSelect({
     const fetchCrew = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const wsId = session?.user?.id;
-        if (!wsId) return;
+        const activeWs = typeof window !== 'undefined' 
+          ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('impersonated_tenant_id') || '')
+          : '';
+        const sessionUserId = session?.user?.id || '';
+        const searchStudio = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('studio') : null;
+
+        const targetIds = Array.from(new Set([sessionUserId, activeWs, searchStudio].filter(Boolean))) as string[];
+        if (targetIds.length === 0) return;
 
         const membersList: LeadOwnerMember[] = [];
 
-        // 1. Fetch from fw_team_members strictly querying actual DB columns (no 'role')
+        // 1. Fetch from fw_team_members strictly querying actual DB columns
         const { data: fwCrew } = await supabase
           .from('fw_team_members')
           .select('id, user_id, name, roles, role_code, primary_role, is_sales_person, avatar_url, phone_number')
-          .eq('user_id', wsId);
+          .in('user_id', targetIds);
 
         if (fwCrew && fwCrew.length > 0) {
           fwCrew.forEach((c: any) => {
@@ -122,7 +126,32 @@ export default function LeadOwnerSelect({
           });
         }
 
-        // 2. Add studio owner if assigned Sales Person role
+        // 2. Fetch from workspace_members for team collaboration / invited members
+        try {
+          const { data: wsCrew } = await supabase
+            .from('workspace_members')
+            .select('id, user_id, workspace_id, name, roles, primary_role, avatar_url, phone')
+            .in('workspace_id', targetIds);
+
+          if (wsCrew && wsCrew.length > 0) {
+            wsCrew.forEach((w: any) => {
+              if (w.name && !membersList.some(m => m.name.toLowerCase() === w.name.trim().toLowerCase())) {
+                const rolesArr: string[] = Array.isArray(w.roles) ? w.roles : [];
+                membersList.push({
+                  id: w.id,
+                  user_id: w.user_id,
+                  name: w.name.trim(),
+                  roles: rolesArr,
+                  avatar_url: w.avatar_url,
+                  phone: w.phone,
+                  is_sales_person: isMemberSalesPerson(w),
+                });
+              }
+            });
+          }
+        } catch (_) {}
+
+        // 3. Add studio owner if assigned Sales Person role
         const ownerName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0];
         const ownerRole = session?.user?.user_metadata?.role || '';
         const isOwnerSales = 
@@ -131,7 +160,7 @@ export default function LeadOwnerSelect({
 
         if (ownerName && !membersList.some(m => m.name.toLowerCase() === ownerName.toLowerCase())) {
           membersList.unshift({
-            id: wsId,
+            id: sessionUserId || 'owner',
             name: ownerName,
             roles: [ownerRole || 'Owner'],
             role_code: isOwnerSales ? 'SP' : undefined,

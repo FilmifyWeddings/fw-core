@@ -1657,13 +1657,20 @@ export function LeadTable({
         try {
           const { data: { session } } = await supabase.auth.getSession();
           const uid = session?.user?.id;
-          if (uid) {
+          const activeWs = typeof window !== 'undefined'
+            ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('impersonated_tenant_id') || '')
+            : '';
+          const targetIds = Array.from(new Set([uid, activeWs].filter(Boolean))) as string[];
+          if (targetIds.length > 0) {
             const { data: fwCrew } = await supabase
               .from('fw_team_members')
-              .select('id, user_id, name, roles, role_code, is_sales_person, avatar_url, phone_number')
-              .eq('user_id', uid);
+              .select('id, user_id, name, roles, role_code, primary_role, is_sales_person, avatar_url, phone_number')
+              .in('user_id', targetIds);
             if (fwCrew && fwCrew.length > 0) {
               setTeamMembers(fwCrew);
+              try {
+                localStorage.setItem('leads_workspace_team_members', JSON.stringify(fwCrew));
+              } catch (_) {}
               return;
             }
           }
@@ -2889,7 +2896,7 @@ export function LeadTable({
   return (
     <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col relative overflow-hidden">
       {/* Fixed Non-Scrolling Top Header Controls Bar (Constrained to Screen Viewport) */}
-      <div className="shrink-0 w-full max-w-full overflow-visible relative border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-50">
+      <div className="shrink-0 w-full max-w-full overflow-visible relative border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-30">
         {renderHeader && (
           <div className="bg-[#FAF8F5] dark:bg-[#070708] px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-2">
             {renderHeader()}
@@ -5238,6 +5245,7 @@ export function LeadTable({
                       </label>
                       <LeadOwnerSelect
                         value={manualLeadOwner}
+                        teamMembers={teamMembers}
                         onChange={(val) => setManualLeadOwner(val)}
                       />
                     </div>
