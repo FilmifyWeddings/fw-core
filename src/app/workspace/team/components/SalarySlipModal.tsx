@@ -48,17 +48,6 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-function generateMonthOptions() {
-  const options: string[] = [];
-  const currentYear = new Date().getFullYear();
-  for (let year = currentYear - 1; year <= currentYear + 1; year++) {
-    for (const month of MONTH_NAMES) {
-      options.push(`${month} ${year}`);
-    }
-  }
-  return options;
-}
-
 export default function SalarySlipModal({
   isOpen,
   onClose,
@@ -70,14 +59,32 @@ export default function SalarySlipModal({
 }: SalarySlipModalProps) {
   const isEditMode = Boolean(slipToEdit && slipToEdit.id);
 
-  const monthOptions = useMemo(() => generateMonthOptions(), []);
+  const currentYear = new Date().getFullYear();
+  const currentMonthIdx = new Date().getMonth();
 
-  const getCurrentDefaultMonth = () => {
-    const d = new Date();
-    return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+  // Helper to parse month and year from string (e.g. "October 2026" or "2026-10")
+  const parseMonthYear = (str?: string) => {
+    if (!str) return { month: MONTH_NAMES[currentMonthIdx], year: currentYear };
+    const parts = str.trim().split(/[\s-]+/);
+    if (parts.length >= 2) {
+      const y1 = parseInt(parts[0], 10);
+      const y2 = parseInt(parts[1], 10);
+      if (!isNaN(y1) && y1 >= 1900 && y1 <= 2100) {
+        const m = parseInt(parts[1], 10) - 1;
+        return { month: MONTH_NAMES[m] || MONTH_NAMES[currentMonthIdx], year: y1 };
+      }
+      if (!isNaN(y2) && y2 >= 1900 && y2 <= 2100) {
+        const mName = parts[0];
+        const match = MONTH_NAMES.find(m => m.toLowerCase().startsWith(mName.toLowerCase()));
+        return { month: match || mName, year: y2 };
+      }
+    }
+    return { month: MONTH_NAMES[currentMonthIdx], year: currentYear };
   };
 
-  const [monthYear, setMonthYear] = useState<string>(getCurrentDefaultMonth());
+  const [selectedMonth, setSelectedMonth] = useState<string>(MONTH_NAMES[currentMonthIdx]);
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+  const [monthYear, setMonthYear] = useState<string>(`${MONTH_NAMES[currentMonthIdx]} ${currentYear}`);
   const [payoutDate, setPayoutDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [baseSalary, setBaseSalary] = useState<string>('0');
   const [incentiveAmount, setIncentiveAmount] = useState<string>('0');
@@ -87,12 +94,26 @@ export default function SalarySlipModal({
   const [notes, setNotes] = useState<string>('');
   const [autoSyncExpense, setAutoSyncExpense] = useState<boolean>(true);
 
+  // Generate wide range of years (from 10 years ago to 15 years in future)
+  const yearOptions = useMemo(() => {
+    const list: number[] = [];
+    const minYear = Math.min(selectedYear, currentYear - 10);
+    const maxYear = Math.max(selectedYear, currentYear + 15);
+    for (let y = minYear; y <= maxYear; y++) {
+      list.push(y);
+    }
+    return list;
+  }, [currentYear, selectedYear]);
+
   // Sync state when opening or when slipToEdit changes
   useEffect(() => {
     if (isOpen) {
       if (slipToEdit) {
         // Prepopulate in Edit mode
-        setMonthYear(slipToEdit.month_year || getCurrentDefaultMonth());
+        const parsed = parseMonthYear(slipToEdit.month_year);
+        setSelectedMonth(parsed.month);
+        setSelectedYear(parsed.year);
+        setMonthYear(slipToEdit.month_year || `${parsed.month} ${parsed.year}`);
         const dateVal = slipToEdit.payout_date || slipToEdit.paid_date || new Date().toISOString().split('T')[0];
         setPayoutDate(dateVal);
         setBaseSalary(String(slipToEdit.base_salary ?? 0));
@@ -104,8 +125,11 @@ export default function SalarySlipModal({
         setNotes(slipToEdit.notes || '');
         setAutoSyncExpense(false); // Edit mode: usually already synced
       } else {
-        // Create mode: prefill sensible defaults
-        setMonthYear(getCurrentDefaultMonth());
+        // Create mode: prefill sensible defaults (strictly decoupled from payout date)
+        const defMonth = MONTH_NAMES[currentMonthIdx];
+        setSelectedMonth(defMonth);
+        setSelectedYear(currentYear);
+        setMonthYear(`${defMonth} ${currentYear}`);
         setPayoutDate(new Date().toISOString().split('T')[0]);
         const defaultRate = member?.default_daily_rate ? String(member.default_daily_rate) : '0';
         setBaseSalary(defaultRate);
@@ -117,7 +141,7 @@ export default function SalarySlipModal({
         setAutoSyncExpense(true);
       }
     }
-  }, [isOpen, slipToEdit, member]);
+  }, [isOpen, slipToEdit, member, currentYear, currentMonthIdx]);
 
   // Real-time calculation: Net Paid = Base + Incentive - Deduction
   const baseNum = Number(baseSalary) || 0;
@@ -199,20 +223,46 @@ export default function SalarySlipModal({
             {/* Cycle & Payout Date */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-stone-500 tracking-wider block">
-                  Salary Month / Period *
-                </label>
-                <select
-                  value={monthYear}
-                  onChange={(e) => setMonthYear(e.target.value)}
-                  className="w-full h-8.5 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 cursor-pointer"
-                >
-                  {monthOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase text-stone-500 tracking-wider block">
+                    Salary Month / Period *
+                  </label>
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md">
+                    {selectedMonth} {selectedYear}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      setSelectedMonth(m);
+                      setMonthYear(`${m} ${selectedYear}`);
+                    }}
+                    className="w-full h-8.5 px-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    {MONTH_NAMES.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => {
+                      const y = parseInt(e.target.value, 10);
+                      setSelectedYear(y);
+                      setMonthYear(`${selectedMonth} ${y}`);
+                    }}
+                    className="w-full h-8.5 px-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    {yearOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="space-y-1">

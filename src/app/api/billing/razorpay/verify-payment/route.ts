@@ -80,11 +80,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: `Invalid planId: ${planId}` }, { status: 400 });
       }
       planName = targetTier.name;
-      priceRupees = billingCycle === 'yearly' ? targetTier.priceYearly : targetTier.priceMonthly;
-      planStorageGB = targetTier.storageGB;
-      planTeamSeats = targetTier.teamSeats;
-      planEventsPerMonth = targetTier.eventsPerMonth;
-      planAiScans = targetTier.aiScans;
+      priceRupees = billingCycle === 'yearly'
+        ? targetTier.priceYearly
+        : billingCycle === '6months'
+        ? (targetTier.price6Months || Math.round(targetTier.priceYearly / 2))
+        : targetTier.priceMonthly;
+      planStorageGB = targetTier.storageGB || 30;
+      planTeamSeats = targetTier.teamSeats || 1;
+      planEventsPerMonth = typeof targetTier.events === 'number' ? targetTier.events : (targetTier.eventsPerMonth || 5);
+      planAiScans = targetTier.aiScans || 1500;
     }
 
     // 3. Signature Verification (if live keys present)

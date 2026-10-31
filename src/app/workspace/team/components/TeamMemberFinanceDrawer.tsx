@@ -221,6 +221,8 @@ export default function TeamMemberFinanceDrawer({
   // ── MONTHLY PAYROLL & SALARY SLIP FORM STATES ──
   const now = new Date();
   const [showAddSalary, setShowAddSalary] = useState(false);
+  const [inlineSalaryMonth, setInlineSalaryMonth] = useState<string>(MONTH_NAMES[now.getMonth()]);
+  const [inlineSalaryYear, setInlineSalaryYear] = useState<number>(now.getFullYear());
   const [salaryDate, setSalaryDate] = useState<string>(now.toISOString().split('T')[0]); // YYYY-MM-DD
   const [salaryBaseAmount, setSalaryBaseAmount] = useState<string>(member?.default_daily_rate ? String(member.default_daily_rate) : '25000');
   const [salaryIncentive, setSalaryIncentive] = useState<string>('0');
@@ -230,6 +232,16 @@ export default function TeamMemberFinanceDrawer({
   const [salaryNotes, setSalaryNotes] = useState<string>('');
   const [salaryAutoSyncExpense, setSalaryAutoSyncExpense] = useState<boolean>(true);
   const [isSubmittingSalary, setIsSubmittingSalary] = useState<boolean>(false);
+
+  // Unlimited Year Options for inline salary slip form
+  const inlineYearOptions = useMemo(() => {
+    const list: number[] = [];
+    const curY = now.getFullYear();
+    for (let y = curY - 10; y <= curY + 15; y++) {
+      list.push(y);
+    }
+    return list;
+  }, [now]);
 
   // Payroll Filter State
   const [payrollFilterYear, setPayrollFilterYear] = useState<string>('All');
@@ -244,15 +256,19 @@ export default function TeamMemberFinanceDrawer({
   const memberType = (member?.primary_type || 'FREELANCER').toUpperCase();
   const isLab = memberType.includes('LAB') || memberType.includes('ALBUM') || memberType.includes('PARTNER');
 
-  // Helper to format Month/Year cleanly
+  // Helper to format Month/Year cleanly - STRICTLY prioritizes explicit month_year over paidDate
   const formatSlipTitle = useCallback((monthYear?: string, paidDate?: string) => {
-    if (monthYear && monthYear.includes('-')) {
-      const parts = monthYear.split('-');
-      const y = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10) - 1;
-      if (!isNaN(y) && !isNaN(m) && m >= 0 && m < 12) {
-        return `${MONTH_NAMES[m]} ${y}`;
+    if (monthYear && monthYear.trim()) {
+      const trimmed = monthYear.trim();
+      if (trimmed.includes('-')) {
+        const parts = trimmed.split('-');
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        if (!isNaN(y) && !isNaN(m) && m >= 0 && m < 12) {
+          return `${MONTH_NAMES[m]} ${y}`;
+        }
       }
+      return trimmed;
     }
     if (paidDate) {
       const d = new Date(paidDate);
@@ -260,7 +276,7 @@ export default function TeamMemberFinanceDrawer({
         return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       }
     }
-    return monthYear || 'Monthly';
+    return 'Monthly';
   }, []);
 
   const formatDisplayDate = useCallback((dateStr?: string) => {
@@ -954,10 +970,8 @@ export default function TeamMemberFinanceDrawer({
     e.preventDefault();
     if (!member?.id || !workspaceId) return;
 
-    const d = new Date(salaryDate || now);
-    const validDate = isNaN(d.getTime()) ? now : d;
-    const monthKey = `${validDate.getFullYear()}-${String(validDate.getMonth() + 1).padStart(2, '0')}`;
-    const monthTitle = formatSlipTitle(monthKey, salaryDate);
+    // Explicitly use selected salary month & year (strictly decoupled from payout date)
+    const monthTitle = `${inlineSalaryMonth} ${inlineSalaryYear}`;
 
     await handleSaveSalarySlip({
       month_year: monthTitle,
@@ -1966,7 +1980,7 @@ export default function TeamMemberFinanceDrawer({
                           <div>
                             <h4 className="text-xs font-black text-stone-900">Create Salary Slip &amp; Payout</h4>
                             <p className="text-[10px] text-amber-800 font-bold">
-                              Salary Cycle: {formatSlipTitle('', salaryDate)}
+                              Salary Cycle: {inlineSalaryMonth} {inlineSalaryYear}
                             </p>
                           </div>
                         </div>
@@ -1979,9 +1993,40 @@ export default function TeamMemberFinanceDrawer({
                         </button>
                       </div>
 
-                      {/* Simplified Grid: Single Payment Date (standard picker) */}
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
-                        {/* A. Simple Payment Date */}
+                      {/* Financial Inputs Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                        {/* A. Salary Month & Year Selector */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase text-stone-500 tracking-wider block">
+                            Salary Period *
+                          </label>
+                          <div className="grid grid-cols-2 gap-1">
+                            <select
+                              value={inlineSalaryMonth}
+                              onChange={(e) => setInlineSalaryMonth(e.target.value)}
+                              className="w-full h-8 px-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                            >
+                              {MONTH_NAMES.map((m) => (
+                                <option key={m} value={m}>
+                                  {m.slice(0, 3)}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={inlineSalaryYear}
+                              onChange={(e) => setInlineSalaryYear(parseInt(e.target.value, 10))}
+                              className="w-full h-8 px-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                            >
+                              {inlineYearOptions.map((y) => (
+                                <option key={y} value={y}>
+                                  {y}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* B. Payment Date */}
                         <div className="space-y-1">
                           <label className="text-[10px] font-black uppercase text-stone-500 tracking-wider block">
                             Payment Date *

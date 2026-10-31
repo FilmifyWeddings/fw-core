@@ -19,6 +19,7 @@ import MandatoryGoogleOnboardingModal from '@/components/auth/MandatoryGoogleOnb
 import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import UpgradePlanModal from '@/components/billing/UpgradePlanModal';
+import FeatureLockModal from '@/components/billing/FeatureLockModal';
 
 interface SidebarLayoutProps {
   children: React.ReactNode;
@@ -189,6 +190,17 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState<boolean>(false);
   const [subscriptionPlan, setSubscriptionPlan] = useState<string>('trial');
+  const [trialDaysRemaining, setTrialDaysRemaining] = useState<number>(14);
+  const [lockModalInfo, setLockModalInfo] = useState<{
+    isOpen: boolean;
+    featureName: string;
+    requiredPlan: 'Pro' | 'Studio' | 'Gallery';
+    description?: string;
+  }>({
+    isOpen: false,
+    featureName: '',
+    requiredPlan: 'Pro',
+  });
   const [showOnboardingCelebration, setShowOnboardingCelebration] = useState<boolean>(false);
   const [showGoogleOnboarding, setShowGoogleOnboarding] = useState<boolean>(false);
   const [googleOnboardingRole, setGoogleOnboardingRole] = useState<'owner' | 'team_member'>('owner');
@@ -320,6 +332,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               if (finalName) setUserName(finalName);
               if (finalAvatar) setUserAvatarUrl(finalAvatar);
               if (p.subscriptionPlan) setSubscriptionPlan(p.subscriptionPlan);
+
+              // Calculate 14-day free trial remaining days
+              const createdDateStr = session.user?.created_at || p?.createdAt || p?.created_at;
+              if (createdDateStr) {
+                const cDate = new Date(createdDateStr);
+                if (!isNaN(cDate.getTime())) {
+                  const diff = Math.floor((Date.now() - cDate.getTime()) / (1000 * 60 * 60 * 24));
+                  setTrialDaysRemaining(Math.max(0, 14 - diff));
+                }
+              }
 
               if (typeof window !== 'undefined') {
                 if (finalStudio) {
@@ -488,6 +510,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   const hasPartnerWorkspaces = mounted && Boolean(availableWorkspaces?.some(w => !w.isOwner));
 
+  const isPlanSolo = subscriptionPlan === 'solo';
+  const isPlanPro = subscriptionPlan === 'pro';
+  const isTrialExpired = subscriptionPlan === 'trial' && trialDaysRemaining <= 0;
+
   const baseMenuItems = isOwner ? [
     {
       id: 'dashboard',
@@ -519,6 +545,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/workspace/clients',
       icon: Users,
       iconBg: 'bg-[#F3E8FF] text-[#7E22CE]',
+      requiredPlan: 'Pro',
+      isLocked: isPlanSolo || isTrialExpired,
     },
     {
       id: 'gallery',
@@ -526,6 +554,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/workspace/gallery',
       icon: Camera,
       iconBg: 'bg-[#FEF3C7] text-[#D97706]',
+      requiredPlan: 'Gallery',
+      isLocked: isPlanSolo || isTrialExpired,
     },
     {
       id: 'quotations',
@@ -561,6 +591,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/workspace/video-review',
       icon: PlaySquare,
       iconBg: 'bg-[#EDE9FE] text-[#7C3AED]',
+      requiredPlan: 'Pro',
+      isLocked: isPlanSolo || isTrialExpired,
     },
     {
       id: 'storage',
@@ -589,6 +621,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/workspace/attendance',
       icon: Clock,
       iconBg: 'bg-[#DCFCE7] text-[#15803D]',
+      requiredPlan: 'Studio',
+      isLocked: isPlanSolo || isPlanPro || isTrialExpired,
     },
     {
       id: 'integrations',
@@ -596,6 +630,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/workspace/integrations',
       icon: Layers,
       iconBg: 'bg-[#E0E7FF] text-[#4338CA]',
+      requiredPlan: 'Studio',
+      isLocked: isPlanSolo || isPlanPro || isTrialExpired,
     },
     {
       id: 'settings',
@@ -912,6 +948,18 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                   suppressHydrationWarning
                   onMouseEnter={() => router.prefetch(formatPathWithStudio(item.path))}
                   onPointerDown={() => router.prefetch(formatPathWithStudio(item.path))}
+                  onClick={(e) => {
+                    if ((item as any).isLocked) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLockModalInfo({
+                        isOpen: true,
+                        featureName: item.name,
+                        requiredPlan: (item as any).requiredPlan || 'Pro',
+                        description: `${item.name} is included in the StudioCore ${(item as any).requiredPlan || 'Pro'} tier. Upgrade now to unlock instant access.`,
+                      });
+                    }
+                  }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
                     isActive
                       ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs'
@@ -926,6 +974,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                   {isExpanded && (
                     <div className="flex items-center justify-between flex-1 min-w-0">
                       <span className="truncate">{item.name}</span>
+                      {(item as any).isLocked && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-stone-100 text-stone-500 text-[9px] font-black tracking-tight border border-stone-200 shrink-0">
+                          🔒 {(item as any).requiredPlan}
+                        </span>
+                      )}
                       {isLeads && (
                         <button
                           type="button"
@@ -981,15 +1034,37 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               {/* Luxury Subscription Badge Pill */}
               <div 
                 onClick={() => setShowUpgradeModal(true)}
-                className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-amber-50 to-orange-50/50 border border-amber-300/60 hover:border-amber-400 hover:shadow-xs transition group cursor-pointer"
+                className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl border hover:shadow-xs transition group cursor-pointer ${
+                  subscriptionPlan === 'trial' && trialDaysRemaining <= 2
+                    ? 'bg-rose-50 border-rose-300/80 hover:border-rose-400'
+                    : 'bg-gradient-to-r from-amber-500/10 via-amber-50 to-orange-50/50 border-amber-300/60 hover:border-amber-400'
+                }`}
               >
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <Sparkles className="w-3.5 h-3.5 text-[#D9822B] fill-[#D9822B] shrink-0" />
-                  <span className="text-[11px] font-extrabold text-amber-950 uppercase tracking-wider truncate">
-                    {subscriptionPlan === 'trial' ? 'Free Trial' : `${subscriptionPlan} Plan`}
+                  <Sparkles className={`w-3.5 h-3.5 shrink-0 ${
+                    subscriptionPlan === 'trial' && trialDaysRemaining <= 2
+                      ? 'text-rose-600 fill-rose-600'
+                      : 'text-[#D9822B] fill-[#D9822B]'
+                  }`} />
+                  <span className={`text-[11px] font-extrabold uppercase tracking-wider truncate ${
+                    subscriptionPlan === 'trial' && trialDaysRemaining <= 2
+                      ? 'text-rose-900'
+                      : 'text-amber-950'
+                  }`}>
+                    {subscriptionPlan === 'trial' ? (
+                      trialDaysRemaining > 0 
+                        ? `${trialDaysRemaining} Days Left in Trial`
+                        : 'Trial Expired'
+                    ) : (
+                      `${subscriptionPlan.toUpperCase()} Plan`
+                    )}
                   </span>
                 </div>
-                <span className="text-[10px] font-bold text-[#D9822B] group-hover:text-amber-700 transition flex items-center shrink-0">
+                <span className={`text-[10px] font-bold group-hover:underline transition flex items-center shrink-0 ${
+                  subscriptionPlan === 'trial' && trialDaysRemaining <= 2
+                    ? 'text-rose-600'
+                    : 'text-[#D9822B]'
+                }`}>
                   Upgrade <ChevronRight className="w-3 h-3 ml-0.5" />
                 </span>
               </div>
@@ -1313,6 +1388,19 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         userId={userId || undefined}
         onSuccess={(newPlan) => {
           setSubscriptionPlan(newPlan.toLowerCase());
+        }}
+      />
+
+      {/* Feature Lock UX Modal */}
+      <FeatureLockModal
+        isOpen={lockModalInfo.isOpen}
+        featureName={lockModalInfo.featureName}
+        requiredPlan={lockModalInfo.requiredPlan}
+        description={lockModalInfo.description}
+        onClose={() => setLockModalInfo((prev) => ({ ...prev, isOpen: false }))}
+        onUpgrade={() => {
+          setLockModalInfo((prev) => ({ ...prev, isOpen: false }));
+          setShowUpgradeModal(true);
         }}
       />
     </div>

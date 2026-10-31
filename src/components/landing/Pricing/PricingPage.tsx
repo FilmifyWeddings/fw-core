@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import { PricingHeader } from './PricingHeader';
@@ -35,11 +35,8 @@ export const PricingPage: React.FC = () => {
         {/* 1. Header */}
         <PricingHeader />
 
-        {/* 2. Monthly / Yearly Toggle */}
-        <PricingToggle isYearly={isYearly} onChange={setIsYearly} />
-
-        {/* 3. 4 Pricing Cards */}
-        <PricingCardsGrid isYearly={isYearly} />
+        {/* 2. Unified Pricing Catalog (Gallery + CRM Tabs, Toggles, Cards, Matrix) */}
+        <PricingCardsGrid />
 
         {/* 4. Trust / Feature Benefits Strip */}
         <PricingBenefitsStrip />

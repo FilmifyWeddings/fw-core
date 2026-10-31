@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySuperAdminSession } from '@/lib/auth/super-admin-auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { SUBSCRIPTION_TIERS } from '@/lib/billing/plans';
+import { SUBSCRIPTION_TIERS, GALLERY_PLANS, CRM_PLANS, SubscriptionTier } from '@/lib/billing/plans';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/sushant/admin/fw/plans
- * Fetches all subscription plans from DB. If empty, seeds with default tiers.
+ * Fetches all subscription plans from DB for the Super Admin management view.
+ * If empty or unseeded, seeds with default gallery and CRM plans.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -26,37 +27,39 @@ export async function GET(req: NextRequest) {
       throw new Error(error.message);
     }
 
-    // If table is empty or unseeded, seed defaults
-    if (!dbPlans || dbPlans.length === 0) {
+    // If table is empty or missing gallery plans, seed defaults
+    const hasGalleryPlans = (dbPlans || []).some((p: any) => String(p.id).startsWith('gallery_'));
+    if (!dbPlans || dbPlans.length === 0 || !hasGalleryPlans) {
       const seedRows = SUBSCRIPTION_TIERS.map((tier) => ({
         id: tier.id,
         name: tier.name,
         tagline: tier.tagline,
         price_monthly: tier.priceMonthly,
         price_yearly: tier.priceYearly,
-        storage_bytes_limit: tier.storageGB * 1024 * 1024 * 1024,
-        team_members_limit: tier.teamSeats,
-        events_per_month_limit: tier.eventsPerMonth,
-        ai_face_scans_limit: tier.aiScans,
+        storage_bytes_limit: (tier.storageGB || 30) * 1024 * 1024 * 1024,
+        team_members_limit: tier.teamSeats || 1,
+        events_per_month_limit: typeof tier.events === 'number' ? tier.events : (tier.eventsPerMonth || 5),
+        ai_face_scans_limit: tier.aiScans || 1500,
         features: tier.features,
         is_active: true,
       }));
 
-      const { data: inserted, error: seedErr } = await supabaseAdmin
+      await supabaseAdmin
         .from('subscription_plans')
-        .insert(seedRows)
-        .select('*');
-
-      if (!seedErr && inserted) {
-        return NextResponse.json({ success: true, plans: inserted });
-      }
+        .upsert(seedRows, { onConflict: 'id' });
     }
 
-    // Format plans for admin UI
-    const formattedPlans = (dbPlans || []).map((p: any) => {
+    // Fetch fresh after seed
+    const { data: latestPlans } = await supabaseAdmin
+      .from('subscription_plans')
+      .select('*')
+      .order('price_monthly', { ascending: true });
+
+    const formattedPlans = (latestPlans || dbPlans || []).map((p: any) => {
       const storageGB = Math.round((Number(p.storage_bytes_limit) || 0) / (1024 * 1024 * 1024));
+      const rowId = String(p.id || '').toLowerCase().trim();
+      const isGallery = rowId.startsWith('gallery_') || p.features?.category === 'gallery';
       
-      // Features can be array of strings or array of objects
       let features = p.features;
       if (Array.isArray(features)) {
         features = features.map((f: any) => {
@@ -74,11 +77,12 @@ export async function GET(req: NextRequest) {
       }
 
       return {
-        id: p.id,
+        id: rowId,
+        category: isGallery ? 'gallery' : 'crm',
         name: p.name,
         tagline: p.tagline || '',
-        badge: p.badge || (p.id === 'pro' ? "Founder's Choice · Most Popular" : p.id === 'enterprise' ? 'Maximum Power' : ''),
-        popular: p.is_popular !== undefined ? Boolean(p.is_popular) : p.id === 'pro',
+        badge: p.badge || (p.id === 'gallery_250' ? 'RECOMMENDED' : p.id === 'pro' ? 'MOST POPULAR' : ''),
+        popular: p.is_popular !== undefined ? Boolean(p.is_popular) : (p.id === 'gallery_250' || p.id === 'pro'),
         priceMonthly: Number(p.price_monthly) || 0,
         priceYearly: Number(p.price_yearly) || 0,
         storageGB,
@@ -91,7 +95,15 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ success: true, plans: formattedPlans });
+    const galleryPlans = formattedPlans.filter((p: any) => p.category === 'gallery');
+    const crmPlans = formattedPlans.filter((p: any) => p.category === 'crm');
+
+    return NextResponse.json({
+      success: true,
+      plans: formattedPlans,
+      galleryPlans: galleryPlans.length > 0 ? galleryPlans : GALLERY_PLANS,
+      crmPlans: crmPlans.length > 0 ? crmPlans : CRM_PLANS,
+    });
   } catch (err: any) {
     console.error('[Admin Plans GET Error]:', err);
     return NextResponse.json(
@@ -130,14 +142,14 @@ export async function POST(req: NextRequest) {
       price_yearly: Math.max(0, Math.round(Number(plan.priceYearly) || 0)),
       storage_bytes_limit: storageBytes,
       team_members_limit: Math.max(1, Math.round(Number(plan.teamSeats) || 1)),
-      events_per_month_limit: Math.max(1, Math.round(Number(plan.eventsPerMonth) || 1)),
+      events_per_month_limit: Math.max(1, Math.round(Number(plan.eventsPerMonth || plan.events) || 1)),
       ai_face_scans_limit: Math.max(0, Math.round(Number(plan.aiScans) || 0)),
       features: Array.isArray(plan.features) ? plan.features : [],
       is_active: plan.isActive !== false,
       updated_at: new Date().toISOString(),
     };
 
-    // Include badge & is_popular if columns exist, or fallback safely
+    // Safely upsert
     try {
       const { error: upsertErr } = await supabaseAdmin
         .from('subscription_plans')
@@ -148,7 +160,6 @@ export async function POST(req: NextRequest) {
         }, { onConflict: 'id' });
 
       if (upsertErr) {
-        // If badge or is_popular column doesn't exist yet, retry without them
         if (upsertErr.message.includes('column') && (upsertErr.message.includes('badge') || upsertErr.message.includes('is_popular'))) {
           const { error: fallbackErr } = await supabaseAdmin
             .from('subscription_plans')
@@ -167,7 +178,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Plan "${plan.name}" updated successfully! Changes are live across all studio accounts.`,
+      message: `Plan "${plan.name}" updated successfully! Changes are live across all studio accounts and pricing pages.`,
       plan: {
         ...plan,
         storageGB,

@@ -53,14 +53,22 @@ export async function POST(req: NextRequest) {
 
     if (dbPlan) {
       planName = dbPlan.name;
-      priceRupees = billingCycle === 'yearly' ? dbPlan.price_yearly : dbPlan.price_monthly;
+      priceRupees = billingCycle === 'yearly'
+        ? Number(dbPlan.price_yearly)
+        : billingCycle === '6months'
+        ? Number(dbPlan.price_6months || Math.round(Number(dbPlan.price_yearly) / 2))
+        : Number(dbPlan.price_monthly);
     } else {
       const targetTier = SUBSCRIPTION_TIERS.find((t) => t.id === planId);
       if (!targetTier) {
         return NextResponse.json({ success: false, error: `Invalid planId: ${planId}` }, { status: 400 });
       }
       planName = targetTier.name;
-      priceRupees = billingCycle === 'yearly' ? targetTier.priceYearly : targetTier.priceMonthly;
+      priceRupees = billingCycle === 'yearly'
+        ? targetTier.priceYearly
+        : billingCycle === '6months'
+        ? (targetTier.price6Months || Math.round(targetTier.priceYearly / 2))
+        : targetTier.priceMonthly;
     }
 
     const amountPaise = priceRupees * 100;

@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sparkles, Check, X, Plus, Trash2, Save, RefreshCw, 
   HardDrive, Users, Calendar, Cpu, Crown, AlertCircle, 
-  CheckCircle2, ShieldCheck, Tag, Coins, ArrowUpRight
+  CheckCircle2, ShieldCheck, Tag, Coins, ArrowUpRight,
+  Images, Briefcase
 } from 'lucide-react';
 
 export interface AdminPlanFeature {
@@ -16,6 +17,7 @@ export interface AdminPlanFeature {
 
 export interface AdminPlan {
   id: string;
+  category?: 'gallery' | 'crm';
   name: string;
   tagline: string;
   badge?: string;
@@ -31,6 +33,7 @@ export interface AdminPlan {
 }
 
 export default function PlansManagerView() {
+  const [activeCategory, setActiveCategory] = useState<'gallery' | 'crm'>('gallery');
   const [plans, setPlans] = useState<AdminPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
@@ -145,27 +148,36 @@ export default function PlansManagerView() {
   };
 
   const handleAddNewPlan = () => {
-    const newId = `custom_${Date.now().toString().slice(-4)}`;
+    const isGal = activeCategory === 'gallery';
+    const newId = isGal ? `gallery_${Date.now().toString().slice(-4)}` : `crm_${Date.now().toString().slice(-4)}`;
     const newPlan: AdminPlan = {
       id: newId,
-      name: 'New Custom Tier',
-      tagline: 'Customized features and limits for studio creators',
+      category: activeCategory,
+      name: isGal ? 'Custom Gallery Tier' : 'Custom CRM Tier',
+      tagline: isGal ? 'Custom event limits and photo delivery' : 'Customized CRM features and limits',
       badge: 'New Tier',
       popular: false,
-      priceMonthly: 1299,
-      priceYearly: 12999,
-      storageGB: 80,
-      teamSeats: 3,
-      eventsPerMonth: 15,
+      priceMonthly: isGal ? 500 : 999,
+      priceYearly: isGal ? 4800 : 9990,
+      storageGB: isGal ? 60 : 80,
+      teamSeats: isGal ? 2 : 5,
+      eventsPerMonth: isGal ? 50 : 20,
       aiScans: 5000,
       isActive: true,
-      features: [
-        { text: '80 GB Backblaze B2 Storage', included: true, highlight: true },
-        { text: '3 Crew Member Seats', included: true },
-        { text: '15 Event Galleries / Month', included: true },
-        { text: '5,000 AI Face Scans', included: true },
-        { text: 'Client QR Guest Registration', included: true },
-        { text: 'Digital Watermark Protection', included: true },
+      features: isGal ? [
+        { text: '50 events', included: true, highlight: true },
+        { text: '3,000 photos per event', included: true },
+        { text: 'Client selection & approval', included: true },
+        { text: 'Download & export tools', included: true },
+        { text: 'AI photo sharing', included: true },
+        { text: 'Web High Resolution', included: true },
+      ] : [
+        { text: 'Leads & Quotations Builder', included: true, highlight: true },
+        { text: 'Booking & Events Master Calendar', included: true },
+        { text: '5 Crew Member Seats', included: true },
+        { text: 'Studio Storage (80 GB)', included: true },
+        { text: 'Post-Production Workflow Board', included: true },
+        { text: 'Smart Invoices & Payments', included: true },
       ],
     };
 
@@ -246,14 +258,48 @@ export default function PlansManagerView() {
         </div>
       </div>
 
+      {/* Category Tabs: Client Gallery vs Photography CRM */}
+      <div className="flex items-center gap-3 border-b border-[#EAE5DA] pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveCategory('gallery')}
+          className={`px-5 py-2.5 rounded-2xl text-xs font-black transition cursor-pointer flex items-center gap-2 ${
+            activeCategory === 'gallery'
+              ? 'bg-[#D9822B] text-white shadow-sm'
+              : 'bg-white text-zinc-600 hover:bg-stone-50 border border-[#EAE5DA]'
+          }`}
+        >
+          <Images className="w-4 h-4" />
+          <span>Client Gallery Plans ({plans.filter((p) => p.id.startsWith('gallery_')).length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveCategory('crm')}
+          className={`px-5 py-2.5 rounded-2xl text-xs font-black transition cursor-pointer flex items-center gap-2 ${
+            activeCategory === 'crm'
+              ? 'bg-[#D9822B] text-white shadow-sm'
+              : 'bg-white text-zinc-600 hover:bg-stone-50 border border-[#EAE5DA]'
+          }`}
+        >
+          <Briefcase className="w-4 h-4" />
+          <span>Photography CRM Plans ({plans.filter((p) => !p.id.startsWith('gallery_')).length})</span>
+        </button>
+      </div>
+
       {/* Plans List */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {plans.map((plan) => {
-          const isSaving = savingPlanId === plan.id;
-          const monthlyEquivalent = Math.round(plan.priceYearly / 12);
-          const yearlyDiscountPercent = Math.round(
-            ((plan.priceMonthly * 12 - plan.priceYearly) / (plan.priceMonthly * 12)) * 100
-          );
+        {plans
+          .filter((plan) => {
+            const isGal = plan.id.startsWith('gallery_') || (plan as any).category === 'gallery';
+            return activeCategory === 'gallery' ? isGal : !isGal;
+          })
+          .map((plan) => {
+            const isSaving = savingPlanId === plan.id;
+            const monthlyEquivalent = Math.round(plan.priceYearly / 12);
+            const yearlyDiscountPercent = Math.round(
+              ((plan.priceMonthly * 12 - plan.priceYearly) / (plan.priceMonthly * 12)) * 100
+            );
 
           return (
             <div
