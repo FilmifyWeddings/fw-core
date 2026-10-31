@@ -279,10 +279,57 @@ Return ONLY a valid JSON object matching:
 `;
 
   let aiRawOutput: any = null;
+  const geminiKey = process.env.GEMINI_API_KEY || '';
   const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // 1. PRIMARY ENGINE: OpenAI GPT-4o-mini (Industry Standard Quotation Intelligence)
-  if (openAiKey) {
+  // 1. PRIMARY ENGINE: Google Gemini (3.6-flash / 3.8-flash)
+  if (geminiKey) {
+    const candidateModels = ['gemini-3.6-flash', 'gemini-3.8-flash'];
+    for (const model of candidateModels) {
+      if (aiRawOutput) break;
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  { text: promptText },
+                  { text: `Please extract 100% structured quotation JSON from this context:\n${JSON.stringify(leanPromptContext, null, 2)}` }
+                ]
+              }
+            ],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.1,
+              maxOutputTokens: 3500
+            }
+          }),
+          signal: AbortSignal.timeout(20000)
+        });
+        if (geminiRes.ok) {
+          const geminiJson = await geminiRes.json();
+          const content = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (content) {
+            aiRawOutput = sanitizeAndParseJson(content);
+            console.log(`[AI Extract] Successfully generated via Gemini (${model})`);
+            break;
+          }
+        } else {
+          const errText = await geminiRes.text().catch(() => '');
+          console.warn(`[Gemini ${model} Error]:`, geminiRes.status, errText.slice(0, 150));
+        }
+      } catch (e: any) {
+        console.warn(`[Gemini ${model} Exception]:`, e?.message || e);
+      }
+    }
+  }
+
+  // 2. SECONDARY ENGINE: OpenAI GPT-4o-mini (Fallback if Gemini unavailable)
+  if (!aiRawOutput && openAiKey) {
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -300,7 +347,7 @@ Return ONLY a valid JSON object matching:
           temperature: 0.1,
           max_tokens: 1500
         }),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(20000)
       });
       if (res.ok) {
         const json = await res.json();

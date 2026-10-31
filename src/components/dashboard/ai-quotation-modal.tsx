@@ -102,12 +102,14 @@ export function AiQuotationModal({
   const [promptCopied, setPromptCopied] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(selectedTemplateId || '');
 
-  // 🎙️ OpenAI Whisper MediaRecorder State
+  // 🎙️ Voice MediaRecorder & Real-time Live Streaming State
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeSuccess, setTranscribeSuccess] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const initialAppendTextRef = useRef<string>('');
   const audioChunksRef = useRef<Blob[]>([]);
   const isCancelledRef = useRef<boolean>(false);
   const timerRef = useRef<any>(null);
@@ -115,6 +117,10 @@ export function AiQuotationModal({
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (_) {}
+        recognitionRef.current = null;
+      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         try { mediaRecorderRef.current.stop(); } catch (_) {}
       }
@@ -125,6 +131,41 @@ export function AiQuotationModal({
     setErrorMsg(null);
     setTranscribeSuccess(false);
     isCancelledRef.current = false;
+    initialAppendTextRef.current = additionalNotes.trim();
+
+    // 1. WebSpeech API for REAL-TIME LIVE STREAMING + AUTO-REPLACEMENT FLOW!
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      try {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'hi-IN'; // Recognizes Hindi, Marathi, Hinglish & English fluently!
+
+        rec.onresult = (event: any) => {
+          let currentSessionText = '';
+          for (let i = 0; i < event.results.length; i++) {
+            currentSessionText += event.results[i][0].transcript + ' ';
+          }
+          const trimmed = currentSessionText.trim();
+          if (initialAppendTextRef.current) {
+            setAdditionalNotes(initialAppendTextRef.current + ' ' + trimmed);
+          } else {
+            setAdditionalNotes(trimmed);
+          }
+        };
+
+        rec.onerror = (e: any) => {
+          console.warn('[WebSpeech Warning]:', e.error);
+        };
+
+        rec.start();
+        recognitionRef.current = rec;
+      } catch (e) {
+        console.warn('[WebSpeech Init Error]:', e);
+      }
+    }
+
     try {
       if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
         alert('Microphone access is not supported in this browser.');
@@ -147,7 +188,7 @@ export function AiQuotationModal({
         }
       };
 
-            recorder.onstop = async () => {
+      recorder.onstop = async () => {
         try {
           stream.getTracks().forEach((track) => track.stop());
         } catch (_) {}
@@ -156,6 +197,14 @@ export function AiQuotationModal({
         if (isCancelledRef.current) {
           isCancelledRef.current = false;
           audioChunksRef.current = [];
+          return;
+        }
+
+        // If SpeechRecognition already captured live streamed text into additionalNotes, finish immediately!
+        if (additionalNotes.trim().length > (initialAppendTextRef.current?.length || 0)) {
+          console.log('[Live Voice Flow]: Speech captured directly via real-time WebSpeech stream.');
+          setTranscribeSuccess(true);
+          setTimeout(() => setTranscribeSuccess(false), 5000);
           return;
         }
 
@@ -197,24 +246,37 @@ export function AiQuotationModal({
 
   const cancelVoiceRecording = () => {
     isCancelledRef.current = true;
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (_) {}
+      recognitionRef.current = null;
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try { mediaRecorderRef.current.stop(); } catch (_) {}
     }
     audioChunksRef.current = [];
     setIsRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
+    setAdditionalNotes(initialAppendTextRef.current || '');
   };
 
   const stopVoiceRecording = () => {
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (_) {}
+      recognitionRef.current = null;
+    }
     if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
     try {
-      // Do not call requestData() before stop() on iOS WebKit - simply call stop()
       mediaRecorderRef.current.stop();
     } catch (e) {
       console.warn('Error stopping media recorder:', e);
     }
     setIsRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
+
+    if (additionalNotes.trim().length > (initialAppendTextRef.current?.length || 0)) {
+      setTranscribeSuccess(true);
+      setTimeout(() => setTranscribeSuccess(false), 5000);
+    }
   };
 
   const transcribeWithWhisper = async (audioBlob: Blob, detectedMime: string = '') => {
@@ -960,12 +1022,19 @@ LEAD & CLIENT CONTEXT:
                       ? 'border-amber-500 ring-4 ring-amber-500/20'
                       : 'border-zinc-200 dark:border-zinc-800 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 shadow-xs'
                   }`}>
+                    {/* Live Streaming Indicator when mic is on */}
+                    {isRecording && (
+                      <div className="flex items-center gap-2 px-4 py-2 bg-rose-500/10 border-b border-rose-500/20 text-rose-600 dark:text-rose-400 text-[11px] font-bold">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0"></span>
+                        <span>🔴 लाइव वॉइस लिसनिंग... (बोलते रहें, आपके शब्द यहाँ रियल-टाइम लाइव टाइप हो रहे हैं)</span>
+                      </div>
+                    )}
                     {/* Textarea */}
                     <textarea
                       rows={5}
                       value={additionalNotes}
                       onChange={(e) => setAdditionalNotes(e.target.value)}
-                      placeholder={isTranscribing ? "🎙️ आपकी आवाज़ OpenAI Whisper से ट्रांसक्राइब हो रही है, कृपया रुकें..." : "माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):\nजैसे: 'रोहन और पूजा की शादी 18-19 नवंबर को लोनावला में, 18 को संगीत और हल्दी, 2 कैंडिड और 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज 2.2 लाख, 20k डिस्काउंट, 25% एडवांस...'\n\n💡 या ChatGPT का JSON सीधे यहाँ पेस्ट करें!"}
+                      placeholder={isRecording ? "🔴 आपकी आवाज़ लाइव रिकॉर्ड और टाइप हो रही है, बोलते रहें..." : isTranscribing ? "🎙️ आपकी आवाज़ प्रोसेस हो रही है, कृपया रुकें..." : "माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):\nजैसे: 'रोहन और पूजा की शादी 18-19 नवंबर को लोनावला में, 18 को संगीत और हल्दी, 2 कैंडिड और 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज 2.2 लाख, 20k डिस्काउंट, 25% एडवांस...'\n\n💡 या ChatGPT का JSON सीधे यहाँ पेस्ट करें!"}
                       className="w-full p-4 bg-transparent text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none resize-none leading-relaxed"
                     />
 
@@ -1069,7 +1138,7 @@ LEAD & CLIENT CONTEXT:
                               onClick={startVoiceRecording}
                               disabled={generating}
                               className="w-9 h-9 rounded-full bg-zinc-900 hover:bg-black dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-md cursor-pointer disabled:opacity-50"
-                              title="बोलकर कोटेशन बनाएँ (OpenAI Whisper Voice Mode)"
+                              title="बोलकर कोटेशन बनाएँ (StudioCore AI Voice Mode)"
                             >
                               <Mic className="w-4 h-4" />
                             </button>

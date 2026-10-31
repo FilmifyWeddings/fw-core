@@ -158,9 +158,18 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   // 1. Couple & Names
   let leadName = '';
-  const noteNameMatch = userNotes.match(/(?:couple|client|bride|groom|name)[:\s]+([A-Za-z0-9\s&]+)/i);
-  if (noteNameMatch) {
-    leadName = noteNameMatch[1].split('\n')[0].trim();
+
+  // Hindi Couple Name matching e.g. "कपल का नाम रहेगा रौनक और प्रेक्षा" or "रौनक और प्रेक्षा"
+  const hindiCoupleMatch = userNotes.match(/(?:कपल का नाम रहेगा|कपल का नाम|कपल नाम|कपल|कपल का)[:\s]*([\u0900-\u097F\w\s&]+?)(?:\s*(?:का|की|के|और उनका|उनका|का इसमें|है|होगी|\.|\n|$))/i);
+  if (hindiCoupleMatch && hindiCoupleMatch[1].trim()) {
+    leadName = hindiCoupleMatch[1].trim();
+  }
+
+  if (!leadName) {
+    const noteNameMatch = userNotes.match(/(?:couple|client|bride|groom|name)[:\s]+([A-Za-z0-9\s&]+)/i);
+    if (noteNameMatch) {
+      leadName = noteNameMatch[1].split('\n')[0].trim();
+    }
   }
 
   // Check for "Quotation for X & Y" or "quote for X & Y"
@@ -178,6 +187,31 @@ export function fallbackHeuristicExtractor(contextData: any) {
       leadName = couplePatternMatch[1].trim();
     }
   }
+
+  // Common Hindi name transliterations
+  const HINDI_NAME_TRANSLATE: Record<string, string> = {
+    'रौनक': 'Raunak',
+    'प्रेक्षा': 'Preksha',
+    'सागर': 'Sagar',
+    'रिद्धि': 'Riddhi',
+    'रोहन': 'Rohan',
+    'पूजा': 'Pooja',
+    'राहुल': 'Rahul',
+    'मोनालिसा': 'Monalisha',
+    'अथर्व': 'Atharva',
+    'साक्षी': 'Sakshi',
+    'संदीप': 'Sandeep',
+    'प्रिया': 'Priya',
+    'और': '&',
+    'तथा': '&',
+    'व': '&'
+  };
+
+  let translatedName = leadName;
+  for (const [k, v] of Object.entries(HINDI_NAME_TRANSLATE)) {
+    translatedName = translatedName.replace(new RegExp(k, 'g'), v);
+  }
+  leadName = translatedName.trim();
 
   if (!leadName) {
     leadName = leadInfo.name || raw.name || raw.client_name || raw.full_name || '';
@@ -210,9 +244,10 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   // 2. Event Type
   let eventType = 'Wedding';
-  const hasPreWed = fullText.includes('pre wedding') || fullText.includes('pre-wedding') || fullText.includes('prewedding') || fullText.includes('previewing') || fullText.includes('pre-shoot') || fullText.includes('pre shoot');
-  const hasWed = fullText.includes('wedding') || fullText.includes('marriage') || fullText.includes('shaadi');
-  const hasEng = fullText.includes('engagement') || fullText.includes('roka') || fullText.includes('ring ceremony');
+  const hasNegativePreWed = /प्री-?वेडिंग नहीं|प्री ?वेडिंग नाहीं|no pre-?wedding|not have pre-?wedding/i.test(fullText);
+  const hasPreWed = !hasNegativePreWed && (fullText.includes('pre wedding') || fullText.includes('pre-wedding') || fullText.includes('prewedding') || fullText.includes('previewing') || fullText.includes('pre-shoot') || fullText.includes('pre shoot'));
+  const hasWed = fullText.includes('wedding') || fullText.includes('marriage') || fullText.includes('shaadi') || fullText.includes('वेडिंग') || fullText.includes('शादी');
+  const hasEng = fullText.includes('engagement') || fullText.includes('roka') || fullText.includes('ring ceremony') || fullText.includes('सगाई');
 
   if (hasPreWed && hasWed) {
     eventType = 'Pre-Wedding & Wedding';
@@ -286,7 +321,31 @@ export function fallbackHeuristicExtractor(contextData: any) {
       }
     }
   }
-  const finalBudget = budget || 150000;
+  // 5. Budget, Pricing & Discounts
+  let basePrice = 150000;
+  let discountAmount = 0;
+
+  // Search for multiple prices (e.g. 1,70,000 and 1,45,000)
+  const priceMatches = [...userNotes.matchAll(/(?:₹|rs\.?|inr)?\s*([0-9]{1,3},[0-9]{3}(?:,[0-9]{3})?|[0-9]{5,7})/gi)]
+    .map(m => parseInt(m[1].replace(/,/g, '')))
+    .filter(n => n >= 5000 && !isNaN(n));
+
+  if (priceMatches.length >= 2) {
+    const sorted = [...new Set(priceMatches)].sort((a, b) => b - a);
+    if (sorted.length >= 2 && sorted[0] > sorted[1]) {
+      basePrice = sorted[0];
+      const finalOfferPrice = sorted[1];
+      discountAmount = basePrice - finalOfferPrice;
+    } else {
+      basePrice = sorted[0];
+    }
+  } else if (priceMatches.length === 1) {
+    basePrice = priceMatches[0];
+  } else if (budget) {
+    basePrice = budget;
+  }
+
+  const netBudget = Math.max(0, basePrice - discountAmount);
 
   // Extract custom times and location from notes
   let customStartTime = '';
@@ -298,7 +357,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
   if (endMatch) customEndTime = endMatch[1].trim();
 
   if (!location) {
-    const locMatch2 = userNotes.match(/(?:location|venue)[:\s]+["']?([^"\n,}]+)["']?/i);
+    const locMatch2 = userNotes.match(/(?:location|venue|at|in)[:\s]+["']?([^"\n,}]+)["']?/i);
     if (locMatch2) location = locMatch2[1].trim();
   }
 
@@ -347,10 +406,10 @@ export function fallbackHeuristicExtractor(contextData: any) {
   const functions: any[] = [];
   const knownEvents = [
     { key: 'haldi + sangeet', name: 'Haldi + Sangeet' },
-    { key: 'haldi', name: 'Haldi Ceremony' },
-    { key: 'mehendi', name: 'Mehendi Ceremony' },
-    { key: 'sangeet', name: 'Sangeet Night' },
-    { key: 'wedding', name: 'Wedding Ceremony' },
+    { key: 'haldi', name: 'Haldi' },
+    { key: 'mehendi', name: 'Mehendi' },
+    { key: 'sangeet', name: 'Sangeet' },
+    { key: 'wedding', name: 'Wedding' },
     { key: 'reception', name: 'Reception' },
     { key: 'engagement', name: 'Ring Ceremony' },
     { key: 'cocktail', name: 'Cocktail Party' },
@@ -394,7 +453,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
   if (functions.length === 0) {
     functions.push({
       id: 'func-ai-def',
-      name: 'Wedding Ceremony',
+      name: 'Wedding',
       date: weddingDate || 'Date Not Fixed',
       dateNotFixed: isDateNotFixed,
       startTime: customStartTime,
@@ -407,39 +466,47 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   // 7. Deliverables
   const deliverables: string[] = [
-    'Full Ultra HD Super-Fine Raw Photos',
-    'High Resolution Edited Photos (300+)',
-    'Cinematic Teaser (3-5 Mins)',
-    'Traditional Wedding Film (30-45 Mins)'
+    'All Raw Photos',
+    'Cinematic Video',
+    'Cinematic Teaser',
+    '1 Instagram Reel'
   ];
-  if (fullText.includes('reel')) deliverables.push('Instagram Reels Package (5 Reels)');
-  if (fullText.includes('drone')) deliverables.push('Drone Aerial Videography');
-  if (fullText.includes('album') || fullText.includes('photobook')) deliverables.push('Premium Photobook Album');
+  if (fullText.includes('album') || fullText.includes('photobook')) {
+    deliverables.push('Mini Book Album', '1 Main DVD Album');
+  }
+  if (fullText.includes('calendar') || fullText.includes('कैलेंडर')) {
+    deliverables.push('Photo Calendar');
+  }
+  if (fullText.includes('30 photo') || fullText.includes('30 फोटो') || fullText.includes('30 edited')) {
+    deliverables.push('30 Edited Photos');
+  } else {
+    deliverables.push('High Resolution Edited Photos (300+)');
+  }
 
-  // 8. Payment Schedule Installments (Custom percentages)
+  // 8. Payment Schedule Installments (Calculated on Net Budget)
   let paymentSteps: any[] = [];
-  if (fullText.includes('30%') && fullText.includes('50%') && fullText.includes('20%')) {
+  if (fullText.includes('30%') || (fullText.includes('50%') && fullText.includes('20%'))) {
     paymentSteps = [
-      { name: 'Advance Token', pct: '30%', amount: Math.round(finalBudget * 0.30), status: 'Pending' },
-      { name: 'On Event Day', pct: '50%', amount: Math.round(finalBudget * 0.50), status: 'Pending' },
-      { name: 'On Final Delivery', pct: '20%', amount: Math.round(finalBudget * 0.20), status: 'Pending' }
+      { name: 'Advance Token', pct: '30%', amount: Math.round(netBudget * 0.30), status: 'Pending' },
+      { name: 'On Event Day', pct: '50%', amount: Math.round(netBudget * 0.50), status: 'Pending' },
+      { name: 'On Final Delivery', pct: '20%', amount: Math.round(netBudget * 0.20), status: 'Pending' }
     ];
   } else if (fullText.includes('50%') && (fullText.includes('50%') || fullText.includes('half'))) {
     paymentSteps = [
-      { name: 'Advance Booking', pct: '50%', amount: Math.round(finalBudget * 0.50), status: 'Pending' },
-      { name: 'On Event Day / Delivery', pct: '50%', amount: Math.round(finalBudget * 0.50), status: 'Pending' }
+      { name: 'Advance Booking', pct: '50%', amount: Math.round(netBudget * 0.50), status: 'Pending' },
+      { name: 'On Event Day / Delivery', pct: '50%', amount: Math.round(netBudget * 0.50), status: 'Pending' }
     ];
   } else if (fullText.includes('20%') && fullText.includes('40%')) {
     paymentSteps = [
-      { name: 'Advance Token', pct: '20%', amount: Math.round(finalBudget * 0.20), status: 'Pending' },
-      { name: 'On Event Day', pct: '40%', amount: Math.round(finalBudget * 0.40), status: 'Pending' },
-      { name: 'On Final Delivery', pct: '40%', amount: Math.round(finalBudget * 0.40), status: 'Pending' }
+      { name: 'Advance Token', pct: '20%', amount: Math.round(netBudget * 0.20), status: 'Pending' },
+      { name: 'On Event Day', pct: '40%', amount: Math.round(netBudget * 0.40), status: 'Pending' },
+      { name: 'On Final Delivery', pct: '40%', amount: Math.round(netBudget * 0.40), status: 'Pending' }
     ];
   } else {
     paymentSteps = [
-      { name: 'Advance Booking Token', pct: '25%', amount: Math.round(finalBudget * 0.25), status: 'Pending' },
-      { name: 'On Wedding Event Day', pct: '50%', amount: Math.round(finalBudget * 0.50), status: 'Pending' },
-      { name: 'On Final Deliverables', pct: '25%', amount: Math.round(finalBudget * 0.25), status: 'Pending' }
+      { name: 'Advance Booking Token', pct: '25%', amount: Math.round(netBudget * 0.25), status: 'Pending' },
+      { name: 'On Wedding Event Day', pct: '50%', amount: Math.round(netBudget * 0.50), status: 'Pending' },
+      { name: 'On Final Deliverables', pct: '25%', amount: Math.round(netBudget * 0.25), status: 'Pending' }
     ];
   }
 
@@ -469,14 +536,14 @@ export function fallbackHeuristicExtractor(contextData: any) {
       note: ''
     },
     pricingPage: {
-      basePrice: finalBudget,
-      discountAmount: 0,
+      basePrice,
+      discountAmount,
       gstPct: 0,
       travelCharges: 0,
       accommodationCharges: 0,
       additionalCharges: 0,
       showExclusionsNote: true,
-      note: ''
+      note: discountAmount > 0 ? `Special discount of ₹${discountAmount.toLocaleString('en-IN')}` : ''
     },
     paymentTermsPage: {
       steps: paymentSteps
