@@ -136,7 +136,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const { isOwner, userRole, permissions, availableWorkspaces, activeWorkspace } = useWorkspace();
   const hasFetchedRef = useRef(false);
   const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+  const [isHovered, setIsHovered] = useState(false);
+  const isExpanded = !collapsed || isHovered;
   const [mounted, setMounted] = useState(false);
 
   const queryStudioCode = searchParams?.get('studio') || searchParams?.get('ws') || '';
@@ -372,7 +374,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     if (savedCollapsed !== null) {
       setCollapsed(savedCollapsed === 'true');
     } else {
-      setCollapsed(false);
+      setCollapsed(true);
     }
 
     if (typeof window !== 'undefined') {
@@ -754,13 +756,15 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       ───────────────────────────────────────────────────────────── */}
       <aside
         suppressHydrationWarning
-        className={`fixed top-0 bottom-0 left-0 z-50 hidden lg:flex flex-col bg-white border-r border-[#EBE7DF] shadow-xs transition-all duration-300 ease-in-out ${
-          collapsed ? 'w-20' : 'w-64'
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className={`fixed top-0 bottom-0 left-0 z-50 hidden lg:flex flex-col bg-white border-r border-[#EBE7DF] transition-all duration-300 ease-in-out ${
+          isHovered ? 'w-64 shadow-2xl' : (collapsed ? 'w-20 shadow-xs' : 'w-64 shadow-xs')
         }`}
       >
         {/* Top Brand Logo Header */}
-        <div suppressHydrationWarning className={`h-16 border-b border-[#F0ECE4] flex items-center shrink-0 ${collapsed ? 'justify-center px-1' : 'justify-between px-4'}`}>
-          {!collapsed ? (
+        <div suppressHydrationWarning className={`h-16 border-b border-[#F0ECE4] flex items-center shrink-0 ${!isExpanded ? 'justify-center px-1' : 'justify-between px-4'}`}>
+          {isExpanded ? (
             <>
               <Link
                 href={isOwner ? "/workspace" : formatPathWithStudio("/assigned-shoots")}
@@ -781,18 +785,18 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               </Link>
 
               <button
-                onClick={() => setCollapsed(true)}
+                onClick={() => setCollapsed(prev => !prev)}
                 className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition shrink-0 cursor-pointer"
-                title="Collapse Sidebar"
+                title={collapsed ? "Pin Sidebar Expanded" : "Collapse Sidebar"}
               >
-                <ChevronLeft className="w-4 h-4" />
+                {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
               </button>
             </>
           ) : (
             <button
               onClick={() => setCollapsed(false)}
               className="flex items-center justify-center w-12 h-12 rounded-2xl hover:bg-amber-50/80 transition-all cursor-pointer relative group"
-              title="Expand Sidebar (Click to Open)"
+              title="Expand Sidebar (Click to Pin or Hover)"
             >
               <StudioCoreBrandIcon className="w-10 h-10 shadow-sm" isCollapsed={true} />
               <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-white border border-[#EBE7DF] text-zinc-500 flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
@@ -804,11 +808,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
         {/* Workspace Switcher Bar */}
         <div className="px-3 pt-3 pb-1 shrink-0">
-          <WorkspaceSwitcher isCollapsed={collapsed} />
+          <WorkspaceSwitcher isCollapsed={!isExpanded} />
         </div>
 
         {/* Animated Round Capsule Mode Switcher (CRM <-> Gallery) - STRICTLY for Studio Owner Only */}
-        {isOwner && (!collapsed ? (
+        {isOwner && (isExpanded ? (
           <div className="px-3 py-2 shrink-0">
             <div className="relative p-1 rounded-full bg-[#F3EFE7] border border-[#E4DEC3] flex items-center shadow-inner">
               <button
@@ -912,14 +916,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                     isActive
                       ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs'
                       : 'text-zinc-600 hover:text-zinc-900 hover:bg-[#F9F8F5]'
-                  } ${collapsed ? 'justify-center px-0 py-2.5' : ''}`}
-                  title={collapsed ? item.name : undefined}
+                  } ${!isExpanded ? 'justify-center px-0 py-2.5' : ''}`}
+                  title={!isExpanded ? item.name : undefined}
                 >
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${item.iconBg}`}>
                     <Icon className="w-3.5 h-3.5" />
                   </div>
 
-                  {!collapsed && (
+                  {isExpanded && (
                     <div className="flex items-center justify-between flex-1 min-w-0">
                       <span className="truncate">{item.name}</span>
                       {isLeads && (
@@ -940,7 +944,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 </Link>
 
                 {/* Leads Nested Submenu */}
-                {isLeads && !collapsed && leadsSubmenuOpen && (
+                {isLeads && isExpanded && leadsSubmenuOpen && (
                   <div className="pl-9 pr-2 py-1 space-y-0.5 mt-0.5 border-l-2 border-amber-200 ml-4.5">
                     {(item as any).subItems?.map((sub: any) => {
                       const isSubActive = checkIsSubActive(sub.path);
@@ -972,7 +976,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
         {/* Bottom Profile & Studio Name Card */}
         <div className="p-3 border-t border-[#F0ECE4] shrink-0 bg-[#FCFBF9]">
-          {!collapsed ? (
+          {isExpanded ? (
             <div className="space-y-2">
               {/* Luxury Subscription Badge Pill */}
               <div 

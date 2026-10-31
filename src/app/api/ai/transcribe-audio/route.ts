@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
             Authorization: `Bearer ${openAiKey}`,
           },
           body: whisperFormData,
-          signal: AbortSignal.timeout(45000), // 45s resilient timeout for mobile audio
+          signal: AbortSignal.timeout(28000), // 28s timeout safely within Nginx proxy limit
         });
 
         if (res.ok) {

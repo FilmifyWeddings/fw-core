@@ -75,11 +75,14 @@ export function persistTemplatesToCache(templates: StudioTemplateItem[], workspa
 
   if (typeof window !== 'undefined') {
     try {
-      const activeUid = workspaceId || localStorage.getItem('wg_last_active_user_id') || '';
+      const activeUid = workspaceId || localStorage.getItem('wg_last_active_user_id') || localStorage.getItem('sc_active_workspace_id') || '';
       const localKey = activeUid ? `studio_templates_cache_${activeUid}` : 'studio_templates_cache';
       const serialized = JSON.stringify(templates);
       localStorage.setItem(localKey, serialized);
       sessionStorage.setItem(localKey, serialized);
+      // Guarantee global fallback key is also synced (0ms cross-workspace availability)
+      localStorage.setItem('studio_templates_cache', serialized);
+      sessionStorage.setItem('studio_templates_cache', serialized);
     } catch (_) {}
   }
 }

@@ -738,6 +738,7 @@ export function LeadQuotationModal({
           localStorage.setItem(cacheKey, JSON.stringify(updatedList));
           if (json.quotation) {
             sessionStorage.setItem(`current_quotation_doc_${qId}`, JSON.stringify(json.quotation));
+            localStorage.setItem(`wg_proposal_draft_${qId}`, JSON.stringify(json.quotation));
           }
         } catch (_) {}
 

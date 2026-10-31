@@ -232,7 +232,14 @@ export function AiQuotationModal({
         method: 'POST',
         body: fd
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch (parseErr) {
+        console.warn('[Whisper HTML or Non-JSON response]:', rawText?.slice(0, 150));
+        throw new Error('Voice transcription server is momentarily busy. Please speak again or type notes directly.');
+      }
       if (res.ok && data.text) {
         setAdditionalNotes((prev: string) => {
           const trimmed = prev.trim();
@@ -241,11 +248,15 @@ export function AiQuotationModal({
         setTranscribeSuccess(true);
         setTimeout(() => setTranscribeSuccess(false), 5000);
       } else {
-        throw new Error(data.error || 'Could not transcribe audio');
+        throw new Error(data.error || 'Could not transcribe audio. Please speak again or type notes directly.');
       }
     } catch (err: any) {
       console.warn('[Whisper Transcribe Notice]:', err);
-      setErrorMsg(err.message || 'Audio transcription unavailable. You can type or paste notes directly.');
+      let friendlyMsg = err.message || 'Audio transcription unavailable. You can type or paste notes directly.';
+      if (friendlyMsg.includes('<!DOCTYPE') || friendlyMsg.includes('Unexpected token') || friendlyMsg.includes('JSON')) {
+        friendlyMsg = 'Voice transcription service was momentarily interrupted. Please speak again or type notes directly.';
+      }
+      setErrorMsg(friendlyMsg);
     } finally {
       setIsTranscribing(false);
     }

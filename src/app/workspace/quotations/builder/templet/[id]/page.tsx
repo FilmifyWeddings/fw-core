@@ -375,7 +375,7 @@ const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIONS.map(
 
 // StudioCore Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
-  designName: 'Personalised Wedding Quotation',
+  designName: 'Wedding Quotation',
   eventGroup: 'Wedding',
   look: 'Cyprus & Sand Dune',
   primaryFont: "'Cormorant Garamond', serif",
@@ -385,9 +385,9 @@ const DEFAULT_AIRY_PROPOSAL = {
 
   // 1. Cover Page State
   cover: {
-    groomName: 'Client',
-    brideName: 'Partner',
-    coupleName: 'Valued Client',
+    groomName: '',
+    brideName: '',
+    coupleName: '',
     eventType: 'Wedding',
     sideOption: 'Both Sides',
     locationName: '',
@@ -5709,8 +5709,7 @@ function StudioCoreAiryBuilderContent() {
   // Render Guard: Strictly NEVER flash default or demo proposal while canonical document is loading
   const isPreseededForRoute = typeof window !== 'undefined' && Boolean(
     sessionStorage.getItem(`current_quotation_doc_${routeId}`) ||
-    localStorage.getItem(`wg_proposal_draft_${routeId}`) ||
-    (sessionStorage.getItem('current_active_quotation_doc') && isDocumentValid(data))
+    localStorage.getItem(`wg_proposal_draft_${routeId}`)
   );
 
   if (!isCanonicalLoaded && !isPreseededForRoute && !isDataReady) {
@@ -5940,15 +5939,15 @@ function StudioCoreAiryBuilderContent() {
 
       {/* ── TOP HEADER BAR ── */}
       {!isPublicPreview && (
-        <header className="h-12 bg-white border-b border-zinc-200 px-3 sm:px-5 flex items-center justify-between shrink-0 z-50 shadow-xs no-print">
-          <div className="flex items-center gap-2 sm:gap-3">
+        <header className="min-h-12 bg-white border-b border-zinc-200 px-2.5 sm:px-4 flex items-center justify-between gap-2 shrink-0 z-50 shadow-xs no-print overflow-x-auto menu-scrollbar">
+          <div className="flex items-center gap-2 shrink min-w-0">
             <input
               type="text"
               value={data.designName}
               onChange={(e) => { setData({ ...data, designName: e.target.value }); }}
-              className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[150px] sm:max-w-[320px] truncate"
+              className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[130px] sm:max-w-[200px] lg:max-w-[260px] truncate"
             />
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border hidden sm:inline-block ${
+            <span className={`text-[10px] font-semibold px-1.5 sm:px-2 py-0.5 rounded border hidden sm:inline-block shrink-0 ${
               hasUnsavedChanges ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
             }`}>
               {autoSaveStatus}
@@ -5956,7 +5955,7 @@ function StudioCoreAiryBuilderContent() {
           </div>
 
           {/* Viewport Zoom Controls */}
-          <div className="flex items-center gap-1 bg-zinc-100 px-2 py-1 rounded-full border border-zinc-200 text-[10px] font-bold text-zinc-700">
+          <div className="hidden md:flex items-center gap-1 bg-zinc-100 px-2 py-1 rounded-full border border-zinc-200 text-[10px] font-bold text-zinc-700 shrink-0">
             <button 
               type="button" 
               onClick={() => updateZoomScale(s => s - 0.05)} 
@@ -5984,15 +5983,16 @@ function StudioCoreAiryBuilderContent() {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
             <button
               type="button"
               onClick={() => setAiModalOpen(true)}
-              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md hover:shadow-lg active:scale-95 shrink-0"
               title="Create & Refine Quotation with AI"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-              <span>Create with AI</span>
+              <span className="hidden sm:inline">Create with AI</span>
+              <span className="sm:hidden">AI</span>
             </button>
 
             <button
@@ -6000,10 +6000,10 @@ function StudioCoreAiryBuilderContent() {
                 const previewUrl = `/workspace/quotations/builder/templet/${templateId || 'templet'}?preview=public`;
                 window.open(previewUrl, '_blank');
               }}
-              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 hidden md:flex"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md hover:shadow-lg active:scale-95 hidden md:flex shrink-0"
               title="Preview Template"
             >
-              <Eye className="w-3.5 h-3.5 stroke-[2.5]" /> <span>Preview</span>
+              <Eye className="w-3.5 h-3.5 stroke-[2.5]" /> <span className="hidden lg:inline">Preview</span>
             </button>
 
             <button
@@ -6022,17 +6022,17 @@ function StudioCoreAiryBuilderContent() {
                   prompt('Copy public quotation link:', shareUrl);
                 }
               }}
-              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md hover:shadow-lg active:scale-95 shrink-0"
               title="Share Public Proposal Link"
             >
-              <Share2 className="w-3.5 h-3.5 stroke-[2.5]" /> <span>Share</span>
+              <Share2 className="w-3.5 h-3.5 stroke-[2.5]" /> <span className="hidden sm:inline">Share</span>
             </button>
 
             <button
               type="button"
               onClick={handleClientDownloadPdf}
               disabled={downloadingPdf}
-              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 shrink-0"
               title="Download High-Res PDF"
             >
               {downloadingPdf ? (
@@ -6040,15 +6040,17 @@ function StudioCoreAiryBuilderContent() {
               ) : (
                 <Download className="w-3.5 h-3.5 stroke-[2.5]" />
               )}
-              <span>{downloadingPdf ? 'Exporting...' : 'Download PDF'}</span>
+              <span className="hidden sm:inline">{downloadingPdf ? 'Exporting...' : 'Download PDF'}</span>
+              <span className="sm:hidden">{downloadingPdf ? '...' : 'PDF'}</span>
             </button>
 
             <button
               onClick={handleManualSave}
               disabled={saving}
-              className="px-3 sm:px-4 py-1.5 rounded-full bg-zinc-900 hover:bg-black text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50"
+              className="px-3 sm:px-4 py-1.5 rounded-full bg-zinc-900 hover:bg-black text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50 shrink-0"
+              title="Save Quotation"
             >
-              <Save className="w-3.5 h-3.5 text-amber-400" /> {saving ? '...' : 'Save'}
+              <Save className="w-3.5 h-3.5 text-amber-400" /> <span>{saving ? '...' : 'Save'}</span>
             </button>
 
             <button
@@ -6068,7 +6070,7 @@ function StudioCoreAiryBuilderContent() {
                 } catch (_) {}
                 router.push('/workspace/quotations');
               }}
-              className="p-1 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-1 cursor-pointer"
+              className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-0.5 cursor-pointer shrink-0"
               title="Close Builder"
             >
               <X className="w-4 h-4" />
