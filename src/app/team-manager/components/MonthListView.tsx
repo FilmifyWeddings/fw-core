@@ -95,7 +95,23 @@ export default function MonthListView({
 
       const matchClientName = !isDateQ && (!q || project.client_name.toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q));
 
-      (project.fw_sub_events || []).forEach((se) => {
+      const subEventsToRender = (project.fw_sub_events && project.fw_sub_events.length > 0)
+        ? project.fw_sub_events
+        : [{
+            id: `${project.id}_default`,
+            project_id: project.id,
+            event_title: (project as any).title || project.client_name || 'Main Wedding Shoot',
+            event_date: project.main_date || null,
+            venue_name: project.main_venue || 'Studio Venue / TBD',
+            roll_call_time: '10:00 AM',
+            dismissal_estimate_time: '06:00 PM',
+            shift_hours_slot: 'Full Day',
+            operational_notes: '',
+            roles: [],
+            fw_assignments: []
+          } as any];
+
+      subEventsToRender.forEach((se) => {
         if (isDateQ) {
           // Strict Date Search: Only show sub-events on this exact date!
           if (!matchDateQuery(q, se.event_date)) return;

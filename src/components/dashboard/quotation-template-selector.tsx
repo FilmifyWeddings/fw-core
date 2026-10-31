@@ -334,16 +334,24 @@ export function QuotationTemplateSelector({
       });
     };
 
+    const onStorageTmplSync = (e: Event) => {
+      if (e && 'key' in e && (e as StorageEvent).key) {
+        const key = (e as StorageEvent).key;
+        if (key !== 'quotation_template_updated' && key !== 'wg_quotations_updated' && !key?.startsWith('studio_templates_cache_')) {
+          return;
+        }
+      }
+      handleTemplateUpdate();
+    };
+
     window.addEventListener('quotation_template_updated', handleTemplateUpdate);
     window.addEventListener('wg_quotations_updated', handleTemplateUpdate);
-    window.addEventListener('storage', handleTemplateUpdate);
-    window.addEventListener('focus', handleTemplateUpdate);
+    window.addEventListener('storage', onStorageTmplSync);
 
     return () => {
       window.removeEventListener('quotation_template_updated', handleTemplateUpdate);
       window.removeEventListener('wg_quotations_updated', handleTemplateUpdate);
-      window.removeEventListener('storage', handleTemplateUpdate);
-      window.removeEventListener('focus', handleTemplateUpdate);
+      window.removeEventListener('storage', onStorageTmplSync);
     };
   }, [workspaceId]);
 

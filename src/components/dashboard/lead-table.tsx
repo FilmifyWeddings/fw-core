@@ -550,16 +550,24 @@ export function LeadTable({
       } catch (_) {}
     };
 
+    const onStorageSync = (e: Event) => {
+      if (e && 'key' in e && (e as StorageEvent).key) {
+        const key = (e as StorageEvent).key;
+        if (key !== 'settings_updated' && key !== 'sc_lead_stages_updated') return;
+      }
+      handleSettingsSync();
+    };
+
     handleSettingsSync();
 
     if (typeof window !== 'undefined') {
       window.addEventListener('settings_updated', handleSettingsSync);
-      window.addEventListener('storage', handleSettingsSync);
+      window.addEventListener('storage', onStorageSync);
     }
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('settings_updated', handleSettingsSync);
-        window.removeEventListener('storage', handleSettingsSync);
+        window.removeEventListener('storage', onStorageSync);
       }
     };
   }, []);
@@ -1952,16 +1960,24 @@ export function LeadTable({
       })();
     };
 
+    const onStorageActionSync = (e: Event) => {
+      if (e && 'key' in e && (e as StorageEvent).key) {
+        const key = (e as StorageEvent).key;
+        if (key !== 'settings_updated' && key !== 'sc_quick_actions_updated') return;
+      }
+      loadActions();
+    };
+
     loadActions();
 
     if (typeof window !== 'undefined') {
       window.addEventListener('settings_updated', loadActions);
-      window.addEventListener('storage', loadActions);
+      window.addEventListener('storage', onStorageActionSync);
     }
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('settings_updated', loadActions);
-        window.removeEventListener('storage', loadActions);
+        window.removeEventListener('storage', onStorageActionSync);
       }
     };
   }, []);

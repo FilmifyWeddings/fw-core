@@ -97,7 +97,26 @@ export default function LeadOwnerSelect({
         const sessionUserId = session?.user?.id || '';
         const searchStudio = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('studio') : null;
 
-        const targetIds = Array.from(new Set([sessionUserId, activeWs, searchStudio].filter(Boolean))) as string[];
+        const isValidUuid = (id?: string | null): id is string => 
+          Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+
+        let resolvedStudioUid: string | null = null;
+        if (searchStudio && !isValidUuid(searchStudio)) {
+          try {
+            const { data: prof } = await supabase
+              .from('workspace_profiles')
+              .select('user_id')
+              .ilike('studio_slug', searchStudio)
+              .maybeSingle();
+            if (prof?.user_id && isValidUuid(prof.user_id)) {
+              resolvedStudioUid = prof.user_id;
+            }
+          } catch (_) {}
+        } else if (searchStudio && isValidUuid(searchStudio)) {
+          resolvedStudioUid = searchStudio;
+        }
+
+        const targetIds = Array.from(new Set([sessionUserId, activeWs, resolvedStudioUid].filter(isValidUuid)));
         if (targetIds.length === 0) return;
 
         const membersList: LeadOwnerMember[] = [];
@@ -151,20 +170,17 @@ export default function LeadOwnerSelect({
           }
         } catch (_) {}
 
-        // 3. Add studio owner if assigned Sales Person role
+        // 3. Add studio owner / current user so owner can always assign themselves
         const ownerName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0];
-        const ownerRole = session?.user?.user_metadata?.role || '';
-        const isOwnerSales = 
-          ownerRole.toLowerCase().includes('sales') || 
-          ownerRole.toUpperCase() === 'SP';
+        const ownerRole = session?.user?.user_metadata?.role || 'Studio Owner';
 
         if (ownerName && !membersList.some(m => m.name.toLowerCase() === ownerName.toLowerCase())) {
           membersList.unshift({
             id: sessionUserId || 'owner',
             name: ownerName,
-            roles: [ownerRole || 'Owner'],
-            role_code: isOwnerSales ? 'SP' : undefined,
-            is_sales_person: isOwnerSales,
+            roles: [ownerRole],
+            role_code: 'SP',
+            is_sales_person: true,
           });
         }
 
@@ -233,12 +249,15 @@ export default function LeadOwnerSelect({
   const currentOwner = (value || 'Unassigned').trim();
   const isUnassigned = currentOwner.toLowerCase() === 'unassigned' || !currentOwner;
 
-  // Strictly filter to Sales Persons only (plus currently assigned owner so legacy assignment is preserved)
+  // Filter to Sales Persons, with graceful fallback to all studio members if none explicitly designated
   const salesTeamMembers = useMemo(() => {
     const list = consolidatedMembers || [];
-    return list
-      .filter(m => isMemberSalesPerson(m) || (!isUnassigned && m.name.toLowerCase() === currentOwner.toLowerCase()))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const salesOnly = list.filter(m => isMemberSalesPerson(m) || (!isUnassigned && m.name.toLowerCase() === currentOwner.toLowerCase()));
+    if (salesOnly.length > 0) {
+      return salesOnly.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    // Fallback: If no dedicated Sales Person is marked yet, show all members so owner can still assign someone!
+    return list.sort((a, b) => a.name.localeCompare(b.name));
   }, [consolidatedMembers, isUnassigned, currentOwner]);
 
   // Selected Member Details (if assigned to a sales person)

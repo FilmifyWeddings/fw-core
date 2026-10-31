@@ -781,23 +781,33 @@ export default function WorkspaceQuotationsGalleryPage() {
   }, [userId]);
 
   useEffect(() => {
-    window.addEventListener('focus', syncWithLocalDrafts);
-    window.addEventListener('pageshow', syncWithLocalDrafts);
-    window.addEventListener('storage', syncWithLocalDrafts);
-    window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
+    let debounceTimer: NodeJS.Timeout | null = null;
+    const debouncedSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
         syncWithLocalDrafts();
+      }, 300);
+    };
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (!e.key || e.key.startsWith('wg_proposal_draft_') || e.key === 'quotation_template_updated' || e.key === 'wg_quotations_updated') {
+        debouncedSync();
       }
-    });
-    window.addEventListener('wg_quotations_updated', syncWithLocalDrafts);
-    window.addEventListener('quotation_template_updated', syncWithLocalDrafts);
+    };
+
+    window.addEventListener('focus', debouncedSync);
+    window.addEventListener('pageshow', debouncedSync);
+    window.addEventListener('storage', handleStorageEvent);
+    window.addEventListener('wg_quotations_updated', debouncedSync);
+    window.addEventListener('quotation_template_updated', debouncedSync);
 
     return () => {
-      window.removeEventListener('focus', syncWithLocalDrafts);
-      window.removeEventListener('pageshow', syncWithLocalDrafts);
-      window.removeEventListener('storage', syncWithLocalDrafts);
-      window.removeEventListener('wg_quotations_updated', syncWithLocalDrafts);
-      window.removeEventListener('quotation_template_updated', syncWithLocalDrafts);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener('focus', debouncedSync);
+      window.removeEventListener('pageshow', debouncedSync);
+      window.removeEventListener('storage', handleStorageEvent);
+      window.removeEventListener('wg_quotations_updated', debouncedSync);
+      window.removeEventListener('quotation_template_updated', debouncedSync);
     };
   }, [syncWithLocalDrafts]);
 

@@ -72,6 +72,59 @@ export async function POST(
         supabaseClient: supabaseAdmin
       });
 
+      // 100% Guarantee: Ensure master project and sub-event exist in Booking & Events (fw_projects & fw_sub_events)
+      try {
+        const clientCId = syncResult?.workspaceClientId || lead.client_id;
+        const couple = syncResult?.coupleName || lead.name || 'Valued Client';
+        if (workspaceId && clientCId) {
+          const { data: existingProjs } = await supabaseAdmin
+            .from('fw_projects')
+            .select('id')
+            .eq('user_id', workspaceId)
+            .eq('client_id', clientCId);
+          let pId = existingProjs?.[0]?.id;
+          if (!pId) {
+            const { data: createdP } = await supabaseAdmin
+              .from('fw_projects')
+              .insert([{
+                user_id: workspaceId,
+                client_id: clientCId,
+                client_name: couple.trim(),
+                main_date: lead.event_date || new Date().toISOString().split('T')[0],
+                main_venue: (lead.location && String(lead.location).trim()) ? String(lead.location).trim() : 'Studio Venue / TBD',
+                status: 'active',
+                is_archived: false
+              }])
+              .select('id')
+              .single();
+            pId = createdP?.id;
+          }
+          if (pId) {
+            const { data: exSe } = await supabaseAdmin
+              .from('fw_sub_events')
+              .select('id')
+              .eq('project_id', pId);
+            if (!exSe || exSe.length === 0) {
+              await supabaseAdmin
+                .from('fw_sub_events')
+                .insert([{
+                  project_id: pId,
+                  event_title: 'Main Wedding Shoot',
+                  event_date: lead.event_date || new Date().toISOString().split('T')[0],
+                  venue_name: (lead.location && String(lead.location).trim()) ? String(lead.location).trim() : 'Studio Venue / TBD',
+                  roll_call_time: '10:00 AM',
+                  dismissal_estimate_time: '06:00 PM',
+                  shift_hours_slot: 'Full Day',
+                  roles: [],
+                  user_id: workspaceId
+                }]);
+            }
+          }
+        }
+      } catch (bkErr) {
+        console.warn('[Book Lead Quotation Fallback fw_projects Notice]:', bkErr);
+      }
+
       return NextResponse.json({
         success: true,
         hasFinalQuotation: true,
@@ -375,8 +428,9 @@ export async function POST(
           } catch (_) {}
         })(),
 
-        // 3E. Bookings & Events (fw_projects): 1 Master Project with 0 ceremonies
+        // 3E. Bookings & Events (fw_projects & fw_sub_events): Master Project with Shoot Card
         (async () => {
+          let projId: string | null = null;
           const { data: existingProjs } = await supabaseAdmin
             .from('fw_projects')
             .select('id')
@@ -384,6 +438,7 @@ export async function POST(
             .eq('client_id', workspaceClientId);
 
           if (existingProjs && existingProjs.length > 0) {
+            projId = existingProjs[0].id;
             await supabaseAdmin
               .from('fw_projects')
               .update({
@@ -395,9 +450,9 @@ export async function POST(
                 is_archived: false,
                 updated_at: nowIso
               })
-              .eq('id', existingProjs[0].id);
+              .eq('id', projId);
           } else {
-            await supabaseAdmin
+            const { data: createdProj } = await supabaseAdmin
               .from('fw_projects')
               .insert({
                 user_id: workspaceId,
@@ -407,7 +462,33 @@ export async function POST(
                 main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
                 status: 'active',
                 is_archived: false
-              });
+              })
+              .select('id')
+              .single();
+            projId = createdProj?.id || null;
+          }
+
+          // Ensure a sub-event exists so the card is visible in Team Manager MonthListView
+          if (projId) {
+            const { data: exSe } = await supabaseAdmin
+              .from('fw_sub_events')
+              .select('id')
+              .eq('project_id', projId);
+            if (!exSe || exSe.length === 0) {
+              await supabaseAdmin
+                .from('fw_sub_events')
+                .insert([{
+                  project_id: projId,
+                  event_title: eventType || 'Main Wedding Shoot',
+                  event_date: eventDate || nowIso.split('T')[0],
+                  venue_name: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
+                  roll_call_time: '10:00 AM',
+                  dismissal_estimate_time: '06:00 PM',
+                  shift_hours_slot: 'Full Day',
+                  roles: [],
+                  user_id: workspaceId
+                }]);
+            }
           }
         })(),
 

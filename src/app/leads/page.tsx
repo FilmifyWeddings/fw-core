@@ -305,10 +305,22 @@ export default function LeadsPage() {
 
   // Settings & Leads sync listener
   useEffect(() => {
-    const handleSync = () => {
+    let debounceTimer: NodeJS.Timeout | null = null;
+    const handleSync = (e?: Event) => {
+      // If it's a storage event from another tab, strictly filter by relevant keys!
+      if (e && 'key' in e && (e as StorageEvent).key) {
+        const storageKey = (e as StorageEvent).key;
+        const allowedKeys = ['leads_updated', 'settings_updated', 'sc_lead_stages_updated', 'sc_booking_sync_event'];
+        if (!storageKey || !allowedKeys.includes(storageKey)) {
+          return;
+        }
+      }
       if (userId) {
-        console.log('[Leads CRM] Triggering instant reload due to sync/update event.');
-        loadLeadsAndPreferences(userId);
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          console.log('[Leads CRM] Triggering debounced reload due to sync/update event.');
+          loadLeadsAndPreferences(userId);
+        }, 300);
       }
     };
     if (typeof window !== 'undefined') {
@@ -318,6 +330,7 @@ export default function LeadsPage() {
       window.addEventListener('storage', handleSync);
     }
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       if (typeof window !== 'undefined') {
         window.removeEventListener('settings_updated', handleSync);
         window.removeEventListener('leads_updated', handleSync);

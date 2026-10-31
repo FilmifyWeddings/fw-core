@@ -933,7 +933,19 @@ export async function syncQuotationToTeamManagerEvents(
 
   try {
     const extractedEvents = extractSubEventsFromQuotation(contentJson, fallbackEventDate, fallbackVenue);
-    if (extractedEvents.length === 0) return null;
+    if (extractedEvents.length === 0) {
+      extractedEvents.push({
+        event_title: 'Main Wedding Shoot',
+        event_date: fallbackEventDate || new Date().toISOString().split('T')[0],
+        venue_name: (fallbackVenue && String(fallbackVenue).trim()) ? String(fallbackVenue).trim() : 'Studio Venue / TBD',
+        venue_map_link: '',
+        roll_call_time: '10:00 AM',
+        dismissal_estimate_time: '06:00 PM',
+        shift_hours_slot: 'Full Day',
+        operational_notes: '',
+        roles: []
+      });
+    }
 
     // Deduplicate extractedEvents strictly by normalized event_title and event_date
     const uniqueEvents: ExtractedSubEvent[] = [];
@@ -1596,7 +1608,9 @@ export async function syncBookedLeadOrFinalQuotation({
             workspaceClientId,
             isBookedStage
           );
-        } else if (workspaceId && isBookedStage) {
+        }
+
+        if (!targetProjectId && workspaceId && isBookedStage) {
           // Create master project if doesn't exist (strictly match by client_id, never hijack another project)
           let existingProjs: any[] = [];
           if (workspaceClientId) {
@@ -1634,6 +1648,29 @@ export async function syncBookedLeadOrFinalQuotation({
                 updated_at: now
               })
               .eq('id', targetProjectId);
+          }
+        }
+
+        // Guarantee at least one sub-event exists in fw_sub_events for this targetProjectId!
+        if (targetProjectId && workspaceId) {
+          const { data: existingSe } = await supabaseClient
+            .from('fw_sub_events')
+            .select('id')
+            .eq('project_id', targetProjectId);
+          if (!existingSe || existingSe.length === 0) {
+            await supabaseClient
+              .from('fw_sub_events')
+              .insert([{
+                project_id: targetProjectId,
+                event_title: 'Main Wedding Shoot',
+                event_date: eventDate || now.split('T')[0],
+                venue_name: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
+                roll_call_time: '10:00 AM',
+                dismissal_estimate_time: '06:00 PM',
+                shift_hours_slot: 'Full Day',
+                roles: [],
+                user_id: workspaceId
+              }]);
           }
         }
       } catch (tmErr) {
