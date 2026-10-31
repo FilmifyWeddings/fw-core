@@ -560,7 +560,11 @@ LEAD & CLIENT CONTEXT:
       setStep('preview');
     } catch (err: any) {
       console.error('[AI Modal Generation Error]:', err);
-      setErrorMsg(err.message || "AI couldn't generate the quotation. Your existing quotation has not been changed.");
+      let friendly = err.message || "AI couldn't generate the quotation. Your existing quotation has not been changed.";
+      if (friendly.includes('<!DOCTYPE') || friendly.includes('Unexpected token') || friendly.includes('JSON')) {
+        friendly = 'AI service was momentarily busy. Please click Create Quotation again or type your requirements.';
+      }
+      setErrorMsg(friendly);
     } finally {
       setGenerating(false);
     }
@@ -836,7 +840,11 @@ LEAD & CLIENT CONTEXT:
       await applyDocAndNavigate(json.extractedDocument);
     } catch (err: any) {
       console.error('[AI Modal Quick Create Error]:', err);
-      setErrorMsg(err.message || "Could not create quotation. Please try again.");
+      let friendly = err.message || "Could not create quotation. Please try again.";
+      if (friendly.includes('<!DOCTYPE') || friendly.includes('Unexpected token') || friendly.includes('JSON')) {
+        friendly = 'AI quotation service was momentarily interrupted. Please click Create Quotation again or verify notes.';
+      }
+      setErrorMsg(friendly);
     } finally {
       setGenerating(false);
     }
@@ -879,13 +887,6 @@ LEAD & CLIENT CONTEXT:
 
           {/* Body Content */}
           <div className="p-5 overflow-y-auto overflow-x-hidden flex-1 space-y-4">
-            {errorMsg && (
-              <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2.5">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
             {step === 'input' ? (
               <div className="space-y-4">
                 {/* Selected Studio Template Design */}

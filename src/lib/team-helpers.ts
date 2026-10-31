@@ -24,7 +24,7 @@ export function isInHouseMember(m: any): boolean {
     return false;
   }
   const primaryType = String(m.primary_type || m.type || '').toUpperCase().trim();
-  const typesArr = (Array.isArray(m.member_types) ? m.member_types : []).map((t) => String(t).toUpperCase().trim());
+  const typesArr = (Array.isArray(m.member_types) ? m.member_types : []).map((t: any) => String(t).toUpperCase().trim());
   
   if (primaryType === 'FREELANCER' || primaryType === 'PARTNER' || primaryType === 'VENDOR' || primaryType === 'EXT_VENDOR') {
     return false;

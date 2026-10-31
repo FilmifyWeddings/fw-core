@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ChevronDown, Search, Check, Sparkles, AlertCircle
+  ChevronDown, Search, Check, Briefcase, Building2, Users, AlertCircle, X
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { isInHouseMember } from '@/lib/team-helpers';
 
 export interface LeadOwnerMember {
   id: string;
@@ -16,6 +17,10 @@ export interface LeadOwnerMember {
   roles?: string[];          // Postgres text[]
   role_code?: string;
   role_codes?: string[];
+  primary_role?: string;
+  primary_type?: string;
+  member_types?: string[];
+  payout_frequency?: string;
   avatar_url?: string;
   phone?: string;
   color?: string;
@@ -54,6 +59,14 @@ export function isMemberSalesPerson(member: any): boolean {
   });
 }
 
+function resolveDisplayRole(m: LeadOwnerMember): string {
+  if (m.primary_role && typeof m.primary_role === 'string') return m.primary_role;
+  if (Array.isArray(m.roles) && m.roles.length > 0) return m.roles[0];
+  if (isMemberSalesPerson(m)) return 'Sales Person';
+  if (isInHouseMember(m)) return 'In-House';
+  return 'Crew';
+}
+
 interface LeadOwnerSelectProps {
   value?: string | null;
   onChange: (ownerName: string, memberId?: string) => void;
@@ -76,7 +89,7 @@ export default function LeadOwnerSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [fetchedMembers, setFetchedMembers] = useState<LeadOwnerMember[]>([]);
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 260 });
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 280 });
   const [isMounted, setIsMounted] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,7 +99,7 @@ export default function LeadOwnerSelect({
     setIsMounted(true);
   }, []);
 
-  // Fetch all active team members for the active studio owner from fw_team_members (Postgres roles text[])
+  // Fetch all active team members for the active studio owner from fw_team_members
   useEffect(() => {
     const fetchCrew = async () => {
       try {
@@ -124,7 +137,7 @@ export default function LeadOwnerSelect({
         // 1. Fetch from fw_team_members strictly querying actual DB columns
         const { data: fwCrew } = await supabase
           .from('fw_team_members')
-          .select('id, user_id, name, roles, role_code, primary_role, is_sales_person, avatar_url, phone_number')
+          .select('id, user_id, name, roles, role_code, primary_role, primary_type, member_types, payout_frequency, is_sales_person, avatar_url, phone_number')
           .in('user_id', targetIds);
 
         if (fwCrew && fwCrew.length > 0) {
@@ -137,6 +150,10 @@ export default function LeadOwnerSelect({
                 name: c.name.trim(),
                 roles: rolesArr,
                 role_code: c.role_code,
+                primary_role: c.primary_role,
+                primary_type: c.primary_type,
+                member_types: c.member_types,
+                payout_frequency: c.payout_frequency,
                 avatar_url: c.avatar_url,
                 phone: c.phone_number,
                 is_sales_person: isMemberSalesPerson(c),
@@ -161,6 +178,7 @@ export default function LeadOwnerSelect({
                   user_id: w.user_id,
                   name: w.name.trim(),
                   roles: rolesArr,
+                  primary_role: w.primary_role,
                   avatar_url: w.avatar_url,
                   phone: w.phone,
                   is_sales_person: isMemberSalesPerson(w),
@@ -179,6 +197,7 @@ export default function LeadOwnerSelect({
             id: sessionUserId || 'owner',
             name: ownerName,
             roles: [ownerRole],
+            primary_role: 'Studio Owner',
             role_code: 'SP',
             is_sales_person: true,
           });
@@ -208,6 +227,7 @@ export default function LeadOwnerSelect({
             id: m,
             name: m,
             roles: isSales ? ['Sales Person'] : ['Team Member'],
+            primary_role: isSales ? 'Sales Person' : 'Team Member',
             role_code: isSales ? 'SP' : undefined,
             is_sales_person: isSales,
           });
@@ -221,6 +241,10 @@ export default function LeadOwnerSelect({
             name: m.name,
             email: m.email,
             roles: rolesArr,
+            primary_role: m.primary_role,
+            primary_type: m.primary_type,
+            member_types: m.member_types,
+            payout_frequency: m.payout_frequency,
             role_code: m.role_code,
             avatar_url: m.avatar_url,
             is_sales_person: isMemberSalesPerson(m),
@@ -236,9 +260,11 @@ export default function LeadOwnerSelect({
         memberMap.set(key, fm);
       } else {
         const existing = memberMap.get(key)!;
-        if (fm.is_sales_person) {
-          existing.is_sales_person = true;
-        }
+        if (fm.is_sales_person) existing.is_sales_person = true;
+        if (fm.primary_role && !existing.primary_role) existing.primary_role = fm.primary_role;
+        if (fm.avatar_url && !existing.avatar_url) existing.avatar_url = fm.avatar_url;
+        if (fm.primary_type) existing.primary_type = fm.primary_type;
+        if (fm.member_types) existing.member_types = fm.member_types;
       }
     });
 
@@ -249,35 +275,64 @@ export default function LeadOwnerSelect({
   const currentOwner = (value || 'Unassigned').trim();
   const isUnassigned = currentOwner.toLowerCase() === 'unassigned' || !currentOwner;
 
-  // Filter to Sales Persons, with graceful fallback to all studio members if none explicitly designated
-  const salesTeamMembers = useMemo(() => {
-    const list = consolidatedMembers || [];
-    const salesOnly = list.filter(m => isMemberSalesPerson(m) || (!isUnassigned && m.name.toLowerCase() === currentOwner.toLowerCase()));
-    if (salesOnly.length > 0) {
-      return salesOnly.sort((a, b) => a.name.localeCompare(b.name));
-    }
-    // Fallback: If no dedicated Sales Person is marked yet, show all members so owner can still assign someone!
-    return list.sort((a, b) => a.name.localeCompare(b.name));
-  }, [consolidatedMembers, isUnassigned, currentOwner]);
+  // Categorize members into the 3 explicit sections
+  const { salesMembers, inHouseMembers, crewMembers } = useMemo(() => {
+    const sales: LeadOwnerMember[] = [];
+    const inHouse: LeadOwnerMember[] = [];
+    const crew: LeadOwnerMember[] = [];
 
-  // Selected Member Details (if assigned to a sales person)
+    const seenIds = new Set<string>();
+
+    // 1. Sales Person
+    consolidatedMembers.forEach(m => {
+      if (isMemberSalesPerson(m)) {
+        sales.push(m);
+        seenIds.add(m.id || m.name);
+      }
+    });
+
+    // 2. In-House Team (who aren't already sales)
+    consolidatedMembers.forEach(m => {
+      const id = m.id || m.name;
+      if (!seenIds.has(id) && isInHouseMember(m)) {
+        inHouse.push(m);
+        seenIds.add(id);
+      }
+    });
+
+    // 3. All Crew & Freelancers
+    consolidatedMembers.forEach(m => {
+      const id = m.id || m.name;
+      if (!seenIds.has(id)) {
+        crew.push(m);
+      }
+    });
+
+    sales.sort((a, b) => a.name.localeCompare(b.name));
+    inHouse.sort((a, b) => a.name.localeCompare(b.name));
+    crew.sort((a, b) => a.name.localeCompare(b.name));
+
+    return { salesMembers: sales, inHouseMembers: inHouse, crewMembers: crew };
+  }, [consolidatedMembers]);
+
+  // Selected Member Details
   const selectedMember = useMemo(() => {
     if (isUnassigned) return null;
-    return salesTeamMembers.find(m => m.name.toLowerCase() === currentOwner.toLowerCase());
-  }, [currentOwner, isUnassigned, salesTeamMembers]);
+    return consolidatedMembers.find(m => m.name.toLowerCase() === currentOwner.toLowerCase());
+  }, [currentOwner, isUnassigned, consolidatedMembers]);
 
   // Update popup coordinates
   const updateCoords = () => {
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      const dropdownHeight = 300;
+      const dropdownHeight = 360;
       const fitsBelow = rect.bottom + dropdownHeight <= window.innerHeight;
       const topPos = fitsBelow ? rect.bottom + 4 : Math.max(10, rect.top - dropdownHeight - 4);
 
       setCoords({
         top: Math.round(topPos),
-        left: Math.round(Math.max(10, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 260) - 10))),
-        width: Math.round(Math.max(rect.width, 260)),
+        left: Math.round(Math.max(10, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 280) - 10))),
+        width: Math.round(Math.max(rect.width, 280)),
       });
     }
   };
@@ -313,59 +368,113 @@ export default function LeadOwnerSelect({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
-  // Search filtering strictly within salesTeamMembers
+  // Search filter across all 3 sections
   const q = searchQuery.toLowerCase().trim();
-  const filteredSales = useMemo(() => {
-    if (!q) return salesTeamMembers;
-    return salesTeamMembers.filter(m => {
-      const matchName = m.name.toLowerCase().includes(q);
-      const matchRole = Array.isArray(m.roles) && m.roles.some((r: string) => r.toLowerCase().includes(q));
-      return matchName || matchRole;
+  const filterList = (list: LeadOwnerMember[]) => {
+    if (!q) return list;
+    return list.filter(m => {
+      const nameMatch = m.name.toLowerCase().includes(q);
+      const roleMatch = (m.primary_role || '').toLowerCase().includes(q) || 
+        (Array.isArray(m.roles) && m.roles.some(r => r.toLowerCase().includes(q)));
+      const phoneMatch = (m.phone || '').includes(q);
+      return nameMatch || roleMatch || phoneMatch;
     });
-  }, [salesTeamMembers, q]);
+  };
 
-  const handleSelect = (name: string, memberId?: string) => {
-    onChange(name, memberId);
+  const filteredSales = useMemo(() => filterList(salesMembers), [salesMembers, q]);
+  const filteredInHouse = useMemo(() => filterList(inHouseMembers), [inHouseMembers, q]);
+  const filteredCrew = useMemo(() => filterList(crewMembers), [crewMembers, q]);
+
+  const hasAnyMatches = filteredSales.length > 0 || filteredInHouse.length > 0 || filteredCrew.length > 0;
+
+  const handleSelect = (ownerName: string, memberId?: string) => {
+    onChange(ownerName, memberId);
     setIsOpen(false);
   };
 
+  const renderMemberRow = (m: LeadOwnerMember) => {
+    const isSelected = currentOwner.toLowerCase() === m.name.toLowerCase();
+    const roleBadge = resolveDisplayRole(m);
+
+    return (
+      <button
+        key={m.id || m.name}
+        type="button"
+        onClick={() => handleSelect(m.name, m.id)}
+        className={`w-full flex items-center justify-between p-2 rounded-xl transition cursor-pointer text-xs select-none ${
+          isSelected
+            ? 'bg-amber-100/70 dark:bg-amber-950/50 text-amber-950 dark:text-amber-100 font-bold border border-amber-300 dark:border-amber-800 shadow-2xs'
+            : 'text-slate-800 dark:text-stone-200 hover:bg-amber-50/60 dark:hover:bg-amber-950/20 font-medium'
+        }`}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          {m.avatar_url ? (
+            <img src={m.avatar_url} alt={m.name} className="w-6 h-6 rounded-full object-cover shrink-0 border border-amber-200" />
+          ) : (
+            <div className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 flex items-center justify-center font-bold text-[10px] shrink-0 border border-amber-300/80">
+              {m.name.slice(0, 2).toUpperCase()}
+            </div>
+          )}
+          <div className="flex flex-col text-left min-w-0">
+            <span className="truncate text-xs font-semibold text-slate-900 dark:text-stone-100 leading-tight">
+              {m.name}
+            </span>
+            <span className="text-[10px] text-slate-400 dark:text-stone-400 font-medium truncate">
+              {roleBadge}
+            </span>
+          </div>
+        </div>
+
+        {isSelected && <Check className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />}
+      </button>
+    );
+  };
+
   return (
-    <div ref={containerRef} className={`relative inline-block w-full min-w-[140px] ${className}`}>
-      {/* 3D Cream Trigger Pill */}
+    <div ref={containerRef} className={`relative inline-block ${className}`}>
+      {/* Trigger Button */}
       <button
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all select-none cursor-pointer shadow-2xs ${
-          isUnassigned
-            ? 'bg-[#FAF8F5] dark:bg-stone-900 border-[#EAE5DA] dark:border-stone-800 text-rose-700 dark:text-rose-400 hover:border-rose-300'
-            : selectedMember
-            ? 'bg-[#FFFDF9] dark:bg-stone-900 border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-200 hover:border-amber-400 shadow-amber-500/5'
-            : 'bg-[#FFFDF9] dark:bg-stone-900 border-[#EAE5DA] dark:border-stone-800 text-slate-800 dark:text-stone-200 hover:border-amber-400'
-        } ${isOpen ? 'ring-2 ring-amber-500/20 border-amber-400' : ''}`}
+        onClick={() => {
+          if (!disabled) setIsOpen(!isOpen);
+        }}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2 bg-white dark:bg-stone-900 border rounded-xl text-xs font-semibold transition-all shadow-2xs select-none cursor-pointer ${
+          disabled ? 'opacity-50 cursor-not-allowed border-slate-200' : 'hover:border-amber-400 border-[#EAE5DA] dark:border-stone-700'
+        }`}
       >
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="flex items-center gap-2 min-w-0">
           {isUnassigned ? (
-            <div className="w-5 h-5 rounded-full bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center text-[10px] font-black shrink-0">
-              —
-            </div>
-          ) : selectedMember?.avatar_url ? (
-            <img src={selectedMember.avatar_url} alt={currentOwner} className="w-5 h-5 rounded-full object-cover shrink-0 border border-amber-300 dark:border-amber-700" />
+            <>
+              <div className="w-5 h-5 rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold text-xs shrink-0">
+                —
+              </div>
+              <span className="text-slate-400 dark:text-stone-500 font-medium">Unassigned</span>
+            </>
+          ) : selectedMember ? (
+            <>
+              {selectedMember.avatar_url ? (
+                <img src={selectedMember.avatar_url} alt={selectedMember.name} className="w-5 h-5 rounded-full object-cover shrink-0 border border-amber-300" />
+              ) : (
+                <div className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 flex items-center justify-center font-bold text-[10px] shrink-0 border border-amber-300">
+                  {selectedMember.name.slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <span className="text-slate-800 dark:text-stone-100 font-bold truncate">
+                {selectedMember.name}
+              </span>
+            </>
           ) : (
-            <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 border bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700">
-              {currentOwner.slice(0, 2).toUpperCase()}
-            </div>
+            <span className="text-slate-800 dark:text-stone-100 font-bold truncate">
+              {currentOwner}
+            </span>
           )}
-
-          <span className="truncate text-xs font-bold text-slate-800 dark:text-stone-200">
-            {isUnassigned ? 'Unassigned' : currentOwner}
-          </span>
         </div>
 
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180 text-amber-600' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180 text-amber-600' : ''}`} />
       </button>
 
-      {/* Floating Portal Menu */}
+      {/* Dropdown Portal */}
       {isMounted && isOpen && createPortal(
         <>
           {/* Backdrop */}
@@ -386,7 +495,7 @@ export default function LeadOwnerSelect({
               left: `${coords.left}px`,
               width: `${coords.width}px`,
               zIndex: 1000002,
-              maxHeight: '340px',
+              maxHeight: '380px',
             }}
             className="bg-[#FFFDF9] dark:bg-[#1A1816] rounded-2xl border border-amber-900/15 dark:border-stone-800 shadow-2xl overflow-hidden flex flex-col font-sans"
           >
@@ -405,8 +514,8 @@ export default function LeadOwnerSelect({
               </div>
             </div>
 
-            {/* Scrollable Items Container (STRICTLY SALES PERSONS ONLY) */}
-            <div className="overflow-y-auto p-1.5 space-y-1 flex-1">
+            {/* Scrollable Items Container (Structured into 3 whitelisted sections) */}
+            <div className="overflow-y-auto p-1.5 space-y-2 flex-1">
               {/* 1. TOP PINNED: Unassigned */}
               <button
                 type="button"
@@ -426,60 +535,57 @@ export default function LeadOwnerSelect({
                 {isUnassigned && <Check className="w-3.5 h-3.5 text-rose-600" />}
               </button>
 
-              {/* 2. SALES PERSONS ONLY (WHITELISTED) */}
-              {salesTeamMembers.length > 0 ? (
-                <div className="pt-1 space-y-1">
-                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 dark:text-stone-500 uppercase tracking-wider">
-                    Sales Team ({salesTeamMembers.length})
-                  </div>
-
-                  {filteredSales.map(m => {
-                    const isSelected = currentOwner.toLowerCase() === m.name.toLowerCase();
-                    return (
-                      <button
-                        key={m.id || m.name}
-                        type="button"
-                        onClick={() => handleSelect(m.name, m.id)}
-                        className={`w-full flex items-center justify-between p-2 rounded-xl transition cursor-pointer text-xs select-none ${
-                          isSelected
-                            ? 'bg-amber-100/70 dark:bg-amber-950/50 text-amber-950 dark:text-amber-100 font-bold border border-amber-300 dark:border-amber-800 shadow-2xs'
-                            : 'text-slate-800 dark:text-stone-200 hover:bg-amber-50/60 dark:hover:bg-amber-950/20 font-medium'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {m.avatar_url ? (
-                            <img src={m.avatar_url} alt={m.name} className="w-6 h-6 rounded-full object-cover shrink-0 border border-amber-200" />
-                          ) : (
-                            <div className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 flex items-center justify-center font-bold text-[10px] shrink-0 border border-amber-300/80">
-                              {m.name.slice(0, 2).toUpperCase()}
-                            </div>
-                          )}
-                          <span className="truncate text-xs font-semibold text-slate-900 dark:text-stone-100">
-                            {m.name}
-                          </span>
-                        </div>
-
-                        {isSelected && <Check className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />}
-                      </button>
-                    );
-                  })}
-
-                  {filteredSales.length === 0 && searchQuery && (
-                    <div className="p-3 text-center text-xs text-slate-400 font-medium">
-                      No matching sales reps found.
-                    </div>
-                  )}
+              {/* 2. SECTION 1: 💼 Sales Person */}
+              <div className="pt-1 space-y-1">
+                <div className="px-2 py-1 text-[10px] font-black text-amber-800 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5 bg-amber-50/60 dark:bg-amber-950/30 rounded-lg">
+                  <Briefcase className="w-3 h-3 text-amber-600 shrink-0" />
+                  <span>Sales Person ({salesMembers.length})</span>
                 </div>
-              ) : (
-                /* Informative helper item when no sales person role exists */
-                <div className="p-4 text-center space-y-1.5 bg-amber-50/50 dark:bg-stone-800/40 rounded-xl border border-dashed border-amber-200 dark:border-stone-700 my-1">
-                  <AlertCircle className="w-4 h-4 text-amber-600 mx-auto" />
-                  <p className="text-xs font-black text-amber-900 dark:text-amber-200">
-                    No team members assigned as Sales Person
-                  </p>
-                  <p className="text-[10px] text-slate-500 dark:text-stone-400">
-                    Assign the &quot;Sales Person (SP)&quot; role in Team Manager to enable lead ownership.
-                  </p>
+
+                {filteredSales.length > 0 ? (
+                  filteredSales.map(m => renderMemberRow(m))
+                ) : (
+                  <div className="px-3 py-1.5 text-[11px] text-slate-400 dark:text-stone-500 italic">
+                    {searchQuery ? 'No sales person matches search' : 'No team members assigned as Sales Person'}
+                  </div>
+                )}
+              </div>
+
+              {/* 3. SECTION 2: 🏢 In-House Team */}
+              <div className="pt-1 space-y-1">
+                <div className="px-2 py-1 text-[10px] font-black text-sky-800 dark:text-sky-400 uppercase tracking-wider flex items-center gap-1.5 bg-sky-50/60 dark:bg-sky-950/30 rounded-lg">
+                  <Building2 className="w-3 h-3 text-sky-600 shrink-0" />
+                  <span>In-House Team ({inHouseMembers.length})</span>
+                </div>
+
+                {filteredInHouse.length > 0 ? (
+                  filteredInHouse.map(m => renderMemberRow(m))
+                ) : (
+                  <div className="px-3 py-1.5 text-[11px] text-slate-400 dark:text-stone-500 italic">
+                    {searchQuery ? 'No in-house members match search' : 'No in-house team members found'}
+                  </div>
+                )}
+              </div>
+
+              {/* 4. SECTION 3: 👥 All Crew & Freelancers */}
+              <div className="pt-1 space-y-1">
+                <div className="px-2 py-1 text-[10px] font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 bg-emerald-50/60 dark:bg-emerald-950/30 rounded-lg">
+                  <Users className="w-3 h-3 text-emerald-600 shrink-0" />
+                  <span>All Crew & Freelancers ({crewMembers.length})</span>
+                </div>
+
+                {filteredCrew.length > 0 ? (
+                  filteredCrew.map(m => renderMemberRow(m))
+                ) : (
+                  <div className="px-3 py-1.5 text-[11px] text-slate-400 dark:text-stone-500 italic">
+                    {searchQuery ? 'No crew matches search' : 'No freelancers or external crew found'}
+                  </div>
+                )}
+              </div>
+
+              {!hasAnyMatches && searchQuery && (
+                <div className="p-3 text-center text-xs text-slate-400 font-medium">
+                  No matching team members found.
                 </div>
               )}
             </div>

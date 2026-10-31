@@ -43,6 +43,7 @@ const AiQuotationModal = dynamic(
   { ssr: false }
 );
 import { consolidateSameDateFunctions, resolvePrimaryCoverLocation } from '@/lib/quotation-defaults';
+import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 import { resolveFunctionTitle } from '@/components/QuotationDocumentCanvas';
@@ -3377,6 +3378,15 @@ function StudioCoreAiryBuilderContent() {
               .maybeSingle();
             if (matchedLead) {
               setLeadData(matchedLead);
+              if (matchedLead.name && (!loadedData?.cover?.coupleName || isPlaceholderCoupleName(loadedData.cover.coupleName))) {
+                setData(prev => ({
+                  ...prev,
+                  cover: {
+                    ...prev.cover,
+                    coupleName: matchedLead.name
+                  }
+                }));
+              }
               try {
                 const stored = localStorage.getItem('sc_quotation_summary_map');
                 const map = stored ? JSON.parse(stored) : {};
@@ -5945,7 +5955,7 @@ function StudioCoreAiryBuilderContent() {
               type="text"
               value={data.designName}
               onChange={(e) => { setData({ ...data, designName: e.target.value }); }}
-              className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[110px] sm:max-w-[160px] lg:max-w-[220px] truncate"
+              className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[90px] sm:max-w-[130px] lg:max-w-[180px] truncate"
             />
             <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border hidden md:inline-block shrink-0 ${
               hasUnsavedChanges ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
@@ -5992,8 +6002,8 @@ function StudioCoreAiryBuilderContent() {
               title="Create & Refine Quotation with AI"
             >
               <Sparkles className="w-3 h-3 text-amber-300 animate-pulse" />
-              <span className="hidden sm:inline">Create with AI</span>
-              <span className="sm:hidden">AI</span>
+              <span className="hidden xl:inline">Create with AI</span>
+              <span className="xl:hidden">AI</span>
             </button>
 
             <button
@@ -6004,7 +6014,7 @@ function StudioCoreAiryBuilderContent() {
               className="px-2 sm:px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-sm hover:shadow active:scale-95 hidden lg:flex shrink-0"
               title="Preview Template"
             >
-              <Eye className="w-3 h-3 stroke-[2.5]" /> <span>Preview</span>
+              <Eye className="w-3 h-3 stroke-[2.5]" /> <span className="hidden xl:inline">Preview</span>
             </button>
 
             <button
@@ -6026,7 +6036,7 @@ function StudioCoreAiryBuilderContent() {
               className="px-2 sm:px-2.5 py-1 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-sm hover:shadow active:scale-95 shrink-0"
               title="Share Public Proposal Link"
             >
-              <Share2 className="w-3 h-3 stroke-[2.5]" /> <span className="hidden sm:inline">Share</span>
+              <Share2 className="w-3 h-3 stroke-[2.5]" /> <span className="hidden xl:inline">Share</span>
             </button>
 
             <button
@@ -6048,10 +6058,10 @@ function StudioCoreAiryBuilderContent() {
             <button
               onClick={handleManualSave}
               disabled={saving}
-              className="px-3 sm:px-3.5 py-1 rounded-full bg-zinc-900 hover:bg-black text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50 shrink-0"
+              className="px-2.5 sm:px-3 py-1 rounded-full bg-zinc-900 hover:bg-black text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50 shrink-0"
               title="Save Quotation"
             >
-              <Save className="w-3.5 h-3.5 text-amber-400" /> <span>{saving ? '...' : 'Save'}</span>
+              <Save className="w-3.5 h-3.5 text-amber-400 shrink-0" /> <span>{saving ? '...' : 'Save'}</span>
             </button>
 
             <button

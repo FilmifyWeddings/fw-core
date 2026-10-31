@@ -39,27 +39,51 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Lead not found' }, { status: 404 });
     }
 
-    let targetQuotationId = explicitQuotationId || lead.final_quotation_id || (lead.raw_payload as any)?.final_quotation_id || null;
+    // Strict Final Quotation Verification:
+    // Only use targetQuotationId if hasFinalQuotation !== false AND the quotation is explicitly marked is_final === true!
+    let targetQuotationId: string | null = null;
     const workspaceId = body.workspaceId || lead.workspace_id || lead.tenant_id || lead.created_by_user_id || 'ws_demo';
 
-    if (!targetQuotationId) {
-      const { data: finalQ } = await supabaseAdmin
-        .from('quotations')
-        .select('id, quotation_number')
-        .eq('client_id', leadId)
-        .eq('is_final', true)
-        .maybeSingle();
-      if (finalQ) targetQuotationId = finalQ.quotation_number || finalQ.id;
-    }
+    if (body.hasFinalQuotation !== false) {
+      const candidateId = explicitQuotationId || lead.final_quotation_id || (lead.raw_payload as any)?.final_quotation_id || null;
+      if (candidateId) {
+        const { data: qCheck } = await supabaseAdmin
+          .from('quotations')
+          .select('id, quotation_number, is_final')
+          .or(`id.eq.${candidateId},quotation_number.eq.${candidateId}`)
+          .maybeSingle();
 
-    if (!targetQuotationId) {
-      const { data: finalDocs } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('id, template_id, content_json')
-        .eq('lead_id', leadId)
-        .order('updated_at', { ascending: false });
-      const finalDoc = (finalDocs || []).find((d: any) => d.content_json?.is_final === true);
-      if (finalDoc) targetQuotationId = finalDoc.template_id || finalDoc.id;
+        const { data: docCheck } = await supabaseAdmin
+          .from('quotation_documents')
+          .select('id, template_id, content_json')
+          .or(`template_id.eq.${candidateId},id.eq.${candidateId}`)
+          .maybeSingle();
+
+        const isActuallyFinal = Boolean(qCheck?.is_final || docCheck?.content_json?.is_final);
+        if (isActuallyFinal) {
+          targetQuotationId = candidateId;
+        }
+      }
+
+      if (!targetQuotationId) {
+        const { data: finalQ } = await supabaseAdmin
+          .from('quotations')
+          .select('id, quotation_number')
+          .eq('client_id', leadId)
+          .eq('is_final', true)
+          .maybeSingle();
+        if (finalQ) targetQuotationId = finalQ.quotation_number || finalQ.id;
+      }
+
+      if (!targetQuotationId) {
+        const { data: finalDocs } = await supabaseAdmin
+          .from('quotation_documents')
+          .select('id, template_id, content_json')
+          .eq('lead_id', leadId)
+          .order('updated_at', { ascending: false });
+        const finalDoc = (finalDocs || []).find((d: any) => d.content_json?.is_final === true);
+        if (finalDoc) targetQuotationId = finalDoc.template_id || finalDoc.id;
+      }
     }
 
     // 2. If a final quotation exists, run full synchronizer!
@@ -133,14 +157,12 @@ export async function POST(
       });
     }
 
-    // 3. NO Final Quotation: Create / Restore clean EMPTY cards across all 4 modules
+    // 3. NO Final Quotation: Create / Restore clean EMPTY cards across all modules
+    // STRICT GUARANTEE: When NO final quotation is selected, card name in ALL modules
+    // MUST strictly be the Lead's Name (lead.name), NEVER any couple name from draft quotations!
+    const clientLeadName = String(lead.name || lead.client_name || 'Valued Client').trim();
+    const coupleName = clientLeadName;
     const raw = lead.raw_payload || {};
-    const coupleName = raw.couple_name 
-      || raw.couple_names 
-      || (lead as any).couple_names 
-      || lead.client_name 
-      || lead.name 
-      || 'Valued Client';
 
     const eventDate = lead.event_date || raw.event_date || null;
     const mainVenue = lead.location || raw.venue || raw.location || raw.city || '';
@@ -148,22 +170,26 @@ export async function POST(
 
     // 3A. Workspace Clients: Locate existing or insert new
     let workspaceClientId: string | null = lead.client_id || null;
+    let existingClient: any = null;
+    let clientsByLeadId: any[] = [];
 
     if (workspaceClientId) {
-      const { data: existingClient } = await supabaseAdmin
+      const { data: foundClient } = await supabaseAdmin
         .from('workspace_clients')
         .select('id, notes, project_manager_id, project_manager_name, project_manager_email, project_manager_phone, handled_by, client_code, portal_token, portal_pin')
         .eq('id', workspaceClientId)
         .maybeSingle();
+      existingClient = foundClient;
       if (!existingClient) workspaceClientId = null;
     }
 
     if (!workspaceClientId) {
-      const { data: clientsByLeadId } = await supabaseAdmin
+      const { data: foundByLead } = await supabaseAdmin
         .from('workspace_clients')
         .select('id, notes, total_package_amount, paid_amount, project_manager_id, project_manager_name, project_manager_email, project_manager_phone, handled_by, client_code, portal_token, portal_pin')
         .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
         .order('created_at', { ascending: false });
+      clientsByLeadId = foundByLead || [];
       if (clientsByLeadId && clientsByLeadId.length > 0) {
         const withPkg = clientsByLeadId.find(c => Number(c.total_package_amount) > 0);
         workspaceClientId = withPkg ? withPkg.id : clientsByLeadId[0].id;
@@ -468,27 +494,16 @@ export async function POST(
             projId = createdProj?.id || null;
           }
 
-          // Ensure a sub-event exists so the card is visible in Team Manager MonthListView
+          // For Empty Cards (No Final Quotation), strictly DO NOT insert arbitrary sub-events!
+          // Keep 0 sub-events so MonthListView renders an authentic Empty Card with the Lead Name.
           if (projId) {
-            const { data: exSe } = await supabaseAdmin
-              .from('fw_sub_events')
-              .select('id')
-              .eq('project_id', projId);
-            if (!exSe || exSe.length === 0) {
+            try {
               await supabaseAdmin
                 .from('fw_sub_events')
-                .insert([{
-                  project_id: projId,
-                  event_title: eventType || 'Main Wedding Shoot',
-                  event_date: eventDate || nowIso.split('T')[0],
-                  venue_name: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
-                  roll_call_time: '10:00 AM',
-                  dismissal_estimate_time: '06:00 PM',
-                  shift_hours_slot: 'Full Day',
-                  roles: [],
-                  user_id: workspaceId
-                }]);
-            }
+                .delete()
+                .eq('project_id', projId)
+                .in('event_title', ['Main Wedding Shoot', 'Wedding Shoot', 'Main Event Photography', 'Wedding Photography']);
+            } catch (_) {}
           }
         })(),
 

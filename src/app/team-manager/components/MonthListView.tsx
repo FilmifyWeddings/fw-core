@@ -95,20 +95,22 @@ export default function MonthListView({
 
       const matchClientName = !isDateQ && (!q || project.client_name.toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q));
 
-      const subEventsToRender = (project.fw_sub_events && project.fw_sub_events.length > 0)
+      const isProjectEmpty = !project.fw_sub_events || project.fw_sub_events.length === 0;
+      const subEventsToRender = !isProjectEmpty
         ? project.fw_sub_events
         : [{
-            id: `${project.id}_default`,
+            id: `${project.id}_empty`,
             project_id: project.id,
-            event_title: (project as any).title || project.client_name || 'Main Wedding Shoot',
+            event_title: 'Empty Card (No Ceremonies Added)',
             event_date: project.main_date || null,
             venue_name: project.main_venue || 'Studio Venue / TBD',
-            roll_call_time: '10:00 AM',
-            dismissal_estimate_time: '06:00 PM',
-            shift_hours_slot: 'Full Day',
+            roll_call_time: '',
+            dismissal_estimate_time: '',
+            shift_hours_slot: '',
             operational_notes: '',
             roles: [],
-            fw_assignments: []
+            fw_assignments: [],
+            is_empty_card: true
           } as any];
 
       subEventsToRender.forEach((se) => {
@@ -301,7 +303,7 @@ export default function MonthListView({
                         </span>
                       </div>
                       <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
-                        {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Crew`}
+                        {(subEvent as any).is_empty_card ? '0 Crew' : eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Crew`}
                       </div>
                     </div>
 
@@ -326,10 +328,17 @@ export default function MonthListView({
                             {subEvent.event_title}
                           </h4>
 
-                          <span className="px-2 py-0.5 rounded-md bg-rose-100 border border-rose-300 text-rose-800 font-extrabold text-[10px] flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3 text-rose-600" />
-                            <span>Date Not Fixed</span>
-                          </span>
+                          {(subEvent as any).is_empty_card ? (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-900 font-extrabold text-[10px] flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-amber-600" />
+                              <span>Empty Card (No Ceremonies)</span>
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-md bg-rose-100 border border-rose-300 text-rose-800 font-extrabold text-[10px] flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-rose-600" />
+                              <span>Date Not Fixed</span>
+                            </span>
+                          )}
 
                           {isOvernightShoot && (
                             <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-extrabold text-[10px] flex items-center gap-1">
@@ -414,36 +423,55 @@ export default function MonthListView({
                         })()}
                       </div>
 
-                      {/* CREW ALLOCATION AVATARS GRID WITH CLICKABLE ASSIGN POPOVERS */}
+                      {/* CREW ALLOCATION OR EMPTY CARD NOTICE */}
                       <div>
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
-                        <div className="flex items-center gap-4 flex-wrap pt-1">
-                          {assignments.map((assignment) => {
-                            const isUserSlot = isMemberSlot(assignment);
-                            if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
-                              return null;
-                            }
-                            const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
-                            return (
-                              <RoleAssignDropdown
-                                key={assignment.id}
-                                assignment={assignment}
-                                subEventId={subEvent.id}
-                                projectId={project.id}
-                                teamMembers={teamMembers}
-                                onAssignMember={onAssignMember}
-                                onAddNewMember={onAddNewMember}
-                                variant="avatar"
-                                readOnly={isReadOnly}
-                                isMasked={false}
-                                    isAdmin={!isTmReadOnly}
-                                    selectedFilterMemberId={unifiedFilters?.memberId || null}
-                                    unifiedFilters={unifiedFilters}
-                                    existingAssignments={assignments}
-                              />
-                            );
-                          })}
-                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                          {(subEvent as any).is_empty_card ? 'Card Status' : 'Crew'}
+                        </span>
+                        {(subEvent as any).is_empty_card ? (
+                          <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs">
+                            <span className="font-medium">
+                              Empty Card: Booking confirmed for <strong>{project.client_name}</strong>. No ceremonies or crew slots added yet.
+                            </span>
+                            {onEditSubEvent && (
+                              <button
+                                type="button"
+                                onClick={() => onEditSubEvent(subEvent, project)}
+                                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer shadow-xs"
+                              >
+                                + Add Ceremony
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-4 flex-wrap pt-1">
+                            {assignments.map((assignment) => {
+                              const isUserSlot = isMemberSlot(assignment);
+                              if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
+                                return null;
+                              }
+                              const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
+                              return (
+                                <RoleAssignDropdown
+                                  key={assignment.id}
+                                  assignment={assignment}
+                                  subEventId={subEvent.id}
+                                  projectId={project.id}
+                                  teamMembers={teamMembers}
+                                  onAssignMember={onAssignMember}
+                                  onAddNewMember={onAddNewMember}
+                                  variant="avatar"
+                                  readOnly={isReadOnly}
+                                  isMasked={false}
+                                  isAdmin={!isTmReadOnly}
+                                  selectedFilterMemberId={unifiedFilters?.memberId || null}
+                                  unifiedFilters={unifiedFilters}
+                                  existingAssignments={assignments}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -558,7 +586,7 @@ export default function MonthListView({
                             </span>
                           </div>
                           <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold border border-white/20 mt-0.5">
-                            {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Crew`}
+                            {(subEvent as any).is_empty_card ? '0 Crew' : eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Crew`}
                           </div>
                         </div>
 
@@ -582,6 +610,13 @@ export default function MonthListView({
                               <h4 className="text-xs sm:text-sm font-bold text-indigo-700 tracking-tight truncate">
                                 {subEvent.event_title}
                               </h4>
+
+                              {(subEvent as any).is_empty_card && (
+                                <span className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-900 font-extrabold text-[9px] flex items-center gap-1">
+                                  <AlertCircle className="w-2.5 h-2.5 text-amber-600" />
+                                  <span>Empty Card</span>
+                                </span>
+                              )}
 
                               {isOvernightShoot && (
                                 <span className="px-1.5 py-0.2 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-extrabold text-[9px] flex items-center gap-1">
@@ -666,36 +701,55 @@ export default function MonthListView({
                             })()}
                           </div>
 
-                          {/* CREW ALLOCATION CHIPS GRID WITH CLICKABLE ASSIGN POPOVERS */}
+                          {/* CREW ALLOCATION OR EMPTY CARD NOTICE */}
                           <div>
-                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
-                            <div className="flex items-center gap-4 flex-wrap pt-1">
-                              {assignments.map((assignment) => {
-                                const isUserSlot = isMemberSlot(assignment);
-                                if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
-                                  return null;
-                                }
-                                const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
-                                return (
-                                  <RoleAssignDropdown
-                                    key={assignment.id}
-                                    assignment={assignment}
-                                    subEventId={subEvent.id}
-                                    projectId={project.id}
-                                    teamMembers={teamMembers}
-                                    onAssignMember={onAssignMember}
-                                    onAddNewMember={onAddNewMember}
-                                    variant="avatar"
-                                    readOnly={isReadOnly}
-                                    isMasked={false}
-                                    isAdmin={!isTmReadOnly}
-                                    selectedFilterMemberId={unifiedFilters?.memberId || null}
-                                    unifiedFilters={unifiedFilters}
-                                    existingAssignments={assignments}
-                                  />
-                                );
-                              })}
-                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                              {(subEvent as any).is_empty_card ? 'Card Status' : 'Crew'}
+                            </span>
+                            {(subEvent as any).is_empty_card ? (
+                              <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs">
+                                <span className="font-medium">
+                                  Empty Card: Booking confirmed for <strong>{project.client_name}</strong>. No ceremonies or crew slots added yet.
+                                </span>
+                                {onEditSubEvent && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onEditSubEvent(subEvent, project)}
+                                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer shadow-xs"
+                                  >
+                                    + Add Ceremony
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-4 flex-wrap pt-1">
+                                {assignments.map((assignment) => {
+                                  const isUserSlot = isMemberSlot(assignment);
+                                  if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
+                                    return null;
+                                  }
+                                  const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
+                                  return (
+                                    <RoleAssignDropdown
+                                      key={assignment.id}
+                                      assignment={assignment}
+                                      subEventId={subEvent.id}
+                                      projectId={project.id}
+                                      teamMembers={teamMembers}
+                                      onAssignMember={onAssignMember}
+                                      onAddNewMember={onAddNewMember}
+                                      variant="avatar"
+                                      readOnly={isReadOnly}
+                                      isMasked={false}
+                                      isAdmin={!isTmReadOnly}
+                                      selectedFilterMemberId={unifiedFilters?.memberId || null}
+                                      unifiedFilters={unifiedFilters}
+                                      existingAssignments={assignments}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -833,10 +887,17 @@ export default function MonthListView({
                                       {subEvent.event_title}
                                     </h4>
 
-                                    <span className="px-2 py-0.5 rounded-md bg-slate-200/80 border border-slate-300 text-slate-700 font-extrabold text-[10px] flex items-center gap-1">
-                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                      <span>Completed</span>
-                                    </span>
+                                    {(subEvent as any).is_empty_card ? (
+                                      <span className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-900 font-extrabold text-[10px] flex items-center gap-1">
+                                        <AlertCircle className="w-3 h-3 text-amber-600" />
+                                        <span>Empty Card</span>
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-md bg-slate-200/80 border border-slate-300 text-slate-700 font-extrabold text-[10px] flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                        <span>Completed</span>
+                                      </span>
+                                    )}
 
                                     {isOvernightShoot && (
                                       <span className="px-2 py-0.5 rounded-md bg-slate-200 border border-slate-300 text-slate-700 font-extrabold text-[10px] flex items-center gap-1">
@@ -921,36 +982,55 @@ export default function MonthListView({
                                   })()}
                                 </div>
 
-                                {/* CREW ALLOCATION AVATARS */}
+                                {/* CREW ALLOCATION OR EMPTY CARD NOTICE */}
                                 <div>
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
-                                  <div className="flex items-center gap-4 flex-wrap pt-1">
-                                    {assignments.map((assignment) => {
-                                      const isUserSlot = isMemberSlot(assignment);
-                                      if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
-                                        return null;
-                                      }
-                                      const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
-                                      return (
-                                        <RoleAssignDropdown
-                                          key={assignment.id}
-                                          assignment={assignment}
-                                          subEventId={subEvent.id}
-                                          projectId={project.id}
-                                          teamMembers={teamMembers}
-                                          onAssignMember={onAssignMember}
-                                          onAddNewMember={onAddNewMember}
-                                          variant="avatar"
-                                          readOnly={isReadOnly}
-                                          isMasked={false}
-                                          isAdmin={!isTmReadOnly}
-                                          selectedFilterMemberId={unifiedFilters?.memberId || null}
-                                          unifiedFilters={unifiedFilters}
-                                          existingAssignments={assignments}
-                                        />
-                                      );
-                                    })}
-                                  </div>
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                                    {(subEvent as any).is_empty_card ? 'Card Status' : 'Crew'}
+                                  </span>
+                                  {(subEvent as any).is_empty_card ? (
+                                    <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs">
+                                      <span className="font-medium">
+                                        Empty Card: Booking confirmed for <strong>{project.client_name}</strong>. No ceremonies or crew slots added yet.
+                                      </span>
+                                      {onEditSubEvent && (
+                                        <button
+                                          type="button"
+                                          onClick={() => onEditSubEvent(subEvent, project)}
+                                          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer shadow-xs"
+                                        >
+                                          + Add Ceremony
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-4 flex-wrap pt-1">
+                                      {assignments.map((assignment) => {
+                                        const isUserSlot = isMemberSlot(assignment);
+                                        if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
+                                          return null;
+                                        }
+                                        const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
+                                        return (
+                                          <RoleAssignDropdown
+                                            key={assignment.id}
+                                            assignment={assignment}
+                                            subEventId={subEvent.id}
+                                            projectId={project.id}
+                                            teamMembers={teamMembers}
+                                            onAssignMember={onAssignMember}
+                                            onAddNewMember={onAddNewMember}
+                                            variant="avatar"
+                                            readOnly={isReadOnly}
+                                            isMasked={false}
+                                            isAdmin={!isTmReadOnly}
+                                            selectedFilterMemberId={unifiedFilters?.memberId || null}
+                                            unifiedFilters={unifiedFilters}
+                                            existingAssignments={assignments}
+                                          />
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>

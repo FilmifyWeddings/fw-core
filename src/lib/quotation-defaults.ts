@@ -833,7 +833,7 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   let derivedGroom = '';
   let derivedBride = '';
   if (rawCoupleCandidate && rawCoupleCandidate.includes('&')) {
-    const parts = rawCoupleCandidate.split('&').map((s) => s.trim());
+    const parts = rawCoupleCandidate.split('&').map((s: string) => s.trim());
     derivedGroom = parts[0] || '';
     derivedBride = parts[1] || '';
   } else if (rawCoupleCandidate) {

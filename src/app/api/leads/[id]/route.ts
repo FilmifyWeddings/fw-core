@@ -323,7 +323,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       if (activities.length > 0 && logWsId) {
-        await supabaseAdmin.from('live_logs').insert(activities).catch(() => {});
+        await supabaseAdmin.from('live_logs').insert(activities);
       }
     } catch (logErr) {
       console.warn('[PATCH /api/leads/[id]] live_logs insertion warning:', logErr);

@@ -156,8 +156,8 @@ export async function POST(req: NextRequest) {
     clonedDoc.theme = templateDoc.theme || templateDoc.look || clonedDoc.theme || clonedDoc.look;
     clonedDoc.primaryFont = templateDoc.primaryFont || clonedDoc.primaryFont || 'Cormorant Garamond';
     clonedDoc.secondaryFont = templateDoc.secondaryFont || clonedDoc.secondaryFont || 'Plus Jakarta Sans';
-    if (templateDoc.colorPalette && !clonedDoc.colorPalette) {
-      clonedDoc.colorPalette = templateDoc.colorPalette;
+    if ((templateDoc as any).colorPalette && !(clonedDoc as any).colorPalette) {
+      (clonedDoc as any).colorPalette = (templateDoc as any).colorPalette;
     }
 
     if (!clonedDoc.cover) clonedDoc.cover = {};
