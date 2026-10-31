@@ -20,11 +20,13 @@ export interface WhatsAppAssignmentModalProps {
   role: string;
   project: FWProject | null;
   subEvent: FWSubEvent | null;
+  assignmentId?: string;
   workspaceId?: string;
   studioName?: string;
   projectManagerName?: string;
   previousMemberName?: string;
   previousRate?: number | string;
+  onConfirmAssignment?: (assignmentData: any) => void;
   onCommercialsSaved?: (savedData?: any) => void;
 }
 
@@ -35,11 +37,13 @@ export default function WhatsAppAssignmentModal({
   role,
   project,
   subEvent,
+  assignmentId: explicitAssignmentId,
   workspaceId = '',
   studioName = 'Filmify Weddings',
   projectManagerName = 'Studio Manager',
   previousMemberName,
   previousRate,
+  onConfirmAssignment,
   onCommercialsSaved,
 }: WhatsAppAssignmentModalProps) {
   const [copied, setCopied] = useState(false);
@@ -73,8 +77,27 @@ export default function WhatsAppAssignmentModal({
     );
   }, [subEvent?.fw_assignments, role, member?.id]);
 
+  // Check if member is on monthly retainer / salary or In-House staff
+  const isMonthlyOrInHouse = useMemo(() => {
+    if (!member) return false;
+    const freq = String((member as any)?.payout_frequency || '').toLowerCase().trim();
+    const pType = String((member as any)?.primary_type || (member as any)?.type || '').toUpperCase().trim();
+    const typesArr = (Array.isArray((member as any)?.member_types) ? (member as any).member_types : []).map((t: any) => String(t).toUpperCase().trim());
+    return (
+      freq === 'monthly' ||
+      pType === 'IN_HOUSE' ||
+      pType === 'INHOUSE' ||
+      pType === 'STAFF' ||
+      typesArr.includes('IN_HOUSE') ||
+      typesArr.includes('INHOUSE') ||
+      (member as any)?.is_inhouse === true
+    );
+  }, [member]);
+
   // Member's configured studio default daily rate:
+  // For monthly retainer / in-house team members, per-event fee defaults to 0!
   const memberDefaultRate = useMemo(() => {
+    if (isMonthlyOrInHouse) return 0;
     const rate = Number(
       (member as any)?.default_daily_rate ??
       (member as any)?.daily_rate ??
@@ -85,7 +108,7 @@ export default function WhatsAppAssignmentModal({
       0
     );
     return isNaN(rate) ? 0 : rate;
-  }, [member]);
+  }, [member, isMonthlyOrInHouse]);
 
   // 2. Synchronous initial value calculation based strictly on target slot:
   // If this specific assignment was already saved previously with an explicit rate (> 0) FOR THIS MEMBER, keep it.
@@ -244,56 +267,8 @@ Please confirm your slot.
     setTimeout(() => setCopied(false), 2500);
   };
 
-  // Handle modal dismissal: Keep crew assignment and save default commercials
+  // Handle modal dismissal: Cancel assignment cleanly without saving
   const handleModalClose = () => {
-    const effectiveWsId = workspaceId || (member as any)?.workspace_id || '';
-    const assignmentId = (subEvent?.fw_assignments || []).find(
-      (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
-    )?.id;
-
-    saveCrewAssignmentCommercials({
-      workspaceId: effectiveWsId,
-      assignmentId,
-      projectId: project?.id,
-      subEventId: subEvent?.id,
-      member: {
-        id: member.id,
-        name: cleanMemberName,
-        phone: member.phone_number || member.phone || '',
-        primary_role: role
-      },
-      assignedRole: role,
-      agreedAmount: numericAgreed > 0 ? numericAgreed : configuredDefaultRate,
-      advancePaid: numericAdvance,
-      paymentStatus: paymentStatus,
-      paymentDate: paymentDate,
-      paymentMethod: paymentMethod,
-      referenceNo: refNo || undefined,
-      notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`,
-      clientName: clientName,
-      eventName: eventTitle,
-      eventDate: subEvent?.event_date
-    }).catch(err => {
-      console.error('[WhatsAppAssignmentModal] Close save error:', err);
-    });
-
-    if (project?.id && !hasLoggedAssignmentRef.current) {
-      hasLoggedAssignmentRef.current = true;
-      logCrewAssignmentChange({
-        projectId: project.id,
-        subEventId: subEvent?.id,
-        workspaceId: effectiveWsId || undefined,
-        projectName: clientName || project?.client_name || undefined,
-        eventTitle: eventTitle,
-        previousMemberName: previousMemberName,
-        newMemberName: cleanMemberName,
-        targetMemberId: member?.id || undefined,
-        targetMemberAvatar: member?.avatar_url || undefined,
-        roleName: role,
-        previousRate: previousRate || memberDefaultRate,
-        newRate: numericAgreed > 0 ? numericAgreed : configuredDefaultRate,
-      }).catch(() => {});
-    }
     onClose();
   };
 
@@ -303,14 +278,14 @@ Please confirm your slot.
     onClose();
 
     // 2. TRIGGER BACKGROUND SILENT ASYNC PERSISTENCE
-    const effectiveWsId = workspaceId || (member as any).workspace_id || '';
-    const assignmentId = (subEvent?.fw_assignments || []).find(
+    const effectiveWsId = workspaceId || (member as any)?.workspace_id || '';
+    const targetAssignmentId = explicitAssignmentId || (subEvent?.fw_assignments || []).find(
       (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
     )?.id;
 
     saveCrewAssignmentCommercials({
       workspaceId: effectiveWsId,
-      assignmentId,
+      assignmentId: targetAssignmentId,
       projectId: project?.id,
       subEventId: subEvent?.id,
       member: {
@@ -332,6 +307,7 @@ Please confirm your slot.
       eventDate: subEvent?.event_date
     }).then((res) => {
       if (onCommercialsSaved) onCommercialsSaved(res);
+      if (onConfirmAssignment) onConfirmAssignment(res);
       if (project?.id && !hasLoggedAssignmentRef.current) {
         hasLoggedAssignmentRef.current = true;
         logCrewAssignmentChange({

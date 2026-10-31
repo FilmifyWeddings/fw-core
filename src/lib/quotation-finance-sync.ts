@@ -1323,7 +1323,17 @@ export async function syncBookedLeadOrFinalQuotation({
         || lead.name 
         || 'Valued Client';
 
-      const coupleName = finalDoc?.content_json
+      // Strictly check if finalDoc is truly marked as final
+      const isFinalDoc = Boolean(
+        finalDoc && (
+          finalDoc.is_final === true || 
+          finalDoc.status === 'final' || 
+          finalDoc.status === 'accepted' || 
+          finalDoc.content_json?.is_final === true
+        )
+      );
+
+      const coupleName = (isFinalDoc && finalDoc?.content_json)
         ? extractCoupleNameFromQuotation(finalDoc.content_json, leadContactName)
         : leadContactName;
 
@@ -1596,7 +1606,7 @@ export async function syncBookedLeadOrFinalQuotation({
       // 6. Booking Events Sync: fw_projects + fw_sub_events + fw_assignments
       let targetProjectId: string | null = null;
       try {
-        if (workspaceId && finalDoc?.content_json) {
+        if (isFinalDoc && workspaceId && finalDoc?.content_json) {
           targetProjectId = await syncQuotationToTeamManagerEvents(
             supabaseClient,
             leadId,
@@ -1650,29 +1660,7 @@ export async function syncBookedLeadOrFinalQuotation({
               .eq('id', targetProjectId);
           }
         }
-
-        // Guarantee at least one sub-event exists in fw_sub_events for this targetProjectId!
-        if (targetProjectId && workspaceId) {
-          const { data: existingSe } = await supabaseClient
-            .from('fw_sub_events')
-            .select('id')
-            .eq('project_id', targetProjectId);
-          if (!existingSe || existingSe.length === 0) {
-            await supabaseClient
-              .from('fw_sub_events')
-              .insert([{
-                project_id: targetProjectId,
-                event_title: 'Main Wedding Shoot',
-                event_date: eventDate || now.split('T')[0],
-                venue_name: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
-                roll_call_time: '10:00 AM',
-                dismissal_estimate_time: '06:00 PM',
-                shift_hours_slot: 'Full Day',
-                roles: [],
-                user_id: workspaceId
-              }]);
-          }
-        }
+        // If not a finalized quotation, project card remains strictly empty with 0 sub-events!
       } catch (tmErr) {
         console.error('[syncBookedLeadOrFinalQuotation] Error syncing team manager:', tmErr);
       }

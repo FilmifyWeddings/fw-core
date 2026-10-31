@@ -38,9 +38,11 @@ import DeleteMemberWarningModal from '../workspace/team/components/DeleteMemberW
 import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, saveAllWorkspaceEventTypes, getRoleShortCode, getRoleAbbr, formatRitualNotes } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
-// Module-level in-memory cache for instant 0ms transitions
+// Module-level in-memory cache for instant 0ms transitions (scoped per workspace to prevent cross-contamination)
 let memCachedTMProjects: FWProject[] = [];
 let memCachedTMTeamMembers: FWTeamMember[] = [];
+const memCachedTMProjectsMap: Record<string, FWProject[]> = {};
+const memCachedTMTeamMembersMap: Record<string, FWTeamMember[]> = {};
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
 const getGradientByProjectId = (id: string) => {
@@ -96,7 +98,7 @@ const format12HourTime = (timeStr?: string): string => {
 import { resolveSubEventAssignments, matchDateQuery, isDateSearchQuery } from '@/lib/team-helpers';
 
 export default function TeamManagerPage() {
-  const { workspaceId, workspaceName, isOwner, userRole, permissions, activeWorkspace, availableWorkspaces, userId, userEmail } = useWorkspace();
+  const { workspaceId, workspaceName, isOwner, userRole, permissions, activeWorkspace, availableWorkspaces, userId, userEmail, loading: wsLoading } = useWorkspace();
   const { crewRoles: globalCrewRoles, eventTypesList: globalEventTypesList } = useWorkspaceData();
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
   const [isMounted, setIsMounted] = useState(false);
@@ -324,6 +326,7 @@ export default function TeamManagerPage() {
   const [initialDateForModal, setInitialDateForModal] = useState<string>('');
   const [whatsappModalData, setWhatsappModalData] = useState<{
     isOpen: boolean;
+    assignmentId?: string;
     member: FWTeamMember | null;
     role: string;
     project: FWProject | null;
@@ -332,6 +335,7 @@ export default function TeamManagerPage() {
     previousRate?: number | string;
   }>({
     isOpen: false,
+    assignmentId: undefined,
     member: null,
     role: '',
     project: null,
@@ -812,6 +816,10 @@ export default function TeamManagerPage() {
       setProjects(projectsDataToSet);
       memCachedTMProjects = projectsDataToSet;
       memCachedTMTeamMembers = combinedMembers;
+      if (uid) {
+        memCachedTMProjectsMap[uid] = projectsDataToSet;
+        memCachedTMTeamMembersMap[uid] = combinedMembers;
+      }
       if (typeof window !== 'undefined') {
         try {
           if (uid && uid !== 'all') {
@@ -833,15 +841,37 @@ export default function TeamManagerPage() {
 
   useEffect(() => {
     async function initUserAndFetch() {
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const studioParam = urlParams?.get('studio') || urlParams?.get('ws');
+      const storedWsId = typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') : null;
+
+      let targetWsId = workspaceId;
+      if (!targetWsId && storedWsId && storedWsId !== 'undefined' && storedWsId !== 'null') {
+        targetWsId = storedWsId;
+      }
+
+      if (studioParam && studioParam !== 'all') {
+        const matched = availableWorkspaces.find(w => w.workspaceId === studioParam || (w as any).studioSlug === studioParam);
+        if (matched) {
+          targetWsId = matched.workspaceId;
+        } else if (wsLoading && !targetWsId) {
+          // Context is still resolving workspace list from server; wait so we never fetch with personal uid!
+          return;
+        }
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id || '';
       setCurrentUserId(uid);
-      const effectiveWsId = workspaceId || uid;
-      const isSilent = memCachedTMProjects.length > 0 || projects.length > 0;
+
+      const effectiveWsId = targetWsId || workspaceId || uid;
+      if (!effectiveWsId) return;
+
+      const isSilent = (memCachedTMProjectsMap[effectiveWsId]?.length || 0) > 0 || projects.length > 0;
       await fetchAllData(effectiveWsId, isSilent);
     }
     initUserAndFetch();
-  }, [workspaceId]);
+  }, [workspaceId, wsLoading, availableWorkspaces]);
 
   // Reactive listeners for 0ms millisecond propagation of newly booked leads across workspace
   useEffect(() => {
@@ -945,7 +975,7 @@ export default function TeamManagerPage() {
     }
   };
 
-  // Handle Assignment Update (Assign / Unassign Team Member to Role INSTANTLY)
+  // Handle Assignment Update (Assign / Unassign Team Member to Role)
   const handleAssignMember = (assignmentId: string, memberId: string | null) => {
     try {
       const activeAssign = projects
@@ -953,333 +983,140 @@ export default function TeamManagerPage() {
         .flatMap(se => resolveSubEventAssignments(se, teamMembers))
         .find(a => a.id === assignmentId);
 
-      if (activeAssign) {
-        const matchedMemberObj = memberId ? teamMembers.find(m => m.id === memberId) || null : null;
+      if (!activeAssign) return;
 
-        const isMemberInHouse = 
-          (matchedMemberObj as any)?.payout_frequency === 'monthly' ||
-          (matchedMemberObj as any)?.primary_type === 'IN_HOUSE' ||
-          (matchedMemberObj as any)?.primary_type === 'in_house' ||
-          (matchedMemberObj as any)?.type === 'IN_HOUSE' ||
-          (matchedMemberObj as any)?.type === 'in_house' ||
-          ((matchedMemberObj as any)?.member_types && (matchedMemberObj as any)?.member_types.includes('IN_HOUSE')) ||
-          ((matchedMemberObj as any)?.member_types && (matchedMemberObj as any)?.member_types.includes('in_house'));
-
-        const defaultAssignedRate = isMemberInHouse ? 0 : Number(
-          (matchedMemberObj as any)?.default_daily_rate ?? 
-          (matchedMemberObj as any)?.default_rate ?? 
-          (matchedMemberObj as any)?.daily_rate ?? 
-          (matchedMemberObj as any)?.day_rate ?? 
-          (matchedMemberObj as any)?.per_day_rate ?? 
-          (matchedMemberObj as any)?.custom_rate ?? 
-          0
-        );
-
-        const subEventObj = projects
-          .flatMap(p => p.fw_sub_events || [])
-          .find(se => se.id === activeAssign.sub_event_id);
-
-        // 1. INSTANT OPTIMISTIC UI STATE UPDATE (NO PAGE RELOAD / NO RE-FETCH)
-        // Multi-slot assignment supported: Does NOT unassign member from other slots on this event!
+      // 1. UNASSIGNMENT CLEANUP (IF MEMBER ID IS NULL)
+      if (!memberId) {
         setProjects(prevProjects =>
           prevProjects.map(proj => ({
             ...proj,
             fw_sub_events: proj.fw_sub_events?.map(se => {
               if (se.id !== activeAssign.sub_event_id) return se;
               const existingAssignments = se.fw_assignments || [];
-              const exists = existingAssignments.some(a => a.id === assignmentId);
-
-              const updatedAssignments = exists
-                ? existingAssignments.map(a =>
-                    a.id === assignmentId
-                      ? { 
-                          ...a, 
-                          assigned_member_id: memberId, 
-                          fw_team_members: matchedMemberObj,
-                          assigned_member_name: memberId ? (matchedMemberObj?.name || (a as any).assigned_member_name) : null,
-                          assigned_member_phone: memberId ? (matchedMemberObj?.phone || (a as any).assigned_member_phone) : null,
-                          agreed_amount: memberId ? defaultAssignedRate : 0,
-                          paid_amount: 0,
-                          advance_amount: 0,
-                          balance_amount: memberId ? defaultAssignedRate : 0,
-                          payment_status: 'pending',
-                          status: memberId ? 'assigned' : 'pending'
-                        }
-                      : a
-                  )
-                : [
-                    ...existingAssignments,
-                    {
-                      id: assignmentId,
-                      project_id: activeAssign.project_id,
-                      sub_event_id: activeAssign.sub_event_id,
-                      required_role: activeAssign.required_role,
-                      assigned_member_id: memberId,
-                      fw_team_members: matchedMemberObj,
-                      assigned_member_name: memberId ? matchedMemberObj?.name : null,
-                      assigned_member_phone: memberId ? matchedMemberObj?.phone : null,
-                      agreed_amount: memberId ? defaultAssignedRate : 0,
+              const updatedAssignments = existingAssignments.map(a =>
+                a.id === assignmentId
+                  ? { 
+                      ...a, 
+                      assigned_member_id: null, 
+                      fw_team_members: null,
+                      assigned_member_name: null,
+                      assigned_member_phone: null,
+                      agreed_amount: 0,
                       paid_amount: 0,
                       advance_amount: 0,
-                      balance_amount: memberId ? defaultAssignedRate : 0,
+                      balance_amount: 0,
                       payment_status: 'pending',
-                      status: memberId ? 'assigned' : 'pending'
-                    },
-                  ];
+                      status: 'pending'
+                    }
+                  : a
+              );
               return { ...se, fw_assignments: updatedAssignments };
             }),
           }))
         );
 
-        // 2. UNASSIGNMENT CLEANUP (IF MEMBER ID IS NULL)
-        if (!memberId) {
-          const subEventObj = projects
-            .flatMap(p => p.fw_sub_events || [])
-            .find(se => se.id === activeAssign.sub_event_id);
-          const projectObj = projects.find(p => p.id === activeAssign.project_id);
-          const prevMem = teamMembers.find(m => m.id === activeAssign.assigned_member_id);
-          const prevName = prevMem?.name || (activeAssign as any).assigned_member_name || 'Crew Member';
+        const subEventObj = projects
+          .flatMap(p => p.fw_sub_events || [])
+          .find(se => se.id === activeAssign.sub_event_id);
+        const projectObj = projects.find(p => p.id === activeAssign.project_id);
+        const prevMem = teamMembers.find(m => m.id === activeAssign.assigned_member_id);
+        const prevName = prevMem?.name || (activeAssign as any).assigned_member_name || 'Crew Member';
 
-          logCrewAssignmentChange({
-            projectId: activeAssign.project_id,
-            subEventId: activeAssign.sub_event_id || undefined,
-            workspaceId: workspaceId || currentUserId || undefined,
-            projectName: projectObj?.client_name || undefined,
-            eventTitle: subEventObj?.event_title || 'event',
-            previousMemberName: prevName,
-            targetMemberId: prevMem?.id || activeAssign.assigned_member_id || undefined,
-            targetMemberAvatar: prevMem?.avatar_url || undefined,
-            roleName: activeAssign.required_role || 'Crew',
-            isRemoval: true
-          }).catch(() => {});
+        logCrewAssignmentChange({
+          projectId: activeAssign.project_id,
+          subEventId: activeAssign.sub_event_id || undefined,
+          workspaceId: workspaceId || currentUserId || undefined,
+          projectName: projectObj?.client_name || undefined,
+          eventTitle: subEventObj?.event_title || 'event',
+          previousMemberName: prevName,
+          targetMemberId: prevMem?.id || activeAssign.assigned_member_id || undefined,
+          targetMemberAvatar: prevMem?.avatar_url || undefined,
+          roleName: activeAssign.required_role || 'Crew',
+          isRemoval: true
+        }).catch(() => {});
 
-          // DIRECT & IMMEDIATE BACKEND PURGE TO GUARANTEE 0 GHOST REAPPEARANCES ON REFRESH
-          (async () => {
-            try {
-              const cleanAssignId = String(assignmentId || '');
-              if (cleanAssignId && !cleanAssignId.includes('-role-')) {
-                await supabase
-                  .from('fw_assignments')
-                  .update({
-                    assigned_member_id: null,
-                    assigned_member_name: null,
-                    assigned_member_phone: null,
-                    agreed_amount: 0,
-                    advance_amount: 0,
-                    paid_amount: 0,
-                    balance_amount: 0,
-                    status: 'pending',
-                    payment_status: 'pending',
-                    notes: null
-                  })
-                  .eq('id', cleanAssignId);
-              } else if (activeAssign.sub_event_id) {
-                let q = supabase
-                  .from('fw_assignments')
-                  .update({
-                    assigned_member_id: null,
-                    assigned_member_name: null,
-                    assigned_member_phone: null,
-                    agreed_amount: 0,
-                    advance_amount: 0,
-                    paid_amount: 0,
-                    balance_amount: 0,
-                    status: 'pending',
-                    payment_status: 'pending',
-                    notes: null
-                  })
-                  .eq('sub_event_id', activeAssign.sub_event_id);
-
-                if (activeAssign.assigned_member_id) {
-                  q = q.eq('assigned_member_id', activeAssign.assigned_member_id);
-                } else if (activeAssign.required_role) {
-                  q = q.eq('required_role', activeAssign.required_role);
-                }
-                await q;
-              }
-
-              await unassignCrewSlot({
-                workspaceId: workspaceId || currentUserId || '',
-                eventId: activeAssign.project_id || undefined,
-                subEventId: activeAssign.sub_event_id || undefined,
-                assignmentId: assignmentId,
-                roleShortCode: (activeAssign as any).role_short_code || activeAssign.required_role?.slice(0, 4) || '',
-                roleName: activeAssign.required_role,
-                teamMemberId: activeAssign.assigned_member_id || undefined
-              });
-            } catch (err) {
-              console.error('[TeamManager] Unassignment error:', err);
-            }
-          })();
-          return;
-        }
-
-        // 3. TRIGGER WHATSAPP ROSTER DISPATCH MODAL ON MEMBER ASSIGNMENT
-        if (matchedMemberObj) {
-          const projectObj = projects.find(p => p.id === activeAssign.project_id);
-          const subEventObj = projects
-            .flatMap(p => p.fw_sub_events || [])
-            .find(se => se.id === activeAssign.sub_event_id);
-
-          const prevMemberId = activeAssign.assigned_member_id;
-          const prevMem = prevMemberId ? teamMembers.find(m => m.id === prevMemberId) : null;
-
-          setWhatsappModalData({
-            isOpen: true,
-            member: matchedMemberObj,
-            role: activeAssign.required_role || 'Crew',
-            project: projectObj || null,
-            subEvent: subEventObj || null,
-            previousMemberName: prevMem?.name,
-            previousRate: (activeAssign as any).agreed_amount,
-          });
-        }
-
-        // 4. BACKGROUND SILENT DB PERSISTENCE & FINANCE PAYOUT AUTO-SYNC
         (async () => {
           try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const currentUid = session?.user?.id || userId || currentUserId || workspaceId;
-            const projectObj = projects.find(p => p.id === activeAssign.project_id);
-            const currentWsId = workspaceId || (projectObj as any)?.workspace_id || currentUid;
-            const subEventObj = projects
-              .flatMap(p => p.fw_sub_events || [])
-              .find(se => se.id === activeAssign.sub_event_id);
-
-            // 0. Ensure member exists in fw_team_members first to eliminate FK constraint errors
-            if (matchedMemberObj && currentUid) {
-              try {
-                await supabase.from('fw_team_members').upsert({
-                  id: memberId,
-                  name: matchedMemberObj.name,
-                  phone_number: matchedMemberObj.phone_number || null,
-                  email: matchedMemberObj.email || null,
-                  primary_role: matchedMemberObj.primary_role || activeAssign.required_role || 'Crew',
-                  avatar_url: matchedMemberObj.avatar_url || null,
-                  default_daily_rate: matchedMemberObj.default_daily_rate || 0,
-                  user_id: currentUid,
-                  workspace_id: currentWsId,
-                  is_active: true,
-                }, { onConflict: 'id' });
-              } catch (e) {
-                console.warn('[TeamManager] fw_team_members upsert warning:', e);
-              }
-            }
-
-            // 1. Auto sync to Team & Partner Financial Engine (0 for In-House, default_daily_rate for Freelancers)
-            if (matchedMemberObj && currentWsId) {
-              const isInHouse = 
-                (matchedMemberObj as any).payout_frequency === 'monthly' ||
-                (matchedMemberObj as any).primary_type === 'IN_HOUSE' ||
-                (matchedMemberObj as any).primary_type === 'in_house' ||
-                (matchedMemberObj as any).type === 'IN_HOUSE' ||
-                (matchedMemberObj as any).type === 'in_house' ||
-                ((matchedMemberObj as any).member_types && (matchedMemberObj as any).member_types.includes('IN_HOUSE')) ||
-                ((matchedMemberObj as any).member_types && (matchedMemberObj as any).member_types.includes('in_house'));
-
-              const defaultAmount = isInHouse ? 0 : Number(
-                (matchedMemberObj as any)?.default_rate ?? 
-                matchedMemberObj.default_daily_rate ?? 
-                (matchedMemberObj as any)?.daily_rate ?? 
-                (matchedMemberObj as any)?.day_rate ?? 
-                (matchedMemberObj as any)?.per_day_rate ?? 
-                (matchedMemberObj as any)?.custom_rate ?? 
-                0
-              );
-
-              await saveOrUpdateEventPayout(currentWsId, {
-                member_id: memberId,
-                member_name: matchedMemberObj.name,
-                project_id: activeAssign.project_id || undefined,
-                sub_event_id: activeAssign.sub_event_id || undefined,
-                client_name: projectObj?.client_name || 'Wedding Client',
-                event_name: subEventObj?.event_title || 'Wedding Event',
-                event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
-                role: activeAssign.required_role || 'Crew',
-                agreed_amount: defaultAmount
-              });
-            }
-
-            // 3. Persist assignment to DB
-            if (assignmentId && !String(assignmentId || '').includes('-role-')) {
-              // Exact primary key update!
-              const updatePayload: any = { 
-                assigned_member_id: memberId,
-                assigned_member_name: matchedMemberObj?.name || null,
-                agreed_amount: defaultAssignedRate,
-                paid_amount: 0,
-                advance_amount: 0,
-                balance_amount: defaultAssignedRate,
-                payment_status: 'pending',
-                status: memberId ? 'assigned' : 'pending'
-              };
-              if (currentUid) {
-                updatePayload.user_id = currentUid;
-                updatePayload.workspace_id = currentWsId;
-              }
-              const { error: assignErr } = await supabase
+            const cleanAssignId = String(assignmentId || '');
+            if (cleanAssignId && !cleanAssignId.includes('-role-')) {
+              await supabase
                 .from('fw_assignments')
-                .update(updatePayload)
-                .eq('id', String(assignmentId));
-
-              if (assignErr) {
-                console.error('[TeamManager] Assignment update error:', assignErr.message);
-              }
-            } else {
-              // Synthetic placeholder slot clicked: Insert new row into fw_assignments
-              const insertPayload: any = {
-                project_id: activeAssign.project_id,
-                sub_event_id: activeAssign.sub_event_id,
-                required_role: activeAssign.required_role,
-                assigned_member_id: memberId,
-                assigned_member_name: matchedMemberObj?.name || null,
-                agreed_amount: defaultAssignedRate,
-                paid_amount: 0,
-                advance_amount: 0,
-                balance_amount: defaultAssignedRate,
-                payment_status: 'pending',
-                sub_event_name: subEventObj?.event_title || (subEventObj as any)?.name || 'Wedding Event',
-                sub_event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
-                start_time: (subEventObj as any)?.start_time || subEventObj?.roll_call_time || '10:00',
-                end_time: (subEventObj as any)?.end_time || subEventObj?.dismissal_estimate_time || '18:00',
-                status: memberId ? 'assigned' : 'pending'
-              };
-              if (currentUid) {
-                insertPayload.user_id = currentUid;
-                insertPayload.workspace_id = currentWsId;
-              }
-              const { data: inserted, error: insertErr } = await supabase
+                .update({
+                  assigned_member_id: null,
+                  assigned_member_name: null,
+                  assigned_member_phone: null,
+                  agreed_amount: 0,
+                  advance_amount: 0,
+                  paid_amount: 0,
+                  balance_amount: 0,
+                  status: 'pending',
+                  payment_status: 'pending',
+                  notes: null
+                })
+                .eq('id', cleanAssignId);
+            } else if (activeAssign.sub_event_id) {
+              let q = supabase
                 .from('fw_assignments')
-                .insert([insertPayload])
-                .select('id')
-                .single();
+                .update({
+                  assigned_member_id: null,
+                  assigned_member_name: null,
+                  assigned_member_phone: null,
+                  agreed_amount: 0,
+                  advance_amount: 0,
+                  paid_amount: 0,
+                  balance_amount: 0,
+                  status: 'pending',
+                  payment_status: 'pending',
+                  notes: null
+                })
+                .eq('sub_event_id', activeAssign.sub_event_id);
 
-              if (inserted?.id) {
-                // Update local state with the returned DB ID so subsequent operations work directly on DB ID
-                setProjects(prevProjects =>
-                  prevProjects.map(proj => ({
-                    ...proj,
-                    fw_sub_events: proj.fw_sub_events?.map(se => {
-                      if (se.id !== activeAssign.sub_event_id) return se;
-                      return {
-                        ...se,
-                        fw_assignments: se.fw_assignments?.map(a =>
-                          a.id === assignmentId ? { ...a, id: inserted.id } : a
-                        )
-                      };
-                    })
-                  }))
-                );
+              if (activeAssign.assigned_member_id) {
+                q = q.eq('assigned_member_id', activeAssign.assigned_member_id);
+              } else if (activeAssign.required_role) {
+                q = q.eq('required_role', activeAssign.required_role);
               }
-
-              if (insertErr) {
-                console.error('[TeamManager] Insert assignment error:', insertErr.message);
-              }
+              await q;
             }
+
+            await unassignCrewSlot({
+              workspaceId: workspaceId || currentUserId || '',
+              eventId: activeAssign.project_id || undefined,
+              subEventId: activeAssign.sub_event_id || undefined,
+              assignmentId: assignmentId,
+              roleShortCode: (activeAssign as any).role_short_code || activeAssign.required_role?.slice(0, 4) || '',
+              roleName: activeAssign.required_role,
+              teamMemberId: activeAssign.assigned_member_id || undefined
+            });
           } catch (err) {
-            console.error('[TeamManager] Background assignment update error:', err);
+            console.error('[TeamManager] Unassignment error:', err);
           }
         })();
+        return;
+      }
+
+      // 2. ASSIGNMENT: Open WhatsApp & Commercials confirmation modal WITHOUT instant assignment commit
+      // Assignment only commits when user clicks "Save & Confirm" or shares on WhatsApp!
+      const matchedMemberObj = teamMembers.find(m => m.id === memberId) || null;
+      if (matchedMemberObj) {
+        const projectObj = projects.find(p => p.id === activeAssign.project_id);
+        const subEventObj = projects
+          .flatMap(p => p.fw_sub_events || [])
+          .find(se => se.id === activeAssign.sub_event_id);
+
+        const prevMemberId = activeAssign.assigned_member_id;
+        const prevMem = prevMemberId ? teamMembers.find(m => m.id === prevMemberId) : null;
+
+        setWhatsappModalData({
+          isOpen: true,
+          assignmentId,
+          member: matchedMemberObj,
+          role: activeAssign.required_role || 'Crew',
+          project: projectObj || null,
+          subEvent: subEventObj || null,
+          previousMemberName: prevMem?.name,
+          previousRate: (activeAssign as any).agreed_amount,
+        });
       }
     } catch (err) {
       console.error('[TeamManager] handleAssignMember Exception:', err);
@@ -4331,6 +4168,7 @@ export default function TeamManagerPage() {
       <WhatsAppAssignmentModal
         isOpen={whatsappModalData.isOpen}
         onClose={() => setWhatsappModalData(prev => ({ ...prev, isOpen: false }))}
+        assignmentId={whatsappModalData.assignmentId}
         member={whatsappModalData.member}
         role={whatsappModalData.role}
         project={whatsappModalData.project}
@@ -4356,6 +4194,7 @@ export default function TeamManagerPage() {
                     const updated = (se.fw_assignments || []).map(a => {
                       const isMatch =
                         (savedData.assignmentId && a.id === savedData.assignmentId) ||
+                        (whatsappModalData.assignmentId && a.id === whatsappModalData.assignmentId) ||
                         (whatsappModalData.role && a.required_role?.toLowerCase() === whatsappModalData.role.toLowerCase()) ||
                         (savedData.role && a.required_role?.toLowerCase() === savedData.role.toLowerCase());
 
@@ -4363,6 +4202,11 @@ export default function TeamManagerPage() {
                         return {
                           ...a,
                           id: savedData.assignmentId || a.id,
+                          assigned_member_id: whatsappModalData.member?.id || (savedData.savedAssignment as any)?.assigned_member_id || a.assigned_member_id,
+                          assigned_member_name: whatsappModalData.member?.name || (savedData.savedAssignment as any)?.assigned_member_name || a.assigned_member_name,
+                          assigned_member_phone: whatsappModalData.member?.phone_number || (whatsappModalData.member as any)?.phone || a.assigned_member_phone,
+                          fw_team_members: whatsappModalData.member || a.fw_team_members,
+                          status: 'assigned',
                           agreed_amount: savedData.agreedAmount,
                           paid_amount: savedData.advancePaid,
                           advance_amount: savedData.advancePaid,

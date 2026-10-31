@@ -149,9 +149,17 @@ export default function RoleAssignDropdown({
     });
 
     return list.sort((a, b) => {
-      // 1. Pinned Assigned Member ALWAYS at Position #1 (Top)
-      const isAAssigned = assignment.assigned_member_id === a.id;
-      const isBAssigned = assignment.assigned_member_id === b.id;
+      // 1. Pinned Assigned Member ALWAYS at Position #1 (Top) - Robust ID, Object & Name match
+      const isAAssigned = Boolean(
+        (assignment.assigned_member_id && a.id === assignment.assigned_member_id) ||
+        (memberObj?.id && a.id === memberObj.id) ||
+        (cleanName && a.name && cleanName.toLowerCase() === a.name.toLowerCase().trim())
+      );
+      const isBAssigned = Boolean(
+        (assignment.assigned_member_id && b.id === assignment.assigned_member_id) ||
+        (memberObj?.id && b.id === memberObj.id) ||
+        (cleanName && b.name && cleanName.toLowerCase() === b.name.toLowerCase().trim())
+      );
       if (isAAssigned && !isBAssigned) return -1;
       if (!isAAssigned && isBAssigned) return 1;
 
@@ -164,7 +172,7 @@ export default function RoleAssignDropdown({
       // 3. Alphabetical fallback
       return (a.name || '').localeCompare(b.name || '');
     });
-  }, [teamMembers, searchQuery, assignment.assigned_member_id, role]);
+  }, [teamMembers, searchQuery, assignment.assigned_member_id, memberObj?.id, cleanName, role]);
 
   const otherSlotAssignedMemberMap = useMemo(() => {
     const map = new Map<string, string>(); // memberId -> roleName
@@ -410,7 +418,11 @@ export default function RoleAssignDropdown({
                 </button>
 
                 {sortedMembers.map((m) => {
-                  const isSelected = assignment.assigned_member_id === m.id;
+                  const isSelected = Boolean(
+                    (assignment.assigned_member_id && m.id === assignment.assigned_member_id) ||
+                    (memberObj?.id && m.id === memberObj.id) ||
+                    (cleanName && m.name && cleanName.toLowerCase() === m.name.toLowerCase().trim())
+                  );
                   const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
                   const isRoleMatch = (m.primary_role || '').toLowerCase() === (role || '').toLowerCase();
                   const alreadyAssignedRole = otherSlotAssignedMemberMap.get(m.id);

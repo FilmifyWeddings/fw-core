@@ -803,13 +803,24 @@ export default function LeadsPage() {
       if (!latestQuote) {
         latestQuote = await findFinalQuotationForLead(supabase, leadId);
       }
-      if (latestQuote?.content_json) {
+
+      // Strictly verify if this quotation is finalized
+      const isFinalQuote = Boolean(
+        latestQuote && (
+          latestQuote.is_final === true || 
+          latestQuote.status === 'final' || 
+          latestQuote.status === 'accepted' || 
+          latestQuote.content_json?.is_final === true
+        )
+      );
+
+      if (isFinalQuote && latestQuote?.content_json) {
         const quoteCouple = extractCoupleNameFromQuotation(latestQuote.content_json);
         if (quoteCouple && quoteCouple !== 'Wedding Client' && quoteCouple !== 'Valued Client') {
           clientName = quoteCouple;
         }
       }
-      const quoteFinancials = latestQuote && latestQuote.content_json
+      const quoteFinancials = isFinalQuote && latestQuote?.content_json
         ? extractFinancialsFromQuotation(latestQuote.content_json, parsedEventDate)
         : null;
 
@@ -1008,7 +1019,7 @@ export default function LeadsPage() {
         // 5. Auto-create / Sync Team Manager Bookings & Event Cards (fw_projects + fw_sub_events + fw_assignments)
         try {
           const mainVenue = raw.venue || raw.location || raw.city || '';
-          if (latestQuote?.content_json) {
+          if (isFinalQuote && latestQuote?.content_json) {
             await syncQuotationToTeamManagerEvents(
               supabase,
               leadId,

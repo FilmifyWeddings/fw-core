@@ -1641,12 +1641,18 @@ export function LeadTable({
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
   // Custom Status & Team Members state
-  const [teamMembers, setTeamMembers] = useState<any[]>([
-    { id: '1', name: 'Chad Thunderclock', email: 'dhondesanty1760@gmail.com', role: 'Admin' },
-    { id: '2', name: 'Sahil Dhonde', email: 'sahil@filmifyweddings.com', role: 'Manager' },
-    { id: '3', name: 'Sushant Nawale', email: 'sushant@filmifyweddings.com', role: 'Lead Owner' },
-    { id: '4', name: 'Rahul Sharma', email: 'rahul@filmifyweddings.com', role: 'Team Member' }
-  ]);
+  const [teamMembers, setTeamMembers] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const local = localStorage.getItem('leads_workspace_team_members') || localStorage.getItem('sc_cached_tm_members');
+        if (local) {
+          const parsed = JSON.parse(local);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
 
   useEffect(() => {
     if (typeof window !== 'undefined') {

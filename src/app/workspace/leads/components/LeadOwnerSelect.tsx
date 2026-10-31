@@ -77,6 +77,8 @@ interface LeadOwnerSelectProps {
   className?: string;
 }
 
+let cachedLeadOwnerMembers: LeadOwnerMember[] = [];
+
 export default function LeadOwnerSelect({
   value,
   onChange,
@@ -88,7 +90,22 @@ export default function LeadOwnerSelect({
 }: LeadOwnerSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [fetchedMembers, setFetchedMembers] = useState<LeadOwnerMember[]>([]);
+  const [fetchedMembers, setFetchedMembers] = useState<LeadOwnerMember[]>(() => {
+    if (cachedLeadOwnerMembers.length > 0) return cachedLeadOwnerMembers;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_lead_owner_members');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            cachedLeadOwnerMembers = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
   const [coords, setCoords] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 280 });
   const [isMounted, setIsMounted] = useState(false);
 
@@ -166,7 +183,7 @@ export default function LeadOwnerSelect({
         try {
           const { data: wsCrew } = await supabase
             .from('workspace_members')
-            .select('id, user_id, workspace_id, name, roles, primary_role, avatar_url, phone')
+            .select('id, user_id, workspace_id, name, roles, primary_role, primary_type, member_types, payout_frequency, avatar_url, phone')
             .in('workspace_id', targetIds);
 
           if (wsCrew && wsCrew.length > 0) {
@@ -179,6 +196,9 @@ export default function LeadOwnerSelect({
                   name: w.name.trim(),
                   roles: rolesArr,
                   primary_role: w.primary_role,
+                  primary_type: w.primary_type,
+                  member_types: w.member_types,
+                  payout_frequency: w.payout_frequency,
                   avatar_url: w.avatar_url,
                   phone: w.phone,
                   is_sales_person: isMemberSalesPerson(w),
@@ -188,23 +208,28 @@ export default function LeadOwnerSelect({
           }
         } catch (_) {}
 
-        // 3. Add studio owner / current user so owner can always assign themselves
+        // 3. Add studio owner / current user if not present (strictly preserve actual role, NEVER force as Sales Person!)
         const ownerName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0];
         const ownerRole = session?.user?.user_metadata?.role || 'Studio Owner';
 
         if (ownerName && !membersList.some(m => m.name.toLowerCase() === ownerName.toLowerCase())) {
-          membersList.unshift({
+          const isOwnerSales = ownerRole.toLowerCase().includes('sales');
+          membersList.push({
             id: sessionUserId || 'owner',
             name: ownerName,
             roles: [ownerRole],
-            primary_role: 'Studio Owner',
-            role_code: 'SP',
-            is_sales_person: true,
+            primary_role: ownerRole,
+            primary_type: 'OWNER',
+            is_sales_person: isOwnerSales,
           });
         }
 
         if (membersList.length > 0) {
+          cachedLeadOwnerMembers = membersList;
           setFetchedMembers(membersList);
+          try {
+            localStorage.setItem('sc_cached_lead_owner_members', JSON.stringify(membersList));
+          } catch (_) {}
         }
       } catch (err) {
         console.warn('Error fetching lead owner team members:', err);

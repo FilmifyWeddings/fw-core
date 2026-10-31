@@ -410,24 +410,39 @@ export default function TeamMemberFinanceDrawer({
         };
       });
 
-      // Merge custom payouts from team_event_payouts with smart sub_event deduplication
+      // Merge custom payouts from team_event_payouts with smart sub_event & event key deduplication
       const rawPayouts = payoutRes.status === 'fulfilled' && payoutRes.value.data ? payoutRes.value.data : [];
       const seenIds = new Set(eventPayouts.map(e => String(e.id)));
       const seenSubEvents = new Set(eventPayouts.map(e => String(e.sub_event_id || '')).filter(Boolean));
+      const seenEventKeys = new Set(
+        eventPayouts.map(e => `${(e.client_name || '').toLowerCase().trim()}:::${(e.event_name || '').toLowerCase().trim()}:::${(e.event_date || '').trim()}`)
+      );
+
       rawPayouts.forEach((p: any) => {
         const pSubEventId = String(p.sub_event_id || '');
-        if (pSubEventId && seenSubEvents.has(pSubEventId)) {
+        const pEventKey = `${(p.client_name || '').toLowerCase().trim()}:::${(p.event_name || '').toLowerCase().trim()}:::${(p.event_date || '').trim()}`;
+
+        // 1. Match by sub_event_id OR normalized (client + event title + date)
+        const isMatchedSubEvent = Boolean(pSubEventId && seenSubEvents.has(pSubEventId));
+        const isMatchedKey = Boolean(p.client_name && p.event_name && seenEventKeys.has(pEventKey));
+
+        if (isMatchedSubEvent || isMatchedKey) {
           // Already present from fw_assignments - enrich any missing notes or paid amounts
-          const existing = eventPayouts.find(e => String(e.sub_event_id || '') === pSubEventId);
+          const existing = eventPayouts.find(e => 
+            (pSubEventId && String(e.sub_event_id || '') === pSubEventId) ||
+            (`${(e.client_name || '').toLowerCase().trim()}:::${(e.event_name || '').toLowerCase().trim()}:::${(e.event_date || '').trim()}` === pEventKey)
+          );
           if (existing) {
             if (p.paid_amount && !existing.paid_amount) existing.paid_amount = Number(p.paid_amount);
             if (p.notes && !existing.notes) existing.notes = p.notes;
           }
           return;
         }
+
         if (!seenIds.has(String(p.id))) {
           seenIds.add(String(p.id));
           if (pSubEventId) seenSubEvents.add(pSubEventId);
+          seenEventKeys.add(pEventKey);
           eventPayouts.push(p);
         }
       });
