@@ -151,6 +151,22 @@ const ARCHIVED_LEAD_DESIGNS = new Set([
   'FW-USER-9YDTLG'
 ]);
 
+function areQuotationsEqual(a: SavedQuotation[], b: SavedQuotation[]): boolean {
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const itemA = a[i];
+    const itemB = b[i];
+    if ((itemA.quotation_number || itemA.id) !== (itemB.quotation_number || itemB.id)) return false;
+    if (itemA.title !== itemB.title) return false;
+    if (Boolean(itemA.is_default) !== Boolean(itemB.is_default)) return false;
+    if (Boolean(itemA.is_system_template) !== Boolean(itemB.is_system_template)) return false;
+    if (itemA.client_name !== itemB.client_name) return false;
+    if (itemA.status !== itemB.status) return false;
+  }
+  return true;
+}
+
 function getSynchronousCachedQuotations(): { items: SavedQuotation[]; hasCache: boolean } {
   if (typeof window === 'undefined') return { items: [], hasCache: false };
   if (memCachedQuotations && memCachedQuotations.length > 0) {
@@ -158,17 +174,9 @@ function getSynchronousCachedQuotations(): { items: SavedQuotation[]; hasCache: 
   }
   try {
     const activeUid = localStorage.getItem('wg_last_active_user_id') || localStorage.getItem('sc_active_workspace_id');
-    let cachedDataStr = activeUid ? localStorage.getItem(`wg_quotations_cache_${activeUid}`) : null;
-    if (!cachedDataStr) {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('wg_quotations_cache_') && k !== 'wg_quotations_cache') {
-          cachedDataStr = localStorage.getItem(k);
-          break;
-        }
-      }
-    }
-    if (!cachedDataStr && activeUid) {
+    // ONLY read cache if activeUid exists and is valid. NEVER read arbitrary keys to prevent card flashing!
+    let cachedDataStr = (activeUid && activeUid !== 'demo_user') ? localStorage.getItem(`wg_quotations_cache_${activeUid}`) : null;
+    if (!cachedDataStr && activeUid && activeUid !== 'demo_user') {
       cachedDataStr = localStorage.getItem(`studio_templates_cache_${activeUid}`);
     }
     if (cachedDataStr) {
@@ -384,13 +392,23 @@ export default function WorkspaceQuotationsGalleryPage() {
 
       const returnedDefaultId = resData.defaultTemplateId || targetId;
 
-      setQuotations(prev => prev.map(q => {
-        const qId = q.quotation_number || q.id;
-        return {
-          ...q,
-          is_default: qId === returnedDefaultId || qId === targetId
-        };
-      }));
+      setQuotations(prev => {
+        const next = prev.map(q => {
+          const qId = q.quotation_number || q.id;
+          return {
+            ...q,
+            is_default: qId === returnedDefaultId || qId === targetId
+          };
+        });
+        memCachedQuotations = next;
+        const effectiveUid = userId || (typeof window !== 'undefined' ? localStorage.getItem('wg_last_active_user_id') : null);
+        if (effectiveUid && effectiveUid !== 'demo_user') {
+          try {
+            localStorage.setItem(`wg_quotations_cache_${effectiveUid}`, JSON.stringify(next));
+          } catch (_) {}
+        }
+        return next;
+      });
 
       setToastMessage('Default quotation template updated');
       setTimeout(() => setToastMessage(null), 3000);
@@ -523,7 +541,12 @@ export default function WorkspaceQuotationsGalleryPage() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!deletingQuote) return;
+    if (!deletingQuote || deletingQuote.is_system_template) {
+      setToastMessage('System template cannot be deleted');
+      setDeletingQuote(null);
+      setIsDeleting(false);
+      return;
+    }
     const targetId = deletingQuote.quotation_number || deletingQuote.id;
     setIsDeleting(true);
 
@@ -832,60 +855,56 @@ export default function WorkspaceQuotationsGalleryPage() {
       localStorage.removeItem('wg_quotations_cache');
     } catch (_) {}
 
-    // 0ms Instant Client Storage Load (avoids any wait or spinner on refresh!)
+    // 0ms Instant Client Storage Load (uses exact active user/workspace ID only; never reads arbitrary keys)
     try {
-      const activeUid = localStorage.getItem('wg_last_active_user_id');
-      let cachedDataStr = activeUid ? localStorage.getItem(`wg_quotations_cache_${activeUid}`) : null;
-      if (!cachedDataStr) {
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && k.startsWith('wg_quotations_cache_') && k !== 'wg_quotations_cache') {
-            cachedDataStr = localStorage.getItem(k);
-            break;
-          }
-        }
-      }
-
-      if (cachedDataStr) {
-        const parsed = JSON.parse(cachedDataStr);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const hydrated = parsed
-            .filter((item: any) => {
-              const idStr = String(item.quotation_number || item.id);
-              if (ARCHIVED_LEAD_DESIGNS.has(idStr)) return false;
-              if (item.title === 'Personalised Wedding Quotation' && item.client_name === 'Valued Client' && idStr.startsWith('FW-USER-')) {
-                return false;
+      const activeUid = localStorage.getItem('wg_last_active_user_id') || localStorage.getItem('sc_active_workspace_id');
+      if (activeUid && activeUid !== 'demo_user') {
+        const cachedDataStr = localStorage.getItem(`wg_quotations_cache_${activeUid}`) || localStorage.getItem(`studio_templates_cache_${activeUid}`);
+        if (cachedDataStr) {
+          const parsed = JSON.parse(cachedDataStr);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const hydrated = parsed
+              .filter((item: any) => {
+                const idStr = String(item.quotation_number || item.id);
+                if (ARCHIVED_LEAD_DESIGNS.has(idStr)) return false;
+                if (idStr.startsWith('FW-Q-') || idStr.startsWith('FW-L-')) return false;
+                if (idStr === 'FW-AIRY-DEFAULT') return false;
+                const tName = String(item.title || '').trim().toLowerCase();
+                const dName = String(item.content_json?.designName || '').trim().toLowerCase();
+                if (tName === 'minimalist airy proposal' || dName === 'minimalist airy proposal') return false;
+                return true;
+              })
+              .map((item: any) => {
+                const itemKey = item.quotation_number || item.id;
+                const draftStr = localStorage.getItem(`wg_proposal_draft_${itemKey}`);
+                if (draftStr) {
+                  try {
+                    const draftObj = JSON.parse(draftStr);
+                    if (isPoisonedDemoDraft(draftObj, item.title)) {
+                      localStorage.removeItem(`wg_proposal_draft_${itemKey}`);
+                    } else if (draftObj && typeof draftObj === 'object') {
+                      return {
+                        ...item,
+                        title: draftObj.designName || item.title,
+                        client_name: draftObj.cover?.coupleName || item.client_name,
+                        content_json: draftObj
+                      };
+                    }
+                  } catch (_) {}
+                }
+                return item;
+              });
+            if (hydrated.length > 0) {
+              memCachedQuotations = hydrated;
+              setQuotations(prev => areQuotationsEqual(prev, hydrated) ? prev : hydrated);
+              setLoading(false);
+              const primary = hydrated[0];
+              if (primary) {
+                setActiveQuotationId(primary.quotation_number || primary.id || '1');
+                if (primary.client_name) setActiveCoupleName(primary.client_name);
+                if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
               }
-              return true;
-            })
-            .map((item: any) => {
-              const itemKey = item.quotation_number || item.id;
-              const draftStr = localStorage.getItem(`wg_proposal_draft_${itemKey}`);
-              if (draftStr) {
-                try {
-                  const draftObj = JSON.parse(draftStr);
-                  if (isPoisonedDemoDraft(draftObj, item.title)) {
-                    localStorage.removeItem(`wg_proposal_draft_${itemKey}`);
-                  } else if (draftObj && typeof draftObj === 'object') {
-                    return {
-                      ...item,
-                      title: draftObj.designName || item.title,
-                      client_name: draftObj.cover?.coupleName || item.client_name,
-                      content_json: draftObj
-                    };
-                  }
-                } catch (_) {}
-              }
-              return item;
-            });
-          memCachedQuotations = hydrated;
-          setQuotations(hydrated);
-          setLoading(false);
-          const primary = hydrated[0];
-          if (primary) {
-            setActiveQuotationId(primary.quotation_number || primary.id || '1');
-            if (primary.client_name) setActiveCoupleName(primary.client_name);
-            if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
+            }
           }
         }
       }
@@ -895,14 +914,14 @@ export default function WorkspaceQuotationsGalleryPage() {
       setUserImages(memCachedUserImages);
     } else {
       try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith('wg_gallery_cache_')) {
-            const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+        const activeUid = localStorage.getItem('wg_last_active_user_id') || localStorage.getItem('sc_active_workspace_id');
+        if (activeUid && activeUid !== 'demo_user') {
+          const cachedGallery = localStorage.getItem(`wg_gallery_cache_${activeUid}`);
+          if (cachedGallery) {
+            const parsed = JSON.parse(cachedGallery);
             if (Array.isArray(parsed) && parsed.length > 0) {
               memCachedUserImages = parsed;
               setUserImages(parsed);
-              break;
             }
           }
         }
@@ -930,6 +949,11 @@ export default function WorkspaceQuotationsGalleryPage() {
                   .filter((item: any) => {
                     const idStr = String(item.quotation_number || item.id);
                     if (ARCHIVED_LEAD_DESIGNS.has(idStr)) return false;
+                    if (idStr.startsWith('FW-Q-') || idStr.startsWith('FW-L-')) return false;
+                    if (idStr === 'FW-AIRY-DEFAULT') return false;
+                    const tName = String(item.title || '').trim().toLowerCase();
+                    const dName = String(item.content_json?.designName || '').trim().toLowerCase();
+                    if (tName === 'minimalist airy proposal' || dName === 'minimalist airy proposal') return false;
                     if (item.title === 'Personalised Wedding Quotation' && item.client_name === 'Valued Client' && idStr.startsWith('FW-USER-')) {
                       return false;
                     }
@@ -956,7 +980,7 @@ export default function WorkspaceQuotationsGalleryPage() {
                     return item;
                   });
                 memCachedQuotations = hydrated;
-                setQuotations(hydrated);
+                setQuotations(prev => areQuotationsEqual(prev, hydrated) ? prev : hydrated);
                 setLoading(false);
                 const primary = hydrated[0];
                 if (primary) {
@@ -1104,22 +1128,30 @@ export default function WorkspaceQuotationsGalleryPage() {
           });
         }
 
-        // ONLY show authentic studio designs under "Your Designs"
-        // If the studio owner has created or duplicated designs, show exclusively their designs!
-        if (userDesigns.length > 0) {
+        // Active published system preset (FW-USER-SJ05RN / "Premium")
+        const activeSysPreset = systemDesigns.find(s => 
+          (s.id === 'FW-USER-SJ05RN' || s.is_system_template) &&
+          s.status === 'published' &&
+          !s.id.startsWith('FW-Q-') &&
+          !s.id.startsWith('FW-L-')
+        );
+
+        if (activeSysPreset) {
+          activeSysPreset.is_system_template = true;
+          // Filter out activeSysPreset from userDesigns so it is never duplicated
+          const cleanUser = userDesigns.filter(u => u.id !== activeSysPreset.id);
+          combined = [...cleanUser, activeSysPreset];
+        } else {
           combined = userDesigns;
-        } else if (isSuperAdminUser) {
-          // Super Admin can see system designs in management view
-          combined = [...userDesigns, ...systemDesigns];
-        } else if (systemDesigns.length > 0) {
-          // New studio owner with 0 designs gets the primary base template clean
-          const baseStarter = { ...systemDesigns[0] };
+        }
+
+        // Fallback for new studio owner with 0 designs if activeSysPreset was not found
+        if (combined.length === 0 && systemDesigns.length > 0) {
+          const baseStarter = { ...systemDesigns[0], is_system_template: true };
           if (baseStarter.title === 'Minimalist Airy Proposal') {
             baseStarter.title = 'Wedding - Design 1';
           }
           combined = [baseStarter];
-        } else {
-          combined = [];
         }
 
         // Check if any template has is_default = true; if none at all, default to first template
@@ -1128,7 +1160,11 @@ export default function WorkspaceQuotationsGalleryPage() {
           combined[0].is_default = true;
         }
 
-        setQuotations(combined);
+        // Only update state if list actually changed (prevents glitch / card re-animation!)
+        setQuotations(prev => {
+          if (areQuotationsEqual(prev, combined)) return prev;
+          return combined;
+        });
         memCachedQuotations = combined;
         if (typeof window !== 'undefined') {
           try {
@@ -1469,8 +1505,8 @@ export default function WorkspaceQuotationsGalleryPage() {
                       </span>
                     )}
 
-                    {/* Top-Right Delete Button (Enabled for User-Owned Templates AND Super Admin) */}
-                    {(!quote.is_system_template || isSuperAdminUser) && (
+                    {/* Top-Right Delete Button (Enabled for User-Owned Templates ONLY; System Presets CANNOT be deleted) */}
+                    {!quote.is_system_template && (
                       <button
                         type="button"
                         title="Delete Template"
@@ -1822,7 +1858,7 @@ export default function WorkspaceQuotationsGalleryPage() {
                         >
                           Edit
                         </button>
-                        {(!q.is_system_template || isSuperAdminUser) && (
+                        {!q.is_system_template && (
                           <button
                             type="button"
                             title="Delete Quotation"

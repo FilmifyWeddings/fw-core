@@ -173,21 +173,14 @@ export async function GET(req: NextRequest) {
 
     // Do NOT inject "Minimalist Airy Proposal" phantom card. Studio owners only see their authentic designs.
 
-    // Deduplicate templates by normalized title/id to prevent duplicate cards
-    const titleSeen = new Map<string, any>();
+    // Deduplicate templates by ID (ensures custom designs and system designs are never clobbered by title)
+    const idSeen = new Map<string, any>();
     for (const t of results) {
-      const normalizedTitle = (t.title || '').trim().toLowerCase();
-      if (!titleSeen.has(normalizedTitle)) {
-        titleSeen.set(normalizedTitle, t);
-      } else {
-        const existing = titleSeen.get(normalizedTitle);
-        // Prefer default template or newer template
-        if (t.is_default && !existing.is_default) {
-          titleSeen.set(normalizedTitle, t);
-        }
+      if (!idSeen.has(t.id)) {
+        idSeen.set(t.id, t);
       }
     }
-    const deduplicatedResults = Array.from(titleSeen.values());
+    const deduplicatedResults = Array.from(idSeen.values());
     deduplicatedResults.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
 
     return NextResponse.json({

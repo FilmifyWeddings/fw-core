@@ -619,8 +619,8 @@ async function handleDelete(
       .eq('id', id)
       .maybeSingle();
 
-    if (!isSuperAdmin && (targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id === GLOBAL_SYSTEM_TEMPLATE_ID)) {
-      return NextResponse.json({ error: 'System templates cannot be deleted by normal users.' }, { status: 403 });
+    if (targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id === GLOBAL_SYSTEM_TEMPLATE_ID || id === 'FW-USER-SJ05RN') {
+      return NextResponse.json({ error: 'System templates cannot be deleted.' }, { status: 403 });
     }
 
     if (!isSuperAdmin && targetTmpl?.is_default) {
