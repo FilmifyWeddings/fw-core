@@ -128,7 +128,8 @@ export async function POST(req: NextRequest) {
       summary: extractionResult.summary,
       missingInformation: extractionResult.missingInformation,
       conflicts: extractionResult.conflicts,
-      verification_required: extractionResult.conflicts.length > 0
+      verification_required: extractionResult.conflicts.length > 0,
+      engine: extractionResult.engine || { provider: 'gemini', model: 'gemini-3.8-flash' }
     });
   } catch (error: any) {
     console.error('[AI Extract Error]:', error);
@@ -279,15 +280,19 @@ Return ONLY a valid JSON object matching:
 `;
 
   let aiRawOutput: any = null;
+  let activeEngineProvider = 'heuristic';
+  let activeEngineModel = 'fallback';
+  let activeKeyHint = '';
+
   const rawGeminiKeys = (process.env.GEMINI_API_KEY || '')
     .split(',')
     .map((k) => k.trim())
     .filter(Boolean);
   const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // 1. PRIMARY ENGINE: Google Gemini (High Speed Flash Models with Multi-Key Rotation)
+  // 1. PRIMARY ENGINE: Google Gemini (Tier 1 High Speed Flash Models with gemini-3.8-flash Priority)
   if (rawGeminiKeys.length > 0) {
-    const candidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
+    const candidateModels = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
     for (const currentKey of rawGeminiKeys) {
       if (aiRawOutput) break;
       for (const model of candidateModels) {
@@ -320,12 +325,15 @@ Return ONLY a valid JSON object matching:
             const content = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text;
             if (content) {
               aiRawOutput = sanitizeAndParseJson(content);
-              console.log(`[AI Extract] Successfully generated via Gemini (${model})`);
+              activeEngineProvider = 'gemini';
+              activeEngineModel = model;
+              activeKeyHint = `${currentKey.slice(0, 14)}...${currentKey.slice(-6)}`;
+              console.log(`[AI Extract] Successfully generated via Gemini (${model}) using key: ${activeKeyHint}`);
               break;
             }
           } else {
             const errText = await geminiRes.text().catch(() => '');
-            console.warn(`[Gemini ${model} Error on key ${currentKey.slice(0, 6)}...]:`, geminiRes.status, errText.slice(0, 150));
+            console.warn(`[Gemini ${model} Error on key ${currentKey.slice(0, 10)}...]:`, geminiRes.status, errText.slice(0, 150));
           }
         } catch (e: any) {
           console.warn(`[Gemini ${model} Exception]:`, e?.message || e);
@@ -360,6 +368,8 @@ Return ONLY a valid JSON object matching:
         const content = json.choices?.[0]?.message?.content;
         if (content) {
           aiRawOutput = JSON.parse(content);
+          activeEngineProvider = 'openai';
+          activeEngineModel = 'gpt-4o-mini';
           console.log('[AI Extract] Successfully generated via OpenAI GPT-4o-mini');
         }
       } else {
@@ -385,5 +395,13 @@ Return ONLY a valid JSON object matching:
   }
 
   // Map AI Output into StudioCore Quotation Schema
-  return mapAiOutputToQuotationDocument(aiRawOutput, baseSchema, contextData);
+  const mappedResult = mapAiOutputToQuotationDocument(aiRawOutput, baseSchema, contextData);
+  return {
+    ...mappedResult,
+    engine: {
+      provider: activeEngineProvider,
+      model: activeEngineModel,
+      activeKey: activeKeyHint || (rawGeminiKeys[0] ? `${rawGeminiKeys[0].slice(0, 14)}...${rawGeminiKeys[0].slice(-6)}` : 'N/A')
+    }
+  };
 }
