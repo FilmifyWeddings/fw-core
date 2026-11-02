@@ -227,7 +227,8 @@ export const LeadUnbookingTrashModal: React.FC<LeadUnbookingTrashModalProps> = (
   leadName,
   isSubmitting = false
 }) => {
-  const [removeCardsToTrash, setRemoveCardsToTrash] = React.useState(true);
+  // Default to false: Safe preservation by default to prevent accidental deletion of shoots, crew assignments & financials
+  const [removeCardsToTrash, setRemoveCardsToTrash] = React.useState(false);
 
   if (!isOpen || !lead) return null;
 
