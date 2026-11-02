@@ -1,16 +1,16 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
-import { Check, ArrowRight, Play, Sparkles } from 'lucide-react';
+import { Check, ArrowRight, Play, ChevronDown } from 'lucide-react';
 
 export function QuotationHero() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
 
-  // Mouse Parallax Effect
+  // Smooth mouse parallax for 3D depth
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
 
@@ -18,21 +18,14 @@ export function QuotationHero() {
   const smoothMouseX = useSpring(mouseX, springConfig);
   const smoothMouseY = useSpring(mouseY, springConfig);
 
-  // Different parallax depth layers
-  const cardLeftX = useTransform(smoothMouseX, [-300, 300], [-15, 15]);
-  const cardLeftY = useTransform(smoothMouseY, [-300, 300], [-10, 10]);
+  const cardsX = useTransform(smoothMouseX, [-300, 300], [-10, 10]);
+  const cardsY = useTransform(smoothMouseY, [-300, 300], [-8, 8]);
 
-  const cardCenterX = useTransform(smoothMouseX, [-300, 300], [-8, 8]);
-  const cardCenterY = useTransform(smoothMouseY, [-300, 300], [-14, 14]);
+  const charX = useTransform(smoothMouseX, [-300, 300], [8, -8]);
+  const charY = useTransform(smoothMouseY, [-300, 300], [6, -6]);
 
-  const cardRightX = useTransform(smoothMouseX, [-300, 300], [-12, 12]);
-  const cardRightY = useTransform(smoothMouseY, [-300, 300], [-8, 8]);
-
-  const charX = useTransform(smoothMouseX, [-300, 300], [12, -12]);
-  const charY = useTransform(smoothMouseY, [-300, 300], [8, -8]);
-
-  const badgeX = useTransform(smoothMouseX, [-300, 300], [20, -20]);
-  const badgeY = useTransform(smoothMouseY, [-300, 300], [15, -15]);
+  const badgeX = useTransform(smoothMouseX, [-300, 300], [16, -16]);
+  const badgeY = useTransform(smoothMouseY, [-300, 300], [12, -12]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
@@ -60,35 +53,41 @@ export function QuotationHero() {
       ref={containerRef}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
-      className="relative pt-28 pb-16 lg:pt-36 lg:pb-24 overflow-hidden"
+      className="relative pt-24 pb-8 lg:pt-32 lg:pb-12 overflow-hidden"
     >
-      {/* Background Ambient Glows */}
-      <div className="absolute top-10 left-1/4 w-[500px] h-[500px] bg-gradient-to-tr from-[#FDF2D6]/60 via-[#FDF8EE]/40 to-transparent rounded-full blur-3xl pointer-events-none -z-10" />
-      <div className="absolute top-20 right-10 w-[600px] h-[600px] bg-gradient-to-bl from-[#FDE8BA]/40 via-[#FAF6ED]/30 to-transparent rounded-full blur-3xl pointer-events-none -z-10" />
+      {/* Background Soft Organic Waves matching reference image */}
+      <div className="absolute top-0 right-0 w-[650px] h-[650px] bg-gradient-to-bl from-[#FDEBC7]/40 via-[#FDF5E6]/30 to-transparent rounded-full blur-3xl pointer-events-none -z-10" />
+      <div className="absolute top-20 left-0 w-[550px] h-[550px] bg-gradient-to-tr from-[#FDF0D5]/50 via-[#FAF5EA]/30 to-transparent rounded-full blur-3xl pointer-events-none -z-10" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
           
-          {/* ================= LEFT COLUMN: COPY & CTA ================= */}
+          {/* ================= LEFT COLUMN: HERO COPY & ACTIONS ================= */}
           <motion.div 
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             className="lg:col-span-5 space-y-6 text-left z-10"
           >
-            {/* Top AI Badge */}
+            {/* AI Quotation Studio Badge */}
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FFFDF7] border border-[#FDE68A] shadow-xs text-xs font-black tracking-widest text-[#92400E] uppercase"
+              transition={{ delay: 0.15, duration: 0.4 }}
+              className="inline-block"
             >
-              <Sparkles className="w-3.5 h-3.5 text-[#D97706] animate-pulse" />
-              <span>AI QUOTATION STUDIO</span>
+              <Image 
+                src="/assets/quotation/gold_ai_badge.png"
+                alt="AI Quotation Studio"
+                width={250}
+                height={50}
+                className="h-9 sm:h-10 w-auto object-contain drop-shadow-xs"
+                priority
+              />
             </motion.div>
 
             {/* Main Headline */}
-            <h1 className="text-4xl sm:text-5xl lg:text-[56px] font-black leading-[1.08] text-[#29231F] font-serif tracking-tight">
+            <h1 className="text-4xl sm:text-5xl lg:text-[58px] font-black leading-[1.08] text-[#29231F] font-serif tracking-tight">
               Create Premium <br />
               Wedding Quotations <br />
               in Just{' '}
@@ -103,13 +102,13 @@ export function QuotationHero() {
             </p>
 
             {/* Feature Checklist */}
-            <div className="space-y-3 pt-2 pb-2">
+            <div className="space-y-3 pt-1 pb-1">
               {checklistItems.map((item, index) => (
                 <motion.div 
                   key={item}
                   initial={{ opacity: 0, x: -15 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 + index * 0.1, duration: 0.4 }}
+                  transition={{ delay: 0.25 + index * 0.08, duration: 0.4 }}
                   className="flex items-center gap-3 text-sm font-bold text-[#29231F]"
                 >
                   <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-[#D97706] to-[#F59E0B] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -120,11 +119,11 @@ export function QuotationHero() {
               ))}
             </div>
 
-            {/* CTA Buttons */}
-            <div className="flex flex-wrap items-center gap-4 pt-4">
+            {/* CTA Buttons matching reference design */}
+            <div className="flex flex-wrap items-center gap-4 pt-3">
               <Link
                 href="/workspace/quotations/builder"
-                className="group px-7 py-3.5 rounded-full bg-gradient-to-r from-[#D8B46A] via-[#C58B27] to-[#B47B1E] text-white font-bold text-sm shadow-[0_10px_25px_-5px_rgba(197,139,39,0.45)] hover:shadow-[0_15px_30px_-5px_rgba(197,139,39,0.55)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+                className="group px-7 py-3.5 rounded-full bg-gradient-to-r from-[#C58B27] via-[#D8B46A] to-[#B47B1E] text-white font-bold text-sm shadow-[0_10px_25px_-5px_rgba(197,139,39,0.45)] hover:shadow-[0_15px_30px_-5px_rgba(197,139,39,0.55)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
               >
                 <span>Create Quotation Now</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -143,131 +142,64 @@ export function QuotationHero() {
             </div>
           </motion.div>
 
-          {/* ================= RIGHT COLUMN: 3D PHOTOGRAPHER & CARDS ================= */}
-          <div className="lg:col-span-7 relative flex items-center justify-center min-h-[440px] sm:min-h-[520px] lg:min-h-[600px] select-none">
+          {/* ================= RIGHT COLUMN: EXACT 3D HERO VISUAL ================= */}
+          <div className="lg:col-span-7 relative flex items-center justify-center min-h-[420px] sm:min-h-[500px] lg:min-h-[580px] select-none">
             
-            {/* Floating Gold Sunburst Rays / Sparkles behind character */}
-            <motion.div 
-              style={{ x: cardCenterX, y: cardCenterY }}
-              className="absolute -top-6 right-1/4 pointer-events-none opacity-80"
-              animate={{ rotate: [0, 8, -8, 0], scale: [1, 1.05, 1] }}
-              transition={{ repeat: Infinity, duration: 6, ease: 'easeInOut' }}
+            {/* Background Three Quotation Cards Mockup */}
+            <motion.div
+              style={{ x: cardsX, y: cardsY }}
+              initial={{ opacity: 0, scale: 0.92, y: -20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ delay: 0.3, duration: 0.8, ease: 'easeOut' }}
+              className="absolute top-0 sm:top-2 right-0 sm:right-4 w-[340px] sm:w-[460px] lg:w-[560px] z-10 pointer-events-none"
             >
-              <Image 
-                src="/assets/quotation/gold_sparkles.png"
-                alt="Gold sparkles"
-                width={200}
-                height={200}
-                className="w-32 h-32 lg:w-44 lg:h-44 object-contain filter drop-shadow-[0_0_20px_rgba(251,191,36,0.4)]"
+              <Image
+                src="/assets/quotation/hero_quotation_cards.png"
+                alt="Three Wedding Quotation Mockups"
+                width={879}
+                height={466}
+                className="w-full h-auto object-contain filter drop-shadow-[0_20px_35px_rgba(0,0,0,0.14)]"
                 priority
               />
             </motion.div>
 
-            {/* THREE WEDDING QUOTATION CARDS (3D Layered Fan Layout) */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              
-              {/* Card 1: Left Dark Luxury Cinematic Quotation */}
-              <motion.div
-                style={{ x: cardLeftX, y: cardLeftY }}
-                initial={{ opacity: 0, x: -60, rotate: -14 }}
-                animate={{ opacity: 1, x: 0, rotate: -8 }}
-                transition={{ delay: 0.3, duration: 0.8, ease: 'easeOut' }}
-                className="absolute left-[2%] sm:left-[8%] top-[8%] sm:top-[6%] w-[180px] sm:w-[230px] lg:w-[260px] pointer-events-auto cursor-pointer"
-                whileHover={{ scale: 1.05, rotate: -4, zIndex: 30 }}
-              >
-                <div className="relative rounded-2xl overflow-hidden shadow-2xl transition-all duration-300">
-                  <Image
-                    src="/assets/quotation/hero_luxury_quotation.png"
-                    alt="Luxury Wedding Quotation"
-                    width={520}
-                    height={740}
-                    className="w-full h-auto object-cover rounded-2xl"
-                    priority
-                  />
-                </div>
-              </motion.div>
-
-              {/* Card 3: Right Minimal Blush-Pink Quotation */}
-              <motion.div
-                style={{ x: cardRightX, y: cardRightY }}
-                initial={{ opacity: 0, x: 60, rotate: 14 }}
-                animate={{ opacity: 1, x: 0, rotate: 9 }}
-                transition={{ delay: 0.5, duration: 0.8, ease: 'easeOut' }}
-                className="absolute right-[2%] sm:right-[6%] top-[12%] sm:top-[10%] w-[170px] sm:w-[220px] lg:w-[250px] pointer-events-auto cursor-pointer"
-                whileHover={{ scale: 1.05, rotate: 5, zIndex: 30 }}
-              >
-                <div className="relative rounded-2xl overflow-hidden shadow-2xl transition-all duration-300">
-                  <Image
-                    src="/assets/quotation/hero_minimal_quotation.png"
-                    alt="Minimal Floral Wedding Quotation"
-                    width={520}
-                    height={740}
-                    className="w-full h-auto object-cover rounded-2xl"
-                    priority
-                  />
-                </div>
-              </motion.div>
-
-              {/* Card 2: Center Elevated Floral Arch Quotation (FILMIFY WEDDINGS) */}
-              <motion.div
-                style={{ x: cardCenterX, y: cardCenterY }}
-                initial={{ opacity: 0, y: -40, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ delay: 0.4, duration: 0.8, ease: 'easeOut' }}
-                className="absolute right-[22%] sm:right-[26%] top-[2%] sm:top-[0%] w-[200px] sm:w-[260px] lg:w-[290px] z-10 pointer-events-auto cursor-pointer"
-                whileHover={{ scale: 1.06, y: -8, zIndex: 35 }}
-              >
-                <div className="relative rounded-2xl overflow-hidden shadow-[0_25px_50px_-12px_rgba(217,119,6,0.3)] transition-all duration-300">
-                  <Image
-                    src="/assets/quotation/hero_floral_quotation.png"
-                    alt="Filmify Weddings Floral Quotation"
-                    width={520}
-                    height={740}
-                    className="w-full h-auto object-cover rounded-2xl"
-                    priority
-                  />
-                </div>
-              </motion.div>
-            </div>
-
-            {/* 3D PHOTOGRAPHER CHARACTER (Front Anchor) */}
+            {/* Front 3D Photographer Character (pointing up behind laptop) */}
             <motion.div
               style={{ x: charX, y: charY }}
               initial={{ opacity: 0, scale: 0.9, y: 30 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="relative z-20 mt-12 sm:mt-16 lg:mt-20 w-[280px] sm:w-[380px] lg:w-[460px] pointer-events-auto"
+              className="relative z-20 mt-16 sm:mt-24 lg:mt-28 w-[290px] sm:w-[390px] lg:w-[460px] pointer-events-auto"
             >
               <Image
                 src="/assets/quotation/hero_photographer.png"
-                alt="StudioCore AI Wedding Photographer"
-                width={800}
-                height={1000}
-                className="w-full h-auto object-contain filter drop-shadow-[0_20px_40px_rgba(0,0,0,0.18)]"
+                alt="StudioCore AI Wedding Photographer Character"
+                width={553}
+                height={516}
+                className="w-full h-auto object-contain filter drop-shadow-[0_20px_40px_rgba(0,0,0,0.2)]"
                 priority
               />
             </motion.div>
 
-            {/* FLOATING BADGE: Generated in 1 Minute! */}
+            {/* Floating Badge: Generated in 1 Minute! */}
             <motion.div
               style={{ x: badgeX, y: badgeY }}
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ delay: 0.7, duration: 0.6, type: 'spring', stiffness: 200 }}
-              className="absolute right-0 sm:right-[4%] bottom-[14%] sm:bottom-[18%] z-30 pointer-events-auto cursor-pointer"
-              whileHover={{ scale: 1.08 }}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.6, duration: 0.5, type: 'spring', stiffness: 200 }}
+              className="absolute right-0 sm:right-2 bottom-[18%] sm:bottom-[22%] z-30 pointer-events-auto cursor-pointer"
             >
               <motion.div
-                animate={{ y: [0, -8, 0] }}
+                animate={{ y: [0, -6, 0] }}
                 transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut' }}
-                className="filter drop-shadow-[0_15px_30px_rgba(217,119,6,0.25)]"
+                className="filter drop-shadow-[0_12px_24px_rgba(217,119,6,0.3)]"
               >
                 <Image
                   src="/assets/quotation/badge_generated_1_minute.png"
-                  alt="Generated in 1 Minute"
-                  width={340}
-                  height={110}
-                  className="w-[180px] sm:w-[220px] lg:w-[250px] h-auto object-contain"
+                  alt="Generated in 1 Minute!"
+                  width={481}
+                  height={190}
+                  className="w-[170px] sm:w-[220px] lg:w-[245px] h-auto object-contain"
                   priority
                 />
               </motion.div>
@@ -276,6 +208,17 @@ export function QuotationHero() {
           </div>
 
         </div>
+
+        {/* Scroll to Explore Indicator matching reference image */}
+        <div className="flex flex-col items-center justify-center pt-8 sm:pt-12 pb-2">
+          <div className="w-7 h-7 rounded-full bg-white border border-[#EAE3D2] shadow-xs flex items-center justify-center text-[#29231F] mb-1.5 animate-bounce">
+            <ChevronDown className="w-4 h-4 stroke-[2.5]" />
+          </div>
+          <span className="text-[10px] font-black tracking-[0.22em] text-[#8C827A] uppercase font-sans">
+            SCROLL TO EXPLORE
+          </span>
+        </div>
+
       </div>
 
       {/* Demo Video Modal Popup */}
