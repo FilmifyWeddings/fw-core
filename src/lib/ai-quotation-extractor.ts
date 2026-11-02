@@ -6,7 +6,7 @@ import {
   sanitizeAndParseJson,
   formatQuotationDate
 } from '@/lib/quotation-defaults';
-import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
+import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 
 /**
  * Standardized Crew Role Normalization Dictionary with Intelligent Fuzzy Matching

@@ -117,30 +117,8 @@ export function normalizeToIsoDate(rawDate?: any, fallbackDate?: string | null):
   return fallback;
 }
 
-export const TEMPLATE_PLACEHOLDER_NAMES = new Set([
-  'yash & twinkle',
-  'yash and twinkle',
-  'twinkle & yash',
-  'rahul & neha',
-  'rahul and neha',
-  'neha & rahul',
-  'valued client',
-  'wedding client',
-  'couple',
-  'demo',
-  'sample',
-  'bride & groom',
-  'groom & bride',
-  'client',
-  'default client'
-]);
+export { TEMPLATE_PLACEHOLDER_NAMES, isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 
-export function isPlaceholderCoupleName(name?: string | null): boolean {
-  if (!name) return true;
-  const clean = name.toLowerCase().trim();
-  if (!clean || clean === 'undefined' || clean === 'null') return true;
-  return TEMPLATE_PLACEHOLDER_NAMES.has(clean);
-}
 
 /**
  * Normalizes sub-event titles by converting " & " or " and " to " + "

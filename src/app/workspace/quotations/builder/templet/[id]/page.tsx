@@ -43,7 +43,7 @@ const AiQuotationModal = dynamic(
   { ssr: false }
 );
 import { consolidateSameDateFunctions, resolvePrimaryCoverLocation } from '@/lib/quotation-defaults';
-import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
+import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 import { resolveFunctionTitle } from '@/components/QuotationDocumentCanvas';

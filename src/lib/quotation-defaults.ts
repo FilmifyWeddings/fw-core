@@ -1139,3 +1139,46 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     pageSequence: finalPageSequence
   };
 }
+
+
+export const TEMPLATE_PLACEHOLDER_NAMES = new Set([
+  'yash & twinkle',
+  'yash and twinkle',
+  'twinkle & yash',
+  'rahul & neha',
+  'rahul and neha',
+  'neha & rahul',
+  'valued client',
+  'wedding client',
+  'couple',
+  'couple name',
+  'demo',
+  'sample',
+  'bride & groom',
+  'groom & bride',
+  'client',
+  'default client',
+  'lead',
+  'lead name',
+  'dhruv & riddhi',
+  'dhruv & riddhi - default',
+  'sagar & riddhi',
+  'rohan & priya',
+  'rohan & simran',
+  'tbd & tbd',
+  'xyz & abc',
+  'quotation',
+  'proposal',
+  'wedding quotation',
+  'wedding proposal'
+]);
+
+/**
+ * Pure client-safe helper: returns true if the couple/client name is a template placeholder or empty.
+ */
+export function isPlaceholderCoupleName(name?: string | null): boolean {
+  if (!name) return true;
+  const clean = String(name).toLowerCase().trim();
+  if (!clean || clean === 'undefined' || clean === 'null') return true;
+  return TEMPLATE_PLACEHOLDER_NAMES.has(clean);
+}

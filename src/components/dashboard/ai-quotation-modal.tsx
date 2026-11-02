@@ -13,7 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 import { QuotationTemplateSelector, StudioTemplateItem, getSynchronousCachedTemplates } from './quotation-template-selector';
 import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument } from '@/lib/ai-quotation-extractor';
-import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
+import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { 
   consolidateSameDateFunctions, 
   resolvePrimaryCoverLocation, 
