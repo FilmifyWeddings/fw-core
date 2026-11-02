@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React from 'react';
 import {
@@ -143,7 +143,8 @@ export const ProblemMobileStage: React.FC = () => {
               src="/assets/characters/problem/problem-photographer.png"
               alt="Stressed Photographer overwhelmed by disconnected tools"
               className="w-auto h-[260px] sm:h-[320px] max-w-none object-contain drop-shadow-[0_12px_28px_rgba(33,27,23,0.14)]"
-              loading="eager"
+              loading="lazy"
+              decoding="async"
             />
           </picture>
         </div>

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React from 'react';
 import {
@@ -141,7 +141,8 @@ export const ChaosMobileScene: React.FC = () => {
                 src="/assets/characters/solution/chaos-photographer.png"
                 alt="Stressed Photographer overwhelmed with spreadsheets and tools"
                 className="w-auto h-[260px] sm:h-[320px] max-w-none object-contain drop-shadow-[0_15px_30px_rgba(33,27,23,0.16)]"
-                loading="eager"
+                loading="lazy"
+                decoding="async"
               />
             </picture>
           </div>

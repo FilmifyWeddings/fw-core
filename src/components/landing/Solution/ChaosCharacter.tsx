@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { forwardRef } from 'react';
 
@@ -42,7 +42,7 @@ export const ChaosCharacter = forwardRef<HTMLDivElement, ChaosCharacterProps>(
               src="/assets/characters/solution/chaos-photographer.png"
               alt="Stressed Photographer overwhelmed with spreadsheets and tools"
               className="w-auto h-[420px] sm:h-[460px] md:h-[490px] lg:h-[510px] xl:h-[530px] max-w-none object-contain drop-shadow-[0_20px_40px_rgba(33,27,23,0.16)]"
-              loading="eager"
+              loading="lazy"
               decoding="async"
             />
           </picture>

@@ -33,11 +33,40 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
 
-  // 5. Cache prevention for HTML pages to eliminate stale chunk errors across deployments
+  // 5. High performance caching for static media assets + cache prevention for dynamic HTML pages
   async headers() {
     return [
       {
-        source: '/((?!_next/static|_next/image|favicon.ico).*)',
+        // Immutable cache for all static public assets, fonts, icons, and optimized images
+        source: '/:all*(png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        source: '/assets/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        source: '/images/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        // Cache prevention ONLY for HTML/page routes to eliminate stale chunk errors across deployments
+        source: '/((?!_next/static|_next/image|assets|images|downloads|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf)).*)',
         headers: [
           {
             key: 'Cache-Control',

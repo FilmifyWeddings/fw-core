@@ -48,11 +48,15 @@ export function PersistentPhotographer() {
         }}
         className="relative drop-shadow-[0_15px_30px_rgba(0,0,0,0.18)]"
       >
-        <img
-          src="/photographer-character.png"
-          alt="StudioCore Photographer Character"
-          className="w-full h-auto object-contain pointer-events-none"
-        />
+        <picture>
+          <source srcSet="/photographer-character.webp" type="image/webp" />
+          <img
+            src="/photographer-character.png"
+            alt="StudioCore Photographer Character"
+            className="w-full h-auto object-contain pointer-events-none"
+            decoding="async"
+          />
+        </picture>
       </motion.div>
     </motion.div>
   );

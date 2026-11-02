@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { forwardRef } from 'react';
 
@@ -42,7 +42,7 @@ export const ProblemCharacter = forwardRef<HTMLDivElement, ProblemCharacterProps
               src="/assets/characters/problem/problem-photographer.png"
               alt="Stressed Photographer overwhelmed by disconnected tools"
               className="w-auto h-[440px] sm:h-[500px] md:h-[540px] lg:h-[580px] xl:h-[630px] max-w-none object-contain drop-shadow-[0_15px_30px_rgba(33,27,23,0.12)]"
-              loading="eager"
+              loading="lazy"
               decoding="async"
             />
           </picture>
