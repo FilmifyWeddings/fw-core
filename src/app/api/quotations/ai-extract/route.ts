@@ -279,51 +279,57 @@ Return ONLY a valid JSON object matching:
 `;
 
   let aiRawOutput: any = null;
-  const geminiKey = process.env.GEMINI_API_KEY || '';
+  const rawGeminiKeys = (process.env.GEMINI_API_KEY || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
   const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // 1. PRIMARY ENGINE: Google Gemini (High Speed Flash Models)
-  if (geminiKey) {
+  // 1. PRIMARY ENGINE: Google Gemini (High Speed Flash Models with Multi-Key Rotation)
+  if (rawGeminiKeys.length > 0) {
     const candidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
-    for (const model of candidateModels) {
+    for (const currentKey of rawGeminiKeys) {
       if (aiRawOutput) break;
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
-        const geminiRes = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: promptText },
-                  { text: `Please extract 100% structured quotation JSON from this context:\n${JSON.stringify(leanPromptContext, null, 2)}` }
-                ]
+      for (const model of candidateModels) {
+        if (aiRawOutput) break;
+        try {
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`;
+          const geminiRes = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    { text: promptText },
+                    { text: `Please extract 100% structured quotation JSON from this context:\n${JSON.stringify(leanPromptContext, null, 2)}` }
+                  ]
+                }
+              ],
+              generationConfig: {
+                responseMimeType: 'application/json',
+                temperature: 0.1,
+                maxOutputTokens: 3500
               }
-            ],
-            generationConfig: {
-              responseMimeType: 'application/json',
-              temperature: 0.1,
-              maxOutputTokens: 3500
+            }),
+            signal: AbortSignal.timeout(12000)
+          });
+          if (geminiRes.ok) {
+            const geminiJson = await geminiRes.json();
+            const content = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (content) {
+              aiRawOutput = sanitizeAndParseJson(content);
+              console.log(`[AI Extract] Successfully generated via Gemini (${model})`);
+              break;
             }
-          }),
-          signal: AbortSignal.timeout(12000)
-        });
-        if (geminiRes.ok) {
-          const geminiJson = await geminiRes.json();
-          const content = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (content) {
-            aiRawOutput = sanitizeAndParseJson(content);
-            console.log(`[AI Extract] Successfully generated via Gemini (${model})`);
-            break;
+          } else {
+            const errText = await geminiRes.text().catch(() => '');
+            console.warn(`[Gemini ${model} Error on key ${currentKey.slice(0, 6)}...]:`, geminiRes.status, errText.slice(0, 150));
           }
-        } else {
-          const errText = await geminiRes.text().catch(() => '');
-          console.warn(`[Gemini ${model} Error]:`, geminiRes.status, errText.slice(0, 150));
+        } catch (e: any) {
+          console.warn(`[Gemini ${model} Exception]:`, e?.message || e);
         }
-      } catch (e: any) {
-        console.warn(`[Gemini ${model} Exception]:`, e?.message || e);
       }
     }
   }
