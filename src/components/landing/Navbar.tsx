@@ -128,15 +128,15 @@ export function Navbar({ activePage = 'home', onNavigate }: NavbarProps) {
                     </div>
                   </button>
                   <button 
-                    onClick={(e) => handleNavClick('features', e)}
-                    className="w-full text-left p-2.5 rounded-xl hover:bg-[#FAF8F5] dark:hover:bg-[#25221F] transition-colors flex items-center gap-3 group"
+                    onClick={(e) => handleNavClick('ai-quotations', e)}
+                    className="w-full text-left p-2.5 rounded-xl hover:bg-[#FAF8F5] dark:hover:bg-[#25221F] transition-colors flex items-center gap-3 group cursor-pointer"
                   >
                     <div className="p-2 rounded-lg bg-[#D4AF37]/10 text-[#B89047]">
                       <Award className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-[#1A1917] dark:text-[#FAF8F5]">Quotation Builder</div>
-                      <div className="text-[10px] text-[#7A756E]">Luxury 3D Proposals</div>
+                      <div className="text-xs font-bold text-[#1A1917] dark:text-[#FAF8F5]">AI Quotation Studio</div>
+                      <div className="text-[10px] text-[#7A756E]">Create in 1 Minute</div>
                     </div>
                   </button>
                 </motion.div>
@@ -256,6 +256,7 @@ export function Navbar({ activePage = 'home', onNavigate }: NavbarProps) {
             <div className="flex flex-col space-y-2">
               {[
                 { name: 'Home', slug: 'home' },
+                { name: 'AI Quotations (1 Min)', slug: 'ai-quotations' },
                 { name: 'Features', slug: 'features' },
                 { name: 'Integrations', slug: 'integrations' },
                 { name: 'Pricing', slug: 'pricing' },
