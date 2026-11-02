@@ -356,10 +356,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               const isGoogle = session.user.app_metadata?.provider === 'google' ||
                                (session.user.identities && session.user.identities.some((id: any) => id.provider === 'google')) ||
                                p.authProvider === 'google';
-              const isExistingUser = Boolean(
-                p.phone || p.phoneVerified || (p.studioName && p.studioName !== 'My Studio') || p.isOnboarded
-              );
-              if (isGoogle && !isExistingUser) {
+              const cleanPhone = String(p.phone || '').replace(/\D/g, '');
+              const hasVerifiedPhone = cleanPhone.length >= 10 && Boolean(p.phoneVerified);
+              if (isGoogle && !hasVerifiedPhone) {
                 setShowGoogleOnboarding(true);
                 if (p.platformRole === 'team_member' || (typeof window !== 'undefined' && window.location.pathname.startsWith('/team'))) {
                   setGoogleOnboardingRole('team_member');

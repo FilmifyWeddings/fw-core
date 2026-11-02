@@ -34,7 +34,7 @@ export const DEFAULT_AIRY_PROPOSAL = {
   look: 'cyprus-sand-dune',
   primaryFont: 'Cormorant Garamond',
   secondaryFont: 'Plus Jakarta Sans',
-  designName: 'Minimalist Airy Proposal',
+  designName: 'Wedding - Design 1',
   pageSequence: DEFAULT_PAGE_SEQUENCE,
   customPages: [],
   cover: {

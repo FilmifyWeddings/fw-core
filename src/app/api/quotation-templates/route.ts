@@ -152,7 +152,16 @@ export async function GET(req: NextRequest) {
         }
 
         const docContent = docsMap[t.id] || null;
-        const title = docContent?.designName || t.title;
+        let title = t.title || 'Wedding - Design 1';
+        if (
+          docContent?.designName &&
+          typeof docContent.designName === 'string' &&
+          docContent.designName.trim() &&
+          docContent.designName !== 'Minimalist Airy Proposal' &&
+          docContent.designName !== 'Personalised Wedding Quotation'
+        ) {
+          title = docContent.designName.trim();
+        }
 
         return {
           ...t,
@@ -162,17 +171,7 @@ export async function GET(req: NextRequest) {
         };
       });
 
-    // If no templates are resolved, supply the standard design template
-    if (results.length === 0) {
-      results.push({
-        id: 'FW-AIRY-DEFAULT',
-        title: 'Minimalist Airy Proposal',
-        category: 'Wedding',
-        is_default: true,
-        is_system_template: true,
-        content_json: DEFAULT_AIRY_PROPOSAL
-      });
-    }
+    // Do NOT inject "Minimalist Airy Proposal" phantom card. Studio owners only see their authentic designs.
 
     // Deduplicate templates by normalized title/id to prevent duplicate cards
     const titleSeen = new Map<string, any>();

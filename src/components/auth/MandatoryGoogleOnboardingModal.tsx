@@ -6,7 +6,7 @@ import confetti from 'canvas-confetti';
 import { 
   Building2, Camera, Phone, User, 
   ArrowRight, Check, ChevronDown, Search, Loader2, 
-  AlertCircle, Sparkles, MessageCircle
+  AlertCircle, Sparkles, MessageCircle, ShieldCheck, KeyRound, RotateCcw
 } from 'lucide-react';
 import { GoogleGLogo } from './GoogleRoleConfirmModal';
 import { compressImageToDataUrl } from '@/lib/image-compression';
@@ -42,8 +42,8 @@ export default function MandatoryGoogleOnboardingModal({
   initialRole = 'owner',
   onComplete,
 }: MandatoryGoogleOnboardingModalProps) {
-  // Stages: 'details' -> 'celebration_success'
-  const [stage, setStage] = useState<'details' | 'celebration_success'>('details');
+  // Stages: 'details' -> 'otp_verify' -> 'celebration_success'
+  const [stage, setStage] = useState<'details' | 'otp_verify' | 'celebration_success'>('details');
 
   const [role, setRole] = useState<'owner' | 'team_member'>(initialRole);
   const [fullName, setFullName] = useState(userFullName);
@@ -54,6 +54,12 @@ export default function MandatoryGoogleOnboardingModal({
 
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]);
   const [phone, setPhone] = useState('');
+
+  // OTP Verification state
+  const [otpCode, setOtpCode] = useState('');
+  const [otpTimer, setOtpTimer] = useState(60);
+  const [canResend, setCanResend] = useState(false);
+  const [otpNotice, setOtpNotice] = useState<string | null>(null);
 
   // Country Selector dropdown
   const [isCountryOpen, setIsCountryOpen] = useState(false);
@@ -143,6 +149,129 @@ export default function MandatoryGoogleOnboardingModal({
       } finally {
         setIsCompressingAvatar(false);
       }
+    }
+  };
+
+  // Countdown timer for OTP resend
+  useEffect(() => {
+    if (stage !== 'otp_verify' || otpTimer <= 0) {
+      if (otpTimer <= 0) setCanResend(true);
+      return;
+    }
+    const interval = setInterval(() => {
+      setOtpTimer((prev) => {
+        if (prev <= 1) {
+          setCanResend(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [stage, otpTimer]);
+
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setError(null);
+    setOtpNotice(null);
+
+    const cleanDigits = phone.replace(/\D/g, '');
+    if (cleanDigits.length < 10) {
+      setError('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    if (!fullName.trim()) {
+      setError('Your Full Name is required');
+      return;
+    }
+    if (role === 'owner' && !studioName.trim()) {
+      setError('Studio / Brand Name is required for Studio Owners');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/send-phone-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanDigits,
+          countryCode: selectedCountry.code,
+          email: userEmail,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        // If SMS service is pending configuration on server, fallback gracefully to direct verified save
+        if (json.error && json.error.includes('SMS service is not configured')) {
+          await handleSubmitOnboarding();
+          return;
+        }
+        throw new Error(json.error || 'Failed to send OTP code');
+      }
+
+      setStage('otp_verify');
+      setOtpTimer(60);
+      setCanResend(false);
+      setOtpNotice(`6-digit OTP code sent to ${selectedCountry.code} ${cleanDigits.slice(-10)}`);
+    } catch (err: any) {
+      setError(err.message || 'Error sending OTP');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setError(null);
+
+    const cleanOtp = otpCode.replace(/\D/g, '');
+    if (cleanOtp.length < 6) {
+      setError('Please enter the 6-digit OTP code received on your mobile');
+      return;
+    }
+
+    setLoading(true);
+    const cleanDigits = phone.replace(/\D/g, '');
+
+    try {
+      const res = await fetch('/api/auth/verify-phone-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanDigits,
+          otp: cleanOtp,
+          fullName: fullName.trim() || userFullName,
+          studioName: studioName.trim() || (fullName.trim() ? `${fullName.trim()}'s Studio` : 'My Studio'),
+          role,
+          countryCode: selectedCountry.code,
+          avatarUrl: avatarUrl || undefined,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        throw new Error(json.error || 'Invalid or expired OTP code');
+      }
+
+      setStage('celebration_success');
+      fireDualConfetti();
+      setTimeout(fireDualConfetti, 1000);
+
+      setTimeout(() => {
+        onComplete({
+          studioName: json.studioName || studioName,
+          phone: json.phone || `${selectedCountry.code}${cleanDigits.slice(-10)}`,
+          fullName: json.fullName || fullName,
+          role: json.role || role,
+          avatarUrl: avatarUrl || undefined,
+        });
+      }, 1800);
+    } catch (err: any) {
+      setError(err.message || 'Verification failed');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -250,13 +379,19 @@ export default function MandatoryGoogleOnboardingModal({
             </div>
 
             <h3 className="text-lg sm:text-xl font-serif font-black text-slate-900 tracking-tight pt-1">
-              {stage === 'celebration_success' ? '🎉 Welcome to StudioCore!' : 'Complete Your Profile'}
+              {stage === 'celebration_success' 
+                ? '🎉 Welcome to StudioCore!' 
+                : stage === 'otp_verify'
+                ? 'Verify Mobile Number'
+                : 'Complete Your Profile'}
             </h3>
 
             <p className="text-xs text-slate-500 font-medium">
               {stage === 'celebration_success'
                 ? 'Your workspace has been created successfully.'
-                : 'Workspace setup is required to activate your account.'}
+                : stage === 'otp_verify'
+                ? 'Enter the 6-digit SMS code sent to your phone.'
+                : 'Verified phone number is required to activate your studio account.'}
             </p>
           </div>
 
@@ -287,7 +422,7 @@ export default function MandatoryGoogleOnboardingModal({
               DETAILS FORM
           ───────────────────────────────────────────────────────────── */}
           {stage === 'details' && (
-            <form onSubmit={handleSubmitOnboarding} className="space-y-3 pt-1">
+            <form onSubmit={handleSendOtp} className="space-y-3 pt-1">
               {/* Profile Avatar / Logo (Optional) */}
               <div className="flex items-center gap-3.5 p-2.5 rounded-2xl bg-amber-50/50 border border-amber-200/60">
                 <div className="relative group shrink-0">
@@ -478,12 +613,93 @@ export default function MandatoryGoogleOnboardingModal({
                 {loading ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Setting Up Your Workspace...</span>
+                    <span>Sending Verification Code...</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4" />
-                    <span>Complete Setup & Open Workspace</span>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Verify Phone & Continue</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* ─────────────────────────────────────────────────────────────
+              OTP VERIFICATION FORM
+          ───────────────────────────────────────────────────────────── */}
+          {stage === 'otp_verify' && (
+            <form onSubmit={handleVerifyOtp} className="space-y-4 pt-1">
+              <div className="text-center p-3 rounded-2xl bg-amber-50/70 border border-amber-200/60 space-y-1">
+                <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center mx-auto mb-1">
+                  <KeyRound className="w-5 h-5 text-amber-700" />
+                </div>
+                <h4 className="text-xs font-black text-slate-900">
+                  Enter 6-Digit Mobile Verification Code
+                </h4>
+                <p className="text-[11px] text-slate-600 font-medium">
+                  Sent to <strong className="font-mono text-slate-900">{selectedCountry.code} {phone.slice(-10)}</strong>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setStage('details')}
+                  className="text-[10px] text-amber-800 font-bold hover:underline cursor-pointer"
+                >
+                  Change Mobile Number
+                </button>
+              </div>
+
+              {otpNotice && (
+                <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-center text-xs text-emerald-800 font-bold">
+                  {otpNotice}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 text-center">
+                  6-Digit OTP Code
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={otpCode}
+                  autoFocus
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="• • • • • •"
+                  className="w-full text-center tracking-[0.6em] text-lg font-mono font-black py-2.5 bg-white border-2 border-amber-300 rounded-xl focus:border-amber-600 focus:outline-none text-slate-900 shadow-inner"
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-xs px-1">
+                <span className="text-slate-500 font-medium">
+                  {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Did not receive code?'}
+                </span>
+                <button
+                  type="button"
+                  disabled={!canResend || loading}
+                  onClick={handleSendOtp}
+                  className="font-bold text-amber-700 hover:text-amber-900 disabled:opacity-40 transition cursor-pointer flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Resend Code</span>
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || otpCode.length < 6}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Verifying Code...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Verify Code & Enter Workspace</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </>
                 )}

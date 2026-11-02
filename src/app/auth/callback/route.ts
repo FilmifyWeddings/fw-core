@@ -93,16 +93,10 @@ export async function GET(request: NextRequest) {
         .maybeSingle();
 
       const userMeta = user.user_metadata || {};
-      const isExistingUser = Boolean(
-        profile?.phone ||
-        profile?.phone_verified ||
-        (profile?.workspace_name && profile.workspace_name !== 'My Studio') ||
-        (profile?.business_name && profile.business_name !== 'My Studio') ||
-        ws?.id ||
-        userMeta.phone ||
-        userMeta.phone_verified ||
-        userMeta.is_onboarded
-      );
+      const cleanPhone = String(profile?.phone || userMeta.phone || '').replace(/\D/g, '');
+      const hasVerifiedPhone = cleanPhone.length >= 10 && Boolean(profile?.phone_verified || userMeta.phone_verified);
+
+      const isExistingUser = hasVerifiedPhone;
 
       const effectiveRole = profile?.platform_role || userMeta.role || role;
 

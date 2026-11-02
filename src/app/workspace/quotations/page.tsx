@@ -178,6 +178,10 @@ function getSynchronousCachedQuotations(): { items: SavedQuotation[]; hasCache: 
           const idStr = String(item.quotation_number || item.id);
           if (ARCHIVED_LEAD_DESIGNS.has(idStr)) return false;
           if (idStr.startsWith('FW-Q-') || idStr.startsWith('FW-L-')) return false;
+          if (idStr === 'FW-AIRY-DEFAULT') return false;
+          const tName = String(item.title || '').trim().toLowerCase();
+          const dName = String(item.content_json?.designName || '').trim().toLowerCase();
+          if (tName === 'minimalist airy proposal' || dName === 'minimalist airy proposal') return false;
           return true;
         });
         if (filtered.length > 0) {
@@ -400,9 +404,15 @@ export default function WorkspaceQuotationsGalleryPage() {
 
   const isPoisonedDemoDraft = (draft: any, authenticTitle?: string) => {
     if (!draft || typeof draft !== 'object') return false;
-    const isDemoTitle = draft.designName === 'Personalised Wedding Quotation' || !draft.designName;
-    const isDemoCouple = draft.cover?.coupleName === 'Valued Client' || !draft.cover?.coupleName;
-    if (isDemoTitle && isDemoCouple && authenticTitle && authenticTitle !== 'Personalised Wedding Quotation') {
+    const isDemoTitle = draft.designName === 'Personalised Wedding Quotation' || 
+                        draft.designName === 'Minimalist Airy Proposal' || 
+                        !draft.designName;
+    const isDemoCouple = draft.cover?.coupleName === 'Valued Client' || 
+                         draft.cover?.coupleName === 'YASH & TWINKLE' || 
+                         !draft.cover?.coupleName;
+    if (isDemoTitle && isDemoCouple && authenticTitle && 
+        authenticTitle !== 'Personalised Wedding Quotation' && 
+        authenticTitle !== 'Minimalist Airy Proposal') {
       return true;
     }
     return false;
@@ -1062,9 +1072,13 @@ export default function WorkspaceQuotationsGalleryPage() {
           filteredTmplData.forEach((t: any) => {
             const isSys = Boolean(t.is_system_template);
             const docObj = docsMap[t.id];
-            const itemTitle = (docObj?.designName && docObj.designName !== 'Personalised Wedding Quotation')
+            const itemTitle = (
+              docObj?.designName &&
+              docObj.designName !== 'Personalised Wedding Quotation' &&
+              docObj.designName !== 'Minimalist Airy Proposal'
+            )
               ? docObj.designName
-              : (t.title || 'Wedding Quotation');
+              : (t.title || 'Wedding - Design 1');
             const coupleName = (docObj?.cover?.coupleName && docObj.cover.coupleName !== 'Valued Client')
               ? docObj.cover.coupleName
               : (docObj?.cover?.groomName ? `${docObj.cover.groomName} & ${docObj.cover.brideName}` : (t.content_json?.cover?.coupleName || 'Rahul & Neha'));
@@ -1090,23 +1104,22 @@ export default function WorkspaceQuotationsGalleryPage() {
           });
         }
 
-        // Combine user's designs + active system presets (NO forced phantom fallback templates!)
-        combined = [...userDesigns, ...systemDesigns];
-
-        // Guarantee at least 1 active template is always available (Never leave screen in infinite skeleton!)
-        if (combined.length === 0) {
-          combined = [{
-            id: 'FW-USER-SJ05RN',
-            quotation_number: 'FW-USER-SJ05RN',
-            title: 'Premium',
-            client_name: 'Rahul & Neha',
-            financials: {},
-            content_json: DEFAULT_AIRY_PROPOSAL,
-            status: 'published',
-            is_default: true,
-            is_system_template: true,
-            updated_at: new Date().toISOString()
-          }];
+        // ONLY show authentic studio designs under "Your Designs"
+        // If the studio owner has created or duplicated designs, show exclusively their designs!
+        if (userDesigns.length > 0) {
+          combined = userDesigns;
+        } else if (isSuperAdminUser) {
+          // Super Admin can see system designs in management view
+          combined = [...userDesigns, ...systemDesigns];
+        } else if (systemDesigns.length > 0) {
+          // New studio owner with 0 designs gets the primary base template clean
+          const baseStarter = { ...systemDesigns[0] };
+          if (baseStarter.title === 'Minimalist Airy Proposal') {
+            baseStarter.title = 'Wedding - Design 1';
+          }
+          combined = [baseStarter];
+        } else {
+          combined = [];
         }
 
         // Check if any template has is_default = true; if none at all, default to first template
@@ -1212,9 +1225,10 @@ export default function WorkspaceQuotationsGalleryPage() {
         bucket: 'whatsapp_templates_media',
         folder: userId || 'user_uploads',
         cacheControl: '31536000',
-        maxWidth: 2048,
-        maxHeight: 2048,
-        quality: 0.92,
+        maxWidth: 3840,
+        maxHeight: 3840,
+        quality: 0.85,
+        targetMaxBytes: 500 * 1024,
       });
 
       setUploadProgress(80);
@@ -1417,7 +1431,12 @@ export default function WorkspaceQuotationsGalleryPage() {
             {quotations.length > 0 ? (
           quotations.map((quote, idx) => {
             const quoteId = quote.quotation_number || quote.id;
-            const customTitle = (quote as any).content_json?.designName || quote.title || 'Wedding - Design 1';
+            const rawDesignName = (quote as any).content_json?.designName;
+            const customTitle = (
+              rawDesignName &&
+              rawDesignName !== 'Minimalist Airy Proposal' &&
+              rawDesignName !== 'Personalised Wedding Quotation'
+            ) ? rawDesignName : (quote.title && quote.title !== 'Minimalist Airy Proposal' ? quote.title : 'Wedding - Design 1');
             const clientName = (quote as any).content_json?.cover?.coupleName || ((quote as any).content_json?.cover?.groomName ? `${(quote as any).content_json.cover.groomName} & ${(quote as any).content_json.cover.brideName}` : quote.client_name || activeCoupleName);
 
             return (

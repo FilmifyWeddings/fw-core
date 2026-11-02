@@ -69,7 +69,7 @@ export const DEFAULT_AIRY_PROPOSAL: any = {
   theme: 'cyprus-sand-dune',
   primaryFont: 'Cormorant Garamond',
   secondaryFont: 'Plus Jakarta Sans',
-  designName: 'Minimalist Airy Proposal',
+  designName: 'Wedding - Design 1',
   cover: {
     coupleName: 'Rahul & Neha',
     eventType: 'WEDDING',
