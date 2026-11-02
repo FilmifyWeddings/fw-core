@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
         });
         whisperFormData.append('file', fileObj);
         whisperFormData.append('model', 'whisper-1');
+        whisperFormData.append('language', 'hi');
         whisperFormData.append(
           'prompt',
           'Indian wedding photography quotation details: Haldi, Mehendi, Sangeet, Wedding, Reception, Candid Photography, Cinematography, Drone, Album, Rates in Lakhs, Advance Token.'
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest) {
         });
         groqFormData.append('file', fileObj);
         groqFormData.append('model', 'whisper-large-v3-turbo');
+        groqFormData.append('language', 'hi');
         groqFormData.append('temperature', '0');
         groqFormData.append(
           'prompt',

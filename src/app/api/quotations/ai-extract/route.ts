@@ -282,9 +282,9 @@ Return ONLY a valid JSON object matching:
   const geminiKey = process.env.GEMINI_API_KEY || '';
   const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // 1. PRIMARY ENGINE: Google Gemini (3.6-flash / 3.8-flash)
+  // 1. PRIMARY ENGINE: Google Gemini (High Speed Flash Models)
   if (geminiKey) {
-    const candidateModels = ['gemini-3.6-flash', 'gemini-3.8-flash'];
+    const candidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
     for (const model of candidateModels) {
       if (aiRawOutput) break;
       try {
@@ -308,7 +308,7 @@ Return ONLY a valid JSON object matching:
               maxOutputTokens: 3500
             }
           }),
-          signal: AbortSignal.timeout(20000)
+          signal: AbortSignal.timeout(12000)
         });
         if (geminiRes.ok) {
           const geminiJson = await geminiRes.json();

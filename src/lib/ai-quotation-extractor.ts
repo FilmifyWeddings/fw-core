@@ -159,8 +159,8 @@ export function fallbackHeuristicExtractor(contextData: any) {
   // 1. Couple & Names
   let leadName = '';
 
-  // Hindi Couple Name matching e.g. "कपल का नाम रहेगा रौनक और प्रेक्षा" or "रौनक और प्रेक्षा"
-  const hindiCoupleMatch = userNotes.match(/(?:कपल का नाम रहेगा|कपल का नाम|कपल नाम|कपल|कपल का)[:\s]*([\u0900-\u097F\w\s&]+?)(?:\s*(?:का|की|के|और उनका|उनका|का इसमें|है|होगी|\.|\n|$))/i);
+  // Hindi Couple Name matching e.g. "कपल का नाम रहेगा रौनक और प्रेक्षा" or "जो की रहेगा संस्कृति और रूपेश का"
+  const hindiCoupleMatch = userNotes.match(/(?:कपल का नाम रहेगा|कपल का नाम|कपल नाम|कपल|कपल का|जो\s*की\s*रहेगा|जो\s*रहेगा|कोटेशन\s*रहेगा|रहेगा|कोटेशन\s*बनाना\s*है|कोटेशन\s*है|बनाना\s*है)[:\s]*([\u0900-\u097F\w\s&]+?)(?:\s*(?:का|की|के|और उनका|उनका|का इसमें|है|होगी|\.|\n|$))/i);
   if (hindiCoupleMatch && hindiCoupleMatch[1].trim()) {
     leadName = hindiCoupleMatch[1].trim();
   }
@@ -190,6 +190,9 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   // Common Hindi name transliterations
   const HINDI_NAME_TRANSLATE: Record<string, string> = {
+    'संस्कृति': 'Sanskriti',
+    'रूपेश': 'Rupesh',
+    'संस्कृती': 'Sanskriti',
     'रौनक': 'Raunak',
     'प्रेक्षा': 'Preksha',
     'सागर': 'Sagar',
@@ -202,6 +205,10 @@ export function fallbackHeuristicExtractor(contextData: any) {
     'साक्षी': 'Sakshi',
     'संदीप': 'Sandeep',
     'प्रिया': 'Priya',
+    'अनुजा': 'Anuja',
+    'हर्षल': 'Harshal',
+    'अमन': 'Aman',
+    'श्रद्धा': 'Shraddha',
     'और': '&',
     'तथा': '&',
     'व': '&'
