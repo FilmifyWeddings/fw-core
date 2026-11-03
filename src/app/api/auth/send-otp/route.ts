@@ -51,24 +51,30 @@ export async function POST(req: Request) {
     }
 
     // 4. Send directly via Resend SDK
-    const sender = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    const configuredSender = process.env.RESEND_FROM || process.env.RESEND_FROM_EMAIL || 'StudioCore <support@studiocore.in>';
+    const fromAddress = configuredSender.includes('<') ? configuredSender : `StudioCore <${configuredSender}>`;
     let emailSent = false;
     let emailError: string | null = null;
 
     if (process.env.RESEND_API_KEY) {
       try {
         const { error: mailError } = await resend.emails.send({
-          from: `Filmify Weddings <${sender}>`,
+          from: fromAddress,
           to: [cleanEmail],
-          subject: 'Your 6-Digit Verification Code',
+          subject: 'StudioCore - Your 6-Digit Verification Code',
           html: `
-            <div style="font-family: sans-serif; padding: 24px; background: #FDFBF7; border-radius: 12px; max-width: 500px; margin: 0 auto; border: 1px solid #e7e5e4;">
-              <h2 style="color: #1C1917; margin-top: 0;">Welcome to Filmify Weddings!</h2>
-              <p style="color: #44403C; font-size: 14px;">Your verification code is:</p>
-              <div style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #b45309; padding: 16px 0;">
-                ${otpCode}
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 32px 24px; background: #FAF9F6; border-radius: 16px; max-width: 480px; margin: 0 auto; border: 1px solid #EBE7DF;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <h1 style="color: #18181B; font-size: 22px; font-weight: 800; margin: 0; letter-spacing: -0.5px;">StudioCore</h1>
+                <p style="color: #71717A; font-size: 13px; margin-top: 4px;">Studio Management Workspace</p>
               </div>
-              <p style="color: #78716C; font-size: 12px; margin-bottom: 0;">This code will expire in 10 minutes. If you did not request this, please ignore this email.</p>
+              <div style="background: #FFFFFF; border-radius: 12px; padding: 24px; border: 1px solid #F4F4F5; text-align: center;">
+                <p style="color: #27272A; font-size: 14px; font-weight: 600; margin: 0 0 12px 0;">Your Verification OTP Code</p>
+                <div style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #b45309; font-family: monospace; padding: 12px 0;">
+                  ${otpCode}
+                </div>
+                <p style="color: #71717A; font-size: 12px; margin: 12px 0 0 0;">This code is valid for 10 minutes. If you did not request this, please ignore this email.</p>
+              </div>
             </div>
           `,
         });
@@ -100,17 +106,22 @@ export async function POST(req: Request) {
             },
           });
           await transporter.sendMail({
-            from: process.env.SMTP_FROM || `Filmify Weddings <${process.env.SMTP_USER}>`,
+            from: process.env.SMTP_FROM || `StudioCore <support@studiocore.in>`,
             to: cleanEmail,
-            subject: 'Your 6-Digit Verification Code',
+            subject: 'StudioCore - Your 6-Digit Verification Code',
             html: `
-              <div style="font-family: sans-serif; padding: 24px; background: #FDFBF7; border-radius: 12px; max-width: 500px; margin: 0 auto; border: 1px solid #e7e5e4;">
-                <h2 style="color: #1C1917; margin-top: 0;">Welcome to Filmify Weddings!</h2>
-                <p style="color: #44403C; font-size: 14px;">Your verification code is:</p>
-                <div style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #b45309; padding: 16px 0;">
-                  ${otpCode}
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 32px 24px; background: #FAF9F6; border-radius: 16px; max-width: 480px; margin: 0 auto; border: 1px solid #EBE7DF;">
+                <div style="text-align: center; margin-bottom: 24px;">
+                  <h1 style="color: #18181B; font-size: 22px; font-weight: 800; margin: 0; letter-spacing: -0.5px;">StudioCore</h1>
+                  <p style="color: #71717A; font-size: 13px; margin-top: 4px;">Studio Management Workspace</p>
                 </div>
-                <p style="color: #78716C; font-size: 12px; margin-bottom: 0;">This code will expire in 10 minutes.</p>
+                <div style="background: #FFFFFF; border-radius: 12px; padding: 24px; border: 1px solid #F4F4F5; text-align: center;">
+                  <p style="color: #27272A; font-size: 14px; font-weight: 600; margin: 0 0 12px 0;">Your Verification OTP Code</p>
+                  <div style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #b45309; font-family: monospace; padding: 12px 0;">
+                    ${otpCode}
+                  </div>
+                  <p style="color: #71717A; font-size: 12px; margin: 12px 0 0 0;">This code is valid for 10 minutes.</p>
+                </div>
               </div>
             `,
           });

@@ -203,8 +203,16 @@ export default function MandatoryGoogleOnboardingModal({
 
       const json = await res.json();
       if (!res.ok) {
-        // If SMS service is pending configuration on server, fallback gracefully to direct verified save
-        if (json.error && json.error.includes('SMS service is not configured')) {
+        // If SMS service is pending configuration or Fast2SMS KYC is pending, fallback gracefully to direct verified save
+        const isSmsPending = json.error && (
+          json.error.includes('SMS service is not configured') ||
+          json.error.includes('Fast2SMS') ||
+          json.error.includes('KYC') ||
+          json.error.includes('OTP रूट') ||
+          json.error.includes('website verification')
+        );
+        if (isSmsPending) {
+          console.warn('[Onboarding]: Fast2SMS KYC pending. Falling back to direct verified save for Google-verified user.');
           await handleSubmitOnboarding();
           return;
         }
@@ -412,9 +420,21 @@ export default function MandatoryGoogleOnboardingModal({
 
           {/* Error Message */}
           {error && (
-            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-700 font-bold">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <span>{error}</span>
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex flex-col gap-2 text-xs text-rose-700 font-bold">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span className="flex-1 leading-relaxed">{error}</span>
+              </div>
+              {(error.includes('Fast2SMS') || error.includes('KYC') || error.includes('SMS') || error.includes('OTP')) && (
+                <button
+                  type="button"
+                  onClick={() => handleSubmitOnboarding()}
+                  className="mt-1 w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer transition-all"
+                >
+                  <span>Continue to Studio Workspace Directly</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
             </div>
           )}
 

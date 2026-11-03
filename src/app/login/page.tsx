@@ -165,6 +165,7 @@ function LoginContent() {
   const [isCountryOpen, setIsCountryOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
   const countryDropdownRef = useRef<HTMLDivElement>(null);
+  const isAwaitingOtpVerification = useRef(false);
 
   // OTP Verification Modal State
   const [showOtpModal, setShowOtpModal] = useState(false);
@@ -215,6 +216,9 @@ function LoginContent() {
 
     // In case session finishes restoring/refreshing asynchronously from disk
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (isAwaitingOtpVerification.current) {
+        return;
+      }
       if (!isCancelled && session?.user && searchParams.get('logout') !== 'true' && !searchParams.get('error')) {
         const defaultPath = portal === 'team' ? '/team/dashboard' : '/workspace';
         const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
@@ -392,31 +396,53 @@ function LoginContent() {
       return;
     }
 
-    setLoading(true);
-    setError(null);
-
     const cleanEmail = signupEmail.trim().toLowerCase();
     const cleanPhone = signupPhone.trim();
     const fullPhone = `${selectedCountry.code}${cleanPhone}`;
 
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (!cleanPhone || cleanPhone.length < 10) {
+      setError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    if (!signupPassword || signupPassword.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
     try {
-      const { data, error: signUpErr } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password: signupPassword,
-        options: {
-          data: {
-            phone: fullPhone,
-            role: 'owner',
-          },
-        },
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: cleanEmail.split('@')[0],
+          email: cleanEmail,
+          password: signupPassword,
+          phone: fullPhone,
+          role: 'owner',
+        }),
       });
 
-      if (signUpErr) throw signUpErr;
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to send verification code. Please check your email or try again.');
+      }
 
+      isAwaitingOtpVerification.current = true;
       setOtpTargetEmail(cleanEmail);
       setOtpTargetPhone(`${selectedCountry.code} ${cleanPhone}`);
       setOtpPendingMeta({
+        fullName: cleanEmail.split('@')[0],
         phone: fullPhone,
+        password: signupPassword,
         role: 'owner',
       });
       setShowOtpModal(true);
@@ -431,55 +457,50 @@ function LoginContent() {
   // 3. Handle Team Member / Freelancer Signup
   const handleTeamSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
 
     const cleanEmail = teamEmail.trim().toLowerCase();
     const cleanPhone = teamPhone.trim();
+    const fullPhone = cleanPhone ? `${selectedCountry.code}${cleanPhone}` : undefined;
+    const cleanName = teamFullName.trim() || 'Crew Member';
+
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (!teamPassword || teamPassword.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
 
     try {
-      const { data, error: signUpErr } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password: teamPassword,
-        options: {
-          data: {
-            full_name: teamFullName.trim() || 'Crew Member',
-            phone: cleanPhone ? `${selectedCountry.code}${cleanPhone}` : undefined,
-            role: 'team_member',
-          },
-        },
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: cleanName,
+          email: cleanEmail,
+          password: teamPassword,
+          phone: fullPhone,
+          role: 'team_member',
+        }),
       });
 
-      if (signUpErr) {
-        if (signUpErr.message.includes('already registered') || (signUpErr as any).code === 'email_exists') {
-          const linkRes = await fetch('/api/team/link-account', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: cleanEmail,
-              password: teamPassword,
-              fullName: teamFullName.trim(),
-              phone: cleanPhone,
-            }),
-          });
-          const linkJson = await linkRes.json();
-          if (linkJson.success) {
-            await supabase.auth.signInWithPassword({
-              email: cleanEmail,
-              password: teamPassword,
-            });
-            const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), '/team/dashboard');
-            window.location.href = destination;
-            return;
-          }
-        }
-        throw signUpErr;
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to send verification code. Please check your email or try again.');
       }
 
+      isAwaitingOtpVerification.current = true;
       setOtpTargetEmail(cleanEmail);
       setOtpTargetPhone(cleanPhone ? `${selectedCountry.code} ${cleanPhone}` : '');
       setOtpPendingMeta({
-        fullName: teamFullName.trim() || 'Crew Member',
+        fullName: cleanName,
+        phone: fullPhone,
+        password: teamPassword,
         role: 'team_member',
         isTeamPortal: true,
       });
@@ -1152,23 +1173,60 @@ function LoginContent() {
       {/* OTP Verification Modal */}
       <OtpModal
         isOpen={showOtpModal}
-        onClose={() => setShowOtpModal(false)}
+        onClose={() => {
+          setShowOtpModal(false);
+          isAwaitingOtpVerification.current = false;
+        }}
         targetAddress={otpTargetEmail || otpTargetPhone}
         name={otpPendingMeta?.fullName}
         onVerify={async (token: string) => {
-          const { error } = await supabase.auth.verifyOtp({
-            email: otpTargetEmail,
-            token,
-            type: 'signup',
+          const res = await fetch('/api/auth/verify-signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: otpTargetEmail,
+              otp: token,
+              phone: otpPendingMeta?.phone,
+              role: otpPendingMeta?.role || (portal === 'team' ? 'team_member' : 'owner'),
+              fullName: otpPendingMeta?.fullName,
+            }),
           });
-          if (error) throw error;
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            throw new Error(data.error || 'Invalid or expired OTP code.');
+          }
+
+          // Sign in user with verified credentials
+          const passwordToUse = otpPendingMeta?.password || (portal === 'studio' ? signupPassword : teamPassword);
+          const { error: signInErr } = await supabase.auth.signInWithPassword({
+            email: otpTargetEmail,
+            password: passwordToUse,
+          });
+          if (signInErr) {
+            console.warn('[Signup verify]: auto sign-in notice:', signInErr.message);
+          }
+
+          isAwaitingOtpVerification.current = false;
           await handleOtpVerified();
         }}
         onResendOtp={async () => {
-          await supabase.auth.resend({
-            type: 'signup',
-            email: otpTargetEmail,
+          const passwordToUse = otpPendingMeta?.password || (portal === 'studio' ? signupPassword : teamPassword);
+          const nameToUse = otpPendingMeta?.fullName || otpTargetEmail.split('@')[0];
+          const res = await fetch('/api/auth/send-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fullName: nameToUse,
+              email: otpTargetEmail,
+              password: passwordToUse,
+              phone: otpPendingMeta?.phone,
+              role: otpPendingMeta?.role || (portal === 'team' ? 'team_member' : 'owner'),
+            }),
           });
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            throw new Error(data.error || 'Failed to resend OTP code.');
+          }
         }}
       />
     </div>
