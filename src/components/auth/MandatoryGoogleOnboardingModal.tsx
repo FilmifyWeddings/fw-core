@@ -172,62 +172,8 @@ export default function MandatoryGoogleOnboardingModal({
 
   const handleSendOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    setError(null);
-    setOtpNotice(null);
-
-    const cleanDigits = phone.replace(/\D/g, '');
-    if (cleanDigits.length < 10) {
-      setError('Please enter a valid 10-digit mobile number');
-      return;
-    }
-    if (!fullName.trim()) {
-      setError('Your Full Name is required');
-      return;
-    }
-    if (role === 'owner' && !studioName.trim()) {
-      setError('Studio / Brand Name is required for Studio Owners');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch('/api/auth/send-phone-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: cleanDigits,
-          countryCode: selectedCountry.code,
-          email: userEmail,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        // If SMS service is pending configuration or Fast2SMS KYC is pending, fallback gracefully to direct verified save
-        const isSmsPending = json.error && (
-          json.error.includes('SMS service is not configured') ||
-          json.error.includes('Fast2SMS') ||
-          json.error.includes('KYC') ||
-          json.error.includes('OTP रूट') ||
-          json.error.includes('website verification')
-        );
-        if (isSmsPending) {
-          console.warn('[Onboarding]: Fast2SMS KYC pending. Falling back to direct verified save for Google-verified user.');
-          await handleSubmitOnboarding();
-          return;
-        }
-        throw new Error(json.error || 'Failed to send OTP code');
-      }
-
-      setStage('otp_verify');
-      setOtpTimer(60);
-      setCanResend(false);
-      setOtpNotice(`6-digit OTP code sent to ${selectedCountry.code} ${cleanDigits.slice(-10)}`);
-    } catch (err: any) {
-      setError(err.message || 'Error sending OTP');
-    } finally {
-      setLoading(false);
-    }
+    // Direct, frictionless profile save for Google-verified users (bypasses expensive ₹7 Fast2SMS API)
+    await handleSubmitOnboarding();
   };
 
   const handleVerifyOtp = async (e?: React.FormEvent) => {
@@ -633,12 +579,12 @@ export default function MandatoryGoogleOnboardingModal({
                 {loading ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Sending Verification Code...</span>
+                    <span>Saving Profile Details...</span>
                   </>
                 ) : (
                   <>
                     <ShieldCheck className="w-4 h-4" />
-                    <span>Verify Phone & Continue</span>
+                    <span>Complete Setup & Enter Studio</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </>
                 )}
