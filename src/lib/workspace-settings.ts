@@ -62,6 +62,20 @@ export interface WorkspaceQuotationPaymentStep {
   display_order?: number;
 }
 
+export interface WorkspaceAiShortcut {
+  id: string;
+  trigger: string;
+  description?: string;
+  mappedDeliverables?: string[];
+  mappedCrew?: Array<{ name: string; qty: number }>;
+  mappedPrice?: number;
+}
+
+export interface WorkspaceAiRules {
+  customInstructions?: string;
+  shortcuts?: WorkspaceAiShortcut[];
+}
+
 export interface WorkspaceQuotationSettings {
   deliverables: WorkspaceQuotationDeliverable[];
   specialAddons: WorkspaceQuotationSpecialAddon[];
@@ -76,6 +90,7 @@ export interface WorkspaceQuotationSettings {
   contractClauses?: string;
   quoteExpiryDays?: number;
   currency?: string;
+  aiRules?: WorkspaceAiRules;
 }
 
 export const DEFAULT_EVENT_TYPES: WorkspaceEventType[] = [
@@ -415,6 +430,35 @@ export const DEFAULT_WORKSPACE_QUOTATION_SETTINGS: WorkspaceQuotationSettings = 
   contractClauses: '1. Standard contract terms apply for all assignments.\\n2. Final deliverables delivered post clearance.\\n3. Studio retains copyright for portfolio presentation.',
   quoteExpiryDays: 14,
   currency: 'INR',
+  aiRules: {
+    customInstructions: '',
+    shortcuts: [
+      {
+        id: 'sc_droppers',
+        trigger: 'all droppers',
+        description: 'Standard studio deliverables package',
+        mappedDeliverables: [
+          '1 Teaser Video (1-2 Min)',
+          '1 Main Highlight Film (15-20 Min)',
+          'Traditional Long Video (2-3 Hours)',
+          'Custom Printed Coffee Table Album',
+          'All Raw Photos & Footage in Hard Drive',
+          '3 Instagram Reels'
+        ]
+      },
+      {
+        id: 'sc_crew',
+        trigger: 'standard crew',
+        description: 'Standard 4-person wedding coverage crew',
+        mappedCrew: [
+          { name: 'Candid Photographer', qty: 2 },
+          { name: 'Cinematographer', qty: 2 },
+          { name: 'Traditional Videographer', qty: 1 },
+          { name: 'Drone Pilot', qty: 1 }
+        ]
+      }
+    ]
+  }
 };
 
 /**
@@ -1429,6 +1473,7 @@ export async function fetchWorkspaceQuotationSettings(workspaceId?: string): Pro
           contractClauses: s.contractClauses || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.contractClauses,
           quoteExpiryDays: s.quoteExpiryDays ?? DEFAULT_WORKSPACE_QUOTATION_SETTINGS.quoteExpiryDays,
           currency: s.currency || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.currency,
+          aiRules: s.aiRules || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.aiRules,
         };
         // Cache to localStorage
         if (typeof window !== 'undefined') {

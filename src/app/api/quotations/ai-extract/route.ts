@@ -95,6 +95,21 @@ export async function POST(req: NextRequest) {
     const metaPayload = lead.raw_meta_payload || {};
     const commentsText = Array.isArray(lead.comments) ? lead.comments.map((c: any) => c.text || '').join('\n') : '';
 
+    // Fetch Studio Quotation Settings (Deliverables, AI Rules, Shortcuts)
+    let studioSettings: any = null;
+    try {
+      const { data: quoteSettingsRow } = await supabaseAdmin
+        .from('workspace_quotation_settings')
+        .select('settings')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+      if (quoteSettingsRow?.settings && typeof quoteSettingsRow.settings === 'object') {
+        studioSettings = quoteSettingsRow.settings;
+      }
+    } catch (e) {
+      console.warn('[AI Extract] Could not fetch workspace_quotation_settings:', e);
+    }
+
     const contextData = {
       lead_info: {
         lead_id: lead.id,
@@ -116,11 +131,12 @@ export async function POST(req: NextRequest) {
       leadId,
       workspaceId,
       targetQId: quotationId || 'NEW',
-      hasAdditionalNotes: !!additionalNotes
+      hasAdditionalNotes: !!additionalNotes,
+      hasStudioSettings: !!studioSettings
     });
 
     // 4. Perform AI Extraction
-    const extractionResult = await performAiExtraction(contextData, existingDoc);
+    const extractionResult = await performAiExtraction(contextData, existingDoc, studioSettings);
 
     return NextResponse.json({
       success: true,
@@ -141,7 +157,7 @@ export async function POST(req: NextRequest) {
  * Executes AI Extraction using OpenAI API or Gemini API,
  * or falls back to an intelligent structured extraction engine.
  */
-async function performAiExtraction(contextData: any, baseDoc: any) {
+async function performAiExtraction(contextData: any, baseDoc: any, studioSettings: any = null) {
   const userNotes = (contextData.additional_user_notes || '').trim();
   const baseSchema = baseDoc ? JSON.parse(JSON.stringify(baseDoc)) : JSON.parse(JSON.stringify(DEFAULT_AIRY_PROPOSAL));
 
@@ -155,12 +171,48 @@ async function performAiExtraction(contextData: any, baseDoc: any) {
     }
   }
 
+  // 🧠 1. STUDIO AI TRAINING & TRIGGER EXPANSION ENGINE
+  const studioDeliverables: any[] = Array.isArray(studioSettings?.deliverables) ? studioSettings.deliverables : [];
+  const studioAiRules = studioSettings?.aiRules || {};
+  const studioCustomInstructions = (studioAiRules.customInstructions || '').trim();
+  const studioShortcuts: any[] = Array.isArray(studioAiRules.shortcuts) ? studioAiRules.shortcuts : [];
+
+  let expandedNotes = userNotes;
+  const detectedShortcuts: string[] = [];
+
+  for (const sc of studioShortcuts) {
+    if (!sc.trigger) continue;
+    const triggerLower = sc.trigger.toLowerCase().trim();
+    if (userNotes.toLowerCase().includes(triggerLower)) {
+      detectedShortcuts.push(sc.trigger);
+      let expansion = `\n[STUDIO TRIGGER DETECTED: "${sc.trigger}"]`;
+      if (sc.mappedDeliverables?.length) {
+        expansion += `\n- Studio Deliverables: ${sc.mappedDeliverables.join(', ')}`;
+      }
+      if (sc.mappedCrew?.length) {
+        expansion += `\n- Studio Crew Requirements: ${sc.mappedCrew.map((c: any) => `${c.qty}x ${c.name}`).join(', ')}`;
+      }
+      if (sc.mappedPrice) {
+        expansion += `\n- Package Base Price: ₹${sc.mappedPrice}`;
+      }
+      expandedNotes += expansion;
+    }
+  }
+
+  // Default Fallback Shorthands if not customized by studio:
+  if (!detectedShortcuts.some((s) => s.toLowerCase().includes('dropper')) && /\b(all droppers|all deliverables|फुल ड्रॉपर्स|सभी डिलीवरेबल्स)\b/i.test(userNotes)) {
+    expandedNotes += `\n[STUDIO TRIGGER DETECTED: "all droppers"]\n- Deliverables: 1 Teaser Video (1-2 Min), 1 Main Highlight Film (15-20 Min), Traditional Long Video (2-3 Hours), Custom Printed Coffee Table Album, All Raw Photos & Footage in Hard Drive, 3 Instagram Reels`;
+  }
+  if (!detectedShortcuts.some((s) => s.toLowerCase().includes('standard crew')) && /\b(standard crew|स्टैंडर्ड टीम)\b/i.test(userNotes)) {
+    expandedNotes += `\n[STUDIO TRIGGER DETECTED: "standard crew"]\n- Crew: 2x Candid Photographer, 2x Cinematographer, 1x Traditional Videographer, 1x Drone Pilot`;
+  }
+
   const leanPromptContext = {
     lead_info: contextData.lead_info,
     raw_form_fields: contextData.raw_form_fields,
     meta_fields: contextData.meta_fields,
     notes_and_comments: contextData.notes_and_comments,
-    additional_user_notes: contextData.additional_user_notes
+    additional_user_notes: expandedNotes
   };
 
   const promptText = `
@@ -169,7 +221,16 @@ You are StudioCore AI — an intelligent quotation data extraction assistant for
 ==================================================
 🎯 YOUR TASK:
 Analyze the client requirements, notes, or spoken conversation provided and convert them into a 100% structured StudioCore Quotation JSON document.
-
+${studioCustomInstructions ? `
+==================================================
+🏢 STUDIO-SPECIFIC CUSTOM AI TRAINING RULES (APPLY WITH HIGHEST PRIORITY):
+${studioCustomInstructions}
+` : ''}
+${studioDeliverables.length > 0 ? `
+==================================================
+📋 STUDIO'S OFFICIAL DELIVERABLES CATALOG (PREFER SELECTING FROM THIS LIST):
+${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
+` : ''}
 ==================================================
 🌟 CRITICAL TOP PRIORITY OVERRIDE MANDATES (MUST FOLLOW):
 
@@ -228,8 +289,14 @@ Analyze the client requirements, notes, or spoken conversation provided and conv
   ]
 
 4. DELIVERABLES (deliverablesPage):
-- selectedItems: Array of professional English strings (e.g. "Cinematic Wedding Highlight Film", "Cinematic Wedding Teaser", "Professionally Designed Wedding Album", "Mini Photo Book", "All Raw Photographs", "1 Year Google Drive Access").
+- selectedItems: Array of professional English strings from the official catalog (e.g. "Cinematic Wedding Highlight Film", "Cinematic Wedding Teaser", "Professionally Designed Wedding Album", "Mini Photo Book", "All Raw Photographs", "1 Year Google Drive Access").
 - NEVER include pre-wedding deliverables here; those belong solely on shootDetails.
+
+5. ZERO HALLUCINATION & STRICT DATA FIDELITY:
+- ONLY include functions and services explicitly mentioned in user notes or expanded via detected studio triggers.
+- If user did not mention pre-wedding shoot, keep shootDetails.visible = false.
+- Synchronize 100% of user data into the quotation JSON without missing or adding extra dummy items.
+- Preserve technical and brand words (e.g., 'Gemini', 'ChatGPT', 'Antigravity', '4K Cinema', 'Drone') accurately.
 
 5. PRICING (pricingPage):
 - STRICT PRICING & DISCOUNT LOGIC (REGULAR PRICE VS BEST OFFER PRICE):

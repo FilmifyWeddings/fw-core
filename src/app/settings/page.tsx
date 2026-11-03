@@ -61,6 +61,7 @@ import {
 import CrewRolesSettings from '@/app/workspace/settings/components/CrewRolesSettings';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import PostProductionSettingsTab from '@/app/workspace/settings/components/PostProductionSettingsTab';
+import StudioAiTrainingSettings from '@/app/workspace/settings/components/StudioAiTrainingSettings';
 import SubscriptionManagementCard from '@/components/billing/SubscriptionManagementCard';
 
 function InstagramIcon({ className = "w-4 h-4" }: { className?: string }) {
@@ -138,7 +139,7 @@ const DRIVE_TYPES = [
 ];
 
 type SettingsTab = 'profile' | 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'storage' | 'finance' | 'billing';
-type QuoteSubTab = 'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms';
+type QuoteSubTab = 'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms' | 'ai_training';
 
 interface DropdownItem {
   id: string;
@@ -2633,6 +2634,20 @@ export default function SettingsPage() {
                       <SlidersHorizontal className="w-3.5 h-3.5" />
                       <span>Theme & Terms</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQuoteSubTab('ai_training')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                        quoteSubTab === 'ai_training' ? 'bg-amber-600 text-white shadow-xs' : 'text-amber-900 bg-amber-100/70 hover:bg-amber-200/70'
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Studio AI Training</span>
+                      <span className="px-1.5 py-0.2 bg-amber-700 text-white text-[10px] rounded-full font-black">
+                        {quotationSettings.aiRules?.shortcuts?.length || 2}
+                      </span>
+                    </button>
                   </div>
                 </div>
 
@@ -3450,6 +3465,19 @@ export default function SettingsPage() {
                       />
                     </div>
                   </div>
+                )}
+
+                {/* SUBTAB 6: STUDIO AI AGENT & TRAINING */}
+                {quoteSubTab === 'ai_training' && (
+                  <StudioAiTrainingSettings
+                    workspaceId={effectiveWsId}
+                    settings={quotationSettings}
+                    onSettingsChange={(newSettings) => setQuotationSettings(newSettings)}
+                    onShowToast={(msg) => {
+                      setSaveToast(msg);
+                      setTimeout(() => setSaveToast(null), 3500);
+                    }}
+                  />
                 )}
 
                 {/* EDITING MODALS */}
