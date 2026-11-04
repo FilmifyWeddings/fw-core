@@ -311,7 +311,7 @@ function LoginContent() {
         // Step 1: Attempt server-side login to atomically set HTTP response cookies
         try {
           const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 6000);
+          const timer = setTimeout(() => controller.abort(), 12000);
 
           const apiRes = await fetch('/api/auth/login', {
             method: 'POST',
@@ -382,7 +382,21 @@ function LoginContent() {
       }
     } catch (err: any) {
       console.error('[Login] Error:', err);
-      setError(err.message || 'Invalid credentials. Please check your email and password.');
+      let rawMsg = String(err?.message || '');
+      let friendly = 'Invalid credentials. Please check your email and password.';
+      if (
+        err?.name === 'AbortError' ||
+        rawMsg.toLowerCase().includes('abort') ||
+        rawMsg.toLowerCase().includes('timed out') ||
+        rawMsg.toLowerCase().includes('timeout') ||
+        rawMsg.toLowerCase().includes('522') ||
+        rawMsg.toLowerCase().includes('failed to fetch')
+      ) {
+        friendly = 'Database connection timed out (Supabase Error 522). The backend server is taking too long to respond. Please check or unpause your Supabase project in the Supabase Dashboard.';
+      } else if (rawMsg) {
+        friendly = rawMsg;
+      }
+      setError(friendly);
     } finally {
       setLoading(false);
     }
