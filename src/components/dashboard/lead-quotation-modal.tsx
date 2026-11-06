@@ -101,17 +101,13 @@ export function LeadQuotationModal({
   const [confirmingFinalQuotation, setConfirmingFinalQuotation] = useState<QuotationVersionItem | null>(null);
   const [unmarkingFinalQuotation, setUnmarkingFinalQuotation] = useState<QuotationVersionItem | null>(null);
 
-  // Template Picker state (Synchronous initialization from 0ms cache - Strictly studio templates)
+  // Template Picker state (Synchronous initialization from 0ms cache - User designs + System Main Design)
   const [availableTemplates, setAvailableTemplates] = useState<StudioTemplateItem[]>(() => {
-    const list = getSynchronousCachedTemplates(lead?.workspace_id);
-    const userOnly = list.filter(t => !t.is_system_template && t.user_id !== 'SYSTEM');
-    return userOnly.length > 0 ? userOnly : list;
+    return getSynchronousCachedTemplates(lead?.workspace_id);
   });
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() => {
     const initial = getSynchronousCachedTemplates(lead?.workspace_id);
-    const userOnly = initial.filter(t => !t.is_system_template && t.user_id !== 'SYSTEM');
-    const pool = userOnly.length > 0 ? userOnly : initial;
-    const def = pool.find(t => t.is_default) || pool[0];
+    const def = initial.find(t => t.is_default) || initial[0];
     return def ? def.id : null;
   });
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
@@ -1312,35 +1308,37 @@ export function LeadQuotationModal({
         )}
       </AnimatePresence>
 
-      {/* AI Quotation Creator Modal */}
-      <AiQuotationModal
-        isOpen={aiModalOpen}
-        onClose={() => setAiModalOpen(false)}
-        lead={lead}
-        quotationId={aiTargetQuotationId}
-        selectedTemplateId={selectedTemplateId || currentSelectedTemplate?.id}
-        availableTemplates={availableTemplates}
-        currentDocumentData={currentSelectedTemplate?.content_json}
-        onApplied={(updatedDoc, targetQId) => {
-          setAiModalOpen(false);
-          const openingCouple = updatedDoc?.cover?.coupleName || lead?.raw_payload?.couple_name || lead?.client_name || lead?.name || 'Quotation';
-          const eventType = (updatedDoc?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
-          const quotationTitle = `${openingCouple} - ${eventType}`;
-          setOpeningQuotation({
-            id: targetQId,
-            title: quotationTitle,
-            step: 'Opening AI Generated Quotation in Builder...'
-          });
-          if (updatedDoc) {
-            try {
-              sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(updatedDoc));
-              sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: updatedDoc }));
-            } catch (_) {}
-          }
-          router.push(`/workspace/quotations/builder/templet/${targetQId}`);
-          // Keep opening overlay active until Next.js unmounts page - no flash of CRM table!
-        }}
-      />
+      {/* AI Quotation Creator Modal - Conditionally mounted for 0ms lag-free opening */}
+      {aiModalOpen && (
+        <AiQuotationModal
+          isOpen={true}
+          onClose={() => setAiModalOpen(false)}
+          lead={lead}
+          quotationId={aiTargetQuotationId}
+          selectedTemplateId={selectedTemplateId || currentSelectedTemplate?.id}
+          availableTemplates={availableTemplates}
+          currentDocumentData={currentSelectedTemplate?.content_json}
+          onApplied={(updatedDoc, targetQId) => {
+            setAiModalOpen(false);
+            const openingCouple = updatedDoc?.cover?.coupleName || lead?.raw_payload?.couple_name || lead?.client_name || lead?.name || 'Quotation';
+            const eventType = (updatedDoc?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+            const quotationTitle = `${openingCouple} - ${eventType}`;
+            setOpeningQuotation({
+              id: targetQId,
+              title: quotationTitle,
+              step: 'Opening AI Generated Quotation in Builder...'
+            });
+            if (updatedDoc) {
+              try {
+                sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(updatedDoc));
+                sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: updatedDoc }));
+              } catch (_) {}
+            }
+            router.push(`/workspace/quotations/builder/templet/${targetQId}`);
+            // Keep opening overlay active until Next.js unmounts page - no flash of CRM table!
+          }}
+        />
+      )}
 
 
       {/* ─── 3D CONFIRMATION MODAL: MARK AS FINAL QUOTATION ─── */}

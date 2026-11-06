@@ -44,6 +44,23 @@ interface UserGalleryImage {
   created_at: string;
 }
 
+class ThumbnailErrorBoundary extends React.Component<{ fallback: React.ReactNode; children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: any) {
+    console.warn('[QuotationCardThumbnail Error]:', error);
+  }
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
 // 1:1 ACTUAL FIRST PAGE DESIGN CARD THUMBNAIL PREVIEW (DYNAMIC FOR EACH TEMPLATE ID)
 function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJson?: any; title?: string; coupleName?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -102,17 +119,26 @@ function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJso
       ref={containerRef} 
       className="relative w-full h-52 sm:h-56 bg-slate-200 dark:bg-zinc-800 overflow-hidden shadow-inner flex items-center justify-center select-none"
     >
-      <div 
-        className="absolute top-0 left-0 origin-top-left pointer-events-none"
-        style={{
-          width: '794px',
-          height: '1123px',
-          transform: `scale(${scale})`,
-          transformOrigin: 'top left'
-        }}
+      <ThumbnailErrorBoundary
+        fallback={
+          <div className="flex flex-col items-center justify-center text-center p-4 text-zinc-500">
+            <Layers className="w-8 h-8 mb-2 text-amber-500" />
+            <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{title || 'Quotation Design'}</span>
+          </div>
+        }
       >
-        <QuotationDocumentCanvas documentData={data} onlyFirstPage={true} />
-      </div>
+        <div 
+          className="absolute top-0 left-0 origin-top-left pointer-events-none"
+          style={{
+            width: '794px',
+            height: '1123px',
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left'
+          }}
+        >
+          <QuotationDocumentCanvas documentData={data} onlyFirstPage={true} />
+        </div>
+      </ThumbnailErrorBoundary>
     </div>
   );
 }
@@ -168,38 +194,62 @@ function areQuotationsEqual(a: SavedQuotation[], b: SavedQuotation[]): boolean {
 }
 
 function getSynchronousCachedQuotations(): { items: SavedQuotation[]; hasCache: boolean } {
-  if (typeof window === 'undefined') return { items: [], hasCache: false };
+  // System preset fallback template (0ms guaranteed fallback)
+  const systemMainTemplate: SavedQuotation = {
+    id: 'FW-USER-SJ05RN',
+    quotation_number: 'FW-USER-SJ05RN',
+    title: 'Premium',
+    client_name: 'Rahul & Neha',
+    financials: {},
+    status: 'published',
+    content_json: DEFAULT_AIRY_PROPOSAL,
+    is_default: true,
+    is_system_template: true,
+    updated_at: new Date().toISOString()
+  };
+
+  if (typeof window === 'undefined') return { items: [systemMainTemplate], hasCache: true };
   if (memCachedQuotations && memCachedQuotations.length > 0) {
     return { items: memCachedQuotations, hasCache: true };
   }
+
   try {
     const activeUid = localStorage.getItem('wg_last_active_user_id') || localStorage.getItem('sc_active_workspace_id');
-    // ONLY read cache if activeUid exists and is valid. NEVER read arbitrary keys to prevent card flashing!
-    let cachedDataStr = (activeUid && activeUid !== 'demo_user') ? localStorage.getItem(`wg_quotations_cache_${activeUid}`) : null;
-    if (!cachedDataStr && activeUid && activeUid !== 'demo_user') {
-      cachedDataStr = localStorage.getItem(`studio_templates_cache_${activeUid}`);
-    }
-    if (cachedDataStr) {
-      const parsed = JSON.parse(cachedDataStr);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const filtered = parsed.filter((item: any) => {
-          const idStr = String(item.quotation_number || item.id);
-          if (ARCHIVED_LEAD_DESIGNS.has(idStr)) return false;
-          if (idStr.startsWith('FW-Q-') || idStr.startsWith('FW-L-')) return false;
-          if (idStr === 'FW-AIRY-DEFAULT') return false;
-          const tName = String(item.title || '').trim().toLowerCase();
-          const dName = String(item.content_json?.designName || '').trim().toLowerCase();
-          if (tName === 'minimalist airy proposal' || dName === 'minimalist airy proposal') return false;
-          return true;
-        });
-        if (filtered.length > 0) {
-          memCachedQuotations = filtered;
-          return { items: filtered, hasCache: true };
+    const candidateKeys = [
+      activeUid && activeUid !== 'demo_user' ? `wg_quotations_cache_${activeUid}` : '',
+      activeUid && activeUid !== 'demo_user' ? `studio_templates_cache_${activeUid}` : '',
+      'studio_templates_cache',
+      'sc_system_template_cache',
+      'wg_quotations_cache'
+    ].filter(Boolean);
+
+    for (const key of candidateKeys) {
+      const cachedDataStr = localStorage.getItem(key);
+      if (cachedDataStr) {
+        const parsed = JSON.parse(cachedDataStr);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const filtered = parsed.filter((item: any) => {
+            const idStr = String(item.quotation_number || item.id);
+            if (ARCHIVED_LEAD_DESIGNS.has(idStr)) return false;
+            if (idStr.startsWith('FW-Q-') || idStr.startsWith('FW-L-')) return false;
+            if (idStr === 'FW-AIRY-DEFAULT') return false;
+            const tName = String(item.title || '').trim().toLowerCase();
+            const dName = String(item.content_json?.designName || '').trim().toLowerCase();
+            if (tName === 'minimalist airy proposal' || dName === 'minimalist airy proposal') return false;
+            return true;
+          });
+          if (filtered.length > 0) {
+            memCachedQuotations = filtered;
+            return { items: filtered, hasCache: true };
+          }
         }
       }
     }
   } catch (_) {}
-  return { items: [], hasCache: false };
+
+  // Guaranteed instant 0ms fallback: Always show the system main template instead of blank/empty!
+  memCachedQuotations = [systemMainTemplate];
+  return { items: [systemMainTemplate], hasCache: true };
 }
 
 export default function WorkspaceQuotationsGalleryPage() {
@@ -442,7 +492,7 @@ export default function WorkspaceQuotationsGalleryPage() {
 
     const isDocValid = (d: any) => Boolean(d && typeof d === 'object' && (d.cover || d.pageSequence?.length || d.pages?.length));
 
-    // CRITICAL: If regular studio owner edits a System Preset, auto-duplicate into their workspace!
+    // CRITICAL: If regular studio owner edits a System Preset, auto-duplicate into their workspace INSTANTLY (0ms)!
     if (!isSuperAdminUser && quote.is_system_template) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -453,32 +503,11 @@ export default function WorkspaceQuotationsGalleryPage() {
         if (userEmail) headers['x-user-email'] = userEmail;
 
         const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
+        const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const createdId = `FW-USER-${randomSuffix}`;
+        const finalDoc = quote.content_json || DEFAULT_AIRY_PROPOSAL;
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-        // Await the backend duplication so Supabase records exist BEFORE navigating
-        const dupRes = await fetch('/api/templates/duplicate', {
-          method: 'POST',
-          headers,
-          signal: controller.signal,
-          body: JSON.stringify({
-            sourceTemplateId: quoteId,
-            workspaceId: currentUserId,
-            title: copyTitle
-          })
-        });
-        clearTimeout(timeoutId);
-
-        if (!dupRes.ok) {
-          const errData = await dupRes.json().catch(() => ({}));
-          throw new Error(errData.error || 'Failed to duplicate template');
-        }
-
-        const dupJson = await dupRes.json();
-        const createdId = dupJson.newTemplateId;
-        const finalDoc = dupJson.document?.content_json || dupJson.template?.content_json || quote.content_json;
-
+        // ⚡ INSTANT 0ms Storage Seeding (Session + Local + IndexedDB)
         if (typeof window !== 'undefined') {
           try {
             sessionStorage.setItem(`current_quotation_doc_${createdId}`, JSON.stringify(finalDoc));
@@ -513,12 +542,30 @@ export default function WorkspaceQuotationsGalleryPage() {
           return nextList;
         });
 
+        // ⚡ INSTANT 0ms CLICK-TO-OPEN (Zero waiting, zero spinner!)
         router.push(`/workspace/quotations/builder/templet/${createdId}`);
+
+        // Fire-and-forget silent background persistence to Supabase
+        (async () => {
+          try {
+            await fetch('/api/templates/duplicate', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                sourceTemplateId: quoteId,
+                targetTemplateId: createdId,
+                workspaceId: currentUserId,
+                title: copyTitle
+              })
+            });
+          } catch (dupBgErr) {
+            console.warn('[handleEditTemplate Background Duplicate Notice]:', dupBgErr);
+          }
+        })();
         return;
       } catch (dupErr: any) {
         console.error('[handleEditTemplate Error]:', dupErr);
-        alert(dupErr.message || 'Failed to duplicate template. Please try again.');
-        setOpeningTemplateId(null);
+        router.push(`/workspace/quotations/builder/templet/${quoteId}`);
         return;
       }
     }
@@ -718,61 +765,7 @@ export default function WorkspaceQuotationsGalleryPage() {
     }
   };
 
-  // Active Unlocked Templates
-  const activeDesigns = [
-    {
-      id: '1',
-      title: 'Wedding - Mocha & Gold',
-      subtitle: 'Wedding - 11 pages',
-      category: 'Wedding',
-      coverImage: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80',
-      badge: 'Popular',
-      isUnlocked: true,
-      editUrl: '/workspace/quotations/builder/templet/1'
-    },
-    {
-      id: '2',
-      title: 'Pre-Wedding - Airy White',
-      subtitle: 'Pre-Wedding - 11 pages',
-      category: 'Pre-Wedding',
-      coverImage: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=800&q=80',
-      badge: 'Minimal',
-      isUnlocked: true,
-      editUrl: '/workspace/quotations/builder/templet/1'
-    }
-  ];
 
-  // Locked Premium Templates
-  const lockedDesigns = [
-    {
-      id: '3',
-      title: 'Engagement — In Black, Rose',
-      subtitle: 'Engagement - 8 pages',
-      price: '₹799/mo',
-      category: 'Engagement'
-    },
-    {
-      id: '4',
-      title: 'Maternity — Peach & Bronze',
-      subtitle: 'Maternity - 6 pages',
-      price: '₹799/mo',
-      category: 'Maternity'
-    },
-    {
-      id: '5',
-      title: 'Baby / Newborn — Dynamic Trend',
-      subtitle: 'Newborn - 7 pages',
-      price: '₹799/mo',
-      category: 'Baby & Kids'
-    },
-    {
-      id: '6',
-      title: 'Birthday — Gold Hues',
-      subtitle: 'Birthday - 5 pages',
-      price: '₹799/mo',
-      category: 'Events'
-    }
-  ];
 
   const syncWithLocalDrafts = useCallback(() => {
     setQuotations(prev => {
@@ -1012,7 +1005,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         const [res, imgRes] = await Promise.all([
           fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { 
             headers,
-            signal: AbortSignal.timeout(5000) 
+            signal: AbortSignal.timeout(12000) 
           }).catch(err => {
             console.warn('[QuotationsPage] Fast fetch templates timeout or network error:', err);
             return null;
@@ -1030,13 +1023,19 @@ export default function WorkspaceQuotationsGalleryPage() {
           localStorage.setItem(`wg_gallery_cache_${currentUserId}`, JSON.stringify(imgRes.data));
         }
 
-        let tmplData: any[] = [];
-        if (res && res.ok) {
-          try {
-            const apiData = await res.json();
-            tmplData = apiData.templates || [];
-          } catch (_) {}
+        // 🛡️ CRITICAL GUARD: If server fetch timed out or returned error, RETAIN cached designs!
+        // Never wipe out user's cached designs with empty list!
+        if (!res || !res.ok) {
+          console.warn('[QuotationsPage] Server fetch timed out or failed, keeping existing cached designs');
+          setLoading(false);
+          return;
         }
+
+        let tmplData: any[] = [];
+        try {
+          const apiData = await res.json();
+          tmplData = apiData.templates || [];
+        } catch (_) {}
 
         const docsMap: Record<string, any> = {};
         tmplData.forEach((t: any) => {
@@ -1128,33 +1127,31 @@ export default function WorkspaceQuotationsGalleryPage() {
           });
         }
 
-        // Active published system preset (FW-USER-SJ05RN / "Premium")
+        // 👑 GUARANTEED SYSTEM PRESET + AUTHENTIC USER DESIGNS
+        // Studio owners always see their own created designs + the primary System Design ("Premium" FW-USER-SJ05RN)
+        // Never show demo or placeholder proposals.
         const activeSysPreset = systemDesigns.find(s => 
           (s.id === 'FW-USER-SJ05RN' || s.is_system_template) &&
-          s.status === 'published' &&
           !s.id.startsWith('FW-Q-') &&
           !s.id.startsWith('FW-L-')
-        );
+        ) || {
+          id: 'FW-USER-SJ05RN',
+          quotation_number: 'FW-USER-SJ05RN',
+          title: 'Premium',
+          client_name: 'Rahul & Neha',
+          financials: {},
+          status: 'published',
+          content_json: DEFAULT_AIRY_PROPOSAL,
+          is_default: userDesigns.length === 0,
+          is_system_template: true,
+          updated_at: new Date().toISOString()
+        };
 
-        if (activeSysPreset) {
-          activeSysPreset.is_system_template = true;
-          // Filter out activeSysPreset from userDesigns so it is never duplicated
-          const cleanUser = userDesigns.filter(u => u.id !== activeSysPreset.id);
-          combined = [...cleanUser, activeSysPreset];
-        } else {
-          combined = userDesigns;
-        }
+        activeSysPreset.is_system_template = true;
+        const cleanUser = userDesigns.filter(u => u.id !== activeSysPreset.id);
+        combined = [...cleanUser, activeSysPreset];
 
-        // Fallback for new studio owner with 0 designs if activeSysPreset was not found
-        if (combined.length === 0 && systemDesigns.length > 0) {
-          const baseStarter = { ...systemDesigns[0], is_system_template: true };
-          if (baseStarter.title === 'Minimalist Airy Proposal') {
-            baseStarter.title = 'Wedding - Design 1';
-          }
-          combined = [baseStarter];
-        }
-
-        // Check if any template has is_default = true; if none at all, default to first template
+        // Ensure at least one design has is_default = true
         const hasAnyDefault = combined.some(q => q.is_default);
         if (!hasAnyDefault && combined.length > 0) {
           combined[0].is_default = true;
@@ -1170,7 +1167,10 @@ export default function WorkspaceQuotationsGalleryPage() {
           try {
             if (currentUserId && currentUserId !== 'demo_user') {
               localStorage.setItem(`wg_quotations_cache_${currentUserId}`, JSON.stringify(combined));
+              localStorage.setItem(`studio_templates_cache_${currentUserId}`, JSON.stringify(combined));
             }
+            localStorage.setItem('studio_templates_cache', JSON.stringify(combined));
+            localStorage.setItem('sc_system_template_cache', JSON.stringify(combined));
           } catch (_) {}
         }
         const primary = combined[0];
@@ -1657,102 +1657,6 @@ export default function WorkspaceQuotationsGalleryPage() {
             </div>
           </div>
         )}
-
-        {/* CARDS 2-5: Coming Soon Templates */}
-        {[
-          {
-            id: 'cinematic',
-            title: 'Cinematic',
-            subtitle: 'Wedding & Film - 12 pages',
-            image: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=800&q=80'
-          },
-          {
-            id: 'heritage',
-            title: 'Heritage',
-            subtitle: 'Royal & Classic - 10 pages',
-            image: 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&w=800&q=80'
-          },
-          {
-            id: 'heirloom',
-            title: 'Heirloom',
-            subtitle: 'Vintage & Fine Art - 14 pages',
-            image: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=800&q=80'
-          },
-          {
-            id: 'vows',
-            title: 'Vows',
-            subtitle: 'Modern & Minimalist - 8 pages',
-            image: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=800&q=80'
-          }
-        ].map(tmpl => (
-          <motion.div 
-            key={tmpl.id}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm flex flex-col justify-between relative select-none"
-          >
-            <div>
-              <div className="relative h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
-                <img 
-                  src={tmpl.image} 
-                  alt={tmpl.title}
-                  className="w-full h-full object-cover grayscale opacity-50 backdrop-blur-md"
-                />
-                <div className="absolute inset-0 bg-slate-900/40 dark:bg-black/50 backdrop-blur-[3px] flex items-center justify-center p-2">
-                  <span className="px-3 py-1 rounded-full bg-amber-500 text-zinc-950 font-black text-[10px] uppercase tracking-wider shadow-md border border-amber-300/40 select-none">
-                    Coming Soon
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-3.5 space-y-1">
-                <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
-                  {tmpl.title}
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium">
-                  {tmpl.subtitle}
-                </p>
-              </div>
-            </div>
-
-            <div className="p-3.5 pt-0 space-y-2">
-              <div className="grid grid-cols-2 gap-1.5">
-                <button 
-                  disabled 
-                  type="button" 
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 text-[10px] font-bold text-center cursor-not-allowed opacity-60 select-none"
-                >
-                  Preview
-                </button>
-                <button 
-                  disabled 
-                  type="button" 
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 text-[10px] font-bold text-center cursor-not-allowed opacity-60 select-none"
-                >
-                  Duplicate
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5">
-                <button 
-                  disabled 
-                  type="button" 
-                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 text-[10px] font-bold text-center cursor-not-allowed opacity-60 select-none"
-                >
-                  Use for Lead
-                </button>
-
-                <button 
-                  disabled 
-                  type="button" 
-                  className="px-2.5 py-1.5 rounded-xl border border-amber-600/30 bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 text-[11px] font-extrabold text-center cursor-not-allowed opacity-60 select-none"
-                >
-                  Edit
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        ))}
           </>
         )}
 

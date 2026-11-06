@@ -34,10 +34,10 @@ export function clearAllSupabaseAuthCookies() {
   } catch (_) {}
 }
 
-// Resilient fetch wrapper with 7-second hard abort to prevent indefinite hanging on degraded networks
+// Resilient fetch wrapper with 20-second hard abort to prevent indefinite hanging while allowing heavy operations
 const customResilientFetch = (url: RequestInfo | URL, options: RequestInit = {}) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 7000); // 7s circuit-breaker timeout
+  const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s circuit-breaker timeout (safe for bulk operations)
   const originalSignal = options.signal;
   if (originalSignal) {
     originalSignal.addEventListener('abort', () => controller.abort());

@@ -25,13 +25,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { leadId, quotationId, explicitTemplateId, selectedTemplateId, currentDocument, additionalNotes } = body;
 
-    let workspaceId = userId;
+    let workspaceId = body.workspaceId || userId;
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('id, workspace_name')
       .eq('id', userId)
       .maybeSingle();
-    if (profile?.id) workspaceId = profile.id;
+    if (profile?.id && !body.workspaceId) workspaceId = profile.id;
 
     // 1. Fetch Lead or Synthesize from Document
     let lead: any = null;
@@ -41,7 +41,10 @@ export async function POST(req: NextRequest) {
         .select('*')
         .eq('id', leadId)
         .maybeSingle();
-      if (matchedLead) lead = matchedLead;
+      if (matchedLead) {
+        lead = matchedLead;
+        if (matchedLead.workspace_id) workspaceId = matchedLead.workspace_id;
+      }
     }
 
     if (!lead) {
@@ -96,7 +99,7 @@ export async function POST(req: NextRequest) {
     const commentsText = Array.isArray(lead.comments) ? lead.comments.map((c: any) => c.text || '').join('\n') : '';
 
     // Fetch Studio Quotation Settings (Deliverables, AI Rules, Shortcuts)
-    let studioSettings: any = null;
+    let studioSettings: any = body.studioSettings || null;
     try {
       const { data: quoteSettingsRow } = await supabaseAdmin
         .from('workspace_quotation_settings')
@@ -113,7 +116,7 @@ export async function POST(req: NextRequest) {
     const contextData = {
       lead_info: {
         lead_id: lead.id,
-        name: lead.name || '',
+        name: lead.name || rawPayload.client_name || rawPayload.couple_name || '',
         phone: lead.phone || '',
         email: lead.email || '',
         status: lead.status || '',
@@ -124,7 +127,8 @@ export async function POST(req: NextRequest) {
       meta_fields: metaPayload,
       notes_and_comments: commentsText,
       additional_user_notes: additionalNotes || '',
-      existing_quotation: existingDoc || null
+      existing_quotation: existingDoc || null,
+      studioSettings: studioSettings || null
     };
 
     console.log('[AI EXTRACTION REQUEST]', {
@@ -145,7 +149,7 @@ export async function POST(req: NextRequest) {
       missingInformation: extractionResult.missingInformation,
       conflicts: extractionResult.conflicts,
       verification_required: extractionResult.conflicts.length > 0,
-      engine: extractionResult.engine || { provider: 'gemini', model: 'gemini-3.8-flash' }
+      engine: (extractionResult as any).engine || { provider: 'gemini', model: 'gemini-3.8-flash' }
     });
   } catch (error: any) {
     console.error('[AI Extract Error]:', error);
@@ -183,11 +187,14 @@ async function performAiExtraction(contextData: any, baseDoc: any, studioSetting
   for (const sc of studioShortcuts) {
     if (!sc.trigger) continue;
     const triggerLower = sc.trigger.toLowerCase().trim();
-    if (userNotes.toLowerCase().includes(triggerLower)) {
+    const hasTrigger = userNotes.toLowerCase().includes(triggerLower) ||
+      triggerLower.split(/\s+/).every((w: string) => userNotes.toLowerCase().includes(w));
+
+    if (hasTrigger) {
       detectedShortcuts.push(sc.trigger);
       let expansion = `\n[STUDIO TRIGGER DETECTED: "${sc.trigger}"]`;
       if (sc.mappedDeliverables?.length) {
-        expansion += `\n- Studio Deliverables: ${sc.mappedDeliverables.join(', ')}`;
+        expansion += `\n- Studio Deliverables to include: ${sc.mappedDeliverables.join(', ')}`;
       }
       if (sc.mappedCrew?.length) {
         expansion += `\n- Studio Crew Requirements: ${sc.mappedCrew.map((c: any) => `${c.qty}x ${c.name}`).join(', ')}`;
@@ -199,10 +206,18 @@ async function performAiExtraction(contextData: any, baseDoc: any, studioSetting
     }
   }
 
-  // Default Fallback Shorthands if not customized by studio:
-  if (!detectedShortcuts.some((s) => s.toLowerCase().includes('dropper')) && /\b(all droppers|all deliverables|फुल ड्रॉपर्स|सभी डिलीवरेबल्स)\b/i.test(userNotes)) {
-    expandedNotes += `\n[STUDIO TRIGGER DETECTED: "all droppers"]\n- Deliverables: 1 Teaser Video (1-2 Min), 1 Main Highlight Film (15-20 Min), Traditional Long Video (2-3 Hours), Custom Printed Coffee Table Album, All Raw Photos & Footage in Hard Drive, 3 Instagram Reels`;
+  // If user says "all deliverables" or "all deliverables add" or "सभी डिलीवरेबल्स":
+  const isAllDeliverablesSpoken = /\b(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)\b/i.test(userNotes);
+
+  if (isAllDeliverablesSpoken) {
+    if (studioDeliverables.length > 0) {
+      const allDelivTitles = studioDeliverables.map((d: any) => typeof d === 'string' ? d : d.title).filter(Boolean);
+      expandedNotes += `\n[STUDIO TRIGGER DETECTED: "all deliverables"]\n- Deliverables: ${allDelivTitles.join(', ')}`;
+    } else {
+      expandedNotes += `\n[STUDIO TRIGGER DETECTED: "all droppers"]\n- Deliverables: 1 Teaser Video (1-2 Min), 1 Main Highlight Film (15-20 Min), Traditional Long Video (2-3 Hours), Custom Printed Coffee Table Album, All Raw Photos & Footage in Hard Drive, 3 Instagram Reels`;
+    }
   }
+
   if (!detectedShortcuts.some((s) => s.toLowerCase().includes('standard crew')) && /\b(standard crew|स्टैंडर्ड टीम)\b/i.test(userNotes)) {
     expandedNotes += `\n[STUDIO TRIGGER DETECTED: "standard crew"]\n- Crew: 2x Candid Photographer, 2x Cinematographer, 1x Traditional Videographer, 1x Drone Pilot`;
   }
@@ -298,19 +313,47 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 - Synchronize 100% of user data into the quotation JSON without missing or adding extra dummy items.
 - Preserve technical and brand words (e.g., 'Gemini', 'ChatGPT', 'Antigravity', '4K Cinema', 'Drone') accurately.
 
-5. PRICING (pricingPage):
-- STRICT PRICING & DISCOUNT LOGIC (REGULAR PRICE VS BEST OFFER PRICE):
-  * basePrice (regularPrice): The gross standard regular package price before discount (Integer, e.g. 120000).
-  * discountAmount: Difference between basePrice and best offer price (e.g. 120000 - 90000 = 30000).
-  * If user mentions "एक लाख बीस हजार का कोटेशन लेकिन 90,000 में दे रहे हैं" -> basePrice: 120000, discountAmount: 30000.
-  * If NO discount/offer mentioned, discountAmount MUST STRICTLY BE 0.
+5. MATHEMATICAL PRICING EVALUATION & METHOD CALCULATION (pricingPage):
+- You MUST perform intelligent mathematical method evaluation (like ChatGPT and Gemini calculators):
+  * PER-DAY / PER-EVENT MULTIPLICATION:
+    - e.g. "35,000 per day for 2 days" -> basePrice = 35000 * 2 = 70000.
+    - e.g. "40k per day for 3 days event" -> basePrice = 40000 * 3 = 120000.
+  * MULTI-EVENT SUMMATION:
+    - e.g. "Haldi 25k, Sangeet 35k, Wedding 70k" -> basePrice = 25000 + 35000 + 70000 = 130000.
+  * INDIAN DENOMINATIONS & NUMBER WORDS:
+    - "2.5 lakh" / "2.5 लाख" / "ढाई लाख" / "अडीच लाख" = 250000.
+    - "1.5 lakh" / "1.5 लाख" / "डेढ़ लाख" = 150000.
+    - "1.8 lakh" / "एक लाख अस्सी हजार" = 180000.
+    - "25k" / "25 thousand" / "पच्चीस हजार" = 25000.
+    - "50k" / "50 thousand" / "पचास हजार" = 50000.
+  * DISCOUNTS & SPECIAL OFFERS:
+    - Flat discount: "25,000 discount" / "25k off" -> discountAmount: 25000.
+    - Percentage discount: "10% discount on 2 lakh" -> discountAmount: 20000.
+    - Regular vs offer: "1.8 lakh regular, 1.5 lakh offer" -> basePrice: 180000, discountAmount: 30000.
+    - If NO discount mentioned, discountAmount MUST strictly be 0.
+  * TRAVEL & STAY CHARGES:
+    - travelCharges: e.g. "15000 travel charges" -> 15000.
+    - accommodationCharges: e.g. "10000 hotel/stay" -> 10000.
+  * ADD-ONS & EXTRAS (additionalCharges):
+    - Extra services: e.g. "20000 album add-on, 15000 drone" -> 35000.
+  * TAXES / GST (gstPct):
+    - If user specifies GST (e.g. "18% GST" or "GST 18%"): gstPct: 18, else 0.
+  * NET TOTAL FORMULA:
+    Net Total = (basePrice - discountAmount + travelCharges + accommodationCharges + additionalCharges) * (1 + gstPct / 100).
   * showExclusionsNote: true.
-  * note: Summary of pricing (e.g. "Special offer package of ₹90,000 for Sagar & Riddhi").
+  * note: Descriptive summary of calculation method (e.g. "₹35,000/day x 2 days + ₹20,000 album with ₹10,000 discount applied").
 
-6. PAYMENT TERMS (paymentTermsPage):
-- steps: Array of payment milestones with custom percentages & amounts based on net price.
-  * e.g. [{ "name": "Advance Token", "pct": "30%", "amount": 27000, "status": "Pending" }, { "name": "On Wedding Day", "pct": "50%", "amount": 45000, "status": "Pending" }, { "name": "On Final Delivery", "pct": "20%", "amount": 18000, "status": "Pending" }]
-  * All step statuses MUST strictly be "Pending".
+6. PAYMENT TERMS & SCHEDULE (paymentTermsPage):
+- steps: Array of payment milestones with exact rupee amounts computed from Net Total:
+  * Percentage Milestones:
+    - e.g. 30% Advance Token, 50% On Event Day, 20% On Final Delivery (or whatever ratio user specifies like 25%/50%/25% or 50%/50%).
+    - Calculate exact rupee amount for EACH step based on Net Total: Net Total * (pct / 100).
+    - Ensure the sum of all step amounts strictly equals Net Total!
+  * Flat Advance:
+    - If user specifies a flat advance (e.g. "₹25,000 advance received"):
+      Step 1: "Advance Token", amount: 25000, pct: calculated percentage. Status: "Completed" (if user confirmed payment was received/paid/diya), else "Pending".
+      Balance remaining milestones to strictly equal Net Total.
+  * All step statuses default to "Pending" unless explicitly confirmed as paid.
 
 7. PRE-WEDDING SHOOT (shootDetails) - DEDICATED SEPARATE PAGE:
 - If and ONLY IF pre-wedding is requested, set visible: true.

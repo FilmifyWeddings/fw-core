@@ -6,6 +6,7 @@ import { ChevronDown, Check, Sparkles, LayoutTemplate, Star } from 'lucide-react
 import { supabase } from '@/lib/supabase';
 import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
 import { preloadActiveFont } from '@/lib/font-loader';
+import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 
 export interface StudioTemplateItem {
   id: string;
@@ -21,7 +22,7 @@ const memoryTemplatesCache: Record<string, StudioTemplateItem[]> = {};
 
 /**
  * Synchronously retrieves cached templates from Memory, localStorage, or sessionStorage.
- * Guaranteed 0ms response time with zero fake/demo templates.
+ * Guaranteed 0ms response time with strictly only the studio's own templates and the System Template.
  */
 export function getSynchronousCachedTemplates(workspaceId?: string): StudioTemplateItem[] {
   const wsKey = workspaceId || 'default';
@@ -37,8 +38,7 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
       const activeUid = workspaceId || localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id') || '';
       const keysToCheck = [
         activeUid ? `studio_templates_cache_${activeUid}` : '',
-        'studio_templates_cache',
-        'wg_quotations_cache'
+        'studio_templates_cache'
       ].filter(Boolean);
 
       for (const key of keysToCheck) {
@@ -46,10 +46,18 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Strictly filter out lead quotations
+            // Strictly filter out lead quotations, cross-studio leaks, and demo templates
             const clean = parsed.filter((t: any) => {
               if (!t || !t.id) return false;
-              if (String(t.id).startsWith('FW-Q-') || String(t.id).startsWith('FW-L-')) return false;
+              const idStr = String(t.id);
+              if (idStr.startsWith('FW-Q-') || idStr.startsWith('FW-L-') || idStr === 'FW-AIRY-DEFAULT') return false;
+              // If template belongs to another studio, exclude it unless it is the authoritative system template
+              if (t.workspace_id && activeUid && t.workspace_id !== activeUid && !t.is_system_template && t.id !== 'FW-USER-SJ05RN') {
+                return false;
+              }
+              const tName = String(t.title || '').trim().toLowerCase();
+              const dName = String(t.content_json?.designName || '').trim().toLowerCase();
+              if (tName === 'minimalist airy proposal' || dName === 'minimalist airy proposal') return false;
               return true;
             });
             if (clean.length > 0) {
@@ -62,7 +70,17 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
     } catch (_) {}
   }
 
-  return [];
+  // Guaranteed instant 0ms fallback: Always provide the System Template so selector is never empty
+  const defaultFallback: StudioTemplateItem = {
+    id: 'FW-USER-SJ05RN',
+    title: 'Premium',
+    category: 'Wedding',
+    is_default: true,
+    is_system_template: true,
+    content_json: DEFAULT_AIRY_PROPOSAL
+  };
+  memoryTemplatesCache[wsKey] = [defaultFallback];
+  return [defaultFallback];
 }
 
 /**
@@ -235,40 +253,24 @@ export function TemplateThumbnail({
 
   const cfg = sizeConfigs[size] || sizeConfigs.md;
 
-  const fallbackMarkup = (
+  return (
     <div
       style={{ width: `${cfg.w}px`, height: `${cfg.h}px` }}
-      className={`relative rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700/80 bg-gradient-to-b ${bgGradient} shrink-0 shadow-2xs flex flex-col items-center justify-between p-0.5 select-none ${className}`}
+      className={`relative rounded-md overflow-hidden border border-amber-500/40 bg-gradient-to-b ${bgGradient} shrink-0 shadow-2xs flex flex-col items-center justify-between p-1 select-none transition-transform group-hover:scale-105 ${className}`}
     >
-      <Sparkles className="w-2 h-2 opacity-60 mt-0.5" />
-      <div className="w-full text-center truncate font-black tracking-tighter uppercase scale-75 opacity-80 leading-none text-[7px]">
-        {title ? title.substring(0, 5) : 'FW'}
+      <div className="w-full flex items-center justify-center pt-0.5">
+        <Sparkles className="w-2.5 h-2.5 text-amber-300 opacity-90" />
       </div>
-      <div className="w-3/4 h-[1px] bg-current opacity-30 rounded-full mb-0.5" />
+      <div className="w-full text-center px-0.5">
+        <p className="font-serif font-bold text-[8px] leading-tight truncate tracking-tight text-white/95">
+          {title || fullDocData.designName || 'Quotation'}
+        </p>
+        <span className="text-[6px] uppercase tracking-widest text-amber-300/80 font-black block scale-90">
+          {fullDocData?.look || 'Design'}
+        </span>
+      </div>
+      <div className="w-2/3 h-[1px] bg-amber-400/50 rounded-full mb-0.5" />
     </div>
-  );
-
-  return (
-    <ThumbnailErrorBoundary fallback={fallbackMarkup}>
-      <div
-        style={{ width: `${cfg.w}px`, height: `${cfg.h}px` }}
-        className={`relative rounded-md overflow-hidden bg-slate-100 dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/90 shrink-0 shadow-2xs group-hover:border-amber-500/60 transition-all select-none ${className}`}
-      >
-        <div
-          className="absolute top-0 left-0 origin-top-left pointer-events-none select-none"
-          style={{
-            width: '794px',
-            height: '1123px',
-            transform: `scale(${cfg.scale})`,
-            transformOrigin: 'top left',
-            backfaceVisibility: 'hidden',
-            WebkitBackfaceVisibility: 'hidden'
-          }}
-        >
-          <QuotationDocumentCanvas documentData={fullDocData} onlyFirstPage={true} />
-        </div>
-      </div>
-    </ThumbnailErrorBoundary>
   );
 }
 

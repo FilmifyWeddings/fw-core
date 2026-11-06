@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 
-export const GLOBAL_SYSTEM_TEMPLATE_ID = 'FW-2WT85Y0';
+export const GLOBAL_SYSTEM_TEMPLATE_ID = 'FW-USER-SJ05RN';
 
 export interface ResolvedTemplateResult {
   templateId: string;

@@ -136,6 +136,308 @@ export function normalizeCrewRoleName(rawRole: string): string {
 }
 
 /**
+ * Normalizes Hindi / Marathi counting words and numerals to standard numeric equivalents.
+ */
+export function normalizeHindiNumberWords(raw: string): string {
+  let s = (raw || '').toLowerCase();
+  const wordMap: Array<{ regex: RegExp; val: string }> = [
+    { regex: /डेढ़\s*लाख/g, val: '150000' },
+    { regex: /ढाई\s*लाख|अडीच\s*लाख/g, val: '250000' },
+    { regex: /सवा\s*लाख/g, val: '125000' },
+    { regex: /पौने\s*दो\s*लाख/g, val: '175000' },
+    { regex: /एक\s*लाख/g, val: '100000' },
+    { regex: /दो\s*लाख/g, val: '200000' },
+    { regex: /तीन\s*लाख/g, val: '300000' },
+    { regex: /चार\s*लाख/g, val: '400000' },
+    { regex: /पांच\s*लाख/g, val: '500000' },
+    { regex: /दस\s*हजार|दस\s*हज़ार/g, val: '10000' },
+    { regex: /पंद्रह\s*हजार|पंद्रह\s*हज़ार/g, val: '15000' },
+    { regex: /बीस\s*हजार|बीस\s*हज़ार/g, val: '20000' },
+    { regex: /पच्चीस\s*हजार|पच्चीस\s*हज़ार/g, val: '25000' },
+    { regex: /तीस\s*हजार|तीस\s*हज़ार/g, val: '30000' },
+    { regex: /पैंतीस\s*हजार|पैंतीस\s*हज़ार/g, val: '35000' },
+    { regex: /चालीस\s*हजार|चालीस\s*हज़ार/g, val: '40000' },
+    { regex: /पचास\s*हजार|पचास\s*हज़ार/g, val: '50000' },
+    { regex: /साठ\s*हजार|साठ\s*हज़ार/g, val: '60000' },
+    { regex: /सत्तर\s*हजार|सत्तर\s*हज़ार/g, val: '70000' },
+    { regex: /अस्सी\s*हजार|अस्सी\s*हज़ार/g, val: '80000' },
+    { regex: /नब्बे\s*हजार|नब्बे\s*हज़ार/g, val: '90000' }
+  ];
+  for (const item of wordMap) {
+    s = s.replace(item.regex, item.val);
+  }
+  return s;
+}
+
+/**
+ * Intelligent currency amount parser: resolves Lakhs, K, Crores, Thousand, and raw numbers.
+ */
+export function parseCurrencyAmount(rawStr: string): number {
+  if (!rawStr) return 0;
+  let s = String(rawStr).toLowerCase().trim();
+  s = normalizeHindiNumberWords(s);
+  
+  const croreMatch = s.match(/([0-9.]+)\s*(?:cr|crore|करोड़)/i);
+  if (croreMatch) {
+    const n = parseFloat(croreMatch[1]);
+    if (!isNaN(n)) return Math.round(n * 10000000);
+  }
+
+  const lakhMatch = s.match(/([0-9.]+)\s*(?:lakh|lac|l|लाख)/i);
+  if (lakhMatch) {
+    const n = parseFloat(lakhMatch[1]);
+    if (!isNaN(n)) return Math.round(n * 100000);
+  }
+  
+  const kMatch = s.match(/([0-9.]+)\s*(?:k|thousand|हजार|हज़ार)/i);
+  if (kMatch) {
+    const n = parseFloat(kMatch[1]);
+    if (!isNaN(n)) return Math.round(n * 1000);
+  }
+
+  const digitsMatch = s.match(/[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7}/);
+  if (digitsMatch) {
+    return parseInt(digitsMatch[0].replace(/,/g, ''), 10);
+  }
+  return 0;
+}
+
+export interface EvaluatedPricingResult {
+  basePrice: number;
+  discountAmount: number;
+  travelCharges: number;
+  accommodationCharges: number;
+  additionalCharges: number;
+  gstPct: number;
+  netTotal: number;
+  note: string;
+  steps: Array<{ name: string; pct: string; amount: number; status: string }>;
+}
+
+/**
+ * Authoritative Mathematical Pricing Method Evaluator
+ * Evaluates complex pricing methods just like Gemini and ChatGPT:
+ * - Multi-day multiplications (e.g. ₹35,000/day x 2 days = ₹70,000)
+ * - Multi-event summations (e.g. Haldi ₹25k + Sangeet ₹35k + Wedding ₹70k = ₹1,30,000)
+ * - Add-on charges (albums, drones, travel, stay)
+ * - Flat and percentage discounts
+ * - Net total investment calculation
+ * - Mathematically balanced payment schedule milestone steps
+ */
+export function evaluatePricingMethod(rawText: string, defaultPrice: number = 150000): EvaluatedPricingResult {
+  const normText = normalizeHindiNumberWords(rawText || '');
+  const text = normText.toLowerCase();
+
+  let basePrice = 0;
+  let discountAmount = 0;
+  let travelCharges = 0;
+  let accommodationCharges = 0;
+  let additionalCharges = 0;
+  let gstPct = 0;
+  let calculationNote = '';
+
+  // 1. Travel charges
+  const travelMatch = text.match(/(?:travel|travelling|traveling|यात्रा|ट्रैवल|सफर)\s*(?:charges|cost|expense|खर्चा)?[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)(?!\s*[%])/i) ||
+                      text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:travel|travelling|यात्रा|ट्रैवल)(?!\s*[%])/i);
+  if (travelMatch) {
+    travelCharges = parseCurrencyAmount(travelMatch[1]);
+  }
+
+  // 2. Stay / Accommodation charges
+  const stayMatch = text.match(/(?:stay|accommodation|hotel|कमरा|रहना|होटल)\s*(?:charges|cost|expense|खर्चा)?[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)(?!\s*[%])/i) ||
+                    text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:stay|accommodation|hotel|होटल)(?!\s*[%])/i);
+  if (stayMatch) {
+    accommodationCharges = parseCurrencyAmount(stayMatch[1]);
+  }
+
+  // 3. Discount calculation (Check early to cleanly isolate discount amount from package price)
+  const discPctMatch = text.match(/([0-9.]+)\s*%\s*(?:discount|off|छूट)/i) || 
+                       text.match(/(?:discount|off|छूट)[:\s]*([0-9.]+)\s*%/i);
+  let discPct = 0;
+  if (discPctMatch) {
+    discPct = parseFloat(discPctMatch[1]) || 0;
+  }
+
+  const discFlatMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:discount|off|minus|डिस्काउंट|छूट)(?!\s*[%])/i) ||
+                        text.match(/(?:discount|off|minus|concession|less|छूट|कम|डिस्काउंट)[:\s]+([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)(?!\s*[%])/i);
+  if (discFlatMatch) {
+    discountAmount = parseCurrencyAmount(discFlatMatch[1]);
+  }
+
+  // 4. Additional charges (album, drone add-on)
+  const albumMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:album|photobook|एल्बम)/i) ||
+                     text.match(/(?:album|photobook|एल्बम)\s*[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)/i);
+  if (albumMatch) {
+    const val = parseCurrencyAmount(albumMatch[1]);
+    if (val > 0 && val < 100000) additionalCharges += val;
+  }
+
+  const droneMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:drone|ड्रोन)/i) ||
+                     text.match(/(?:drone|ड्रोन)\s*[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)/i);
+  if (droneMatch) {
+    const val = parseCurrencyAmount(droneMatch[1]);
+    if (val > 0 && val < 100000) additionalCharges += val;
+  }
+
+  // 5. Per day / Per event multiplication e.g. '35,000 per day for 2 days' or '40k per day x 3 days'
+  const multiDayMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:per\s*day|per\s*event|per\s*function|दिन|डे)\s*(?:[x*]|for|into)?\s*(\d+)\s*(?:days|events|functions|दिन)?/i) ||
+                        text.match(/(\d+)\s*(?:days|events|functions|दिन)\s*(?:into|[x*]|@)?\s*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:per\s*day|per\s*event)?/i);
+  if (multiDayMatch) {
+    const rateStr = multiDayMatch[1].match(/\d/) ? multiDayMatch[1] : multiDayMatch[2];
+    const qtyStr = multiDayMatch[2].match(/^[0-9]+$/) ? multiDayMatch[2] : multiDayMatch[1];
+    const rate = parseCurrencyAmount(rateStr);
+    const qty = parseInt(qtyStr, 10) || 1;
+    if (rate > 0 && qty > 0) {
+      basePrice = rate * qty;
+      calculationNote = `₹${rate.toLocaleString('en-IN')}/day x ${qty} Days = ₹${basePrice.toLocaleString('en-IN')}`;
+    }
+  }
+
+  // 6. Multi-event rates summation e.g. 'haldi 25000, sangeet 35000, wedding 70000'
+  if (!basePrice) {
+    const eventRates: number[] = [];
+    const events = ['haldi', 'sangeet', 'mehendi', 'wedding', 'reception', 'engagement', 'roka', 'हल्दी', 'संगीत', 'शादी', 'वेडिंग', 'रिसेप्शन'];
+    for (const evt of events) {
+      const regex = new RegExp(evt + '[^0-9]{1,15}([0-9]+(?:[.,][0-9]+)*(?:\\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)', 'i');
+      const m = text.match(regex);
+      if (m) {
+        const num = parseCurrencyAmount(m[1]);
+        if (num >= 5000) eventRates.push(num);
+      }
+    }
+    if (eventRates.length >= 2) {
+      basePrice = eventRates.reduce((a, b) => a + b, 0);
+      calculationNote = `Sum of ${eventRates.length} ceremonies = ₹${basePrice.toLocaleString('en-IN')}`;
+    }
+  }
+
+  // 7. Direct package / regular / budget price
+  if (!basePrice) {
+    const pkgMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:का\s*पैकेज|का\s*बजट|का\s*कोटेशन|ka\s*package|ka\s*budget|package|budget|बजट|पैकेज)/i) ||
+                     text.match(/(?:package|budget|total|price|cost|investment|बजट|पैकेज|कोटेशन)[:\s]+([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)(?!\s*[%])/i);
+    if (pkgMatch) {
+      basePrice = parseCurrencyAmount(pkgMatch[1]);
+    }
+  }
+
+  // 8. Fallback to any prominent amount in text (excluding discount amount)
+  if (!basePrice) {
+    const numbers = [...text.matchAll(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)/gi)]
+      .map(m => parseCurrencyAmount(m[1]))
+      .filter(n => n >= 15000 && n !== discountAmount && n !== travelCharges);
+    if (numbers.length > 0) {
+      basePrice = numbers[0];
+    }
+  }
+
+  if (!basePrice) basePrice = defaultPrice;
+
+  // Apply percentage discount if found
+  if (discPct > 0 && !discountAmount) {
+    discountAmount = Math.round((basePrice * discPct) / 100);
+  }
+
+  // Check regular vs best offer price
+  if (!discountAmount) {
+    const regMatch = text.match(/(?:regular|standard|actual)[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand))?)/i);
+    const offerMatch = text.match(/(?:offer|deal|final|special|best)[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand))?)/i);
+    if (regMatch && offerMatch) {
+      const reg = parseCurrencyAmount(regMatch[1]);
+      const off = parseCurrencyAmount(offerMatch[1]);
+      if (reg > off && off > 0) {
+        basePrice = reg;
+        discountAmount = reg - off;
+      }
+    }
+  }
+
+  // 9. GST percentage
+  const gstMatch = text.match(/([0-9.]+)\s*%\s*gst/i) || text.match(/gst[:\s]*([0-9.]+)\s*%/i);
+  if (gstMatch) {
+    gstPct = parseFloat(gstMatch[1]) || 0;
+  }
+
+  const netSubtotal = Math.max(0, basePrice - discountAmount + travelCharges + accommodationCharges + additionalCharges);
+  const gstAmount = Math.round(netSubtotal * (gstPct / 100));
+  const netTotal = netSubtotal + gstAmount;
+
+  if (discountAmount > 0 && !calculationNote) {
+    calculationNote = `Special discount of ₹${discountAmount.toLocaleString('en-IN')} applied (Net: ₹${netTotal.toLocaleString('en-IN')})`;
+  }
+
+  // 10. Payment schedule calculation (Percentages or flat amounts, balanced strictly to Net Total)
+  const steps: Array<{ name: string; pct: string; amount: number; status: string }> = [];
+
+  // Check if explicit flat advance token was mentioned (e.g. "25,000 token received")
+  const flatAdvanceMatch = text.match(/(?:advance|token|booking|टोकन|एडवांस)[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)(?!\s*[%])/i) ||
+                           text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:advance|token|booking|टोकन|एडवांस)(?!\s*[%])/i);
+  let explicitAdvanceAmt = 0;
+  if (flatAdvanceMatch) {
+    const parsedAdv = parseCurrencyAmount(flatAdvanceMatch[1]);
+    if (parsedAdv > 0 && parsedAdv < netTotal) {
+      explicitAdvanceAmt = parsedAdv;
+    }
+  }
+
+  const hasExplicitPaymentReceived = /\b(advance received|advance paid|already paid|already received|payment received|token received|token paid|amount received|amount paid|प्राप्त|दिया)\b/i.test(text);
+
+  const pctMatches = [...text.matchAll(/(\d{1,2})\s*%\s*(?:advance|token|booking|event|wedding|delivery|final)/gi)];
+  if (pctMatches.length >= 2) {
+    let allocated = 0;
+    pctMatches.forEach((m, idx) => {
+      const p = parseInt(m[1], 10);
+      const isLast = idx === pctMatches.length - 1;
+      const amt = isLast ? Math.max(0, netTotal - allocated) : Math.round((netTotal * p) / 100);
+      allocated += amt;
+      const isAdv = m[0].includes('advance') || m[0].includes('token') || m[0].includes('booking');
+      const name = isAdv ? 'Advance Token'
+                 : m[0].includes('event') || m[0].includes('wedding') ? 'On Event Day' : 'On Final Delivery';
+      const status = isAdv && hasExplicitPaymentReceived ? 'Completed' : 'Pending';
+      steps.push({ name, pct: p + '%', amount: amt, status });
+    });
+  } else if (explicitAdvanceAmt > 0) {
+    const advPct = Math.round((explicitAdvanceAmt / netTotal) * 100);
+    const rem = Math.max(0, netTotal - explicitAdvanceAmt);
+    const eventAmt = Math.round(rem * 0.60);
+    const delivAmt = Math.max(0, rem - eventAmt);
+    steps.push(
+      { name: 'Advance Token', pct: `${advPct}%`, amount: explicitAdvanceAmt, status: hasExplicitPaymentReceived ? 'Completed' : 'Pending' },
+      { name: 'On Event Day', pct: `${Math.round((eventAmt / netTotal) * 100)}%`, amount: eventAmt, status: 'Pending' },
+      { name: 'On Final Delivery', pct: `${Math.max(0, 100 - advPct - Math.round((eventAmt / netTotal) * 100))}%`, amount: delivAmt, status: 'Pending' }
+    );
+  } else if (text.includes('50%') && (text.includes('half') || text.includes('दो भाग') || text.includes('50% 50%'))) {
+    const s1 = Math.round(netTotal * 0.50);
+    const s2 = Math.max(0, netTotal - s1);
+    steps.push(
+      { name: 'Advance Booking', pct: '50%', amount: s1, status: hasExplicitPaymentReceived ? 'Completed' : 'Pending' },
+      { name: 'On Event Day / Delivery', pct: '50%', amount: s2, status: 'Pending' }
+    );
+  } else {
+    // Default 30% / 50% / 20%
+    const s1 = Math.round(netTotal * 0.30);
+    const s2 = Math.round(netTotal * 0.50);
+    const s3 = Math.max(0, netTotal - s1 - s2);
+    steps.push(
+      { name: 'Advance Token', pct: '30%', amount: s1, status: hasExplicitPaymentReceived ? 'Completed' : 'Pending' },
+      { name: 'On Event Day', pct: '50%', amount: s2, status: 'Pending' },
+      { name: 'On Final Delivery', pct: '20%', amount: s3, status: 'Pending' }
+    );
+  }
+
+  return {
+    basePrice,
+    discountAmount,
+    travelCharges,
+    accommodationCharges,
+    additionalCharges,
+    gstPct,
+    netTotal,
+    note: calculationNote,
+    steps
+  };
+}
+
+/**
  * Intelligent Fallback Extraction Engine when LLM API keys are not present
  */
 export function fallbackHeuristicExtractor(contextData: any) {
@@ -159,32 +461,33 @@ export function fallbackHeuristicExtractor(contextData: any) {
   // 1. Couple & Names
   let leadName = '';
 
-  // Hindi Couple Name matching e.g. "कपल का नाम रहेगा रौनक और प्रेक्षा" or "जो की रहेगा संस्कृति और रूपेश का"
-  const hindiCoupleMatch = userNotes.match(/(?:कपल का नाम रहेगा|कपल का नाम|कपल नाम|कपल|कपल का|जो\s*की\s*रहेगा|जो\s*रहेगा|कोटेशन\s*रहेगा|रहेगा|कोटेशन\s*बनाना\s*है|कोटेशन\s*है|बनाना\s*है)[:\s]*([\u0900-\u097F\w\s&]+?)(?:\s*(?:का|की|के|और उनका|उनका|का इसमें|है|होगी|\.|\n|$))/i);
-  if (hindiCoupleMatch && hindiCoupleMatch[1].trim()) {
-    leadName = hindiCoupleMatch[1].trim();
+  // Check explicit "Couple: X & Y" or "Couple name: X and Y" or "Client: X & Y"
+  const explicitMatch = userNotes.match(/(?:couple(?:\s*name)?|client(?:\s*name)?|bride\s*(?:&|and)\s*groom|groom\s*(?:&|and)\s*bride)[:\s]+([A-Za-z\u0900-\u097F\s&'+.-]+?)(?=\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|\d|₹|rs|all|deliverable)|[,\n\r.]|$)/i);
+  if (explicitMatch && explicitMatch[1].trim()) {
+    leadName = explicitMatch[1].trim();
   }
 
+  // Hindi Couple Name matching e.g. "कपल का नाम रहेगा रौनक और प्रेक्षा" or "कपल नेम राहुल नेहा"
   if (!leadName) {
-    const noteNameMatch = userNotes.match(/(?:couple|client|bride|groom|name)[:\s]+([A-Za-z0-9\s&]+)/i);
-    if (noteNameMatch) {
-      leadName = noteNameMatch[1].split('\n')[0].trim();
+    const hindiCoupleMatch = userNotes.match(/(?:कपल(?:\s*का)?\s*नाम(?:\s*रहेगा)?|कपल\s*नेम|कपल|जो\s*की\s*रहेगा|जो\s*रहेगा|कोटेशन\s*रहेगा|रहेगा|कोटेशन\s*बनाना\s*है)[:\s]*([\u0900-\u097Fa-zA-Z\s&'+.-]+?)(?=\s+(?:वेडिंग|शादी|लग्न|कोटेशन|हल्दी|संगीत|रिसेप्शन|मेहंदी|तारीख|बजट|\d|ऑल|all|का|की|के|है)|[,\n\r.]|$)/i);
+    if (hindiCoupleMatch && hindiCoupleMatch[1].trim()) {
+      leadName = hindiCoupleMatch[1].trim();
+    }
+  }
+
+  // Check for standalone couple name pattern e.g. "Sagar & Vruddhi" or "Rahul and Pooja"
+  if (!leadName) {
+    const couplePatternMatch = userNotes.match(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])([A-Za-z\u0900-\u097F]{2,20}\s*(?:&|weds|and|\+|तथा|और)\s*[A-Za-z\u0900-\u097F]{2,20})(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i);
+    if (couplePatternMatch && couplePatternMatch[1]?.trim()) {
+      leadName = couplePatternMatch[1].trim();
     }
   }
 
   // Check for "Quotation for X & Y" or "quote for X & Y"
   if (!leadName) {
-    const forMatch = userNotes.match(/(?:quotation\s+for|quote\s+for|proposal\s+for|for)\s+([A-Za-z0-9\s&]+?)(?:\s+(?:wedding|reception|event|pre-wedding|haldi|sangeet|on|date|budget|\d)|$)/i);
+    const forMatch = userNotes.match(/(?:quotation\s+for|quote\s+for|proposal\s+for|for)\s+([A-Za-z\u0900-\u097F\s&]+?)(?=\s+(?:wedding|reception|event|pre-wedding|haldi|sangeet|on|date|budget|\d)|[,\n\r.]|$)/i);
     if (forMatch && forMatch[1].trim()) {
       leadName = forMatch[1].trim();
-    }
-  }
-
-  // Check for standalone couple name pattern e.g. "Sagar & Vruddhi" or "Sagar weds Vruddhi"
-  if (!leadName) {
-    const couplePatternMatch = userNotes.match(/\b([A-Za-z]{2,25}\s*(?:&|weds|and|\+)\s*[A-Za-z]{2,25})\b/i);
-    if (couplePatternMatch && couplePatternMatch[1].trim()) {
-      leadName = couplePatternMatch[1].trim();
     }
   }
 
@@ -200,6 +503,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     'रोहन': 'Rohan',
     'पूजा': 'Pooja',
     'राहुल': 'Rahul',
+    'नेहा': 'Neha',
     'मोनालिसा': 'Monalisha',
     'अथर्व': 'Atharva',
     'साक्षी': 'Sakshi',
@@ -209,44 +513,65 @@ export function fallbackHeuristicExtractor(contextData: any) {
     'हर्षल': 'Harshal',
     'अमन': 'Aman',
     'श्रद्धा': 'Shraddha',
+    'ध्रुव': 'Dhruv',
+    'विशाल': 'Vishal',
+    'सुमती': 'Sumati',
+    'यश': 'Yash',
+    'हर्षिता': 'Harshita',
+    'मंथन': 'Manthan',
     'और': '&',
     'तथा': '&',
-    'व': '&'
+    'व': '&',
+    'एंड': '&'
   };
 
-  let translatedName = leadName;
+  let cleanNameStr = leadName;
   for (const [k, v] of Object.entries(HINDI_NAME_TRANSLATE)) {
-    translatedName = translatedName.replace(new RegExp(k, 'g'), v);
+    cleanNameStr = cleanNameStr.replace(new RegExp(`(^|[^\\u0900-\\u097Fa-zA-Z0-9])${k}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`, 'gi'), `$1${v}`);
   }
-  leadName = translatedName.trim();
+  cleanNameStr = cleanNameStr.replace(/\s+/g, ' ').trim();
 
-  if (!leadName) {
-    leadName = leadInfo.name || raw.name || raw.client_name || raw.full_name || '';
+  // If no name extracted from notes or placeholder name, fallback to Lead record from CRM
+  if (!cleanNameStr || isPlaceholderCoupleName(cleanNameStr)) {
+    const candidateLeadName = 
+      raw.couple_name || 
+      raw.client_name || 
+      raw.bride_and_groom || 
+      raw.groom_and_bride || 
+      leadInfo.name || 
+      raw.name || 
+      raw.full_name || 
+      '';
+    if (candidateLeadName && !isPlaceholderCoupleName(candidateLeadName)) {
+      cleanNameStr = String(candidateLeadName).trim();
+    }
   }
 
   let groomName = '';
   let brideName = '';
   let coupleName = '';
 
-  if (leadName.includes('&')) {
-    const parts = leadName.split('&');
-    groomName = parts[0].trim();
-    brideName = parts[1].trim();
-    coupleName = `${groomName} & ${brideName}`;
-  } else if (leadName.toLowerCase().includes(' weds ')) {
-    const parts = leadName.split(/weds/i);
-    groomName = parts[0].trim();
-    brideName = parts[1].trim();
-    coupleName = `${groomName} & ${brideName}`;
-  } else if (leadName.toLowerCase().includes(' and ')) {
-    const parts = leadName.split(/and/i);
-    groomName = parts[0].trim();
-    brideName = parts[1].trim();
-    coupleName = `${groomName} & ${brideName}`;
+  const splitRegex = /\s*(?:&|weds|and|\+|तथा|और)\s*/i;
+  const stripKeywords = (s: string) => {
+    return s.replace(/\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|\d|all|deliverable|days|day).*$/i, '').trim();
+  };
+
+  if (splitRegex.test(cleanNameStr)) {
+    const parts = cleanNameStr.split(splitRegex);
+    groomName = stripKeywords((parts[0] || '').trim());
+    brideName = stripKeywords((parts[1] || '').trim());
+    groomName = groomName ? groomName.charAt(0).toUpperCase() + groomName.slice(1) : '';
+    brideName = brideName ? brideName.charAt(0).toUpperCase() + brideName.slice(1) : '';
+    coupleName = groomName && brideName ? `${groomName} & ${brideName}` : (groomName || brideName || 'Client');
+  } else if (cleanNameStr && !isPlaceholderCoupleName(cleanNameStr)) {
+    const singleClean = stripKeywords(cleanNameStr);
+    groomName = singleClean ? singleClean.charAt(0).toUpperCase() + singleClean.slice(1) : 'Client';
+    brideName = '';
+    coupleName = groomName;
   } else {
-    groomName = leadName || 'Client';
+    groomName = 'Client';
     brideName = 'Partner';
-    coupleName = leadName || 'Valued Client';
+    coupleName = 'Client & Partner';
   }
 
   // 2. Event Type
@@ -293,66 +618,22 @@ export function fallbackHeuristicExtractor(contextData: any) {
     weddingDate = 'Date Not Fixed';
   }
 
-  // 5. Budget / Pricing
+  // 5. Intelligent Mathematical Pricing & Method Evaluation (Evaluates formulas, multipliers, additions & discounts like Gemini & ChatGPT)
   let budget: number | null = null;
-  if (userNotes) {
-    const bMatch = userNotes.match(/(?:₹|rs\.?|inr|budget|price|cost|investment|amount)[:\s]*([0-9,]+(?:\s*lakh|\s*k)?)/i) ||
-                   userNotes.match(/\b([0-9]{2,3},[0-9]{3})\b/);
-    if (bMatch) {
-      let valStr = bMatch[1].toLowerCase();
-      if (valStr.includes('lakh') || valStr.includes('l')) {
-        const val = parseFloat(valStr.replace(/[^0-9.]/g, ''));
-        if (!isNaN(val)) budget = Math.round(val * 100000);
-      } else if (valStr.includes('k')) {
-        const val = parseFloat(valStr.replace(/[^0-9.]/g, ''));
-        if (!isNaN(val)) budget = Math.round(val * 1000);
-      } else {
-        const num = parseInt(valStr.replace(/[^0-9]/g, ''));
-        if (!isNaN(num)) budget = num;
-      }
-    }
-  }
-  if (!budget) {
-    const rawBudget = raw.budget || raw.package_budget || raw.preferred_budget_range || raw.approximate_budget || raw.pricing || null;
-    if (rawBudget) {
-      const budgetStr = String(rawBudget).toLowerCase();
-      if (budgetStr.includes('lakh') || budgetStr.includes('l')) {
-        const val = parseFloat(budgetStr.replace(/[^0-9.]/g, ''));
-        if (!isNaN(val)) budget = Math.round(val * 100000);
-      } else if (budgetStr.includes('k')) {
-        const val = parseFloat(budgetStr.replace(/[^0-9.]/g, ''));
-        if (!isNaN(val)) budget = Math.round(val * 1000);
-      } else {
-        const num = parseInt(budgetStr.replace(/[^0-9]/g, ''));
-        if (!isNaN(num) && num > 0) budget = num;
-      }
-    }
-  }
-  // 5. Budget, Pricing & Discounts
-  let basePrice = 150000;
-  let discountAmount = 0;
-
-  // Search for multiple prices (e.g. 1,70,000 and 1,45,000)
-  const priceMatches = [...userNotes.matchAll(/(?:₹|rs\.?|inr)?\s*([0-9]{1,3},[0-9]{3}(?:,[0-9]{3})?|[0-9]{5,7})/gi)]
-    .map(m => parseInt(m[1].replace(/,/g, '')))
-    .filter(n => n >= 5000 && !isNaN(n));
-
-  if (priceMatches.length >= 2) {
-    const sorted = [...new Set(priceMatches)].sort((a, b) => b - a);
-    if (sorted.length >= 2 && sorted[0] > sorted[1]) {
-      basePrice = sorted[0];
-      const finalOfferPrice = sorted[1];
-      discountAmount = basePrice - finalOfferPrice;
-    } else {
-      basePrice = sorted[0];
-    }
-  } else if (priceMatches.length === 1) {
-    basePrice = priceMatches[0];
-  } else if (budget) {
-    basePrice = budget;
+  const rawBudget = raw.budget || raw.package_budget || raw.preferred_budget_range || raw.approximate_budget || raw.pricing || null;
+  if (rawBudget) {
+    budget = parseCurrencyAmount(String(rawBudget));
   }
 
-  const netBudget = Math.max(0, basePrice - discountAmount);
+  const evaluatedPricing = evaluatePricingMethod(notes, budget || 150000);
+  let basePrice = evaluatedPricing.basePrice;
+  let discountAmount = evaluatedPricing.discountAmount;
+  let travelCharges = evaluatedPricing.travelCharges;
+  let accommodationCharges = evaluatedPricing.accommodationCharges;
+  let additionalCharges = evaluatedPricing.additionalCharges;
+  let gstPct = evaluatedPricing.gstPct;
+  let pricingNote = evaluatedPricing.note;
+  let paymentSteps = evaluatedPricing.steps;
 
   // Extract custom times and location from notes
   let customStartTime = '';
@@ -404,10 +685,43 @@ export function fallbackHeuristicExtractor(contextData: any) {
       }
     });
   }
-  const defaultRequirements = parsedRequirements.length > 0 ? parsedRequirements : [
-    { name: 'Candid Photographer', qty: 1 },
-    { name: 'Cinematographer', qty: 1 }
-  ];
+  // Check studio shortcuts for crew and pricing before creating functions
+  const studioShortcuts: any[] = Array.isArray(contextData.studioSettings?.aiRules?.shortcuts)
+    ? contextData.studioSettings.aiRules.shortcuts
+    : [];
+
+  let shortcutCrew: Array<{ name: string; qty: number }> | null = null;
+  let shortcutDeliverables: string[] = [];
+
+  for (const sc of studioShortcuts) {
+    if (!sc.trigger) continue;
+    const trigLower = sc.trigger.toLowerCase().trim();
+    const words = trigLower.split(/\s+/);
+    const isMatch = fullText.includes(trigLower) || 
+      words.every(w => fullText.includes(w)) ||
+      (trigLower.includes('deliverable') && (fullText.includes('ऑल डिलीवरेबल्स') || fullText.includes('all deliverable')));
+
+    if (isMatch) {
+      if (Array.isArray(sc.mappedCrew) && sc.mappedCrew.length > 0) {
+        shortcutCrew = sc.mappedCrew;
+      }
+      if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) {
+        shortcutDeliverables.push(...sc.mappedDeliverables);
+      }
+      if (sc.mappedPrice && (!priceMatches.length && !budget)) {
+        basePrice = sc.mappedPrice;
+      }
+    }
+  }
+
+  const defaultRequirements = parsedRequirements.length > 0 
+    ? parsedRequirements 
+    : (shortcutCrew && shortcutCrew.length > 0 
+        ? shortcutCrew 
+        : [
+            { name: 'Candid Photographer', qty: 1 },
+            { name: 'Cinematographer', qty: 1 }
+          ]);
 
   // 6. Functions & Coverage Extraction
   const functions: any[] = [];
@@ -471,49 +785,65 @@ export function fallbackHeuristicExtractor(contextData: any) {
     });
   }
 
-  // 7. Deliverables
-  const deliverables: string[] = [
-    'All Raw Photos',
-    'Cinematic Video',
-    'Cinematic Teaser',
-    '1 Instagram Reel'
-  ];
-  if (fullText.includes('album') || fullText.includes('photobook')) {
-    deliverables.push('Mini Book Album', '1 Main DVD Album');
-  }
-  if (fullText.includes('calendar') || fullText.includes('कैलेंडर')) {
-    deliverables.push('Photo Calendar');
-  }
-  if (fullText.includes('30 photo') || fullText.includes('30 फोटो') || fullText.includes('30 edited')) {
-    deliverables.push('30 Edited Photos');
-  } else {
-    deliverables.push('High Resolution Edited Photos (300+)');
+  // 7. Studio Settings Deliverables & Shorthands Sync
+  const studioDeliverables: string[] = Array.isArray(contextData.studioSettings?.deliverables)
+    ? contextData.studioSettings.deliverables
+        .map((d: any) => typeof d === 'string' ? d : d?.title)
+        .filter(Boolean)
+    : [];
+
+  let deliverables: string[] = [];
+
+  // Check if "all deliverables" or "all droppers" trigger was spoken or requested (Unicode safe for Hindi/Marathi/English)
+  const hasAllDeliverablesRequested = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(fullText);
+
+  // Check if any custom shortcut triggered mapped deliverables (using previously declared shortcutDeliverables)
+  for (const sc of studioShortcuts) {
+    if (!sc.trigger) continue;
+    const trigLower = sc.trigger.toLowerCase().trim();
+    if (fullText.includes(trigLower) || trigLower.split(/\s+/).every((w: string) => fullText.includes(w))) {
+      if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) {
+        shortcutDeliverables.push(...sc.mappedDeliverables);
+      }
+      if (sc.mappedPrice && (!priceMatches.length && !budget)) {
+        basePrice = sc.mappedPrice;
+      }
+    }
   }
 
-  // 8. Payment Schedule Installments (Calculated on Net Budget)
-  let paymentSteps: any[] = [];
-  if (fullText.includes('30%') || (fullText.includes('50%') && fullText.includes('20%'))) {
-    paymentSteps = [
-      { name: 'Advance Token', pct: '30%', amount: Math.round(netBudget * 0.30), status: 'Pending' },
-      { name: 'On Event Day', pct: '50%', amount: Math.round(netBudget * 0.50), status: 'Pending' },
-      { name: 'On Final Delivery', pct: '20%', amount: Math.round(netBudget * 0.20), status: 'Pending' }
-    ];
-  } else if (fullText.includes('50%') && (fullText.includes('50%') || fullText.includes('half'))) {
-    paymentSteps = [
-      { name: 'Advance Booking', pct: '50%', amount: Math.round(netBudget * 0.50), status: 'Pending' },
-      { name: 'On Event Day / Delivery', pct: '50%', amount: Math.round(netBudget * 0.50), status: 'Pending' }
-    ];
-  } else if (fullText.includes('20%') && fullText.includes('40%')) {
-    paymentSteps = [
-      { name: 'Advance Token', pct: '20%', amount: Math.round(netBudget * 0.20), status: 'Pending' },
-      { name: 'On Event Day', pct: '40%', amount: Math.round(netBudget * 0.40), status: 'Pending' },
-      { name: 'On Final Delivery', pct: '40%', amount: Math.round(netBudget * 0.40), status: 'Pending' }
-    ];
+  if (hasAllDeliverablesRequested && studioDeliverables.length > 0) {
+    // ⚡ FULL SYNC: Add ALL deliverables configured in Quotation Settings!
+    deliverables = [...studioDeliverables];
+  } else if (shortcutDeliverables.length > 0) {
+    deliverables = [...new Set(shortcutDeliverables)];
+  } else if (studioDeliverables.length > 0) {
+    // If user mentioned specific words, match against studio deliverables catalog
+    const matchedStudioDelivs = studioDeliverables.filter((title: string) => {
+      const tLower = title.toLowerCase();
+      if (tLower.includes('teaser') && fullText.includes('teaser')) return true;
+      if (tLower.includes('highlight') && (fullText.includes('highlight') || fullText.includes('film'))) return true;
+      if (tLower.includes('traditional') && (fullText.includes('traditional') || fullText.includes('long video'))) return true;
+      if (tLower.includes('album') && (fullText.includes('album') || fullText.includes('photobook'))) return true;
+      if (tLower.includes('reel') && (fullText.includes('reel') || fullText.includes('instagram'))) return true;
+      if (tLower.includes('raw') && (fullText.includes('raw') || fullText.includes('hard drive'))) return true;
+      if (tLower.includes('edited') && (fullText.includes('edited') || fullText.includes('photos') || fullText.includes('images'))) return true;
+      return false;
+    });
+
+    if (matchedStudioDelivs.length > 0) {
+      deliverables = matchedStudioDelivs;
+    } else {
+      deliverables = studioDeliverables.slice(0, 6);
+    }
   } else {
-    paymentSteps = [
-      { name: 'Advance Booking Token', pct: '25%', amount: Math.round(netBudget * 0.25), status: 'Pending' },
-      { name: 'On Wedding Event Day', pct: '50%', amount: Math.round(netBudget * 0.50), status: 'Pending' },
-      { name: 'On Final Deliverables', pct: '25%', amount: Math.round(netBudget * 0.25), status: 'Pending' }
+    // Base fallback if no studio deliverables configured
+    deliverables = [
+      'All Raw Photos & Footage in Hard Drive',
+      'Cinematic Wedding Highlight Film (15-20 Min)',
+      'Cinematic Wedding Teaser (1-2 Min)',
+      '3 Instagram Reels',
+      'Traditional Long Video (2-3 Hours)',
+      'Custom Printed Coffee Table Album'
     ];
   }
 
@@ -545,12 +875,12 @@ export function fallbackHeuristicExtractor(contextData: any) {
     pricingPage: {
       basePrice,
       discountAmount,
-      gstPct: 0,
-      travelCharges: 0,
-      accommodationCharges: 0,
-      additionalCharges: 0,
+      gstPct,
+      travelCharges,
+      accommodationCharges,
+      additionalCharges,
       showExclusionsNote: true,
-      note: discountAmount > 0 ? `Special discount of ₹${discountAmount.toLocaleString('en-IN')}` : ''
+      note: pricingNote || (discountAmount > 0 ? `Special discount of ₹${discountAmount.toLocaleString('en-IN')}` : '')
     },
     paymentTermsPage: {
       steps: paymentSteps
@@ -639,6 +969,23 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       });
     }
 
+    // ⚡ FULL DELIVERABLES SYNC: If user requested "all deliverables", inject ALL deliverables from Studio Settings!
+    const allNotesText = [
+      contextData?.additional_user_notes,
+      contextData?.notes_and_comments,
+      contextData?.additionalNotes
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    const hasAllDelivReq = /\b(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)\b/i.test(allNotesText);
+    const studioDelivs: string[] = Array.isArray(contextData?.studioSettings?.deliverables)
+      ? contextData.studioSettings.deliverables.map((d: any) => typeof d === 'string' ? d : d?.title).filter(Boolean)
+      : [];
+
+    if (hasAllDelivReq && studioDelivs.length > 0) {
+      if (!normDoc.deliverablesPage) normDoc.deliverablesPage = { selectedItems: [] };
+      normDoc.deliverablesPage.selectedItems = [...studioDelivs];
+    }
+
     // Ensure showExclusionsNote is default ON (true)
     if (normDoc.shootDetails) normDoc.shootDetails.showExclusionsNote = true;
     if (normDoc.pricingPage) normDoc.pricingPage.showExclusionsNote = true;
@@ -648,7 +995,10 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     const discP = normDoc.pricingPage?.discountAmount || 0;
     const travP = normDoc.pricingPage?.travelCharges || 0;
     const accP = normDoc.pricingPage?.accommodationCharges || 0;
-    const totAmount = baseP - discP + travP + accP;
+    const addlP = normDoc.pricingPage?.additionalCharges || 0;
+    const gstP = normDoc.pricingPage?.gstPct || 0;
+    const subTot = Math.max(0, baseP - discP + travP + accP + addlP);
+    const totAmount = Math.round(subTot * (1 + gstP / 100));
 
     const summary = {
       coupleName: cName,
@@ -784,6 +1134,65 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     }
   }
 
+  // ⚡ MANDATE: Enforce Studio Settings Deliverables & Shortcuts synchronization ("x डालेंगे तो y होगा")
+  const studioDeliverables: string[] = Array.isArray(contextData?.studioSettings?.deliverables)
+    ? contextData.studioSettings.deliverables
+        .map((d: any) => typeof d === 'string' ? d : d?.title)
+        .filter(Boolean)
+    : [];
+  const studioShortcuts: any[] = Array.isArray(contextData?.studioSettings?.aiRules?.shortcuts)
+    ? contextData.studioSettings.aiRules.shortcuts
+    : [];
+
+  const allNotesText = `${contextData?.additional_user_notes || ''} ${JSON.stringify(contextData?.raw_form_fields || '')}`.toLowerCase();
+  const hasAllDelivReq = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText);
+
+  let matchedShortcutCrew: Array<{ name: string; qty: number }> | null = null;
+  let matchedShortcutPrice: number | null = null;
+  let matchedShortcutDelivs: string[] = [];
+
+  for (const sc of studioShortcuts) {
+    if (!sc.trigger) continue;
+    const trigLower = sc.trigger.toLowerCase().trim();
+    const words = trigLower.split(/\s+/);
+    const isMatch = allNotesText.includes(trigLower) || 
+      words.every(w => allNotesText.includes(w)) ||
+      (trigLower.includes('deliverable') && (allNotesText.includes('ऑल डिलीवरेबल्स') || allNotesText.includes('all deliverable')));
+
+    if (isMatch) {
+      if (Array.isArray(sc.mappedCrew) && sc.mappedCrew.length > 0) matchedShortcutCrew = sc.mappedCrew;
+      if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) matchedShortcutDelivs.push(...sc.mappedDeliverables);
+      if (sc.mappedPrice) matchedShortcutPrice = sc.mappedPrice;
+    }
+  }
+
+  if (hasAllDelivReq && studioDeliverables.length > 0) {
+    doc.deliverablesPage.selectedItems = [...studioDeliverables];
+  } else if (matchedShortcutDelivs.length > 0) {
+    doc.deliverablesPage.selectedItems = [...new Set(matchedShortcutDelivs)];
+  }
+
+  // Populate availableOptions with all studio deliverables
+  if (studioDeliverables.length > 0) {
+    doc.deliverablesPage.availableOptions = Array.from(new Set([
+      ...studioDeliverables,
+      ...(doc.deliverablesPage.availableOptions || []),
+      ...(doc.deliverablesPage.selectedItems || [])
+    ]));
+  }
+
+  // Assign matched shortcut crew to functions
+  if (matchedShortcutCrew && matchedShortcutCrew.length > 0 && Array.isArray(doc.functionsPage?.items)) {
+    doc.functionsPage.items.forEach((fn: any) => {
+      fn.requirements = matchedShortcutCrew;
+    });
+  }
+
+  // Assign matched shortcut price
+  if (matchedShortcutPrice && doc.pricingPage && (!doc.pricingPage.basePrice || doc.pricingPage.basePrice === 150000)) {
+    doc.pricingPage.basePrice = matchedShortcutPrice;
+  }
+
   // 5. Special Value Additions Page
   if (!doc.specialValueAdditions) doc.specialValueAdditions = {};
   const rawSpecial = specialValueAdditions.selectedItems || [];
@@ -812,25 +1221,43 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   if (pricingPage.additionalCharges !== undefined) doc.pricingPage.additionalCharges = Number(pricingPage.additionalCharges);
   doc.pricingPage.showExclusionsNote = true;
 
+  // Calculate Summary
+  const coupleName = doc.cover.coupleName || `${doc.cover.groomName || 'Client'} & ${doc.cover.brideName || 'Partner'}`;
+  const baseAmt = doc.pricingPage.basePrice || 150000;
+  const discAmtVal = doc.pricingPage.discountAmount || 0;
+  const travAmt = doc.pricingPage.travelCharges || 0;
+  const accAmt = doc.pricingPage.accommodationCharges || 0;
+  const addlAmt = doc.pricingPage.additionalCharges || 0;
+  const gstPctVal = doc.pricingPage.gstPct || 0;
+  const subTotalAmount = Math.max(0, baseAmt - discAmtVal + travAmt + accAmt + addlAmt);
+  const totalAmount = Math.round(subTotalAmount * (1 + gstPctVal / 100));
+
   // 7. Payment Terms Page
   if (!doc.paymentTermsPage) doc.paymentTermsPage = {};
   const rawSteps = paymentTermsPage.steps || (Array.isArray(paymentTermsPage) ? paymentTermsPage : aiData.payment_schedule) || [];
   if (Array.isArray(rawSteps) && rawSteps.length > 0) {
-    doc.paymentTermsPage.steps = rawSteps.map((step: any) => {
+    let allocated = 0;
+    doc.paymentTermsPage.steps = rawSteps.map((step: any, idx: number) => {
       const stepStatusLower = String(step.status || '').toLowerCase().trim();
       const isPaid = (stepStatusLower === 'completed' || stepStatusLower === 'paid') && hasExplicitPaymentReceived;
+      const stepPct = parseFloat(String(step.pct || '').replace(/[^0-9.]/g, '')) || 0;
+      let stepAmt = Number(step.amount || 0);
+
+      // If step amount was not provided or 0, calculate mathematically from totalAmount
+      if (stepAmt === 0 && totalAmount > 0 && stepPct > 0) {
+        const isLast = idx === rawSteps.length - 1;
+        stepAmt = isLast ? Math.max(0, totalAmount - allocated) : Math.round((totalAmount * stepPct) / 100);
+      }
+      allocated += stepAmt;
+
       return {
         name: step.name || 'Payment Milestone',
-        pct: step.pct || '30%',
-        amount: Number(step.amount || 0),
+        pct: step.pct || (totalAmount > 0 ? `${Math.round((stepAmt / totalAmount) * 100)}%` : '30%'),
+        amount: stepAmt,
         status: isPaid ? 'Completed' : 'Pending'
       };
     });
   }
-
-  // Calculate Summary
-  const coupleName = doc.cover.coupleName || `${doc.cover.groomName || 'Client'} & ${doc.cover.brideName || 'Partner'}`;
-  const totalAmount = (doc.pricingPage.basePrice || 150000) - (doc.pricingPage.discountAmount || 0) + (doc.pricingPage.travelCharges || 0) + (doc.pricingPage.accommodationCharges || 0) + (doc.pricingPage.additionalCharges || 0);
 
   const summary = {
     coupleName,

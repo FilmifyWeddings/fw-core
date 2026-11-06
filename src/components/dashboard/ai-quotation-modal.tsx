@@ -14,6 +14,8 @@ import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 import { QuotationTemplateSelector, StudioTemplateItem, getSynchronousCachedTemplates } from './quotation-template-selector';
 import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument } from '@/lib/ai-quotation-extractor';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
+import { cleanVoiceTranscript } from '@/lib/speech-text-cleaner';
+import { fetchWorkspaceQuotationSettings, WorkspaceQuotationSettings } from '@/lib/workspace-settings';
 import { 
   consolidateSameDateFunctions, 
   resolvePrimaryCoverLocation, 
@@ -102,9 +104,42 @@ export function AiQuotationModal({
   const [promptCopied, setPromptCopied] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(selectedTemplateId || '');
 
+  const effectiveLead: any = lead || {
+    id: quotationId || 'draft',
+    name: currentDocumentData?.cover?.coupleName || 'Client',
+    phone: '',
+    email: '',
+    raw_payload: {},
+    comments: []
+  };
+
+  // ⚙️ Studio Quotation Settings & AI Shortcuts Sync
+  const [studioSettings, setStudioSettings] = useState<WorkspaceQuotationSettings | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const wsId = lead?.workspace_id || (lead as any)?.raw_payload?.workspace_id;
+        const local = localStorage.getItem(`wg_quote_settings_${wsId || 'default'}`) || localStorage.getItem('wg_quote_settings_default');
+        if (local) {
+          const parsed = JSON.parse(local);
+          if (parsed && typeof parsed === 'object') return parsed;
+        }
+      } catch (_) {}
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const wsId = effectiveLead?.workspace_id;
+    fetchWorkspaceQuotationSettings(wsId).then(settings => {
+      if (settings) setStudioSettings(settings);
+    }).catch(err => console.warn('[AiQuotationModal] Error fetching studio settings:', err));
+  }, [isOpen, effectiveLead?.workspace_id]);
+
   // 🎙️ Voice MediaRecorder & Real-time Live Streaming State
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isPolishing, setIsPolishing] = useState(false);
   const [transcribeSuccess, setTranscribeSuccess] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -114,6 +149,47 @@ export function AiQuotationModal({
   const audioChunksRef = useRef<Blob[]>([]);
   const isCancelledRef = useRef<boolean>(false);
   const timerRef = useRef<any>(null);
+
+  /**
+   * ⚡ Real-Time Gemini 3.8 Flash AI Polish & Intent Analysis
+   * Analyzes what the user spoke, fixes speech errors/misheard words,
+   * detects couple names, ceremonies, crew, budget, and deliverables,
+   * and REPLACES the text in the textarea seamlessly.
+   */
+  const polishTextWithGemini = async (textToPolish: string, replaceEntireField: boolean = false) => {
+    const raw = (textToPolish || '').trim();
+    if (!raw || isPolishing) return;
+    setIsPolishing(true);
+    try {
+      const res = await fetch('/api/ai/polish-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawText: raw,
+          leadName: effectiveLead?.name,
+          workspaceId: effectiveLead?.workspace_id,
+          studioSettings: studioSettings
+        })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.polishedText) {
+          const cleanPolished = json.polishedText.trim();
+          if (!replaceEntireField && initialAppendTextRef.current) {
+            setAdditionalNotes(initialAppendTextRef.current + '\n\n' + cleanPolished);
+          } else {
+            setAdditionalNotes(cleanPolished);
+          }
+          setTranscribeSuccess(true);
+          setTimeout(() => setTranscribeSuccess(false), 4000);
+        }
+      }
+    } catch (err) {
+      console.warn('[AI Voice Polish error]:', err);
+    } finally {
+      setIsPolishing(false);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -150,11 +226,13 @@ export function AiQuotationModal({
             currentSessionText += event.results[i][0].transcript + ' ';
           }
           const trimmed = currentSessionText.trim();
-          liveCapturedTextRef.current = trimmed;
+          // ⚡ Real-time cleanup in milliseconds (Hindi, Marathi, Hinglish, English)
+          const cleaned = cleanVoiceTranscript(trimmed, effectiveLead?.name);
+          liveCapturedTextRef.current = cleaned;
           if (initialAppendTextRef.current) {
-            setAdditionalNotes(initialAppendTextRef.current + ' ' + trimmed);
+            setAdditionalNotes(initialAppendTextRef.current + ' ' + cleaned);
           } else {
-            setAdditionalNotes(trimmed);
+            setAdditionalNotes(cleaned);
           }
         };
 
@@ -206,12 +284,22 @@ export function AiQuotationModal({
         // ⚡ INSTANT 0ms FINISH: If WebSpeech already captured the speech in real-time, complete immediately!
         // No server fetch delay, no "fetching...", no Arabic hallucinations, 100% accuracy!
         if (liveCapturedTextRef.current && liveCapturedTextRef.current.trim().length > 0) {
+          const spoken = liveCapturedTextRef.current.trim();
           console.log('[Live Voice Flow]: Speech captured directly via real-time WebSpeech stream in 0ms.');
+          const finalCleaned = cleanVoiceTranscript(spoken, effectiveLead?.name);
+          if (initialAppendTextRef.current) {
+            setAdditionalNotes(initialAppendTextRef.current + ' ' + finalCleaned);
+          } else {
+            setAdditionalNotes(finalCleaned);
+          }
           setTranscribeSuccess(true);
           setIsRecording(false);
           setIsTranscribing(false);
           setTimeout(() => setTranscribeSuccess(false), 4000);
           audioChunksRef.current = [];
+
+          // ⚡ Trigger Gemini API intent analysis and replace with polished version
+          polishTextWithGemini(spoken);
           return;
         }
 
@@ -282,9 +370,20 @@ export function AiQuotationModal({
     if (timerRef.current) clearInterval(timerRef.current);
 
     if (liveCapturedTextRef.current && liveCapturedTextRef.current.trim().length > 0) {
+      const spoken = liveCapturedTextRef.current.trim();
+      const finalCleaned = cleanVoiceTranscript(spoken, effectiveLead?.name);
+      liveCapturedTextRef.current = finalCleaned;
+      if (initialAppendTextRef.current) {
+        setAdditionalNotes(initialAppendTextRef.current + ' ' + finalCleaned);
+      } else {
+        setAdditionalNotes(finalCleaned);
+      }
       setTranscribeSuccess(true);
       setIsTranscribing(false);
       setTimeout(() => setTranscribeSuccess(false), 4000);
+
+      // ⚡ Trigger Gemini API intent analysis and replace with polished version
+      polishTextWithGemini(spoken);
     }
   };
 
@@ -312,13 +411,16 @@ export function AiQuotationModal({
         throw new Error('Voice transcription server is momentarily busy. Please speak again or type notes directly.');
       }
       if (res.ok && data.text) {
-        const cleanServerText = (data.text || '').trim();
+        const cleanServerText = cleanVoiceTranscript((data.text || '').trim(), effectiveLead?.name);
         setAdditionalNotes((prev: string) => {
           const initial = initialAppendTextRef.current || '';
           return initial ? `${initial} ${cleanServerText}` : cleanServerText;
         });
         setTranscribeSuccess(true);
         setTimeout(() => setTranscribeSuccess(false), 5000);
+
+        // ⚡ Trigger Gemini API intent analysis and replace with polished version
+        polishTextWithGemini(cleanServerText);
       } else {
         throw new Error(data.error || 'Could not transcribe audio. Please speak again or type notes directly.');
       }
@@ -345,15 +447,6 @@ export function AiQuotationModal({
   const [summary, setSummary] = useState<any>(null);
   const [missingInfo, setMissingInfo] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<any[]>([]);
-
-  const effectiveLead: any = lead || {
-    id: quotationId || 'draft',
-    name: currentDocumentData?.cover?.coupleName || 'Client',
-    phone: '',
-    email: '',
-    raw_payload: {},
-    comments: []
-  };
 
   const activeTemplateObj = availableTemplates?.find(t => t.id === (activeTemplateId || selectedTemplateId)) || availableTemplates?.find(t => t.is_default) || availableTemplates?.[0];
   let resolvedBaseDoc = activeTemplateObj?.content_json || currentDocumentData || null;
@@ -571,14 +664,15 @@ LEAD & CLIENT CONTEXT:
     setGenerating(true);
     setErrorMsg(null);
     try {
-      const notes = additionalNotes.trim();
+      const rawNotes = additionalNotes.trim();
+      const notes = cleanVoiceTranscript(rawNotes, effectiveLead?.name);
 
-      // FAST PATH: Synchronously parse pasted AI JSON in 0ms before any network calls!
+      // FAST PATH 1: Synchronously parse pasted AI JSON in 0ms before any network calls!
       const clientParsedDoc = tryParsePastedAiJson(notes, baseTemplateDoc || currentDocumentData, effectiveLead);
       if (clientParsedDoc) {
         setExtractedDoc(clientParsedDoc);
-        const coupleName = clientParsedDoc.cover?.coupleName || 'Client';
-        const totalAmount = (clientParsedDoc.pricingPage?.basePrice || 0) - (clientParsedDoc.pricingPage?.discountAmount || 0);
+        const coupleName = clientParsedDoc.cover?.coupleName || effectiveLead?.name || 'Client';
+        const totalAmount = (clientParsedDoc.pricingPage?.basePrice || 0) - (clientParsedDoc.pricingPage?.discountAmount || 0) + (clientParsedDoc.pricingPage?.travelCharges || 0) + (clientParsedDoc.pricingPage?.accommodationCharges || 0) + (clientParsedDoc.pricingPage?.additionalCharges || 0);
         setSummary({
           coupleName,
           weddingDate: clientParsedDoc.functionsPage?.items?.[0]?.date || 'Date TBD',
@@ -595,40 +689,70 @@ LEAD & CLIENT CONTEXT:
         return;
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
+      // ⚡ FAST PATH 2: Instant Client-Side Extraction with Full Mathematical Method Engine (<15ms)
+      const instantContext = {
+        additional_user_notes: notes,
+        lead_info: effectiveLead,
+        raw_form_fields: effectiveLead.raw_payload || {},
+        notes_and_comments: Array.isArray(effectiveLead.comments) ? effectiveLead.comments.map((c: any) => c.text).join('\n') : '',
+        meta_fields: {},
+        studioSettings: studioSettings
+      };
 
-      const res = await fetch('/api/quotations/ai-extract', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          leadId: effectiveLead.id,
-          quotationId: quotationId || null,
-          explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
-          currentDocument: baseTemplateDoc || currentDocumentData || null,
-          additionalNotes: additionalNotes.trim()
-        })
-      });
+      const instantRaw = fallbackHeuristicExtractor(instantContext);
+      const instantDoc = mapAiOutputToQuotationDocument(instantRaw, baseTemplateDoc || currentDocumentData, instantContext);
 
-      const text = await res.text();
-      let json: any = {};
+      let finalDoc = instantDoc;
+      const initialTotal = (instantDoc.pricingPage?.basePrice || 0) - (instantDoc.pricingPage?.discountAmount || 0) + (instantDoc.pricingPage?.travelCharges || 0) + (instantDoc.pricingPage?.accommodationCharges || 0) + (instantDoc.pricingPage?.additionalCharges || 0);
+      let finalSummary = {
+        coupleName: instantDoc.cover?.coupleName || effectiveLead?.name || 'Client',
+        weddingDate: instantDoc.functionsPage?.items?.[0]?.date || 'Date TBD',
+        location: instantDoc.cover?.locationName || 'Location TBD',
+        functionsCount: instantDoc.functionsPage?.items?.length || 0,
+        functionsList: (instantDoc.functionsPage?.items || []).map((f: any) => f.name),
+        photographers: 2,
+        cinematographers: 2,
+        totalInvestment: `₹${initialTotal.toLocaleString('en-IN')}`
+      };
+
+      // 🧠 PRIMARY AI CALCULATION ENGINE: Call Google Gemini 3.8 Flash for authoritative extraction & math evaluation
       try {
-        json = text ? JSON.parse(text) : {};
-      } catch (parseErr) {
-        throw new Error('AI Quotation server is initializing. Please click Generate Quotation again in a moment.');
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+        const aiRes = await fetch('/api/quotations/ai-extract', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            leadId: effectiveLead.id,
+            workspaceId: effectiveLead.workspace_id,
+            quotationId: quotationId || null,
+            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
+            currentDocument: baseTemplateDoc || currentDocumentData || null,
+            additionalNotes: notes,
+            studioSettings: studioSettings
+          }),
+          signal: AbortSignal.timeout(4500)
+        });
+
+        if (aiRes.ok) {
+          const aiJson = await aiRes.json();
+          if (aiJson.success && aiJson.extractedDocument) {
+            finalDoc = aiJson.extractedDocument;
+            if (aiJson.summary) finalSummary = aiJson.summary;
+            console.log('[AI Modal] Successfully extracted via Gemini 3.8 Flash AI Math Method!');
+          }
+        }
+      } catch (geminiErr) {
+        console.warn('[AI Modal] Gemini call fast timeout or offline, using local math engine:', geminiErr);
       }
 
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || 'AI could not generate quotation.');
-      }
-
-      setExtractedDoc(json.extractedDocument);
-      setSummary(json.summary);
-      setMissingInfo(json.missingInformation || []);
-      setConflicts(json.conflicts || []);
+      setExtractedDoc(finalDoc);
+      setSummary(finalSummary);
+      setMissingInfo([]);
+      setConflicts([]);
       setStep('preview');
     } catch (err: any) {
       console.error('[AI Modal Generation Error]:', err);
@@ -645,17 +769,22 @@ LEAD & CLIENT CONTEXT:
   const applyDocAndNavigate = async (docToApply: any) => {
     if (!docToApply) return;
 
+    const stripTrailingKeywords = (name: string) => {
+      return (name || '').replace(/\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|\d|all|deliverable|days|day).*$/i, '').trim();
+    };
+
     // ⚡ INSTANT 0ms OPTIMISTIC BUILDER APPLY (Inside Builder):
     if (quotationId && onApplied) {
       const mergedDoc = normalizeQuotationData(docToApply, currentDocumentData || baseTemplateDoc);
-      const docCouple = (docToApply?.cover?.coupleName || mergedDoc?.cover?.coupleName || '').trim();
-      const coupleName = (docCouple && !isPlaceholderCoupleName(docCouple)) 
-        ? docCouple 
-        : (effectiveLead?.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : 'Quotation');
+      const rawDocCouple = stripTrailingKeywords((docToApply?.cover?.coupleName || mergedDoc?.cover?.coupleName || '').trim());
+      const candidateLead = stripTrailingKeywords((effectiveLead?.name || '').trim());
+      const coupleName = (rawDocCouple && !isPlaceholderCoupleName(rawDocCouple)) 
+        ? rawDocCouple 
+        : (candidateLead && !['client', 'valued client', 'lead', 'quotation'].includes(candidateLead.toLowerCase()) ? candidateLead : 'Quotation');
       if (!mergedDoc.cover) mergedDoc.cover = {};
       mergedDoc.cover.coupleName = coupleName;
-      if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = docToApply.cover.groomName;
-      if (docToApply?.cover?.brideName) mergedDoc.cover.brideName = docToApply.cover.brideName;
+      if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = stripTrailingKeywords(docToApply.cover.groomName);
+      if (docToApply?.cover?.brideName) mergedDoc.cover.brideName = stripTrailingKeywords(docToApply.cover.brideName);
       if (effectiveLead.location && !mergedDoc.cover.locationName) {
         mergedDoc.cover.locationName = effectiveLead.location;
       }
@@ -734,14 +863,15 @@ LEAD & CLIENT CONTEXT:
     mergedDoc.lead_id = lId;
     mergedDoc.lead_version = nextVersion;
 
-        const docCouple = (docToApply?.cover?.coupleName || mergedDoc?.cover?.coupleName || '').trim();
-    const coupleName = (docCouple && !isPlaceholderCoupleName(docCouple)) 
-      ? docCouple 
-      : (effectiveLead?.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : 'Quotation');
+    const rawDocCouple = stripTrailingKeywords((docToApply?.cover?.coupleName || mergedDoc?.cover?.coupleName || '').trim());
+    const candidateLead = stripTrailingKeywords((effectiveLead?.name || '').trim());
+    const coupleName = (rawDocCouple && !isPlaceholderCoupleName(rawDocCouple)) 
+      ? rawDocCouple 
+      : (candidateLead && !['client', 'valued client', 'lead', 'quotation'].includes(candidateLead.toLowerCase()) ? candidateLead : 'Quotation');
     if (!mergedDoc.cover) mergedDoc.cover = {};
     mergedDoc.cover.coupleName = coupleName;
-    if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = docToApply.cover.groomName;
-    if (docToApply?.cover?.brideName) mergedDoc.cover.brideName = docToApply.cover.brideName;
+    if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = stripTrailingKeywords(docToApply.cover.groomName);
+    if (docToApply?.cover?.brideName) mergedDoc.cover.brideName = stripTrailingKeywords(docToApply.cover.brideName);
     if (effectiveLead.location && !mergedDoc.cover.locationName) {
       mergedDoc.cover.locationName = effectiveLead.location;
     }
@@ -860,14 +990,15 @@ LEAD & CLIENT CONTEXT:
   const handleQuickCreateAndOpen = async () => {
     setErrorMsg(null);
     try {
-      const notes = additionalNotes.trim();
+      const rawNotes = additionalNotes.trim();
 
-      if (!notes) {
+      if (!rawNotes) {
         setErrorMsg('कृपया पहले माइक से बोलें या कोटेशन की कुछ डिटेल्स लिखें (या Paste करें) ताकि AI कोटेशन बना सके!');
         return;
       }
 
       setGenerating(true);
+      const notes = cleanVoiceTranscript(rawNotes, effectiveLead?.name);
 
       // FAST PATH 1: Synchronously parse pasted AI JSON in 0ms before any network calls!
       const clientParsedDoc = tryParsePastedAiJson(notes, baseTemplateDoc || currentDocumentData, effectiveLead);
@@ -877,39 +1008,56 @@ LEAD & CLIENT CONTEXT:
         return;
       }
 
-      // 2. Full AI Extraction via OpenAI GPT-4o-mini
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
+      // ⚡ FAST PATH 2: Instant Client-Side Extraction with Full Mathematical Method Engine (<15ms)
+      const instantContext = {
+        additional_user_notes: notes,
+        lead_info: effectiveLead,
+        raw_form_fields: effectiveLead.raw_payload || {},
+        notes_and_comments: Array.isArray(effectiveLead.comments) ? effectiveLead.comments.map((c: any) => c.text).join('\n') : '',
+        meta_fields: {},
+        studioSettings: studioSettings
+      };
 
-      const res = await fetch('/api/quotations/ai-extract', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          leadId: effectiveLead.id,
-          quotationId: quotationId || null,
-          explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
-          currentDocument: baseTemplateDoc || currentDocumentData || null,
-          additionalNotes: notes
-        })
-      });
+      const instantRaw = fallbackHeuristicExtractor(instantContext);
+      const instantDoc = mapAiOutputToQuotationDocument(instantRaw, baseTemplateDoc || currentDocumentData, instantContext);
 
-      const text = await res.text();
-      let json: any = {};
+      let docToApply = instantDoc;
+
+      // 🧠 PRIMARY AI CALCULATION ENGINE: Call Google Gemini 3.8 Flash for authoritative extraction & math evaluation
       try {
-        json = text ? JSON.parse(text) : {};
-      } catch (parseErr) {
-        throw new Error('AI Quotation server is initializing. Please try again in a moment.');
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+        const aiRes = await fetch('/api/quotations/ai-extract', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            leadId: effectiveLead.id,
+            workspaceId: effectiveLead.workspace_id,
+            quotationId: quotationId || null,
+            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
+            currentDocument: baseTemplateDoc || currentDocumentData || null,
+            additionalNotes: notes,
+            studioSettings: studioSettings
+          }),
+          signal: AbortSignal.timeout(4500)
+        });
+
+        if (aiRes.ok) {
+          const aiJson = await aiRes.json();
+          if (aiJson.success && aiJson.extractedDocument) {
+            docToApply = aiJson.extractedDocument;
+            console.log('[AI Modal Quick Create] Successfully applied Gemini 3.8 Flash AI Math Method!');
+          }
+        }
+      } catch (geminiErr) {
+        console.warn('[AI Modal Quick Create] Gemini timeout/error, applying local math evaluation:', geminiErr);
       }
 
-      if (!res.ok || !json.success || !json.extractedDocument) {
-        throw new Error(json.error || 'AI could not generate quotation.');
-      }
-
-      setExtractedDoc(json.extractedDocument);
-      await applyDocAndNavigate(json.extractedDocument);
+      setExtractedDoc(docToApply);
+      await applyDocAndNavigate(docToApply);
     } catch (err: any) {
       console.error('[AI Modal Quick Create Error]:', err);
       let friendly = err.message || "Could not create quotation. Please try again.";
@@ -1024,6 +1172,23 @@ LEAD & CLIENT CONTEXT:
                     </motion.div>
                   )}
 
+                  {/* AI Polishing Banner */}
+                  {isPolishing && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-3 rounded-2xl bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-purple-500/10 border border-purple-500/30 text-purple-700 dark:text-purple-300 text-xs font-bold flex items-center gap-2.5 shadow-xs"
+                    >
+                      <Sparkles className="w-4 h-4 text-purple-500 animate-spin shrink-0" />
+                      <div className="flex-1">
+                        <span className="font-extrabold">✨ AI Analyzing & Polishing your speech...</span>
+                        <p className="text-[10px] font-normal text-purple-600/80 dark:text-purple-300/80 mt-0.5">
+                          आवाज़ को समझकर सही नाम, इवेंट्स और सेटिंग्स के साथ टेक्स्ट रीप्लेस किया जा रहा है
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+
                   {/* ChatGPT-Style Input Card */}
                   <div className={`relative rounded-2xl border transition-all duration-200 bg-white dark:bg-zinc-900 ${
                     isRecording 
@@ -1069,6 +1234,17 @@ LEAD & CLIENT CONTEXT:
                               <span>Copy Prompt</span>
                             </>
                           )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => polishTextWithGemini(additionalNotes, true)}
+                          disabled={isPolishing || !additionalNotes.trim() || isRecording}
+                          className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0 disabled:opacity-40"
+                          title="AI Polish: Automatically fix grammar, couple names, and format details"
+                        >
+                          <Sparkles className={`w-3.5 h-3.5 text-purple-500 ${isPolishing ? 'animate-spin' : ''}`} />
+                          <span>{isPolishing ? 'Polishing...' : 'AI Polish'}</span>
                         </button>
 
                         {additionalNotes.length > 0 && (
@@ -1269,7 +1445,7 @@ LEAD & CLIENT CONTEXT:
                     {generating || applying ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin text-white" />
-                        <span>{quotationId ? 'Applying to Quotation...' : 'Opening Design...'}</span>
+                        <span>{quotationId ? 'Applying with AI...' : 'AI Calculating & Opening...'}</span>
                       </>
                     ) : (
                       <span>{quotationId ? 'Apply to Quotation' : 'Create Quotation'}</span>

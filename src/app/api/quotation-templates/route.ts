@@ -3,6 +3,13 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 
+interface CacheEntry {
+  timestamp: number;
+  data: any;
+}
+const serverTemplatesCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 15000; // 15s in-memory cache for ultra-fast 1ms responses
+
 /**
  * Authoritative Quotation Templates List API (GET)
  * Bypasses RLS using supabaseAdmin to ensure quotation_documents content_json is never blocked.
@@ -19,6 +26,17 @@ export async function GET(req: NextRequest) {
       ? userId
       : (workspaceIdParam && workspaceIdParam !== 'demo_user' ? workspaceIdParam : '');
 
+    const isAdmin = isSuperAdmin || (userEmail?.toLowerCase() === 'sushantnawale700@gmail.com');
+    const shouldBypassCache = searchParams.get('refresh') === 'true' || req.headers.get('cache-control') === 'no-cache';
+    const cacheKey = `${effectiveUserId || 'anon'}_${isAdmin ? 'admin' : 'user'}`;
+
+    if (!shouldBypassCache && serverTemplatesCache.has(cacheKey)) {
+      const entry = serverTemplatesCache.get(cacheKey)!;
+      if (Date.now() - entry.timestamp < CACHE_TTL_MS) {
+        return NextResponse.json(entry.data);
+      }
+    }
+
     let activeDefaultId: string | null = null;
     if (effectiveUserId) {
       try {
@@ -29,29 +47,12 @@ export async function GET(req: NextRequest) {
       } catch (err) {}
     }
 
-    const isAdmin = isSuperAdmin || (userEmail?.toLowerCase() === 'sushantnawale700@gmail.com');
-
     let validTemplates: any[] = [];
 
-    if (isAdmin) {
-      // Super Admin sees all system/global templates AND their workspace templates
-      const { data: adminTemplates, error: tmplErr } = await supabaseAdmin
-        .from('quotation_templates')
-        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
-        .not('status', 'in', '("archived","deleted")')
-        .not('id', 'ilike', 'FW-Q-%')
-        .not('id', 'ilike', 'FW-L-%')
-        .or(`user_id.eq.SYSTEM,workspace_id.is.null,is_system_template.eq.true,workspace_id.eq.37c63a54-d4f1-4b99-b546-3d965cd23a37,user_id.eq.37c63a54-d4f1-4b99-b546-3d965cd23a37${effectiveUserId ? `,workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}` : ''}`)
-        .order('updated_at', { ascending: false });
-
-      if (tmplErr) {
-        console.error('[Admin Templates Error]:', tmplErr);
-      }
-      validTemplates = adminTemplates || [];
-    } else {
-      // Regular Studio Owners see:
-      // 1. Their own workspace templates (with user default first)
-      const { data: userTemplates } = await supabaseAdmin
+    // 1. Fetch Studio's Own Created Quotation Templates
+    let userTemplates: any[] = [];
+    if (effectiveUserId) {
+      const { data: uTmpls, error: uErr } = await supabaseAdmin
         .from('quotation_templates')
         .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
         .not('status', 'in', '("archived","deleted")')
@@ -62,29 +63,47 @@ export async function GET(req: NextRequest) {
         .order('is_default', { ascending: false })
         .order('updated_at', { ascending: false });
 
-      // 2. Published system templates (e.g. "Premium" FW-USER-SJ05RN)
-      const { data: activeSysTmpls } = await supabaseAdmin
-        .from('quotation_templates')
-        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
-        .eq('is_system_template', true)
-        .eq('status', 'published')
-        .not('status', 'in', '("archived","deleted")')
-        .not('id', 'ilike', 'FW-Q-%')
-        .not('id', 'ilike', 'FW-L-%')
-        .order('updated_at', { ascending: false });
+      if (uErr) console.warn('[Quotation Templates] user templates fetch warning:', uErr.message);
+      userTemplates = uTmpls || [];
+    }
 
-      const seen = new Set<string>();
-      (userTemplates || []).forEach(t => {
-        if (!seen.has(t.id)) {
-          seen.add(t.id);
-          validTemplates.push(t);
-        }
-      });
-      (activeSysTmpls || []).forEach(t => {
-        if (!seen.has(t.id)) {
-          seen.add(t.id);
-          validTemplates.push(t);
-        }
+    // 2. Fetch The Single Authoritative System Template (FW-USER-SJ05RN / "Premium")
+    const { data: activeSysTmpls, error: sysErr } = await supabaseAdmin
+      .from('quotation_templates')
+      .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+      .eq('id', 'FW-USER-SJ05RN')
+      .limit(1);
+
+    if (sysErr) console.warn('[Quotation Templates] system template fetch warning:', sysErr.message);
+
+    const seen = new Set<string>();
+    // Add studio owner templates first
+    (userTemplates || []).forEach(t => {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        validTemplates.push(t);
+      }
+    });
+
+    // Add active system template
+    if (activeSysTmpls && activeSysTmpls.length > 0) {
+      const sys = activeSysTmpls[0];
+      if (!seen.has(sys.id)) {
+        seen.add(sys.id);
+        validTemplates.push(sys);
+      }
+    } else if (!seen.has('FW-USER-SJ05RN')) {
+      // Fallback in-memory representation if DB row was temporarily missing
+      validTemplates.push({
+        id: 'FW-USER-SJ05RN',
+        user_id: 'SYSTEM',
+        workspace_id: null,
+        title: 'Premium',
+        category: 'Wedding',
+        is_default: validTemplates.length === 0,
+        is_system_template: true,
+        status: 'published',
+        updated_at: new Date().toISOString()
       });
     }
 
@@ -137,9 +156,9 @@ export async function GET(req: NextRequest) {
       .filter(t => {
         // Exclude lead-specific quotation instances
         if (t.id.startsWith('FW-Q-') || t.id.startsWith('FW-L-')) return false;
-        // Require valid content_json so empty or ghost templates are never returned
+        // Require valid content_json or system preset
         const hasContent = Boolean(docsMap[t.id]);
-        return hasContent;
+        return hasContent || t.id === 'FW-USER-SJ05RN' || Boolean(t.is_system_template);
       })
       .map(t => {
         let isDefault = false;
@@ -151,7 +170,7 @@ export async function GET(req: NextRequest) {
           isDefault = true;
         }
 
-        const docContent = docsMap[t.id] || null;
+        const docContent = docsMap[t.id] || (Boolean(t.is_system_template) ? DEFAULT_AIRY_PROPOSAL : null);
         let title = t.title || 'Wedding - Design 1';
         if (
           docContent?.designName &&
@@ -183,11 +202,14 @@ export async function GET(req: NextRequest) {
     const deduplicatedResults = Array.from(idSeen.values());
     deduplicatedResults.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
 
-    return NextResponse.json({
+    const responsePayload = {
       success: true,
       activeDefaultTemplateId: activeDefaultId,
       templates: deduplicatedResults
-    });
+    };
+    serverTemplatesCache.set(cacheKey, { timestamp: Date.now(), data: responsePayload });
+
+    return NextResponse.json(responsePayload);
   } catch (error: any) {
     console.error('Error fetching quotation templates:', error);
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });

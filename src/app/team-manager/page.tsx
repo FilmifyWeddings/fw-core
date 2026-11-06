@@ -589,10 +589,7 @@ export default function TeamManagerPage() {
           *,
           fw_sub_events (
             *,
-            fw_assignments (
-              *,
-              fw_team_members (*)
-            )
+            fw_assignments (*)
           )
         `)
         .neq('status', 'trash')
@@ -648,7 +645,15 @@ export default function TeamManagerPage() {
       ]);
 
       if (membersErr) console.warn('[TeamManager] fw_team_members error:', membersErr.message);
-      if (projectsErr) console.warn('[TeamManager] fw_projects error:', projectsErr.message);
+      if (projectsErr) {
+        console.warn('[TeamManager] fw_projects error:', projectsErr.message);
+        if (!projectsData || projectsData.length === 0) {
+          const fallbackCached = (uid ? memCachedTMProjectsMap[uid] : null) || memCachedTMProjects;
+          if (fallbackCached && fallbackCached.length > 0) {
+            projectsData = fallbackCached;
+          }
+        }
+      }
       if (clientsErr) console.warn('[TeamManager] workspace_clients fetch warning for PM hydration:', clientsErr.message);
 
       // Populate workspace_members
@@ -857,6 +862,9 @@ export default function TeamManagerPage() {
         } else if (wsLoading && !targetWsId) {
           // Context is still resolving workspace list from server; wait so we never fetch with personal uid!
           return;
+        } else {
+          // Direct fallback if studioParam is a valid studio id
+          targetWsId = studioParam;
         }
       }
 

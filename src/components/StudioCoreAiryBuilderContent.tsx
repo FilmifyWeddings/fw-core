@@ -89,7 +89,7 @@ export interface StudioCoreAiryBuilderContentProps {
 }
 
 export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioCoreAiryBuilderContentProps = {}) {
-  const [isDataReady, setIsDataReady] = useState(false);
+  const [isDataReady, setIsDataReady] = useState(true);
   const router = useRouter();
   const searchParams = useSearchParams();
   const params = useParams();
@@ -97,14 +97,36 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   
-  const [data, rawSetData] = useState<any>(DEFAULT_AIRY_PROPOSAL);
+  const [data, rawSetData] = useState<any>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const routeId = params?.id ? String(params.id) : 'FW-USER-SJ05RN';
+        const fromSession = sessionStorage.getItem(`current_quotation_doc_${routeId}`) || sessionStorage.getItem('current_active_quotation_doc');
+        if (fromSession) {
+          const parsed = JSON.parse(fromSession);
+          const doc = parsed.document || parsed;
+          if (doc && typeof doc === 'object' && (doc.cover || doc.theme || doc.look || doc.designName)) {
+            return normalizeQuotationData(doc);
+          }
+        }
+        const fromLocal = localStorage.getItem(`wg_proposal_draft_${routeId}`);
+        if (fromLocal) {
+          const parsed = JSON.parse(fromLocal);
+          if (parsed && typeof parsed === 'object' && (parsed.cover || parsed.theme || parsed.look || parsed.designName)) {
+            return normalizeQuotationData(parsed);
+          }
+        }
+      } catch (_) {}
+    }
+    return DEFAULT_AIRY_PROPOSAL;
+  });
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Auto-saved to cloud');
   const isInitialLoadedRef = useRef<boolean>(false);
   const currentVersionRef = useRef<number>(1);
-  const activeRouteIdRef = useRef<string>(params?.id ? String(params.id) : 'FW-2WT85Y0');
+  const activeRouteIdRef = useRef<string>(params?.id ? String(params.id) : 'FW-USER-SJ05RN');
   const clientTabIdRef = useRef<string>(`tab_${Math.random().toString(36).substring(2, 9)}`);
   const realtimeChannelRef = useRef<any>(null);
   const isRemoteUpdateRef = useRef<boolean>(false);
@@ -165,7 +187,7 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
 
         setUserId(currentUserId || 'demo_user');
 
-        const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
+        const routeId = params?.id ? String(params.id) : 'FW-USER-SJ05RN';
         activeRouteIdRef.current = routeId;
 
         const isAdminMode = mode === 'admin-system-template';
@@ -283,7 +305,7 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
 
       const { data: { session } } = await supabase.auth.getSession();
       const userAccessToken = session?.access_token;
-      const routeId = activeRouteIdRef.current || (params?.id ? String(params.id) : 'FW-2WT85Y0');
+      const routeId = activeRouteIdRef.current || (params?.id ? String(params.id) : 'FW-USER-SJ05RN');
 
       const isAdminMode = mode === 'admin-system-template';
       const saveEndpoint = isAdminMode ? `/api/admin/quotation-templates/${routeId}` : `/api/templates/${routeId}`;
@@ -315,6 +337,14 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
           window.history.replaceState(null, '', `/workspace/quotations/builder/templet/${resJson.newTemplateId}`);
         }
         cacheDocumentLocal(activeRouteIdRef.current, snapshotData, currentVersionRef.current);
+        if (typeof window !== 'undefined') {
+          try {
+            sessionStorage.setItem(`current_quotation_doc_${activeRouteIdRef.current}`, JSON.stringify(snapshotData));
+            sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: activeRouteIdRef.current, document: snapshotData }));
+            localStorage.setItem(`wg_proposal_draft_${activeRouteIdRef.current}`, JSON.stringify(snapshotData));
+            window.dispatchEvent(new CustomEvent('quotation_template_updated', { detail: { id: activeRouteIdRef.current } }));
+          } catch (_) {}
+        }
       }
 
       if (isAdminMode) {
