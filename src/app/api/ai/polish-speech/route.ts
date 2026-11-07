@@ -5,11 +5,16 @@ import { supabaseAdmin } from '@/lib/supabase';
 export const maxDuration = 30; // 30 seconds server execution timeout
 
 /**
- * High-Speed AI Voice Polish & Intent Replacement Route
- * Uses Google Gemini 3.8 Flash (Tier 1 low-latency) with fallback to instant rule-based cleaner.
- * Analyzes raw spoken text from microphone, understands user true intent,
+ * High-Speed AI Voice Polish & Intent Replacement Route (ChatGPT Manager)
+ * Primary Engine: OpenAI GPT-4o-mini (Tier 1 Ultra-Low-Latency, Superior Multilingual Hindi/Hinglish/Marathi & Math)
+ * Secondary Engine: Google Gemini (gemini-flash-latest)
+ * Tertiary Fallback: Instant Rule-Based Cleaner
+ *
+ * Analyzes raw spoken audio transcript from microphone, understands user true intent,
  * fixes speech-to-text recognition errors, stutters, and phonetic slips,
- * and formats couple names, ceremonies, crew, budget, and deliverables cleanly.
+ * applies Studio AI Training rules and Voice Trigger Shortcuts,
+ * performs mathematical calculations, and formats couple names, ceremonies, crew, budget,
+ * and deliverables cleanly for instant text-area replacement.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -44,48 +49,106 @@ export async function POST(req: NextRequest) {
       : [];
     const customInstructions = studioSettings?.aiRules?.customInstructions || '';
     const shortcutsContext = shortcuts.length > 0 
-      ? shortcuts.map((s: any) => `- Trigger: "${s.trigger}" ${s.description ? `(${s.description})` : ''}`).join('\n')
+      ? shortcuts.map((s: any) => `- Trigger: "${s.trigger}" ${s.description ? `(${s.description})` : ''} -> Crew: ${JSON.stringify(s.mappedCrew || [])}, Deliverables: ${JSON.stringify(s.mappedDeliverables || [])}, Price: ${s.mappedPrice || 'N/A'}`).join('\n')
       : 'None';
 
     // 2. Client-side heuristic baseline (instant fallback)
     const baseCleaned = cleanVoiceTranscript(rawText, leadName);
 
-    // 3. Google Gemini 3.8 Flash Engine
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey) {
-      const systemInstruction = `You are StudioCore AI Voice Intelligence for a professional wedding photography studio.
-The user just spoke voice notes into their microphone. Analyze the raw speech transcript, understand the user's true intent, fix any speech-to-text transcription errors, phonetic slips, stutters, and grammatical mistakes (e.g. "कैंडिडेट" -> "Candid Photographer", "ऑल डिलीवरी बस" -> "All Deliverables Add", "डेढ़ लाख" -> "₹1,50,000", numbers to currency, Hindi/Marathi dates).
+    const systemInstruction = `You are StudioCore ChatGPT Quotation Manager for a premier wedding photography and cinematography studio.
+The studio owner or sales manager just spoke voice notes into their microphone in Hindi, Hinglish, Marathi, or English.
+Analyze the raw speech transcript, understand the user's true intent, fix any speech-to-text transcription errors, phonetic slips, stutters, and grammatical mistakes (e.g. "कैंडिडेट" / "कैंडिड" -> "Candid Photographer", "सिनेमा" -> "Cinematographer", "ड्रोन" -> "Drone Pilot", "ट्रैडिशनल" -> "Traditional Videographer/Photographer", "ऑल डिलीवरी बस" -> "All Deliverables Add", "डेढ़ लाख" -> "₹1,50,000", numbers to currency, Hindi/Marathi dates).
 
-STUDIO SHORTCUTS TO RECOGNIZE & ACCURATELY PRESERVE:
+STUDIO AI TRAINING SHORTCUTS TO RECOGNIZE & ACCURATELY EXPAND:
 ${shortcutsContext}
-${customInstructions ? `STUDIO TRAINING RULES:\n${customInstructions}` : ''}
+
+${customInstructions ? `STUDIO AI TRAINING CUSTOM RULES & TONE:\n${customInstructions}` : ''}
 
 CRITICAL MANDATES:
-1. Understand the real intent of what the user is trying to say.
-2. INTELLIGENT MATHEMATICAL PRICING & METHOD CALCULATION (LIKE GEMINI & CHATGPT):
+1. ACCURATE COUPLE NAME DETECTION:
+   - Identify the Groom and Bride names accurately from the voice transcript (e.g. "राहुल और नेहा" -> "Rahul & Neha", "रोहित और अंजलि" -> "Rohit & Anjali").
+   - If user explicitly mentions a couple name, format it clearly as: "Couple: [Groom] & [Bride]".
+   ${leadName ? `- Note: The CRM lead contact name is "${leadName}", but if the spoken notes mention a different groom/bride or specific couple name, prioritize the SPOKEN couple name!` : ''}
+
+2. INTELLIGENT MATHEMATICAL PRICING & METHOD CALCULATION (CHATGPT MANAGER PRECISION):
    - When the user mentions pricing, per-day rates, multi-day shoots, discounts, or payment milestones, YOU MUST EVALUATE THE MATH METHOD ACCURATELY:
      * Multiplications: e.g. "35000 per day for 2 days" -> Calculate ₹70,000.
      * Additions: e.g. "Haldi 25k, Sangeet 35k, Wedding 70k" -> Calculate ₹1,30,000 total.
      * Denominations: "2.5 lakh" / "ढाई लाख" = ₹2,50,000; "डेढ़ लाख" = ₹1,50,000; "25k" = ₹25,000.
-     * Discounts: e.g. "₹25,000 discount" or "10% discount on ₹2,000,000" -> ₹20,000 discount.
+     * Discounts: e.g. "₹25,000 discount" -> Net Total = Base Price - Discount.
      * Net Total: Calculate Net Investment = Base Price - Discount + Travel/Extras.
-     * Payment Terms Milestones: If percentages are given (e.g. 30% advance, 50% event day, 20% delivery), CALCULATE the exact rupee amount for EACH milestone based on Net Investment!
-3. Structure the notes cleanly:
-   - Couple: [Groom] & [Bride] (e.g. "Couple: Rahul & Pooja")
-   - Dates & Functions: e.g. "18 - Nov - 2026: Haldi + Sangeet", "19 - Nov - 2026: Wedding Ceremony"
-   - Crew requirements: e.g. "2 Candid Photographers, 2 Cinematographers, 1 Drone Pilot"
-   - Pricing Method & Breakdown:
-     * Base Package: ₹... (e.g. ₹35,000/day x 2 days = ₹70,000 + Album ₹20,000 = ₹90,000)
-     * Discount: ₹...
-     * Travel / Extra Charges: ₹...
-     * Net Total Investment: ₹...
-     * Payment Terms: 30% Advance Token (₹...), 50% On Event Day (₹...), 20% On Final Delivery (₹...)
-   - Deliverables: e.g. "All Deliverables Add"
-4. Return ONLY the polished, structured replacement text that will directly replace the user's text in the text box.
-5. Do NOT output conversational filler, introductory remarks (like "Here is the polished text:"), or markdown code blocks (\`\`\`). Return ONLY the replacement text.`;
+     * Payment Terms Milestones: If percentages are mentioned (e.g. 30% advance, 50% event day, 20% delivery), CALCULATE the exact rupee amount for EACH milestone based on Net Investment!
 
+3. STRUCTURE THE NOTES CLEANLY FOR 1-CLICK QUOTATION CONVERSION:
+   Couple: [Groom] & [Bride]
+   Dates & Functions:
+   - [DD - Mon - YYYY] [Function Name]: [Venue/City], [Time/Slot]
+   Crew Requirements:
+   - [Count] [Role Name] (e.g. 2 Candid Photographers, 2 Cinematographers, 1 Drone Pilot)
+   Deliverables:
+   - [Deliverable 1]
+   - [Deliverable 2]
+   Pricing & Math Breakdown:
+   - Base Package: ₹...
+   - Discount: ₹...
+   - Net Total Investment: ₹...
+   Payment Terms:
+   - [X]% Booking Token: ₹...
+   - [Y]% On Event Day: ₹...
+   - [Z]% On Final Delivery: ₹...
+   Special Notes:
+   - [Any special instructions, terms, or notes mentioned]
+
+4. RETURN ONLY the polished, structured replacement text that will directly replace the user's text in the text box.
+5. Do NOT output conversational filler (e.g. "Here is your polished quotation:"), explanations, or markdown code blocks (\`\`\`). Output plain text only.`;
+
+    // 3. PRIMARY ENGINE: OpenAI GPT-4o-mini (Super fast, ~400ms, best multilingual intent extraction)
+    const openAiKey = process.env.OPENAI_API_KEY;
+    if (openAiKey) {
       try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`;
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openAiKey}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemInstruction },
+              { role: 'user', content: `Raw Spoken Audio Transcript:\n"${rawText}"\n\nCleaned & Formatted ChatGPT Specification:` }
+            ],
+            temperature: 0.1,
+            max_tokens: 800
+          }),
+          signal: AbortSignal.timeout(8000)
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          const polishedText = json.choices?.[0]?.message?.content?.trim();
+          if (polishedText && polishedText.length > 5) {
+            const cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
+            return NextResponse.json({
+              success: true,
+              polishedText: cleanResult,
+              engine: 'chatgpt-gpt-4o-mini'
+            });
+          }
+        } else {
+          const errText = await res.text().catch(() => '');
+          console.warn('[Polish Speech] OpenAI returned error:', res.status, errText.slice(0, 150));
+        }
+      } catch (openAiErr: any) {
+        console.warn('[Polish Speech] OpenAI call exception:', openAiErr?.message || openAiErr);
+      }
+    }
+
+    // 4. SECONDARY ENGINE: Google Gemini (gemini-flash-latest)
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`;
         const res = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -101,34 +164,30 @@ CRITICAL MANDATES:
             ],
             generationConfig: {
               temperature: 0.1,
-              maxOutputTokens: 600
+              maxOutputTokens: 800
             }
           }),
-          signal: AbortSignal.timeout(6000) // 6s fast timeout
+          signal: AbortSignal.timeout(6000)
         });
 
         if (res.ok) {
           const geminiJson = await res.json();
           const polishedText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
           if (polishedText && polishedText.length > 5) {
-            // Strip any wrapping quotes or backticks if present
             const cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
             return NextResponse.json({
               success: true,
               polishedText: cleanResult,
-              engine: 'gemini-3.8-flash'
+              engine: 'gemini-flash-latest'
             });
           }
-        } else {
-          const errText = await res.text().catch(() => '');
-          console.warn('[Polish Speech] Gemini 3.8 Flash returned error:', res.status, errText.slice(0, 150));
         }
       } catch (geminiErr: any) {
         console.warn('[Polish Speech] Gemini call exception:', geminiErr?.message || geminiErr);
       }
     }
 
-    // 4. Graceful Fallback: Return rule-based cleaned transcript
+    // 5. Graceful Fallback: Return rule-based cleaned transcript
     return NextResponse.json({
       success: true,
       polishedText: baseCleaned,

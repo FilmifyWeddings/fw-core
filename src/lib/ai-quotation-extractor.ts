@@ -483,6 +483,14 @@ export function fallbackHeuristicExtractor(contextData: any) {
     }
   }
 
+  // Check for "X और Y का कोटेशन / शादी" pattern
+  if (!leadName) {
+    const hindiKaMatch = userNotes.match(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])([A-Za-z\u0900-\u097F]{2,20}\s*(?:&|weds|and|\+|तथा|और)\s*[A-Za-z\u0900-\u097F]{2,20})\s*(?:का|की|के)\s*(?:कोटेशन|वेडिंग|शादी|इवेंट)/i);
+    if (hindiKaMatch && hindiKaMatch[1]?.trim()) {
+      leadName = hindiKaMatch[1].trim();
+    }
+  }
+
   // Check for "Quotation for X & Y" or "quote for X & Y"
   if (!leadName) {
     const forMatch = userNotes.match(/(?:quotation\s+for|quote\s+for|proposal\s+for|for)\s+([A-Za-z\u0900-\u097F\s&]+?)(?=\s+(?:wedding|reception|event|pre-wedding|haldi|sangeet|on|date|budget|\d)|[,\n\r.]|$)/i);

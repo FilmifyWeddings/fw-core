@@ -734,7 +734,7 @@ LEAD & CLIENT CONTEXT:
             additionalNotes: notes,
             studioSettings: studioSettings
           }),
-          signal: AbortSignal.timeout(4500)
+          signal: AbortSignal.timeout(15000)
         });
 
         if (aiRes.ok) {
@@ -742,11 +742,11 @@ LEAD & CLIENT CONTEXT:
           if (aiJson.success && aiJson.extractedDocument) {
             finalDoc = aiJson.extractedDocument;
             if (aiJson.summary) finalSummary = aiJson.summary;
-            console.log('[AI Modal] Successfully extracted via Gemini 3.8 Flash AI Math Method!');
+            console.log('[AI Modal] Successfully extracted via ChatGPT/AI Math Engine!');
           }
         }
       } catch (geminiErr) {
-        console.warn('[AI Modal] Gemini call fast timeout or offline, using local math engine:', geminiErr);
+        console.warn('[AI Modal] AI call fast timeout or offline, using local math engine:', geminiErr);
       }
 
       setExtractedDoc(finalDoc);
@@ -776,11 +776,21 @@ LEAD & CLIENT CONTEXT:
     // ⚡ INSTANT 0ms OPTIMISTIC BUILDER APPLY (Inside Builder):
     if (quotationId && onApplied) {
       const mergedDoc = normalizeQuotationData(docToApply, currentDocumentData || baseTemplateDoc);
-      const rawDocCouple = stripTrailingKeywords((docToApply?.cover?.coupleName || mergedDoc?.cover?.coupleName || '').trim());
+      const rawDocCouple = stripTrailingKeywords((docToApply?.cover?.coupleName || '').trim());
+      const rawGroom = stripTrailingKeywords((docToApply?.cover?.groomName || '').trim());
+      const rawBride = stripTrailingKeywords((docToApply?.cover?.brideName || '').trim());
       const candidateLead = stripTrailingKeywords((effectiveLead?.name || '').trim());
-      const coupleName = (rawDocCouple && !isPlaceholderCoupleName(rawDocCouple)) 
-        ? rawDocCouple 
-        : (candidateLead && !['client', 'valued client', 'lead', 'quotation'].includes(candidateLead.toLowerCase()) ? candidateLead : 'Quotation');
+
+      let coupleName = '';
+      if (rawDocCouple && !isPlaceholderCoupleName(rawDocCouple)) {
+        coupleName = rawDocCouple;
+      } else if (rawGroom && rawBride && !isPlaceholderCoupleName(`${rawGroom} & ${rawBride}`)) {
+        coupleName = `${rawGroom} & ${rawBride}`;
+      } else if (candidateLead && !['client', 'valued client', 'lead', 'quotation', 'demo'].includes(candidateLead.toLowerCase())) {
+        coupleName = candidateLead;
+      } else {
+        coupleName = rawDocCouple || 'Groom & Bride';
+      }
       if (!mergedDoc.cover) mergedDoc.cover = {};
       mergedDoc.cover.coupleName = coupleName;
       if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = stripTrailingKeywords(docToApply.cover.groomName);
@@ -863,11 +873,21 @@ LEAD & CLIENT CONTEXT:
     mergedDoc.lead_id = lId;
     mergedDoc.lead_version = nextVersion;
 
-    const rawDocCouple = stripTrailingKeywords((docToApply?.cover?.coupleName || mergedDoc?.cover?.coupleName || '').trim());
+    const rawDocCouple = stripTrailingKeywords((docToApply?.cover?.coupleName || '').trim());
+    const rawGroom = stripTrailingKeywords((docToApply?.cover?.groomName || '').trim());
+    const rawBride = stripTrailingKeywords((docToApply?.cover?.brideName || '').trim());
     const candidateLead = stripTrailingKeywords((effectiveLead?.name || '').trim());
-    const coupleName = (rawDocCouple && !isPlaceholderCoupleName(rawDocCouple)) 
-      ? rawDocCouple 
-      : (candidateLead && !['client', 'valued client', 'lead', 'quotation'].includes(candidateLead.toLowerCase()) ? candidateLead : 'Quotation');
+
+    let coupleName = '';
+    if (rawDocCouple && !isPlaceholderCoupleName(rawDocCouple)) {
+      coupleName = rawDocCouple;
+    } else if (rawGroom && rawBride && !isPlaceholderCoupleName(`${rawGroom} & ${rawBride}`)) {
+      coupleName = `${rawGroom} & ${rawBride}`;
+    } else if (candidateLead && !['client', 'valued client', 'lead', 'quotation', 'demo'].includes(candidateLead.toLowerCase())) {
+      coupleName = candidateLead;
+    } else {
+      coupleName = rawDocCouple || 'Groom & Bride';
+    }
     if (!mergedDoc.cover) mergedDoc.cover = {};
     mergedDoc.cover.coupleName = coupleName;
     if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = stripTrailingKeywords(docToApply.cover.groomName);
@@ -1023,7 +1043,7 @@ LEAD & CLIENT CONTEXT:
 
       let docToApply = instantDoc;
 
-      // 🧠 PRIMARY AI CALCULATION ENGINE: Call Google Gemini 3.8 Flash for authoritative extraction & math evaluation
+      // 🧠 PRIMARY AI CALCULATION ENGINE: Call Authoritative AI Extraction & Math Evaluation
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token || '';
@@ -1042,18 +1062,18 @@ LEAD & CLIENT CONTEXT:
             additionalNotes: notes,
             studioSettings: studioSettings
           }),
-          signal: AbortSignal.timeout(4500)
+          signal: AbortSignal.timeout(15000)
         });
 
         if (aiRes.ok) {
           const aiJson = await aiRes.json();
           if (aiJson.success && aiJson.extractedDocument) {
             docToApply = aiJson.extractedDocument;
-            console.log('[AI Modal Quick Create] Successfully applied Gemini 3.8 Flash AI Math Method!');
+            console.log('[AI Modal Quick Create] Successfully applied ChatGPT/AI Math Engine!');
           }
         }
       } catch (geminiErr) {
-        console.warn('[AI Modal Quick Create] Gemini timeout/error, applying local math evaluation:', geminiErr);
+        console.warn('[AI Modal Quick Create] AI timeout/error, applying local math evaluation:', geminiErr);
       }
 
       setExtractedDoc(docToApply);
@@ -1181,9 +1201,9 @@ LEAD & CLIENT CONTEXT:
                     >
                       <Sparkles className="w-4 h-4 text-purple-500 animate-spin shrink-0" />
                       <div className="flex-1">
-                        <span className="font-extrabold">✨ AI Analyzing & Polishing your speech...</span>
+                        <span className="font-extrabold">✨ ChatGPT Manager Analyzing & Polishing your speech...</span>
                         <p className="text-[10px] font-normal text-purple-600/80 dark:text-purple-300/80 mt-0.5">
-                          आवाज़ को समझकर सही नाम, इवेंट्स और सेटिंग्स के साथ टेक्स्ट रीप्लेस किया जा रहा है
+                          आवाज़, स्टूडियो AI ट्रेनिंग और मैथ्स को समझकर कपल, इवेंट्स और प्राइसिंग को तुरंत रीप्लेस किया जा रहा है
                         </p>
                       </div>
                     </motion.div>
@@ -1241,10 +1261,10 @@ LEAD & CLIENT CONTEXT:
                           onClick={() => polishTextWithGemini(additionalNotes, true)}
                           disabled={isPolishing || !additionalNotes.trim() || isRecording}
                           className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0 disabled:opacity-40"
-                          title="AI Polish: Automatically fix grammar, couple names, and format details"
+                          title="ChatGPT Manager Polish: Automatically analyze intent, fix speech slips, format couple & pricing math"
                         >
                           <Sparkles className={`w-3.5 h-3.5 text-purple-500 ${isPolishing ? 'animate-spin' : ''}`} />
-                          <span>{isPolishing ? 'Polishing...' : 'AI Polish'}</span>
+                          <span>{isPolishing ? 'Polishing...' : 'ChatGPT Polish'}</span>
                         </button>
 
                         {additionalNotes.length > 0 && (
