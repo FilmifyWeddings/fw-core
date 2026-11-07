@@ -645,12 +645,30 @@ export default function TeamManagerPage() {
       ]);
 
       if (membersErr) console.warn('[TeamManager] fw_team_members error:', membersErr.message);
-      if (projectsErr) {
-        console.warn('[TeamManager] fw_projects error:', projectsErr.message);
-        if (!projectsData || projectsData.length === 0) {
+      let resolvedProjects = projectsData;
+      if (projectsErr || !resolvedProjects || resolvedProjects.length === 0) {
+        if (projectsErr) console.warn('[TeamManager] fw_projects client query error:', projectsErr.message);
+        try {
+          const { data: { session: projSession } } = await supabase.auth.getSession();
+          const pToken = projSession?.access_token;
+          const apiRes = await fetch(`/api/workspace/projects?workspace_id=${uid}`, {
+            headers: pToken ? { Authorization: `Bearer ${pToken}` } : {},
+          });
+          if (apiRes.ok) {
+            const apiJson = await apiRes.json();
+            if (apiJson.success && Array.isArray(apiJson.projects) && apiJson.projects.length > 0) {
+              resolvedProjects = apiJson.projects;
+              console.log('[TeamManager] Resilient server API loaded projects:', resolvedProjects.length);
+            }
+          }
+        } catch (apiErr) {
+          console.warn('[TeamManager] Server projects API fallback notice:', apiErr);
+        }
+
+        if (!resolvedProjects || resolvedProjects.length === 0) {
           const fallbackCached = (uid ? memCachedTMProjectsMap[uid] : null) || memCachedTMProjects;
           if (fallbackCached && fallbackCached.length > 0) {
-            projectsData = fallbackCached;
+            resolvedProjects = fallbackCached;
           }
         }
       }
@@ -707,7 +725,7 @@ export default function TeamManagerPage() {
 
       const clientsForHydration: any[] = clientsData || [];
 
-      let projectsDataToSet: any[] = (projectsData || []).map((proj: any) => {
+      let projectsDataToSet: any[] = (resolvedProjects || []).map((proj: any) => {
         let pmId = proj.project_manager_id || null;
         let pmName = proj.project_manager_name || null;
         let matchedClientId = proj.client_id || null;
@@ -771,8 +789,12 @@ export default function TeamManagerPage() {
         };
       });
 
-      if (!isOwner && isAssignedCardOnly) {
-        const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session: authSessionCheck } } = await supabase.auth.getSession();
+      const currentAuthUid = authSessionCheck?.user?.id;
+      const isActualOwnerOfTarget = isOwner || (Boolean(currentAuthUid) && currentAuthUid === uid);
+
+      if (!isActualOwnerOfTarget && isAssignedCardOnly) {
+        const session = authSessionCheck;
         const uEmail = (session?.user?.email || '').trim().toLowerCase();
         const uName = (session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || '').trim().toLowerCase();
         const uId = session?.user?.id;

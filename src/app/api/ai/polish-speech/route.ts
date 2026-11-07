@@ -96,7 +96,7 @@ CRITICAL MANDATES (GEMINI / ANTIGRAVITY FINISHING FIDELITY):
     // 3. PRIMARY ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash Priority)
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
-      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash'];
+      const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.5-flash'];
       for (const model of candidateModels) {
         try {
           const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;

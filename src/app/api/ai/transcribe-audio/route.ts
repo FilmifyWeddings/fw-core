@@ -54,8 +54,61 @@ export async function POST(req: NextRequest) {
     let transcript = '';
     let lastErrorDetail = '';
 
-    // 1. PRIMARY: OpenAI Whisper API (whisper-1)
-    if (openAiKey) {
+    // 1. PRIMARY: Google Gemini Multimodal Audio Transcription
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      try {
+        const base64Audio = Buffer.from(audioBuffer).toString('base64');
+        const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest'];
+        for (const model of candidateModels) {
+          try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    {
+                      text: "Accurately transcribe the spoken voice in this audio file word-for-word in its original language (Hindi, Marathi, English, or Hinglish). Do not add any preface, formatting, brackets, commentary, markdown, or notes. Output ONLY the exact transcribed words."
+                    },
+                    {
+                      inlineData: {
+                        mimeType: mimeType,
+                        data: base64Audio
+                      }
+                    }
+                  ]
+                }],
+                generationConfig: {
+                  temperature: 0.1,
+                  maxOutputTokens: 2000
+                }
+              }),
+              signal: AbortSignal.timeout(25000),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+              if (text) {
+                transcript = text;
+                console.log(`[Gemini Audio Transcription Success via ${model}]:`, transcript);
+                break;
+              }
+            } else {
+              const errTxt = await res.text().catch(() => '');
+              console.warn(`[Gemini Audio Transcription Error on ${model}]:`, res.status, errTxt.slice(0, 100));
+            }
+          } catch (modelErr: any) {
+            console.warn(`[Gemini Audio Transcription Model ${model} Exception]:`, modelErr?.message || modelErr);
+          }
+        }
+      } catch (geminiEx: any) {
+        console.warn('[Gemini Audio Transcription Outer Exception]:', geminiEx?.message || geminiEx);
+      }
+    }
+
+    // 2. SECONDARY FALLBACK: OpenAI Whisper API (whisper-1)
+    if (!transcript && openAiKey) {
       try {
         const whisperFormData = new FormData();
         const fileObj = new File([audioBuffer], `recording.${fileExt}`, {
