@@ -211,7 +211,44 @@ export function resolveSubEventAssignments(
   // Track sequential numbering for duplicate base roles in rawRoles
   const roleCounters: Record<string, number> = {};
 
+  // Deduplicate synonym aliases within rawRoles so that generic quotation synonyms (e.g. 'Cinematographer' vs 'Cinematic Videographer')
+  // do not artificially increment roleCounters into duplicate numbered slots (CV 2, CV 3, etc.)
+  const normalizedRawRoles: string[] = [];
+  const seenBaseKeysInRoles = new Map<string, { preferredRole: string; maxSlot: number; rawCount: number; seenBaseNames: Set<string> }>();
+
   rawRoles.forEach((roleItem) => {
+    const trimmed = String(roleItem || '').trim();
+    if (!trimmed) return;
+    const { baseRole, number: explicitNum } = parseRoleAndNumber(trimmed);
+    const baseKey = getBaseRoleKey(baseRole);
+    if (!baseKey) return;
+
+    const ex = seenBaseKeysInRoles.get(baseKey);
+    const slot = explicitNum > 1 ? explicitNum : 1;
+    const baseLower = baseRole.toLowerCase();
+
+    if (!ex) {
+      seenBaseKeysInRoles.set(baseKey, {
+        preferredRole: baseRole,
+        maxSlot: slot,
+        rawCount: 1,
+        seenBaseNames: new Set([baseLower])
+      });
+      normalizedRawRoles.push(roleItem);
+    } else {
+      // Check if this is an alias for slot 1 (e.g. 'Cinematographer' when 'Cinematic Videographer' is already in the list)
+      const isSynonymAlias = !ex.seenBaseNames.has(baseLower) && slot === 1 && ex.maxSlot >= 1;
+      ex.seenBaseNames.add(baseLower);
+
+      if (!isSynonymAlias) {
+        ex.maxSlot = Math.max(ex.maxSlot, slot, ex.rawCount + 1);
+        ex.rawCount += 1;
+        normalizedRawRoles.push(roleItem);
+      }
+    }
+  });
+
+  normalizedRawRoles.forEach((roleItem) => {
     const trimmed = String(roleItem || '').trim();
     if (!trimmed) return;
 
@@ -279,11 +316,20 @@ export function resolveSubEventAssignments(
   });
 
   // Append any extra assignments from DB that were not part of rawRoles
+  // ONLY append if genuinely assigned to a team member! Never append orphan unassigned phantom rows!
   remainingExisting.forEach(extra => {
-    resolvedAssignments.push({
-      ...extra,
-      fw_team_members: resolveMemberObj(extra)
-    });
+    const memberObj = resolveMemberObj(extra);
+    const hasAssignedMember = Boolean(
+      memberObj || 
+      (extra.assigned_member_id && extra.assigned_member_id !== 'null' && extra.assigned_member_id !== 'undefined') ||
+      (extra.assigned_member_name && !['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(String(extra.assigned_member_name).trim().toLowerCase()))
+    );
+    if (hasAssignedMember) {
+      resolvedAssignments.push({
+        ...extra,
+        fw_team_members: memberObj
+      });
+    }
   });
 
   return resolvedAssignments;

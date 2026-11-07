@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { SUPER_ADMIN_ID } from '@/lib/auth/admin-guard';
 import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 import { getDisambiguatedClientName } from '@/lib/name-disambiguation';
+import { getRoleShortCode, parseRoleAndNumber, formatRoleWithNumber, isRoleMatching } from '@/lib/workspace-settings';
 
 export interface ExtractedQuotationFinancials {
   base_package_price: number;
@@ -1036,12 +1037,83 @@ export async function syncQuotationToTeamManagerEvents(
 
       let subEventId: string;
 
+      // Helper to resolve canonical uppercase short code / base role key
+      const getCanonicalRoleKey = (roleStr?: string | null): string => {
+        if (!roleStr) return '';
+        const { baseRole } = parseRoleAndNumber(roleStr);
+        const clean = baseRole.trim();
+        if (!clean) return '';
+        const code = getRoleShortCode(clean);
+        return (code || clean).toUpperCase().trim();
+      };
+
       if (matchedSe) {
         usedExistingSubEventIds.add(matchedSe.id);
         subEventId = matchedSe.id;
 
-        // Preserve union of existing roles + new quotation roles (NEVER drop existing roles!)
-        const mergedRoles = Array.from(new Set([...(matchedSe.roles || []), ...ev.roles]));
+        // Group existing roles by canonical key (e.g. 'Cinematic Videographer' -> 'CV')
+        const existingRolesMap = new Map<string, { preferredName: string; maxSlot: number; rawCount: number; seenBaseRoles: Set<string> }>();
+        (matchedSe.roles || []).forEach((r: string) => {
+          const trimmed = String(r || '').trim();
+          if (!trimmed) return;
+          const { baseRole, number } = parseRoleAndNumber(trimmed);
+          const cKey = getCanonicalRoleKey(baseRole);
+          if (!cKey) return;
+          const ex = existingRolesMap.get(cKey);
+          const slot = number > 1 ? number : 1;
+          if (!ex) {
+            existingRolesMap.set(cKey, {
+              preferredName: baseRole,
+              maxSlot: slot,
+              rawCount: 1,
+              seenBaseRoles: new Set([baseRole.toLowerCase()])
+            });
+          } else {
+            const baseLower = baseRole.toLowerCase();
+            const isSynonymAlias = !ex.seenBaseRoles.has(baseLower) && slot === 1 && ex.maxSlot >= 1;
+            ex.seenBaseRoles.add(baseLower);
+            if (!isSynonymAlias) {
+              ex.maxSlot = Math.max(ex.maxSlot, slot, ex.rawCount + 1);
+              ex.rawCount += 1;
+            } else {
+              ex.maxSlot = Math.max(ex.maxSlot, slot);
+            }
+            if (baseRole.length > ex.preferredName.length) {
+              ex.preferredName = baseRole;
+            }
+          }
+        });
+
+        // Also group roles requested in quotation ev.roles
+        const evRolesCount = new Map<string, { preferredName: string; count: number }>();
+        (ev.roles || []).forEach((r: string) => {
+          const trimmed = String(r || '').trim();
+          if (!trimmed) return;
+          const { baseRole } = parseRoleAndNumber(trimmed);
+          const cKey = getCanonicalRoleKey(baseRole);
+          if (!cKey) return;
+          const ex = evRolesCount.get(cKey);
+          if (ex) {
+            ex.count += 1;
+          } else {
+            evRolesCount.set(cKey, { preferredName: baseRole, count: 1 });
+          }
+        });
+
+        // Preserve union of canonical roles (NEVER allow synonym duplicate bloating like 'CV' + 'Cinematographer'!)
+        const allCanonicalKeys = new Set([...existingRolesMap.keys(), ...evRolesCount.keys()]);
+        const mergedRoles: string[] = [];
+
+        allCanonicalKeys.forEach(cKey => {
+          const ex = existingRolesMap.get(cKey);
+          const evItem = evRolesCount.get(cKey);
+          const count = Math.max(ex?.maxSlot || 0, evItem?.count || 0);
+          // Prefer existing project title over quotation alias (e.g. 'Cinematic Videographer' over 'Cinematographer')
+          const preferredName = ex?.preferredName || evItem?.preferredName || cKey;
+          for (let i = 1; i <= count; i++) {
+            mergedRoles.push(formatRoleWithNumber(preferredName, i));
+          }
+        });
 
         // Update sub-event IN-PLACE without destroying anything
         await supabaseClient
@@ -1064,21 +1136,35 @@ export async function syncQuotationToTeamManagerEvents(
         // Check assignments for this sub-event:
         const currentSubAssignments = existingAssignmentsList.filter(a => a.sub_event_id === matchedSe.id);
 
-        // For each role in ev.roles, ensure a slot exists; ONLY insert missing new slots!
+        // Count existing assignments by canonical key to prevent duplicate alias inserts!
         const existingRolesCount: Record<string, number> = {};
+        const existingRolesPreferredName: Record<string, string> = {};
+
         currentSubAssignments.forEach(a => {
-          const rKey = (a.required_role || '').trim().toLowerCase();
-          existingRolesCount[rKey] = (existingRolesCount[rKey] || 0) + 1;
+          const cKey = getCanonicalRoleKey(a.required_role || '');
+          if (cKey) {
+            existingRolesCount[cKey] = (existingRolesCount[cKey] || 0) + 1;
+            if (!existingRolesPreferredName[cKey] && (a.required_role || '').length > 3) {
+              const { baseRole } = parseRoleAndNumber(a.required_role);
+              existingRolesPreferredName[cKey] = baseRole;
+            }
+          }
         });
 
+        // For each role in ev.roles, ensure a slot exists; ONLY insert missing new slots!
         const newSlotsToInsert: any[] = [];
         const neededRolesCount: Record<string, number> = {};
         for (const role of ev.roles) {
-          const rKey = role.trim().toLowerCase();
-          neededRolesCount[rKey] = (neededRolesCount[rKey] || 0) + 1;
-          const currentCount = existingRolesCount[rKey] || 0;
-          if (neededRolesCount[rKey] > currentCount) {
-            // Need a new slot for this role
+          const cKey = getCanonicalRoleKey(role);
+          if (!cKey) continue;
+          neededRolesCount[cKey] = (neededRolesCount[cKey] || 0) + 1;
+          const currentCount = existingRolesCount[cKey] || 0;
+          if (neededRolesCount[cKey] > currentCount) {
+            // Need a new slot for this canonical role
+            const slotNum = neededRolesCount[cKey];
+            const baseName = existingRolesPreferredName[cKey] || existingRolesMap.get(cKey)?.preferredName || parseRoleAndNumber(role).baseRole || role;
+            const formattedRoleName = formatRoleWithNumber(baseName, slotNum);
+
             newSlotsToInsert.push({
               project_id: targetProjectId,
               sub_event_id: subEventId,
@@ -1086,7 +1172,7 @@ export async function syncQuotationToTeamManagerEvents(
               sub_event_date: evDate || fallbackEventDate || new Date().toISOString().split('T')[0],
               start_time: ev.roll_call_time || '10:00 AM',
               end_time: ev.dismissal_estimate_time || '06:00 PM',
-              required_role: role,
+              required_role: formattedRoleName,
               assigned_member_id: null,
               assigned_member_name: null,
               assigned_member_phone: null,
@@ -1097,6 +1183,7 @@ export async function syncQuotationToTeamManagerEvents(
               workspace_id: workspaceId,
               client_name: clientName.trim()
             });
+            existingRolesCount[cKey] = slotNum;
           }
         }
 
@@ -1104,7 +1191,15 @@ export async function syncQuotationToTeamManagerEvents(
           await supabaseClient.from('fw_assignments').insert(newSlotsToInsert);
         }
       } else {
-        // Brand new sub-event: insert cleanly
+        // Brand new sub-event: format roles sequentially and insert cleanly
+        const roleCounters: Record<string, number> = {};
+        const formattedNewRoles = (ev.roles || []).map(r => {
+          const { baseRole } = parseRoleAndNumber(r);
+          const cKey = getCanonicalRoleKey(baseRole);
+          roleCounters[cKey] = (roleCounters[cKey] || 0) + 1;
+          return formatRoleWithNumber(baseRole, roleCounters[cKey]);
+        });
+
         const subEventPayload = {
           project_id: targetProjectId,
           event_title: ev.event_title,
@@ -1116,7 +1211,7 @@ export async function syncQuotationToTeamManagerEvents(
           dismissal_estimate_time: ev.dismissal_estimate_time || '06:00 PM',
           shift_hours_slot: ev.shift_hours_slot || 'Full Day',
           operational_notes: ev.operational_notes || null,
-          roles: ev.roles,
+          roles: formattedNewRoles,
           user_id: workspaceId
         };
 
@@ -1128,8 +1223,8 @@ export async function syncQuotationToTeamManagerEvents(
 
         if (!seErr && insertedSubEvent) {
           subEventId = insertedSubEvent.id;
-          if (ev.roles.length > 0) {
-            const initialAssignments = ev.roles.map(role => ({
+          if (formattedNewRoles.length > 0) {
+            const initialAssignments = formattedNewRoles.map(role => ({
               project_id: targetProjectId,
               sub_event_id: subEventId,
               sub_event_name: ev.event_title,

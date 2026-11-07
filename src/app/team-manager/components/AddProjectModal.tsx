@@ -50,48 +50,72 @@ const DRAFT_KEY_PREFIX = 'fw_event_form_draft_';
 
 // Merges roles from fw_assignments and fw_sub_events.roles, taking max instances per role without loss and numbering sequentially (TV, TV 2, TV 3)
 export const mergeSubEventRoles = (assignedRoles: string[], dbRoles: string[], customRoles?: any[]): string[] => {
-  const dbCounts = new Map<string, { name: string; count: number }>();
-  dbRoles.forEach(r => {
-    const trimmed = (r || '').trim();
-    if (!trimmed) return;
-    const { baseRole } = parseRoleAndNumber(trimmed);
+  const getRoleKey = (baseRole: string) => {
     const code = getRoleShortCode(baseRole, customRoles).toUpperCase();
-    const key = code || baseRole.toLowerCase();
-    const ex = dbCounts.get(key);
-    if (ex) ex.count += 1;
-    else dbCounts.set(key, { name: baseRole, count: 1 });
-  });
+    return code || baseRole.toLowerCase();
+  };
 
-  const assignCounts = new Map<string, { name: string; count: number }>();
-  assignedRoles.forEach(r => {
-    const trimmed = (r || '').trim();
-    if (!trimmed) return;
-    const { baseRole } = parseRoleAndNumber(trimmed);
-    const code = getRoleShortCode(baseRole, customRoles).toUpperCase();
-    const key = code || baseRole.toLowerCase();
-    const ex = assignCounts.get(key);
-    if (ex) ex.count += 1;
-    else assignCounts.set(key, { name: baseRole, count: 1 });
-  });
+  const processRoleList = (roleList: string[]) => {
+    const counts = new Map<string, { preferredName: string; maxSlot: number; rawCount: number; seenBaseRoles: Set<string> }>();
+    roleList.forEach(r => {
+      const trimmed = (r || '').trim();
+      if (!trimmed) return;
+      const { baseRole, number } = parseRoleAndNumber(trimmed);
+      const key = getRoleKey(baseRole);
+      if (!key) return;
+      const ex = counts.get(key);
+      const slot = number > 1 ? number : 1;
+      if (!ex) {
+        counts.set(key, {
+          preferredName: baseRole,
+          maxSlot: slot,
+          rawCount: 1,
+          seenBaseRoles: new Set([baseRole.toLowerCase()])
+        });
+      } else {
+        const baseLower = baseRole.toLowerCase();
+        // If this is a different alias for slot 1 (e.g. 'Cinematographer' vs 'Cinematic Videographer'),
+        // do not increase slot count; treat as a synonym alias!
+        const isSynonymAlias = !ex.seenBaseRoles.has(baseLower) && slot === 1 && ex.maxSlot >= 1;
+        ex.seenBaseRoles.add(baseLower);
 
-  const allKeys = new Set([...dbCounts.keys(), ...assignCounts.keys()]);
+        if (!isSynonymAlias) {
+          ex.maxSlot = Math.max(ex.maxSlot, slot, ex.rawCount + 1);
+          ex.rawCount += 1;
+        } else {
+          ex.maxSlot = Math.max(ex.maxSlot, slot);
+        }
+
+        // Prioritize more descriptive title (e.g. 'Cinematic Videographer' over 'Cinematographer' or 'CV')
+        if (baseRole.length > ex.preferredName.length) {
+          ex.preferredName = baseRole;
+        }
+      }
+    });
+    return counts;
+  };
+
+  const dbProcessed = processRoleList(dbRoles);
+  const assignProcessed = processRoleList(assignedRoles);
+
+  const allKeys = new Set([...dbProcessed.keys(), ...assignProcessed.keys()]);
   const result: string[] = [];
 
   allKeys.forEach(k => {
-    const dbItem = dbCounts.get(k);
-    const assignItem = assignCounts.get(k);
-    const count = Math.max(dbItem?.count || 0, assignItem?.count || 0);
+    const dbItem = dbProcessed.get(k);
+    const assignItem = assignProcessed.get(k);
+    const count = Math.max(dbItem?.maxSlot || 0, assignItem?.maxSlot || 0);
     // Prioritize the more descriptive full name over short abbreviations
-    let preferredName = dbItem?.name || assignItem?.name || k;
-    if (dbItem?.name && assignItem?.name) {
-      if (dbItem.name.length <= 3 && assignItem.name.length > 3) {
-        preferredName = assignItem.name;
-      } else if (assignItem.name.length <= 3 && dbItem.name.length > 3) {
-        preferredName = dbItem.name;
+    let preferredName = dbItem?.preferredName || assignItem?.preferredName || k;
+    if (dbItem?.preferredName && assignItem?.preferredName) {
+      if (dbItem.preferredName.length <= 3 && assignItem.preferredName.length > 3) {
+        preferredName = assignItem.preferredName;
+      } else if (assignItem.preferredName.length <= 3 && dbItem.preferredName.length > 3) {
+        preferredName = dbItem.preferredName;
       }
     }
-    for (let i = 0; i < count; i++) {
-      result.push(formatRoleWithNumber(preferredName, i + 1));
+    for (let i = 1; i <= count; i++) {
+      result.push(formatRoleWithNumber(preferredName, i));
     }
   });
 
