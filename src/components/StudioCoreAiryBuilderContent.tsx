@@ -362,7 +362,7 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
           },
           body: JSON.stringify({
             workspace_id: userId || 'demo_user',
-            title: snapshotData.designName || 'Wedding - Design 1',
+            title: snapshotData.designName || 'Premium',
             client_name: `${snapshotData.cover?.coupleName || (snapshotData.cover?.groomName ? `${snapshotData.cover.groomName} & ${snapshotData.cover.brideName}` : 'Rahul & Neha')}`,
             content_json: snapshotData,
             financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
@@ -433,7 +433,7 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
               <Link href={isAdminMode ? "/admin/quotation-templates" : "/workspace/quotations"} className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">
                 <ArrowLeft className="w-4 h-4" />
               </Link>
-              <h2 className="text-sm font-black text-white">{data.designName || 'Wedding - Design 1'}</h2>
+              <h2 className="text-sm font-black text-white">{data.designName || 'Premium'}</h2>
             </div>
             <span className="text-xs text-emerald-400 font-bold">{autoSaveStatus}</span>
           </div>

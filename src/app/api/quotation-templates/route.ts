@@ -171,13 +171,13 @@ export async function GET(req: NextRequest) {
         }
 
         const docContent = docsMap[t.id] || (Boolean(t.is_system_template) ? DEFAULT_AIRY_PROPOSAL : null);
-        let title = t.title || 'Wedding - Design 1';
+        let title = (t.title && t.title !== 'Wedding - Design 1') ? t.title : 'Premium';
         if (
           docContent?.designName &&
           typeof docContent.designName === 'string' &&
           docContent.designName.trim() &&
           docContent.designName !== 'Minimalist Airy Proposal' &&
-          docContent.designName !== 'Personalised Wedding Quotation'
+          docContent.designName !== 'Personalised Wedding Quotation' && docContent.designName !== 'Wedding - Design 1'
         ) {
           title = docContent.designName.trim();
         }

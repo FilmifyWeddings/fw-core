@@ -69,7 +69,7 @@ export const DEFAULT_AIRY_PROPOSAL: any = {
   theme: 'cyprus-sand-dune',
   primaryFont: 'Cormorant Garamond',
   secondaryFont: 'Plus Jakarta Sans',
-  designName: 'Wedding - Design 1',
+  designName: 'Premium',
   cover: {
     coupleName: 'Rahul & Neha',
     eventType: 'WEDDING',
@@ -1387,10 +1387,12 @@ export default function QuotationDocumentCanvas({
   const data = normalizeQuotationData(loadedData);
 
   useEffect(() => {
-    loadCustomFontsFromAPI();
+    if (!onlyFirstPage) {
+      loadCustomFontsFromAPI();
+    }
     if (data?.primaryFont) preloadActiveFont(data.primaryFont);
     if (data?.secondaryFont) preloadActiveFont(data.secondaryFont);
-  }, [data?.primaryFont, data?.secondaryFont]);
+  }, [data?.primaryFont, data?.secondaryFont, onlyFirstPage]);
   const activeTheme = getThemeFromKey(data.theme || data.look || data.colorPalette || data.palette);
   const pageBgColor = activeTheme.background;
   const textColor = activeTheme.text;
@@ -1400,11 +1402,15 @@ export default function QuotationDocumentCanvas({
   const borderColor = activeTheme.borderColor || (isDarkTheme ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)');
   const boxBgColor = activeTheme.boxBgColor || (isDarkTheme ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)');
 
-  const pricingCalculated = calculatePricingTotals(data.pricingPage);
-  const paymentTermsCalculated = calculatePaymentTermsSummary(
-    data.paymentTermsPage?.steps || [],
-    pricingCalculated.netTotal || 0
-  );
+  const pricingCalculated = onlyFirstPage 
+    ? { netTotal: 0, subTotal: 0, grandTotal: 0, discount: 0, taxes: 0 }
+    : calculatePricingTotals(data.pricingPage);
+  const paymentTermsCalculated = onlyFirstPage
+    ? { totalAllocated: 0, remainingBalance: 0, stepsSummary: [] }
+    : calculatePaymentTermsSummary(
+        data.paymentTermsPage?.steps || [],
+        pricingCalculated.netTotal || 0
+      );
 
   const rawFullSeq = data?.pageSequence || DEFAULT_PAGE_SEQUENCE;
   const fullSequence: PageSequenceItem[] = (Array.isArray(rawFullSeq) && rawFullSeq.length > 0 ? rawFullSeq : DEFAULT_PAGE_SEQUENCE).map((p: any) => {

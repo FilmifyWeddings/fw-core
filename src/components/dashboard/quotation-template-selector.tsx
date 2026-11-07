@@ -58,6 +58,7 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
               const tName = String(t.title || '').trim().toLowerCase();
               const dName = String(t.content_json?.designName || '').trim().toLowerCase();
               if (tName === 'minimalist airy proposal' || dName === 'minimalist airy proposal') return false;
+              if (tName === 'wedding - design 1' || dName === 'wedding - design 1') return false;
               return true;
             });
             if (clean.length > 0) {
@@ -167,11 +168,11 @@ class ThumbnailErrorBoundary extends Component<ThumbnailErrorBoundaryProps, Thum
 }
 
 /**
- * 1:1 FIRST PAGE DESIGN THUMBNAIL
+ * 1:1 FIRST PAGE DESIGN THUMBNAIL (MEMOIZED FOR 0MS RESPONSIVENESS)
  * Renders the exact first page design (canvas) of the quotation template,
  * identical to the Cards in the Quotations Gallery (/workspace/quotations).
  */
-export function TemplateThumbnail({
+export const TemplateThumbnail = React.memo(function TemplateThumbnail({
   contentJson,
   title,
   size = 'md',
@@ -192,13 +193,25 @@ export function TemplateThumbnail({
         doc = JSON.parse(doc);
       } catch (_) {}
     }
+    const isSys = title === 'Premium' || !doc || doc.id === 'FW-USER-SJ05RN' || doc.designName === 'Premium';
+    const fallbackPhoto = isSys ? '/images/system-premium-cover.webp' : '';
+
     if (doc && typeof doc === 'object' && (doc.cover || doc.theme || doc.look)) {
+      const coverPhoto = doc.cover?.photoUrl || doc.cover?.photo || fallbackPhoto;
+      let coupleName = doc.cover?.coupleName;
+      if (!coupleName || coupleName === 'YASH & TWINKLE' || coupleName === 'Valued Client') {
+        coupleName = isSys ? 'Groom\n& \nBride' : (title || 'Rahul & Neha');
+      }
+
       return {
         ...doc,
-        designName: doc.designName || title || 'Wedding Quotation',
+        designName: (doc.designName && doc.designName !== 'Wedding - Design 1') ? doc.designName : (title || 'Premium'),
         cover: {
           ...doc.cover,
-          coupleName: doc.cover?.coupleName !== undefined ? doc.cover.coupleName : (title || 'Rahul & Neha')
+          photoUrl: coverPhoto,
+          coupleName,
+          frameShape: doc.cover?.frameShape || 'arch',
+          bgOpacity: typeof doc.cover?.bgOpacity === 'number' ? doc.cover.bgOpacity : 19
         }
       };
     }
@@ -207,15 +220,16 @@ export function TemplateThumbnail({
       theme: 'cyprus-sand-dune',
       primaryFont: 'Cormorant Garamond',
       secondaryFont: 'Plus Jakarta Sans',
-      designName: title || 'Wedding Quotation',
+      designName: title || 'Premium',
       cover: {
-        coupleName: title || 'Rahul & Neha',
-        eventType: 'WEDDING',
-        eventDate: 'DECEMBER 2026',
-        location: 'MUMBAI',
-        brandName: 'FILMIFY WEDDINGS',
+        coupleName: 'Groom\n& \nBride',
+        eventType: 'Wedding',
+        weddingDate: 'December 14, 2026',
+        locationName: 'MUMBAI',
+        brandName: 'Filmify Weddings',
         frameShape: 'arch',
-        bgOpacity: 40
+        bgOpacity: 19,
+        photoUrl: '/images/system-premium-cover.webp'
       }
     };
   }, [contentJson, title]);
@@ -243,20 +257,20 @@ export function TemplateThumbnail({
     return 'from-zinc-800 to-zinc-950 text-zinc-300';
   }, [themeName]);
 
-  // Precise A4 aspect ratio dimensions (794 x 1123)
+  // Precise A4 aspect ratio dimensions (794 x 1123, ratio ~0.707)
   const sizeConfigs = {
-    xs: { w: 26, h: 37, scale: 26 / 794 },
-    sm: { w: 32, h: 45, scale: 32 / 794 },
-    md: { w: 42, h: 60, scale: 42 / 794 },
-    lg: { w: 56, h: 80, scale: 56 / 794 }
+    xs: { w: 30, h: 42, scale: 30 / 794 },
+    sm: { w: 40, h: 56, scale: 40 / 794 },
+    md: { w: 56, h: 79, scale: 56 / 794 },
+    lg: { w: 72, h: 102, scale: 72 / 794 }
   };
 
   const cfg = sizeConfigs[size] || sizeConfigs.md;
 
-  return (
+  const fallbackMarkup = (
     <div
       style={{ width: `${cfg.w}px`, height: `${cfg.h}px` }}
-      className={`relative rounded-md overflow-hidden border border-amber-500/40 bg-gradient-to-b ${bgGradient} shrink-0 shadow-2xs flex flex-col items-center justify-between p-1 select-none transition-transform group-hover:scale-105 ${className}`}
+      className={`relative rounded-md overflow-hidden border border-amber-500/40 bg-gradient-to-b ${bgGradient} shrink-0 shadow-2xs flex flex-col items-center justify-between p-1 select-none ${className}`}
     >
       <div className="w-full flex items-center justify-center pt-0.5">
         <Sparkles className="w-2.5 h-2.5 text-amber-300 opacity-90" />
@@ -272,7 +286,30 @@ export function TemplateThumbnail({
       <div className="w-2/3 h-[1px] bg-amber-400/50 rounded-full mb-0.5" />
     </div>
   );
-}
+
+  return (
+    <ThumbnailErrorBoundary fallback={fallbackMarkup}>
+      <div
+        style={{ width: `${cfg.w}px`, height: `${cfg.h}px` }}
+        className={`relative rounded-md overflow-hidden bg-slate-100 dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/90 shrink-0 shadow-xs group-hover:border-amber-500/60 transition-all select-none ${className}`}
+      >
+        <div
+          className="absolute top-0 left-0 origin-top-left pointer-events-none select-none"
+          style={{
+            width: '794px',
+            height: '1123px',
+            transform: `scale(${cfg.scale})`,
+            transformOrigin: 'top left',
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden'
+          }}
+        >
+          <QuotationDocumentCanvas documentData={fullDocData} onlyFirstPage={true} />
+        </div>
+      </div>
+    </ThumbnailErrorBoundary>
+  );
+});
 
 interface QuotationTemplateSelectorProps {
   templates?: StudioTemplateItem[];
@@ -450,7 +487,7 @@ export function QuotationTemplateSelector({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: placement === 'top' ? 4 : -4, scale: 0.98 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className={`absolute ${popoverAlignClass} z-[150] w-[300px] sm:w-[330px] max-w-[calc(100vw-32px)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/90 rounded-2xl shadow-2xl p-1.5 ${popoverPositionClass} backdrop-blur-xl`}
+            className={`absolute ${popoverAlignClass} z-[150] w-[320px] sm:w-[350px] max-w-[calc(100vw-32px)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/90 rounded-2xl shadow-2xl p-1.5 ${popoverPositionClass} backdrop-blur-xl`}
           >
             {/* Popover Header */}
             <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 mb-1">
@@ -464,7 +501,7 @@ export function QuotationTemplateSelector({
             </div>
 
             {/* List of Templates with 1:1 First Page Thumbnails & Smooth Custom Scrollbar */}
-            <div className="max-h-[300px] overflow-y-auto space-y-1.5 p-1 pr-1.5 overscroll-contain quotation-dropdown-scroll">
+            <div className="max-h-[320px] overflow-y-auto space-y-2 p-1.5 pr-2 overscroll-contain quotation-dropdown-scroll">
               {templates.map((tmpl) => {
                 const isSelected = tmpl.id === (currentSelected?.id || selectedId);
                 const themeName = tmpl.content_json?.theme || tmpl.content_json?.look || tmpl.category || 'Wedding';
@@ -477,39 +514,39 @@ export function QuotationTemplateSelector({
                       onSelect(tmpl.id);
                       setIsOpen(false);
                     }}
-                    className={`w-full text-left p-1.5 rounded-xl flex items-center gap-2.5 transition-all cursor-pointer group ${
+                    className={`w-full text-left p-2 rounded-xl flex items-center gap-3 transition-all cursor-pointer group ${
                       isSelected
-                        ? 'bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/40 text-amber-900 dark:text-amber-200 font-bold shadow-xs'
+                        ? 'bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/50 text-amber-950 dark:text-amber-100 font-bold shadow-xs'
                         : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/80 border border-transparent text-zinc-800 dark:text-zinc-200'
                     }`}
                   >
                     {/* 1:1 Actual First Page Design Thumbnail Preview */}
-                    <TemplateThumbnail
-                      contentJson={tmpl.content_json}
-                      title={tmpl.title}
-                      size="md"
-                    />
+                    <div className="shrink-0 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-2xs group-hover:border-amber-500/50 transition-colors">
+                      <TemplateThumbnail
+                        contentJson={tmpl.content_json}
+                        title={tmpl.title}
+                        size="md"
+                      />
+                    </div>
 
                     {/* Template Meta Information */}
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                       <div className="flex items-center gap-1.5">
-                        <span className={`text-xs truncate ${isSelected ? 'font-black text-amber-600 dark:text-amber-300' : 'font-bold'}`}>
+                        <span className={`text-xs truncate ${isSelected ? 'font-black text-amber-700 dark:text-amber-300' : 'font-bold'}`}>
                           {tmpl.title}
                         </span>
                         {tmpl.is_default && (
-                          <span className="shrink-0 text-[8px] bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.2 rounded-full font-black uppercase tracking-wider flex items-center gap-0.5">
+                          <span className="shrink-0 text-[8px] bg-amber-500/20 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded-full font-black uppercase tracking-wider flex items-center gap-0.5">
                             <Star className="w-2 h-2 fill-amber-500 text-amber-500" /> Default
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5 flex items-center gap-1">
-                        <span>{themeName}</span>
-                        {tmpl.is_system_template && (
-                          <>
-                            <span>•</span>
-                            <span className="text-purple-500 font-medium">System Preset</span>
-                          </>
-                        )}
+                      <span className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5 flex items-center gap-1 font-medium">
+                        <span className="truncate">{themeName}</span>
+                        <span>•</span>
+                        <span className={tmpl.is_system_template ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-emerald-600 dark:text-emerald-400 font-semibold'}>
+                          {tmpl.is_system_template ? 'System Preset' : 'Studio Custom'}
+                        </span>
                       </span>
                     </div>
 

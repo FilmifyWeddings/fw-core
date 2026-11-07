@@ -90,7 +90,7 @@ function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJso
       theme: 'cyprus-sand-dune',
       primaryFont: 'Cormorant Garamond',
       secondaryFont: 'Plus Jakarta Sans',
-      designName: title || 'Wedding - Design 1',
+      designName: title || 'Premium',
       cover: {
         coupleName: coupleName || title || 'Rahul & Neha',
         eventType: 'WEDDING',
@@ -144,12 +144,12 @@ function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJso
 }
 
 function generateUniqueCopyName(requestedTitle: string, existingTitles: string[]): string {
-  const cleanTitle = (requestedTitle || 'Wedding - Design 1').trim();
+  const cleanTitle = (requestedTitle || 'Premium').trim();
   
   // Base name without any trailing " Copy" or " Copy N"
   const baseTitle = cleanTitle
     .replace(/\s*\(?Copy\s*\d*\)?$/i, '')
-    .trim() || 'Wedding - Design 1';
+    .trim() || 'Premium';
 
   let candidate = `${baseTitle} Copy`;
   if (!existingTitles.includes(candidate)) {
@@ -236,6 +236,7 @@ function getSynchronousCachedQuotations(): { items: SavedQuotation[]; hasCache: 
             const tName = String(item.title || '').trim().toLowerCase();
             const dName = String(item.content_json?.designName || '').trim().toLowerCase();
             if (tName === 'minimalist airy proposal' || dName === 'minimalist airy proposal') return false;
+            if (tName === 'wedding - design 1' || dName === 'wedding - design 1') return false;
             return true;
           });
           if (filtered.length > 0) {
@@ -502,7 +503,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         if (token) headers['Authorization'] = `Bearer ${token}`;
         if (userEmail) headers['x-user-email'] = userEmail;
 
-        const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
+        const copyTitle = generateUniqueCopyName(quote.title || 'Premium', quotations.map(q => q.title));
         const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
         const createdId = `FW-USER-${randomSuffix}`;
         const finalDoc = quote.content_json || DEFAULT_AIRY_PROPOSAL;
@@ -669,7 +670,7 @@ export default function WorkspaceQuotationsGalleryPage() {
     // 1. Generate unique copy ID and title immediately
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const newId = `FW-USER-${randomSuffix}`;
-    const copyTitle = generateUniqueCopyName(sourceQuote.title || 'Wedding - Design 1', quotations.map(q => q.title));
+    const copyTitle = generateUniqueCopyName(sourceQuote.title || 'Premium', quotations.map(q => q.title));
 
     // 2. Prepare cloned document content
     const baseDoc = sourceQuote.content_json || DEFAULT_AIRY_PROPOSAL;
@@ -1101,7 +1102,7 @@ export default function WorkspaceQuotationsGalleryPage() {
               docObj.designName !== 'Minimalist Airy Proposal'
             )
               ? docObj.designName
-              : (t.title || 'Wedding - Design 1');
+              : (t.title || 'Premium');
             const coupleName = (docObj?.cover?.coupleName && docObj.cover.coupleName !== 'Valued Client')
               ? docObj.cover.coupleName
               : (docObj?.cover?.groomName ? `${docObj.cover.groomName} & ${docObj.cover.brideName}` : (t.content_json?.cover?.coupleName || 'Rahul & Neha'));
@@ -1441,26 +1442,9 @@ export default function WorkspaceQuotationsGalleryPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
         
         {loading && quotations.length === 0 ? (
-          Array.from({ length: 5 }).map((_, idx) => (
-            <div 
-              key={`quotation-skeleton-${idx}`} 
-              className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm animate-pulse flex flex-col justify-between h-[360px]"
-            >
-              <div className="w-full h-52 bg-slate-200/80 dark:bg-zinc-800/80" />
-              <div className="p-3.5 space-y-2">
-                <div className="h-4 bg-slate-200 dark:bg-zinc-800 rounded w-3/4" />
-                <div className="h-3 bg-slate-100 dark:bg-zinc-800/60 rounded w-1/2" />
-              </div>
-              <div className="p-3.5 pt-0 space-y-2">
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div className="h-7 bg-slate-100 dark:bg-zinc-800 rounded-lg" />
-                  <div className="h-7 bg-slate-100 dark:bg-zinc-800 rounded-lg" />
-                </div>
-                <div className="h-7 bg-slate-100 dark:bg-zinc-800 rounded-lg" />
-                <div className="h-8 bg-amber-100/60 dark:bg-amber-950/40 rounded-xl" />
-              </div>
-            </div>
-          ))
+          <div className="col-span-full py-16 flex flex-col items-center justify-center">
+            <StudioCoreLiquidLoader fullscreen={false} label="Loading Quotation Designs..." />
+          </div>
         ) : (
           <>
             {/* DYNAMIC USER QUOTATION CARDS (1:1 Thumbnail Sync, Dynamic Custom Title, Instant Duplication) */}
@@ -1473,7 +1457,8 @@ export default function WorkspaceQuotationsGalleryPage() {
               rawDesignName !== 'Minimalist Airy Proposal' &&
               rawDesignName !== 'Personalised Wedding Quotation'
             ) ? rawDesignName : (quote.title && quote.title !== 'Minimalist Airy Proposal' ? quote.title : 'Wedding - Design 1');
-            const clientName = (quote as any).content_json?.cover?.coupleName || ((quote as any).content_json?.cover?.groomName ? `${(quote as any).content_json.cover.groomName} & ${(quote as any).content_json.cover.brideName}` : quote.client_name || activeCoupleName);
+            let clientName = (quote as any).content_json?.cover?.coupleName || ((quote as any).content_json?.cover?.groomName ? `${(quote as any).content_json.cover.groomName} & ${(quote as any).content_json.cover.brideName}` : quote.client_name || activeCoupleName);
+            if (String(clientName).toUpperCase().includes('YASH & TWINKLE')) clientName = 'Groom & Bride';
 
             return (
               <motion.div 
