@@ -102,7 +102,53 @@ CRITICAL MANDATES:
 4. RETURN ONLY the polished, structured replacement text that will directly replace the user's text in the text box.
 5. Do NOT output conversational filler (e.g. "Here is your polished quotation:"), explanations, or markdown code blocks (\`\`\`). Output plain text only.`;
 
-    // 3. PRIMARY ENGINE: OpenAI GPT-4o-mini (Super fast, ~400ms, best multilingual intent extraction)
+    // 3. PRIMARY ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash Priority)
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash'];
+      for (const model of candidateModels) {
+        try {
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+          const res = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    { text: systemInstruction },
+                    { text: `Raw Voice Input:\n"${rawText}"\n\nCleaned & Formatted Replacement Text:` }
+                  ]
+                }
+              ],
+              generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: 800
+              }
+            }),
+            signal: AbortSignal.timeout(10000)
+          });
+
+          if (res.ok) {
+            const geminiJson = await res.json();
+            const polishedText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (polishedText && polishedText.length > 5) {
+              const cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
+              return NextResponse.json({
+                success: true,
+                polishedText: cleanResult,
+                engine: `gemini-${model}`
+              });
+            }
+          }
+        } catch (geminiErr: any) {
+          console.warn(`[Polish Speech] Gemini ${model} exception:`, geminiErr?.message || geminiErr);
+        }
+      }
+    }
+
+    // 4. SECONDARY ENGINE: OpenAI GPT-4o-mini Fallback
     const openAiKey = process.env.OPENAI_API_KEY;
     if (openAiKey) {
       try {
@@ -116,7 +162,7 @@ CRITICAL MANDATES:
             model: 'gpt-4o-mini',
             messages: [
               { role: 'system', content: systemInstruction },
-              { role: 'user', content: `Raw Spoken Audio Transcript:\n"${rawText}"\n\nCleaned & Formatted ChatGPT Specification:` }
+              { role: 'user', content: `Raw Spoken Audio Transcript:\n"${rawText}"\n\nCleaned & Formatted Specification:` }
             ],
             temperature: 0.1,
             max_tokens: 800
@@ -135,55 +181,9 @@ CRITICAL MANDATES:
               engine: 'chatgpt-gpt-4o-mini'
             });
           }
-        } else {
-          const errText = await res.text().catch(() => '');
-          console.warn('[Polish Speech] OpenAI returned error:', res.status, errText.slice(0, 150));
         }
       } catch (openAiErr: any) {
-        console.warn('[Polish Speech] OpenAI call exception:', openAiErr?.message || openAiErr);
-      }
-    }
-
-    // 4. SECONDARY ENGINE: Google Gemini (gemini-flash-latest)
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey) {
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`;
-        const res = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: systemInstruction },
-                  { text: `Raw Voice Input:\n"${rawText}"\n\nCleaned & Formatted Replacement Text:` }
-                ]
-              }
-            ],
-            generationConfig: {
-              temperature: 0.1,
-              maxOutputTokens: 800
-            }
-          }),
-          signal: AbortSignal.timeout(6000)
-        });
-
-        if (res.ok) {
-          const geminiJson = await res.json();
-          const polishedText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-          if (polishedText && polishedText.length > 5) {
-            const cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
-            return NextResponse.json({
-              success: true,
-              polishedText: cleanResult,
-              engine: 'gemini-flash-latest'
-            });
-          }
-        }
-      } catch (geminiErr: any) {
-        console.warn('[Polish Speech] Gemini call exception:', geminiErr?.message || geminiErr);
+        console.warn('[Polish Speech] OpenAI fallback exception:', openAiErr?.message || openAiErr);
       }
     }
 

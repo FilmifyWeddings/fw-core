@@ -400,8 +400,60 @@ Return ONLY a valid JSON object matching:
     .filter(Boolean);
   const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // 1. PRIMARY ENGINE: OpenAI GPT-4o-mini (Super fast ~400-800ms, 100% structured JSON fidelity, superior Hindi/Indian context)
-  if (openAiKey) {
+  // 1. PRIMARY ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash & gemini-flash-latest Priority)
+  if (rawGeminiKeys.length > 0) {
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash'];
+    for (const currentKey of rawGeminiKeys) {
+      if (aiRawOutput) break;
+      for (const model of candidateModels) {
+        if (aiRawOutput) break;
+        try {
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`;
+          const geminiRes = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    { text: promptText },
+                    { text: `Please extract 100% structured quotation JSON from this context:\n${JSON.stringify(leanPromptContext, null, 2)}` }
+                  ]
+                }
+              ],
+              generationConfig: {
+                responseMimeType: 'application/json',
+                temperature: 0.1,
+                maxOutputTokens: 3500
+              }
+            }),
+            signal: AbortSignal.timeout(15000)
+          });
+          if (geminiRes.ok) {
+            const geminiJson = await geminiRes.json();
+            const content = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (content) {
+              aiRawOutput = sanitizeAndParseJson(content);
+              activeEngineProvider = 'gemini';
+              activeEngineModel = model;
+              activeKeyHint = `${currentKey.slice(0, 14)}...${currentKey.slice(-6)}`;
+              console.log(`[AI Extract] Successfully generated via Gemini (${model}) using key: ${activeKeyHint}`);
+              break;
+            }
+          } else {
+            const errText = await geminiRes.text().catch(() => '');
+            console.warn(`[Gemini ${model} Error on key ${currentKey.slice(0, 10)}...]:`, geminiRes.status, errText.slice(0, 150));
+          }
+        } catch (e: any) {
+          console.warn(`[Gemini ${model} Exception]:`, e?.message || e);
+        }
+      }
+    }
+  }
+
+  // 2. SECONDARY ENGINE: OpenAI GPT-4o-mini Fallback
+  if (!aiRawOutput && openAiKey) {
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -419,7 +471,7 @@ Return ONLY a valid JSON object matching:
           temperature: 0.1,
           max_tokens: 3000
         }),
-        signal: AbortSignal.timeout(10000) // 10s fast timeout
+        signal: AbortSignal.timeout(10000)
       });
 
       if (res.ok) {
@@ -429,7 +481,7 @@ Return ONLY a valid JSON object matching:
           aiRawOutput = sanitizeAndParseJson(content);
           activeEngineProvider = 'openai';
           activeEngineModel = 'gpt-4o-mini';
-          console.log('[AI Extract] Successfully generated via OpenAI GPT-4o-mini (Primary)');
+          console.log('[AI Extract] Fallback generated via OpenAI GPT-4o-mini');
         }
       } else {
         const errJson = await res.json().catch(() => ({}));
@@ -437,54 +489,6 @@ Return ONLY a valid JSON object matching:
       }
     } catch (e: any) {
       console.warn('[OpenAI Call Exception/Timeout]:', e?.message || e);
-    }
-  }
-
-  // 2. SECONDARY ENGINE: Google Gemini (gemini-flash-latest Fallback)
-  if (!aiRawOutput && rawGeminiKeys.length > 0) {
-    for (const currentKey of rawGeminiKeys) {
-      if (aiRawOutput) break;
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${currentKey}`;
-        const geminiRes = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: promptText },
-                  { text: `Please extract 100% structured quotation JSON from this context:\n${JSON.stringify(leanPromptContext, null, 2)}` }
-                ]
-              }
-            ],
-            generationConfig: {
-              responseMimeType: 'application/json',
-              temperature: 0.1,
-              maxOutputTokens: 3500
-            }
-          }),
-          signal: AbortSignal.timeout(8000)
-        });
-        if (geminiRes.ok) {
-          const geminiJson = await geminiRes.json();
-          const content = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (content) {
-            aiRawOutput = sanitizeAndParseJson(content);
-            activeEngineProvider = 'gemini';
-            activeEngineModel = 'gemini-flash-latest';
-            activeKeyHint = `${currentKey.slice(0, 14)}...${currentKey.slice(-6)}`;
-            console.log(`[AI Extract] Successfully generated via Gemini (gemini-flash-latest) using key: ${activeKeyHint}`);
-            break;
-          }
-        } else {
-          const errText = await geminiRes.text().catch(() => '');
-          console.warn(`[Gemini gemini-flash-latest Error on key ${currentKey.slice(0, 10)}...]:`, geminiRes.status, errText.slice(0, 150));
-        }
-      } catch (e: any) {
-        console.warn(`[Gemini gemini-flash-latest Exception]:`, e?.message || e);
-      }
     }
   }
 

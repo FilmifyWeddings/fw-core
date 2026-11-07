@@ -734,7 +734,7 @@ LEAD & CLIENT CONTEXT:
             additionalNotes: notes,
             studioSettings: studioSettings
           }),
-          signal: AbortSignal.timeout(15000)
+          signal: AbortSignal.timeout(20000)
         });
 
         if (aiRes.ok) {
@@ -742,7 +742,7 @@ LEAD & CLIENT CONTEXT:
           if (aiJson.success && aiJson.extractedDocument) {
             finalDoc = aiJson.extractedDocument;
             if (aiJson.summary) finalSummary = aiJson.summary;
-            console.log('[AI Modal] Successfully extracted via ChatGPT/AI Math Engine!');
+            console.log('[AI Modal] Successfully extracted via Gemini AI Engine!');
           }
         }
       } catch (geminiErr) {
@@ -1062,14 +1062,14 @@ LEAD & CLIENT CONTEXT:
             additionalNotes: notes,
             studioSettings: studioSettings
           }),
-          signal: AbortSignal.timeout(15000)
+          signal: AbortSignal.timeout(20000)
         });
 
         if (aiRes.ok) {
           const aiJson = await aiRes.json();
           if (aiJson.success && aiJson.extractedDocument) {
             docToApply = aiJson.extractedDocument;
-            console.log('[AI Modal Quick Create] Successfully applied ChatGPT/AI Math Engine!');
+            console.log('[AI Modal Quick Create] Successfully applied Gemini AI Engine!');
           }
         }
       } catch (geminiErr) {
