@@ -108,31 +108,48 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 2. Fallback to OpenAI Whisper API
-        if (!rawTranscript && openAiKey) {
+        // Multimodal Gemini Audio Transcription fallback if needed
+        if (!rawTranscript && geminiKey) {
           try {
-            const whisperFormData = new FormData();
-            const fileObj = new File([audioArrayBuffer], 'voice_note.webm', {
-              type: audioFile.type || 'audio/webm',
-            });
-            whisperFormData.append('file', fileObj);
-            whisperFormData.append('model', 'whisper-1');
-
-            const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${openAiKey}`,
-              },
-              body: whisperFormData,
-            });
-
-            if (whisperRes.ok) {
-              const whisperJson = await whisperRes.json();
-              rawTranscript = (whisperJson.text || '').trim();
-              console.log('[OpenAI Whisper Result]:', rawTranscript);
+            const base64Audio = Buffer.from(audioArrayBuffer).toString('base64');
+            const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+            for (const model of candidateModels) {
+              const geminiRes = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': geminiKey,
+                  },
+                  body: JSON.stringify({
+                    contents: [
+                      {
+                        parts: [
+                          { text: "Accurately transcribe this voice recording verbatim. Output ONLY the words spoken." },
+                          {
+                            inlineData: {
+                              mimeType: audioFile.type || 'audio/webm',
+                              data: base64Audio,
+                            },
+                          },
+                        ],
+                      },
+                    ],
+                  }),
+                }
+              );
+              if (geminiRes.ok) {
+                const geminiJson = await geminiRes.json();
+                const t = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+                if (t) {
+                  rawTranscript = t;
+                  break;
+                }
+              }
             }
           } catch (e) {
-            console.warn('[OpenAI Whisper Exception]:', e);
+            console.warn('[Gemini Voice Comment Transcribe Exception]:', e);
           }
         }
       }
@@ -199,74 +216,48 @@ TERMINOLOGY & POLISHING RULES:
 3. Return ONLY the final polished comment text. Do NOT wrap in quotes, do NOT add introductory conversational filler like "Here is your text:".`;
 
     if (geminiKey) {
-      try {
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: `${systemInstruction}\n\nRaw Voice Transcript:\n"${rawTranscript}"\n\nReturn ONLY the clean polished text string:`,
-                    },
-                  ],
-                },
-              ],
-              generationConfig: {
-                temperature: 0.1,
+      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+      for (const model of candidateModels) {
+        try {
+          const geminiRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': geminiKey,
               },
-            }),
-          }
-        );
+              body: JSON.stringify({
+                contents: [
+                  {
+                    parts: [
+                      {
+                        text: `${systemInstruction}\n\nRaw Voice Transcript:\n"${rawTranscript}"\n\nReturn ONLY the clean polished text string:`,
+                      },
+                    ],
+                  },
+                ],
+                generationConfig: {
+                  temperature: 0.1,
+                },
+              }),
+            }
+          );
 
-        if (geminiRes.ok) {
-          const geminiJson = await geminiRes.json();
-          const gText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-          if (gText) {
-            cleanedComment = gText.replace(/^["']|["']$/g, '');
+          if (geminiRes.ok) {
+            const geminiJson = await geminiRes.json();
+            const gText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (gText) {
+              cleanedComment = gText.replace(/^["']|["']$/g, '');
+              break;
+            }
+          } else {
+            const gErr = await geminiRes.text();
+            console.warn(`[Gemini ${model} Error]:`, gErr);
           }
-        } else {
-          const gErr = await geminiRes.text();
-          console.warn('[Gemini 1.5 Flash Error]:', gErr);
+        } catch (e) {
+          console.warn(`[Gemini ${model} Exception]:`, e);
         }
-      } catch (e) {
-        console.warn('[Gemini API Exception]:', e);
-      }
-    }
-
-    // Fallback to OpenAI GPT-4o-mini
-    if (cleanedComment === rawTranscript && openAiKey) {
-      try {
-        const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${openAiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemInstruction },
-              { role: 'user', content: rawTranscript },
-            ],
-            temperature: 0.1,
-          }),
-        });
-
-        if (chatRes.ok) {
-          const chatJson = await chatRes.json();
-          const content = chatJson.choices?.[0]?.message?.content?.trim();
-          if (content) {
-            cleanedComment = content.replace(/^["']|["']$/g, '');
-          }
-        }
-      } catch (e) {
-        console.warn('[GPT-4o Fallback Exception]:', e);
       }
     }
 

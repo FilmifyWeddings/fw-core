@@ -54,17 +54,20 @@ export async function POST(req: NextRequest) {
     let transcript = '';
     let lastErrorDetail = '';
 
-    // 1. PRIMARY: Google Gemini Multimodal Audio Transcription
+    // 1. EXCLUSIVE PRIMARY: Google Gemini Multimodal Audio Transcription
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
       try {
         const base64Audio = Buffer.from(audioBuffer).toString('base64');
-        const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest'];
+        const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
         for (const model of candidateModels) {
           try {
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': geminiKey
+              },
               body: JSON.stringify({
                 contents: [{
                   parts: [
@@ -104,45 +107,6 @@ export async function POST(req: NextRequest) {
         }
       } catch (geminiEx: any) {
         console.warn('[Gemini Audio Transcription Outer Exception]:', geminiEx?.message || geminiEx);
-      }
-    }
-
-    // 2. SECONDARY FALLBACK: OpenAI Whisper API (whisper-1)
-    if (!transcript && openAiKey) {
-      try {
-        const whisperFormData = new FormData();
-        const fileObj = new File([audioBuffer], `recording.${fileExt}`, {
-          type: mimeType,
-        });
-        whisperFormData.append('file', fileObj);
-        whisperFormData.append('model', 'whisper-1');
-        whisperFormData.append('language', 'hi');
-        whisperFormData.append(
-          'prompt',
-          'Indian wedding photography quotation details: Haldi, Mehendi, Sangeet, Wedding, Reception, Candid Photography, Cinematography, Drone, Album, Rates in Lakhs, Advance Token.'
-        );
-
-        const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${openAiKey}`,
-          },
-          body: whisperFormData,
-          signal: AbortSignal.timeout(28000), // 28s timeout safely within Nginx proxy limit
-        });
-
-        if (res.ok) {
-          const json = await res.json();
-          transcript = (json.text || '').trim();
-          console.log('[OpenAI Whisper Success]:', transcript);
-        } else {
-          const errText = await res.text();
-          lastErrorDetail = `OpenAI Whisper: ${res.status} ${errText}`;
-          console.warn('[OpenAI Whisper Error]:', res.status, errText);
-        }
-      } catch (e: any) {
-        lastErrorDetail = e?.message || String(e);
-        console.warn('[OpenAI Whisper Exception]:', lastErrorDetail);
       }
     }
 

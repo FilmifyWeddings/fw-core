@@ -93,16 +93,19 @@ CRITICAL MANDATES (GEMINI / ANTIGRAVITY FINISHING FIDELITY):
 4. RETURN ONLY the polished, finished replacement text that will directly replace the user's text in the text box.
 5. Do NOT output conversational filler (e.g. "Here is your polished quotation:"), options (no "Option 1 / Option 2"), explanations, or markdown code blocks (\`\`\`). Output plain clean text only.`;
 
-    // 3. PRIMARY ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash Priority)
+    // 3. EXCLUSIVE ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash & gemini-flash-latest)
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
-      const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.5-flash'];
+      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
       for (const model of candidateModels) {
         try {
           const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
           const res = await fetch(geminiUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': geminiKey
+            },
             body: JSON.stringify({
               contents: [
                 {
@@ -118,7 +121,7 @@ CRITICAL MANDATES (GEMINI / ANTIGRAVITY FINISHING FIDELITY):
                 maxOutputTokens: 2000
               }
             }),
-            signal: AbortSignal.timeout(10000)
+            signal: AbortSignal.timeout(12000)
           });
 
           if (res.ok) {
@@ -132,49 +135,13 @@ CRITICAL MANDATES (GEMINI / ANTIGRAVITY FINISHING FIDELITY):
                 engine: `gemini-${model}`
               });
             }
+          } else {
+            const errBody = await res.text().catch(() => '');
+            console.warn(`[Polish Speech] Gemini ${model} error (${res.status}):`, errBody.slice(0, 150));
           }
         } catch (geminiErr: any) {
           console.warn(`[Polish Speech] Gemini ${model} exception:`, geminiErr?.message || geminiErr);
         }
-      }
-    }
-
-    // 4. SECONDARY ENGINE: OpenAI GPT-4o-mini Fallback
-    const openAiKey = process.env.OPENAI_API_KEY;
-    if (openAiKey) {
-      try {
-        const res = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openAiKey}`
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemInstruction },
-              { role: 'user', content: `Raw Spoken Audio Transcript:\n"${rawText}"\n\nCleaned & Formatted Specification:` }
-            ],
-            temperature: 0.1,
-            max_tokens: 800
-          }),
-          signal: AbortSignal.timeout(8000)
-        });
-
-        if (res.ok) {
-          const json = await res.json();
-          const polishedText = json.choices?.[0]?.message?.content?.trim();
-          if (polishedText && polishedText.length > 5) {
-            const cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
-            return NextResponse.json({
-              success: true,
-              polishedText: cleanResult,
-              engine: 'chatgpt-gpt-4o-mini'
-            });
-          }
-        }
-      } catch (openAiErr: any) {
-        console.warn('[Polish Speech] OpenAI fallback exception:', openAiErr?.message || openAiErr);
       }
     }
 

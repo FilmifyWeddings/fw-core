@@ -400,9 +400,9 @@ Return ONLY a valid JSON object matching:
     .filter(Boolean);
   const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // 1. PRIMARY ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash & gemini-flash-latest Priority)
+  // 1. EXCLUSIVE ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash & gemini-flash-latest)
   if (rawGeminiKeys.length > 0) {
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.5-flash'];
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
     for (const currentKey of rawGeminiKeys) {
       if (aiRawOutput) break;
       for (const model of candidateModels) {
@@ -411,7 +411,10 @@ Return ONLY a valid JSON object matching:
           const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`;
           const geminiRes = await fetch(geminiUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': currentKey
+            },
             body: JSON.stringify({
               contents: [
                 {
@@ -449,46 +452,6 @@ Return ONLY a valid JSON object matching:
           console.warn(`[Gemini ${model} Exception]:`, e?.message || e);
         }
       }
-    }
-  }
-
-  // 2. SECONDARY ENGINE: OpenAI GPT-4o-mini Fallback
-  if (!aiRawOutput && openAiKey) {
-    try {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openAiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: promptText },
-            { role: 'user', content: `Please extract structured quotation JSON from this context:\n${JSON.stringify(leanPromptContext, null, 2)}` }
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.1,
-          max_tokens: 3000
-        }),
-        signal: AbortSignal.timeout(10000)
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        const content = json.choices?.[0]?.message?.content;
-        if (content) {
-          aiRawOutput = sanitizeAndParseJson(content);
-          activeEngineProvider = 'openai';
-          activeEngineModel = 'gpt-4o-mini';
-          console.log('[AI Extract] Fallback generated via OpenAI GPT-4o-mini');
-        }
-      } else {
-        const errJson = await res.json().catch(() => ({}));
-        console.warn('[OpenAI Call Error]:', res.status, errJson?.error?.code || errJson?.error?.message);
-      }
-    } catch (e: any) {
-      console.warn('[OpenAI Call Exception/Timeout]:', e?.message || e);
     }
   }
 
