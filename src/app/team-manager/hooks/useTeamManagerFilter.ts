@@ -146,25 +146,35 @@ export function extractSubEventSlots(subEvent: any, teamMembers: any[] = []): an
 /**
  * ⚡ Checks if a project's Project Manager matches the active PM filter
  */
-export function isPmMatch(project: any, filters?: UnifiedFilterState | null): boolean {
+export function isPmMatch(project: any, filters?: UnifiedFilterState | null, teamMembers: any[] = []): boolean {
   if (!filters || !project) return false;
   const activePmIds = (filters.pmIds && filters.pmIds.length > 0)
     ? filters.pmIds
     : (filters.pmId && filters.pmId !== 'all' ? [filters.pmId] : []);
   if (activePmIds.length === 0) return false;
 
-  const pmId = String(project.project_manager_id || project.project_manager?.id || '').toLowerCase();
-  const pmName = String(
+  const pmId = String(project.project_manager_id || project.project_manager?.id || '').toLowerCase().trim();
+  let pmName = String(
     project.project_manager_name ||
     project.project_manager?.name ||
     (typeof project.project_manager === 'string' ? project.project_manager : '') ||
     project.lead_assigned_to ||
     ''
-  ).toLowerCase();
+  ).toLowerCase().trim();
+
+  // If pmName is empty but pmId exists, resolve name from teamMembers directory
+  if (!pmName && pmId && teamMembers && teamMembers.length > 0) {
+    const matchedMem = teamMembers.find(m => String(m.id).toLowerCase() === pmId);
+    if (matchedMem?.name) {
+      pmName = matchedMem.name.toLowerCase().trim();
+    }
+  }
 
   return activePmIds.some(target => {
-    const t = target.toLowerCase();
-    return (Boolean(pmId) && pmId === t) || (Boolean(pmName) && pmName === t);
+    const t = target.toLowerCase().trim();
+    if (!t) return false;
+    return (Boolean(pmId) && pmId === t) ||
+           (Boolean(pmName) && (pmName === t || pmName.includes(t) || t.includes(pmName)));
   });
 }
 
@@ -192,7 +202,7 @@ export function isSubEventMatch(
     : (filters.pmId && filters.pmId !== 'all' ? [filters.pmId] : []);
 
   if (activePmIds.length > 0 && project) {
-    if (!isPmMatch(project, filters)) return false;
+    if (!isPmMatch(project, filters, teamMembers)) return false;
   }
 
   const isTbd = Boolean(subEvent.is_date_tbd) || !subEvent.event_date || String(subEvent.event_date).toLowerCase() === 'tbd' || String(subEvent.event_date).toLowerCase().includes('not fix');
@@ -235,49 +245,55 @@ export function isSubEventMatch(
   // 6. Extract Authoritative Slots
   const slots = extractSubEventSlots(subEvent, teamMembers);
 
-  // 7. Team Member Filter
+  // 7. Strict Joint Crew Filtering: TEAM MEMBER + CREW ROLE + ASSIGNMENT STATUS
+  // When filters like Member AND Role are combined, they MUST match at the SAME slot level!
   const activeMemberIds = (filters.memberIds && filters.memberIds.length > 0)
     ? filters.memberIds
     : (filters.memberId && filters.memberId !== 'all' ? [filters.memberId] : []);
+  const hasMemberFilter = activeMemberIds.length > 0;
 
-  if (activeMemberIds.length > 0) {
-    const hasMember = slots.some((a: any) => {
-      const mId = String(a.assigned_member_id || a.team_member_id || (a.fw_team_members as any)?.id || '').toLowerCase();
-      const mName = String((a.fw_team_members as any)?.name || a.clean_name || a.member_name || a.assigned_member_name || '').toLowerCase();
-      return activeMemberIds.some(target => {
-        const t = target.toLowerCase();
-        return (mId && mId === t) || (mName && mName.includes(t));
-      });
-    });
-    if (!hasMember) return false;
-  }
-
-  // 8. Strict Joint Filtering: CREW ROLE + ASSIGNMENT STATUS
   const hasRoleFilter = Boolean(filters.roles && filters.roles.length > 0);
   const activeStatuses = (filters.assignmentStatuses && filters.assignmentStatuses.length > 0)
     ? filters.assignmentStatuses
     : (filters.assignmentStatus && filters.assignmentStatus !== 'all' ? [filters.assignmentStatus] : []);
   const hasStatusFilter = activeStatuses.length > 0;
 
-  if (hasRoleFilter || hasStatusFilter) {
+  if (hasMemberFilter || hasRoleFilter || hasStatusFilter) {
     if (slots.length === 0) return false;
 
-    // Check if at least ONE slot in THIS sub-event satisfies BOTH role and status filters
-    const matchFound = slots.some((roleSlot: any) => {
-      const slotRoleName = roleSlot.required_role || roleSlot.role_name || roleSlot.role || '';
+    // Check if at least ONE slot in THIS sub-event satisfies ALL active crew criteria jointly
+    const matchFound = slots.some((slot: any) => {
+      // (a) Team Member Check
+      if (hasMemberFilter) {
+        const mId = String(slot.assigned_member_id || slot.team_member_id || (slot.fw_team_members as any)?.id || '').toLowerCase();
+        const mName = String((slot.fw_team_members as any)?.name || slot.clean_name || slot.member_name || slot.assigned_member_name || '').toLowerCase();
+        const memberMatches = activeMemberIds.some(target => {
+          const t = target.toLowerCase().trim();
+          return (Boolean(mId) && mId === t) || (Boolean(mName) && (mName === t || mName.includes(t) || t.includes(mName)));
+        });
+        if (!memberMatches) return false;
+      }
 
-      const matchesRole = !hasRoleFilter || filters.roles.some((r: string) => isRoleMatching(r, slotRoleName));
-      if (!matchesRole) return false;
+      // (b) Crew Role Check
+      if (hasRoleFilter) {
+        const slotRoleName = slot.required_role || slot.role_name || slot.role || '';
+        const roleMatches = filters.roles.some((r: string) => isRoleMatching(r, slotRoleName));
+        if (!roleMatches) return false;
+      }
 
-      const isAssigned = isSlotAssigned(roleSlot);
-
+      // (c) Assignment Status Check
       if (hasStatusFilter) {
+        const isAssigned = isSlotAssigned(slot);
         const wantsAssigned = activeStatuses.some(s => s.toLowerCase() === 'assigned' || s.toLowerCase() === 'fully_assigned');
         const wantsUnassigned = activeStatuses.some(s => s.toLowerCase() === 'unassigned');
 
-        if (wantsAssigned && wantsUnassigned) return true;
-        if (wantsAssigned && !isAssigned) return false;
-        if (wantsUnassigned && isAssigned) return false;
+        if (wantsAssigned && wantsUnassigned) {
+          // both allowed
+        } else if (wantsAssigned && !isAssigned) {
+          return false;
+        } else if (wantsUnassigned && isAssigned) {
+          return false;
+        }
       }
 
       return true;
@@ -311,7 +327,7 @@ export function isProjectMatch(
     : (filters.pmId && filters.pmId !== 'all' ? [filters.pmId] : []);
 
   if (activePmIds.length > 0) {
-    if (!isPmMatch(project, filters)) return false;
+    if (!isPmMatch(project, filters, teamMembers)) return false;
   }
 
   // 3. Sub-events check: At least one sub-event must match the sub-event criteria
@@ -370,8 +386,8 @@ export function checkRoleSlotMatch(
   const mName = String((roleSlot.fw_team_members as any)?.name || roleSlot.clean_name || roleSlot.member_name || roleSlot.assigned_member_name || '').toLowerCase();
 
   const isMemberMatch = hasMemberFilter && activeMemberIds.some(target => {
-    const t = target.toLowerCase();
-    return (mId && mId === t) || (mName && mName.includes(t));
+    const t = target.toLowerCase().trim();
+    return (Boolean(mId) && mId === t) || (Boolean(mName) && (mName === t || mName.includes(t) || t.includes(mName)));
   });
 
   // 2. Role & Status Co-Filtering Match
@@ -395,12 +411,15 @@ export function checkRoleSlotMatch(
     }
   }
 
-  // A slot is targeted if member filter matches, OR if (role / status filter active and matches both)
+  // ⚡ Joint Targeting: If Member, Role, or Status are filtered, a slot is targeted
+  // only if ALL active filters among them match at this exact slot!
   let isTargeted = false;
-  if (hasMemberFilter) {
-    isTargeted = isMemberMatch;
-  } else if (hasRoleFilter || hasStatusFilter) {
-    isTargeted = matchesRole && matchesStatus;
+  const hasAnyCrewFilter = hasMemberFilter || hasRoleFilter || hasStatusFilter;
+  if (hasAnyCrewFilter) {
+    const memberOk = !hasMemberFilter || isMemberMatch;
+    const roleOk = !hasRoleFilter || matchesRole;
+    const statusOk = !hasStatusFilter || matchesStatus;
+    isTargeted = memberOk && roleOk && statusOk;
   }
 
   return {

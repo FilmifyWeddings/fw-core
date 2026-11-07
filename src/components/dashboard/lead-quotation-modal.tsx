@@ -12,6 +12,7 @@ import {
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { AiQuotationModal } from './ai-quotation-modal';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 
 const QuotationDocumentCanvas = dynamic(
@@ -950,34 +951,14 @@ export function LeadQuotationModal({
                 </button>
               </div>
 
-              {/* Opening Quotation Screen Overlay Skeleton */}
+              {/* Opening Quotation Screen Overlay with Official StudioCore 3D Liquid Loader */}
               {openingQuotation && (
-                <div className="fixed inset-0 z-[100003] bg-white/95 dark:bg-[#1C1A18]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-5 animate-in fade-in duration-150">
-                  <div className="relative flex items-center justify-center">
-                    <div className="absolute w-20 h-20 rounded-full bg-amber-500/20 animate-ping" />
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-xl z-10">
-                      <Sparkles className="w-7 h-7 animate-pulse text-amber-100" />
-                    </div>
-                  </div>
-
-                  {/* Skeleton Canvas Preview Card */}
-                  <div className="w-full p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-2.5 animate-pulse">
-                    <div className="flex items-center justify-between">
-                      <div className="w-24 h-4 rounded-md bg-amber-500/30" />
-                      <div className="w-12 h-3 rounded-md bg-zinc-300 dark:bg-zinc-700" />
-                    </div>
-                    <div className="w-48 h-5 rounded-md bg-zinc-300 dark:bg-zinc-700" />
-                    <div className="w-32 h-3 rounded-md bg-zinc-200 dark:bg-zinc-800" />
-                  </div>
-
+                <div className="fixed inset-0 z-[100003] bg-white/95 dark:bg-[#1C1A18]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-4 animate-in fade-in duration-150">
+                  <StudioCoreLiquidLoader label={openingQuotation.step || "Opening StudioCore Quotation..."} fullscreen={false} />
                   <div className="text-center space-y-1">
                     <h4 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-wider">
                       {openingQuotation.title}
                     </h4>
-                    <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1.5">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>{openingQuotation.step}</span>
-                    </p>
                   </div>
                 </div>
               )}

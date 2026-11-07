@@ -357,7 +357,7 @@ const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIONS.map(
 
 // StudioCore Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
-  designName: 'Wedding - Design 1',
+  designName: 'Premium',
   eventGroup: 'Wedding',
   look: 'Cyprus & Sand Dune',
   primaryFont: "'Cormorant Garamond', serif",

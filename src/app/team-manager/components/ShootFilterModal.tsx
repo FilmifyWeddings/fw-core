@@ -213,7 +213,7 @@ export default function ShootFilterModal({
   // 3. Project Manager (PM) Multi-select options
   const pmMultiOptions: MultiSelectOption[] = useMemo(() => {
     return assignedPms.map(pm => ({
-      id: pm.id,
+      id: pm.name,
       name: pm.name,
       badge: 'PM',
     }));
@@ -251,9 +251,9 @@ export default function ShootFilterModal({
     if (!projects || projects.length === 0) return totalFilteredCount;
     return projects.filter(p => {
       if (p.is_archived) return false;
-      return isProjectMatch(p, draft);
+      return isProjectMatch(p, draft, teamMembers);
     }).length;
-  }, [projects, draft, totalFilteredCount]);
+  }, [projects, draft, teamMembers, totalFilteredCount]);
 
   if (!isOpen) return null;
 

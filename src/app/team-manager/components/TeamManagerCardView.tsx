@@ -305,26 +305,13 @@ export default function TeamManagerCardView({
                               return null;
                             }
 
-                            const activeFilterId = selectedFilterMemberId || highlightMemberId;
-                            const isUserAdmin = isAdmin ?? (!isTmReadOnly || isOwner);
-
-                            const isSelectedSpotlight = Boolean(
-                              isUserAdmin &&
-                              isAssigned &&
-                              activeFilterId &&
-                              activeFilterId !== 'all' &&
-                              (
-                                assignment.assigned_member_id === activeFilterId ||
-                                memberObj?.id === activeFilterId ||
-                                cleanName.toLowerCase() === activeFilterId.toLowerCase()
-                              )
-                            );
-
                             const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
-                            const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
+                            const isTargeted = slotMatch.isTargetedSlot;
+                            const isFilterActive = checkIsFilterActive(unifiedFilters);
+                            const isDimmed = isFilterActive && !isTargeted;
 
                             return (
-                              <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
+                              <div key={assignment.id} className={`relative flex flex-col items-center min-w-[68px] transition-opacity duration-200 ${isDimmed ? 'opacity-35 grayscale contrast-75' : ''}`}>
                                 <div
                                   className={`relative flex flex-col items-center transition-all duration-300 ${
                                     isTargeted

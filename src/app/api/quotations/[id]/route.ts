@@ -130,7 +130,7 @@ export async function PUT(
     const payload: any = {
       workspace_id: currentUserId,
       quotation_number: id || 'FW-2026-001',
-      title: title || content_json?.designName || 'Wedding - Design 1',
+      title: title || content_json?.designName || 'Premium',
       client_name: extractCoupleNameFromQuotation(content_json, client_name),
       financials: financials || { total_amount: 0 },
       status: status || 'draft',

@@ -187,20 +187,7 @@ export default function RoleAssignDropdown({
   }, [existingAssignments, assignment.id]);
 
   const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
-  const isSelectedSpotlight = Boolean(
-    (
-      isAdmin &&
-      isAssigned &&
-      selectedFilterMemberId &&
-      selectedFilterMemberId !== 'all' &&
-      (
-        assignment.assigned_member_id === selectedFilterMemberId ||
-        memberObj?.id === selectedFilterMemberId ||
-        cleanName.toLowerCase() === selectedFilterMemberId.toLowerCase()
-      )
-    ) ||
-    slotMatch.isTargetedSlot
-  );
+  const isSelectedSpotlight = slotMatch.isTargetedSlot;
 
   const isFilterActive = isCardFilterActive(unifiedFilters);
   const isDimmed = isFilterActive && !isSelectedSpotlight;

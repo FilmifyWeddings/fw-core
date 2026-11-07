@@ -25,7 +25,7 @@ const DEFAULT_PAGE_SEQUENCE = [
 ];
 
 const DEFAULT_AIRY_PROPOSAL = {
-  designName: 'Wedding - Design 1',
+  designName: 'Premium',
   eventGroup: 'Wedding',
   look: 'Cyprus & Sand Dune',
   primaryFont: "'Cormorant Garamond', serif",

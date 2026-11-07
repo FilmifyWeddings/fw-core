@@ -1456,7 +1456,7 @@ export default function WorkspaceQuotationsGalleryPage() {
               rawDesignName &&
               rawDesignName !== 'Minimalist Airy Proposal' &&
               rawDesignName !== 'Personalised Wedding Quotation'
-            ) ? rawDesignName : (quote.title && quote.title !== 'Minimalist Airy Proposal' ? quote.title : 'Wedding - Design 1');
+            ) ? rawDesignName : (quote.title && quote.title !== 'Minimalist Airy Proposal' && quote.title !== 'Wedding - Design 1' ? quote.title : 'Premium');
             let clientName = (quote as any).content_json?.cover?.coupleName || ((quote as any).content_json?.cover?.groomName ? `${(quote as any).content_json.cover.groomName} & ${(quote as any).content_json.cover.brideName}` : quote.client_name || activeCoupleName);
             if (String(clientName).toUpperCase().includes('YASH & TWINKLE')) clientName = 'Groom & Bride';
 

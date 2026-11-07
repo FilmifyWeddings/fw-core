@@ -864,12 +864,12 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     brandName: d.cover?.brandName || coverSrc.brandName || '',
     brandLogoUrl: coverSrc.brandLogoUrl || d.cover?.brandLogoUrl || '',
     brandLogoSize: coverSrc.brandLogoSize || d.cover?.brandLogoSize || 80,
-    photoUrl: coverSrc.photoUrl ? coverSrc.photoUrl : (d.cover?.photoUrl || ''),
-    photoHeight: coverSrc.photoHeight ?? d.cover?.photoHeight ?? 360,
-    photoWidth: coverSrc.photoWidth ?? d.cover?.photoWidth ?? 75,
-    photoFocalY: coverSrc.photoFocalY ?? d.cover?.photoFocalY ?? 50,
-    bgOpacity: coverSrc.bgOpacity ?? d.cover?.bgOpacity ?? 40,
-    frameShape: coverSrc.frameShape || d.cover?.frameShape || 'rounded',
+    photoUrl: d.cover?.photoUrl || coverSrc.photoUrl || '/images/system-premium-cover.webp',
+    photoHeight: d.cover?.photoHeight ?? coverSrc.photoHeight ?? 570,
+    photoWidth: d.cover?.photoWidth ?? coverSrc.photoWidth ?? 72,
+    photoFocalY: d.cover?.photoFocalY ?? coverSrc.photoFocalY ?? 44,
+    bgOpacity: d.cover?.bgOpacity ?? coverSrc.bgOpacity ?? 19,
+    frameShape: d.cover?.frameShape || coverSrc.frameShape || 'arch',
     imagePosition: coverSrc.imagePosition || d.cover?.imagePosition || 'bottom',
   };
 

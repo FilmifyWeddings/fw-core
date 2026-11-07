@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     // 2. Client-side heuristic baseline (instant fallback)
     const baseCleaned = cleanVoiceTranscript(rawText, leadName);
 
-    const systemInstruction = `You are StudioCore Google Gemini AI Quotation Manager for a premier wedding photography and cinematography studio.
+    const systemInstruction = `You are StudioCore Google Gemini AI Quotation Voice Finisher (just like Google Gemini / Antigravity voice assistant) for a premier wedding photography and cinematography studio.
 The studio owner or sales manager just spoke voice notes into their microphone in Hindi, Hinglish, Marathi, or English.
 Analyze the raw speech transcript, understand the user's true intent, fix any speech-to-text transcription errors, phonetic slips, stutters, and grammatical mistakes (e.g. "कैंडिडेट" / "कैंडिड" -> "Candid Photographer", "सिनेमा" -> "Cinematographer", "ड्रोन" -> "Drone Pilot", "ट्रैडिशनल" -> "Traditional Videographer/Photographer", "ऑल डिलीवरी बस" -> "All Deliverables Add", "डेढ़ लाख" -> "₹1,50,000", numbers to currency, Hindi/Marathi dates).
 
@@ -64,49 +64,34 @@ ${shortcutsContext}
 
 ${customInstructions ? `STUDIO AI TRAINING CUSTOM RULES & TONE:\n${customInstructions}` : ''}
 
-CRITICAL MANDATES:
+CRITICAL MANDATES (GEMINI / ANTIGRAVITY FINISHING FIDELITY):
 1. ACCURATE COUPLE NAME DETECTION:
-   - Identify the Groom and Bride names accurately from the voice transcript (e.g. "राहुल और नेहा" -> "Rahul & Neha", "रोहित और अंजलि" -> "Rohit & Anjali").
-   - If user explicitly mentions a couple name, format it clearly as: "Couple: [Groom] & [Bride]".
-   ${leadName ? `- Note: The CRM lead contact name is "${leadName}", but if the spoken notes mention a different groom/bride or specific couple name, strictly prioritize the SPOKEN couple name!` : ''}
+   - Identify Groom and Bride names accurately from the voice transcript (e.g. "राहुल और नेहा" -> "Rahul & Neha", "रोहित और अंजलि" -> "Rohit & Anjali").
+   - Format: "Couple: [Groom] & [Bride]" (e.g. "Couple: Rahul & Neha").
+   ${leadName ? `- Note: The CRM lead contact name is "${leadName}", but if the spoken notes mention a specific couple name, strictly prioritize the SPOKEN couple name!` : ''}
 
 2. INTELLIGENT MATHEMATICAL PRICING & METHOD CALCULATION (GEMINI 3.8 FLASH PRECISION):
-   - When the user mentions pricing, per-day rates, multi-day shoots, discounts, or payment milestones, YOU MUST EVALUATE THE MATH METHOD ACCURATELY:
-     * Multiplications: e.g. "35000 per day for 2 days" -> Calculate ₹70,000.
-     * Additions: e.g. "Haldi 25k, Sangeet 35k, Wedding 70k" -> Calculate ₹1,30,000 total.
+   - When user mentions pricing, per-day rates, multi-day shoots, discounts, or payment milestones, EVALUATE THE MATH METHOD ACCURATELY:
+     * Multiplications: "35000 per day for 2 days" -> ₹70,000.
+     * Additions: "Haldi 25k, Sangeet 35k, Wedding 70k" -> ₹1,30,000 total.
      * Denominations: "2.5 lakh" / "ढाई लाख" = ₹2,50,000; "डेढ़ लाख" = ₹1,50,000; "25k" = ₹25,000.
-     * Discounts: e.g. "₹25,000 discount" -> Net Total = Base Price - Discount.
+     * Discounts: "₹25,000 discount" -> Net Total = Base Price - Discount.
      * Net Total: Calculate Net Investment = Base Price - Discount + Travel/Extras.
-     * Payment Terms Milestones: If percentages are mentioned (e.g. 30% advance, 50% event day, 20% delivery), CALCULATE the exact rupee amount for EACH milestone based on Net Investment!
+     * Payment Terms Milestones: If percentages are mentioned (e.g. 25% token advance, 50% event day, 25% delivery), CALCULATE the exact rupee amount for EACH milestone based on Net Investment!
 
-3. STRUCTURE THE NOTES IN AN ULTRA-SORTED FORMAT FOR 1-CLICK QUOTATION CONVERSION:
-Couple: [Groom] & [Bride]
-Event Type: Wedding (or Pre-Wedding / Engagement / Reception)
-Location: [City / Venue]
+3. ZERO PLACEHOLDER & FAKE BRACKET MANDATE:
+   - Format what was ACTUALLY spoken into clean, clear, natural lines covering:
+     * Couple: Groom & Bride (if mentioned)
+     * Location: City / Venue (if mentioned)
+     * Events & Dates: list of ceremonies with date, venue, and crew (only those actually spoken)
+     * Deliverables: ONLY list deliverables if explicitly mentioned by user (e.g. Traditional Video, Cinematic Teaser, 2 Photobooks).
+     * Pricing / Budget: Base package, discount, net amount (with evaluated math)
+     * Payment Milestones: (only if payment terms or token advance were mentioned)
+   - STRICT: NEVER output robotic fake bracket placeholders like "[Deliverable 1]", "[Deliverable 2]", "[Time/Slot]", "[Venue/City]", or "(To be specified)". If the user did NOT mention something, DO NOT include that line or section!
+   - Finish and clean the user's speech naturally and fluently, exactly as they intended.
 
-Events & Coverage Schedule:
-- [DD - MMM - YYYY] [Function Name]: [Venue/City], [Time/Slot]
-  Crew: [Count] [Role Name] (e.g. 2 Candid Photographers, 2 Cinematographers, 1 Drone Pilot)
-
-Deliverables:
-- [Deliverable 1]
-- [Deliverable 2]
-
-Pricing & Math Breakdown:
-- Base Package: ₹...
-- Discount: ₹...
-- Net Total Investment: ₹...
-
-Payment Milestones (Calculated):
-- [X]% Booking Advance Token: ₹...
-- [Y]% On Event Day: ₹...
-- [Z]% On Final Delivery: ₹...
-
-Special Notes:
-- [Any special instructions, terms, or notes mentioned]
-
-4. RETURN ONLY the polished, structured replacement text that will directly replace the user's text in the text box.
-5. Do NOT output conversational filler (e.g. "Here is your polished quotation:"), explanations, or markdown code blocks (\`\`\`). Output plain text only.`;
+4. RETURN ONLY the polished, finished replacement text that will directly replace the user's text in the text box.
+5. Do NOT output conversational filler (e.g. "Here is your polished quotation:"), options (no "Option 1 / Option 2"), explanations, or markdown code blocks (\`\`\`). Output plain clean text only.`;
 
     // 3. PRIMARY ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash Priority)
     const geminiKey = process.env.GEMINI_API_KEY;
@@ -124,13 +109,13 @@ Special Notes:
                   role: 'user',
                   parts: [
                     { text: systemInstruction },
-                    { text: `Raw Voice Input:\n"${rawText}"\n\nCleaned & Formatted Replacement Text:` }
+                    { text: `Raw Voice Input:\n"${rawText}"\n\nClean Finished Replacement Text:` }
                   ]
                 }
               ],
               generationConfig: {
                 temperature: 0.1,
-                maxOutputTokens: 800
+                maxOutputTokens: 2000
               }
             }),
             signal: AbortSignal.timeout(10000)

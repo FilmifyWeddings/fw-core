@@ -43,6 +43,7 @@ const AiQuotationModal = dynamic(
   { ssr: false }
 );
 import { consolidateSameDateFunctions, resolvePrimaryCoverLocation } from '@/lib/quotation-defaults';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
@@ -8097,14 +8098,7 @@ export default function TemplateQuotationBuilderPage() {
   }, []);
 
   return (
-    <React.Suspense fallback={
-      <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 flex items-center justify-center p-4">
-        <div className="text-center space-y-3">
-          <div className="w-10 h-10 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-zinc-600">Loading StudioCore Editor...</p>
-        </div>
-      </div>
-    }>
+    <React.Suspense fallback={<StudioCoreLiquidLoader label="Loading StudioCore Editor..." fullscreen={true} />}>
       <StudioCoreAiryBuilderContent />
     </React.Suspense>
   );

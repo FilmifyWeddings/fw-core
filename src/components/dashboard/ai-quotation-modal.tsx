@@ -448,18 +448,48 @@ export function AiQuotationModal({
   const [missingInfo, setMissingInfo] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<any[]>([]);
 
-  const activeTemplateObj = availableTemplates?.find(t => t.id === (activeTemplateId || selectedTemplateId)) || availableTemplates?.find(t => t.is_default) || availableTemplates?.[0];
-  let resolvedBaseDoc = activeTemplateObj?.content_json || currentDocumentData || null;
-  if (!resolvedBaseDoc && typeof window !== 'undefined') {
-    try {
-      const cachedTmpls = getSynchronousCachedTemplates(effectiveLead?.workspace_id);
-      const foundCached = cachedTmpls.find(t => t.id === (activeTemplateId || selectedTemplateId)) || cachedTmpls.find(t => t.is_default) || cachedTmpls[0];
-      if (foundCached?.content_json) {
-        resolvedBaseDoc = foundCached.content_json;
-      }
-    } catch (_) {}
-  }
-  const baseTemplateDoc = resolvedBaseDoc;
+  const activeTemplateObj = useMemo(() => {
+    if (!availableTemplates || availableTemplates.length === 0) return null;
+    const targetId = activeTemplateId || selectedTemplateId;
+    if (targetId) {
+      const found = availableTemplates.find(t => t.id === targetId);
+      if (found) return found;
+    }
+    return availableTemplates.find(t => t.is_default) || availableTemplates[0] || null;
+  }, [availableTemplates, activeTemplateId, selectedTemplateId]);
+
+  const baseTemplateDoc = useMemo(() => {
+    if (activeTemplateObj?.content_json && typeof activeTemplateObj.content_json === 'object') {
+      return activeTemplateObj.content_json;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const cachedTmpls = getSynchronousCachedTemplates(effectiveLead?.workspace_id);
+        const targetId = activeTemplateId || selectedTemplateId || activeTemplateObj?.id;
+        const found = cachedTmpls.find(t => t.id === targetId) || cachedTmpls.find(t => t.is_default) || cachedTmpls[0];
+        if (found?.content_json) {
+          return found.content_json;
+        }
+      } catch (_) {}
+    }
+    return currentDocumentData || DEFAULT_AIRY_PROPOSAL;
+  }, [activeTemplateObj, activeTemplateId, selectedTemplateId, effectiveLead?.workspace_id, currentDocumentData]);
+
+  // Ensure content_json of selected template is always fetched if missing in memory
+  useEffect(() => {
+    const targetId = activeTemplateId || selectedTemplateId || activeTemplateObj?.id;
+    if (targetId && (!activeTemplateObj?.content_json || Object.keys(activeTemplateObj.content_json).length === 0)) {
+      fetch(`/api/templates/${targetId}`)
+        .then(r => r.json())
+        .then(json => {
+          const docContent = json.document?.content_json || json.document?.document_json || (json.document?.cover ? json.document : null);
+          if (docContent && activeTemplateObj) {
+            activeTemplateObj.content_json = docContent;
+          }
+        })
+        .catch(err => console.warn('[AI Modal] Template content fetch error:', err));
+    }
+  }, [activeTemplateId, selectedTemplateId, activeTemplateObj]);
 
   if (!isOpen) return null;
 
@@ -773,9 +803,59 @@ LEAD & CLIENT CONTEXT:
       return (name || '').replace(/\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|\d|all|deliverable|days|day).*$/i, '').trim();
     };
 
+    const chosenBaseDoc = baseTemplateDoc || activeTemplateObj?.content_json || currentDocumentData || DEFAULT_AIRY_PROPOSAL;
+
+    const applyVisualTokens = (targetDoc: any, baseDoc: any) => {
+      if (!targetDoc || !baseDoc) return;
+      targetDoc.look = baseDoc.look || targetDoc.look || 'cyprus-sand-dune';
+      targetDoc.theme = baseDoc.theme || baseDoc.look || targetDoc.theme || 'cyprus-sand-dune';
+      targetDoc.primaryFont = baseDoc.primaryFont || targetDoc.primaryFont || 'Cormorant Garamond';
+      targetDoc.secondaryFont = baseDoc.secondaryFont || targetDoc.secondaryFont || 'Plus Jakarta Sans';
+      if (baseDoc.colorPalette) targetDoc.colorPalette = baseDoc.colorPalette;
+
+      if (!targetDoc.cover) targetDoc.cover = {};
+      if (baseDoc.cover) {
+        if (baseDoc.cover.frameShape) targetDoc.cover.frameShape = baseDoc.cover.frameShape;
+        if (baseDoc.cover.photoUrl) targetDoc.cover.photoUrl = baseDoc.cover.photoUrl;
+        if (baseDoc.cover.photoHeight !== undefined) targetDoc.cover.photoHeight = baseDoc.cover.photoHeight;
+        if (baseDoc.cover.photoWidth !== undefined) targetDoc.cover.photoWidth = baseDoc.cover.photoWidth;
+        if (baseDoc.cover.photoFocalY !== undefined) targetDoc.cover.photoFocalY = baseDoc.cover.photoFocalY;
+        if (baseDoc.cover.bgOpacity !== undefined) targetDoc.cover.bgOpacity = baseDoc.cover.bgOpacity;
+        if (baseDoc.cover.imagePosition) targetDoc.cover.imagePosition = baseDoc.cover.imagePosition;
+        if (baseDoc.cover.sideOption) targetDoc.cover.sideOption = baseDoc.cover.sideOption;
+        if (baseDoc.cover.brandName) targetDoc.cover.brandName = baseDoc.cover.brandName;
+        if (baseDoc.cover.brandLogoUrl) targetDoc.cover.brandLogoUrl = baseDoc.cover.brandLogoUrl;
+        if (baseDoc.cover.brandLogoSize !== undefined) targetDoc.cover.brandLogoSize = baseDoc.cover.brandLogoSize;
+      }
+
+      if (Array.isArray(baseDoc.pageSequence) && baseDoc.pageSequence.length > 0) {
+        targetDoc.pageSequence = baseDoc.pageSequence;
+      }
+      if (Array.isArray(baseDoc.customPages) && baseDoc.customPages.length > 0) {
+        targetDoc.customPages = baseDoc.customPages;
+      }
+
+      if (baseDoc.aboutUs?.photo) {
+        if (!targetDoc.aboutUs) targetDoc.aboutUs = {};
+        targetDoc.aboutUs.photo = baseDoc.aboutUs.photo;
+        if (baseDoc.aboutUs.signature) targetDoc.aboutUs.signature = baseDoc.aboutUs.signature;
+      }
+      if (baseDoc.shootDetails?.photo) {
+        if (!targetDoc.shootDetails) targetDoc.shootDetails = {};
+        targetDoc.shootDetails.photo = baseDoc.shootDetails.photo;
+      }
+      if (baseDoc.thankYouPage?.photo) {
+        if (!targetDoc.thankYouPage) targetDoc.thankYouPage = {};
+        targetDoc.thankYouPage.photo = baseDoc.thankYouPage.photo;
+        if (baseDoc.thankYouPage.signature) targetDoc.thankYouPage.signature = baseDoc.thankYouPage.signature;
+        if (baseDoc.thankYouPage.brandName) targetDoc.thankYouPage.brandName = baseDoc.thankYouPage.brandName;
+      }
+    };
+
     // ⚡ INSTANT 0ms OPTIMISTIC BUILDER APPLY (Inside Builder):
     if (quotationId && onApplied) {
-      const mergedDoc = normalizeQuotationData(docToApply, currentDocumentData || baseTemplateDoc);
+      const mergedDoc = normalizeQuotationData(docToApply, chosenBaseDoc);
+      applyVisualTokens(mergedDoc, chosenBaseDoc);
       const rawDocCouple = stripTrailingKeywords((docToApply?.cover?.coupleName || '').trim());
       const rawGroom = stripTrailingKeywords((docToApply?.cover?.groomName || '').trim());
       const rawBride = stripTrailingKeywords((docToApply?.cover?.brideName || '').trim());
@@ -868,7 +948,8 @@ LEAD & CLIENT CONTEXT:
 
     const targetQId = quotationId || `FW-Q-${leadShort}-V${nextVersion}-${randSuffix}`;
 
-    const mergedDoc = normalizeQuotationData(docToApply, baseTemplateDoc || currentDocumentData);
+    const mergedDoc = normalizeQuotationData(docToApply, chosenBaseDoc);
+    applyVisualTokens(mergedDoc, chosenBaseDoc);
     mergedDoc.id = targetQId;
     mergedDoc.lead_id = lId;
     mergedDoc.lead_version = nextVersion;

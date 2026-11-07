@@ -1633,33 +1633,51 @@ export default function TeamManagerPage() {
     return days > 0 ? `In ${days} Days` : days === 0 ? 'Today' : `${Math.abs(days)} Days Ago`;
   };
 
-  // Extract unique active project managers from current projects
+  // Extract unique active project managers from current projects (deduplicated by canonical person name)
   const assignedPms = useMemo(() => {
     const map = new Map<string, { id: string; name: string }>();
     projects.forEach((p: any) => {
-      if (p.is_archived) return;
+      if (p.is_archived || p.status === 'trash') return;
+
+      let rawName = '';
+      let rawId = '';
+
       if (p.project_manager) {
         if (typeof p.project_manager === 'object') {
-          const id = p.project_manager.id || p.project_manager_id || p.project_manager.name;
-          const name = p.project_manager.name || p.project_manager_name;
-          if (id && name) map.set(String(id), { id: String(id), name: String(name) });
+          rawId = p.project_manager.id || p.project_manager_id || '';
+          rawName = p.project_manager.name || p.project_manager_name || '';
         } else if (typeof p.project_manager === 'string' && p.project_manager.trim()) {
-          const val = p.project_manager.trim();
-          map.set(val, { id: val, name: val });
+          rawName = p.project_manager.trim();
         }
       }
-      if (p.project_manager_id && p.project_manager_name) {
-        map.set(String(p.project_manager_id), { id: String(p.project_manager_id), name: String(p.project_manager_name) });
-      } else if (p.project_manager_name && typeof p.project_manager_name === 'string' && p.project_manager_name.trim()) {
-        const val = p.project_manager_name.trim();
-        map.set(val, { id: val, name: val });
-      } else if (p.lead_assigned_to && typeof p.lead_assigned_to === 'string' && p.lead_assigned_to.trim()) {
-        const val = p.lead_assigned_to.trim();
-        map.set(val, { id: val, name: val });
+      if (!rawName && p.project_manager_name) {
+        rawName = String(p.project_manager_name).trim();
+      }
+      if (!rawId && p.project_manager_id) {
+        rawId = String(p.project_manager_id).trim();
+      }
+      if (!rawName && rawId && teamMembers.length > 0) {
+        const found = teamMembers.find(m => m.id === rawId);
+        if (found?.name) rawName = found.name;
+      }
+      if (!rawName && p.lead_assigned_to && typeof p.lead_assigned_to === 'string') {
+        rawName = p.lead_assigned_to.trim();
+      }
+
+      const cleanName = rawName.replace(/\.\.\./g, '').trim();
+      if (!cleanName || ['unassigned', 'none', 'null', 'not fixed', 'tbd', 'pending'].includes(cleanName.toLowerCase())) {
+        return;
+      }
+
+      // Strict Deduplication by normalized name so the same PM never appears twice in the filter dropdown
+      const normKey = cleanName.toLowerCase();
+      if (!map.has(normKey)) {
+        map.set(normKey, { id: cleanName, name: cleanName });
       }
     });
+
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [projects]);
+  }, [projects, teamMembers]);
 
   // Filtered Projects List with Unified Filter Support
   const filteredProjects = useMemo(() => {
@@ -2943,23 +2961,6 @@ export default function TeamManagerPage() {
                                           (userId && memberObj?.user_id === userId)
                                         );
 
-                                        const isSelectedSpotlight = Boolean(
-                                          !isTmReadOnly &&
-                                          isAssigned &&
-                                          (
-                                            (unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0 && (
-                                              (assignment.assigned_member_id && unifiedFilters.memberIds.includes(assignment.assigned_member_id)) ||
-                                              (memberObj?.id && unifiedFilters.memberIds.includes(memberObj.id)) ||
-                                              unifiedFilters.memberIds.some(id => id.toLowerCase() === cleanName.toLowerCase())
-                                            )) ||
-                                            (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all' && (
-                                              assignment.assigned_member_id === unifiedFilters.memberId ||
-                                              memberObj?.id === unifiedFilters.memberId ||
-                                              cleanName.toLowerCase() === unifiedFilters.memberId.toLowerCase()
-                                            ))
-                                          )
-                                        );
-
                                         // Dynamic Per-Event RBAC Masking: omit non-self roles completely if OWN_ROLE_ONLY
                                         if (eventVisibility === 'OWN_ROLE_ONLY' && !isCurrentUserSlot) {
                                           return null;
@@ -2967,7 +2968,7 @@ export default function TeamManagerPage() {
 
                                         const isFilterActive = checkIsFilterActive(unifiedFilters) || selectedRoleFilter !== 'All';
                                         const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
-                                        const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
+                                        const isTargeted = slotMatch.isTargetedSlot;
                                         const isDimmed = isFilterActive && !isTargeted;
 
                                         return (
@@ -3451,24 +3452,6 @@ export default function TeamManagerPage() {
                                             (userId && memberObj?.user_id === userId)
                                           );
 
-                                          const isUserAdmin = !isTmReadOnly;
-                                          const isSelectedSpotlight = Boolean(
-                                            isUserAdmin &&
-                                            isAssigned &&
-                                            (
-                                              (unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0 && (
-                                                (assignment.assigned_member_id && unifiedFilters.memberIds.includes(assignment.assigned_member_id)) ||
-                                                (memberObj?.id && unifiedFilters.memberIds.includes(memberObj.id)) ||
-                                                unifiedFilters.memberIds.some(id => id.toLowerCase() === cleanName.toLowerCase())
-                                              )) ||
-                                              (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all' && (
-                                                assignment.assigned_member_id === unifiedFilters.memberId ||
-                                                memberObj?.id === unifiedFilters.memberId ||
-                                                cleanName.toLowerCase() === unifiedFilters.memberId.toLowerCase()
-                                              ))
-                                            )
-                                          );
-
                                           // Dynamic Per-Event RBAC Masking: omit non-self roles completely if OWN_ROLE_ONLY
                                           if (eventVisibility === 'OWN_ROLE_ONLY' && !isCurrentUserSlot) {
                                             return null;
@@ -3476,7 +3459,7 @@ export default function TeamManagerPage() {
 
                                           const isFilterActive = checkIsFilterActive(unifiedFilters) || selectedRoleFilter !== 'All';
                                           const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
-                                          const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
+                                          const isTargeted = slotMatch.isTargetedSlot;
                                           const isDimmed = isFilterActive && !isTargeted;
 
                                           return (
