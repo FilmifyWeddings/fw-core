@@ -55,11 +55,11 @@ export async function POST(req: NextRequest) {
     let lastErrorDetail = '';
 
     // 1. EXCLUSIVE PRIMARY: Google Gemini Multimodal Audio Transcription
-    const geminiKey = process.env.GEMINI_API_KEY;
+    const geminiKey = (process.env.GEMINI_API_KEY || '').split(',')[0]?.trim();
     if (geminiKey) {
       try {
         const base64Audio = Buffer.from(audioBuffer).toString('base64');
-        const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+        const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
         for (const model of candidateModels) {
           try {
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {

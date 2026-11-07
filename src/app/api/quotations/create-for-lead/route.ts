@@ -59,16 +59,22 @@ export async function POST(req: NextRequest) {
       workspaceId = profile.id;
     }
 
-    // 2. Fast template resolution: if initialDocument provided by client, skip slow DB lookups!
+    // 2. Strict Template Design Resolution: Always load authentic template to guarantee 100% design fidelity
     let sourceTemplateId = explicitTemplateId || GLOBAL_SYSTEM_TEMPLATE_ID;
     let templateDoc = DEFAULT_AIRY_PROPOSAL;
 
-    if (body.initialDocument && typeof body.initialDocument === 'object') {
-      templateDoc = body.initialDocument;
-    } else {
+    try {
       const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId, explicitTemplateId);
-      sourceTemplateId = resolved.templateId;
-      templateDoc = resolved.document || DEFAULT_AIRY_PROPOSAL;
+      if (resolved?.document) {
+        sourceTemplateId = resolved.templateId;
+        templateDoc = resolved.document;
+      }
+    } catch (tmplErr) {
+      console.warn('[create-for-lead] Error resolving template:', tmplErr);
+    }
+
+    if (body.initialDocument && typeof body.initialDocument === 'object') {
+      templateDoc = normalizeQuotationData(body.initialDocument, templateDoc);
     }
 
     // Calculate max version

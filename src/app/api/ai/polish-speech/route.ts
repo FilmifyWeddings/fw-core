@@ -93,54 +93,59 @@ CRITICAL MANDATES (GEMINI / ANTIGRAVITY FINISHING FIDELITY):
 4. RETURN ONLY the polished, finished replacement text that will directly replace the user's text in the text box.
 5. Do NOT output conversational filler (e.g. "Here is your polished quotation:"), options (no "Option 1 / Option 2"), explanations, or markdown code blocks (\`\`\`). Output plain clean text only.`;
 
-    // 3. EXCLUSIVE ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash & gemini-flash-latest)
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey) {
-      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
-      for (const model of candidateModels) {
-        try {
-          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
-          const res = await fetch(geminiUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': geminiKey
-            },
-            body: JSON.stringify({
-              contents: [
-                {
-                  role: 'user',
-                  parts: [
-                    { text: systemInstruction },
-                    { text: `Raw Voice Input:\n"${rawText}"\n\nClean Finished Replacement Text:` }
-                  ]
+    // 3. EXCLUSIVE ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash, gemini-flash-latest & gemini-2.5-flash)
+    const rawGeminiKeys = (process.env.GEMINI_API_KEY || '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
+    if (rawGeminiKeys.length > 0) {
+      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
+      for (const geminiKey of rawGeminiKeys) {
+        for (const model of candidateModels) {
+          try {
+            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+            const res = await fetch(geminiUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': geminiKey
+              },
+              body: JSON.stringify({
+                contents: [
+                  {
+                    role: 'user',
+                    parts: [
+                      { text: systemInstruction },
+                      { text: `Raw Voice Input:\n"${rawText}"\n\nClean Finished Replacement Text:` }
+                    ]
+                  }
+                ],
+                generationConfig: {
+                  temperature: 0.1,
+                  maxOutputTokens: 2000
                 }
-              ],
-              generationConfig: {
-                temperature: 0.1,
-                maxOutputTokens: 2000
-              }
-            }),
-            signal: AbortSignal.timeout(12000)
-          });
+              }),
+              signal: AbortSignal.timeout(12000)
+            });
 
-          if (res.ok) {
-            const geminiJson = await res.json();
-            const polishedText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            if (polishedText && polishedText.length > 5) {
-              const cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
-              return NextResponse.json({
-                success: true,
-                polishedText: cleanResult,
-                engine: `gemini-${model}`
-              });
+            if (res.ok) {
+              const geminiJson = await res.json();
+              const polishedText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+              if (polishedText && polishedText.length > 5) {
+                const cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
+                return NextResponse.json({
+                  success: true,
+                  polishedText: cleanResult,
+                  engine: `gemini-${model}`
+                });
+              }
+            } else {
+              const errBody = await res.text().catch(() => '');
+              console.warn(`[Polish Speech] Gemini ${model} error (${res.status}):`, errBody.slice(0, 150));
             }
-          } else {
-            const errBody = await res.text().catch(() => '');
-            console.warn(`[Polish Speech] Gemini ${model} error (${res.status}):`, errBody.slice(0, 150));
+          } catch (geminiErr: any) {
+            console.warn(`[Polish Speech] Gemini ${model} exception:`, geminiErr?.message || geminiErr);
           }
-        } catch (geminiErr: any) {
-          console.warn(`[Polish Speech] Gemini ${model} exception:`, geminiErr?.message || geminiErr);
         }
       }
     }

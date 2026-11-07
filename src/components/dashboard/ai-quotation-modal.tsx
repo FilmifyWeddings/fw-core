@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -447,6 +447,7 @@ export function AiQuotationModal({
   const [summary, setSummary] = useState<any>(null);
   const [missingInfo, setMissingInfo] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<any[]>([]);
+  const [fetchedTemplateDoc, setFetchedTemplateDoc] = useState<any>(null);
 
   const activeTemplateObj = useMemo(() => {
     if (!availableTemplates || availableTemplates.length === 0) return null;
@@ -459,36 +460,47 @@ export function AiQuotationModal({
   }, [availableTemplates, activeTemplateId, selectedTemplateId]);
 
   const baseTemplateDoc = useMemo(() => {
-    if (activeTemplateObj?.content_json && typeof activeTemplateObj.content_json === 'object') {
+    if (activeTemplateObj?.content_json && typeof activeTemplateObj.content_json === 'object' && Object.keys(activeTemplateObj.content_json).length > 0) {
       return activeTemplateObj.content_json;
+    }
+    if (fetchedTemplateDoc && typeof fetchedTemplateDoc === 'object' && Object.keys(fetchedTemplateDoc).length > 0) {
+      return fetchedTemplateDoc;
     }
     if (typeof window !== 'undefined') {
       try {
         const cachedTmpls = getSynchronousCachedTemplates(effectiveLead?.workspace_id);
         const targetId = activeTemplateId || selectedTemplateId || activeTemplateObj?.id;
         const found = cachedTmpls.find(t => t.id === targetId) || cachedTmpls.find(t => t.is_default) || cachedTmpls[0];
-        if (found?.content_json) {
+        if (found?.content_json && Object.keys(found.content_json).length > 0) {
           return found.content_json;
         }
       } catch (_) {}
     }
     return currentDocumentData || DEFAULT_AIRY_PROPOSAL;
-  }, [activeTemplateObj, activeTemplateId, selectedTemplateId, effectiveLead?.workspace_id, currentDocumentData]);
+  }, [activeTemplateObj, fetchedTemplateDoc, activeTemplateId, selectedTemplateId, effectiveLead?.workspace_id, currentDocumentData]);
 
-  // Ensure content_json of selected template is always fetched if missing in memory
+  // Ensure content_json of selected template is always fetched & state updated if missing in memory
   useEffect(() => {
     const targetId = activeTemplateId || selectedTemplateId || activeTemplateObj?.id;
-    if (targetId && (!activeTemplateObj?.content_json || Object.keys(activeTemplateObj.content_json).length === 0)) {
-      fetch(`/api/templates/${targetId}`)
-        .then(r => r.json())
-        .then(json => {
-          const docContent = json.document?.content_json || json.document?.document_json || (json.document?.cover ? json.document : null);
-          if (docContent && activeTemplateObj) {
+    if (!targetId) return;
+
+    if (activeTemplateObj?.content_json && Object.keys(activeTemplateObj.content_json).length > 0) {
+      setFetchedTemplateDoc(activeTemplateObj.content_json);
+      return;
+    }
+
+    fetch(`/api/templates/${targetId}`)
+      .then(r => r.json())
+      .then(json => {
+        const docContent = json.document?.content_json || json.document?.document_json || (json.document?.cover ? json.document : null);
+        if (docContent) {
+          if (activeTemplateObj) {
             activeTemplateObj.content_json = docContent;
           }
-        })
-        .catch(err => console.warn('[AI Modal] Template content fetch error:', err));
-    }
+          setFetchedTemplateDoc(docContent);
+        }
+      })
+      .catch(err => console.warn('[AI Modal] Template content fetch error:', err));
   }, [activeTemplateId, selectedTemplateId, activeTemplateObj]);
 
   if (!isOpen) return null;
@@ -826,6 +838,7 @@ LEAD & CLIENT CONTEXT:
         if (baseDoc.cover.brandName) targetDoc.cover.brandName = baseDoc.cover.brandName;
         if (baseDoc.cover.brandLogoUrl) targetDoc.cover.brandLogoUrl = baseDoc.cover.brandLogoUrl;
         if (baseDoc.cover.brandLogoSize !== undefined) targetDoc.cover.brandLogoSize = baseDoc.cover.brandLogoSize;
+        if (baseDoc.cover.coverStyle) targetDoc.cover.coverStyle = baseDoc.cover.coverStyle;
       }
 
       if (Array.isArray(baseDoc.pageSequence) && baseDoc.pageSequence.length > 0) {
@@ -835,20 +848,41 @@ LEAD & CLIENT CONTEXT:
         targetDoc.customPages = baseDoc.customPages;
       }
 
-      if (baseDoc.aboutUs?.photo) {
+      if (baseDoc.aboutUs) {
         if (!targetDoc.aboutUs) targetDoc.aboutUs = {};
-        targetDoc.aboutUs.photo = baseDoc.aboutUs.photo;
+        if (baseDoc.aboutUs.photo) targetDoc.aboutUs.photo = baseDoc.aboutUs.photo;
         if (baseDoc.aboutUs.signature) targetDoc.aboutUs.signature = baseDoc.aboutUs.signature;
+        if (baseDoc.aboutUs.kicker) targetDoc.aboutUs.kicker = baseDoc.aboutUs.kicker;
+        if (baseDoc.aboutUs.heading) targetDoc.aboutUs.heading = baseDoc.aboutUs.heading;
+        if (baseDoc.aboutUs.text && (!targetDoc.aboutUs.text || targetDoc.aboutUs.text.length < 15)) {
+          targetDoc.aboutUs.text = baseDoc.aboutUs.text;
+        }
       }
-      if (baseDoc.shootDetails?.photo) {
+      if (baseDoc.shootDetails) {
         if (!targetDoc.shootDetails) targetDoc.shootDetails = {};
-        targetDoc.shootDetails.photo = baseDoc.shootDetails.photo;
+        if (baseDoc.shootDetails.photo) targetDoc.shootDetails.photo = baseDoc.shootDetails.photo;
+        if (baseDoc.shootDetails.kicker) targetDoc.shootDetails.kicker = baseDoc.shootDetails.kicker;
+        if (baseDoc.shootDetails.heading) targetDoc.shootDetails.heading = baseDoc.shootDetails.heading;
       }
-      if (baseDoc.thankYouPage?.photo) {
+      if (baseDoc.termsPage) {
+        targetDoc.termsPage = {
+          ...(targetDoc.termsPage || {}),
+          ...baseDoc.termsPage
+        };
+      }
+      if (baseDoc.thankYouPage) {
         if (!targetDoc.thankYouPage) targetDoc.thankYouPage = {};
-        targetDoc.thankYouPage.photo = baseDoc.thankYouPage.photo;
+        if (baseDoc.thankYouPage.photo) targetDoc.thankYouPage.photo = baseDoc.thankYouPage.photo;
         if (baseDoc.thankYouPage.signature) targetDoc.thankYouPage.signature = baseDoc.thankYouPage.signature;
         if (baseDoc.thankYouPage.brandName) targetDoc.thankYouPage.brandName = baseDoc.thankYouPage.brandName;
+        if (baseDoc.thankYouPage.phone) targetDoc.thankYouPage.phone = baseDoc.thankYouPage.phone;
+        if (baseDoc.thankYouPage.email) targetDoc.thankYouPage.email = baseDoc.thankYouPage.email;
+        if (baseDoc.thankYouPage.website) targetDoc.thankYouPage.website = baseDoc.thankYouPage.website;
+      }
+      const appliedTemplateId = activeTemplateId || selectedTemplateId || activeTemplateObj?.id;
+      if (appliedTemplateId) {
+        targetDoc.source_template_id = appliedTemplateId;
+        targetDoc.template_id = appliedTemplateId;
       }
     };
 
@@ -1398,7 +1432,12 @@ LEAD & CLIENT CONTEXT:
                         ) : isTranscribing ? (
                           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-bold animate-pulse">
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500 shrink-0" />
-                            <span>Fetching...</span>
+                            <span>Transcribing...</span>
+                          </div>
+                        ) : isPolishing ? (
+                          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-700 dark:text-purple-400 text-xs font-bold animate-pulse shadow-sm">
+                            <Sparkles className="w-3.5 h-3.5 animate-spin text-purple-500 shrink-0" />
+                            <span>Gemini Polishing...</span>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">

@@ -402,7 +402,7 @@ Return ONLY a valid JSON object matching:
 
   // 1. EXCLUSIVE ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash & gemini-flash-latest)
   if (rawGeminiKeys.length > 0) {
-    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
     for (const currentKey of rawGeminiKeys) {
       if (aiRawOutput) break;
       for (const model of candidateModels) {
