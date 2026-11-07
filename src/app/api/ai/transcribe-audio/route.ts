@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
 
     if (!transcript) {
       return NextResponse.json({
-        error: lastErrorDetail || 'Could not transcribe audio. Please ensure OpenAI credits are active or type your notes directly.',
+        error: lastErrorDetail || 'Could not transcribe audio. Please speak again or type your notes directly.',
         success: false
       }, { status: 422 });
     }

@@ -1201,9 +1201,9 @@ LEAD & CLIENT CONTEXT:
                     >
                       <Sparkles className="w-4 h-4 text-purple-500 animate-spin shrink-0" />
                       <div className="flex-1">
-                        <span className="font-extrabold">✨ ChatGPT Manager Analyzing & Polishing your speech...</span>
+                        <span className="font-extrabold">✨ Google Gemini AI Analyzing & Polishing your speech...</span>
                         <p className="text-[10px] font-normal text-purple-600/80 dark:text-purple-300/80 mt-0.5">
-                          आवाज़, स्टूडियो AI ट्रेनिंग और मैथ्स को समझकर कपल, इवेंट्स और प्राइसिंग को तुरंत रीप्लेस किया जा रहा है
+                          Google Gemini 3.8 Flash आपकी आवाज़ को समझकर कपल नेम, इवेंट्स, क्रू और प्राइज़िंग को तुरंत स्ट्रक्चर कर रहा है
                         </p>
                       </div>
                     </motion.div>
@@ -1229,11 +1229,11 @@ LEAD & CLIENT CONTEXT:
                       rows={5}
                       value={additionalNotes}
                       onChange={(e) => setAdditionalNotes(e.target.value)}
-                      placeholder={isRecording ? "🔴 आपकी आवाज़ लाइव रिकॉर्ड और टाइप हो रही है, बोलते रहें..." : isTranscribing ? "🎙️ आपकी आवाज़ प्रोसेस हो रही है, कृपया रुकें..." : "माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):\nजैसे: 'रोहन और पूजा की शादी 18-19 नवंबर को लोनावला में, 18 को संगीत और हल्दी, 2 कैंडिड और 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज 2.2 लाख, 20k डिस्काउंट, 25% एडवांस...'\n\n💡 या ChatGPT का JSON सीधे यहाँ पेस्ट करें!"}
+                      placeholder={isRecording ? "🔴 आपकी आवाज़ लाइव रिकॉर्ड और टाइप हो रही है, बोलते रहें..." : isTranscribing ? "🎙️ आपकी आवाज़ प्रोसेस हो रही है, कृपया रुकें..." : "माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):\nजैसे: 'रोहन और पूजा की शादी 18-19 नवंबर को लोनावला में, 18 को संगीत और हल्दी, 2 कैंडिड और 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज 2.2 लाख, 20k डिस्काउंट, 25% एडवांस...'\n\n💡 या AI का JSON सीधे यहाँ पेस्ट करें!"}
                       className="w-full p-4 bg-transparent text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none resize-none leading-relaxed"
                     />
 
-                    {/* ChatGPT Bottom Action Bar */}
+                    {/* Gemini Bottom Action Bar */}
                     <div className="flex items-center justify-between p-3 border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-zinc-900/60 rounded-b-2xl">
                       {/* Left: Copy Prompt / Info */}
                       <div className="flex items-center gap-2">
@@ -1241,7 +1241,7 @@ LEAD & CLIENT CONTEXT:
                           type="button"
                           onClick={handleCopySystemPrompt}
                           className="px-2.5 py-1.5 rounded-xl bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
-                          title="Copy Master JSON Prompt to paste in ChatGPT"
+                          title="Copy Master JSON Prompt"
                         >
                           {promptCopied ? (
                             <>
@@ -1261,10 +1261,10 @@ LEAD & CLIENT CONTEXT:
                           onClick={() => polishTextWithGemini(additionalNotes, true)}
                           disabled={isPolishing || !additionalNotes.trim() || isRecording}
                           className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0 disabled:opacity-40"
-                          title="ChatGPT Manager Polish: Automatically analyze intent, fix speech slips, format couple & pricing math"
+                          title="Google Gemini AI Polish: Automatically analyze intent, fix speech slips, format couple, events & pricing math"
                         >
                           <Sparkles className={`w-3.5 h-3.5 text-purple-500 ${isPolishing ? 'animate-spin' : ''}`} />
-                          <span>{isPolishing ? 'Polishing...' : 'ChatGPT Polish'}</span>
+                          <span>{isPolishing ? 'Gemini Polishing...' : 'Gemini Polish'}</span>
                         </button>
 
                         {additionalNotes.length > 0 && (
