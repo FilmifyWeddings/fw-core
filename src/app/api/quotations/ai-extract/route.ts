@@ -402,7 +402,7 @@ Return ONLY a valid JSON object matching:
 
   // 1. EXCLUSIVE ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash & gemini-flash-latest)
   if (rawGeminiKeys.length > 0) {
-    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
     for (const currentKey of rawGeminiKeys) {
       if (aiRawOutput) break;
       for (const model of candidateModels) {
@@ -431,7 +431,7 @@ Return ONLY a valid JSON object matching:
                 maxOutputTokens: 3500
               }
             }),
-            signal: AbortSignal.timeout(15000)
+            signal: AbortSignal.timeout(25000)
           });
           if (geminiRes.ok) {
             const geminiJson = await geminiRes.json();

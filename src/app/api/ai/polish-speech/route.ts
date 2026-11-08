@@ -99,7 +99,7 @@ CRITICAL MANDATES (GEMINI / ANTIGRAVITY FINISHING FIDELITY):
       .map((k) => k.trim())
       .filter(Boolean);
     if (rawGeminiKeys.length > 0) {
-      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
+      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
       for (const geminiKey of rawGeminiKeys) {
         for (const model of candidateModels) {
           try {
@@ -125,7 +125,7 @@ CRITICAL MANDATES (GEMINI / ANTIGRAVITY FINISHING FIDELITY):
                   maxOutputTokens: 2000
                 }
               }),
-              signal: AbortSignal.timeout(12000)
+              signal: AbortSignal.timeout(22000)
             });
 
             if (res.ok) {
