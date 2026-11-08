@@ -22,6 +22,8 @@ interface MonthListViewProps {
   onAssignMember: (assignmentId: string, memberId: string | null) => void;
   onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
   onAddProject?: (initialDate?: string) => void;
+  onEditProject?: (project: FWProject) => void;
+  onEditSubEvent?: (subEvent: FWSubEvent, project: FWProject) => void;
   onOpenHistory?: (project: FWProject, subEvent?: FWSubEvent) => void;
   isTmReadOnly?: boolean;
   isSelfRoleOnly?: boolean;
@@ -56,6 +58,8 @@ export default function MonthListView({
   onAssignMember,
   onAddNewMember,
   onAddProject,
+  onEditProject,
+  onEditSubEvent,
   onOpenHistory,
   isTmReadOnly = false,
   isSelfRoleOnly = false,
@@ -78,6 +82,7 @@ export default function MonthListView({
 
   const now = new Date();
   const currentMonthYearId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   // Flatten and categorize sub-events
   const { tbdEvents, activeMonthGroups, pastMonthGroups, activeMonthOrder, pastMonthOrder } = useMemo(() => {
@@ -155,7 +160,16 @@ export default function MonthListView({
         const dateObj = d!;
         const monthKey = dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         const monthYearId = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
-        const isPast = monthYearId < currentMonthYearId;
+        
+        // Strict date check: if event date is before today, it belongs in Past & Completed Shoots immediately
+        const eventDateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+        const isOvernight = Boolean((se as any).is_overnight === true || (se as any).is_overnight === 'true');
+        const endD = isOvernight && (se as any).end_date ? new Date((se as any).end_date) : null;
+        const compareDateStr = (isOvernight && endD && !isNaN(endD.getTime()))
+          ? `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-${String(endD.getDate()).padStart(2, '0')}`
+          : eventDateStr;
+
+        const isPast = Boolean(compareDateStr && compareDateStr < todayStr);
 
         const item: FlattenedSubEvent = {
           subEvent: se,
@@ -207,7 +221,7 @@ export default function MonthListView({
       activeMonthOrder: sortedActiveOrder,
       pastMonthOrder: sortedPastOrder,
     };
-  }, [projects, teamMembers, searchQuery, selectedRoleFilter, unifiedFilters, currentMonthYearId]);
+  }, [projects, teamMembers, searchQuery, selectedRoleFilter, unifiedFilters, currentMonthYearId, todayStr]);
 
   const totalEventsCount = useMemo(() => {
     let count = tbdEvents.length;

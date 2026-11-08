@@ -5,11 +5,12 @@ import { FWProject } from '@/types';
 import { 
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid 
 } from 'recharts';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, ChevronDown } from 'lucide-react';
 
 interface OverviewAnalyticsProps {
   projects: FWProject[];
   selectedYear: number;
+  onSelectYear?: (year: number) => void;
   scopeMode?: 'all' | 'month' | 'year' | 'custom';
   selectedMonth?: string;
   onSelectMonth?: (monthVal: string) => void;
@@ -59,11 +60,38 @@ const parseSafeDate = (dateStr?: string | null): Date | null => {
 export default function OverviewAnalytics({
   projects,
   selectedYear,
+  onSelectYear,
   scopeMode,
   selectedMonth,
   onSelectMonth,
 }: OverviewAnalyticsProps) {
   const activeProjects = useMemo(() => projects.filter(p => !p.is_archived), [projects]);
+
+  // Dynamically compute all years from projects plus a continuous range
+  const computedYears = useMemo(() => {
+    const yearsSet = new Set<number>();
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear - 4; y <= currentYear + 6; y++) {
+      yearsSet.add(y);
+    }
+    activeProjects.forEach(p => {
+      (p.fw_sub_events || []).forEach(se => {
+        const raw = se.event_date || p.main_date;
+        const d = parseSafeDate(raw);
+        if (d && !isNaN(d.getFullYear())) {
+          yearsSet.add(d.getFullYear());
+        }
+      });
+      if (p.main_date) {
+        const d = parseSafeDate(p.main_date);
+        if (d && !isNaN(d.getFullYear())) {
+          yearsSet.add(d.getFullYear());
+        }
+      }
+    });
+    if (selectedYear) yearsSet.add(selectedYear);
+    return Array.from(yearsSet).sort((a, b) => a - b);
+  }, [activeProjects, selectedYear]);
 
   // Generate 12 months chart data
   const chartData = useMemo(() => {
@@ -114,9 +142,21 @@ export default function OverviewAnalytics({
           <span className="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-900 text-xs font-black border border-emerald-200/90 shadow-2xs">
             {totalYearShoots} Shoots
           </span>
-          <span className="px-3 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-black border border-slate-200">
-            Year {selectedYear}
-          </span>
+          <div className="relative flex items-center">
+            <select
+              value={selectedYear}
+              onChange={(e) => onSelectYear && onSelectYear(parseInt(e.target.value, 10))}
+              className="appearance-none px-3.5 py-1 pr-7 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-black border border-slate-300 focus:outline-none focus:border-[#6C5CE7] cursor-pointer transition shadow-2xs"
+              title="Select Year"
+            >
+              {computedYears.map((yr) => (
+                <option key={yr} value={yr}>
+                  Year {yr}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 pointer-events-none" />
+          </div>
         </div>
       </div>
 

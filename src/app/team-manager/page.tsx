@@ -1972,11 +1972,10 @@ export default function TeamManagerPage() {
                 <button
                   type="button"
                   onClick={() => setIsAllHistoryOpen(true)}
-                  className="hidden sm:flex bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold h-7.5 px-3 rounded-xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition-all"
-                  title="All Team Manager History"
+                  className="hidden sm:flex bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 h-7.5 w-7.5 rounded-xl items-center justify-center shadow-2xs shrink-0 cursor-pointer transition-all"
+                  title="History"
                 >
                   <History className="w-3.5 h-3.5 text-slate-600" />
-                  <span>History</span>
                 </button>
               )}
 
@@ -1984,10 +1983,10 @@ export default function TeamManagerPage() {
               <button
                 type="button"
                 onClick={() => setIsUnifiedFilterOpen(true)}
-                className="hidden sm:flex bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-semibold h-7.5 px-3 rounded-xl items-center justify-center gap-1 shadow-2xs shrink-0 cursor-pointer transition-all"
+                className="hidden sm:flex relative bg-white border border-slate-200 hover:border-slate-300 text-slate-700 h-7.5 w-7.5 rounded-xl items-center justify-center shadow-2xs shrink-0 cursor-pointer transition-all"
+                title="Filter"
               >
-                <Filter className="w-3 h-3 text-slate-600" />
-                <span>Filter</span>
+                <Filter className="w-3.5 h-3.5 text-slate-600" />
                 {(
                   (unifiedFilters?.monthYear && unifiedFilters.monthYear !== 'all') ||
                   Boolean(unifiedFilters?.startDate) ||
@@ -2002,17 +2001,18 @@ export default function TeamManagerPage() {
                   (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all') ||
                   (unifiedFilters?.studioId && unifiedFilters.studioId !== 'all')
                 ) && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
                 )}
               </button>
 
               {!isTmReadOnly && (
                 <button
                   onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-                  className="hidden sm:flex bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black h-7.5 px-3.5 rounded-xl transition items-center justify-center gap-1 shadow-md shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
+                  className="hidden sm:flex bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black h-7.5 px-3.5 rounded-xl transition items-center justify-center gap-1.5 shadow-md shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
+                  title="Add Project"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>+ Project</span>
+                  <span>Add Project</span>
                 </button>
               )}
             </div>
@@ -2034,20 +2034,19 @@ export default function TeamManagerPage() {
               <button 
                 type="button"
                 onClick={() => setIsAllHistoryOpen(true)}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
-                title="All History"
+                className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center shrink-0 shadow-xs cursor-pointer"
+                title="History"
               >
                 <History className="w-3.5 h-3.5 text-slate-500"/>
-                <span className="hidden sm:inline">History</span>
               </button>
             )}
             <button 
               type="button"
               onClick={() => setIsUnifiedFilterOpen(!isUnifiedFilterOpen)}
-              className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+              className="h-8 w-8 relative rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center shrink-0 shadow-xs cursor-pointer"
+              title="Filter"
             >
               <Filter className="w-3.5 h-3.5 text-slate-500"/>
-              <span className="hidden sm:inline">Filter</span>
               {(
                 (unifiedFilters?.monthYear && unifiedFilters.monthYear !== 'all') ||
                 Boolean(unifiedFilters?.startDate) ||
@@ -2062,7 +2061,7 @@ export default function TeamManagerPage() {
                 (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all') ||
                 (unifiedFilters?.studioId && unifiedFilters.studioId !== 'all')
               ) && (
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
               )}
             </button>
           </div>
@@ -3642,6 +3641,14 @@ export default function TeamManagerPage() {
             onAddProject={isTmReadOnly ? undefined : (initialDate) => {
               setEditingProject(null);
               setInitialDateForModal(initialDate || '');
+              setIsAddProjectOpen(true);
+            }}
+            onEditProject={isTmReadOnly ? undefined : (proj) => {
+              setEditingProject(proj);
+              setIsAddProjectOpen(true);
+            }}
+            onEditSubEvent={isTmReadOnly ? undefined : (subEvent, proj) => {
+              setEditingProject(proj);
               setIsAddProjectOpen(true);
             }}
             onOpenHistory={canManageTeam ? (project, subEvent) => {

@@ -7,7 +7,7 @@ import {
   AlertTriangle, DollarSign, X, Phone, Mail, MapPin, Clock, 
   FileText, Sparkles, PieChart, Activity, Briefcase, Camera, Film, Disc, Filter,
   Layers, ArrowUpRight, Check, AlertCircle, Eye, SlidersHorizontal, Search, ChevronRight,
-  Building2
+  Building2, Heart, Music, Sun
 } from 'lucide-react';
 import { 
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, Legend 
@@ -210,14 +210,40 @@ export default function OperationsAnalyticsTab({
     );
   }, [filteredSubEvents]);
 
-  // Categories Breakdown
+  // Categories Breakdown with real event icons (no generic AI sparkles)
   const categories = [
-    { key: 'Wedding', name: 'Wedding Ceremonies', icon: Sparkles, color: 'from-amber-500 via-orange-500 to-amber-600', keywords: ['wedding', 'phera', 'marriage', 'vow'] },
+    { key: 'Wedding', name: 'Wedding Ceremonies', icon: Heart, color: 'from-rose-500 via-pink-500 to-rose-600', keywords: ['wedding', 'phera', 'marriage', 'vow'] },
     { key: 'Pre-wedding', name: 'Pre-Wedding Shoots', icon: Camera, color: 'from-indigo-500 via-purple-600 to-indigo-700', keywords: ['pre-wedding', 'engagement', 'save the date', 'ring'] },
-    { key: 'Sangeet', name: 'Sangeet & Cocktail', icon: Disc, color: 'from-fuchsia-500 via-pink-600 to-rose-600', keywords: ['sangeet', 'cocktail', 'party', 'dance'] },
-    { key: 'Haldi', name: 'Haldi & Mehendi', icon: Film, color: 'from-yellow-400 via-amber-500 to-yellow-500', keywords: ['haldi', 'mehendi', 'myaap', 'chooda'] },
+    { key: 'Sangeet', name: 'Sangeet & Cocktail', icon: Music, color: 'from-fuchsia-500 via-pink-600 to-purple-600', keywords: ['sangeet', 'cocktail', 'party', 'dance'] },
+    { key: 'Haldi', name: 'Haldi & Mehendi', icon: Sun, color: 'from-yellow-400 via-amber-500 to-yellow-500', keywords: ['haldi', 'mehendi', 'myaap', 'chooda'] },
     { key: 'Corporate', name: 'Corporate & Other', icon: Briefcase, color: 'from-emerald-500 via-teal-600 to-emerald-700', keywords: ['corporate', 'commercial', 'portfolio', 'birthday'] },
   ];
+
+  // Dynamic available years computed from data and extended rolling range
+  const availableYears = useMemo(() => {
+    const yearsSet = new Set<number>();
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear - 4; y <= currentYear + 6; y++) {
+      yearsSet.add(y);
+    }
+    scopedProjects.forEach(p => {
+      (p.fw_sub_events || []).forEach(se => {
+        const raw = se.event_date || p.main_date;
+        const d = parseSafeDate(raw);
+        if (d && !isNaN(d.getFullYear())) {
+          yearsSet.add(d.getFullYear());
+        }
+      });
+      if (p.main_date) {
+        const d = parseSafeDate(p.main_date);
+        if (d && !isNaN(d.getFullYear())) {
+          yearsSet.add(d.getFullYear());
+        }
+      }
+    });
+    if (selectedYear) yearsSet.add(selectedYear);
+    return Array.from(yearsSet).sort((a, b) => a - b);
+  }, [scopedProjects, selectedYear]);
 
   const totalShootsCount = filteredSubEvents.length;
 
@@ -557,9 +583,9 @@ export default function OperationsAnalyticsTab({
                 onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
                 className="h-6.5 px-2 bg-slate-50 border border-slate-200 rounded-md font-bold text-slate-800 text-[11px] focus:outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
               >
-                <option value={2025}>2025</option>
-                <option value={2026}>2026</option>
-                <option value={2027}>2027</option>
+                {availableYears.map((yr) => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
               </select>
             </div>
           )}
@@ -587,7 +613,14 @@ export default function OperationsAnalyticsTab({
                 <input
                   type="date"
                   value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCustomStartDate(val);
+                    if (val) {
+                      const yr = new Date(val).getFullYear();
+                      if (!isNaN(yr) && yr > 2000) setSelectedYear(yr);
+                    }
+                  }}
                   className="px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
                 />
               </div>
@@ -596,7 +629,14 @@ export default function OperationsAnalyticsTab({
                 <input
                   type="date"
                   value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCustomEndDate(val);
+                    if (!customStartDate && val) {
+                      const yr = new Date(val).getFullYear();
+                      if (!isNaN(yr) && yr > 2000) setSelectedYear(yr);
+                    }
+                  }}
                   className="px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
                 />
               </div>
@@ -1052,6 +1092,7 @@ export default function OperationsAnalyticsTab({
           <OverviewAnalytics
             projects={projects}
             selectedYear={selectedYear}
+            onSelectYear={(yr) => setSelectedYear(yr)}
             scopeMode={scopeMode}
             selectedMonth={selectedMonth}
             onSelectMonth={(monthVal) => {
