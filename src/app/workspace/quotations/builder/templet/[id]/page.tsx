@@ -3307,13 +3307,8 @@ function StudioCoreAiryBuilderContent() {
           // CANONICAL SUPABASE DB DOCUMENT (Primary Source of Truth)
           loadedData = normalizeQuotationData(docContent);
           currentVersionRef.current = json.document?.version || 1;
-        } else if (isDocumentValid(latestDataRef.current)) {
-          // SAFE GUARD: Never overwrite local pre-seeded quotation document with demo template!
-          loadedData = latestDataRef.current;
-        } else if (isDocumentValid(cachedLocal?.documentJson)) {
-          loadedData = normalizeQuotationData(cachedLocal?.documentJson);
         } else {
-          // Fallback to session/local draft before default
+          // Fallback to session/local pre-seeded draft before any default
           let fallbackDoc: any = null;
           if (typeof window !== 'undefined') {
             try {
@@ -3325,6 +3320,11 @@ function StudioCoreAiryBuilderContent() {
           }
           if (isDocumentValid(fallbackDoc)) {
             loadedData = normalizeQuotationData(fallbackDoc);
+          } else if (isDocumentValid(cachedLocal?.documentJson)) {
+            loadedData = normalizeQuotationData(cachedLocal?.documentJson);
+          } else if (isDocumentValid(latestDataRef.current) && latestDataRef.current !== DEFAULT_AIRY_PROPOSAL && latestDataRef.current?.designName !== 'Personalised Wedding Quotation' && latestDataRef.current?.designName !== 'Minimalist Airy Proposal') {
+            // SAFE GUARD: Only reuse existing memory ref if it contains authentic quotation data
+            loadedData = latestDataRef.current;
           } else {
             loadedData = { ...DEFAULT_AIRY_PROPOSAL };
           }

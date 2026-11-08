@@ -59,9 +59,10 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // 2. Fetch Existing Quotation Document or use currentDocument
-    let existingDoc: any = currentDocument || null;
-    if (!existingDoc && quotationId) {
+    // 2. Fetch Existing Quotation Document or resolve selected template
+    let existingDoc: any = null;
+    if (quotationId) {
+      // Editing existing quotation
       const { data: qDoc } = await supabaseAdmin
         .from('quotation_documents')
         .select('content_json')
@@ -80,17 +81,36 @@ export async function POST(req: NextRequest) {
           .maybeSingle();
         if (qRecord?.content_json) existingDoc = qRecord.content_json;
       }
-    }
-
-    // STRICT GUARANTEE: If no document exists, resolve the explicitly selected template (or user default template)
-    if (!existingDoc) {
+      if (!existingDoc && currentDocument) {
+        existingDoc = currentDocument;
+      }
+    } else {
+      // Creating NEW quotation for lead: resolve the explicitly selected template first!
       const templateToUse = explicitTemplateId || selectedTemplateId || body.templateId;
-      const resolvedDefault = await resolveUserDefaultQuotationTemplate(
-        workspaceId, 
-        userId, 
-        templateToUse
-      );
-      existingDoc = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
+      if (templateToUse) {
+        try {
+          const resolved = await resolveUserDefaultQuotationTemplate(
+            workspaceId,
+            userId,
+            templateToUse
+          );
+          if (resolved?.document) {
+            existingDoc = resolved.document;
+          }
+        } catch (e) {
+          console.warn('[AI Extract] Could not resolve template:', e);
+        }
+      }
+      if (!existingDoc && currentDocument) {
+        existingDoc = currentDocument;
+      }
+      if (!existingDoc) {
+        const resolvedDefault = await resolveUserDefaultQuotationTemplate(
+          workspaceId, 
+          userId
+        );
+        existingDoc = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
+      }
     }
 
     // 3. Assemble Combined Context Text

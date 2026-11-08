@@ -759,10 +759,17 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
 
   if (!rawInput || typeof rawInput !== 'object') return d;
 
-  // 1. Unwrap root wrappers if present ({ quotation: { ... } } or { pages: { ... } })
+  // 1. Unwrap root wrappers if present ({ quotation: { ... } }, { document: { ... } }, { extractedDocument: { ... } }, or { pages: { ... } })
   let loaded = rawInput;
   if (loaded.quotation && typeof loaded.quotation === 'object') {
     loaded = { ...loaded, ...loaded.quotation };
+  }
+  if (loaded.document && typeof loaded.document === 'object' && (loaded.document.cover || loaded.document.functionsPage || loaded.document.pages || loaded.document.pricingPage || loaded.document.pageSequence)) {
+    loaded = { ...loaded, ...loaded.document };
+  }
+  if (loaded.extractedDocument && typeof loaded.extractedDocument === 'object') {
+    const ext = loaded.extractedDocument;
+    loaded = { ...loaded, ...(ext.document && typeof ext.document === 'object' ? ext.document : ext) };
   }
   const pagesObj = loaded.pages && typeof loaded.pages === 'object' ? loaded.pages : loaded;
 

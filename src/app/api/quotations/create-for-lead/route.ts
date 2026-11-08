@@ -73,10 +73,6 @@ export async function POST(req: NextRequest) {
       console.warn('[create-for-lead] Error resolving template:', tmplErr);
     }
 
-    if (body.initialDocument && typeof body.initialDocument === 'object') {
-      templateDoc = normalizeQuotationData(body.initialDocument, templateDoc);
-    }
-
     // Calculate max version
     let maxVersion = 0;
     (existingDocs || []).forEach((d: any) => {
@@ -152,18 +148,22 @@ export async function POST(req: NextRequest) {
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const quotationId = body.quotationId || `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
 
-    const baseSourceDoc = initialDoc ? normalizeQuotationData(initialDoc, templateDoc) : templateDoc;
+    const rawInputDoc = body.initialDocument?.document || body.initialDocument || initialDoc?.document || initialDoc;
+    const baseSourceDoc = rawInputDoc ? normalizeQuotationData(rawInputDoc, templateDoc) : templateDoc;
     const clonedDoc = JSON.parse(JSON.stringify(baseSourceDoc || DEFAULT_AIRY_PROPOSAL));
     clonedDoc.lead_id = leadId;
     clonedDoc.lead_version = nextVersion;
 
-    // Explicitly guarantee chosen template design tokens are preserved
+    // Explicitly guarantee chosen template design tokens are preserved 100% from templateDoc
     clonedDoc.look = templateDoc.look || clonedDoc.look || 'cyprus-sand-dune';
     clonedDoc.theme = templateDoc.theme || templateDoc.look || clonedDoc.theme || clonedDoc.look;
     clonedDoc.primaryFont = templateDoc.primaryFont || clonedDoc.primaryFont || 'Cormorant Garamond';
     clonedDoc.secondaryFont = templateDoc.secondaryFont || clonedDoc.secondaryFont || 'Plus Jakarta Sans';
-    if ((templateDoc as any).colorPalette && !(clonedDoc as any).colorPalette) {
+    if ((templateDoc as any).colorPalette) {
       (clonedDoc as any).colorPalette = (templateDoc as any).colorPalette;
+    }
+    if (Array.isArray((templateDoc as any).pageSequence) && (templateDoc as any).pageSequence.length > 0) {
+      clonedDoc.pageSequence = (templateDoc as any).pageSequence;
     }
 
     if (!clonedDoc.cover) clonedDoc.cover = {};

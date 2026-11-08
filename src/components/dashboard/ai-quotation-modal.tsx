@@ -742,11 +742,12 @@ LEAD & CLIENT CONTEXT:
       };
 
       const instantRaw = fallbackHeuristicExtractor(instantContext);
-      const instantDoc = mapAiOutputToQuotationDocument(instantRaw, baseTemplateDoc || currentDocumentData, instantContext);
+      const instantRes = mapAiOutputToQuotationDocument(instantRaw, baseTemplateDoc || currentDocumentData, instantContext);
+      const instantDoc = instantRes.document || instantRes;
 
       let finalDoc = instantDoc;
       const initialTotal = (instantDoc.pricingPage?.basePrice || 0) - (instantDoc.pricingPage?.discountAmount || 0) + (instantDoc.pricingPage?.travelCharges || 0) + (instantDoc.pricingPage?.accommodationCharges || 0) + (instantDoc.pricingPage?.additionalCharges || 0);
-      let finalSummary = {
+      let finalSummary = instantRes.summary || {
         coupleName: instantDoc.cover?.coupleName || effectiveLead?.name || 'Client',
         weddingDate: instantDoc.functionsPage?.items?.[0]?.date || 'Date TBD',
         location: instantDoc.cover?.locationName || 'Location TBD',
@@ -782,7 +783,7 @@ LEAD & CLIENT CONTEXT:
         if (aiRes.ok) {
           const aiJson = await aiRes.json();
           if (aiJson.success && aiJson.extractedDocument) {
-            finalDoc = aiJson.extractedDocument;
+            finalDoc = aiJson.extractedDocument?.document || aiJson.extractedDocument;
             if (aiJson.summary) finalSummary = aiJson.summary;
             console.log('[AI Modal] Successfully extracted via Gemini AI Engine!');
           }
@@ -1065,7 +1066,61 @@ LEAD & CLIENT CONTEXT:
       }
     } catch (_) {}
 
-    // 3. Immediately trigger navigation or callback in <50ms!
+    // 3. Await cloud persistence first so database row is guaranteed created before routing to builder!
+    setApplying(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      if (!quotationId && lId && lId !== 'draft') {
+        const createRes = await fetch('/api/quotations/create-for-lead', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            leadId: lId,
+            quotationId: targetQId,
+            clientName: coupleName,
+            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || undefined,
+            initialDocument: mergedDoc
+          })
+        });
+
+        if (createRes.ok) {
+          const createJson = await createRes.json().catch(() => ({}));
+          if (createJson.document) {
+            // Adopt canonical created document with exact template design tokens
+            Object.assign(mergedDoc, createJson.document);
+            sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(mergedDoc));
+            sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: mergedDoc }));
+            localStorage.setItem(`wg_proposal_draft_${targetQId}`, JSON.stringify(mergedDoc));
+          }
+        }
+      } else if (targetQId && targetQId !== 'draft') {
+        await fetch('/api/quotations/ai-apply', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            quotationId: targetQId,
+            document: mergedDoc
+          })
+        });
+      }
+
+      const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
+      await cacheDocumentLocal(targetQId, mergedDoc, 1);
+    } catch (e) {
+      console.warn('[AI Persist Error]:', e);
+    } finally {
+      setApplying(false);
+    }
+
+    // 4. Trigger navigation or callback now that quotation is committed to DB and storage!
     if (onApplied) {
       onApplied(mergedDoc, targetQId);
     } else if (targetQId && targetQId !== 'draft') {
@@ -1074,48 +1129,6 @@ LEAD & CLIENT CONTEXT:
     } else {
       onClose();
     }
-
-    // 4. Non-blocking background cloud persistence (Supabase single source of truth)
-    (async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token || '';
-
-        if (!quotationId && lId && lId !== 'draft') {
-          await fetch('/api/quotations/create-for-lead', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              leadId: lId,
-              quotationId: targetQId,
-              clientName: coupleName,
-              explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || undefined,
-              initialDocument: mergedDoc
-            })
-          });
-        } else if (targetQId && targetQId !== 'draft') {
-          await fetch('/api/quotations/ai-apply', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              quotationId: targetQId,
-              document: mergedDoc
-            })
-          });
-        }
-
-        const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-        await cacheDocumentLocal(targetQId, mergedDoc, 1);
-      } catch (e) {
-        console.warn('[AI Background Persist Error]:', e);
-      }
-    })();
   };
 
   const handleApply = async () => {
@@ -1154,7 +1167,8 @@ LEAD & CLIENT CONTEXT:
       };
 
       const instantRaw = fallbackHeuristicExtractor(instantContext);
-      const instantDoc = mapAiOutputToQuotationDocument(instantRaw, baseTemplateDoc || currentDocumentData, instantContext);
+      const instantRes = mapAiOutputToQuotationDocument(instantRaw, baseTemplateDoc || currentDocumentData, instantContext);
+      const instantDoc = instantRes.document || instantRes;
 
       let docToApply = instantDoc;
 
@@ -1183,7 +1197,7 @@ LEAD & CLIENT CONTEXT:
         if (aiRes.ok) {
           const aiJson = await aiRes.json();
           if (aiJson.success && aiJson.extractedDocument) {
-            docToApply = aiJson.extractedDocument;
+            docToApply = aiJson.extractedDocument?.document || aiJson.extractedDocument;
             console.log('[AI Modal Quick Create] Successfully applied Gemini AI Engine!');
           }
         }
@@ -1191,8 +1205,9 @@ LEAD & CLIENT CONTEXT:
         console.warn('[AI Modal Quick Create] AI timeout/error, applying local math evaluation:', geminiErr);
       }
 
-      setExtractedDoc(docToApply);
-      await applyDocAndNavigate(docToApply);
+      const finalDocToApply = docToApply?.document || docToApply;
+      setExtractedDoc(finalDocToApply);
+      await applyDocAndNavigate(finalDocToApply);
     } catch (err: any) {
       console.error('[AI Modal Quick Create Error]:', err);
       let friendly = err.message || "Could not create quotation. Please try again.";
