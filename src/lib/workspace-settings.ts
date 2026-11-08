@@ -1447,14 +1447,21 @@ export async function deleteQuotationCrewRole(
  */
 export async function fetchWorkspaceQuotationSettings(workspaceId?: string): Promise<WorkspaceQuotationSettings> {
   const wsId = await resolveWorkspaceId(workspaceId);
+  let sessionUserId = '';
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) sessionUserId = session.user.id;
+  } catch (_) {}
+
+  const candidateIds = Array.from(new Set([wsId, sessionUserId, workspaceId].filter((id): id is string => Boolean(id && isUuid(id)))));
   let result: WorkspaceQuotationSettings = { ...DEFAULT_WORKSPACE_QUOTATION_SETTINGS };
 
   try {
-    if (wsId) {
+    for (const candId of candidateIds) {
       const { data, error } = await supabase
         .from('workspace_quotation_settings')
         .select('settings')
-        .eq('workspace_id', wsId)
+        .eq('workspace_id', candId)
         .maybeSingle();
 
       if (!error && data?.settings && typeof data.settings === 'object') {
@@ -1477,7 +1484,10 @@ export async function fetchWorkspaceQuotationSettings(workspaceId?: string): Pro
         };
         // Cache to localStorage
         if (typeof window !== 'undefined') {
-          localStorage.setItem(`wg_quote_settings_${wsId}`, JSON.stringify(result));
+          localStorage.setItem(`wg_quote_settings_${candId}`, JSON.stringify(result));
+          if (wsId && wsId !== candId) {
+            localStorage.setItem(`wg_quote_settings_${wsId}`, JSON.stringify(result));
+          }
         }
         return result;
       }

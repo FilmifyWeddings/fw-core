@@ -149,6 +149,9 @@ export function AiQuotationModal({
   const audioChunksRef = useRef<Blob[]>([]);
   const isCancelledRef = useRef<boolean>(false);
   const timerRef = useRef<any>(null);
+  const additionalNotesRef = useRef<string>(additionalNotes);
+  additionalNotesRef.current = additionalNotes;
+  const isPolishingInProgressRef = useRef<boolean>(false);
 
   /**
    * ⚡ Real-Time Gemini 3.8 Flash AI Polish & Intent Analysis
@@ -158,9 +161,11 @@ export function AiQuotationModal({
    */
   const polishTextWithGemini = async (textToPolish: string, replaceEntireField: boolean = false) => {
     const raw = (textToPolish || '').trim();
-    if (!raw || isPolishing) return;
+    if (!raw || isPolishingInProgressRef.current) return;
+    isPolishingInProgressRef.current = true;
     setIsPolishing(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/ai/polish-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -168,13 +173,21 @@ export function AiQuotationModal({
           rawText: raw,
           leadName: effectiveLead?.name,
           workspaceId: effectiveLead?.workspace_id,
+          userId: session?.user?.id || null,
           studioSettings: studioSettings
         })
       });
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.polishedText) {
-          const cleanPolished = json.polishedText.trim();
+          let cleanPolished = json.polishedText.trim();
+
+          // Client-side safeguard: if raw voice input had an amount/budget and cleanPolished missed it, keep it
+          const rawAmt = raw.match(/(?:बजट|budget|प्राइस|price|अमाउंट|amount)?\s*(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?\s*(?:लाख|lakh|lac|हजार|thousand|k|cr|करोड़)|\d{4,7})/i);
+          if (rawAmt && !cleanPolished.match(/(?:₹|rs\.?|inr|\d+\s*(?:lakh|lac|लाख|k|हजार|thousand))/i)) {
+            cleanPolished += ` (Budget: ${rawAmt[0].trim()})`;
+          }
+
           if (!replaceEntireField && initialAppendTextRef.current) {
             setAdditionalNotes(initialAppendTextRef.current + '\n\n' + cleanPolished);
           } else {
@@ -188,6 +201,7 @@ export function AiQuotationModal({
       console.warn('[AI Voice Polish error]:', err);
     } finally {
       setIsPolishing(false);
+      isPolishingInProgressRef.current = false;
     }
   };
 
@@ -299,7 +313,9 @@ export function AiQuotationModal({
           audioChunksRef.current = [];
 
           // ⚡ Trigger Gemini API intent analysis and replace with polished version
-          polishTextWithGemini(spoken);
+          if (!isPolishingInProgressRef.current) {
+            polishTextWithGemini(spoken);
+          }
           return;
         }
 
@@ -355,36 +371,44 @@ export function AiQuotationModal({
   };
 
   const stopVoiceRecording = () => {
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (_) {}
-      recognitionRef.current = null;
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (e) {
-        console.warn('Error stopping media recorder:', e);
-      }
-    }
     setIsRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    if (liveCapturedTextRef.current && liveCapturedTextRef.current.trim().length > 0) {
-      const spoken = liveCapturedTextRef.current.trim();
-      const finalCleaned = cleanVoiceTranscript(spoken, effectiveLead?.name);
-      liveCapturedTextRef.current = finalCleaned;
-      if (initialAppendTextRef.current) {
-        setAdditionalNotes(initialAppendTextRef.current + ' ' + finalCleaned);
-      } else {
-        setAdditionalNotes(finalCleaned);
+    // Give WebSpeech 250ms to flush the last spoken words (e.g. final amount "दो लाख")
+    setTimeout(() => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (_) {}
+        recognitionRef.current = null;
       }
-      setTranscribeSuccess(true);
-      setIsTranscribing(false);
-      setTimeout(() => setTranscribeSuccess(false), 4000);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (e) {
+          console.warn('Error stopping media recorder:', e);
+        }
+      }
 
-      // ⚡ Trigger Gemini API intent analysis and replace with polished version
-      polishTextWithGemini(spoken);
-    }
+      // Read most up-to-date captured text
+      const candidateText = (liveCapturedTextRef.current || '').trim();
+      const fallbackText = (additionalNotesRef.current || '').replace(initialAppendTextRef.current || '', '').trim();
+      const spoken = candidateText || fallbackText;
+
+      if (spoken && spoken.length > 0) {
+        const finalCleaned = cleanVoiceTranscript(spoken, effectiveLead?.name);
+        liveCapturedTextRef.current = finalCleaned;
+        if (initialAppendTextRef.current) {
+          setAdditionalNotes(initialAppendTextRef.current + ' ' + finalCleaned);
+        } else {
+          setAdditionalNotes(finalCleaned);
+        }
+        setTranscribeSuccess(true);
+        setIsTranscribing(false);
+        setTimeout(() => setTranscribeSuccess(false), 4000);
+
+        // ⚡ Trigger Gemini API intent analysis and replace with polished version
+        polishTextWithGemini(spoken);
+      }
+    }, 250);
   };
 
   const transcribeWithWhisper = async (audioBlob: Blob, detectedMime: string = '') => {
@@ -771,6 +795,7 @@ LEAD & CLIENT CONTEXT:
           body: JSON.stringify({
             leadId: effectiveLead.id,
             workspaceId: effectiveLead.workspace_id,
+            userId: session?.user?.id || null,
             quotationId: quotationId || null,
             explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
             currentDocument: baseTemplateDoc || currentDocumentData || null,
@@ -1185,6 +1210,7 @@ LEAD & CLIENT CONTEXT:
           body: JSON.stringify({
             leadId: effectiveLead.id,
             workspaceId: effectiveLead.workspace_id,
+            userId: session?.user?.id || null,
             quotationId: quotationId || null,
             explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
             currentDocument: baseTemplateDoc || currentDocumentData || null,

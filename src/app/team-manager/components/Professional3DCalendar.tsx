@@ -519,7 +519,7 @@ export default function Professional3DCalendar({
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-black bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white rounded-xl shadow-md shadow-[#6C5CE7]/20 transition cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>+ Project</span>
+                  <span>Add Project</span>
                 </button>
               )}
             </div>

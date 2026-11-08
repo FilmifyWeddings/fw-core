@@ -120,17 +120,30 @@ export async function POST(req: NextRequest) {
 
     // Fetch Studio Quotation Settings (Deliverables, AI Rules, Shortcuts)
     let studioSettings: any = body.studioSettings || null;
-    try {
-      const { data: quoteSettingsRow } = await supabaseAdmin
-        .from('workspace_quotation_settings')
-        .select('settings')
-        .eq('workspace_id', workspaceId)
-        .maybeSingle();
-      if (quoteSettingsRow?.settings && typeof quoteSettingsRow.settings === 'object') {
-        studioSettings = quoteSettingsRow.settings;
+    if (!studioSettings || !studioSettings.aiRules) {
+      try {
+        const candidateWsIds = Array.from(new Set([
+          userId,
+          profile?.id,
+          body.workspaceId,
+          workspaceId,
+          lead?.workspace_id
+        ].filter(Boolean)));
+
+        for (const cWsId of candidateWsIds) {
+          const { data: quoteSettingsRow } = await supabaseAdmin
+            .from('workspace_quotation_settings')
+            .select('settings')
+            .eq('workspace_id', cWsId)
+            .maybeSingle();
+          if (quoteSettingsRow?.settings && typeof quoteSettingsRow.settings === 'object') {
+            studioSettings = quoteSettingsRow.settings;
+            break;
+          }
+        }
+      } catch (e) {
+        console.warn('[AI Extract] Could not fetch workspace_quotation_settings:', e);
       }
-    } catch (e) {
-      console.warn('[AI Extract] Could not fetch workspace_quotation_settings:', e);
     }
 
     const contextData = {

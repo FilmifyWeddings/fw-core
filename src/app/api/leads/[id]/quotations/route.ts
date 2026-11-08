@@ -243,32 +243,19 @@ export async function GET(
       return NextResponse.json({ error: 'Lead ID is required' }, { status: 400 });
     }
 
-    const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-    const leadShort6 = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6);
+    const leadShortLower = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toLowerCase();
+    const leadShortUpper = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+    const leadShort6Lower = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toLowerCase();
+    const leadShort6Upper = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
 
-    // 1. Fetch lead details, quotation documents, responses & legacy quotes in parallel for ultra-fast response
-    // Includes FW-Q- (Create with AI / New Version), FW-L- (Lead proposals), and explicit lead_id matches!
-    const [leadRes, docsRes, responsesRes, quotesRes] = await Promise.all([
-      supabaseAdmin
-        .from('leads')
-        .select('id, workspace_id, name, full_name, email, phone, final_quotation_id, raw_payload')
-        .eq('id', leadId)
-        .maybeSingle(),
-      supabaseAdmin
-        .from('quotation_documents')
-        .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-        .or(`lead_id.eq.${leadId},template_id.ilike.%FW-Q-${leadShortId}%,template_id.ilike.%FW-Q-${leadShort6}%,template_id.ilike.%FW-L-${leadShortId}%,template_id.ilike.%${leadShortId}%`),
-      supabaseAdmin
-        .from('quotation_responses')
-        .select('quotation_id, lead_version, response_type, client_name, client_notes, budget_amount, created_at')
-        .eq('lead_id', leadId),
-      supabaseAdmin
-        .from('quotations')
-        .select('id, quotation_number, title, status, client_name, client_notes, content_json, public_token, is_final, created_at, updated_at')
-        .or(`client_id.eq.${leadId},quotation_number.ilike.%${leadShortId}%,quotation_number.ilike.%${leadShort6}%`)
-    ]);
+    // 1. Fetch lead details first to collect all known quotation IDs
+    const { data: leadRow } = await supabaseAdmin
+      .from('leads')
+      .select('id, workspace_id, name, full_name, email, phone, quotation_id, final_quotation_id, raw_payload')
+      .eq('id', leadId)
+      .maybeSingle();
 
-    const effectiveLead = leadRes.data || {
+    const effectiveLead = leadRow || {
       id: leadId,
       name: 'Client',
       full_name: 'Client',
@@ -278,14 +265,68 @@ export async function GET(
       raw_payload: {}
     };
 
-    // 2. Process quotation documents specifically for this lead
+    const rawPayload = effectiveLead.raw_payload || {};
+    const knownIds = new Set<string>();
+    if (effectiveLead.quotation_id) knownIds.add(effectiveLead.quotation_id);
+    if (effectiveLead.final_quotation_id) knownIds.add(effectiveLead.final_quotation_id);
+    if (rawPayload.quotation_id) knownIds.add(rawPayload.quotation_id);
+    if (rawPayload.final_quotation_id) knownIds.add(rawPayload.final_quotation_id);
+    if (Array.isArray(rawPayload.quotation_versions)) {
+      rawPayload.quotation_versions.forEach((v: any) => {
+        if (v.id) knownIds.add(v.id);
+        if (v.template_id) knownIds.add(v.template_id);
+      });
+    }
+
+    const knownIdsList = Array.from(knownIds);
+
+    // Build resilient OR filter for quotation_documents (includes upper & lower case matches)
+    const docOrFilters = [
+      `lead_id.eq.${leadId}`,
+      `template_id.ilike.%${leadShortLower}%`,
+      `template_id.ilike.%${leadShortUpper}%`
+    ];
+    if (knownIdsList.length > 0) {
+      docOrFilters.push(`template_id.in.(${knownIdsList.map(id => `"${id}"`).join(',')})`);
+      const validUuids = knownIdsList.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+      if (validUuids.length > 0) {
+        docOrFilters.push(`id.in.(${validUuids.map(id => `"${id}"`).join(',')})`);
+      }
+    }
+
+    // 2. Fetch quotation documents, responses & legacy quotes in parallel for ultra-fast response
+    const [docsRes, responsesRes, quotesRes] = await Promise.all([
+      supabaseAdmin
+        .from('quotation_documents')
+        .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
+        .or(docOrFilters.join(',')),
+      supabaseAdmin
+        .from('quotation_responses')
+        .select('quotation_id, lead_version, response_type, client_name, client_notes, budget_amount, created_at')
+        .eq('lead_id', leadId),
+      supabaseAdmin
+        .from('quotations')
+        .select('id, quotation_number, title, status, client_name, client_notes, content_json, public_token, is_final, created_at, updated_at')
+        .or(`client_id.eq.${leadId},quotation_number.ilike.%${leadShortLower}%,quotation_number.ilike.%${leadShortUpper}%`)
+    ]);
+
+    // 3. Process quotation documents specifically for this lead with case-insensitive matching
     let matchedDocs = (docsRes.data || []).filter((doc: any) => {
       const docLeadId = doc.lead_id || doc.content_json?.lead_id;
-      if (docLeadId) return docLeadId === leadId;
+      if (docLeadId && docLeadId === leadId) return true;
       if (doc.template_id) {
-        return doc.template_id.includes(leadShortId) || doc.template_id.includes(leadShort6);
+        const tidUpper = String(doc.template_id).toUpperCase();
+        if (tidUpper.includes(leadShortUpper) || tidUpper.includes(leadShort6Upper)) return true;
+        if (knownIdsList.some(k => tidUpper.includes(String(k).toUpperCase()))) return true;
       }
-      return true;
+      return false;
+    });
+
+    // Auto-heal rows in quotation_documents where lead_id is missing
+    matchedDocs.forEach((doc: any) => {
+      if (!doc.lead_id) {
+        supabaseAdmin.from('quotation_documents').update({ lead_id: leadId }).eq('id', doc.id).then(() => {});
+      }
     });
 
     const allResponses = responsesRes.data || [];
@@ -296,6 +337,13 @@ export async function GET(
     const legacyOnlyQuotes = allQuotes.filter((q: any) => 
       !docTemplateIds.has(q.id) && !docTemplateIds.has(q.quotation_number)
     );
+
+    // Merge any version recorded in raw_payload.quotation_versions that might be missing from docsRes
+    const rawVersions: any[] = Array.isArray(rawPayload.quotation_versions) ? rawPayload.quotation_versions : [];
+    const missingRawVersions = rawVersions.filter((rv: any) => {
+      const rId = rv.template_id || rv.id;
+      return rId && !docTemplateIds.has(rId) && !legacyOnlyQuotes.some((q: any) => q.id === rId || q.quotation_number === rId);
+    });
 
     const combinedList = [
       ...(matchedDocs || []),
@@ -308,6 +356,16 @@ export async function GET(
         content_json: q.content_json || {},
         created_at: q.created_at || new Date().toISOString(),
         updated_at: q.updated_at || q.created_at || new Date().toISOString()
+      })),
+      ...missingRawVersions.map((rv: any, i: number) => ({
+        id: rv.id || `raw_v_${rv.version || i + 1}`,
+        template_id: rv.template_id || rv.id,
+        lead_id: leadId,
+        version: rv.version || i + 1,
+        lead_version: rv.version || i + 1,
+        content_json: rv.content_json || {},
+        created_at: rv.created_at || new Date().toISOString(),
+        updated_at: rv.updated_at || rv.created_at || new Date().toISOString()
       }))
     ];
 
@@ -417,15 +475,28 @@ export async function GET(
       };
     });
 
+    // Deduplicate formattedQuotations by template_id and version so versions never duplicate
+    const seenTids = new Set<string>();
+    const seenVers = new Set<number>();
+    const uniqueQuotations: typeof formattedQuotations = [];
+    for (const q of formattedQuotations) {
+      const tid = String(q.template_id || q.id).toUpperCase();
+      const ver = Number(q.version);
+      if (seenTids.has(tid) || (ver > 0 && seenVers.has(ver))) continue;
+      seenTids.add(tid);
+      if (ver > 0) seenVers.add(ver);
+      uniqueQuotations.push(q);
+    }
+
     // Sort versions descending for modal display: V3, V2, V1
-    formattedQuotations.sort((a, b) => b.version - a.version);
+    uniqueQuotations.sort((a, b) => b.version - a.version);
 
     // Non-blocking sync of versions into lead.raw_payload for instant 0ms retrieval
     try {
       const existingRaw = effectiveLead.raw_payload || {};
       const existingVers = Array.isArray(existingRaw.quotation_versions) ? existingRaw.quotation_versions : [];
-      if (existingVers.length !== formattedQuotations.length) {
-        const lightweightVersions = formattedQuotations.map(q => ({
+      if (existingVers.length !== uniqueQuotations.length) {
+        const lightweightVersions = uniqueQuotations.map(q => ({
           id: q.id,
           template_id: q.template_id,
           version: q.version,
@@ -447,8 +518,8 @@ export async function GET(
     return NextResponse.json({
       success: true,
       lead: { id: effectiveLead.id, name: effectiveLead.name, email: effectiveLead.email, phone: effectiveLead.phone },
-      quotations: formattedQuotations,
-      count: formattedQuotations.length
+      quotations: uniqueQuotations,
+      count: uniqueQuotations.length
     });
   } catch (err: any) {
     console.error('[GET /api/leads/[id]/quotations] Error:', err);

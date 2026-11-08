@@ -386,7 +386,23 @@ export function LeadQuotationModal({
         const localOnly = quotations.filter(q => !serverIds.has(q.template_id) && !serverIds.has(q.id));
         const mergedCandidate = [...leadScoped, ...localOnly];
 
-        const finalizedList = mergedCandidate.map((item: QuotationVersionItem) => ({
+        // Deduplicate mergedCandidate by template_id and version number so versions (V1, V2) are cleanly preserved
+        const seenVerMap = new Map<number, QuotationVersionItem>();
+        const seenIdSet = new Set<string>();
+        const deduplicated: QuotationVersionItem[] = [];
+
+        for (const item of mergedCandidate) {
+          const tid = String(item.template_id || item.id).toUpperCase();
+          const ver = Number(item.version);
+          if (seenIdSet.has(tid)) continue;
+          if (ver > 0 && seenVerMap.has(ver)) continue;
+          seenIdSet.add(tid);
+          if (ver > 0) seenVerMap.set(ver, item);
+          deduplicated.push(item);
+        }
+        deduplicated.sort((a, b) => (Number(b.version) || 0) - (Number(a.version) || 0));
+
+        const finalizedList = deduplicated.map((item: QuotationVersionItem) => ({
           ...item,
           is_final: Boolean(
             (targetFinalId && (
@@ -602,13 +618,48 @@ export function LeadQuotationModal({
     clonedDoc.designName = quotationTitle;
     clonedDoc.title = quotationTitle;
 
-    setOpeningQuotation({ id: qId, title: quotationTitle, step: 'Hydrating Builder Canvas...' });
+    setOpeningQuotation({ id: qId, title: quotationTitle, step: 'Creating with Selected Template...' });
 
-    // Synchronously prime sessionStorage & localStorage (<1ms)
+    let finalDocument = clonedDoc;
+
     try {
-      sessionStorage.setItem(`current_quotation_doc_${qId}`, JSON.stringify(clonedDoc));
-      sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: qId, document: clonedDoc }));
-      localStorage.setItem(`wg_proposal_draft_${qId}`, JSON.stringify(clonedDoc));
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const createRes = await fetch('/api/quotations/create-for-lead', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({
+          leadId: lead.id,
+          quotationId: qId,
+          clientName: openingCouple,
+          version: nextVersion,
+          explicitTemplateId: chosenTemplateId,
+          initialDocument: clonedDoc,
+          actor_name: session?.user?.email?.split('@')[0] || 'Studio Admin'
+        })
+      });
+
+      if (createRes.ok) {
+        const createJson = await createRes.json().catch(() => ({}));
+        if (createJson.document) {
+          finalDocument = createJson.document;
+        }
+      }
+    } catch (createErr) {
+      console.warn('[CreateQuotation] Error calling create-for-lead, using local document:', createErr);
+    }
+
+    // Synchronously prime sessionStorage & localStorage with authoritative template document (<1ms)
+    try {
+      sessionStorage.setItem(`current_quotation_doc_${qId}`, JSON.stringify(finalDocument));
+      sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: qId, document: finalDocument }));
+      localStorage.setItem(`wg_proposal_draft_${qId}`, JSON.stringify(finalDocument));
+
+      const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
+      await cacheDocumentLocal(qId, finalDocument, nextVersion);
 
       const newVer = {
         id: qId,
@@ -649,38 +700,10 @@ export function LeadQuotationModal({
       });
     } catch (_) {}
 
-    // Navigate to builder immediately (<50ms)!
-    router.push(`/workspace/quotations/builder/templet/${qId}`);
+    setCreating(false);
 
-    // Non-blocking background persistence to Supabase
-    (async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token || '';
-        await fetch('/api/quotations/create-for-lead', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + token
-          },
-          body: JSON.stringify({
-            leadId: lead.id,
-            quotationId: qId,
-            clientName: openingCouple,
-            version: nextVersion,
-            explicitTemplateId: chosenTemplateId,
-            initialDocument: clonedDoc,
-            actor_name: session?.user?.email?.split('@')[0] || 'Studio Admin'
-          })
-        });
-        const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-        await cacheDocumentLocal(qId, clonedDoc, nextVersion);
-      } catch (e) {
-        console.warn('[handleCreateNewQuotation background sync warn]:', e);
-      } finally {
-        setCreating(false);
-      }
-    })();
+    // Navigate to builder immediately with 100% template fidelity!
+    router.push(`/workspace/quotations/builder/templet/${qId}`);
   };
 
   const handleBranchAndEdit = async (q: QuotationVersionItem) => {

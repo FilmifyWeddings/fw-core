@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
     }
 
     let workspaceId = userId;
-    const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+    const leadShortLower = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toLowerCase();
+    const leadShortUpper = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
 
     // 1. Fetch Lead details & existing versions in parallel (Fast indexed lookup)
     const [{ data: lead }, { data: profile }, { data: existingDocs }] = await Promise.all([
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
       supabaseAdmin
         .from('quotation_documents')
         .select('version, lead_version, content_json')
-        .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`)
+        .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortLower}%,template_id.ilike.%${leadShortUpper}%`)
     ]);
 
     const clientNameInput = body.clientName || body.leadName || 'Valued Client';
@@ -51,12 +52,12 @@ export async function POST(req: NextRequest) {
       raw_payload: {}
     };
 
-    if (lead?.workspace_id) {
-      workspaceId = lead.workspace_id;
-    } else if (profile?.workspace_id) {
+    if (profile?.workspace_id) {
       workspaceId = profile.workspace_id;
     } else if (profile?.id) {
       workspaceId = profile.id;
+    } else if (lead?.workspace_id) {
+      workspaceId = lead.workspace_id;
     }
 
     // 2. Strict Template Design Resolution: Always load authentic template to guarantee 100% design fidelity
@@ -64,7 +65,8 @@ export async function POST(req: NextRequest) {
     let templateDoc = DEFAULT_AIRY_PROPOSAL;
 
     try {
-      const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId, explicitTemplateId);
+      const studioWorkspace = profile?.workspace_id || profile?.id || userId || workspaceId;
+      const resolved = await resolveUserDefaultQuotationTemplate(studioWorkspace, userId || profile?.id, explicitTemplateId);
       if (resolved?.document) {
         sourceTemplateId = resolved.templateId;
         templateDoc = resolved.document;
@@ -79,7 +81,7 @@ export async function POST(req: NextRequest) {
       const v = d.lead_version || d.content_json?.lead_version || d.version || 0;
       if (v > maxVersion) maxVersion = v;
     });
-    const nextVersion = maxVersion + 1;
+    const nextVersion = body.version ? Math.max(Number(body.version), maxVersion + 1) : (maxVersion + 1);
 
     // 2. Extract initial document from body or additionalNotes if provided
     let initialDoc = body.initialDocument;

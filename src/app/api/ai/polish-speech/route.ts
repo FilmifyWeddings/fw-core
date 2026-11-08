@@ -29,15 +29,30 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Fetch Studio Quotation Settings & Shortcuts if not provided
-    if (!studioSettings && workspaceId) {
+    if (!studioSettings || !studioSettings.aiRules) {
       try {
-        const { data: row } = await supabaseAdmin
-          .from('workspace_quotation_settings')
-          .select('settings')
-          .eq('workspace_id', workspaceId)
-          .maybeSingle();
-        if (row?.settings && typeof row.settings === 'object') {
-          studioSettings = row.settings;
+        const candidateWsIds = Array.from(new Set([
+          body.userId,
+          body.ownerId,
+          workspaceId
+        ].filter(Boolean)));
+
+        if (candidateWsIds.length === 0) {
+          const { data: prof } = await supabaseAdmin.from('profiles').select('id, workspace_id').limit(1).maybeSingle();
+          if (prof?.id) candidateWsIds.push(prof.id);
+          if (prof?.workspace_id) candidateWsIds.push(prof.workspace_id);
+        }
+
+        for (const cWsId of candidateWsIds) {
+          const { data: row } = await supabaseAdmin
+            .from('workspace_quotation_settings')
+            .select('settings')
+            .eq('workspace_id', cWsId)
+            .maybeSingle();
+          if (row?.settings && typeof row.settings === 'object') {
+            studioSettings = row.settings;
+            break;
+          }
         }
       } catch (e) {
         console.warn('[Polish Speech] Could not fetch workspace_quotation_settings:', e);
@@ -63,9 +78,11 @@ Output the complete, accurate, and clean transcript of EVERYTHING the user said.
 Fix speech-to-text recognition errors, stutters, and phonetic slips while faithfully preserving 100% of the user's spoken words, sentences, requests, notes, and instructions.
 
 ABSOLUTE MANDATES:
-1. PRESERVE ALL SPOKEN CONTENT (DO NOT TRUNCATE OR SUMMARIZE):
+1. PRESERVE ALL SPOKEN CONTENT & NEVER DROP THE TRAILING AMOUNT OR BUDGET:
    - You MUST include every ceremony, detail, requirement, client comment, crew detail, date, and budget mentioned.
-   - NEVER drop or omit any spoken sentence. The text must NOT be incomplete ("aadha-adhura").
+   - CRITICAL: NEVER drop, truncate, or omit the final words or concluding sentences of the speech!
+   - If the user concluded by stating an amount, budget, or price (e.g. "दो लाख", "₹2,00,000", "50 हजार", "बजट ढाई लाख है"), that amount MUST be preserved in the output!
+   - NEVER leave the text incomplete or cut short ("aadha-adhura").
    - STRICT: DO NOT structure the text into rigid bullet templates like "Couple: ... / Location: ... / Events: ... / Pricing: ...".
    - Keep the natural sentence and paragraph structure of the user's speech. If the user spoke in sentences, keep the sentences.
 
@@ -150,7 +167,14 @@ ${customInstructions ? `\nSTUDIO CUSTOM RULES:\n${customInstructions}` : ''}
               const geminiJson = await res.json();
               const polishedText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
               if (polishedText && polishedText.length > 5) {
-                const cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
+                let cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
+
+                // Anti-drop safeguard: If rawText contained an amount or budget and cleanResult inexplicably dropped it, append it!
+                const rawAmountMatch = rawText.match(/(?:बजट|budget|प्राइस|price|अमाउंट|amount|टोटल|total)?\s*(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?\s*(?:लाख|lakh|lac|हजार|thousand|k|cr|करोड़)|\d{4,7})/i);
+                if (rawAmountMatch && !cleanResult.match(/(?:₹|rs\.?|inr|\d+\s*(?:lakh|lac|लाख|k|हजार|thousand))/i)) {
+                  cleanResult += ` (Budget: ${rawAmountMatch[0].trim()})`;
+                }
+
                 return NextResponse.json({
                   success: true,
                   polishedText: cleanResult,
