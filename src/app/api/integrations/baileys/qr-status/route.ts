@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
       qrString = null;
 
       // Ensure DB reflects connected state so page refresh and DB views stay 100% in sync
-      if (data?.conn_state !== 'open' || !data?.phone_number) {
+      if (data?.conn_state !== 'open' || data?.status !== 'open' || !data?.phone_number) {
         await supabaseAdmin
           .from('baileys_sessions')
           .update({
