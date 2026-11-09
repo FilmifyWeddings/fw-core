@@ -236,16 +236,18 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
   let gstPct = 0;
   let calculationNote = '';
 
+  const amtPattern = '([0-9]+(?:[.,][0-9]+)*(?:\\s*(?:lakh|lakhs|lac|lacs|l|लाख|k|thousand|thousands|हजार|हज़ार|cr|crore|crores|करोड़))?)';
+
   // 1. Travel charges
-  const travelMatch = text.match(/(?:travel|travelling|traveling|यात्रा|ट्रैवल|सफर)\s*(?:charges|cost|expense|खर्चा)?[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)(?!\s*[%])/i) ||
-                      text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:travel|travelling|यात्रा|ट्रैवल)(?!\s*[%])/i);
+  const travelMatch = text.match(new RegExp(`(?:travel|travelling|traveling|यात्रा|ट्रैवल|सफर)\\s*(?:charges|cost|expense|खर्चा)?[:\\s]*${amtPattern}(?!\\s*[%])`, 'i')) ||
+                      text.match(new RegExp(`${amtPattern}\\s*(?:travel|travelling|यात्रा|ट्रैवल)(?!\\s*[%])`, 'i'));
   if (travelMatch) {
     travelCharges = parseCurrencyAmount(travelMatch[1]);
   }
 
   // 2. Stay / Accommodation charges
-  const stayMatch = text.match(/(?:stay|accommodation|hotel|कमरा|रहना|होटल)\s*(?:charges|cost|expense|खर्चा)?[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)(?!\s*[%])/i) ||
-                    text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:stay|accommodation|hotel|होटल)(?!\s*[%])/i);
+  const stayMatch = text.match(new RegExp(`(?:stay|accommodation|hotel|कमरा|रहना|होटल)\\s*(?:charges|cost|expense|खर्चा)?[:\\s]*${amtPattern}(?!\\s*[%])`, 'i')) ||
+                    text.match(new RegExp(`${amtPattern}\\s*(?:stay|accommodation|hotel|होटल)(?!\\s*[%])`, 'i'));
   if (stayMatch) {
     accommodationCharges = parseCurrencyAmount(stayMatch[1]);
   }
@@ -258,30 +260,30 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
     discPct = parseFloat(discPctMatch[1]) || 0;
   }
 
-  const discFlatMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:discount|off|minus|डिस्काउंट|छूट)(?!\s*[%])/i) ||
-                        text.match(/(?:discount|off|minus|concession|less|छूट|कम|डिस्काउंट)[:\s]+([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)(?!\s*[%])/i);
+  const discFlatMatch = text.match(new RegExp(`${amtPattern}\\s*(?:discount|off|minus|डिस्काउंट|छूट)(?!\\s*[%])`, 'i')) ||
+                        text.match(new RegExp(`(?:discount|off|minus|concession|less|छूट|कम|डिस्काउंट)[:\\s]+${amtPattern}(?!\\s*[%])`, 'i'));
   if (discFlatMatch) {
     discountAmount = parseCurrencyAmount(discFlatMatch[1]);
   }
 
   // 4. Additional charges (album, drone add-on)
-  const albumMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:album|photobook|एल्बम)/i) ||
-                     text.match(/(?:album|photobook|एल्बम)\s*[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)/i);
+  const albumMatch = text.match(new RegExp(`${amtPattern}\\s*(?:album|photobook|एल्बम)`, 'i')) ||
+                     text.match(new RegExp(`(?:album|photobook|एल्बम)\\s*[:\\s]*${amtPattern}`, 'i'));
   if (albumMatch) {
     const val = parseCurrencyAmount(albumMatch[1]);
     if (val > 0 && val < 100000) additionalCharges += val;
   }
 
-  const droneMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:drone|ड्रोन)/i) ||
-                     text.match(/(?:drone|ड्रोन)\s*[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)/i);
+  const droneMatch = text.match(new RegExp(`${amtPattern}\\s*(?:drone|ड्रोन)`, 'i')) ||
+                     text.match(new RegExp(`(?:drone|ड्रोन)\\s*[:\\s]*${amtPattern}`, 'i'));
   if (droneMatch) {
     const val = parseCurrencyAmount(droneMatch[1]);
     if (val > 0 && val < 100000) additionalCharges += val;
   }
 
   // 5. Per day / Per event multiplication e.g. '35,000 per day for 2 days' or '40k per day x 3 days'
-  const multiDayMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:per\s*day|per\s*event|per\s*function|दिन|डे)\s*(?:[x*]|for|into)?\s*(\d+)\s*(?:days|events|functions|दिन)?/i) ||
-                        text.match(/(\d+)\s*(?:days|events|functions|दिन)\s*(?:into|[x*]|@)?\s*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:per\s*day|per\s*event)?/i);
+  const multiDayMatch = text.match(new RegExp(`${amtPattern}\\s*(?:per\\s*day|per\\s*event|per\\s*function|दिन|डे)\\s*(?:[x*]|for|into)?\\s*(\\d+)\\s*(?:days|events|functions|दिन)?`, 'i')) ||
+                        text.match(new RegExp(`(\\d+)\\s*(?:days|events|functions|दिन)\\s*(?:into|[x*]|@)?\\s*${amtPattern}\\s*(?:per\\s*day|per\\s*event)?`, 'i'));
   if (multiDayMatch) {
     const rateStr = multiDayMatch[1].match(/\d/) ? multiDayMatch[1] : multiDayMatch[2];
     const qtyStr = multiDayMatch[2].match(/^[0-9]+$/) ? multiDayMatch[2] : multiDayMatch[1];
@@ -298,7 +300,7 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
     const eventRates: number[] = [];
     const events = ['haldi', 'sangeet', 'mehendi', 'wedding', 'reception', 'engagement', 'roka', 'हल्दी', 'संगीत', 'शादी', 'वेडिंग', 'रिसेप्शन'];
     for (const evt of events) {
-      const regex = new RegExp(evt + '[^0-9]{1,15}([0-9]+(?:[.,][0-9]+)*(?:\\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)', 'i');
+      const regex = new RegExp(`${evt}[^0-9]{1,15}${amtPattern}`, 'i');
       const m = text.match(regex);
       if (m) {
         const num = parseCurrencyAmount(m[1]);
@@ -313,8 +315,8 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
 
   // 7. Direct package / regular / budget price
   if (!basePrice) {
-    const pkgMatch = text.match(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)\s*(?:का\s*पैकेज|का\s*बजट|का\s*कोटेशन|ka\s*package|ka\s*budget|package|budget|बजट|पैकेज)/i) ||
-                     text.match(/(?:package|budget|total|price|cost|investment|बजट|पैकेज|कोटेशन)[:\s]+([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)(?!\s*[%])/i);
+    const pkgMatch = text.match(new RegExp(`${amtPattern}\\s*(?:का\\s*पैकेज|का\\s*बजट|का\\s*कोटेशन|के\\s*लिए|ka\\s*package|ka\\s*budget|package|budget|बजट|पैकेज)`, 'i')) ||
+                     text.match(new RegExp(`(?:package|budget|total|price|cost|investment|बजट|पैकेज|कोटेशन|अमाउंट|प्राइस)\\s*(?:है|is|ka|ke|का|के|:|\\s)?\\s*${amtPattern}(?!\\s*[%])`, 'i'));
     if (pkgMatch) {
       basePrice = parseCurrencyAmount(pkgMatch[1]);
     }
@@ -322,7 +324,7 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
 
   // 8. Fallback to any prominent amount in text (excluding discount amount)
   if (!basePrice) {
-    const numbers = [...text.matchAll(/([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand|हजार|हज़ार))?)/gi)]
+    const numbers = [...text.matchAll(new RegExp(amtPattern, 'gi'))]
       .map(m => parseCurrencyAmount(m[1]))
       .filter(n => n >= 15000 && n !== discountAmount && n !== travelCharges);
     if (numbers.length > 0) {
@@ -339,8 +341,8 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
 
   // Check regular vs best offer price
   if (!discountAmount) {
-    const regMatch = text.match(/(?:regular|standard|actual)[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand))?)/i);
-    const offerMatch = text.match(/(?:offer|deal|final|special|best)[:\s]*([0-9]+(?:[.,][0-9]+)*(?:\s*(?:lakh|lac|k|thousand))?)/i);
+    const regMatch = text.match(new RegExp(`(?:regular|standard|actual)[:\\s]*${amtPattern}`, 'i'));
+    const offerMatch = text.match(new RegExp(`(?:offer|deal|final|special|best)[:\\s]*${amtPattern}`, 'i'));
     if (regMatch && offerMatch) {
       const reg = parseCurrencyAmount(regMatch[1]);
       const off = parseCurrencyAmount(offerMatch[1]);
@@ -461,16 +463,29 @@ export function fallbackHeuristicExtractor(contextData: any) {
   // 1. Couple & Names
   let leadName = '';
 
+  const INVALID_NAME_WORDS = new Set([
+    'होगी', 'होगा', 'रहेगा', 'रहेगी', 'शादी', 'हल्दी', 'संगीत', 'फेरे', 'लग्न', 'विवाह',
+    'मेहंदी', 'सगाई', 'रिसेप्शन', 'कैंडिड', 'सिनेमैटोग्राफर', 'ड्रोन', 'ट्रेडिशनल', 'फोटोग्राफर',
+    'शूट', 'कोटेशन', 'प्रपोजल', 'बजट', 'पैकेज', 'wedding', 'marriage', 'proposal', 'quotation',
+    'haldi', 'sangeet', 'mehendi', 'reception', 'candid', 'cine', 'cinematographer', 'traditional',
+    'drone', 'budget', 'price', 'rate', 'cost', 'date', 'day', 'days', 'hours'
+  ]);
+  const isValidCoupleCandidate = (cand: string): boolean => {
+    if (!cand) return false;
+    const parts = cand.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i);
+    return parts.length >= 1 && !parts.some(p => INVALID_NAME_WORDS.has(p.trim()));
+  };
+
   // Check explicit "Couple: X & Y" or "Couple name: X and Y" or "Client: X & Y"
   const explicitMatch = userNotes.match(/(?:couple(?:\s*name)?|client(?:\s*name)?|bride\s*(?:&|and)\s*groom|groom\s*(?:&|and)\s*bride)[:\s]+([A-Za-z\u0900-\u097F\s&'+.-]+?)(?=\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|\d|₹|rs|all|deliverable)|[,\n\r.]|$)/i);
-  if (explicitMatch && explicitMatch[1].trim()) {
+  if (explicitMatch && explicitMatch[1].trim() && isValidCoupleCandidate(explicitMatch[1].trim())) {
     leadName = explicitMatch[1].trim();
   }
 
   // Hindi Couple Name matching e.g. "कपल का नाम रहेगा रौनक और प्रेक्षा" or "कपल नेम राहुल नेहा"
   if (!leadName) {
     const hindiCoupleMatch = userNotes.match(/(?:कपल(?:\s*का)?\s*नाम(?:\s*रहेगा)?|कपल\s*नेम|कपल|जो\s*की\s*रहेगा|जो\s*रहेगा|कोटेशन\s*रहेगा|रहेगा|कोटेशन\s*बनाना\s*है)[:\s]*([\u0900-\u097Fa-zA-Z\s&'+.-]+?)(?=\s+(?:वेडिंग|शादी|लग्न|कोटेशन|हल्दी|संगीत|रिसेप्शन|मेहंदी|तारीख|बजट|\d|ऑल|all|का|की|के|है)|[,\n\r.]|$)/i);
-    if (hindiCoupleMatch && hindiCoupleMatch[1].trim()) {
+    if (hindiCoupleMatch && hindiCoupleMatch[1].trim() && isValidCoupleCandidate(hindiCoupleMatch[1].trim())) {
       leadName = hindiCoupleMatch[1].trim();
     }
   }
@@ -478,7 +493,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
   // Check for standalone couple name pattern e.g. "Sagar & Vruddhi" or "Rahul and Pooja"
   if (!leadName) {
     const couplePatternMatch = userNotes.match(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])([A-Za-z\u0900-\u097F]{2,20}\s*(?:&|weds|and|\+|तथा|और)\s*[A-Za-z\u0900-\u097F]{2,20})(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i);
-    if (couplePatternMatch && couplePatternMatch[1]?.trim()) {
+    if (couplePatternMatch && couplePatternMatch[1]?.trim() && isValidCoupleCandidate(couplePatternMatch[1].trim())) {
       leadName = couplePatternMatch[1].trim();
     }
   }
@@ -486,7 +501,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
   // Check for "X और Y का कोटेशन / शादी" pattern
   if (!leadName) {
     const hindiKaMatch = userNotes.match(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])([A-Za-z\u0900-\u097F]{2,20}\s*(?:&|weds|and|\+|तथा|और)\s*[A-Za-z\u0900-\u097F]{2,20})\s*(?:का|की|के)\s*(?:कोटेशन|वेडिंग|शादी|इवेंट)/i);
-    if (hindiKaMatch && hindiKaMatch[1]?.trim()) {
+    if (hindiKaMatch && hindiKaMatch[1]?.trim() && isValidCoupleCandidate(hindiKaMatch[1].trim())) {
       leadName = hindiKaMatch[1].trim();
     }
   }
@@ -494,7 +509,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
   // Check for "Quotation for X & Y" or "quote for X & Y"
   if (!leadName) {
     const forMatch = userNotes.match(/(?:quotation\s+for|quote\s+for|proposal\s+for|for)\s+([A-Za-z\u0900-\u097F\s&]+?)(?=\s+(?:wedding|reception|event|pre-wedding|haldi|sangeet|on|date|budget|\d)|[,\n\r.]|$)/i);
-    if (forMatch && forMatch[1].trim()) {
+    if (forMatch && forMatch[1].trim() && isValidCoupleCandidate(forMatch[1].trim())) {
       leadName = forMatch[1].trim();
     }
   }
@@ -601,27 +616,96 @@ export function fallbackHeuristicExtractor(contextData: any) {
     eventType = 'Maternity Shoot';
   }
 
-  // 3. Location / Venue
-  let location = '';
-  if (userNotes) {
-    const locMatch = userNotes.match(/(?:at|in|venue|location|city|destination)[:\s]+([A-Za-z0-9\s,]+)/i);
-    if (locMatch) {
-      location = locMatch[1].split('\n')[0].trim();
+  // 3. Indian City & Location Resolution
+  const INDIAN_CITY_MAP: Record<string, string> = {
+    'मुंबई': 'Mumbai', 'mumbai': 'Mumbai', 'बॉम्बे': 'Mumbai', 'बम्बई': 'Mumbai',
+    'पुणे': 'Pune', 'pune': 'Pune', 'पूना': 'Pune',
+    'उदयपुर': 'Udaipur', 'udaipur': 'Udaipur',
+    'गोवा': 'Goa', 'goa': 'Goa',
+    'जयपुर': 'Jaipur', 'jaipur': 'Jaipur',
+    'दिल्ली': 'Delhi', 'delhi': 'Delhi', 'नई दिल्ली': 'New Delhi', 'new delhi': 'New Delhi',
+    'अहमदाबाद': 'Ahmedabad', 'ahmedabad': 'Ahmedabad',
+    'सूरत': 'Surat', 'surat': 'Surat',
+    'नागपुर': 'Nagpur', 'nagpur': 'Nagpur',
+    'नाशिक': 'Nashik', 'nashik': 'Nashik',
+    'कोल्हापुर': 'Kolhapur', 'kolhapur': 'Kolhapur',
+    'इंदौर': 'Indore', 'indore': 'Indore',
+    'भोपाल': 'Bhopal', 'bhopal': 'Bhopal',
+    'लोनावला': 'Lonavala', 'lonavala': 'Lonavala',
+    'महाबलेश्वर': 'Mahabaleshwar', 'mahabaleshwar': 'Mahabaleshwar',
+    'अलीबाग': 'Alibaug', 'alibaug': 'Alibaug',
+    'जोधपुर': 'Jodhpur', 'jodhpur': 'Jodhpur',
+    'जैसलमेर': 'Jaisalmer', 'jaisalmer': 'Jaisalmer',
+    'आगरा': 'Agra', 'agra': 'Agra',
+    'वाराणसी': 'Varanasi', 'varanasi': 'Varanasi', 'बनारस': 'Varanasi',
+    'ऋषिकेश': 'Rishikesh', 'rishikesh': 'Rishikesh',
+    'जिम कॉर्बेट': 'Jim Corbett', 'jim corbett': 'Jim Corbett',
+    'हैदराबाद': 'Hyderabad', 'hyderabad': 'Hyderabad',
+    'बेंगलुरु': 'Bengaluru', 'bangalore': 'Bengaluru', 'bengaluru': 'Bengaluru',
+    'कोलकाता': 'Kolkata', 'kolkata': 'Kolkata',
+    'चंडीगढ़': 'Chandigarh', 'chandigarh': 'Chandigarh',
+    'लखनऊ': 'Lucknow', 'lucknow': 'Lucknow'
+  };
+
+  const extractLocationFromSnippet = (snippet: string): string => {
+    if (!snippet) return '';
+    for (const [k, v] of Object.entries(INDIAN_CITY_MAP)) {
+      if (new RegExp(`(?:^|[^\\u0900-\\u097Fa-zA-Z0-9])${k}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`, 'i').test(snippet)) {
+        return v;
+      }
     }
-  }
-  if (!location) {
-    location = raw.venue || raw.location || raw.city || raw.destination || '';
-  }
+    const explicitLocMatch = snippet.match(/(?:at|in|venue|location|city|destination|लोकेशन|वेन्यू|स्थान|जगह|शहर|में)[:\s]+(["']?[A-Za-z\u0900-\u097F0-9\s,.-]+["']?)/i);
+    if (explicitLocMatch) {
+      const clean = explicitLocMatch[1].replace(/["']/g, '').split(/[,\n]/)[0].trim();
+      if (clean && clean.length > 2 && !['शादी', 'वेडिंग', 'हल्दी', 'संगीत', 'रिसेप्शन', 'में'].includes(clean.toLowerCase())) {
+        return clean;
+      }
+    }
+    return '';
+  };
+
+  const extractDateFromSnippet = (snippet: string): string => {
+    if (!snippet) return '';
+    const dateM = snippet.match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s*(?:जनवरी|फ़रवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|सितम्बर|अक्टूबर|अक्तूबर|नवंबर|नवम्बर|दिसंबर|दिसम्बर|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(\d{2,4})?/i);
+    if (dateM) {
+      return formatQuotationDate(dateM[0]);
+    }
+    const slashM = snippet.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/);
+    if (slashM) {
+      return formatQuotationDate(slashM[0]);
+    }
+    return '';
+  };
+
+  const extractCrewFromSnippet = (snippet: string): Array<{ name: string; qty: number }> => {
+    const crewDefs = [
+      { name: 'Candid Photographer', regex: /(?:कैंडिड|candid|cp)\s*(?:फोटोग्राफर|photo|photography)?\s*(\d+)?|(\d+)\s*(?:कैंडिड|candid)/i },
+      { name: 'Cinematographer', regex: /(?:सिनेमैटोग्राफर|सिनेमैटिक|cinematog|cinematic|cine|cv)\s*(\d+)?|(\d+)\s*(?:सिनेमैटोग्राफर|cinematog)/i },
+      { name: 'Traditional Photographer', regex: /(?:ट्रेडिशनल|traditional|trad|tp)\s*(?:फोटोग्राफर|photo)\s*(\d+)?|(\d+)\s*(?:ट्रेडिशनल|traditional)\s*photo/i },
+      { name: 'Traditional Videographer', regex: /(?:ट्रेडिशनल|traditional|trad|tv)\s*(?:वीडियो|video|videography)\s*(\d+)?|(\d+)\s*(?:ट्रेडिशनल|traditional)\s*video/i },
+      { name: 'Drone Pilot', regex: /(?:ड्रोन|drone)\s*(?:पायलट|pilot)?\s*(\d+)?|(\d+)\s*(?:ड्रोन|drone)/i },
+      { name: 'Semi Cinematic', regex: /(?:सेमी\s*सिनेमैटिक|semi\s*cinematic|semi-cinematic)\s*(\d+)?/i },
+      { name: 'Semi Standard', regex: /(?:सेमी\s*स्टैंडर्ड|semi\s*standard|semi-standard)\s*(\d+)?/i }
+    ];
+    const found: Array<{ name: string; qty: number }> = [];
+    for (const c of crewDefs) {
+      const m = snippet.match(c.regex);
+      if (m) {
+        const qty = parseInt(m[1] || m[2] || '1', 10) || 1;
+        found.push({ name: c.name, qty });
+      }
+    }
+    return found;
+  };
+
+  let location = extractLocationFromSnippet(userNotes) || raw.venue || raw.location || raw.city || raw.destination || '';
 
   // 4. Dates
-  let weddingDate = '';
-  const dateMatch = userNotes.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(?:\d{2,4})?)\b/i);
-  if (dateMatch) {
-    weddingDate = dateMatch[1];
-  } else if (raw.event_date || raw.wedding_date || raw.date || raw.wedding_month || raw.month) {
-    weddingDate = raw.event_date || raw.wedding_date || raw.date || raw.wedding_month || raw.month;
+  let weddingDate = extractDateFromSnippet(userNotes);
+  if (!weddingDate && (raw.event_date || raw.wedding_date || raw.date || raw.wedding_month || raw.month)) {
+    weddingDate = formatQuotationDate(raw.event_date || raw.wedding_date || raw.date || raw.wedding_month || raw.month);
   }
-  const isDateNotFixed = !weddingDate || fullText.includes('not fix') || fullText.includes('not fixed') || fullText.includes('tbd');
+  const isDateNotFixed = !weddingDate || weddingDate === 'Date Not Fixed' || fullText.includes('not fix') || fullText.includes('not fixed') || fullText.includes('tbd');
   if (isDateNotFixed && !weddingDate) {
     weddingDate = 'Date Not Fixed';
   }
@@ -643,7 +727,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
   let pricingNote = evaluatedPricing.note;
   let paymentSteps = evaluatedPricing.steps;
 
-  // Extract custom times and location from notes
+  // Extract custom times from notes
   let customStartTime = '';
   let customEndTime = '';
   const startMatch = userNotes.match(/(?:startTime|start_time|start|from|timing)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
@@ -652,47 +736,9 @@ export function fallbackHeuristicExtractor(contextData: any) {
   const endMatch = userNotes.match(/(?:endTime|end_time|end|to)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
   if (endMatch) customEndTime = endMatch[1].trim();
 
-  if (!location) {
-    const locMatch2 = userNotes.match(/(?:location|venue|at|in)[:\s]+["']?([^"\n,}]+)["']?/i);
-    if (locMatch2) location = locMatch2[1].trim();
-  }
+  // Extract general requirements from notes if specified
+  const parsedRequirements: any[] = extractCrewFromSnippet(userNotes);
 
-  // Extract requirements from notes if specified
-  const parsedRequirements: any[] = [];
-
-  // Check for Semi Cinematic / Semi Kinematic
-  if (
-    fullText.includes('semi-cinematic') || 
-    fullText.includes('semi cinematic') || 
-    fullText.includes('semi-kinematic') || 
-    fullText.includes('semi kinematic') || 
-    fullText.includes('semi cine') ||
-    fullText.includes('semi-cine')
-  ) {
-    parsedRequirements.push({ name: 'Semi Cinematic', qty: 1 });
-  }
-
-  // Check for Semi Standard / Semi Traditional
-  if (
-    fullText.includes('semi-standard') || 
-    fullText.includes('semi standard') || 
-    fullText.includes('semi-traditional') || 
-    fullText.includes('semi traditional') || 
-    fullText.includes('semi trad') ||
-    fullText.includes('semi-trad')
-  ) {
-    parsedRequirements.push({ name: 'Semi Standard', qty: 1 });
-  }
-
-  const reqMatches = [...userNotes.matchAll(/(?:name|role)?[:\s]*["']?([A-Za-z\s]+(?:Photographer|Videographer|Cinematographer|Drone|Pilot|Assistant|Creator|Person))["']?/gi)];
-  if (reqMatches.length > 0) {
-    reqMatches.forEach((m) => {
-      const normalized = normalizeCrewRoleName(m[1]);
-      if (normalized && !parsedRequirements.some(r => r.name === normalized)) {
-        parsedRequirements.push({ name: normalized, qty: 1 });
-      }
-    });
-  }
   // Check studio shortcuts for crew and pricing before creating functions
   const studioShortcuts: any[] = Array.isArray(contextData.studioSettings?.aiRules?.shortcuts)
     ? contextData.studioSettings.aiRules.shortcuts
@@ -706,7 +752,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     const trigLower = sc.trigger.toLowerCase().trim();
     const words = trigLower.split(/\s+/);
     const isMatch = fullText.includes(trigLower) || 
-      words.every(w => fullText.includes(w)) ||
+      words.every((w: string) => fullText.includes(w)) ||
       (trigLower.includes('deliverable') && (fullText.includes('ऑल डिलीवरेबल्स') || fullText.includes('all deliverable')));
 
     if (isMatch) {
@@ -716,7 +762,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
       if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) {
         shortcutDeliverables.push(...sc.mappedDeliverables);
       }
-      if (sc.mappedPrice && (!priceMatches.length && !budget)) {
+      if (sc.mappedPrice && basePrice <= 0 && !budget) {
         basePrice = sc.mappedPrice;
       }
     }
@@ -731,58 +777,57 @@ export function fallbackHeuristicExtractor(contextData: any) {
             { name: 'Cinematographer', qty: 1 }
           ]);
 
-  // 6. Functions & Coverage Extraction
+  // 6. Functions & Multi-Ceremony Coverage Extraction with Natural Language Clauses
   const functions: any[] = [];
-  const knownEvents = [
-    { key: 'haldi + sangeet', name: 'Haldi + Sangeet' },
-    { key: 'haldi', name: 'Haldi' },
-    { key: 'mehendi', name: 'Mehendi' },
-    { key: 'sangeet', name: 'Sangeet' },
-    { key: 'wedding', name: 'Wedding' },
-    { key: 'reception', name: 'Reception' },
-    { key: 'engagement', name: 'Ring Ceremony' },
-    { key: 'cocktail', name: 'Cocktail Party' },
-    { key: 'mayra', name: 'Mayra Function' },
-    { key: 'ganesh puja', name: 'Ganesh Puja' }
+  const eventDefs = [
+    { key: 'haldi + sangeet', name: 'Haldi + Sangeet', regex: /(?:हल्दी\s*(?:\+|और|व|&)?\s*संगीत|haldi\s*(?:\+|and|&)\s*sangeet)/i },
+    { key: 'haldi', name: 'Haldi Ceremony', regex: /(?:हल्दी|हळद|pithi|haldi)/i },
+    { key: 'sangeet', name: 'Sangeet Night', regex: /(?:संगीत|sangeet)/i },
+    { key: 'wedding', name: 'Wedding Ceremony', regex: /(?:शादी|लग्न|विवाह|फेरे|wedding|marriage|pheras)/i },
+    { key: 'mehendi', name: 'Mehendi Ceremony', regex: /(?:मेहंदी|mehendi|mehndi)/i },
+    { key: 'engagement', name: 'Ring Ceremony', regex: /(?:सगाई|रिंग सेरेमनी|साखरपुडा|engagement|roka)/i },
+    { key: 'reception', name: 'Reception', regex: /(?:रिसेप्शन|reception)/i },
+    { key: 'cocktail', name: 'Cocktail Party', regex: /(?:कॉकटेल|cocktail)/i },
+    { key: 'home entry', name: 'Home Entry Shoot', regex: /(?:गृह प्रवेश|घर का शूट|घर पे एंट्री|home entry)/i },
+    { key: 'mayra', name: 'Mayra Function', regex: /(?:मायरा|भाता|mayra)/i },
+    { key: 'ganesh puja', name: 'Ganesh Puja', regex: /(?:गणेश पूजा|पूजा|puja)/i }
   ];
 
-  // Check multi-event combinations first
-  let remainingText = fullText;
-  if (remainingText.includes('haldi') && remainingText.includes('sangeet') && (remainingText.includes('same day') || remainingText.includes('haldi + sangeet') || remainingText.includes('haldi & sangeet'))) {
-    functions.push({
-      id: 'func-ai-1',
-      name: 'Haldi + Sangeet',
-      date: weddingDate || 'Date Not Fixed',
-      dateNotFixed: isDateNotFixed,
-      startTime: customStartTime,
-      endTime: customEndTime,
-      location: location || '',
-      requirements: defaultRequirements,
-      notes: ''
-    });
-    remainingText = remainingText.replace(/haldi/g, '').replace(/sangeet/g, '');
-  }
+  const clauses = userNotes.split(/[.,;\n।|]|\s+(?:और|तथा|व|and|&)\s+/i).map((c: string) => c.trim()).filter(Boolean);
 
-  knownEvents.forEach((evt, idx) => {
-    if (remainingText.includes(evt.key)) {
-      functions.push({
-        id: `func-ai-${idx + 2}`,
-        name: evt.name,
-        date: weddingDate || 'Date Not Fixed',
-        dateNotFixed: isDateNotFixed,
-        startTime: customStartTime,
-        endTime: customEndTime,
-        location: location || '',
-        requirements: defaultRequirements,
-        notes: ''
-      });
+  eventDefs.forEach((evt, idx) => {
+    // If Haldi + Sangeet was matched, skip individual Haldi or Sangeet
+    if ((evt.key === 'haldi' || evt.key === 'sangeet') && functions.some(f => f.name === 'Haldi + Sangeet')) {
+      return;
+    }
+
+    const matchingClause = clauses.find((c: string) => evt.regex.test(c)) || (evt.regex.test(userNotes) ? userNotes : '');
+    if (matchingClause) {
+      if (!functions.some(f => f.name === evt.name)) {
+        const clauseDate = extractDateFromSnippet(matchingClause) || weddingDate || 'Date Not Fixed';
+        const clauseLoc = extractLocationFromSnippet(matchingClause) || location || '';
+        const clauseCrew = extractCrewFromSnippet(matchingClause);
+        const eventCrew = clauseCrew.length > 0 ? clauseCrew : defaultRequirements;
+
+        functions.push({
+          id: `func-ai-${idx + 1}`,
+          name: evt.name,
+          date: clauseDate,
+          dateNotFixed: clauseDate === 'Date Not Fixed',
+          startTime: customStartTime,
+          endTime: customEndTime,
+          location: clauseLoc,
+          requirements: eventCrew,
+          notes: ''
+        });
+      }
     }
   });
 
   if (functions.length === 0) {
     functions.push({
       id: 'func-ai-def',
-      name: 'Wedding',
+      name: 'Wedding Ceremony',
       date: weddingDate || 'Date Not Fixed',
       dateNotFixed: isDateNotFixed,
       startTime: customStartTime,
@@ -791,6 +836,12 @@ export function fallbackHeuristicExtractor(contextData: any) {
       requirements: defaultRequirements,
       notes: ''
     });
+  }
+
+  // Update primary location from Wedding ceremony if present
+  const weddingFunc = functions.find(f => f.name.toLowerCase().includes('wedding') && f.location);
+  if (weddingFunc && weddingFunc.location) {
+    location = weddingFunc.location;
   }
 
   // 7. Studio Settings Deliverables & Shorthands Sync
@@ -813,7 +864,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
       if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) {
         shortcutDeliverables.push(...sc.mappedDeliverables);
       }
-      if (sc.mappedPrice && (!priceMatches.length && !budget)) {
+      if (sc.mappedPrice && basePrice <= 0 && !budget) {
         basePrice = sc.mappedPrice;
       }
     }
@@ -902,7 +953,41 @@ export function fallbackHeuristicExtractor(contextData: any) {
  * Maps raw AI extraction result into the exact StudioCore Quotation JSON document structure.
  */
 export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextData: any) {
-  const rootObj = aiData.quotation || aiData;
+  let rootObj = aiData?.document || aiData?.quotation || aiData;
+
+  // Canonical top-level field normalizer
+  if (rootObj && typeof rootObj === 'object') {
+    if (!rootObj.cover) rootObj.cover = {};
+    if (rootObj.coupleName && !rootObj.cover.coupleName) rootObj.cover.coupleName = rootObj.coupleName;
+    if (rootObj.groomName && !rootObj.cover.groomName) rootObj.cover.groomName = rootObj.groomName;
+    if (rootObj.brideName && !rootObj.cover.brideName) rootObj.cover.brideName = rootObj.brideName;
+    if (rootObj.eventType && !rootObj.cover.eventType) rootObj.cover.eventType = rootObj.eventType;
+    if ((rootObj.location || rootObj.venue || rootObj.city) && !rootObj.cover.locationName) {
+      rootObj.cover.locationName = rootObj.location || rootObj.venue || rootObj.city;
+    }
+    if ((rootObj.weddingDate || rootObj.event_date) && !rootObj.cover.weddingDate) {
+      rootObj.cover.weddingDate = rootObj.weddingDate || rootObj.event_date;
+    }
+    if (!rootObj.functionsPage) {
+      if (Array.isArray(rootObj.functions) || Array.isArray(rootObj.events)) {
+        rootObj.functionsPage = { items: rootObj.functions || rootObj.events };
+      }
+    } else if (!rootObj.functionsPage.items && (Array.isArray(rootObj.functions) || Array.isArray(rootObj.events))) {
+      rootObj.functionsPage.items = rootObj.functions || rootObj.events;
+    }
+    if (!rootObj.deliverablesPage) {
+      if (Array.isArray(rootObj.deliverables)) {
+        rootObj.deliverablesPage = { selectedItems: rootObj.deliverables };
+      }
+    } else if (!rootObj.deliverablesPage.selectedItems && Array.isArray(rootObj.deliverables)) {
+      rootObj.deliverablesPage.selectedItems = rootObj.deliverables;
+    }
+    if (!rootObj.pricingPage) {
+      if (rootObj.pricing || rootObj.budget || rootObj.basePrice) {
+        rootObj.pricingPage = typeof rootObj.pricing === 'object' ? rootObj.pricing : { basePrice: rootObj.basePrice || rootObj.budget || 150000 };
+      }
+    }
+  }
 
   // Check if user's notes or prompt explicitly confirmed any payment/advance was already received
   const allUserNotes = [
@@ -1164,7 +1249,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     const trigLower = sc.trigger.toLowerCase().trim();
     const words = trigLower.split(/\s+/);
     const isMatch = allNotesText.includes(trigLower) || 
-      words.every(w => allNotesText.includes(w)) ||
+      words.every((w: string) => allNotesText.includes(w)) ||
       (trigLower.includes('deliverable') && (allNotesText.includes('ऑल डिलीवरेबल्स') || allNotesText.includes('all deliverable')));
 
     if (isMatch) {

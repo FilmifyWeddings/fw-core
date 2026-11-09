@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[1].trim() : 'Partner');
 
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const quotationId = body.quotationId || `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
+    const quotationId = body.quotationId || `FW-Q-${leadShortUpper}-V${nextVersion}-${randomSuffix}`;
 
     const rawInputDoc = body.initialDocument?.document || body.initialDocument || initialDoc?.document || initialDoc;
     const baseSourceDoc = rawInputDoc ? normalizeQuotationData(rawInputDoc, templateDoc) : templateDoc;
@@ -173,10 +173,53 @@ export async function POST(req: NextRequest) {
     clonedDoc.cover.groomName = groomName;
     clonedDoc.cover.brideName = brideName;
 
-    if (effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location) {
-      if (!clonedDoc.cover.locationName) {
-        clonedDoc.cover.locationName = effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location;
+    // Strict preservation of AI-extracted or custom initial document data
+    if (rawInputDoc) {
+      if (rawInputDoc.cover?.locationName) {
+        clonedDoc.cover.locationName = rawInputDoc.cover.locationName;
       }
+      if (rawInputDoc.cover?.weddingDate && rawInputDoc.cover.weddingDate !== 'Date Not Fixed') {
+        clonedDoc.cover.weddingDate = rawInputDoc.cover.weddingDate;
+      }
+      if (Array.isArray(rawInputDoc.functionsPage?.items) && rawInputDoc.functionsPage.items.length > 0) {
+        clonedDoc.functionsPage = {
+          ...(clonedDoc.functionsPage || {}),
+          items: rawInputDoc.functionsPage.items
+        };
+      }
+      if (Array.isArray(rawInputDoc.deliverablesPage?.selectedItems) && rawInputDoc.deliverablesPage.selectedItems.length > 0) {
+        clonedDoc.deliverablesPage = {
+          ...(clonedDoc.deliverablesPage || {}),
+          selectedItems: rawInputDoc.deliverablesPage.selectedItems,
+          availableOptions: Array.from(new Set([
+            ...(clonedDoc.deliverablesPage?.availableOptions || []),
+            ...(rawInputDoc.deliverablesPage?.availableOptions || []),
+            ...rawInputDoc.deliverablesPage.selectedItems
+          ]))
+        };
+      }
+      if (rawInputDoc.pricingPage?.basePrice) {
+        clonedDoc.pricingPage = {
+          ...(clonedDoc.pricingPage || {}),
+          basePrice: rawInputDoc.pricingPage.basePrice,
+          discountAmount: rawInputDoc.pricingPage.discountAmount || 0,
+          gstPct: rawInputDoc.pricingPage.gstPct || 0,
+          travelCharges: rawInputDoc.pricingPage.travelCharges || 0,
+          accommodationCharges: rawInputDoc.pricingPage.accommodationCharges || 0,
+          additionalCharges: rawInputDoc.pricingPage.additionalCharges || 0,
+          note: rawInputDoc.pricingPage.note || clonedDoc.pricingPage?.note || ''
+        };
+      }
+      if (Array.isArray(rawInputDoc.paymentTermsPage?.steps) && rawInputDoc.paymentTermsPage.steps.length > 0) {
+        clonedDoc.paymentTermsPage = {
+          ...(clonedDoc.paymentTermsPage || {}),
+          steps: rawInputDoc.paymentTermsPage.steps
+        };
+      }
+    }
+
+    if (!clonedDoc.cover.locationName && (effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location)) {
+      clonedDoc.cover.locationName = effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location;
     }
 
     // STRICT GUARANTEE: Never overwrite template branding, photos, or custom headings with dummy placeholders

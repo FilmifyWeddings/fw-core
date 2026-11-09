@@ -1163,6 +1163,14 @@ LEAD & CLIENT CONTEXT:
   const handleQuickCreateAndOpen = async () => {
     setErrorMsg(null);
     try {
+      // If voice polish is currently completing, wait briefly for it
+      if (isPolishingInProgressRef.current) {
+        for (let i = 0; i < 20; i++) {
+          if (!isPolishingInProgressRef.current) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+
       const rawNotes = additionalNotes.trim();
 
       if (!rawNotes) {
@@ -1217,7 +1225,7 @@ LEAD & CLIENT CONTEXT:
             additionalNotes: notes,
             studioSettings: studioSettings
           }),
-          signal: AbortSignal.timeout(20000)
+          signal: AbortSignal.timeout(30000)
         });
 
         if (aiRes.ok) {
@@ -1226,6 +1234,9 @@ LEAD & CLIENT CONTEXT:
             docToApply = aiJson.extractedDocument?.document || aiJson.extractedDocument;
             console.log('[AI Modal Quick Create] Successfully applied Gemini AI Engine!');
           }
+        } else {
+          const errTxt = await aiRes.text().catch(() => '');
+          console.warn('[AI Modal Quick Create] Server extraction returned status:', aiRes.status, errTxt.slice(0, 150));
         }
       } catch (geminiErr) {
         console.warn('[AI Modal Quick Create] AI timeout/error, applying local math evaluation:', geminiErr);

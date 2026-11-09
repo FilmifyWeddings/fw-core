@@ -393,32 +393,95 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 - If user did NOT explicitly request a pre-wedding shoot, keep visible: false!
 
 ==================================================
-OUTPUT FORMAT:
-Return ONLY a valid JSON object matching:
+OUTPUT FORMAT & CRITICAL JSON MANDATE:
+- Respond ONLY with 100% valid, parseable JSON matching the exact schema below.
+- NO markdown preamble or conversational text. Wrap in standard \`\`\`json ... \`\`\` or output pure JSON.
+- NO single quotes in keys or string values.
+- NO trailing commas before closing braces/brackets.
+- All numbers must be bare numeric literals (e.g. 200000, NOT "2,00,000").
+- Strict Date Format: "DD - MMM - YYYY" (e.g. "17 - Nov - 2026"). Default year 2026.
+- Strict Cover Location: Single primary cover location (Wedding ceremony venue/city).
+- Strict Status: Every payment step status MUST strictly be "Pending" unless payment confirmed.
+
+POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
 {
-  "cover": { "coupleName": string, "groomName": string, "brideName": string, "eventType": string, "locationName": string },
-  "shootDetails": { "visible": boolean, "daysText": string, "crewText": string, "deliverablesText": string, "showExclusionsNote": boolean },
+  "cover": {
+    "coupleName": "Sagar & Riddhi",
+    "groomName": "Sagar",
+    "brideName": "Riddhi",
+    "eventType": "Wedding",
+    "locationName": "Mumbai"
+  },
+  "shootDetails": {
+    "visible": false,
+    "daysText": "1 Day Shoot",
+    "crewText": "Candid Photography\\nCinematography\\nDrone Pilot",
+    "deliverablesText": "Full Ultra HD Raw Photos\\nApprox. 50 Edited Photos\\n1 Teaser Video Reel",
+    "showExclusionsNote": true
+  },
   "functionsPage": {
     "items": [
       {
-        "id": string,
-        "name": string,
-        "date": string,
-        "dateNotFixed": boolean,
-        "startTime": string,
-        "endTime": string,
-        "location": string,
-        "requirements": [ { "name": string, "qty": number } ],
-        "notes": string
+        "id": "func-1",
+        "name": "Haldi Ceremony",
+        "date": "17 - Nov - 2026",
+        "dateNotFixed": false,
+        "startTime": "10:00 AM",
+        "endTime": "02:00 PM",
+        "location": "Pune",
+        "requirements": [
+          { "name": "Candid Photographer", "qty": 2 },
+          { "name": "Cinematographer", "qty": 2 },
+          { "name": "Drone Pilot", "qty": 1 }
+        ],
+        "notes": ""
+      },
+      {
+        "id": "func-2",
+        "name": "Wedding Ceremony",
+        "date": "18 - Nov - 2026",
+        "dateNotFixed": false,
+        "startTime": "06:00 PM",
+        "endTime": "11:00 PM",
+        "location": "Mumbai",
+        "requirements": [
+          { "name": "Candid Photographer", "qty": 2 },
+          { "name": "Cinematographer", "qty": 2 },
+          { "name": "Drone Pilot", "qty": 1 }
+        ],
+        "notes": ""
       }
     ]
   },
-  "deliverablesPage": { "selectedItems": [string] },
-  "specialValueAdditions": { "selectedItems": [string], "note": string },
-  "pricingPage": { "basePrice": number, "discountAmount": number, "gstPct": number, "travelCharges": number, "accommodationCharges": number, "additionalCharges": number, "showExclusionsNote": boolean, "note": string },
-  "paymentTermsPage": { "steps": [ { "name": string, "pct": string, "amount": number, "status": string } ] },
-  "missingInformation": [string],
-  "conflicts": [ { "field": string, "values": [string] } ]
+  "deliverablesPage": {
+    "selectedItems": [
+      "Full Ultra HD Super-Fine Raw Photos",
+      "High Resolution Edited Photos (300+)",
+      "Cinematic Teaser (3-5 Mins)",
+      "Traditional Wedding Film (30-45 Mins)"
+    ]
+  },
+  "specialValueAdditions": {
+    "selectedItems": [],
+    "note": ""
+  },
+  "pricingPage": {
+    "basePrice": 200000,
+    "discountAmount": 0,
+    "gstPct": 0,
+    "travelCharges": 0,
+    "accommodationCharges": 0,
+    "additionalCharges": 0,
+    "showExclusionsNote": true,
+    "note": ""
+  },
+  "paymentTermsPage": {
+    "steps": [
+      { "name": "Advance Token", "pct": "30%", "amount": 60000, "status": "Pending" },
+      { "name": "On Event Day", "pct": "50%", "amount": 100000, "status": "Pending" },
+      { "name": "On Final Delivery", "pct": "20%", "amount": 40000, "status": "Pending" }
+    ]
+  }
 }
 `;
 
