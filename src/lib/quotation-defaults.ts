@@ -571,7 +571,7 @@ export function resolvePrimaryCoverLocation(rawCoverLocation: string, functions:
  */
 export function formatQuotationDate(raw: string | null | undefined): string {
   if (!raw) return 'Date Not Fixed';
-  const str = String(raw).trim();
+  let str = String(raw).trim();
   if (
     !str ||
     str.toLowerCase() === 'date not fixed' ||
@@ -583,6 +583,22 @@ export function formatQuotationDate(raw: string | null | undefined): string {
     return 'Date Not Fixed';
   }
 
+  // 0. Translate Devanagari numerals to standard digits
+  str = str.replace(/[०-९]/g, (d) => String('०१२३४५६७८९'.indexOf(d)));
+
+  // 0.1 Translate Hindi and Marathi month names
+  const hindiMonths: Record<string, string> = {
+    'जनवरी': 'Jan', 'फ़रवरी': 'Feb', 'फरवरी': 'Feb', 'मार्च': 'Mar', 'अप्रैल': 'Apr',
+    'मई': 'May', 'जून': 'Jun', 'जुलाई': 'Jul', 'अगस्त': 'Aug', 'सितंबर': 'Sep',
+    'सितम्बर': 'Sep', 'अक्टूबर': 'Oct', 'अक्तूबर': 'Oct', 'नवंबर': 'Nov', 'नवम्बर': 'Nov',
+    'दिसंबर': 'Dec', 'दिसम्बर': 'Dec'
+  };
+  for (const [h, e] of Object.entries(hindiMonths)) {
+    str = str.replace(new RegExp(h, 'gi'), e);
+  }
+  str = str.trim();
+
+  const defaultYear = '2026';
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const monthNameToIndex: Record<string, number> = {
     jan: 0, january: 0,
@@ -606,14 +622,32 @@ export function formatQuotationDate(raw: string | null | undefined): string {
     const mLower = standardMatch[2].toLowerCase();
     const mIdx = monthNameToIndex[mLower] ?? -1;
     const mStr = mIdx >= 0 ? months[mIdx] : (standardMatch[2].charAt(0).toUpperCase() + standardMatch[2].slice(1, 3).toLowerCase());
-    const year = standardMatch[3];
+    let year = standardMatch[3];
+    if (Number(year) < 2024) year = defaultYear;
     return `${day} - ${mStr} - ${year}`;
   }
 
-  // 2. Match ISO YYYY-MM-DD or YYYY/MM/DD (e.g. "2026-12-13")
+  // 2. Day first without year (e.g. "17 November", "17 Nov", "17th Nov", "18-Nov")
+  const dayFirstNoYear = str.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s-]+([A-Za-z]+)$/i);
+  if (dayFirstNoYear) {
+    const day = dayFirstNoYear[1].padStart(2, '0');
+    const mIdx = monthNameToIndex[dayFirstNoYear[2].toLowerCase()] ?? -1;
+    if (mIdx >= 0) return `${day} - ${months[mIdx]} - ${defaultYear}`;
+  }
+
+  // 3. Month first without year (e.g. "November 17", "Nov 17")
+  const monthFirstNoYear = str.match(/^([A-Za-z]+)[\s-]+(\d{1,2})(?:st|nd|rd|th)?$/i);
+  if (monthFirstNoYear) {
+    const day = monthFirstNoYear[2].padStart(2, '0');
+    const mIdx = monthNameToIndex[monthFirstNoYear[1].toLowerCase()] ?? -1;
+    if (mIdx >= 0) return `${day} - ${months[mIdx]} - ${defaultYear}`;
+  }
+
+  // 4. Match ISO YYYY-MM-DD or YYYY/MM/DD (e.g. "2026-12-13")
   const isoMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
   if (isoMatch) {
-    const year = isoMatch[1];
+    let year = isoMatch[1];
+    if (Number(year) < 2024) year = defaultYear;
     const monthNum = parseInt(isoMatch[2], 10) - 1;
     const day = isoMatch[3].padStart(2, '0');
     if (monthNum >= 0 && monthNum < 12) {
@@ -621,47 +655,51 @@ export function formatQuotationDate(raw: string | null | undefined): string {
     }
   }
 
-  // 3. Match DD-MM-YYYY or DD/MM/YYYY (e.g. "13/12/2026", "13-12-2026")
+  // 5. Match DD-MM-YYYY or DD/MM/YYYY (e.g. "13/12/2026", "13-12-2026")
   const dmyMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
   if (dmyMatch) {
     const day = dmyMatch[1].padStart(2, '0');
     const monthNum = parseInt(dmyMatch[2], 10) - 1;
-    const year = dmyMatch[3];
+    let year = dmyMatch[3];
+    if (Number(year) < 2024) year = defaultYear;
     if (monthNum >= 0 && monthNum < 12) {
       return `${day} - ${months[monthNum]} - ${year}`;
     }
   }
 
-  // 4. Match "13 Dec 2026", "13th December 2026", "13-Dec-2026"
+  // 6. Match "13 Dec 2026", "13th December 2026", "13-Dec-2026"
   const textDayMatch = str.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s-]+([A-Za-z]+)[\s,-]+(\d{4})/i);
   if (textDayMatch) {
     const day = textDayMatch[1].padStart(2, '0');
     const mLower = textDayMatch[2].toLowerCase();
     const mIdx = monthNameToIndex[mLower] ?? -1;
     const mStr = mIdx >= 0 ? months[mIdx] : (textDayMatch[2].charAt(0).toUpperCase() + textDayMatch[2].slice(1, 3).toLowerCase());
-    const year = textDayMatch[3];
+    let year = textDayMatch[3];
+    if (Number(year) < 2024) year = defaultYear;
     return `${day} - ${mStr} - ${year}`;
   }
 
-  // 5. Match "December 13, 2026" or "Dec 13 2026"
+  // 7. Match "December 13, 2026" or "Dec 13 2026"
   const monthFirstMatch = str.match(/^([A-Za-z]+)[\s-]+(\d{1,2})(?:st|nd|rd|th)?[\s,-]+(\d{4})/i);
   if (monthFirstMatch) {
     const mLower = monthFirstMatch[1].toLowerCase();
     const mIdx = monthNameToIndex[mLower] ?? -1;
     const mStr = mIdx >= 0 ? months[mIdx] : (monthFirstMatch[1].charAt(0).toUpperCase() + monthFirstMatch[1].slice(1, 3).toLowerCase());
     const day = monthFirstMatch[2].padStart(2, '0');
-    const year = monthFirstMatch[3];
+    let year = monthFirstMatch[3];
+    if (Number(year) < 2024) year = defaultYear;
     return `${day} - ${mStr} - ${year}`;
   }
 
-  // 6. Native Date parse fallback
+  // 8. Native Date parse fallback (guard against ECMAScript default year 2001)
   const parsedTimestamp = Date.parse(str);
   if (!isNaN(parsedTimestamp)) {
     const d = new Date(parsedTimestamp);
     if (!isNaN(d.getTime())) {
       const day = String(d.getDate()).padStart(2, '0');
       const month = months[d.getMonth()];
-      const year = d.getFullYear();
+      let year = String(d.getFullYear());
+      if (Number(year) < 2024) year = defaultYear;
       return `${day} - ${month} - ${year}`;
     }
   }
