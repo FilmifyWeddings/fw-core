@@ -1616,28 +1616,38 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
         }
 
         if (!canProcess) {
-          // Grace period: only auto-fail if overdue by more than 15 minutes without any connection,
-          // giving transient socket reconnections a safe window instead of killing them instantly!
-          const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-          const { data: overdueItems } = await supabaseAdmin
-            .from('baileys_action_queue')
-            .select('id, attempt_count')
-            .eq('workspace_id', workspaceId)
-            .eq('status', 'pending')
-            .lte('next_retry_at', fifteenMinsAgo);
+          // Grace period: only auto-fail if overdue by more than 15 minutes AND session was explicitly unlinked / has no phone number.
+          // NEVER auto-fail if the studio has a valid paired phone number — preserve queue until connection recovers!
+          const { data: checkSession } = await supabaseAdmin
+            .from('baileys_sessions')
+            .select('phone_number, conn_state, status')
+            .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
+            .maybeSingle();
 
-          if (overdueItems && overdueItems.length > 0) {
-            console.warn(`[poller] No active session for workspace ${workspaceId}. Auto-failing ${overdueItems.length} overdue pending task(s).`);
-            for (const item of overdueItems) {
-              await supabaseAdmin
-                .from('baileys_action_queue')
-                .update({
-                  status: 'failed',
-                  error_message: `[AUTO-FAIL] No active WhatsApp session detected for over 15 minutes. Scan QR code on integrations page to re-establish connection, then use Retry Failed Steps.`,
-                  next_retry_at: null
-                })
-                .eq('id', item.id)
-                .eq('status', 'pending');
+          const hasLinkedPhone = !!(checkSession?.phone_number && String(checkSession.phone_number).trim().length > 5);
+
+          if (!hasLinkedPhone) {
+            const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+            const { data: overdueItems } = await supabaseAdmin
+              .from('baileys_action_queue')
+              .select('id, attempt_count')
+              .eq('workspace_id', workspaceId)
+              .eq('status', 'pending')
+              .lte('next_retry_at', fifteenMinsAgo);
+
+            if (overdueItems && overdueItems.length > 0) {
+              console.warn(`[poller] No active session for unlinked workspace ${workspaceId}. Auto-failing ${overdueItems.length} overdue pending task(s).`);
+              for (const item of overdueItems) {
+                await supabaseAdmin
+                  .from('baileys_action_queue')
+                  .update({
+                    status: 'failed',
+                    error_message: `[AUTO-FAIL] No active WhatsApp session detected for over 15 minutes. Scan QR code on integrations page to re-establish connection, then use Retry Failed Steps.`,
+                    next_retry_at: null
+                  })
+                  .eq('id', item.id)
+                  .eq('status', 'pending');
+              }
             }
           }
           continue;

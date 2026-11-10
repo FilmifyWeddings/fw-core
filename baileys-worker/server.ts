@@ -1608,7 +1608,69 @@ async function executeAction(action: {
   } catch (err: any) {
     const errStr = String(err?.message || err);
 
-    // Sync workflow log failure if applicable
+    const isPermanentLogout =
+      errStr.includes('401') ||
+      errStr.includes('403') ||
+      errStr.toLowerCase().includes('logged out') ||
+      errStr.toLowerCase().includes('unlinked');
+
+    const isTransientSocketError =
+      errStr.includes('428') ||
+      errStr.includes('515') ||
+      errStr.toLowerCase().includes('connection closed') ||
+      errStr.toLowerCase().includes('not connected') ||
+      errStr.toLowerCase().includes('timed out') ||
+      errStr.toLowerCase().includes('timeout') ||
+      errStr.toLowerCase().includes('socket is closed') ||
+      errStr.toLowerCase().includes('socket closed') ||
+      errStr.toLowerCase().includes('econnreset') ||
+      errStr.toLowerCase().includes('fetch failed');
+
+    if (isPermanentLogout) {
+      logger.error({ err: errStr, actionId: action.id }, '🔴 [Execute Action] True permanent unpair/logout detected!');
+
+      if (checkLogId) {
+        try {
+          await supabase
+            .from('whatsapp_workflow_logs')
+            .update({
+              status: 'failed',
+              error_message: 'WhatsApp Session Expired. Please reconnect QR code.',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', checkLogId);
+        } catch (logErr) {
+          logger.warn({ logErr, checkLogId }, 'Failed to update workflow log error status');
+        }
+      }
+
+      await dbWriteCritical(
+        supabase
+          .from('baileys_sessions')
+          .update({
+            conn_state: 'disconnected',
+            status: 'disconnected',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('workspace_id', action.workspace_id),
+        'execute-action-disconnect'
+      );
+
+      throw new Error('WhatsApp Session Expired. Please reconnect QR code.');
+    }
+
+    if (isTransientSocketError) {
+      logger.warn({ err: errStr, actionId: action.id, workspaceId: action.workspace_id }, '⚠️ [Execute Action] Transient socket drop detected — preserving session and triggering auto-reconnect');
+
+      if (hasDiskSession(action.workspace_id)) {
+        startBaileysSocket(false, action.workspace_id).catch(() => {});
+      }
+
+      // Keep workflow log in pending so it auto-retries when socket recovers
+      throw new Error(`[Transient Socket Error - Will Auto Retry] ${errStr}`);
+    }
+
+    // Standard non-socket error (invalid number, etc.)
     if (checkLogId) {
       try {
         await supabase
@@ -1624,28 +1686,6 @@ async function executeAction(action: {
       }
     }
 
-    const isDisconnectError = 
-      errStr.includes('401') || errStr.includes('403') || errStr.includes('428') || 
-      errStr.includes('515') || errStr.toLowerCase().includes('logged out') || 
-      errStr.toLowerCase().includes('connection closed') || errStr.toLowerCase().includes('not connected');
-
-    if (isDisconnectError) {
-      logger.error({ err: errStr, actionId: action.id }, '🔴 [Execute Action] Socket error indicates disconnected session!');
-      
-      await dbWriteCritical(
-        supabase
-          .from('baileys_sessions')
-          .update({
-            conn_state: 'disconnected',
-            status: 'disconnected',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('workspace_id', action.workspace_id),
-        'execute-action-disconnect'
-      );
-
-      throw new Error('WhatsApp Session Expired. Please reconnect QR code.');
-    }
     throw err;
   }
 
@@ -1697,17 +1737,34 @@ async function executeAction(action: {
 
 // ─── Queue Drain Wrapper (calls the processor engine) ─────────────────────────
 async function runQueueDrain(): Promise<void> {
-  if (activeSessions.size === 0) {
-    return;
-  }
   try {
     const { drainQueue } = await import('./src/queue-processor.js');
+
+    // 1. Drain active authenticated sessions
     for (const wsId of activeSessions.keys()) {
       if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') continue;
       const sess = activeSessions.get(wsId);
-      // Guard: Only drain queue if this worker has an authenticated live socket for this workspace
       if (!sess?.sock?.user?.id) continue;
       await drainQueue(wsId, executeAction as any, 3);
+    }
+
+    // 2. Discover workspaces that have pending actions due but no active in-memory socket
+    // (auto-revives sockets from disk so pending actions are never stuck indefinitely)
+    const { data: pendingWorkspaces } = await supabase
+      .from('baileys_action_queue')
+      .select('workspace_id')
+      .eq('status', 'pending')
+      .lte('next_retry_at', new Date().toISOString())
+      .limit(10);
+
+    if (pendingWorkspaces && pendingWorkspaces.length > 0) {
+      const uniqueWs = Array.from(new Set(pendingWorkspaces.map((p: any) => p.workspace_id).filter(Boolean))) as string[];
+      for (const targetWs of uniqueWs) {
+        if (!activeSessions.has(targetWs) && hasDiskSession(targetWs)) {
+          logger.info({ workspaceId: targetWs }, '🔌 Auto-restoring offline socket from disk for pending queue actions...');
+          startBaileysSocket(false, targetWs).catch(() => {});
+        }
+      }
     }
   } catch (err: unknown) {
     logger.error({ err }, 'Queue drain error');
@@ -1873,6 +1930,7 @@ async function syncOpenSessionToDb(wsId: string, sock: any, authState?: any): Pr
       user_id: wsId,
       workspace_id: wsId,
       conn_state: 'open',
+      status: 'open',
       phone_number: phoneNum,
       qr_string: null,
       qr_expires_at: null,
@@ -3460,11 +3518,11 @@ async function runSelfHealingSessionSync(): Promise<void> {
       try {
         const { data: dbSess } = await supabase
           .from('baileys_sessions')
-          .select('phone_number, conn_state')
+          .select('phone_number, conn_state, status')
           .or(`user_id.eq.${wsId},workspace_id.eq.${wsId}`)
           .maybeSingle();
 
-        if (!dbSess || dbSess.conn_state !== 'open' || !dbSess.phone_number || dbSess.phone_number === 'null' || dbSess.phone_number === 'Connected Device') {
+        if (!dbSess || dbSess.conn_state !== 'open' || dbSess.status !== 'open' || !dbSess.phone_number || dbSess.phone_number === 'null' || dbSess.phone_number === 'Connected Device') {
           console.log(`[Self-Healing Sync] Force-syncing active session for workspace: ${wsId}`);
           await syncOpenSessionToDb(wsId, sess.sock, sess.authState);
         }

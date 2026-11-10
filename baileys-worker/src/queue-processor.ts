@@ -273,9 +273,40 @@ export async function processQueueAction(
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
 
-    // ── Step 4: Permanent FAILURE — no auto-retry ────────────────────────────
-    // Per architecture decision: failed actions must be manually retried via the UI.
-    // Auto-retry caused infinite loop bugs when messages were sent but DB write failed.
+    const isTransientError =
+      errMsg.includes('[Transient Socket Error') ||
+      errMsg.includes('428') ||
+      errMsg.includes('515') ||
+      errMsg.toLowerCase().includes('connection closed') ||
+      errMsg.toLowerCase().includes('not connected') ||
+      errMsg.toLowerCase().includes('timed out') ||
+      errMsg.toLowerCase().includes('timeout') ||
+      errMsg.toLowerCase().includes('socket closed') ||
+      errMsg.toLowerCase().includes('socket is closed') ||
+      errMsg.toLowerCase().includes('econnreset') ||
+      errMsg.toLowerCase().includes('fetch failed');
+
+    // ── Safe Transient Retry: Give socket time to reconnect without failing message ──
+    if (isTransientError && newAttemptCount < MAX_RETRIES) {
+      const retryDelayMs = Math.min(60_000, 15_000 * Math.pow(2, newAttemptCount - 1));
+      const nextRetryIso = new Date(Date.now() + retryDelayMs).toISOString();
+
+      console.warn(`[QueueProcessor] ⚠️ Transient socket glitch for action ${id}. Retrying ${newAttemptCount}/${MAX_RETRIES} in ${retryDelayMs / 1000}s...`);
+
+      await supabaseAdmin
+        .from('baileys_action_queue')
+        .update({
+          status: 'pending',
+          next_retry_at: nextRetryIso,
+          failure_reason: `[Attempt ${newAttemptCount}/${MAX_RETRIES}] Retrying in ${retryDelayMs / 1000}s: ${errMsg.slice(0, 120)}`,
+        })
+        .eq('id', id);
+
+      // Keep workflow log in 'pending' state — DO NOT fail it!
+      return;
+    }
+
+    // ── Step 4: Permanent FAILURE (after MAX_RETRIES or non-retriable error) ────
     await supabaseAdmin
       .from('baileys_action_queue')
       .update({
@@ -356,8 +387,8 @@ export async function drainQueue(
       .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
       .maybeSingle();
 
-    if (session?.conn_state !== 'open') {
-      console.warn(`[QueueProcessor] ⏸️ WhatsApp session is not open for workspace ${workspaceId} (state: ${session?.conn_state ?? 'none'}) — pausing queue dispatches.`);
+    if (session?.conn_state !== 'open' && session?.status !== 'open' && session?.status !== 'CONNECTED') {
+      console.warn(`[QueueProcessor] ⏸️ WhatsApp session is not open for workspace ${workspaceId} (conn_state: ${session?.conn_state ?? 'none'}, status: ${session?.status ?? 'none'}) — pausing queue dispatches.`);
       return;
     }
 
