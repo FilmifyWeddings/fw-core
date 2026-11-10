@@ -1846,12 +1846,39 @@ function normalizeQuotationData(loaded: any) {
   const d = DEFAULT_AIRY_PROPOSAL;
   if (!loaded || typeof loaded !== 'object') return d;
 
+  const shootVisible = loaded.shootDetails?.visible !== undefined
+    ? Boolean(loaded.shootDetails.visible)
+    : (Array.isArray(loaded.pageSequence)
+        ? loaded.pageSequence.some((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) === 'shootDetails')
+        : Boolean((d.shootDetails as any).visible ?? true));
+  const rawSeq = Array.isArray(loaded.pageSequence) && loaded.pageSequence.length > 0 ? loaded.pageSequence : d.pageSequence;
+  const filteredSeq = shootVisible
+    ? (rawSeq.some((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) === 'shootDetails')
+        ? rawSeq
+        : (() => {
+            const next = [...rawSeq];
+            const aboutIdx = next.findIndex((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) === 'aboutUs');
+            const coverIdx = next.findIndex((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) === 'cover');
+            const insertAt = aboutIdx >= 0 ? aboutIdx + 1 : (coverIdx >= 0 ? coverIdx + 1 : 0);
+            next.splice(insertAt, 0, { id: 'shootDetails-std', type: 'shootDetails', label: 'Pre-Wedding Shoot', isStandard: true });
+            return next;
+          })())
+    : rawSeq.filter((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) !== 'shootDetails');
+
   return {
     ...d,
     ...loaded,
+    pageSequence: filteredSeq,
     cover: { ...d.cover, ...(loaded.cover || {}) },
     aboutUs: { ...d.aboutUs, ...(loaded.aboutUs || {}) },
-    shootDetails: { ...d.shootDetails, ...(loaded.shootDetails || {}) },
+    shootDetails: {
+      ...d.shootDetails,
+      ...(loaded.shootDetails || {}),
+      visible: shootVisible,
+      daysText: shootVisible ? (loaded.shootDetails?.daysText ?? d.shootDetails.daysText) : '',
+      crewText: shootVisible ? (loaded.shootDetails?.crewText ?? d.shootDetails.crewText) : '',
+      deliverablesText: shootVisible ? (loaded.shootDetails?.deliverablesText ?? d.shootDetails.deliverablesText) : '',
+    },
     functionsPage: {
       ...d.functionsPage,
       ...(loaded.functionsPage || {}),
@@ -2180,8 +2207,17 @@ function StudioCoreAiryBuilderContent() {
 
   const deletePage = (index: number) => {
     const newSeq = [...pageSequence];
-    newSeq.splice(index, 1);
-    updatePageSequence(newSeq);
+    const [removed] = newSeq.splice(index, 1);
+    if (removed?.type === 'shootDetails') {
+      setData(prev => ({
+        ...prev,
+        pageSequence: newSeq,
+        shootDetails: { ...(prev.shootDetails || {}), visible: false }
+      }));
+      setHasUnsavedChanges(true);
+    } else {
+      updatePageSequence(newSeq);
+    }
   };
 
   const addCustomBlankPage = () => {
@@ -2259,7 +2295,22 @@ function StudioCoreAiryBuilderContent() {
       }
     }
 
-    updatePageSequence(newSeq);
+    if (stdType === 'shootDetails') {
+      setData(prev => ({
+        ...prev,
+        pageSequence: newSeq,
+        shootDetails: {
+          ...(prev.shootDetails || {}),
+          visible: true,
+          daysText: prev.shootDetails?.daysText || '1 Day Shoot',
+          crewText: prev.shootDetails?.crewText || '1x Candid Photographer\n1x Cinematographer\n1x Drone Pilot',
+          deliverablesText: prev.shootDetails?.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n1 Teaser Video Reel',
+        }
+      }));
+      setHasUnsavedChanges(true);
+    } else {
+      updatePageSequence(newSeq);
+    }
     setOpenCard(stdDef.type);
     setAddPageModalOpen(false);
   };

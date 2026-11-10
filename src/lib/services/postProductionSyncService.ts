@@ -264,7 +264,7 @@ export function parseQuotationDeliverables(q: any): {
     // 1.1 Pre-Wedding Shoot Page (shootDetails)
     const hasPreWeddingPage = pageSequence.length > 0
       ? pageSequence.some((p: any) => p?.type === 'shootDetails' || p?.id === 'shootDetails' || p === 'shootDetails' || String(p?.id || '').startsWith('shoot'))
-      : Boolean(doc.shootDetails?.deliverablesText?.trim() || doc.shootDetails?.daysText);
+      : (doc.shootDetails?.visible !== false && doc.shootDetails?.enabled !== false && Boolean(doc.shootDetails?.deliverablesText?.trim() || doc.shootDetails?.daysText));
 
     if (hasPreWeddingPage && doc.shootDetails) {
       discoveredSegments.add('Pre-Wedding');

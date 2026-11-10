@@ -4,7 +4,8 @@ import { resolveUserDefaultQuotationTemplate, GLOBAL_SYSTEM_TEMPLATE_ID } from '
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { DEFAULT_AIRY_PROPOSAL, normalizeQuotationData } from '@/lib/quotation-defaults';
 import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
-import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument } from '@/lib/ai-quotation-extractor';
+import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument, syncShootPageInSequence } from '@/lib/ai-quotation-extractor';
+import { DEFAULT_EVENT_TYPES, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
 /**
  * Authoritative Fast Backend Route for Lead Quotation Creation (<100ms Response)
@@ -87,6 +88,54 @@ export async function POST(req: NextRequest) {
     let initialDoc = body.initialDocument;
     if (!initialDoc && body.additionalNotes) {
       try {
+        const candidateWsIds = Array.from(new Set([
+          workspaceId,
+          profile?.workspace_id,
+          profile?.id,
+          userId,
+          lead?.workspace_id
+        ].filter(Boolean)));
+
+        let studioSettings: any = body.studioSettings || null;
+        let studioEventTypes: any[] = [];
+        let studioCrewRoles: any[] = [];
+
+        for (const cWsId of candidateWsIds) {
+          if (!studioSettings) {
+            const { data: qsRow } = await supabaseAdmin
+              .from('workspace_quotation_settings')
+              .select('settings')
+              .eq('workspace_id', cWsId)
+              .maybeSingle();
+            if (qsRow?.settings && typeof qsRow.settings === 'object') {
+              studioSettings = qsRow.settings;
+            }
+          }
+          if (studioEventTypes.length === 0) {
+            const { data: evRows } = await supabaseAdmin
+              .from('workspace_event_types')
+              .select('id, name, category, display_order')
+              .eq('workspace_id', cWsId)
+              .order('display_order', { ascending: true });
+            if (Array.isArray(evRows) && evRows.length > 0) {
+              studioEventTypes = evRows.filter((e: any) => String(e?.category || '').toLowerCase() !== 'ritual');
+            }
+          }
+          if (studioCrewRoles.length === 0) {
+            const { data: roleRows } = await supabaseAdmin
+              .from('master_crew_roles')
+              .select('id, name, short_code, category, display_order')
+              .eq('workspace_id', cWsId)
+              .order('display_order', { ascending: true });
+            if (Array.isArray(roleRows) && roleRows.length > 0) {
+              studioCrewRoles = roleRows;
+            }
+          }
+        }
+
+        if (studioEventTypes.length === 0) studioEventTypes = DEFAULT_EVENT_TYPES;
+        if (studioCrewRoles.length === 0) studioCrewRoles = DEFAULT_CREW_ROLES;
+
         const contextData = {
           lead_info: {
             lead_id: effectiveLead.id,
@@ -97,7 +146,10 @@ export async function POST(req: NextRequest) {
           raw_form_fields: effectiveLead.raw_payload || {},
           meta_fields: {},
           notes_and_comments: '',
-          additional_user_notes: body.additionalNotes
+          additional_user_notes: body.additionalNotes,
+          studioSettings,
+          studioEventTypes,
+          studioCrewRoles
         };
         const extracted = fallbackHeuristicExtractor(contextData);
         const mapped = mapAiOutputToQuotationDocument(extracted, templateDoc, contextData);
@@ -165,7 +217,7 @@ export async function POST(req: NextRequest) {
       (clonedDoc as any).colorPalette = (templateDoc as any).colorPalette;
     }
     if (Array.isArray((templateDoc as any).pageSequence) && (templateDoc as any).pageSequence.length > 0) {
-      clonedDoc.pageSequence = (templateDoc as any).pageSequence;
+      clonedDoc.pageSequence = JSON.parse(JSON.stringify((templateDoc as any).pageSequence));
     }
 
     if (!clonedDoc.cover) clonedDoc.cover = {};
@@ -175,6 +227,21 @@ export async function POST(req: NextRequest) {
 
     // Strict preservation of AI-extracted or custom initial document data
     if (rawInputDoc) {
+      if (rawInputDoc.shootDetails !== undefined) {
+        const shootVisible = Boolean(rawInputDoc.shootDetails.visible);
+        clonedDoc.shootDetails = {
+          ...(clonedDoc.shootDetails || {}),
+          ...rawInputDoc.shootDetails,
+          visible: shootVisible,
+          daysText: shootVisible ? (rawInputDoc.shootDetails.daysText || '') : '',
+          crewText: shootVisible ? (rawInputDoc.shootDetails.crewText || '') : '',
+          deliverablesText: shootVisible ? (rawInputDoc.shootDetails.deliverablesText || '') : '',
+        };
+        clonedDoc.pageSequence = syncShootPageInSequence(clonedDoc.pageSequence, shootVisible);
+      } else if (Array.isArray(rawInputDoc.pageSequence)) {
+        const hasShoot = rawInputDoc.pageSequence.some((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) === 'shootDetails');
+        clonedDoc.pageSequence = syncShootPageInSequence(clonedDoc.pageSequence, hasShoot);
+      }
       if (rawInputDoc.cover?.locationName) {
         clonedDoc.cover.locationName = rawInputDoc.cover.locationName;
       }

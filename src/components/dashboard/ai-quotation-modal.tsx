@@ -12,12 +12,18 @@ import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 import { QuotationTemplateSelector, StudioTemplateItem, getSynchronousCachedTemplates } from './quotation-template-selector';
-import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument } from '@/lib/ai-quotation-extractor';
+import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument, syncShootPageInSequence } from '@/lib/ai-quotation-extractor';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { cleanVoiceTranscript } from '@/lib/speech-text-cleaner';
-import { fetchWorkspaceQuotationSettings, WorkspaceQuotationSettings } from '@/lib/workspace-settings';
+import {
+  fetchWorkspaceQuotationSettings,
+  fetchWorkspaceEventTypes,
+  fetchWorkspaceCrewRoles,
+  WorkspaceQuotationSettings,
+  WorkspaceEventType,
+  WorkspaceCrewRole
+} from '@/lib/workspace-settings';
 import { 
-  consolidateSameDateFunctions, 
   resolvePrimaryCoverLocation, 
   sanitizeAndParseJson,
   formatQuotationDate,
@@ -113,7 +119,7 @@ export function AiQuotationModal({
     comments: []
   };
 
-  // ⚙️ Studio Quotation Settings & AI Shortcuts Sync
+  // ⚙️ Studio Quotation Settings, Official Functions, Crew Roles & AI Shortcuts Sync
   const [studioSettings, setStudioSettings] = useState<WorkspaceQuotationSettings | null>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -128,11 +134,39 @@ export function AiQuotationModal({
     return null;
   });
 
+  const [studioEventTypes, setStudioEventTypes] = useState<WorkspaceEventType[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const wsId = lead?.workspace_id || (lead as any)?.raw_payload?.workspace_id;
+        const local = localStorage.getItem(`wg_custom_event_types_${wsId || 'default'}`) || localStorage.getItem('wg_custom_event_types_default');
+        if (local) {
+          const parsed = JSON.parse(local);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((e: any) => String(e?.category || '').toLowerCase() !== 'ritual');
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
+  const [studioCrewRoles, setStudioCrewRoles] = useState<WorkspaceCrewRole[]>([]);
+
   useEffect(() => {
     if (!isOpen) return;
     const wsId = effectiveLead?.workspace_id;
-    fetchWorkspaceQuotationSettings(wsId).then(settings => {
+    Promise.all([
+      fetchWorkspaceQuotationSettings(wsId).catch(() => null),
+      fetchWorkspaceEventTypes(wsId).catch(() => null),
+      fetchWorkspaceCrewRoles(wsId).catch(() => null)
+    ]).then(([settings, evTypes, roles]) => {
       if (settings) setStudioSettings(settings);
+      if (Array.isArray(evTypes) && evTypes.length > 0) {
+        setStudioEventTypes(evTypes.filter(e => String(e?.category || '').toLowerCase() !== 'ritual'));
+      }
+      if (Array.isArray(roles) && roles.length > 0) {
+        setStudioCrewRoles(roles);
+      }
     }).catch(err => console.warn('[AiQuotationModal] Error fetching studio settings:', err));
   }, [isOpen, effectiveLead?.workspace_id]);
 
@@ -174,7 +208,9 @@ export function AiQuotationModal({
           leadName: effectiveLead?.name,
           workspaceId: effectiveLead?.workspace_id,
           userId: session?.user?.id || null,
-          studioSettings: studioSettings
+          studioSettings: studioSettings,
+          studioEventTypes: studioEventTypes,
+          studioCrewRoles: studioCrewRoles
         })
       });
       if (res.ok) {
@@ -536,13 +572,21 @@ export function AiQuotationModal({
     const extractedLocation = rawPayload.location || rawPayload.city || rawPayload.venue || rawPayload.destination || effectiveLead.location || '';
     const extractedFunctions = rawPayload.functions || rawPayload.wedding_functions || rawPayload.events || '';
 
+    const studioEventNamesList = Array.from(
+      new Set(
+        studioEventTypes
+          .map(e => (e?.name || '').trim())
+          .filter(n => n && !/pre[\s-]*wed|prewedding|pre[\s-]*shoot/i.test(n))
+      )
+    );
+
     const masterPrompt = `You are StudioCore AI Quotation Assistant for Professional Wedding & Event Photography Studios.
 
 ==================================================
 🎯 YOUR TASK:
 Analyze the client requirements, notes, or conversation below and convert them into a 100% structured StudioCore Quotation JSON document.
-CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi, Sangeet, Wedding, etc.), real budgets, and real locations from the LEAD & CLIENT CONTEXT. DO NOT hallucinate fake data, and DO NOT output default placeholders when real client data is present.
-
+CRITICAL MANDATE: Extract real event dates/months, real wedding functions, real budgets, and real locations from the LEAD & CLIENT CONTEXT. DO NOT hallucinate fake data, and DO NOT output default placeholders when real client data is present.
+${studioEventNamesList.length > 0 ? `\nSTUDIO'S OFFICIAL FUNCTIONS / SUB-EVENTS LIST (USE THESE EXACT NAMES):\n${studioEventNamesList.map(n => `- "${n}"`).join('\n')}\n` : ''}
 ==================================================
 📋 PAGE-BY-PAGE RULES & MAPPING:
 
@@ -564,25 +608,26 @@ CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi
 - KEEP DEFAULT TEMPLATE AS IS (No changes).
 
 3. PRE-WEDDING SHOOT (shootDetails) - DEDICATED SEPARATE PAGE:
-- If pre-wedding is requested/included:
-  - visible: true
-  - daysText: e.g. "1 Day Shoot" (Default if not specified) or "2 Days Shoot", "3 Days Shoot".
-  - crewText: Requirements/crew (e.g. "Candid Photography\\nCinematography\\nDrone Pilot\\nReel Creator").
-  - deliverablesText: Expected deliverables (e.g. "1 Minute Teaser Reel\\n50+ Color Graded Photos\\nSave the Date Video").
-  - showExclusionsNote: true (Default ON).
+- STRICT VISIBILITY RULE:
+  * If Pre-Wedding ("pre-wedding", "pre shoot", "प्री वेडिंग", "प्री-वेडिंग", "प्रीवेडिंग") is NOT requested in the client notes / voice note (or explicitly declined):
+    YOU MUST set visible: false and leave daysText: "", crewText: "", deliverablesText: ""!
+  * ONLY if Pre-Wedding IS explicitly requested:
+    - visible: true
+    - daysText: e.g. "1 Day Shoot" (Default if not specified) or "2 Days Shoot", "3 Days Shoot".
+    - crewText: Requirements/crew (e.g. "Candid Photography\\nCinematography\\nDrone Pilot\\nReel Creator").
+    - deliverablesText: Expected deliverables (e.g. "1 Minute Teaser Reel\\n50+ Color Graded Photos\\nSave the Date Video").
+    - showExclusionsNote: true (Default ON).
 
 4. FUNCTIONS & COVERAGE (functionsPage):
-- CRITICAL SAME-DATE EVENT CONSOLIDATION MANDATE (MUST FOLLOW):
-  * If two or more ceremonies/events occur on the SAME DATE or SAME DAY (for example: "22 February ko Haldi aur Sangeet hai", or "Haldi and Sangeet on 22 Feb", or Mehendi & Ring Ceremony on the same date):
-    YOU MUST COMBINE THEM INTO ONE SINGLE FUNCTION CARD!
-    Name it by joining ceremony names with " + " (e.g. "Haldi + Sangeet", "Mehendi + Sangeet", "Puja + Haldi").
-    DO NOT create separate cards for events occurring on the same date! Combine their crew requirements into that single card.
-  * ONLY create separate cards for events that occur on DIFFERENT DATES (e.g. 21 Feb Mehendi card, 22 Feb Haldi + Sangeet card, 23 Feb Wedding card).
-  * REAL CEREMONY NAMES MANDATE: NEVER output generic names like "Event 1", "Event 2", "Function 1", "Function 2". ALWAYS extract and use the real event names (Haldi, Mehendi, Sangeet, Ring Ceremony, Wedding, Reception, Cocktail, Mayra, Ganesh Puja, etc.).
+- SEPARATE FUNCTION CARDS BY DEFAULT vs EXPLICIT COMBINATION RULE (CRITICAL!):
+  * By default, ALWAYS create a SEPARATE function card in functionsPage.items for EVERY event/sub-event mentioned — EVEN IF events occur on the SAME DATE! Give each card its exact name, date, and crew requirements.
+  * ONLY combine multiple events into one card ("Event A + Event B") if the user EXPLICITLY requests combining them together on one card/day (e.g., "Wedding और Haldi एक ही दिन पे है", "Haldi + Sangeet एक साथ", "combine Haldi and Sangeet"). Phrases like "दोनों में 1 Traditional Photographer" ALWAYS keep two SEPARATE cards (1x Traditional Photographer in each card).
+  * STUDIO SETTINGS EVENT NAMES MANDATE: Use exact function names from the Studio's Official Functions List above (e.g. "Wedding", "Haldi", "Sangeet" — NEVER invent suffixes like "Ceremony" or "Night" if not in settings). NEVER output generic names like "Event 1", "Function 1".
+  * RELATIVE DATE ARITHMETIC MANDATE: Accurately calculate relative dates across clauses (e.g., "Wedding 10 November को है और उसके अगले दिन Haldi है" => Wedding on "10 - Nov - 2026" and Haldi on "11 - Nov - 2026"; "30 Nov" + next day => "01 - Dec - 2026"; "एक दिन पहले" => -1 day; "उसी दिन" => same date).
 - items: Array of event objects:
   - id: Unique string "func_1", "func_2", etc.
-  - name: Combined ceremony title (e.g. "Haldi + Sangeet", "Wedding Ceremony", "Reception").
-  - date: CRITICAL DATE FORMAT MANDATE: Every date MUST strictly be formatted as "DD - MMM - YYYY" (e.g. "13 - Dec - 2026", "22 - Feb - 2026", "05 - Jan - 2027"). NEVER output ISO dates like 2026-12-13, and NEVER output other formats! ONLY set date: "Date Not Fixed" and dateNotFixed: true if NO date, month, or season is mentioned anywhere in context!
+  - name: Exact function name from Studio Settings (e.g. "Wedding", "Haldi", "Sangeet", or combined "Wedding + Haldi" only when explicitly combined).
+  - date: CRITICAL DATE FORMAT MANDATE: Every date MUST strictly be formatted as "DD - MMM - YYYY" (e.g. "13 - Dec - 2026", "22 - Feb - 2026", "05 - Jan - 2027"). NEVER output ISO dates like 2026-12-13! ONLY set date: "Date Not Fixed" and dateNotFixed: true if NO date, month, or season is mentioned anywhere!
   - dateNotFixed: boolean (false if date or month is known, true only if completely unspecified).
   - startTime / endTime: Exact time if specified (e.g. "09:00 AM" / "02:00 PM"). If NO time specified, keep EMPTY string ""!
   - location: Venue or location for this specific function. If NO location specified, keep EMPTY string ""!
@@ -603,7 +648,7 @@ CRITICAL MANDATE: Extract real event dates/months, real wedding functions (Haldi
     * "Makeup Artist" (MUA, Bridal Makeup)
     * "Family Photographer" (Family Photos, Family Photography)
     * IMPORTANT: If user mentions "semi-kinematic" or "semi-cinematic", output exact name "Semi Cinematic". If user mentions "semi-standard" or "semi-traditional", output exact name "Semi Standard".
-    * If multiple ceremonies on this card require crew, SUM the quantities together (e.g. if Haldi needs 1 Candid and Sangeet needs 1 Candid + 1 Cinematographer -> the combined Haldi + Sangeet card has { "name": "Candid Photographer", "qty": 2 }, { "name": "Cinematographer", "qty": 1 }).
+    * Keep each card's own exact crew quantities cleanly per card (only combine crew quantities when the user explicitly asked for a combined card).
 
 5. DELIVERABLES (deliverablesPage):
 - selectedItems: Array of exact deliverables requested by user (e.g. "Full Ultra HD Super-Fine Raw Photos", "High Resolution Edited Photos (300+)", "Cinematic Teaser (3-5 Mins)", "Traditional Wedding Film (30-45 Mins)", "Instagram Reels Package (5 Reels)"). Custom deliverables will be added seamlessly.
@@ -739,14 +784,20 @@ LEAD & CLIENT CONTEXT:
         setExtractedDoc(clientParsedDoc);
         const coupleName = clientParsedDoc.cover?.coupleName || effectiveLead?.name || 'Client';
         const totalAmount = (clientParsedDoc.pricingPage?.basePrice || 0) - (clientParsedDoc.pricingPage?.discountAmount || 0) + (clientParsedDoc.pricingPage?.travelCharges || 0) + (clientParsedDoc.pricingPage?.accommodationCharges || 0) + (clientParsedDoc.pricingPage?.additionalCharges || 0);
+        const pCount = Math.max(0, ...(clientParsedDoc.functionsPage?.items || []).map((f: any) =>
+          (f.requirements || []).filter((r: any) => /photo/i.test(r.name)).reduce((s: number, r: any) => s + Number(r.qty || 1), 0)
+        ));
+        const vCount = Math.max(0, ...(clientParsedDoc.functionsPage?.items || []).map((f: any) =>
+          (f.requirements || []).filter((r: any) => /cinemat|cine|video/i.test(r.name)).reduce((s: number, r: any) => s + Number(r.qty || 1), 0)
+        ));
         setSummary({
           coupleName,
           weddingDate: clientParsedDoc.functionsPage?.items?.[0]?.date || 'Date TBD',
           location: clientParsedDoc.cover?.locationName || 'Location TBD',
           functionsCount: clientParsedDoc.functionsPage?.items?.length || 0,
           functionsList: (clientParsedDoc.functionsPage?.items || []).map((f: any) => f.name),
-          photographers: 2,
-          cinematographers: 2,
+          photographers: pCount,
+          cinematographers: vCount,
           totalInvestment: `₹${totalAmount.toLocaleString('en-IN')}`
         });
         setMissingInfo([]);
@@ -762,7 +813,9 @@ LEAD & CLIENT CONTEXT:
         raw_form_fields: effectiveLead.raw_payload || {},
         notes_and_comments: Array.isArray(effectiveLead.comments) ? effectiveLead.comments.map((c: any) => c.text).join('\n') : '',
         meta_fields: {},
-        studioSettings: studioSettings
+        studioSettings: studioSettings,
+        studioEventTypes: studioEventTypes,
+        studioCrewRoles: studioCrewRoles
       };
 
       const instantRaw = fallbackHeuristicExtractor(instantContext);
@@ -777,8 +830,8 @@ LEAD & CLIENT CONTEXT:
         location: instantDoc.cover?.locationName || 'Location TBD',
         functionsCount: instantDoc.functionsPage?.items?.length || 0,
         functionsList: (instantDoc.functionsPage?.items || []).map((f: any) => f.name),
-        photographers: 2,
-        cinematographers: 2,
+        photographers: 1,
+        cinematographers: 1,
         totalInvestment: `₹${initialTotal.toLocaleString('en-IN')}`
       };
 
@@ -800,7 +853,9 @@ LEAD & CLIENT CONTEXT:
             explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
             currentDocument: baseTemplateDoc || currentDocumentData || null,
             additionalNotes: notes,
-            studioSettings: studioSettings
+            studioSettings: studioSettings,
+            studioEventTypes: studioEventTypes,
+            studioCrewRoles: studioCrewRoles
           }),
           signal: AbortSignal.timeout(20000)
         });
@@ -868,7 +923,10 @@ LEAD & CLIENT CONTEXT:
       }
 
       if (Array.isArray(baseDoc.pageSequence) && baseDoc.pageSequence.length > 0) {
-        targetDoc.pageSequence = baseDoc.pageSequence;
+        const clonedSeq = JSON.parse(JSON.stringify(baseDoc.pageSequence));
+        targetDoc.pageSequence = syncShootPageInSequence(clonedSeq, Boolean(targetDoc.shootDetails?.visible));
+      } else {
+        targetDoc.pageSequence = syncShootPageInSequence(targetDoc.pageSequence, Boolean(targetDoc.shootDetails?.visible));
       }
       if (Array.isArray(baseDoc.customPages) && baseDoc.customPages.length > 0) {
         targetDoc.customPages = baseDoc.customPages;
@@ -1196,7 +1254,9 @@ LEAD & CLIENT CONTEXT:
         raw_form_fields: effectiveLead.raw_payload || {},
         notes_and_comments: Array.isArray(effectiveLead.comments) ? effectiveLead.comments.map((c: any) => c.text).join('\n') : '',
         meta_fields: {},
-        studioSettings: studioSettings
+        studioSettings: studioSettings,
+        studioEventTypes: studioEventTypes,
+        studioCrewRoles: studioCrewRoles
       };
 
       const instantRaw = fallbackHeuristicExtractor(instantContext);
@@ -1223,7 +1283,9 @@ LEAD & CLIENT CONTEXT:
             explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
             currentDocument: baseTemplateDoc || currentDocumentData || null,
             additionalNotes: notes,
-            studioSettings: studioSettings
+            studioSettings: studioSettings,
+            studioEventTypes: studioEventTypes,
+            studioCrewRoles: studioCrewRoles
           }),
           signal: AbortSignal.timeout(30000)
         });
