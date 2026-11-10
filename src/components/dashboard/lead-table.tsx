@@ -609,6 +609,10 @@ export function LeadTable({
     workflow: any | null;
     workflowId: string | null;
     leadId: string | null;
+    leadName?: string;
+    leadPhone?: string;
+    groupId?: string | null;
+    preferredType?: 'welcome' | 'followup';
   }>({
     isOpen: false,
     workflow: null,
@@ -624,6 +628,19 @@ export function LeadTable({
     }
     return {};
   });
+  const [waWorkflowsMap, setWaWorkflowsMap] = useState<Record<string, any>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('sc_cached_wa_workflows');
+        if (cached) return JSON.parse(cached);
+      } catch (_) {}
+    }
+    return {};
+  });
+  const waStatusesRef = useRef(waStatuses);
+  waStatusesRef.current = waStatuses;
+  const waWorkflowsMapRef = useRef(waWorkflowsMap);
+  waWorkflowsMapRef.current = waWorkflowsMap;
   const [quotationModalLead, setQuotationModalLead] = useState<Lead | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
@@ -888,6 +905,10 @@ export function LeadTable({
   }, [searchParams]);
 
   // ⚡ Live WhatsApp Workflow Status Synchronization (Welcome + Follow-up)
+  const leadsRef = useRef(leads);
+  leadsRef.current = leads;
+  const lastWaSyncSigRef = useRef<string>('');
+
   const fetchWaStatuses = useCallback(async (leadList: Lead[]) => {
     if (!leadList || leadList.length === 0) return;
     const leadIds = leadList.map(l => l.id).filter(Boolean);
@@ -900,9 +921,22 @@ export function LeadTable({
         body: JSON.stringify({ lead_ids: leadIds, workspace_id: activeWs }),
       });
       const data = await res.json();
+      if (data.success && data.workflows) {
+        setWaWorkflowsMap(prev => {
+          const mergedWfs = { ...prev, ...data.workflows };
+          waWorkflowsMapRef.current = mergedWfs;
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('sc_cached_wa_workflows', JSON.stringify(mergedWfs));
+            } catch (_) {}
+          }
+          return mergedWfs;
+        });
+      }
       if (data.success && data.statuses) {
         setWaStatuses(prev => {
           const merged = { ...prev, ...data.statuses };
+          waStatusesRef.current = merged;
           if (typeof window !== 'undefined') {
             try {
               localStorage.setItem('sc_cached_wa_statuses', JSON.stringify(merged));
@@ -936,8 +970,30 @@ export function LeadTable({
     }
   };
 
-  // Open Unified Timeline Modal for Welcome or Followup
-  const handleOpenWelcomeTimeline = useCallback(async (lead: Lead) => {
+  const resolveCachedGroupWorkflow = (
+    groupId: string | null | undefined,
+    type: 'welcome' | 'followup',
+    workflowsMap: Record<string, any>
+  ) => {
+    if (!groupId || !workflowsMap) return null;
+    const wfsForGroup = Object.values(workflowsMap).filter((w: any) => w?.target_group_id === groupId);
+    if (wfsForGroup.length === 0) return null;
+    const welcomeWf =
+      wfsForGroup.find((w: any) =>
+        (w.workflow_name || '').toLowerCase().includes('welcome') ||
+        (w.workflow_name || '').toLowerCase().startsWith('wm')
+      ) || wfsForGroup[0];
+    if (type === 'welcome') return welcomeWf || null;
+    const followupWf =
+      wfsForGroup.find((w: any) =>
+        (w.workflow_name || '').toLowerCase().includes('follow') ||
+        (w.workflow_name || '').toLowerCase().startsWith('fu')
+      ) || (wfsForGroup.length > 1 ? wfsForGroup.find((w: any) => w.id !== welcomeWf?.id) : wfsForGroup[0]);
+    return followupWf || null;
+  };
+
+  // Open Unified Timeline Modal for Welcome or Followup — 0ms instant open (no blocking await)
+  const handleOpenWelcomeTimeline = useCallback((lead: Lead) => {
     if (!lead.whatsapp_group_id) {
       setAssignGroupModalState({
         isOpen: true,
@@ -947,24 +1003,13 @@ export function LeadTable({
       return;
     }
 
-    let stat = waStatuses[lead.id]?.welcome;
-    let wf = stat?.workflow || null;
-    let wfId = stat?.workflow_id || null;
+    const stat = waStatusesRef.current[lead.id]?.welcome;
+    let wfId: string | null = stat?.workflow_id || null;
+    let wf: any = stat?.workflow || (wfId ? waWorkflowsMapRef.current[wfId] : null) || null;
 
     if (!wf && !wfId) {
-      try {
-        const res = await fetch('/api/workflows/lead-whatsapp-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lead_ids: [lead.id], workspace_id: lead.workspace_id || '' }),
-        });
-        const data = await res.json();
-        if (data.success && data.statuses?.[lead.id]) {
-          setWaStatuses(prev => ({ ...prev, [lead.id]: data.statuses[lead.id] }));
-          wf = data.statuses[lead.id]?.welcome?.workflow || null;
-          wfId = data.statuses[lead.id]?.welcome?.workflow_id || null;
-        }
-      } catch (_) {}
+      wf = resolveCachedGroupWorkflow(lead.whatsapp_group_id, 'welcome', waWorkflowsMapRef.current);
+      wfId = wf?.id || null;
     }
 
     setActiveTimelineModal({
@@ -972,10 +1017,14 @@ export function LeadTable({
       workflow: wf,
       workflowId: wfId,
       leadId: lead.id,
+      leadName: lead.name || undefined,
+      leadPhone: lead.phone || undefined,
+      groupId: lead.whatsapp_group_id,
+      preferredType: 'welcome',
     });
-  }, [waStatuses]);
+  }, []);
 
-  const handleOpenFollowupTimeline = useCallback(async (lead: Lead) => {
+  const handleOpenFollowupTimeline = useCallback((lead: Lead) => {
     if (!lead.whatsapp_group_id) {
       setAssignGroupModalState({
         isOpen: true,
@@ -985,24 +1034,13 @@ export function LeadTable({
       return;
     }
 
-    let stat = waStatuses[lead.id]?.followup;
-    let wf = stat?.workflow || null;
-    let wfId = stat?.workflow_id || null;
+    const stat = waStatusesRef.current[lead.id]?.followup;
+    let wfId: string | null = stat?.workflow_id || null;
+    let wf: any = stat?.workflow || (wfId ? waWorkflowsMapRef.current[wfId] : null) || null;
 
     if (!wf && !wfId) {
-      try {
-        const res = await fetch('/api/workflows/lead-whatsapp-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lead_ids: [lead.id], workspace_id: lead.workspace_id || '' }),
-        });
-        const data = await res.json();
-        if (data.success && data.statuses?.[lead.id]) {
-          setWaStatuses(prev => ({ ...prev, [lead.id]: data.statuses[lead.id] }));
-          wf = data.statuses[lead.id]?.followup?.workflow || null;
-          wfId = data.statuses[lead.id]?.followup?.workflow_id || null;
-        }
-      } catch (_) {}
+      wf = resolveCachedGroupWorkflow(lead.whatsapp_group_id, 'followup', waWorkflowsMapRef.current);
+      wfId = wf?.id || null;
     }
 
     setActiveTimelineModal({
@@ -1010,24 +1048,75 @@ export function LeadTable({
       workflow: wf,
       workflowId: wfId,
       leadId: lead.id,
+      leadName: lead.name || undefined,
+      leadPhone: lead.phone || undefined,
+      groupId: lead.whatsapp_group_id,
+      preferredType: 'followup',
     });
-  }, [waStatuses]);
+  }, []);
 
   useEffect(() => {
     if (!leads || leads.length === 0) return;
-    fetchWaStatuses(leads);
+    const activeWs = leads[0]?.workspace_id || '';
+    const sig = `${activeWs}::${leads.map(l => `${l.id}:${l.whatsapp_group_id || ''}`).join('|')}`;
+    if (lastWaSyncSigRef.current !== sig) {
+      lastWaSyncSigRef.current = sig;
+      fetchWaStatuses(leads);
+    }
+  }, [leads, fetchWaStatuses]);
+
+  const workspaceIdForWaRealtime = leads[0]?.workspace_id || '';
+
+  useEffect(() => {
+    if (!workspaceIdForWaRealtime) return;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceIdForWaRealtime);
+    const pendingLeadIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let needsFullRefresh = false;
+
+    const flush = () => {
+      debounceTimer = null;
+      const currentLeads = leadsRef.current;
+      if (!currentLeads || currentLeads.length === 0) return;
+      if (needsFullRefresh || pendingLeadIds.size === 0 || pendingLeadIds.size > 20) {
+        pendingLeadIds.clear();
+        needsFullRefresh = false;
+        fetchWaStatuses(currentLeads);
+        return;
+      }
+      const targetIds = new Set(pendingLeadIds);
+      pendingLeadIds.clear();
+      const matched = currentLeads.filter(l => targetIds.has(l.id));
+      if (matched.length > 0) {
+        fetchWaStatuses(matched);
+      }
+    };
+
+    const pgFilter: any = {
+      event: '*',
+      schema: 'public',
+      table: 'whatsapp_workflow_logs',
+      ...(isUuid ? { filter: `tenant_id=eq.${workspaceIdForWaRealtime}` } : {}),
+    };
 
     const ch = supabase
-      .channel('lead-table-wa-logs-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_workflow_logs' }, () => {
-        fetchWaStatuses(leads);
+      .channel(`lead-table-wa-logs-sync-${workspaceIdForWaRealtime}`)
+      .on('postgres_changes', pgFilter, (payload: any) => {
+        const changedLeadId = payload?.new?.lead_id || payload?.old?.lead_id;
+        if (changedLeadId) pendingLeadIds.add(changedLeadId);
+        else needsFullRefresh = true;
+
+        if (!debounceTimer) {
+          debounceTimer = setTimeout(flush, 800);
+        }
       })
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(ch);
     };
-  }, [leads, fetchWaStatuses]);
+  }, [workspaceIdForWaRealtime, fetchWaStatuses]);
 
   const handleQuotationChange = React.useCallback((leadId: string, updatedVersions: any[]) => {
     const versions = [...updatedVersions];
@@ -5402,6 +5491,9 @@ export function LeadTable({
               })
                 .then(r => r.json())
                 .then(data => {
+                  if (data.success && data.workflows) {
+                    setWaWorkflowsMap(prev => ({ ...prev, ...data.workflows }));
+                  }
                   if (data.success && data.statuses) {
                     setWaStatuses(prev => ({ ...prev, ...data.statuses }));
                   }
@@ -5412,6 +5504,10 @@ export function LeadTable({
           workflow={activeTimelineModal.workflow}
           workflowId={activeTimelineModal.workflowId}
           initialLeadId={activeTimelineModal.leadId}
+          leadName={activeTimelineModal.leadName}
+          leadPhone={activeTimelineModal.leadPhone}
+          groupId={activeTimelineModal.groupId}
+          preferredType={activeTimelineModal.preferredType}
         />
       )}
 

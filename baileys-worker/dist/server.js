@@ -1195,6 +1195,19 @@ async function sendGroupAlert(groupId, leadData, templateStr, wsId = WORKSPACE_I
  *
  * Must return { success: boolean, waMessageId?, error? }
  */
+async function cancelOrDeleteQueueRow(actionId, reason) {
+    const { error: cancelErr } = await supabase
+        .from('baileys_action_queue')
+        .update({ status: 'cancelled', error_message: reason, failure_reason: reason, processed_at: new Date().toISOString() })
+        .eq('id', actionId);
+    if (cancelErr) {
+        logger.warn({ actionId, err: cancelErr.message }, 'Update to cancelled rejected by DB constraint; deleting obsolete queue row');
+        const { error: delErr } = await supabase.from('baileys_action_queue').delete().eq('id', actionId);
+        if (delErr) {
+            logger.error({ actionId, err: delErr.message }, 'Failed to delete obsolete queue row');
+        }
+    }
+}
 async function executeAction(action) {
     // Extract workspace / user ID from action payload safely
     let targetWsId = action.workspace_id ||
@@ -1225,21 +1238,30 @@ async function executeAction(action) {
         throw new Error(`[QueueProcessor Error] Missing user_id/workspace_id for action ${action.id}`);
     }
     console.log(`[QueueProcessor Trace] Processing action ${action.id} with resolved targetWsId: ${targetWsId}`);
-    // Pre-flight check: If workflow log, lead, or workflow execution was stopped/deleted, abort dispatch immediately
+    // Pre-flight check: If workflow log, lead, or workflow execution was stopped/deleted/already-sent, abort dispatch immediately
     const actPayload = (action.payload || {});
-    const checkLogId = actPayload.workflowLogId;
+    const checkLogId = actPayload.workflowLogId || actPayload.logId;
     const checkLeadId = actPayload.leadId || actPayload.lead_id;
     const checkWfId = actPayload.workflowId || actPayload.workflow_id;
     if (checkLogId) {
-        const { data: wfLog } = await supabase
+        const { data: wfLog, error: wfLogErr } = await supabase
             .from('whatsapp_workflow_logs')
             .select('id, status, error_message, workflow_id')
             .eq('id', checkLogId)
             .maybeSingle();
-        if (!wfLog || wfLog.status === 'stopped' || wfLog.status === 'cancelled' || wfLog.error_message === 'STOPPED' || wfLog.error_message === 'Cancelled by user stop action.') {
-            logger.info({ actionId: action.id, checkLogId }, '🛑 Workflow log cancelled or stopped. Skipping dispatch.');
-            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: workflow step stopped' }).eq('id', action.id);
-            return { success: true, waMessageId: null };
+        if (!wfLogErr) {
+            const isAlreadySent = wfLog && ['sent', 'delivered', 'read'].includes(wfLog.status);
+            const isStoppedOrDeleted = !wfLog || wfLog.status === 'stopped' || wfLog.status === 'cancelled' || wfLog.error_message === 'STOPPED' || wfLog.error_message === 'Cancelled by user stop action.';
+            if (isStoppedOrDeleted || isAlreadySent) {
+                const reason = !wfLog
+                    ? 'Skipped: workflow log deleted'
+                    : isAlreadySent
+                        ? `Skipped: workflow step already ${wfLog.status}`
+                        : 'Skipped: workflow step stopped';
+                logger.info({ actionId: action.id, checkLogId, reason }, '🛑 Skipping dispatch safely.');
+                await cancelOrDeleteQueueRow(action.id, reason);
+                return { success: true, skipped: true, waMessageId: null };
+            }
         }
     }
     if (checkWfId) {
@@ -1250,25 +1272,25 @@ async function executeAction(action) {
             .maybeSingle();
         if (wfObj && (wfObj.status === 'Inactive' || wfObj.status === 'stopped' || wfObj.status === 'paused')) {
             logger.info({ actionId: action.id, checkWfId }, '🛑 Workflow is inactive/stopped. Skipping dispatch.');
-            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: parent workflow is inactive/stopped' }).eq('id', action.id);
-            return { success: true, waMessageId: null };
+            await cancelOrDeleteQueueRow(action.id, 'Skipped: parent workflow is inactive/stopped');
+            return { success: true, skipped: true, waMessageId: null };
         }
     }
     if (checkLeadId) {
-        const { data: leadRow } = await supabase
+        const { data: leadRow, error: leadErr } = await supabase
             .from('leads')
             .select('id, raw_payload')
             .eq('id', checkLeadId)
             .maybeSingle();
-        if (!leadRow) {
+        if (!leadErr && !leadRow) {
             logger.info({ actionId: action.id, checkLeadId }, '🛑 Lead was deleted from CRM. Skipping dispatch.');
-            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: lead deleted' }).eq('id', action.id);
-            return { success: true, waMessageId: null };
+            await cancelOrDeleteQueueRow(action.id, 'Skipped: lead deleted');
+            return { success: true, skipped: true, waMessageId: null };
         }
         if (leadRow?.raw_payload?.stop_followup === true || leadRow?.raw_payload?.workflow_status === 'stopped') {
             logger.info({ actionId: action.id, checkLeadId }, '🛑 Lead follow-up is stopped in CRM. Skipping dispatch.');
-            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: lead follow-up stopped' }).eq('id', action.id);
-            return { success: true, waMessageId: null };
+            await cancelOrDeleteQueueRow(action.id, 'Skipped: lead follow-up stopped');
+            return { success: true, skipped: true, waMessageId: null };
         }
         if (checkWfId) {
             const { data: execRow } = await supabase
@@ -1279,8 +1301,8 @@ async function executeAction(action) {
                 .maybeSingle();
             if (execRow && execRow.status === 'STOPPED') {
                 logger.info({ actionId: action.id, checkLeadId, checkWfId }, '🛑 Lead execution stopped. Skipping dispatch.');
-                await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: lead execution stopped' }).eq('id', action.id);
-                return { success: true, waMessageId: null };
+                await cancelOrDeleteQueueRow(action.id, 'Skipped: lead execution stopped');
+                return { success: true, skipped: true, waMessageId: null };
             }
         }
     }
@@ -1588,15 +1610,16 @@ async function runQueueDrain() {
             const sess = activeSessions.get(wsId);
             if (!sess?.sock?.user?.id)
                 continue;
-            await drainQueue(wsId, executeAction, 3);
+            await drainQueue(wsId, executeAction, 5);
         }
         // 2. Discover workspaces that have pending actions due but no active in-memory socket
         // (auto-revives sockets from disk so pending actions are never stuck indefinitely)
+        const nowIso = new Date().toISOString();
         const { data: pendingWorkspaces } = await supabase
             .from('baileys_action_queue')
             .select('workspace_id')
             .eq('status', 'pending')
-            .lte('next_retry_at', new Date().toISOString())
+            .or(`next_retry_at.is.null,next_retry_at.lte.${nowIso}`)
             .limit(10);
         if (pendingWorkspaces && pendingWorkspaces.length > 0) {
             const uniqueWs = Array.from(new Set(pendingWorkspaces.map((p) => p.workspace_id).filter(Boolean)));
@@ -2669,12 +2692,29 @@ async function scheduleNextDelayedCheck() {
         delayedCheckTimer = null;
     }
     try {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const candidateWsIds = new Set();
+        for (const wsId of activeSessions.keys()) {
+            if (uuidRegex.test(wsId))
+                candidateWsIds.add(wsId);
+        }
+        if (WORKSPACE_ID && uuidRegex.test(WORKSPACE_ID)) {
+            candidateWsIds.add(WORKSPACE_ID);
+        }
+        const activeWsIds = Array.from(candidateWsIds);
+        if (activeWsIds.length === 0) {
+            delayedCheckTimer = setTimeout(async () => {
+                delayedCheckTimer = null;
+                await scheduleNextDelayedCheck();
+            }, 10_000);
+            return;
+        }
         const now = new Date().toISOString();
         // 1. DRAIN OVERDUE/DUE ACTIONS FIRST: Check if any pending action is due now or in the past
         const { data: overdueAction } = await supabase
             .from('baileys_action_queue')
             .select('id')
-            .eq('workspace_id', WORKSPACE_ID)
+            .in('workspace_id', activeWsIds)
             .eq('status', 'pending')
             .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
             .limit(1)
@@ -2683,11 +2723,11 @@ async function scheduleNextDelayedCheck() {
             logger.info('⚡ Overdue or immediate pending action found — draining queue now');
             await runQueueDrain().catch(err => logger.error({ err }, 'Queue drain error'));
         }
-        // 2. Query for next future action
+        // 2. Query for next future action across all active workspaces
         const { data: nextAction } = await supabase
             .from('baileys_action_queue')
             .select('next_retry_at')
-            .eq('workspace_id', WORKSPACE_ID)
+            .in('workspace_id', activeWsIds)
             .eq('status', 'pending')
             .not('next_retry_at', 'is', null)
             .gt('next_retry_at', new Date().toISOString())

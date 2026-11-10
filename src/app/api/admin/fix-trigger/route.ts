@@ -37,6 +37,7 @@ DECLARE
   v_scheduled_at TIMESTAMPTZ;
   v_workspace_id UUID;
   v_log_id UUID;
+  v_priority INT;
 BEGIN
   IF TG_OP = 'UPDATE' THEN
     IF OLD.whatsapp_group_id IS NOT DISTINCT FROM NEW.whatsapp_group_id THEN
@@ -137,6 +138,15 @@ BEGIN
         r_step.template_name, 'pending', v_scheduled_at
       );
 
+      v_priority := CASE
+        WHEN LOWER(COALESCE(r_workflow.workflow_name, '')) LIKE '%welcome%'
+          OR LOWER(COALESCE(r_step.delay_unit, '')) IN ('seconds', 'minutes')
+          OR r_step.target_type = 'group'
+          OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '')
+        THEN 2
+        ELSE 5
+      END;
+
       IF r_step.target_type = 'group' OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '') THEN
         INSERT INTO public.baileys_action_queue (
           workspace_id, action_type, payload, status, next_retry_at, priority
@@ -154,7 +164,7 @@ BEGIN
             'templateId',      r_step.template_id,
             'workflowLogId',   v_log_id
           ),
-          'pending', v_scheduled_at, 5
+          'pending', v_scheduled_at, v_priority
         );
       ELSE
         INSERT INTO public.baileys_action_queue (
@@ -169,7 +179,7 @@ BEGIN
             'variables', v_variables,
             'workflowLogId', v_log_id
           ),
-          'pending', v_scheduled_at, 5
+          'pending', v_scheduled_at, v_priority
         );
       END IF;
     END LOOP;
@@ -198,6 +208,7 @@ DECLARE
   v_log_id UUID;
   v_triggered_count INT := 0;
   v_skipped_count INT := 0;
+  v_priority INT;
 BEGIN
   SELECT * INTO r_workflow FROM public.whatsapp_custom_workflows WHERE id = p_workflow_id;
   IF NOT FOUND THEN
@@ -280,6 +291,15 @@ BEGIN
         r_step.template_name, 'pending', v_scheduled_at
       );
 
+      v_priority := CASE
+        WHEN LOWER(COALESCE(r_workflow.workflow_name, '')) LIKE '%welcome%'
+          OR LOWER(COALESCE(r_step.delay_unit, '')) IN ('seconds', 'minutes')
+          OR r_step.target_type = 'group'
+          OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '')
+        THEN 2
+        ELSE 5
+      END;
+
       IF r_step.target_type = 'group' OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '') THEN
         INSERT INTO public.baileys_action_queue (
           workspace_id, action_type, payload, status, next_retry_at, priority
@@ -297,7 +317,7 @@ BEGIN
             'templateId',      r_step.template_id,
             'workflowLogId',   v_log_id
           ),
-          'pending', v_scheduled_at, 5
+          'pending', v_scheduled_at, v_priority
         );
       ELSE
         INSERT INTO public.baileys_action_queue (
@@ -312,7 +332,7 @@ BEGIN
             'variables', v_variables,
             'workflowLogId', v_log_id
           ),
-          'pending', v_scheduled_at, 5
+          'pending', v_scheduled_at, v_priority
         );
       END IF;
 

@@ -166,21 +166,35 @@ export async function PATCH(req: NextRequest) {
           .eq('workflow_id', workflowId)
           .eq('status', 'pending');
 
-        const { data: qItems } = await supabaseAdmin
-          .from('baileys_action_queue')
-          .select('id, payload')
-          .eq('workspace_id', tenantId)
-          .in('status', ['pending', 'processing']);
+        const qItems: any[] = [];
+        for (let from = 0; ; from += 1000) {
+          const { data: page } = await supabaseAdmin
+            .from('baileys_action_queue')
+            .select('id, payload')
+            .eq('workspace_id', tenantId)
+            .in('status', ['pending', 'processing'])
+            .range(from, from + 999);
+          if (!page || page.length === 0) break;
+          qItems.push(...page);
+          if (page.length < 1000) break;
+        }
 
-        const cancelIds = (qItems || [])
+        const cancelIds = qItems
           .filter((item: any) => item.payload?.workflowId === workflowId || item.payload?.workflow_id === workflowId)
           .map((item: any) => item.id);
 
         if (cancelIds.length > 0) {
-          await supabaseAdmin
+          const { error: cancelErr } = await supabaseAdmin
             .from('baileys_action_queue')
             .update({ status: 'cancelled', error_message: 'Cancelled: workflow paused/inactive', processed_at: now })
             .in('id', cancelIds);
+
+          if (cancelErr) {
+            await supabaseAdmin
+              .from('baileys_action_queue')
+              .delete()
+              .in('id', cancelIds);
+          }
         }
       } catch (cancelErr) {
         console.warn('[PATCH workflows] Cancel pending tasks notice:', cancelErr);
@@ -218,21 +232,35 @@ export async function DELETE(req: NextRequest) {
         .eq('workflow_id', workflowId)
         .eq('status', 'pending');
 
-      const { data: qItems } = await supabaseAdmin
-        .from('baileys_action_queue')
-        .select('id, payload')
-        .eq('workspace_id', tenantId)
-        .in('status', ['pending', 'processing']);
+      const qItems: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: page } = await supabaseAdmin
+          .from('baileys_action_queue')
+          .select('id, payload')
+          .eq('workspace_id', tenantId)
+          .in('status', ['pending', 'processing'])
+          .range(from, from + 999);
+        if (!page || page.length === 0) break;
+        qItems.push(...page);
+        if (page.length < 1000) break;
+      }
 
-      const cancelIds = (qItems || [])
+      const cancelIds = qItems
         .filter((item: any) => item.payload?.workflowId === workflowId || item.payload?.workflow_id === workflowId)
         .map((item: any) => item.id);
 
       if (cancelIds.length > 0) {
-        await supabaseAdmin
+        const { error: cancelErr } = await supabaseAdmin
           .from('baileys_action_queue')
           .update({ status: 'cancelled', error_message: 'Cancelled: workflow deleted', processed_at: now })
           .in('id', cancelIds);
+
+        if (cancelErr) {
+          await supabaseAdmin
+            .from('baileys_action_queue')
+            .delete()
+            .in('id', cancelIds);
+        }
       }
     } catch (_) {}
 

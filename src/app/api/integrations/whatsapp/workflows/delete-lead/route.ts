@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { fetchWorkspaceQueueItems, deleteQueueItemsInChunks } from '@/lib/queue-processor';
 
 export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -38,33 +39,32 @@ export async function POST(req: NextRequest) {
 
     const logIds = (logs || []).map(l => l.id);
 
-    // 3. Purge matching queue items from baileys_action_queue by workflowLogId, leadId, or phone
-    const { data: queueItems } = await supabaseAdmin
-      .from('baileys_action_queue')
-      .select('id, payload')
-      .eq('workspace_id', tenantId)
-      .in('status', ['pending', 'failed', 'processing']);
+    // 3. Purge matching queue items from baileys_action_queue by workflowLogId, leadId, or phone (paginated)
+    const queueItems = await fetchWorkspaceQueueItems(tenantId, {
+      columns: 'id, payload',
+      statuses: ['pending', 'failed', 'processing', 'cancelled'],
+    });
+    const logIdSet = new Set(logIds);
+    const targetLeadSet = new Set(targetLeadIds);
+    const cleanPhoneSet = new Set(cleanPhones);
 
-    const queueIdsToDelete = (queueItems || []).filter((item: any) => {
+    const queueIdsToDelete = queueItems.filter((item: any) => {
       const p = item.payload || {};
       const qWfLogId = p.workflowLogId;
       const qLeadId = p.leadId || p.lead_id;
       const qPhone = String(p.to || p.recipient || p.phone || '').replace(/@.*$/, '').replace(/[^0-9]/g, '');
 
-      const matchesLog = qWfLogId && logIds.includes(qWfLogId);
-      const matchesLead = qLeadId && targetLeadIds.includes(qLeadId);
-      const matchesPhone = qPhone && cleanPhones.includes(qPhone);
+      const matchesLog = Boolean(qWfLogId && logIdSet.has(qWfLogId));
+      const matchesLead = Boolean(qLeadId && targetLeadSet.has(qLeadId));
+      const matchesPhone = Boolean(qPhone && cleanPhoneSet.has(qPhone));
 
       return matchesLog || matchesLead || matchesPhone;
     }).map(i => i.id);
 
-    if (queueIdsToDelete.length > 0) {
-      const { error: qDelErr } = await supabaseAdmin
-        .from('baileys_action_queue')
-        .delete()
-        .in('id', queueIdsToDelete);
-
-      if (qDelErr) console.warn('[delete-lead] Queue delete warning:', qDelErr.message);
+    try {
+      await deleteQueueItemsInChunks(queueIdsToDelete);
+    } catch (qDelErr: any) {
+      console.warn('[delete-lead] Queue delete warning:', qDelErr?.message);
     }
 
     // 4. Delete from whatsapp_workflow_logs

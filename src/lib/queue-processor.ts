@@ -59,9 +59,12 @@ export interface QueueAction {
 
 export interface ProcessorResult {
   success: boolean;
+  skipped?: boolean;
   waMessageId?: string | null;
   error?: string;
 }
+
+export type ProcessOutcome = 'done' | 'failed' | 'skipped' | 'noop';
 
 // Action handler function signature — implemented by the worker
 export type ActionHandler = (action: QueueAction) => Promise<ProcessorResult>;
@@ -119,6 +122,35 @@ export async function applyWhatsAppRateLimit(customDelayMs?: number): Promise<vo
   await new Promise(resolve => setTimeout(resolve, delay));
 }
 
+/**
+ * Safely cancels a queue item without ever getting trapped in 'processing' if the
+ * live DB CHECK constraint rejects status = 'cancelled'. Falls back to deleting
+ * the obsolete queue row cleanly.
+ */
+async function cancelOrDeleteQueueAction(actionId: string, reason: string): Promise<void> {
+  const { error: cancelErr } = await supabaseAdmin
+    .from('baileys_action_queue')
+    .update({
+      status: 'cancelled',
+      error_message: reason,
+      failure_reason: reason,
+      processed_at: new Date().toISOString(),
+    })
+    .eq('id', actionId);
+
+  if (cancelErr) {
+    console.warn(`[QueueProcessor] Update to 'cancelled' rejected for ${actionId} (${cancelErr.message}). Deleting obsolete queue row...`);
+    const { error: delErr } = await supabaseAdmin
+      .from('baileys_action_queue')
+      .delete()
+      .eq('id', actionId);
+
+    if (delErr) {
+      console.error(`[QueueProcessor] Failed to delete obsolete action ${actionId}:`, delErr.message);
+    }
+  }
+}
+
 // ── Core Queue Processing Engine ──────────────────────────────────────────────
 /**
  * Processes a single action from the queue with full error handling,
@@ -130,7 +162,7 @@ export async function applyWhatsAppRateLimit(customDelayMs?: number): Promise<vo
 export async function processQueueAction(
   action: QueueAction,
   handler: ActionHandler
-): Promise<void> {
+): Promise<ProcessOutcome> {
   const { id, workspace_id, attempt_count } = action;
   const newAttemptCount = attempt_count + 1;
 
@@ -148,68 +180,84 @@ export async function processQueueAction(
 
   if (lockError) {
     console.error(`[QueueProcessor] Failed to claim action ${id}:`, lockError.message);
-    return;
+    return 'noop';
   }
 
   // If 0 rows returned, another processor already claimed this action — skip it
   if (!claimedRows || claimedRows.length === 0) {
     console.warn(`[QueueProcessor] Action ${id} already claimed by another processor — skipping.`);
-    return;
+    return 'noop';
   }
 
-  // ── Step 2: Skip cancelled actions & Stopped Workflows / Leads ─────────────
+  // ── Step 2: Skip cancelled actions & Stopped / Deleted Workflows or Leads ──
   const { data: recheckStatus } = await supabaseAdmin
     .from('baileys_action_queue')
     .select('status')
     .eq('id', id)
     .maybeSingle();
 
-  if (recheckStatus?.status === 'cancelled') {
+  if (!recheckStatus || recheckStatus.status === 'cancelled') {
     await supabaseAdmin.from('live_logs').insert({
       workspace_id,
       event_type: 'queue_action_skipped',
       message: `⏭️ Action ${action.action_type} [${id}] was cancelled — skipping.`,
       metadata: { action_id: id, action_type: action.action_type },
     });
-    return;
+    return 'skipped';
   }
 
-  // Pre-flight Guard A: If workflowLogId is stopped or cancelled in database, abort dispatch
+  // Pre-flight Guard A: If workflowLogId is missing/stopped/cancelled/already-sent in database, abort dispatch
   const actPayload = (action.payload || {}) as Record<string, any>;
   const wfLogId = actPayload.workflowLogId || actPayload.logId;
   if (wfLogId) {
-    const { data: wfLog } = await supabaseAdmin
+    const { data: wfLog, error: wfLogErr } = await supabaseAdmin
       .from('whatsapp_workflow_logs')
-      .select('status')
+      .select('id, status, error_message')
       .eq('id', wfLogId)
       .maybeSingle();
 
-    if (wfLog && (wfLog.status === 'stopped' || wfLog.status === 'cancelled')) {
-      await supabaseAdmin.from('baileys_action_queue').update({
-        status: 'cancelled',
-        error_message: 'Skipped: workflow step is stopped in logs'
-      }).eq('id', id);
-      console.log(`[QueueProcessor] Action ${id} skipped because workflowLog ${wfLogId} is ${wfLog.status}.`);
-      return;
+    if (!wfLogErr) {
+      const isAlreadySent = wfLog && ['sent', 'delivered', 'read'].includes(wfLog.status);
+      const isStoppedOrCancelled =
+        !wfLog ||
+        wfLog.status === 'stopped' ||
+        wfLog.status === 'cancelled' ||
+        wfLog.error_message === 'STOPPED' ||
+        wfLog.error_message === 'Cancelled by user stop action.';
+
+      if (isStoppedOrCancelled || isAlreadySent) {
+        const reason = !wfLog
+          ? 'Workflow log deleted'
+          : isAlreadySent
+            ? `Workflow log already ${wfLog.status}`
+            : 'Workflow log stopped or cancelled';
+        await cancelOrDeleteQueueAction(id, reason);
+        console.log(`[QueueProcessor] Action ${id} skipped: ${reason}`);
+        return 'skipped';
+      }
     }
   }
 
-  // Pre-flight Guard B: If target lead has stop_followup flag, abort dispatch
+  // Pre-flight Guard B: If target lead was deleted or has stop_followup flag, abort dispatch
   const leadId = actPayload.leadId || actPayload.lead_id;
   if (leadId) {
-    const { data: leadRow } = await supabaseAdmin
+    const { data: leadCheck, error: leadCheckErr } = await supabaseAdmin
       .from('leads')
-      .select('raw_payload')
+      .select('id, raw_payload')
       .eq('id', leadId)
       .maybeSingle();
 
-    if (leadRow?.raw_payload?.stop_followup === true || leadRow?.raw_payload?.workflow_status === 'stopped') {
-      await supabaseAdmin.from('baileys_action_queue').update({
-        status: 'cancelled',
-        error_message: 'Skipped: lead follow-up is stopped'
-      }).eq('id', id);
+    if (!leadCheckErr && !leadCheck) {
+      await cancelOrDeleteQueueAction(id, 'Lead was deleted from CRM');
+      console.log(`[QueueProcessor] Action ${id} skipped because lead ${leadId} was deleted.`);
+      return 'skipped';
+    }
+
+    const leadRaw = (leadCheck as any)?.raw_payload;
+    if (leadRaw?.stop_followup === true || leadRaw?.workflow_status === 'stopped') {
+      await cancelOrDeleteQueueAction(id, 'Skipped: lead follow-up is stopped');
       console.log(`[QueueProcessor] Action ${id} skipped because lead ${leadId} has follow-up stopped.`);
-      return;
+      return 'skipped';
     }
   }
 
@@ -221,6 +269,10 @@ export async function processQueueAction(
       throw new Error(result.error || 'Handler returned failure without error message');
     }
 
+    if (result.skipped) {
+      return 'skipped';
+    }
+
     // ── Step 4: Mark as DONE ─────────────────────────────────────────────────
     // The handler (executeAction) may have already written 'done' to the DB as an
     // ACID guarantee immediately after sock.sendMessage succeeded. Check first.
@@ -230,7 +282,7 @@ export async function processQueueAction(
       .eq('id', id)
       .maybeSingle();
 
-    if (currentRow?.status !== 'done') {
+    if (currentRow && currentRow.status !== 'done') {
       await supabaseAdmin
         .from('baileys_action_queue')
         .update({
@@ -254,6 +306,7 @@ export async function processQueueAction(
       },
     });
 
+    return 'done';
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
 
@@ -288,6 +341,7 @@ export async function processQueueAction(
       `[QueueProcessor] ❌ FAILED — Action ${id} (${action.action_type}) failed at attempt ${newAttemptCount}. ` +
       `Status set to 'failed'. Manual retry required. Error: ${errMsg}`
     );
+    return 'failed';
   }
 }
 
@@ -301,13 +355,17 @@ export async function processQueueAction(
  *
  * @param workspaceId - The workspace to drain queue for
  * @param handler - The action handler (WhatsApp socket dispatcher)
- * @param batchSize - Max actions to process per poll cycle (default: 3)
+ * @param batchSize - Max actions to process per poll cycle (default: 5)
  */
 export async function drainQueue(
   workspaceId: string,
   handler: ActionHandler,
-  batchSize = 3
+  batchSize = 5
 ): Promise<void> {
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    return;
+  }
+
   // Acquire workspace-level processing lock
   if (!acquireLock(workspaceId)) {
     return; // Another drain cycle is already running for this workspace
@@ -317,15 +375,16 @@ export async function drainQueue(
     const now = new Date().toISOString();
     console.log("Worker polling at", now);
 
-    // Fetch pending actions that are due (respects next_retry_at backoff)
+    // Fetch pending actions that are due (respects priority, scheduled time, and backoff)
     const { data: actions, error } = await supabaseAdmin
       .from('baileys_action_queue')
       .select('*')
       .eq('workspace_id', workspaceId)
       .eq('status', 'pending')
       .or(`next_retry_at.is.null,next_retry_at.lte.${now}`) // Due for processing
-      .order('priority', { ascending: true })   // High priority (1) first
-      .order('created_at', { ascending: true })  // FIFO within same priority
+      .order('priority', { ascending: true })
+      .order('next_retry_at', { ascending: true, nullsFirst: true })
+      .order('created_at', { ascending: true })
       .limit(batchSize);
 
     if (error) {
@@ -340,9 +399,31 @@ export async function drainQueue(
 
     console.log(`[QueueProcessor] 🎯 Processing ${actions.length} actions for workspace ${workspaceId}`);
 
+    let needsCooldown = false;
+    let lastDelayMs: number | undefined;
+
     // Process actions sequentially (not parallel) to respect WhatsApp rate limits
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i] as QueueAction;
+      const isWhatsAppAction = [
+        'send_text',
+        'send_image',
+        'send_video',
+        'send_document',
+        'send_audio',
+        'send_media',
+        'send_template',
+        'send_poll',
+        'send_buttons',
+        'group_dispatch',
+        'group_lead_alert',
+      ].includes(action.action_type);
+
+      if (needsCooldown && isWhatsAppAction) {
+        await applyWhatsAppRateLimit(lastDelayMs);
+        needsCooldown = false;
+        lastDelayMs = undefined;
+      }
 
       // Skip cancelled items
       const { data: skipCheck } = await supabaseAdmin
@@ -350,18 +431,14 @@ export async function drainQueue(
         .select('status')
         .eq('id', action.id)
         .maybeSingle();
-      if (skipCheck?.status === 'cancelled') continue;
+      if (!skipCheck || skipCheck.status === 'cancelled') continue;
 
-      await processQueueAction(action, handler);
+      const outcome = await processQueueAction(action, handler);
 
-      // Apply configurable anti-ban delay between WhatsApp message dispatches
-      // Check action payload for user-defined delayMs, otherwise use default
-      const isWhatsAppAction = ['send_text', 'send_media', 'send_template', 'group_dispatch'].includes(
-        action.action_type
-      );
-      if (isWhatsAppAction && i < actions.length - 1) {
+      if (outcome === 'done' && isWhatsAppAction) {
+        needsCooldown = true;
         const userDelayMs = (action.payload as any)?.delayMs;
-        await applyWhatsAppRateLimit(userDelayMs ? Number(userDelayMs) : undefined);
+        lastDelayMs = userDelayMs ? Number(userDelayMs) : undefined;
       }
     }
 
@@ -372,48 +449,133 @@ export async function drainQueue(
 
 // ── Retry-Due Action Sweeper ──────────────────────────────────────────────────
 /**
- * Sweeps the queue to find failed actions whose next_retry_at has passed
- * and resets them to 'pending' so the main drainer picks them up.
+ * Sweeps the queue to find orphaned 'processing' actions (worker crashed mid-action)
+ * and cleans obsolete rows, fails exhausted rows (>= MAX_RETRIES), or resets retriable ones.
  *
  * Run this on a slower interval (e.g. every 60 seconds).
  *
  * @param workspaceId - Workspace to sweep
  */
 export async function sweepExpiredRetries(workspaceId: string): Promise<number> {
-  const now = new Date().toISOString();
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    return 0;
+  }
 
-  // Note: drainQueue already handles next_retry_at via the .or() filter.
-  // This sweeper is a safety net for orphaned 'processing' rows (worker crashed mid-action).
   const STUCK_PROCESSING_TIMEOUT = new Date(Date.now() - PROCESSING_LOCK_TTL_MS * 2).toISOString();
 
   const { data: stuckActions, error } = await supabaseAdmin
     .from('baileys_action_queue')
-    .select('id, attempt_count, failure_reason')
+    .select('id, attempt_count, failure_reason, payload')
     .eq('workspace_id', workspaceId)
     .eq('status', 'processing')
     .lt('processed_at', STUCK_PROCESSING_TIMEOUT); // Stuck for >2x lock TTL
 
   if (error || !stuckActions || stuckActions.length === 0) return 0;
 
-  // Reset stuck 'processing' rows back to 'pending' for retry
-  const stuckIds = stuckActions.map(a => a.id);
+  const wfLogIds = Array.from(
+    new Set(
+      stuckActions
+        .map((a: any) => a?.payload?.workflowLogId || a?.payload?.logId)
+        .filter((v: any) => typeof v === 'string' && v.length > 0)
+    )
+  );
 
-  const { error: resetError } = await supabaseAdmin
-    .from('baileys_action_queue')
-    .update({
-      status: 'pending',
-      failure_reason: 'Worker process crashed or timed out. Auto-recovered by sweeper.',
-      next_retry_at: computeNextRetryAt(1),
-    })
-    .in('id', stuckIds);
-
-  if (resetError) {
-    console.error('[QueueProcessor] Sweeper reset error:', resetError.message);
-    return 0;
+  const wfLogMap = new Map<string, { id: string; status: string; error_message: string | null }>();
+  let wfLogsFetchOk = true;
+  if (wfLogIds.length > 0) {
+    const { data: wfLogs, error: wfLogsErr } = await supabaseAdmin
+      .from('whatsapp_workflow_logs')
+      .select('id, status, error_message')
+      .in('id', wfLogIds);
+    if (wfLogsErr) {
+      wfLogsFetchOk = false;
+      console.warn('[QueueProcessor] Sweeper workflow log lookup warning:', wfLogsErr.message);
+    } else {
+      for (const l of wfLogs || []) {
+        wfLogMap.set(l.id, l as any);
+      }
+    }
   }
 
-  console.warn(`[QueueProcessor] 🧹 Sweeper recovered ${stuckIds.length} stuck actions for workspace ${workspaceId}`);
-  return stuckIds.length;
+  const obsoleteActions: Array<{ id: string; reason: string }> = [];
+  const exhaustedIds: string[] = [];
+  const retriableIds: string[] = [];
+
+  for (const a of stuckActions as any[]) {
+    const wfLogId = a?.payload?.workflowLogId || a?.payload?.logId;
+    if (wfLogId && wfLogsFetchOk) {
+      const wfLog = wfLogMap.get(wfLogId);
+      if (!wfLog) {
+        obsoleteActions.push({ id: a.id, reason: 'Sweeper cleanup: workflow log deleted' });
+        continue;
+      }
+      if (['sent', 'delivered', 'read'].includes(wfLog.status)) {
+        obsoleteActions.push({ id: a.id, reason: `Sweeper cleanup: workflow log already ${wfLog.status}` });
+        continue;
+      }
+      if (
+        wfLog.status === 'stopped' ||
+        wfLog.status === 'cancelled' ||
+        wfLog.error_message === 'STOPPED' ||
+        wfLog.error_message === 'Cancelled by user stop action.'
+      ) {
+        obsoleteActions.push({ id: a.id, reason: 'Sweeper cleanup: workflow log stopped/cancelled' });
+        continue;
+      }
+    }
+
+    if ((a.attempt_count || 0) >= MAX_RETRIES) {
+      exhaustedIds.push(a.id);
+    } else {
+      retriableIds.push(a.id);
+    }
+  }
+
+  let handledCount = 0;
+
+  for (const obs of obsoleteActions) {
+    await cancelOrDeleteQueueAction(obs.id, obs.reason);
+    handledCount++;
+  }
+
+  if (exhaustedIds.length > 0) {
+    const failMsg = `Worker timed out after ${MAX_RETRIES} attempts. Marked failed by sweeper.`;
+    const { error: failErr } = await supabaseAdmin
+      .from('baileys_action_queue')
+      .update({
+        status: 'failed',
+        error_message: failMsg,
+        failure_reason: failMsg,
+        next_retry_at: null,
+      })
+      .in('id', exhaustedIds);
+
+    if (failErr) {
+      console.error('[QueueProcessor] Sweeper fail update error:', failErr.message);
+    } else {
+      handledCount += exhaustedIds.length;
+    }
+  }
+
+  if (retriableIds.length > 0) {
+    const { error: resetError } = await supabaseAdmin
+      .from('baileys_action_queue')
+      .update({
+        status: 'pending',
+        failure_reason: 'Worker process crashed or timed out. Auto-recovered by sweeper.',
+        next_retry_at: computeNextRetryAt(1),
+      })
+      .in('id', retriableIds);
+
+    if (resetError) {
+      console.error('[QueueProcessor] Sweeper reset error:', resetError.message);
+    } else {
+      handledCount += retriableIds.length;
+      console.warn(`[QueueProcessor] 🧹 Sweeper recovered ${retriableIds.length} stuck actions for workspace ${workspaceId}`);
+    }
+  }
+
+  return handledCount;
 }
 
 // ── Queue Statistics Helper ───────────────────────────────────────────────────
@@ -440,4 +602,59 @@ export async function getQueueStats(workspaceId: string): Promise<{
     failed: rows.filter(r => r.status === 'failed').length,
     nextAction: rows.find(r => r.status === 'pending'),
   };
+}
+
+/**
+ * Fetches all matching `baileys_action_queue` rows for a workspace across pages
+ * so workspaces with >1,000 active queue items never hit PostgREST's 1,000-row cap.
+ */
+export async function fetchWorkspaceQueueItems(
+  workspaceId: string,
+  options: {
+    columns?: string;
+    statuses?: string[];
+  } = {}
+): Promise<any[]> {
+  if (!workspaceId) return [];
+  const columns = options.columns || 'id, payload';
+  const pageSize = 1000;
+  const rows: any[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    let query = supabaseAdmin
+      .from('baileys_action_queue')
+      .select(columns)
+      .eq('workspace_id', workspaceId)
+      .range(from, from + pageSize - 1);
+
+    if (options.statuses && options.statuses.length > 0) {
+      query = query.in('status', options.statuses);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('[QueueProcessor] fetchWorkspaceQueueItems warning:', error.message);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+/**
+ * Deletes `baileys_action_queue` rows in safe URL-sized batches.
+ */
+export async function deleteQueueItemsInChunks(ids: string[], chunkSize = 150): Promise<void> {
+  if (!ids || ids.length === 0) return;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const { error } = await supabaseAdmin
+      .from('baileys_action_queue')
+      .delete()
+      .in('id', chunk);
+    if (error) throw error;
+  }
 }

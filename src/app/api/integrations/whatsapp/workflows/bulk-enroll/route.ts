@@ -273,6 +273,11 @@ export async function POST(req: NextRequest) {
               sent_at: stepScheduledAt.toISOString(),
             });
 
+            const isWelcomeOrShort =
+              (wf.workflow_name || '').toLowerCase().includes('welcome') ||
+              cumulativeStepMs <= 30 * 60 * 1000;
+            const stepPriority = isWelcomeOrShort || isGroup ? 2 : 5;
+
             // 2. Insert into Baileys action queue
             if (isGroup) {
               await supabaseAdmin.from('baileys_action_queue').insert({
@@ -291,7 +296,7 @@ export async function POST(req: NextRequest) {
                 },
                 status: 'pending',
                 next_retry_at: stepScheduledAt.toISOString(),
-                priority: 5,
+                priority: stepPriority,
               });
             } else {
               await supabaseAdmin.from('baileys_action_queue').insert({
@@ -306,7 +311,7 @@ export async function POST(req: NextRequest) {
                 },
                 status: 'pending',
                 next_retry_at: stepScheduledAt.toISOString(),
-                priority: 5,
+                priority: stepPriority,
               });
             }
           }

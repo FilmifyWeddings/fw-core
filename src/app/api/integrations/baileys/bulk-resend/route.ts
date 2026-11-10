@@ -58,14 +58,27 @@ export async function POST(req: NextRequest) {
         const delayOffset = Math.floor(i / batchSize) * delayBetweenMs;
         const scheduledAt = new Date(Date.now() + delayOffset).toISOString();
 
+        const wfLogId = (item.payload as any)?.workflowLogId;
+        if (wfLogId) {
+          await supabaseAdmin
+            .from('whatsapp_workflow_logs')
+            .update({
+              status: 'pending',
+              error_message: null,
+              updated_at: now,
+            })
+            .eq('id', wfLogId);
+        }
+
         await supabaseAdmin
           .from('baileys_action_queue')
           .update({
             status: 'pending',
+            priority: 2,
             attempt_count: 0,
             error_message: null,
             failure_reason: null,
-            next_retry_at: null,
+            next_retry_at: delayOffset > 0 ? scheduledAt : null,
             created_at: now,
           })
           .eq('id', item.id);

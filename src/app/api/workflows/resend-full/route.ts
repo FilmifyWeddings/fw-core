@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { forceWakeQueue, buildLeadVariables } from '@/lib/baileys-serverless';
 import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
+import { fetchWorkspaceQueueItems } from '@/lib/queue-processor';
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,12 +50,11 @@ export async function POST(req: NextRequest) {
 
     if (logsError) throw logsError;
 
-    // 4. Retrieve queue items
-    const { data: queueItems } = await supabaseAdmin
-      .from('baileys_action_queue')
-      .select('*')
-      .eq('workspace_id', tenantId)
-      .in('status', ['failed', 'pending', 'processing', 'done']);
+    // 4. Retrieve queue items (paginated so workspaces >1k queue items never duplicate)
+    const queueItems = await fetchWorkspaceQueueItems(tenantId, {
+      columns: '*',
+      statuses: ['failed', 'pending', 'processing', 'done', 'cancelled'],
+    });
 
     // 5. Calculate cumulative scheduling starting from NOW with intelligent Anti-Ban pacing
     const workflowSteps: any[] = (workflow.workflow_steps || []).slice().sort(
@@ -158,6 +158,7 @@ export async function POST(req: NextRequest) {
           .from('baileys_action_queue')
           .update({
             status: 'pending',
+            priority: 2,
             attempt_count: 0,
             error_message: null,
             failure_reason: null,

@@ -149,6 +149,7 @@ async function executeWhatsAppSend(
       : { to, text: message };
 
     const actionType = templateId ? 'send_template' : 'send_text';
+    const isNearImmediate = new Date(scheduledAt).getTime() - Date.now() <= 30 * 60 * 1000;
 
     const { error } = await supabaseAdmin
       .from('baileys_action_queue')
@@ -158,7 +159,7 @@ async function executeWhatsAppSend(
         payload,
         status: 'pending',
         next_retry_at: scheduledAt,
-        priority: 5,
+        priority: isNearImmediate ? 2 : 5,
       });
 
     if (error) return { success: false, output: {}, error: `Queue schedule failed: ${error.message}` };
@@ -202,6 +203,7 @@ async function executeWhatsAppGroupAlert(
 
   // If scheduled timestamp is provided, enqueue it
   if (scheduledAt) {
+    const isNearImmediate = new Date(scheduledAt).getTime() - Date.now() <= 30 * 60 * 1000;
     const { error } = await supabaseAdmin
       .from('baileys_action_queue')
       .insert({
@@ -210,7 +212,7 @@ async function executeWhatsAppGroupAlert(
         payload: { to: groupJid, text: message },
         status: 'pending',
         next_retry_at: scheduledAt,
-        priority: 5,
+        priority: isNearImmediate ? 2 : 5,
       });
 
     if (error) return { success: false, output: {}, error: `Queue schedule failed: ${error.message}` };
