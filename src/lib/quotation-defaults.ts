@@ -861,8 +861,18 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     funcItems = d.functionsPage.items;
   }
 
-  // ⚡ MANDATE: Automatically consolidate ceremonies occurring on the same date (e.g. Haldi + Sangeet)
-  funcItems = consolidateSameDateFunctions(funcItems);
+  // Keep separate function cards by default; do not unconditionally merge events occurring on the same date.
+  funcItems = (Array.isArray(funcItems) ? funcItems : []).map((rawItem: any) => {
+    if (!rawItem) return rawItem;
+    const rawName = String(rawItem.name || '').trim();
+    const cleanedName = /^(?:event|function)\s*\d+$/i.test(rawName)
+      ? 'Wedding'
+      : (rawName.replace(/(?:event|function)\s*\d+\s*\+?\s*/gi, '').replace(/\s*\+\s*$/, '').replace(/^\s*\+\s*/, '').trim() || 'Wedding');
+    return {
+      ...rawItem,
+      name: cleanedName
+    };
+  }).filter(Boolean);
 
   const functionsPage = {
     ...(d.functionsPage || {}),
@@ -932,9 +942,14 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
 
   // 5. Normalize Pre-Wedding Shoot Details
   const shootSrc = loaded.shootDetails || pagesObj.pre_wedding || {};
-  const shootVisible = shootSrc.visible !== undefined 
-    ? Boolean(shootSrc.visible) 
-    : Boolean(shootSrc.crewText || shootSrc.deliverablesText || d.shootDetails?.visible);
+  const hasShootInLoadedSeq = Array.isArray(loaded.pageSequence)
+    ? loaded.pageSequence.some((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) === 'shootDetails')
+    : undefined;
+  const shootVisible = shootSrc.visible !== undefined
+    ? Boolean(shootSrc.visible)
+    : (hasShootInLoadedSeq !== undefined
+        ? hasShootInLoadedSeq && Boolean(shootSrc.crewText || shootSrc.deliverablesText || d.shootDetails?.visible)
+        : Boolean(shootSrc.crewText || shootSrc.deliverablesText || d.shootDetails?.visible));
 
   const shootDetails = {
     ...(d.shootDetails || {}),
@@ -942,10 +957,10 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     visible: shootVisible,
     kicker: d.shootDetails?.kicker || shootSrc.kicker || 'PRE-WEDDING',
     heading: d.shootDetails?.heading || shootSrc.heading || 'Pre-Wedding Shoot',
-    daysText: shootSrc.daysText || d.shootDetails?.daysText || '1 Full Day Creative Session',
-    crewText: shootSrc.crewText !== undefined ? shootSrc.crewText : (d.shootDetails?.crewText || ''),
+    daysText: shootVisible ? (shootSrc.daysText || d.shootDetails?.daysText || '1 Day Shoot') : '',
+    crewText: shootVisible ? (shootSrc.crewText !== undefined ? shootSrc.crewText : (d.shootDetails?.crewText || '')) : '',
     deliverablesHeading: d.shootDetails?.deliverablesHeading || shootSrc.deliverablesHeading || 'Deliverables',
-    deliverablesText: shootSrc.deliverablesText !== undefined ? shootSrc.deliverablesText : (d.shootDetails?.deliverablesText || ''),
+    deliverablesText: shootVisible ? (shootSrc.deliverablesText !== undefined ? shootSrc.deliverablesText : (d.shootDetails?.deliverablesText || '')) : '',
     showExclusionsNote: shootSrc.showExclusionsNote !== undefined ? Boolean(shootSrc.showExclusionsNote) : true,
     photo: shootSrc.photo ? shootSrc.photo : (d.shootDetails?.photo || ''),
   };
@@ -1159,6 +1174,20 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     rawTypes.push('thankYouPage');
 
     finalPageSequence = rawTypes.map(toPageSequenceItem);
+  }
+
+  // Strictly synchronize shootDetails presence in pageSequence with shootDetails.visible
+  if (!shootDetails.visible) {
+    finalPageSequence = finalPageSequence.filter((p: PageSequenceItem) => p.type !== 'shootDetails');
+  } else if (!finalPageSequence.some((p: PageSequenceItem) => p.type === 'shootDetails')) {
+    const aboutIdx = finalPageSequence.findIndex((p: PageSequenceItem) => p.type === 'aboutUs');
+    const coverIdx = finalPageSequence.findIndex((p: PageSequenceItem) => p.type === 'cover');
+    const insertAt = aboutIdx >= 0 ? aboutIdx + 1 : (coverIdx >= 0 ? coverIdx + 1 : 0);
+    finalPageSequence = [
+      ...finalPageSequence.slice(0, insertAt),
+      { id: 'shootDetails-std', type: 'shootDetails', label: 'Pre-Wedding Shoot', isStandard: true },
+      ...finalPageSequence.slice(insertAt)
+    ];
   }
 
   return {

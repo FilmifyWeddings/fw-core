@@ -6,8 +6,12 @@ import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-re
 import {
   normalizeCrewRoleName,
   fallbackHeuristicExtractor,
-  mapAiOutputToQuotationDocument
+  mapAiOutputToQuotationDocument,
+  detectPreWeddingIntent,
+  detectPreWeddingNegation,
+  resolveStudioFunctionName
 } from '@/lib/ai-quotation-extractor';
+import { DEFAULT_EVENT_TYPES, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
 export const maxDuration = 60; // 60 seconds timeout for AI generation
 
@@ -28,10 +32,12 @@ export async function POST(req: NextRequest) {
     let workspaceId = body.workspaceId || userId;
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('id, workspace_name')
+      .select('id, workspace_id, workspace_name')
       .eq('id', userId)
       .maybeSingle();
-    if (profile?.id && !body.workspaceId) workspaceId = profile.id;
+    if (!body.workspaceId) {
+      workspaceId = profile?.workspace_id || profile?.id || userId;
+    }
 
     // 1. Fetch Lead or Synthesize from Document
     let lead: any = null;
@@ -118,18 +124,19 @@ export async function POST(req: NextRequest) {
     const metaPayload = lead.raw_meta_payload || {};
     const commentsText = Array.isArray(lead.comments) ? lead.comments.map((c: any) => c.text || '').join('\n') : '';
 
-    // Fetch Studio Quotation Settings (Deliverables, AI Rules, Shortcuts)
+    // Fetch Studio Quotation Settings, Official Functions (workspace_event_types), and Crew Roles (master_crew_roles)
+    const candidateWsIds = Array.from(new Set([
+      workspaceId,
+      profile?.workspace_id,
+      profile?.id,
+      userId,
+      body.workspaceId,
+      lead?.workspace_id
+    ].filter(Boolean)));
+
     let studioSettings: any = body.studioSettings || null;
     if (!studioSettings || !studioSettings.aiRules) {
       try {
-        const candidateWsIds = Array.from(new Set([
-          userId,
-          profile?.id,
-          body.workspaceId,
-          workspaceId,
-          lead?.workspace_id
-        ].filter(Boolean)));
-
         for (const cWsId of candidateWsIds) {
           const { data: quoteSettingsRow } = await supabaseAdmin
             .from('workspace_quotation_settings')
@@ -144,6 +151,51 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.warn('[AI Extract] Could not fetch workspace_quotation_settings:', e);
       }
+    }
+
+    let studioEventTypes: any[] = [];
+    try {
+      for (const cWsId of candidateWsIds) {
+        const { data: evRows } = await supabaseAdmin
+          .from('workspace_event_types')
+          .select('id, name, category, display_order')
+          .eq('workspace_id', cWsId)
+          .order('display_order', { ascending: true })
+          .order('name', { ascending: true });
+        if (Array.isArray(evRows) && evRows.length > 0) {
+          studioEventTypes = evRows.filter((e: any) => String(e?.category || '').toLowerCase() !== 'ritual');
+          if (studioEventTypes.length > 0) break;
+        }
+      }
+    } catch (e) {
+      console.warn('[AI Extract] Could not fetch workspace_event_types:', e);
+    }
+    if (studioEventTypes.length === 0) {
+      studioEventTypes = Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0
+        ? body.studioEventTypes.filter((e: any) => typeof e === 'string' || String(e?.category || '').toLowerCase() !== 'ritual')
+        : DEFAULT_EVENT_TYPES;
+    }
+
+    let studioCrewRoles: any[] = [];
+    try {
+      for (const cWsId of candidateWsIds) {
+        const { data: roleRows } = await supabaseAdmin
+          .from('master_crew_roles')
+          .select('id, name, short_code, category, display_order')
+          .eq('workspace_id', cWsId)
+          .order('display_order', { ascending: true });
+        if (Array.isArray(roleRows) && roleRows.length > 0) {
+          studioCrewRoles = roleRows;
+          break;
+        }
+      }
+    } catch (e) {
+      console.warn('[AI Extract] Could not fetch master_crew_roles:', e);
+    }
+    if (studioCrewRoles.length === 0) {
+      studioCrewRoles = Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0
+        ? body.studioCrewRoles
+        : DEFAULT_CREW_ROLES;
     }
 
     const contextData = {
@@ -161,7 +213,9 @@ export async function POST(req: NextRequest) {
       notes_and_comments: commentsText,
       additional_user_notes: additionalNotes || '',
       existing_quotation: existingDoc || null,
-      studioSettings: studioSettings || null
+      studioSettings: studioSettings || null,
+      studioEventTypes,
+      studioCrewRoles
     };
 
     console.log('[AI EXTRACTION REQUEST]', {
@@ -263,6 +317,33 @@ async function performAiExtraction(contextData: any, baseDoc: any, studioSetting
     additional_user_notes: expandedNotes
   };
 
+  const studioEventNamesList: string[] = Array.from(
+    new Set(
+      (Array.isArray(contextData.studioEventTypes) ? contextData.studioEventTypes : [])
+        .map((e: any) => (typeof e === 'string' ? e : e?.name || '').trim())
+        .filter((n: string) => n && !/pre[\s-]*wed|prewedding|pre[\s-]*shoot/i.test(n))
+    )
+  );
+  const studioCrewRoleNames: string[] = Array.from(
+    new Set([
+      ...(Array.isArray(contextData.studioCrewRoles) ? contextData.studioCrewRoles : [])
+        .map((r: any) => (typeof r === 'string' ? r : r?.name || '').trim())
+        .filter(Boolean),
+      'Traditional Photographer',
+      'Traditional Videographer',
+      'Candid Photographer',
+      'Cinematographer',
+      'Drone Pilot',
+      'Semi Cinematic',
+      'Semi Standard',
+      'Reel Creator'
+    ])
+  );
+  const studioPwReqsList: string[] = Array.isArray(studioSettings?.requirements) ? studioSettings.requirements : [];
+  const studioPwDelivsList: string[] = Array.isArray(studioSettings?.preWeddingDeliverables) ? studioSettings.preWeddingDeliverables : [];
+  const sampleFunc1 = resolveStudioFunctionName('Haldi', studioEventNamesList);
+  const sampleFunc2 = resolveStudioFunctionName('Wedding', studioEventNamesList);
+
   const promptText = `
 You are StudioCore AI — an intelligent quotation data extraction assistant for professional wedding photographers.
 
@@ -273,6 +354,17 @@ ${studioCustomInstructions ? `
 ==================================================
 🏢 STUDIO-SPECIFIC CUSTOM AI TRAINING RULES (APPLY WITH HIGHEST PRIORITY):
 ${studioCustomInstructions}
+` : ''}
+${studioEventNamesList.length > 0 ? `
+==================================================
+🏷️ STUDIO'S OFFICIAL FUNCTIONS / SUB-EVENTS LIST (USE THESE EXACT VERBATIM NAMES FOR ALL CARDS IN functionsPage.items):
+${studioEventNamesList.map((name: string) => `- "${name}"`).join('\n')}
+CRITICAL: Whenever a ceremony matches one of the studio's official names above, ALWAYS output that EXACT string (letter-for-letter) so Quotations sync 100% with Team Manager & Post-Production! NEVER invent extra suffixes like "Ceremony" or "Night" if the Studio's Official List says "Wedding" or "Haldi" or "Sangeet"!
+` : ''}
+${studioCrewRoleNames.length > 0 ? `
+==================================================
+📸 STUDIO'S OFFICIAL CREW ROLES DICTIONARY (USE THESE EXACT NAMES):
+${studioCrewRoleNames.map((r: string) => `- "${r}"`).join('\n')}
 ` : ''}
 ${studioDeliverables.length > 0 ? `
 ==================================================
@@ -295,113 +387,76 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 - NEVER output Devanagari script for coupleName, groomName, brideName, or ceremony names. Always output polished English!
 - Only use lead_info.name if NO couple name is stated anywhere in the user notes.
 
-2. INDIAN CEREMONY NAMES & MULTI-DAY RESOLUTION:
-- ALWAYS translate Hindi/Marathi/regional function names to clean standard English:
-  * "वेडिंग" / "शादी" / "लग्न" / "फेरे" / "Barat" -> "Wedding Ceremony"
-  * "हल्दी" / "हळद" / "Pithi" -> "Haldi Ceremony"
-  * "घर पे एंट्री शूट" / "एंट्री" / "गृह प्रवेश" / "घर का शूट" -> "Home Entry Shoot"
-  * "संगीत" -> "Sangeet Night"
-  * "मेहंदी" -> "Mehendi Ceremony"
-  * "सगाई" / "रिंग सेरेमनी" / "साखरपुडा" / "Roka" -> "Engagement Ceremony"
-  * "रिसेप्शन" -> "Reception"
-- DATES RESOLUTION & STRICT FORMAT:
-  * Every date MUST strictly be formatted as "DD - MMM - YYYY" (e.g. "11 - Nov - 2026", "12 - Nov - 2026", "13 - Nov - 2026").
-  * Default year is 2026.
-  * Multi-day relative dates resolution: If user says "11 नवंबर" and then "नेक्स्ट डे पे हल्दी" (next day Haldi) and "उसके नेक्स्ट डे पे घर पे शूट" (next day after that home shoot):
-    - Wedding Ceremony: "11 - Nov - 2026"
-    - Haldi Ceremony: "12 - Nov - 2026"
-    - Home Entry Shoot: "13 - Nov - 2026"
+2. EXACT STUDIO FUNCTIONS, RELATIVE DATE ARITHMETIC & SEPARATE CARDS MANDATE:
+- MATCH EXACT STUDIO SETTINGS NAMES:
+  * "वेडिंग" / "शादी" / "लग्न" / "फेरे" / "Barat" -> map to the exact matching studio setting name above (e.g. "${sampleFunc2}").
+  * "हल्दी" / "हळद" / "पीठी" / "Pithi" -> map to "${sampleFunc1}".
+  * "घर पे एंट्री शूट" / "गृह प्रवेश" / "घर का शूट" -> "Home Entry Shoot" (or matching studio setting name).
+  * "संगीत" -> ${resolveStudioFunctionName('Sangeet', studioEventNamesList)}, "मेहंदी" -> ${resolveStudioFunctionName('Mehendi', studioEventNamesList)}, "सगाई"/"रिंग सेरेमनी" -> ${resolveStudioFunctionName('Engagement', studioEventNamesList)}, "रिसेप्शन" -> ${resolveStudioFunctionName('Reception', studioEventNamesList)}.
+- RELATIVE DATES & STRICT DATE ARITHMETIC ("DD - MMM - YYYY", default year 2026):
+  * Every date MUST strictly be formatted as "DD - MMM - YYYY" (e.g. "10 - Nov - 2026", "11 - Nov - 2026", "01 - Dec - 2026"). Default year is 2026.
+  * You MUST compute calendar arithmetic accurately across clauses & month boundaries:
+    - "अगले दिन" / "उसके अगले दिन" / "दूसरे दिन" / "नेक्स्ट डे" / "next day" / "following day" / "day after" / "tomorrow" => anchor date + 1 day!
+      Example: "Wedding 10 November को है और उसके अगले दिन Haldi है" -> ${sampleFunc2}: "10 - Nov - 2026", ${sampleFunc1}: "11 - Nov - 2026"!
+      Example with month rollover: "30 November ko Wedding aur uske agle din Haldi" -> ${sampleFunc2}: "30 - Nov - 2026", ${sampleFunc1}: "01 - Dec - 2026"!
+    - "2 दिन बाद" / "2 days later" / "परसों" => + 2 days!
+    - "एक दिन पहले" / "पिछले दिन" / "previous day" / "day before" => - 1 day!
+    - "उसी दिन" / "सेम डे" / "same day" => exact same date (+0 days)!
+- SEPARATE FUNCTION CARDS BY DEFAULT vs EXPLICIT COMBINED CARDS (CRITICAL!):
+  * By default, ALWAYS create a SEPARATE function card in functionsPage.items for EVERY ceremony/event mentioned — EVEN IF two ceremonies fall on the SAME date! Each card gets its own name, date, and crew requirements.
+  * Example ("दोनों में"): "Wedding 10 November को है और उसके अगले दिन Haldi है, दोनों में 1 Traditional Photographer चाहिए"
+    => MUST produce TWO SEPARATE cards:
+       1) { name: "${sampleFunc2}", date: "10 - Nov - 2026", requirements: [{ name: "Traditional Photographer", qty: 1 }] }
+       2) { name: "${sampleFunc1}", date: "11 - Nov - 2026", requirements: [{ name: "Traditional Photographer", qty: 1 }] }
+  * Same-date SEPARATE example: "10 Nov सुबह Haldi में 1 Traditional Photographer और शाम को Wedding में 2 Candid Photographer"
+    => MUST produce TWO SEPARATE cards (both on "10 - Nov - 2026") with their own separate crew!
+  * EXPLICIT COMBINATION EXCEPTION: ONLY combine ceremonies into a single "${sampleFunc2} + ${sampleFunc1}" card when the user EXPLICITLY says they are together / combined into one day/function (e.g. "Wedding और Haldi एक ही दिन पे है", "Haldi + Sangeet एक साथ में", "combine Haldi and Sangeet on same card").
 - TIMINGS & TIMES:
-  * Convert times to standard 12-hour format with AM/PM (e.g. startTime: "11:00 AM", endTime: "11:00 PM", or "07:00 PM" - "11:00 PM").
+  * Convert times to standard 12-hour format with AM/PM (e.g. startTime: "11:00 AM", endTime: "11:00 PM").
+  * If no explicit clock time was stated, keep startTime: "" and endTime: "".
   * For duration-only shoots like "घर पे 2 आवर्स का शूट", put startTime: "", endTime: "", and notes: "2 Hours Duration Coverage".
 
 3. CREW REQUIREMENTS NORMALIZATION:
 - In functionsPage.items, each item MUST have:
   "requirements": [ { "name": string, "qty": number } ]
-- Use exact standardized role names:
-  * "Traditional Photographer"
-  * "Traditional Videographer"
-  * "Candid Photographer"
-  * "Cinematographer"
-  * "Drone Pilot"
-  * "Semi Cinematic"
-  * "Semi Standard"
-  * "Social Media Person"
-  * "Reel Creator"
-- If user mentions "कैन्डिड फोटोग्राफी, सिनेमैटोग्राफी, ट्रेडिशनल वीडियो और ट्रेडिशनल फोटो", output:
-  [
-    { "name": "Traditional Photographer", "qty": 1 },
-    { "name": "Traditional Videographer", "qty": 1 },
-    { "name": "Candid Photographer", "qty": 1 },
-    { "name": "Cinematographer", "qty": 1 }
-  ]
+- Map all spoken Indian/English crew roles strictly to the Studio's Official Crew Roles Dictionary above (e.g. "Traditional Photographer", "Traditional Videographer", "Candid Photographer", "Cinematographer", "Drone Pilot", "Semi Cinematic", "Semi Standard", "Reel Creator").
 
 4. DELIVERABLES (deliverablesPage):
-- selectedItems: Array of professional English strings from the official catalog (e.g. "Cinematic Wedding Highlight Film", "Cinematic Wedding Teaser", "Professionally Designed Wedding Album", "Mini Photo Book", "All Raw Photographs", "1 Year Google Drive Access").
+- selectedItems: Array of professional English strings matching the Studio's Official Deliverables Catalog above whenever possible.
 - NEVER include pre-wedding deliverables here; those belong solely on shootDetails.
 
 5. ZERO HALLUCINATION & STRICT DATA FIDELITY:
 - ONLY include functions and services explicitly mentioned in user notes or expanded via detected studio triggers.
-- If user did not mention pre-wedding shoot, keep shootDetails.visible = false.
+- NEVER put Pre-Wedding as a function card in functionsPage.items.
 - Synchronize 100% of user data into the quotation JSON without missing or adding extra dummy items.
-- Preserve technical and brand words (e.g., 'Gemini', 'ChatGPT', 'Antigravity', '4K Cinema', 'Drone') accurately.
 
-5. MATHEMATICAL PRICING EVALUATION & METHOD CALCULATION (pricingPage):
-- You MUST perform intelligent mathematical method evaluation (like ChatGPT and Gemini calculators):
-  * PER-DAY / PER-EVENT MULTIPLICATION:
-    - e.g. "35,000 per day for 2 days" -> basePrice = 35000 * 2 = 70000.
-    - e.g. "40k per day for 3 days event" -> basePrice = 40000 * 3 = 120000.
-  * MULTI-EVENT SUMMATION:
-    - e.g. "Haldi 25k, Sangeet 35k, Wedding 70k" -> basePrice = 25000 + 35000 + 70000 = 130000.
-  * INDIAN DENOMINATIONS & NUMBER WORDS:
-    - "2.5 lakh" / "2.5 लाख" / "ढाई लाख" / "अडीच लाख" = 250000.
-    - "1.5 lakh" / "1.5 लाख" / "डेढ़ लाख" = 150000.
-    - "1.8 lakh" / "एक लाख अस्सी हजार" = 180000.
-    - "25k" / "25 thousand" / "पच्चीस हजार" = 25000.
-    - "50k" / "50 thousand" / "पचास हजार" = 50000.
-  * DISCOUNTS & SPECIAL OFFERS:
-    - Flat discount: "25,000 discount" / "25k off" -> discountAmount: 25000.
-    - Percentage discount: "10% discount on 2 lakh" -> discountAmount: 20000.
-    - Regular vs offer: "1.8 lakh regular, 1.5 lakh offer" -> basePrice: 180000, discountAmount: 30000.
-    - If NO discount mentioned, discountAmount MUST strictly be 0.
-  * TRAVEL & STAY CHARGES:
-    - travelCharges: e.g. "15000 travel charges" -> 15000.
-    - accommodationCharges: e.g. "10000 hotel/stay" -> 10000.
-  * ADD-ONS & EXTRAS (additionalCharges):
-    - Extra services: e.g. "20000 album add-on, 15000 drone" -> 35000.
-  * TAXES / GST (gstPct):
-    - If user specifies GST (e.g. "18% GST" or "GST 18%"): gstPct: 18, else 0.
-  * NET TOTAL FORMULA:
-    Net Total = (basePrice - discountAmount + travelCharges + accommodationCharges + additionalCharges) * (1 + gstPct / 100).
+6. MATHEMATICAL PRICING EVALUATION & METHOD CALCULATION (pricingPage):
+- Perform exact mathematical method evaluation:
+  * PER-DAY / PER-EVENT MULTIPLICATION: e.g. "35,000 per day for 2 days" -> basePrice = 70000.
+  * MULTI-EVENT SUMMATION: e.g. "Haldi 25k, Sangeet 35k, Wedding 70k" -> basePrice = 130000.
+  * INDIAN DENOMINATIONS: "2.5 lakh"/"ढाई लाख" = 250000, "1.5 lakh"/"डेढ़ लाख" = 150000, "50k"/"पचास हजार" = 50000.
+  * DISCOUNTS: Flat ("25k off" -> discountAmount: 25000), Percentage ("10% discount on 2 lakh" -> discountAmount: 20000), Regular vs offer ("1.8L regular, 1.5L offer" -> basePrice: 180000, discountAmount: 30000). Default 0.
+  * TRAVEL/ACCOMMODATION/ADD-ONS/GST: Compute accurately; Net Total = (basePrice - discountAmount + travelCharges + accommodationCharges + additionalCharges) * (1 + gstPct / 100).
   * showExclusionsNote: true.
-  * note: Descriptive summary of calculation method (e.g. "₹35,000/day x 2 days + ₹20,000 album with ₹10,000 discount applied").
 
-6. PAYMENT TERMS & SCHEDULE (paymentTermsPage):
-- steps: Array of payment milestones with exact rupee amounts computed from Net Total:
-  * Percentage Milestones:
-    - e.g. 30% Advance Token, 50% On Event Day, 20% On Final Delivery (or whatever ratio user specifies like 25%/50%/25% or 50%/50%).
-    - Calculate exact rupee amount for EACH step based on Net Total: Net Total * (pct / 100).
-    - Ensure the sum of all step amounts strictly equals Net Total!
-  * Flat Advance:
-    - If user specifies a flat advance (e.g. "₹25,000 advance received"):
-      Step 1: "Advance Token", amount: 25000, pct: calculated percentage. Status: "Completed" (if user confirmed payment was received/paid/diya), else "Pending".
-      Balance remaining milestones to strictly equal Net Total.
-  * All step statuses default to "Pending" unless explicitly confirmed as paid.
+7. PAYMENT TERMS & SCHEDULE (paymentTermsPage):
+- Compute exact rupee amounts per milestone summing strictly to Net Total.
+- All step statuses MUST default to "Pending" unless explicitly stated as already paid/received.
 
-7. PRE-WEDDING SHOOT (shootDetails) - DEDICATED SEPARATE PAGE:
-- If and ONLY IF pre-wedding is requested, set visible: true.
-- If user did NOT explicitly request a pre-wedding shoot, keep visible: false!
+8. PRE-WEDDING SHOOT PAGE (shootDetails) — STRICT CONDITIONAL VISIBILITY:
+- Inspect user's voice note / text message carefully ("pre-wedding", "prewedding", "pre shoot", "प्री वेडिंग", "प्रि वेडिंग", "प्री-वेडिंग", "प्रीवेडिंग", "प्री शूट").
+- IF Pre-Wedding is NOT mentioned OR is explicitly declined ("प्री वेडिंग नहीं चाहिए", "no pre-wedding"):
+  * YOU MUST set shootDetails.visible = false AND leave daysText: "", crewText: "", deliverablesText: ""!
+- IF Pre-Wedding IS explicitly mentioned:
+  * Set shootDetails.visible = true.
+  * Populate daysText (e.g. "1 Day Shoot" or "2 Days Shoot"), crewText (exact crew mentioned, else studio defaults: ${studioPwReqsList.length > 0 ? studioPwReqsList.slice(0, 3).join(', ') : '1x Candid Photographer, 1x Cinematographer, 1x Drone Pilot'}), and deliverablesText (exact deliverables mentioned, else studio defaults: ${studioPwDelivsList.length > 0 ? studioPwDelivsList.slice(0, 3).join(', ') : 'Full Ultra HD Super-Fine Raw Photos, Approx. 50 High Resolution Edited Images, 1 Teaser Video Reel'}).
 
 ==================================================
 OUTPUT FORMAT & CRITICAL JSON MANDATE:
 - Respond ONLY with 100% valid, parseable JSON matching the exact schema below.
-- NO markdown preamble or conversational text. Wrap in standard \`\`\`json ... \`\`\` or output pure JSON.
-- NO single quotes in keys or string values.
-- NO trailing commas before closing braces/brackets.
-- All numbers must be bare numeric literals (e.g. 200000, NOT "2,00,000").
-- Strict Date Format: "DD - MMM - YYYY" (e.g. "17 - Nov - 2026"). Default year 2026.
-- Strict Cover Location: Single primary cover location (Wedding ceremony venue/city).
-- Strict Status: Every payment step status MUST strictly be "Pending" unless payment confirmed.
+- NO markdown preamble or conversational text.
+- NO trailing commas or single quotes. All numbers must be bare numeric literals.
+- Strict Date Format: "DD - MMM - YYYY" (e.g. "10 - Nov - 2026"). Default year 2026.
 
 POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
 {
@@ -414,40 +469,36 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
   },
   "shootDetails": {
     "visible": false,
-    "daysText": "1 Day Shoot",
-    "crewText": "Candid Photography\\nCinematography\\nDrone Pilot",
-    "deliverablesText": "Full Ultra HD Raw Photos\\nApprox. 50 Edited Photos\\n1 Teaser Video Reel",
+    "daysText": "",
+    "crewText": "",
+    "deliverablesText": "",
     "showExclusionsNote": true
   },
   "functionsPage": {
     "items": [
       {
         "id": "func-1",
-        "name": "Haldi Ceremony",
-        "date": "17 - Nov - 2026",
+        "name": ${JSON.stringify(sampleFunc2)},
+        "date": "10 - Nov - 2026",
         "dateNotFixed": false,
-        "startTime": "10:00 AM",
-        "endTime": "02:00 PM",
-        "location": "Pune",
+        "startTime": "",
+        "endTime": "",
+        "location": "Mumbai",
         "requirements": [
-          { "name": "Candid Photographer", "qty": 2 },
-          { "name": "Cinematographer", "qty": 2 },
-          { "name": "Drone Pilot", "qty": 1 }
+          { "name": "Traditional Photographer", "qty": 1 }
         ],
         "notes": ""
       },
       {
         "id": "func-2",
-        "name": "Wedding Ceremony",
-        "date": "18 - Nov - 2026",
+        "name": ${JSON.stringify(sampleFunc1)},
+        "date": "11 - Nov - 2026",
         "dateNotFixed": false,
-        "startTime": "06:00 PM",
-        "endTime": "11:00 PM",
+        "startTime": "",
+        "endTime": "",
         "location": "Mumbai",
         "requirements": [
-          { "name": "Candid Photographer", "qty": 2 },
-          { "name": "Cinematographer", "qty": 2 },
-          { "name": "Drone Pilot", "qty": 1 }
+          { "name": "Traditional Photographer", "qty": 1 }
         ],
         "notes": ""
       }
@@ -551,11 +602,26 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
     }
   }
 
-  // Pre-wedding strict isolation check: if user did not ask for pre-wedding, keep shootDetails.visible = false
-  if (aiRawOutput?.shootDetails) {
-    const hasPreWedKeyword = /\b(pre-wedding|prewedding|pre wedding|previewing)\b/i.test(userNotes);
-    if (!hasPreWedKeyword) {
-      aiRawOutput.shootDetails.visible = false;
+  // Pre-wedding strict isolation check (Unicode-safe Hindi/Marathi/Hinglish/English)
+  const formSignals = [
+    contextData?.raw_form_fields?.event_type,
+    contextData?.raw_form_fields?.services,
+    contextData?.raw_form_fields?.event,
+    contextData?.raw_form_fields?.functions
+  ].filter(Boolean).join(' ');
+  const userNegatedPreWed = detectPreWeddingNegation(userNotes || contextData?.notes_and_comments || '');
+  const hasPreWedSignal = !userNegatedPreWed && (
+    userNotes
+      ? detectPreWeddingIntent(userNotes)
+      : (detectPreWeddingIntent(contextData?.notes_and_comments || '') || detectPreWeddingIntent(formSignals))
+  );
+  if (aiRawOutput) {
+    if (!aiRawOutput.shootDetails) aiRawOutput.shootDetails = {};
+    aiRawOutput.shootDetails.visible = hasPreWedSignal;
+    if (!hasPreWedSignal) {
+      aiRawOutput.shootDetails.daysText = '';
+      aiRawOutput.shootDetails.crewText = '';
+      aiRawOutput.shootDetails.deliverablesText = '';
     }
   }
 

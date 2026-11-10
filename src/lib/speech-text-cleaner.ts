@@ -75,7 +75,11 @@ export function cleanVoiceTranscript(rawText: string, contextLeadName?: string):
   // 2. Deliverables Shorthands
   text = text.replace(/(?:ऑल\s*डिलीवरेबल्स\s*ऐड|ऑल\s*डिलीवरेबल्स|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|सारे\s*डिलीवरेबल्स(?:\s*ऐड)?|all\s*deliverables\s*add|all\s*deliverable\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers)/gi, 'All Deliverables Add');
 
-  // 3. Indian Ceremonies Normalization
+  // 3. Protect Pre-Wedding BEFORE replacing standalone "वेडिंग" -> "Wedding"
+  text = text.replace(/(?:प्री[\s-]*वेडिंग|प्रि[\s-]*वेडिंग|प्रीवेडिंग|प्रिवेडिंग)/gi, 'Pre-Wedding');
+  text = text.replace(/(?:प्री[\s-]*शूट|प्रि[\s-]*शूट|प्री[\s-]*शुट|प्रीशूट)/gi, 'Pre-Wedding Shoot');
+
+  // 3.1 Indian Ceremonies Normalization
   text = safeUnicodeReplace(text, 'हल्दी', 'Haldi');
   text = safeUnicodeReplace(text, 'हळद', 'Haldi');
   text = safeUnicodeReplace(text, 'संगीत', 'Sangeet');
@@ -85,21 +89,22 @@ export function cleanVoiceTranscript(rawText: string, contextLeadName?: string):
   text = safeUnicodeReplace(text, 'फेरे', 'Wedding');
   text = safeUnicodeReplace(text, 'रिसेप्शन', 'Reception');
   text = safeUnicodeReplace(text, 'मेहंदी', 'Mehendi');
+  text = safeUnicodeReplace(text, 'मेंहदी', 'Mehendi');
   text = safeUnicodeReplace(text, 'सगाई', 'Ring Ceremony');
   text = safeUnicodeReplace(text, 'रिंग सेरेमनी', 'Ring Ceremony');
   text = safeUnicodeReplace(text, 'साखरपुडा', 'Ring Ceremony');
   text = safeUnicodeReplace(text, 'रोका', 'Ring Ceremony');
   text = safeUnicodeReplace(text, 'कोटेशन', 'Quotation');
 
-  // 4. Crew Terms Normalization
-  text = text.replace(/(?:कैंडिड\s*फोटोग्राफी|कैंडिड\s*फोटो|कैंडिड)/gi, 'Candid Photographer');
-  text = text.replace(/(?:सिनेमैटोग्राफी|सिनेमैटिक\s*वीडियो|सिनेमा)/gi, 'Cinematographer');
-  text = text.replace(/(?:ट्रेडिशनल\s*वीडियो|ट्रेड\s*वीडियो)/gi, 'Traditional Videographer');
-  text = text.replace(/(?:ट्रेडिशनल\s*फोटो|ट्रेड\s*फोटो)/gi, 'Traditional Photographer');
+  // 4. Crew Terms Normalization (match longest full role titles first so suffixes like "ग्राफर" are never stranded)
+  text = text.replace(/(?:कैंडिड\s*फोटोग्राफर|कैंडिड\s*फोटोग्राफी|कैंडिड\s*फोटो|कैंडिड)/gi, 'Candid Photographer');
+  text = text.replace(/(?:सिनेमैटोग्राफर|सिनेमैटोग्राफी|सिनेमैटिक\s*वीडियो|सिनेमैटिक|सिनेमा)/gi, 'Cinematographer');
+  text = text.replace(/(?:ट्रेडिशनल\s*वीडियोग्राफर|ट्रेडिशनल\s*वीडियोग्राफी|ट्रेडिशनल\s*वीडियो|ट्रेड\s*वीडियो)/gi, 'Traditional Videographer');
+  text = text.replace(/(?:ट्रेडिशनल\s*फोटोग्राफर|ट्रेडिशनल\s*फोटोग्राफी|ट्रेडिशनल\s*फोटो|ट्रेड\s*फोटो)/gi, 'Traditional Photographer');
   text = text.replace(/(?:ड्रोन\s*पायलट|ड्रोन)/gi, 'Drone Pilot');
   text = text.replace(/(?:सेमी\s*काइनेमैटिक|सेमी\s*सिनेमैटिक|semi-cinematic)/gi, 'Semi Cinematic');
   text = text.replace(/(?:सेमी\s*स्टैंडर्ड|सेमी\s*ट्रेडिशनल|semi-standard)/gi, 'Semi Standard');
-  text = text.replace(/(?:इंस्टाग्राम\s*रील|रील|reels?)/gi, 'Reels');
+  text = text.replace(/(?:इंस्टाग्राम\s*रील्स|इंस्टाग्राम\s*रील|रील्स|रील|reels?)/gi, 'Reels');
 
   // 5. Transliterate known Indian Names
   for (const [k, v] of Object.entries(HINDI_NAME_TRANSLATE)) {
@@ -107,7 +112,7 @@ export function cleanVoiceTranscript(rawText: string, contextLeadName?: string):
   }
 
   // 6. Format explicit couple prefixes
-  text = text.replace(/(?:कपल\s*का\s*नाम\s*रहेगा|कपल\s*का\s*नाम|कपल\s*नेम|कपल|couple\s*name\s*is|couple\s*name)\s*[:=-]?\s*([A-Za-z\s&]+?)(?=\s+(?:Wedding|Quotation|Haldi|Sangeet|Reception|Ring Ceremony|Mehendi|\d|All|₹)|$)/gi, (match, names) => {
+  text = text.replace(/(?:कपल\s*का\s*नाम\s*रहेगा|कपल\s*का\s*नाम|कपल\s*नेम|कपल|couple\s*name\s*is|couple\s*name)\s*[:=-]?\s*([A-Za-z\s&]+?)(?=\s+(?:Pre-Wedding|Wedding|Quotation|Haldi|Sangeet|Reception|Ring Ceremony|Mehendi|\d|All|₹)|$)/gi, (match, names) => {
     const cleanNames = names.split(/\s*&\s*|\s+and\s+/i)
       .map((n: string) => n.trim().charAt(0).toUpperCase() + n.trim().slice(1).toLowerCase())
       .filter(Boolean)

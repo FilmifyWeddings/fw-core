@@ -1,12 +1,395 @@
 import { 
   DEFAULT_AIRY_PROPOSAL, 
   normalizeQuotationData, 
-  consolidateSameDateFunctions, 
   resolvePrimaryCoverLocation, 
   sanitizeAndParseJson,
-  formatQuotationDate
+  formatQuotationDate,
+  STANDARD_PAGE_DEFINITIONS
 } from '@/lib/quotation-defaults';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
+
+const QUOTATION_MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const QUOTATION_MONTH_IDX: Record<string, number> = {
+  jan: 0, january: 0,
+  feb: 1, february: 1,
+  mar: 2, march: 2,
+  apr: 3, april: 3,
+  may: 4,
+  jun: 5, june: 5,
+  jul: 6, july: 6,
+  aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8,
+  oct: 9, october: 9,
+  nov: 10, november: 10,
+  dec: 11, december: 11
+};
+
+export function parseQuotationDateParts(rawDate: string): { year: number; monthIdx: number; day: number } | null {
+  if (!rawDate) return null;
+  const formatted = formatQuotationDate(rawDate);
+  if (!formatted || formatted === 'Date Not Fixed') return null;
+  const m = formatted.match(/^(\d{1,2})\s*-\s*([A-Za-z]+)\s*-\s*(\d{4})$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  const monthIdx = QUOTATION_MONTH_IDX[m[2].toLowerCase()];
+  const year = parseInt(m[3], 10);
+  if (isNaN(day) || monthIdx === undefined || isNaN(year)) return null;
+  return { year, monthIdx, day };
+}
+
+/**
+ * Pure UTC calendar arithmetic (avoids +05:30 / DST timezone off-by-one shifts).
+ */
+export function addDaysToQuotationDate(rawBaseDate: string, deltaDays: number): string {
+  const parts = parseQuotationDateParts(rawBaseDate);
+  if (!parts) return rawBaseDate || 'Date Not Fixed';
+  const dt = new Date(Date.UTC(parts.year, parts.monthIdx, parts.day + deltaDays));
+  const d = String(dt.getUTCDate()).padStart(2, '0');
+  const m = QUOTATION_MONTH_ABBR[dt.getUTCMonth()];
+  const y = String(dt.getUTCFullYear());
+  return `${d} - ${m} - ${y}`;
+}
+
+function parseSmallCountWord(token: string): number {
+  const t = (token || '').trim().toLowerCase();
+  const map: Record<string, number> = {
+    '1': 1, 'एक': 1, 'one': 1,
+    '2': 2, 'दो': 2, 'two': 2,
+    '3': 3, 'तीन': 3, 'three': 3,
+    '4': 4, 'चार': 4, 'four': 4,
+    '5': 5, 'पांच': 5, 'पाँच': 5, 'five': 5,
+    '6': 6, 'छह': 6, 'छः': 6, 'six': 6,
+    '7': 7, 'सात': 7, 'seven': 7
+  };
+  return map[t] ?? (parseInt(t, 10) || 1);
+}
+
+/**
+ * Detects relative day offset within a clause ("उसके अगले दिन" -> +1, "2 दिन बाद" -> +2, "एक दिन पहले" -> -1, "उसी दिन" -> 0).
+ */
+export function detectRelativeDayOffset(clause: string): number | null {
+  if (!clause) return null;
+  const s = clause.toLowerCase().trim();
+
+  // Negative numeric days before: "2 days before", "दो दिन पहले"
+  const negNumMatch = s.match(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(\d+|एक|दो|तीन|चार|पांच|पाँच|छह|सात|one|two|three|four|five|six|seven)\s*(?:दिन\s*(?:के\s*)?(?:पहले|पूर्व)|din\s*(?:ke\s*)?(?:pehle|pahle|before)|days?\s*(?:before|earlier|prior))(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i);
+  if (negNumMatch) {
+    return -parseSmallCountWord(negNumMatch[1]);
+  }
+
+  // Single day before: "previous day", "day before", "पिछले दिन", "उससे पहले दिन"
+  if (/(?:पिछले\s*दिन|उससे\s*पहले(?:\s*(?:के|का|को))?\s*दिन|उसके\s*पहले(?:\s*(?:के|का|को))?\s*दिन|previous\s*day|day\s*before|pichle\s*din)/i.test(s)) {
+    return -1;
+  }
+
+  // Day after next ("परसों" / "day after tomorrow" -> +2)
+  if (/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:परसों|parson|day\s*after\s*tomorrow)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(s)) {
+    return 2;
+  }
+
+  // Positive numeric days later: "2 दिन बाद", "दो दिन के बाद", "2 days later", "after 2 days"
+  const posNumMatch =
+    s.match(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(\d+|एक|दो|तीन|चार|पांच|पाँच|छह|सात|one|two|three|four|five|six|seven)\s*(?:दिन\s*(?:के\s*)?(?:बाद|पश्चात|लेटर)|din\s*(?:ke\s*)?(?:baad|bad|later|after)|days?\s*(?:later|after))(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i) ||
+    s.match(/(?:after|बाद)\s*(\d+|one|two|three|four|five|six|seven|दो|तीन|चार|पांच)\s*(?:days?|दिन)/i);
+  if (posNumMatch) {
+    return parseSmallCountWord(posNumMatch[1]);
+  }
+
+  // Next day: "उसके अगले दिन", "अगले दिन", "नेक्स्ट डे", "दूसरे दिन", "next day", "following day", "day after"
+  if (/(?:उसके\s*अगले\s*दिन|अगले\s*दिन|दूसरे\s*दिन|नेक्स्ट\s*डे|next\s*day|following\s*day|day\s*after|uske\s*agle\s*din|agle\s*din|dusre\s*din|doosre\s*din|tomorrow)/i.test(s)) {
+    return 1;
+  }
+
+  // Same day: "उसी दिन", "सेम डे", "same day", "same date", "एक ही दिन"
+  if (/(?:उसी\s*दिन|सेम\s*डे|एक\s*ही\s*दिन|एक\s*ही\s*तारीख|एक\s*ही\s*डेट|usi\s*din|same\s*day|same\s*date|ek\s*hi\s*din|ek\s*hi\s*date|on\s*that\s*day)/i.test(s)) {
+    return 0;
+  }
+
+  return null;
+}
+
+/**
+ * Checks whether user text explicitly negates Pre-Wedding shoot.
+ */
+export function detectPreWeddingNegation(text: string): boolean {
+  if (!text) return false;
+  return /(?:no\s+pre[\s-]*wed(?:ding)?|without\s+pre[\s-]*wed(?:ding)?|skip\s+pre[\s-]*wed(?:ding)?|exclude\s+pre[\s-]*wed(?:ding)?|don'?t\s+(?:want|need|include|add)\s+pre[\s-]*wed(?:ding)?|pre[\s-]*wed(?:ding)?\s*(?:nahi|nahin|nhi|na|not\s*(?:required|needed|included))|प्री[\s-]*वेडिंग\s*(?:नहीं|नाहीं|नको|मत|छोड़)|प्रि[\s-]*वेडिंग\s*(?:नहीं|नाहीं|नको)|प्रीवेडिंग\s*(?:नहीं|नाहीं|नको))/i.test(text);
+}
+
+/**
+ * Unicode-safe detection of Pre-Wedding shoot request in English, Hinglish, Hindi, or Marathi.
+ */
+export function detectPreWeddingIntent(text: string): boolean {
+  if (!text || !text.trim()) return false;
+  if (detectPreWeddingNegation(text)) return false;
+  return /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:pre[\s-]*wed(?:ding)?|prewedding|pre[\s-]*shoot|preshoot|previewing|प्री[\s-]*वेडिंग|प्रि[\s-]*वेडिंग|प्रीवेडिंग|प्रिवेडिंग|प्री[\s-]*शूट|प्रि[\s-]*शूट|प्री[\s-]*शुट|प्रीशूट)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(text);
+}
+
+/**
+ * Synchronizes Pre-Wedding (`shootDetails`) presence in a pageSequence array based strictly on visibility.
+ */
+export function syncShootPageInSequence(pageSequence: any[] | undefined, shootVisible: boolean): any[] {
+  const base = Array.isArray(pageSequence) && pageSequence.length > 0 ? [...pageSequence] : [];
+  const filtered = shootVisible
+    ? base
+    : base.filter((p: any) => {
+        const typeStr = typeof p === 'string' ? p : (p?.type || p?.id || '');
+        return typeStr !== 'shootDetails';
+      });
+
+  if (shootVisible) {
+    const alreadyHasShoot = filtered.some((p: any) => {
+      const typeStr = typeof p === 'string' ? p : (p?.type || p?.id || '');
+      return typeStr === 'shootDetails';
+    });
+    if (!alreadyHasShoot) {
+      const shootStd = STANDARD_PAGE_DEFINITIONS.find(s => s.type === 'shootDetails');
+      const shootItem = {
+        id: 'shootDetails-std',
+        type: 'shootDetails',
+        label: shootStd?.label || 'Pre-Wedding Shoot',
+        isStandard: true
+      };
+      const aboutIdx = filtered.findIndex((p: any) => (typeof p === 'string' ? p : p?.type) === 'aboutUs');
+      const coverIdx = filtered.findIndex((p: any) => (typeof p === 'string' ? p : p?.type) === 'cover');
+      const insertAt = aboutIdx >= 0 ? aboutIdx + 1 : (coverIdx >= 0 ? coverIdx + 1 : 0);
+      filtered.splice(insertAt, 0, shootItem);
+    }
+  }
+  return filtered;
+}
+
+/**
+ * Resolves any spoken/extracted ceremony name to the exact function name configured in the Studio Owner's Settings
+ * (`workspace_event_types` + `workspace_quotation_settings.defaultFunctions`) so Quotations sync seamlessly to Team Manager & Post-Production.
+ */
+export function resolveStudioFunctionName(
+  rawName: string,
+  studioEventNames?: string[],
+  defaultFunctions?: any[]
+): string {
+  const cleanRaw = (rawName || '').trim();
+  const primaryNames: string[] = [];
+  const secondaryNames: string[] = [];
+  const seenPrimary = new Set<string>();
+  const seenAll = new Set<string>();
+
+  const collect = (candidate: any, targetArr: string[], seenSet: Set<string>) => {
+    if (!candidate) return;
+    if (typeof candidate === 'object') {
+      if (String(candidate.category || '').toLowerCase() === 'ritual') return;
+      candidate = candidate.name;
+    }
+    const name = String(candidate || '').trim();
+    if (!name) return;
+    const lower = name.toLowerCase();
+    // Keep pre-wedding shoot out of main wedding function mapping
+    if (/pre[\s-]*wed|prewedding|pre[\s-]*shoot|preshoot/.test(lower)) return;
+    if (!seenSet.has(lower)) {
+      seenSet.add(lower);
+      targetArr.push(name);
+    }
+  };
+
+  if (Array.isArray(studioEventNames)) {
+    studioEventNames.forEach(item => {
+      collect(item, primaryNames, seenPrimary);
+      collect(item, secondaryNames, seenAll);
+    });
+  }
+  if (Array.isArray(defaultFunctions)) {
+    defaultFunctions.forEach(item => collect(item, secondaryNames, seenAll));
+  }
+
+  const orderedPool = primaryNames.length > 0 ? primaryNames : secondaryNames;
+
+  if (!cleanRaw) {
+    return resolveStudioSingleEvent('Wedding', orderedPool);
+  }
+
+  // Handle combined names like "Wedding + Haldi" or "Haldi + Sangeet"
+  if (cleanRaw.includes('+')) {
+    const exactCombined = orderedPool.find(s => s.toLowerCase() === cleanRaw.toLowerCase());
+    if (exactCombined) return exactCombined;
+    const parts = cleanRaw
+      .split('+')
+      .map(p => resolveStudioSingleEvent(p.trim(), orderedPool))
+      .filter(Boolean);
+    return Array.from(new Set(parts)).join(' + ') || 'Wedding';
+  }
+
+  // Try authoritative workspace_event_types list first; only check secondary defaultFunctions if nothing matched
+  if (primaryNames.length > 0) {
+    const resPrimary = resolveStudioSingleEvent(cleanRaw, primaryNames, false);
+    if (resPrimary) return resPrimary;
+  }
+
+  return resolveStudioSingleEvent(cleanRaw, secondaryNames, true) || cleanRaw.replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function resolveStudioSingleEvent(rawName: string, studioNames: string[], allowDefaultFallback: boolean = true): string {
+  const clean = (rawName || '').trim();
+  const lower = clean.toLowerCase();
+
+  // 1. Exact case-insensitive match in studio settings
+  const exact = studioNames.find(s => s.toLowerCase() === lower);
+  if (exact) return exact;
+
+  // 2. Strip generic ceremony suffixes and check exact match in studio settings ("Wedding Ceremony" -> "Wedding")
+  const stripped = lower
+    .replace(/\b(?:ceremony|function|night|party|shoot|event|day)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (stripped) {
+    const exactStripped = studioNames.find(s => s.toLowerCase() === stripped);
+    if (exactStripped) return exactStripped;
+  }
+
+  // 3. Semantic synonym concept matching -> exact Studio Settings name (or clean StudioCore default)
+  const conceptDefs: Array<{
+    concept: string;
+    testRaw: RegExp;
+    preferStudioExact: string[];
+    testStudioPartial: RegExp;
+    fallbackDefault: string;
+  }> = [
+    {
+      concept: 'wedding',
+      testRaw: /^(?:शादी|लग्न|विवाह|फेरे|वेडिंग|बारात|nikah|anand\s*karaj|barat|baraat|wedding(?:\s+(?:ceremony|day|story|function))?|marriage|pheras)$/i,
+      preferStudioExact: ['wedding', 'wedding day', 'wedding ceremony', 'varmala & pheras'],
+      testStudioPartial: /^(?!.*pre[\s-]*wed).*(?:wedding|marriage|varmala|pheras)/i,
+      fallbackDefault: 'Wedding'
+    },
+    {
+      concept: 'haldi',
+      testRaw: /(?:हल्दी|हळद|पीठी|pithi|haldi)/i,
+      preferStudioExact: ['haldi', 'haldi ceremony'],
+      testStudioPartial: /haldi|pithi/i,
+      fallbackDefault: 'Haldi'
+    },
+    {
+      concept: 'sangeet',
+      testRaw: /(?:संगीत|sangeet)/i,
+      preferStudioExact: ['sangeet', 'sangeet night'],
+      testStudioPartial: /^sangeet(?:\s+night|\s+sandhya|\s+ceremony)?$/i,
+      fallbackDefault: 'Sangeet'
+    },
+    {
+      concept: 'mehendi',
+      testRaw: /(?:मेहंदी|मेंहदी|meh[ae]?ndi|henna)/i,
+      preferStudioExact: ['mehendi', 'mehndi', 'mehendi ceremony'],
+      testStudioPartial: /meh[ae]?ndi/i,
+      fallbackDefault: 'Mehendi'
+    },
+    {
+      concept: 'engagement',
+      testRaw: /(?:सगाई|रिंग\s*सेरेमनी|साखरपुडा|रोका|एंगेजमेंट|engagement|ring\s*ceremony|roka|sagai|tilak)/i,
+      preferStudioExact: ['engagement', 'ring ceremony', 'ring ceremony / engagement', 'engagement ceremony', 'roka'],
+      testStudioPartial: /ring\s*ceremony|engagement|roka|sagai/i,
+      fallbackDefault: 'Ring Ceremony'
+    },
+    {
+      concept: 'reception',
+      testRaw: /(?:रिसेप्शन|reception)/i,
+      preferStudioExact: ['reception', 'reception dinner'],
+      testStudioPartial: /reception/i,
+      fallbackDefault: 'Reception'
+    },
+    {
+      concept: 'cocktail',
+      testRaw: /(?:कॉकटेल|cocktail)/i,
+      preferStudioExact: ['cocktail', 'cocktail party'],
+      testStudioPartial: /cocktail/i,
+      fallbackDefault: 'Cocktail Party'
+    },
+    {
+      concept: 'pool_party',
+      testRaw: /(?:पूल\s*पार्टी|pool\s*party)/i,
+      preferStudioExact: ['pool party'],
+      testStudioPartial: /pool\s*party/i,
+      fallbackDefault: 'Pool Party'
+    },
+    {
+      concept: 'mayra',
+      testRaw: /(?:मायरा|भाता|mayra|bhat)/i,
+      preferStudioExact: ['mayra', 'mayra function'],
+      testStudioPartial: /mayra/i,
+      fallbackDefault: 'Mayra'
+    },
+    {
+      concept: 'ganesh_puja',
+      testRaw: /(?:गणेश\s*पूजा|ganesh\s*puj|puja|pooja)/i,
+      preferStudioExact: ['ganesh puja', 'puja', 'pooja'],
+      testStudioPartial: /ganesh\s*pu|puja|pooja/i,
+      fallbackDefault: 'Ganesh Puja'
+    },
+    {
+      concept: 'home_entry',
+      testRaw: /(?:गृह\s*प्रवेश|घर\s*का\s*शूट|घर\s*पे\s*एंट्री|home\s*entry|griha\s*pravesh)/i,
+      preferStudioExact: ['home entry', 'home entry shoot', 'griha pravesh'],
+      testStudioPartial: /home\s*entry|griha/i,
+      fallbackDefault: 'Home Entry Shoot'
+    }
+  ];
+
+  // Guard: don't match "wedding" inside "pre-wedding"
+  if (!/pre[\s-]*wed/i.test(lower)) {
+    for (const c of conceptDefs) {
+      if (c.testRaw.test(lower) || (stripped && c.testRaw.test(stripped))) {
+        if (studioNames.length > 0) {
+          for (const pref of c.preferStudioExact) {
+            const found = studioNames.find(s => s.toLowerCase() === pref);
+            if (found) return found;
+          }
+          const partial = studioNames.find(s => c.testStudioPartial.test(s));
+          if (partial) return partial;
+        }
+        return allowDefaultFallback ? c.fallbackDefault : '';
+      }
+    }
+  }
+
+  // 4. Title case normalized fallback if custom event wasn't in concept map
+  if (studioNames.length > 0 && stripped) {
+    const partialStudio = studioNames.find(s => s.toLowerCase() === stripped || s.toLowerCase().includes(stripped));
+    if (partialStudio) return partialStudio;
+  }
+
+  return allowDefaultFallback ? clean.replace(/\b\w/g, l => l.toUpperCase()) : '';
+}
+
+/**
+ * Resolves Crew Role Name respecting Studio Owner's master_crew_roles settings first.
+ */
+export function resolveStudioCrewRole(
+  rawRole: string,
+  studioCrewRoles?: Array<string | { name?: string; short_code?: string }>
+): string {
+  const raw = (rawRole || '').trim();
+  if (!raw) return 'Candid Photographer';
+  const list = Array.isArray(studioCrewRoles) ? studioCrewRoles : [];
+
+  const exactByRoleOrCode = list.find((item) => {
+    const name = typeof item === 'string' ? item : item?.name;
+    const code = typeof item === 'string' ? '' : item?.short_code;
+    return (name && name.toLowerCase() === raw.toLowerCase()) || (code && code.toLowerCase() === raw.toLowerCase());
+  });
+  if (exactByRoleOrCode) {
+    return typeof exactByRoleOrCode === 'string' ? exactByRoleOrCode : (exactByRoleOrCode.name || raw);
+  }
+
+  const normalized = normalizeCrewRoleName(raw);
+  const matchedNorm = list.find((item) => {
+    const name = typeof item === 'string' ? item : item?.name;
+    return name && name.toLowerCase() === normalized.toLowerCase();
+  });
+  if (matchedNorm) {
+    return typeof matchedNorm === 'string' ? matchedNorm : (matchedNorm.name || normalized);
+  }
+
+  return normalized;
+}
 
 /**
  * Standardized Crew Role Normalization Dictionary with Intelligent Fuzzy Matching
@@ -195,7 +578,7 @@ export function parseCurrencyAmount(rawStr: string): number {
     if (!isNaN(n)) return Math.round(n * 1000);
   }
 
-  const digitsMatch = s.match(/[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7}/);
+  const digitsMatch = s.match(/[0-9]{1,3}(?:,[0-9]{2,3})+|[0-9]{4,7}/);
   if (digitsMatch) {
     return parseInt(digitsMatch[0].replace(/,/g, ''), 10);
   }
@@ -236,7 +619,7 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
   let gstPct = 0;
   let calculationNote = '';
 
-  const amtPattern = '([0-9]+(?:[.,][0-9]+)*(?:\\s*(?:lakh|lakhs|lac|lacs|l|लाख|k|thousand|thousands|हजार|हज़ार|cr|crore|crores|करोड़))?)';
+  const amtPattern = '(?:(?:₹|rs\\.?|inr)\\s*)?([0-9]+(?:[.,][0-9]+)*(?:\\s*(?:lakh|lakhs|lac|lacs|l|लाख|k|thousand|thousands|हजार|हज़ार|cr|crore|crores|करोड़))?)';
 
   // 1. Travel charges
   const travelMatch = text.match(new RegExp(`(?:travel|travelling|traveling|यात्रा|ट्रैवल|सफर)\\s*(?:charges|cost|expense|खर्चा)?[:\\s]*${amtPattern}(?!\\s*[%])`, 'i')) ||
@@ -316,7 +699,7 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
   // 7. Direct package / regular / budget price
   if (!basePrice) {
     const pkgMatch = text.match(new RegExp(`${amtPattern}\\s*(?:का\\s*पैकेज|का\\s*बजट|का\\s*कोटेशन|के\\s*लिए|ka\\s*package|ka\\s*budget|package|budget|बजट|पैकेज)`, 'i')) ||
-                     text.match(new RegExp(`(?:package|budget|total|price|cost|investment|बजट|पैकेज|कोटेशन|अमाउंट|प्राइस)\\s*(?:है|is|ka|ke|का|के|:|\\s)?\\s*${amtPattern}(?!\\s*[%])`, 'i'));
+                     text.match(new RegExp(`(?:package|budget|total|price|cost|investment|बजट|पैकेज|कोटेशन|अमाउंट|प्राइस)\\s*(?:है|is|ka|ke|का|के|:|\\s)*\\s*${amtPattern}(?!\\s*[%])`, 'i'));
     if (pkgMatch) {
       basePrice = parseCurrencyAmount(pkgMatch[1]);
     }
@@ -450,7 +833,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
   if (directParsed && typeof directParsed === 'object') {
     const root = directParsed.quotation || directParsed;
     if (root.cover || root.pages || root.functionsPage || root.functions_coverage || root.pricingPage || root.shootDetails) {
-      return mapAiOutputToQuotationDocument(directParsed, {}, contextData);
+      return mapAiOutputToQuotationDocument(directParsed, {}, { ...contextData, _isDirectJson: true });
     }
   }
 
@@ -460,20 +843,49 @@ export function fallbackHeuristicExtractor(contextData: any) {
   const notes = `${userNotes}\n${contextData.notes_and_comments || ''}`;
   const fullText = `${notes} ${JSON.stringify(raw)} ${JSON.stringify(meta)}`.toLowerCase();
 
+  // Gather Studio Owner Settings (Functions, Crew Roles, Deliverables, Pre-Wedding Settings)
+  const studioSettings = contextData.studioSettings || {};
+  const studioDefaultFunctions: any[] = Array.isArray(studioSettings.defaultFunctions) ? studioSettings.defaultFunctions : [];
+  const rawStudioEvents: any[] = Array.isArray(contextData.studioEventTypes) ? contextData.studioEventTypes : [];
+  const studioEventNames: string[] = Array.from(
+    new Set(
+      rawStudioEvents
+        .filter((e: any) => typeof e === 'string' || String(e?.category || '').toLowerCase() !== 'ritual')
+        .map((e: any) => (typeof e === 'string' ? e : e?.name || ''))
+        .filter(Boolean)
+    )
+  );
+  const allConfiguredEventNames: string[] = Array.from(
+    new Set([
+      ...studioEventNames,
+      ...studioDefaultFunctions.map((f: any) => f?.name || '').filter(Boolean)
+    ])
+  );
+  const studioCrewRoles: any[] = Array.isArray(contextData.studioCrewRoles) ? contextData.studioCrewRoles : [];
+
   // 1. Couple & Names
   let leadName = '';
 
   const INVALID_NAME_WORDS = new Set([
-    'होगी', 'होगा', 'रहेगा', 'रहेगी', 'शादी', 'हल्दी', 'संगीत', 'फेरे', 'लग्न', 'विवाह',
-    'मेहंदी', 'सगाई', 'रिसेप्शन', 'कैंडिड', 'सिनेमैटोग्राफर', 'ड्रोन', 'ट्रेडिशनल', 'फोटोग्राफर',
-    'शूट', 'कोटेशन', 'प्रपोजल', 'बजट', 'पैकेज', 'wedding', 'marriage', 'proposal', 'quotation',
-    'haldi', 'sangeet', 'mehendi', 'reception', 'candid', 'cine', 'cinematographer', 'traditional',
-    'drone', 'budget', 'price', 'rate', 'cost', 'date', 'day', 'days', 'hours'
+    'होगी', 'होगा', 'रहेगा', 'रहेगी', 'रखना', 'चाहिए', 'शादी', 'हल्दी', 'संगीत', 'फेरे', 'लग्न', 'विवाह',
+    'मेहंदी', 'सगाई', 'रिसेप्शन', 'कैंडिड', 'सिनेमैटोग्राफर', 'ड्रोन', 'ट्रेडिशनल', 'फोटोग्राफर', 'वीडियोग्राफर',
+    'शूट', 'कोटेशन', 'प्रपोजल', 'बजट', 'पैकेज', 'वेडिंग', 'प्री', 'अगले', 'दूसरे', 'उसी', 'नेक्स्ट', 'पहले',
+    'बाद', 'दिन', 'दोनों', 'सभी', 'एक', 'उसके', 'उसमें', 'नहीं',
+    'wedding', 'marriage', 'proposal', 'quotation', 'haldi', 'sangeet', 'mehendi', 'mehndi', 'reception',
+    'engagement', 'roka', 'cocktail', 'mayra', 'puja', 'pre', 'shoot', 'candid', 'cine', 'cinematographer',
+    'traditional', 'drone', 'photographer', 'videographer', 'budget', 'price', 'rate', 'cost', 'date',
+    'day', 'days', 'hours', 'next', 'same', 'both', 'all', 'each', 'every', 'after', 'before',
+    ...allConfiguredEventNames.map(s => s.toLowerCase())
   ]);
   const isValidCoupleCandidate = (cand: string): boolean => {
     if (!cand) return false;
-    const parts = cand.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i);
-    return parts.length >= 1 && !parts.some(p => INVALID_NAME_WORDS.has(p.trim()));
+    const parts = cand.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i).map(p => p.trim()).filter(Boolean);
+    if (parts.length === 0) return false;
+    return !parts.some(p => {
+      if (INVALID_NAME_WORDS.has(p)) return true;
+      const words = p.split(/\s+/);
+      return words.some(w => INVALID_NAME_WORDS.has(w));
+    });
   };
 
   // Check explicit "Couple: X & Y" or "Couple name: X and Y" or "Client: X & Y"
@@ -484,7 +896,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   // Hindi Couple Name matching e.g. "कपल का नाम रहेगा रौनक और प्रेक्षा" or "कपल नेम राहुल नेहा"
   if (!leadName) {
-    const hindiCoupleMatch = userNotes.match(/(?:कपल(?:\s*का)?\s*नाम(?:\s*रहेगा)?|कपल\s*नेम|कपल|जो\s*की\s*रहेगा|जो\s*रहेगा|कोटेशन\s*रहेगा|रहेगा|कोटेशन\s*बनाना\s*है)[:\s]*([\u0900-\u097Fa-zA-Z\s&'+.-]+?)(?=\s+(?:वेडिंग|शादी|लग्न|कोटेशन|हल्दी|संगीत|रिसेप्शन|मेहंदी|तारीख|बजट|\d|ऑल|all|का|की|के|है)|[,\n\r.]|$)/i);
+    const hindiCoupleMatch = userNotes.match(/(?:कपल(?:\s*का)?\s*नाम(?:\s*रहेगा)?|कपल\s*नेम|कपल|जो\s*की\s*रहेगा|जो\s*रहेगा|कोटेशन\s*रहेगा|कोटेशन\s*बनाना\s*है)[:\s]*([\u0900-\u097Fa-zA-Z\s&'+.-]+?)(?=\s+(?:वेडिंग|शादी|लग्न|कोटेशन|हल्दी|संगीत|रिसेप्शन|मेहंदी|तारीख|बजट|\d|ऑल|all|का|की|के|है)|[,\n\r.]|$)/i);
     if (hindiCoupleMatch && hindiCoupleMatch[1].trim() && isValidCoupleCandidate(hindiCoupleMatch[1].trim())) {
       leadName = hindiCoupleMatch[1].trim();
     }
@@ -516,36 +928,14 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   // Common Hindi name transliterations
   const HINDI_NAME_TRANSLATE: Record<string, string> = {
-    'संस्कृति': 'Sanskriti',
-    'रूपेश': 'Rupesh',
-    'संस्कृती': 'Sanskriti',
-    'रौनक': 'Raunak',
-    'प्रेक्षा': 'Preksha',
-    'सागर': 'Sagar',
-    'रिद्धि': 'Riddhi',
-    'रोहन': 'Rohan',
-    'पूजा': 'Pooja',
-    'राहुल': 'Rahul',
-    'नेहा': 'Neha',
-    'मोनालिसा': 'Monalisha',
-    'अथर्व': 'Atharva',
-    'साक्षी': 'Sakshi',
-    'संदीप': 'Sandeep',
-    'प्रिया': 'Priya',
-    'अनुजा': 'Anuja',
-    'हर्षल': 'Harshal',
-    'अमन': 'Aman',
-    'श्रद्धा': 'Shraddha',
-    'ध्रुव': 'Dhruv',
-    'विशाल': 'Vishal',
-    'सुमती': 'Sumati',
-    'यश': 'Yash',
-    'हर्षिता': 'Harshita',
-    'मंथन': 'Manthan',
-    'और': '&',
-    'तथा': '&',
-    'व': '&',
-    'एंड': '&'
+    'संस्कृति': 'Sanskriti', 'रूपेश': 'Rupesh', 'संस्कृती': 'Sanskriti',
+    'रौनक': 'Raunak', 'प्रेक्षा': 'Preksha', 'सागर': 'Sagar', 'रिद्धि': 'Riddhi',
+    'रोहन': 'Rohan', 'पूजा': 'Pooja', 'राहुल': 'Rahul', 'नेहा': 'Neha',
+    'मोनालिसा': 'Monalisha', 'अथर्व': 'Atharva', 'साक्षी': 'Sakshi', 'संदीप': 'Sandeep',
+    'प्रिया': 'Priya', 'अनुजा': 'Anuja', 'हर्षल': 'Harshal', 'अमन': 'Aman',
+    'श्रद्धा': 'Shraddha', 'ध्रुव': 'Dhruv', 'विशाल': 'Vishal', 'सुमती': 'Sumati',
+    'यश': 'Yash', 'हर्षिता': 'Harshita', 'मंथन': 'Manthan',
+    'और': '&', 'तथा': '&', 'व': '&', 'एंड': '&'
   };
 
   let cleanNameStr = leadName;
@@ -597,22 +987,35 @@ export function fallbackHeuristicExtractor(contextData: any) {
     coupleName = 'Client & Partner';
   }
 
-  // 2. Event Type
-  let eventType = 'Wedding';
-  const hasNegativePreWed = /प्री-?वेडिंग नहीं|प्री ?वेडिंग नाहीं|no pre-?wedding|not have pre-?wedding/i.test(fullText);
-  const hasPreWed = !hasNegativePreWed && (fullText.includes('pre wedding') || fullText.includes('pre-wedding') || fullText.includes('prewedding') || fullText.includes('previewing') || fullText.includes('pre-shoot') || fullText.includes('pre shoot'));
-  const hasWed = fullText.includes('wedding') || fullText.includes('marriage') || fullText.includes('shaadi') || fullText.includes('वेडिंग') || fullText.includes('शादी');
-  const hasEng = fullText.includes('engagement') || fullText.includes('roka') || fullText.includes('ring ceremony') || fullText.includes('सगाई');
+  // 2. Pre-Wedding Intent & Main Event Type Detection (strictly scoped to user voice/text message when present)
+  const userNegatedPreWed = detectPreWeddingNegation(userNotes);
+  const formSignals = [raw.event_type, raw.services, raw.event, raw.functions].filter(Boolean).join(' ');
+  const hasPreWed = !userNegatedPreWed && (
+    userNotes
+      ? detectPreWeddingIntent(userNotes)
+      : (detectPreWeddingIntent(contextData.notes_and_comments || '') || detectPreWeddingIntent(formSignals))
+  );
 
+  // Strip Pre-Wedding words from a temporary scan copy so "Pre-Wedding" never falsely matches "Wedding"
+  const preWedMaskedNotes = notes.replace(
+    /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:pre[\s-]*wed(?:ding)?|prewedding|pre[\s-]*shoot|preshoot|previewing|प्री[\s-]*वेडिंग|प्रि[\s-]*वेडिंग|प्रीवेडिंग|प्रिवेडिंग|प्री[\s-]*शूट|प्रि[\s-]*शूट|प्री[\s-]*शुट|प्रीशूट)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi,
+    ' __PREWED__ '
+  );
+  const preWedMaskedLower = preWedMaskedNotes.toLowerCase();
+
+  const hasWed = /(?:wedding|marriage|shaadi|लग्न|विवाह|फेरे|वेडिंग|शादी)/i.test(preWedMaskedLower);
+  const hasEng = /(?:engagement|roka|ring\s*ceremony|सगाई|साखरपुडा)/i.test(preWedMaskedLower);
+
+  let eventType = 'Wedding';
   if (hasPreWed && hasWed) {
     eventType = 'Pre-Wedding & Wedding';
   } else if (hasPreWed && !hasWed) {
     eventType = 'Pre-Wedding';
   } else if (hasEng && !hasWed) {
     eventType = 'Engagement';
-  } else if (fullText.includes('reception')) {
+  } else if (preWedMaskedLower.includes('reception')) {
     eventType = 'Wedding & Reception';
-  } else if (fullText.includes('maternity')) {
+  } else if (preWedMaskedLower.includes('maternity')) {
     eventType = 'Maternity Shoot';
   }
 
@@ -654,53 +1057,116 @@ export function fallbackHeuristicExtractor(contextData: any) {
         return v;
       }
     }
-    const explicitLocMatch = snippet.match(/(?:at|in|venue|location|city|destination|लोकेशन|वेन्यू|स्थान|जगह|शहर|में)[:\s]+(["']?[A-Za-z\u0900-\u097F0-9\s,.-]+["']?)/i);
+    const explicitLocMatch = snippet.match(/(?:at|venue|location|city|destination|लोकेशन|वेन्यू|स्थान|जगह|शहर)[:\s]+(["']?[A-Za-z\u0900-\u097F0-9\s,.-]+["']?)/i);
     if (explicitLocMatch) {
       const clean = explicitLocMatch[1].replace(/["']/g, '').split(/[,\n]/)[0].trim();
-      if (clean && clean.length > 2 && !['शादी', 'वेडिंग', 'हल्दी', 'संगीत', 'रिसेप्शन', 'में'].includes(clean.toLowerCase())) {
+      if (clean && clean.length > 2 && !['शादी', 'वेडिंग', 'हल्दी', 'संगीत', 'रिसेप्शन', 'में', 'दोनों'].includes(clean.toLowerCase())) {
         return clean;
       }
     }
     return '';
   };
 
-  const extractDateFromSnippet = (snippet: string): string => {
+  const extractDateFromSnippet = (snippet: string, fallbackMonthYear?: { monthIdx: number; year: number } | null): string => {
     if (!snippet) return '';
-    const dateM = snippet.match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s*(?:जनवरी|फ़रवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|सितम्बर|अक्टूबर|अक्तूबर|नवंबर|नवम्बर|दिसंबर|दिसम्बर|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(\d{2,4})?/i);
+    const dateM = snippet.match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s*(?:जनवरी|फ़रवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|सितम्बर|अक्टूबर|अक्तूबर|नवंबर|नवम्बर|दिसंबर|दिसम्बर|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*(?:\s*(\d{2,4}))?/i);
     if (dateM) {
       return formatQuotationDate(dateM[0]);
+    }
+    const monthFirstM = snippet.match(/(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:[\s,-]+(\d{2,4}))?/i);
+    if (monthFirstM) {
+      return formatQuotationDate(monthFirstM[0]);
     }
     const slashM = snippet.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/);
     if (slashM) {
       return formatQuotationDate(slashM[0]);
     }
+    if (fallbackMonthYear) {
+      const bareDayM = snippet.match(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(\d{1,2})\s*(?:st|nd|rd|th)?\s*(?:तारीख|tarikh|date|को|ko)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i);
+      if (bareDayM) {
+        const dNum = parseInt(bareDayM[1], 10);
+        if (dNum >= 1 && dNum <= 31) {
+          return `${String(dNum).padStart(2, '0')} - ${QUOTATION_MONTH_ABBR[fallbackMonthYear.monthIdx]} - ${fallbackMonthYear.year}`;
+        }
+      }
+    }
     return '';
   };
 
+  const extractTimesFromSnippet = (snippet: string): { startTime: string; endTime: string } => {
+    let startTime = '';
+    let endTime = '';
+    const rangeM = snippet.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(?:-|to|से)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))/i);
+    if (rangeM) {
+      startTime = rangeM[1].toUpperCase().trim();
+      endTime = rangeM[2].toUpperCase().trim();
+    } else {
+      const sM = snippet.match(/(?:startTime|start_time|start|from|timing)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
+      const eM = snippet.match(/(?:endTime|end_time|end|till)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
+      if (sM) startTime = sM[1].trim();
+      if (eM) endTime = eM[1].trim();
+    }
+    return { startTime, endTime };
+  };
+
+  const numPrefix = '(?:(\\d+|एक|दो|तीन|चार|पांच|पाँच|one|two|three|four|five)\\s*(?:x|\\*|-)?)';
+  const numSuffix = '(?:x|\\*|:|-)?\\s*(\\d+)';
+
   const extractCrewFromSnippet = (snippet: string): Array<{ name: string; qty: number }> => {
-    const crewDefs = [
-      { name: 'Candid Photographer', regex: /(?:कैंडिड|candid|cp)\s*(?:फोटोग्राफर|photo|photography)?\s*(\d+)?|(\d+)\s*(?:कैंडिड|candid)/i },
-      { name: 'Cinematographer', regex: /(?:सिनेमैटोग्राफर|सिनेमैटिक|cinematog|cinematic|cine|cv)\s*(\d+)?|(\d+)\s*(?:सिनेमैटोग्राफर|cinematog)/i },
-      { name: 'Traditional Photographer', regex: /(?:ट्रेडिशनल|traditional|trad|tp)\s*(?:फोटोग्राफर|photo)\s*(\d+)?|(\d+)\s*(?:ट्रेडिशनल|traditional)\s*photo/i },
-      { name: 'Traditional Videographer', regex: /(?:ट्रेडिशनल|traditional|trad|tv)\s*(?:वीडियो|video|videography)\s*(\d+)?|(\d+)\s*(?:ट्रेडिशनल|traditional)\s*video/i },
-      { name: 'Drone Pilot', regex: /(?:ड्रोन|drone)\s*(?:पायलट|pilot)?\s*(\d+)?|(\d+)\s*(?:ड्रोन|drone)/i },
-      { name: 'Semi Cinematic', regex: /(?:सेमी\s*सिनेमैटिक|semi\s*cinematic|semi-cinematic)\s*(\d+)?/i },
-      { name: 'Semi Standard', regex: /(?:सेमी\s*स्टैंडर्ड|semi\s*standard|semi-standard)\s*(\d+)?/i }
+    if (!snippet || !snippet.trim()) return [];
+    const crewDefs: Array<{ name: string; regex: RegExp }> = [
+      {
+        name: 'Semi Cinematic',
+        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सेमी[\\s-]*काइनेमैटिक|सेमी[\\s-]*सिनेमैटिक|semi[\\s-]*(?:cinematic|kinematic|cine))(?:\\s*${numSuffix})?`, 'gi')
+      },
+      {
+        name: 'Semi Standard',
+        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सेमी[\\s-]*स्टैंडर्ड|सेमी[\\s-]*ट्रेडिशनल|semi[\\s-]*(?:standard|traditional|trad))(?:\\s*${numSuffix})?`, 'gi')
+      },
+      {
+        name: 'Candid Photographer',
+        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:कैंडिड\\s*(?:फोटोग्राफर|फोटोग्राफी|फोटो)|कैंडिड|candid\\s*(?:photo(?:grapher|graphy|s)?)?|cp\\b)(?:\\s*${numSuffix})?`, 'gi')
+      },
+      {
+        name: 'Cinematographer',
+        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सिनेमैटोग्राफर|सिनेमैटोग्राफी|सिनेमैटिक\\s*(?:वीडियो|विडियो)?|सिनेमा|cinematog(?:rapher|raphy)?|cinematic(?:\\s*video)?|\\bcine\\b|\\bcv\\b)(?:\\s*${numSuffix})?`, 'gi')
+      },
+      {
+        name: 'Traditional Photographer',
+        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:(?:ट्रेडिशनल|ट्रेड)\\s*(?:फोटोग्राफर|फोटोग्राफी|फोटो)|(?:traditional|trad)\\s*photo(?:grapher|graphy|s)?|\\btp\\b)(?:\\s*${numSuffix})?`, 'gi')
+      },
+      {
+        name: 'Traditional Videographer',
+        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:(?:ट्रेडिशनल|ट्रेड)\\s*(?:वीडियोग्राफर|वीडियोग्राफी|वीडियो)|(?:traditional|trad)\\s*video(?:grapher|graphy)?|\\btv\\b)(?:\\s*${numSuffix})?`, 'gi')
+      },
+      {
+        name: 'Drone Pilot',
+        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:ड्रोन\\s*(?:पायलट|कैमरा)?|drone\\s*(?:pilot|coverage|shoot)?|aerial\\s*drone)(?:\\s*${numSuffix})?`, 'gi')
+      }
     ];
-    const found: Array<{ name: string; qty: number }> = [];
+
+    const foundMap = new Map<string, number>();
+    let maskedSnippet = snippet;
+
     for (const c of crewDefs) {
-      const m = snippet.match(c.regex);
+      const m = c.regex.exec(maskedSnippet);
+      c.regex.lastIndex = 0;
       if (m) {
-        const qty = parseInt(m[1] || m[2] || '1', 10) || 1;
-        found.push({ name: c.name, qty });
+        const qtyToken = m[1] || m[2] || '1';
+        const qty = parseSmallCountWord(qtyToken);
+        const resolvedRole = resolveStudioCrewRole(c.name, studioCrewRoles);
+        foundMap.set(resolvedRole, Math.max(foundMap.get(resolvedRole) || 0, qty));
+        // Mask matched span so Semi Cinematic isn't double-matched as Cinematographer, or Traditional Photographer matched twice
+        maskedSnippet = maskedSnippet.replace(m[0], ' ');
       }
     }
-    return found;
+
+    return Array.from(foundMap.entries()).map(([name, qty]) => ({ name, qty }));
   };
 
   let location = extractLocationFromSnippet(userNotes) || raw.venue || raw.location || raw.city || raw.destination || '';
 
-  // 4. Dates
+  // 4. Headline Dates
   let weddingDate = extractDateFromSnippet(userNotes);
   if (!weddingDate && (raw.event_date || raw.wedding_date || raw.date || raw.wedding_month || raw.month)) {
     weddingDate = formatQuotationDate(raw.event_date || raw.wedding_date || raw.date || raw.wedding_month || raw.month);
@@ -710,7 +1176,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     weddingDate = 'Date Not Fixed';
   }
 
-  // 5. Intelligent Mathematical Pricing & Method Evaluation (Evaluates formulas, multipliers, additions & discounts like Gemini & ChatGPT)
+  // 5. Intelligent Mathematical Pricing & Method Evaluation
   let budget: number | null = null;
   const rawBudget = raw.budget || raw.package_budget || raw.preferred_budget_range || raw.approximate_budget || raw.pricing || null;
   if (rawBudget) {
@@ -727,21 +1193,14 @@ export function fallbackHeuristicExtractor(contextData: any) {
   let pricingNote = evaluatedPricing.note;
   let paymentSteps = evaluatedPricing.steps;
 
-  // Extract custom times from notes
-  let customStartTime = '';
-  let customEndTime = '';
-  const startMatch = userNotes.match(/(?:startTime|start_time|start|from|timing)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
-  if (startMatch) customStartTime = startMatch[1].trim();
+  // Global custom times fallback
+  const globalTimes = extractTimesFromSnippet(userNotes);
+  const customStartTime = globalTimes.startTime;
+  const customEndTime = globalTimes.endTime;
 
-  const endMatch = userNotes.match(/(?:endTime|end_time|end|to)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
-  if (endMatch) customEndTime = endMatch[1].trim();
-
-  // Extract general requirements from notes if specified
-  const parsedRequirements: any[] = extractCrewFromSnippet(userNotes);
-
-  // Check studio shortcuts for crew and pricing before creating functions
-  const studioShortcuts: any[] = Array.isArray(contextData.studioSettings?.aiRules?.shortcuts)
-    ? contextData.studioSettings.aiRules.shortcuts
+  // Check studio shortcuts for crew, deliverables & pricing
+  const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
+    ? studioSettings.aiRules.shortcuts
     : [];
 
   let shortcutCrew: Array<{ name: string; qty: number }> | null = null;
@@ -757,7 +1216,10 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
     if (isMatch) {
       if (Array.isArray(sc.mappedCrew) && sc.mappedCrew.length > 0) {
-        shortcutCrew = sc.mappedCrew;
+        shortcutCrew = sc.mappedCrew.map((c: any) => ({
+          name: resolveStudioCrewRole(typeof c === 'string' ? c : c?.name || '', studioCrewRoles),
+          qty: Number(c?.qty || 1)
+        }));
       }
       if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) {
         shortcutDeliverables.push(...sc.mappedDeliverables);
@@ -768,74 +1230,409 @@ export function fallbackHeuristicExtractor(contextData: any) {
     }
   }
 
-  const defaultRequirements = parsedRequirements.length > 0 
-    ? parsedRequirements 
-    : (shortcutCrew && shortcutCrew.length > 0 
-        ? shortcutCrew 
-        : [
-            { name: 'Candid Photographer', qty: 1 },
-            { name: 'Cinematographer', qty: 1 }
-          ]);
-
-  // 6. Functions & Multi-Ceremony Coverage Extraction with Natural Language Clauses
-  const functions: any[] = [];
-  const eventDefs = [
-    { key: 'haldi + sangeet', name: 'Haldi + Sangeet', regex: /(?:हल्दी\s*(?:\+|और|व|&)?\s*संगीत|haldi\s*(?:\+|and|&)\s*sangeet)/i },
-    { key: 'haldi', name: 'Haldi Ceremony', regex: /(?:हल्दी|हळद|pithi|haldi)/i },
-    { key: 'sangeet', name: 'Sangeet Night', regex: /(?:संगीत|sangeet)/i },
-    { key: 'wedding', name: 'Wedding Ceremony', regex: /(?:शादी|लग्न|विवाह|फेरे|wedding|marriage|pheras)/i },
-    { key: 'mehendi', name: 'Mehendi Ceremony', regex: /(?:मेहंदी|mehendi|mehndi)/i },
-    { key: 'engagement', name: 'Ring Ceremony', regex: /(?:सगाई|रिंग सेरेमनी|साखरपुडा|engagement|roka)/i },
-    { key: 'reception', name: 'Reception', regex: /(?:रिसेप्शन|reception)/i },
-    { key: 'cocktail', name: 'Cocktail Party', regex: /(?:कॉकटेल|cocktail)/i },
-    { key: 'home entry', name: 'Home Entry Shoot', regex: /(?:गृह प्रवेश|घर का शूट|घर पे एंट्री|home entry)/i },
-    { key: 'mayra', name: 'Mayra Function', regex: /(?:मायरा|भाता|mayra)/i },
-    { key: 'ganesh puja', name: 'Ganesh Puja', regex: /(?:गणेश पूजा|पूजा|puja)/i }
+  // 6. Functions & Multi-Ceremony Chronological Extraction (Relative Dates + Separate Cards + Studio Settings Names)
+  const builtinEventMatchers: Array<{ concept: string; rawTitle: string; regex: RegExp }> = [
+    { concept: 'haldi', rawTitle: 'Haldi', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:हल्दी|हळद|पीठी|pithi|haldi)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'sangeet', rawTitle: 'Sangeet', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:संगीत|sangeet(?:\s*night)?)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'wedding', rawTitle: 'Wedding', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:शादी|लग्न|विवाह|फेरे|वेडिंग|बारात|wedding(?:\s*ceremony)?|marriage|pheras|varmala)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'mehendi', rawTitle: 'Mehendi', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:मेहंदी|मेंहदी|meh[ae]?ndi)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'engagement', rawTitle: 'Ring Ceremony', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:सगाई|रिंग\s*सेरेमनी|साखरपुडा|रोका|एंगेजमेंट|engagement(?:\s*ceremony)?|ring\s*ceremony|roka|sagai)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'reception', rawTitle: 'Reception', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:रिसेप्शन|reception(?:\s*dinner)?)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'cocktail', rawTitle: 'Cocktail Party', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:कॉकटेल(?:\s*पार्टी)?|cocktail(?:\s*party)?)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'pool_party', rawTitle: 'Pool Party', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:पूल\s*पार्टी|pool\s*party)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'home_entry', rawTitle: 'Home Entry Shoot', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:गृह\s*प्रवेश|घर\s*का\s*शूट|घर\s*पे\s*एंट्री|home\s*entry(?:\s*shoot)?)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'mayra', rawTitle: 'Mayra', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:मायरा|भाता|mayra)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { concept: 'ganesh_puja', rawTitle: 'Ganesh Puja', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:गणेश\s*पूजा|ganesh\s*puja|puja|pooja)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi }
   ];
 
-  const clauses = userNotes.split(/[.,;\n।|]|\s+(?:और|तथा|व|and|&)\s+/i).map((c: string) => c.trim()).filter(Boolean);
+  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const customEventMatchers: Array<{ concept: string; rawTitle: string; regex: RegExp }> = [];
+  for (const sName of allConfiguredEventNames) {
+    const lower = sName.toLowerCase();
+    if (/pre[\s-]*wed|prewedding|pre[\s-]*shoot/.test(lower)) continue;
+    const alreadyBuiltin = builtinEventMatchers.some(b => {
+      b.regex.lastIndex = 0;
+      return b.regex.test(sName);
+    });
+    if (!alreadyBuiltin && sName.trim().length >= 3) {
+      customEventMatchers.push({
+        concept: `custom_${lower}`,
+        rawTitle: sName.trim(),
+        regex: new RegExp(`(?:^|[^\\u0900-\\u097Fa-zA-Z0-9])${escapeRegExp(sName.trim())}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`, 'gi')
+      });
+    }
+  }
+  customEventMatchers.sort((a, b) => b.rawTitle.length - a.rawTitle.length);
+  const allEventMatchers = [...builtinEventMatchers, ...customEventMatchers];
 
-  eventDefs.forEach((evt, idx) => {
-    // If Haldi + Sangeet was matched, skip individual Haldi or Sangeet
-    if ((evt.key === 'haldi' || evt.key === 'sangeet') && functions.some(f => f.name === 'Haldi + Sangeet')) {
-      return;
+  interface EventHit {
+    concept: string;
+    resolvedName: string;
+    startIdx: number;
+    endIdx: number;
+  }
+
+  const findEventsInText = (text: string): EventHit[] => {
+    const hits: EventHit[] = [];
+    for (const matcher of allEventMatchers) {
+      matcher.regex.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = matcher.regex.exec(text)) !== null) {
+        const prefixLen = m[0].length - m[0].trimStart().length;
+        const startIdx = m.index + prefixLen;
+        const endIdx = m.index + m[0].length;
+        // Avoid overlapping matches
+        if (!hits.some(h => Math.max(h.startIdx, startIdx) < Math.min(h.endIdx, endIdx))) {
+          hits.push({
+            concept: matcher.concept,
+            resolvedName: resolveStudioFunctionName(matcher.rawTitle, studioEventNames, studioDefaultFunctions),
+            startIdx,
+            endIdx
+          });
+        }
+      }
+    }
+    return hits.sort((a, b) => a.startIdx - b.startIdx);
+  };
+
+  // Explicit combine indicator: user EXPLICITLY says two+ functions are combined on same day / same card
+  const EXPLICIT_COMBINE_REGEX = /(?:एक\s*ही\s*दिन|ek\s*hi\s*din|ek\s*din\s*pe|एक\s*ही\s*तारीख|एक\s*ही\s*डेट|ek\s*hi\s*date|एक\s*साथ|ek\s*sath|साथ\s*में|saath\s*mein|एक\s*ही\s*फंक्शन|ek\s*hi\s*function|एक\s*ही\s*इवेंट|एक\s*कार्ड|single\s*card|single\s*function|combine(?:d)?|clubbed|merged|together)/i;
+  const BOTH_SEPARATE_MODIFIER_REGEX = /(?:दोनों\s*(?:में|मे|को|पे)|तीनों\s*(?:में|मे|को|पे)|चारों\s*(?:में|मे|को|पे)|सभी\s*(?:में|मे|को|पे)|हर\s*(?:फंक्शन|इवेंट)|both\s*(?:events?|functions?)?|all\s*(?:events?|functions?)|each\s*(?:event|function)?|every\s*(?:event|function)?|separate(?:ly)?|अलग[\s-]*अलग)/i;
+  const CONTINUATION_PRONOUN_REGEX = /(?:उसमें|इसमें|उसमे|इसमे|जिसमें|जिसमे|usme|isme|jisme|jismein|there|for\s*that)/i;
+
+  const explicitDateCountInNotes = (userNotes.match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s*(?:जनवरी|फ़रवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|सितम्बर|अक्टूबर|अक्तूबर|नवंबर|नवम्बर|दिसंबर|दिसम्बर|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/gi) || []).length;
+
+  // Split into sentence blocks by hard boundaries, then split conjunctions UNLESS conjunction directly joins two combined events without separate dates/timing/crew
+  const hardSentences = preWedMaskedNotes
+    .split(/(?:\r?\n|[.;।|])+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const sequentialClauses: Array<{ text: string; groupSharedDate?: string }> = [];
+  for (const sent of hardSentences) {
+    // Also split commas, except protect comma between two events inside explicit combine sentence
+    const commaParts = sent.split(/\s*,\s*/).map(p => p.trim()).filter(Boolean);
+    for (const part of commaParts) {
+      const partEvents = findEventsInText(part);
+      const hasCombineWord = EXPLICIT_COMBINE_REGEX.test(part);
+      const hasPlusJoin = partEvents.length >= 2 && /\+/.test(part.slice(partEvents[0].startIdx, partEvents[partEvents.length - 1].endIdx));
+      const hasExplicitSeparateHints = BOTH_SEPARATE_MODIFIER_REGEX.test(part) || /(?:सुबह|शाम|morning|evening|में|मे)\b/i.test(part);
+
+      // If this part explicitly combines adjacent events (e.g., "Wedding और Haldi एक ही दिन पे है 10 November को" or "Haldi + Sangeet 22 Feb"), keep the whole part together!
+      if ((hasCombineWord || hasPlusJoin) && partEvents.length >= 2 && !hasExplicitSeparateHints) {
+        sequentialClauses.push({ text: part });
+        continue;
+      }
+
+      // Otherwise split on sequential connectors ("और", "&", "and", "तथा", "व", "फिर", "then", "after that")
+      const subParts = part
+        .split(/\s+(?:और|तथा|व|and|&|फिर|उसके\s*बाद|जिसके\s*बाद|then|after\s*that)\s+/i)
+        .map(sp => sp.trim())
+        .filter(Boolean);
+
+      // Check if all subParts in this single comma-group share ONE explicit date (e.g. "10 Nov को Haldi और Sangeet है" or "Haldi और Sangeet 10 Nov को है")
+      const datedSubIndices = subParts
+        .map((sp, idx) => ({ idx, dt: extractDateFromSnippet(sp) }))
+        .filter(x => x.dt && x.dt !== 'Date Not Fixed');
+      const hasAnyRelOffset = subParts.some(sp => detectRelativeDayOffset(sp) !== null);
+      const hasNotFixedHint = /(?:not\s*fix|tbd|फिक्स\s*नहीं|तय\s*नहीं)/i.test(part);
+      const groupSharedDate =
+        subParts.length >= 2 &&
+        datedSubIndices.length === 1 &&
+        !hasAnyRelOffset &&
+        !hasNotFixedHint &&
+        !part.includes('__PREWED__') &&
+        subParts.every(sp => findEventsInText(sp).length > 0)
+          ? datedSubIndices[0].dt
+          : undefined;
+
+      // Special check: if "Wedding" and "Haldi एक ही दिन पे है" got split across "और"/"&", re-glue adjacent combined pair!
+      for (let i = 0; i < subParts.length; i++) {
+        const cur = subParts[i];
+        const nxt = subParts[i + 1];
+        if (
+          nxt &&
+          findEventsInText(cur).length >= 1 &&
+          findEventsInText(nxt).length >= 1 &&
+          !extractDateFromSnippet(cur) &&
+          detectRelativeDayOffset(cur) === null &&
+          extractCrewFromSnippet(cur).length === 0 &&
+          EXPLICIT_COMBINE_REGEX.test(nxt) &&
+          !BOTH_SEPARATE_MODIFIER_REGEX.test(nxt)
+        ) {
+          sequentialClauses.push({ text: `${cur} & ${nxt}`, groupSharedDate });
+          i++; // skip nxt
+        } else {
+          sequentialClauses.push({ text: cur, groupSharedDate });
+        }
+      }
+    }
+  }
+
+  const functions: any[] = [];
+  let lastResolvedDate: string | null = null;
+  let lastMonthYear: { monthIdx: number; year: number } | null = null;
+  let pendingDateForNextEvent: string | null = null;
+  let pendingLocationForNextEvent: string | null = null;
+  const globalModifierCrew: Array<{ name: string; qty: number }> = [];
+  const globalModifierRoleSet = new Set<string>();
+  const preWedClauses: string[] = [];
+  let lastActiveTarget: 'prewed' | 'function' | 'global_crew' | null = null;
+
+  for (const clauseItem of sequentialClauses) {
+    const clause = clauseItem.text;
+    const isPreWedClause = clause.includes('__PREWED__');
+    const eventsInClause = findEventsInText(clause);
+
+    if (isPreWedClause) {
+      preWedClauses.push(clause.replace(/__PREWED__/g, 'Pre-Wedding'));
     }
 
-    const matchingClause = clauses.find((c: string) => evt.regex.test(c)) || (evt.regex.test(userNotes) ? userNotes : '');
-    if (matchingClause) {
-      if (!functions.some(f => f.name === evt.name)) {
-        const clauseDate = extractDateFromSnippet(matchingClause) || weddingDate || 'Date Not Fixed';
-        const clauseLoc = extractLocationFromSnippet(matchingClause) || location || '';
-        const clauseCrew = extractCrewFromSnippet(matchingClause);
-        const eventCrew = clauseCrew.length > 0 ? clauseCrew : defaultRequirements;
+    // Extract explicit or relative date from this clause
+    const explicitDate = extractDateFromSnippet(clause, lastMonthYear);
+    if (explicitDate) {
+      const p = parseQuotationDateParts(explicitDate);
+      if (p) lastMonthYear = { monthIdx: p.monthIdx, year: p.year };
+    }
+    const relOffset = detectRelativeDayOffset(clause);
 
+    let clauseResolvedDate = '';
+    if (explicitDate && explicitDate !== 'Date Not Fixed') {
+      clauseResolvedDate = explicitDate;
+    } else if (relOffset !== null) {
+      const anchor = lastResolvedDate || (weddingDate && weddingDate !== 'Date Not Fixed' ? weddingDate : '');
+      if (anchor) {
+        clauseResolvedDate = addDaysToQuotationDate(anchor, relOffset);
+        const p = parseQuotationDateParts(clauseResolvedDate);
+        if (p) lastMonthYear = { monthIdx: p.monthIdx, year: p.year };
+      }
+    } else if (clauseItem.groupSharedDate && eventsInClause.length > 0) {
+      clauseResolvedDate = clauseItem.groupSharedDate;
+    }
+
+    // If this clause ONLY talks about Pre-Wedding (no main ceremony matched), update chronological date anchor and continue!
+    if (isPreWedClause && eventsInClause.length === 0) {
+      if (clauseResolvedDate) lastResolvedDate = clauseResolvedDate;
+      lastActiveTarget = 'prewed';
+      continue;
+    }
+
+    const clauseCrew = extractCrewFromSnippet(clause);
+    const clauseLoc = extractLocationFromSnippet(clause);
+    const clauseTimes = extractTimesFromSnippet(clause);
+
+    // Case A: Clause mentions NO main wedding event -> treat as modifier / continuation clause
+    if (eventsInClause.length === 0) {
+      const isGlobalMod = BOTH_SEPARATE_MODIFIER_REGEX.test(clause);
+      const isContMod = CONTINUATION_PRONOUN_REGEX.test(clause);
+      const looksLikeClosingTerms = /(?:बजट|budget|price|cost|discount|ऑफर|offer|advance|एडवांस|gst|album|एल्बम|photobook|फोटोबुक|long\s*video|all\s*deliverable|ऑल\s*डिलीवरेबल|सभी\s*डिलीवरेबल)/i.test(clause);
+
+      // If previous clause was Pre-Wedding and this clause continues Pre-Wedding crew/reels/location without switching to pricing/albums/global modifier, keep it with Pre-Wedding!
+      if (hasPreWed && lastActiveTarget === 'prewed' && !isGlobalMod && !looksLikeClosingTerms) {
+        preWedClauses.push(clause.replace(/__PREWED__/g, 'Pre-Wedding'));
+        if (clauseResolvedDate) lastResolvedDate = clauseResolvedDate;
+        continue;
+      }
+      if (looksLikeClosingTerms) {
+        lastActiveTarget = null;
+      }
+
+      if (clauseCrew.length > 0) {
+        if (isGlobalMod || (lastActiveTarget === 'global_crew' && !isContMod && !clauseLoc && !clauseResolvedDate && relOffset === null) || (functions.length > 1 && !isContMod && !clauseLoc && !clauseResolvedDate && relOffset === null && /\b(?:दोनों|तीनों|चारों|सभी|both|all|each|every)\b/i.test(clause))) {
+          lastActiveTarget = 'global_crew';
+          for (const cr of clauseCrew) {
+            if (!globalModifierRoleSet.has(cr.name.toLowerCase())) {
+              globalModifierRoleSet.add(cr.name.toLowerCase());
+              globalModifierCrew.push(cr);
+            }
+          }
+        } else if (functions.length > 0) {
+          // Attach to the immediately preceding card ("Wedding 10 Nov को है, उसमें 2 Candid Photographer")
+          lastActiveTarget = 'function';
+          const prevCard = functions[functions.length - 1];
+          const existingReqs: Array<{ name: string; qty: number }> = prevCard._explicitCrew || [];
+          for (const cr of clauseCrew) {
+            if (!existingReqs.some(r => r.name.toLowerCase() === cr.name.toLowerCase())) {
+              existingReqs.push(cr);
+            }
+          }
+          prevCard._explicitCrew = existingReqs;
+          prevCard.requirements = [...existingReqs];
+        } else {
+          lastActiveTarget = 'global_crew';
+          for (const cr of clauseCrew) {
+            if (!globalModifierRoleSet.has(cr.name.toLowerCase())) {
+              globalModifierRoleSet.add(cr.name.toLowerCase());
+              globalModifierCrew.push(cr);
+            }
+          }
+        }
+      }
+
+      if (clauseLoc) {
+        if (functions.length > 0 && !functions[functions.length - 1].location) {
+          functions[functions.length - 1].location = clauseLoc;
+        } else {
+          pendingLocationForNextEvent = clauseLoc;
+        }
+      }
+
+      if (clauseTimes.startTime && functions.length > 0 && !functions[functions.length - 1].startTime) {
+        functions[functions.length - 1].startTime = clauseTimes.startTime;
+      }
+      if (clauseTimes.endTime && functions.length > 0 && !functions[functions.length - 1].endTime) {
+        functions[functions.length - 1].endTime = clauseTimes.endTime;
+      }
+
+      if (clauseResolvedDate) {
+        if (functions.length > 0 && functions[functions.length - 1].dateNotFixed && !isGlobalMod && relOffset === null) {
+          functions[functions.length - 1].date = clauseResolvedDate;
+          functions[functions.length - 1].dateNotFixed = false;
+          lastResolvedDate = clauseResolvedDate;
+        } else {
+          pendingDateForNextEvent = clauseResolvedDate;
+          lastResolvedDate = clauseResolvedDate;
+        }
+      }
+      continue;
+    }
+
+    // Case B: Events found in this clause!
+    lastActiveTarget = 'function';
+    if (clauseResolvedDate) {
+      lastResolvedDate = clauseResolvedDate;
+    }
+
+    const effectiveCardDate =
+      clauseResolvedDate ||
+      pendingDateForNextEvent ||
+      (explicitDateCountInNotes === 1 && weddingDate && weddingDate !== 'Date Not Fixed' && lastResolvedDate === null ? weddingDate : 'Date Not Fixed');
+
+    if (effectiveCardDate && effectiveCardDate !== 'Date Not Fixed') {
+      lastResolvedDate = effectiveCardDate;
+    }
+    pendingDateForNextEvent = null;
+
+    const effectiveCardLoc = clauseLoc || pendingLocationForNextEvent || location || '';
+    pendingLocationForNextEvent = null;
+
+    const spanStart = eventsInClause[0].startIdx;
+    const spanEnd = eventsInClause[eventsInClause.length - 1].endIdx;
+    const betweenEventsText = clause.slice(spanStart, spanEnd);
+    const isExplicitlyCombinedCard =
+      eventsInClause.length >= 2 &&
+      !BOTH_SEPARATE_MODIFIER_REGEX.test(clause) &&
+      (EXPLICIT_COMBINE_REGEX.test(clause) || /\+/.test(betweenEventsText));
+
+    if (isExplicitlyCombinedCard) {
+      const uniqueNames = Array.from(new Set(eventsInClause.map(e => e.resolvedName)));
+      const combinedTitle = uniqueNames.join(' + ');
+      if (!functions.some(f => f.name.toLowerCase() === combinedTitle.toLowerCase())) {
         functions.push({
-          id: `func-ai-${idx + 1}`,
-          name: evt.name,
-          date: clauseDate,
-          dateNotFixed: clauseDate === 'Date Not Fixed',
-          startTime: customStartTime,
-          endTime: customEndTime,
-          location: clauseLoc,
-          requirements: eventCrew,
+          id: `func-ai-${functions.length + 1}`,
+          name: combinedTitle,
+          date: effectiveCardDate || 'Date Not Fixed',
+          dateNotFixed: !effectiveCardDate || effectiveCardDate === 'Date Not Fixed',
+          startTime: clauseTimes.startTime || customStartTime,
+          endTime: clauseTimes.endTime || customEndTime,
+          location: effectiveCardLoc,
+          _explicitCrew: clauseCrew.length > 0 ? [...clauseCrew] : undefined,
+          requirements: clauseCrew.length > 0 ? [...clauseCrew] : [],
           notes: ''
         });
       }
+    } else {
+      // ALWAYS create SEPARATE function cards for each ceremony!
+      for (const hit of eventsInClause) {
+        // Deduplicate ONLY if identical event name on the exact same date AND same time/clause (unless repeated across distinct dates!)
+        const alreadySameNameAndDate = functions.some(
+          f => f.name.toLowerCase() === hit.resolvedName.toLowerCase() && f.date === (effectiveCardDate || 'Date Not Fixed')
+        );
+        if (!alreadySameNameAndDate) {
+          functions.push({
+            id: `func-ai-${functions.length + 1}`,
+            name: hit.resolvedName,
+            date: effectiveCardDate || 'Date Not Fixed',
+            dateNotFixed: !effectiveCardDate || effectiveCardDate === 'Date Not Fixed',
+            startTime: clauseTimes.startTime || customStartTime,
+            endTime: clauseTimes.endTime || customEndTime,
+            location: effectiveCardLoc,
+            _explicitCrew: clauseCrew.length > 0 ? [...clauseCrew] : undefined,
+            requirements: clauseCrew.length > 0 ? [...clauseCrew] : [],
+            notes: ''
+          });
+        }
+      }
     }
-  });
+  }
 
+  // Fallback default function if zero main ceremonies detected
   if (functions.length === 0) {
+    const fallbackEventName = resolveStudioFunctionName('Wedding', studioEventNames, studioDefaultFunctions);
     functions.push({
       id: 'func-ai-def',
-      name: 'Wedding Ceremony',
+      name: fallbackEventName,
       date: weddingDate || 'Date Not Fixed',
       dateNotFixed: isDateNotFixed,
       startTime: customStartTime,
       endTime: customEndTime,
       location: location || '',
-      requirements: defaultRequirements,
+      requirements: [],
       notes: ''
     });
+  }
+
+  // Apply global modifier crew ("दोनों में 1 Traditional Photographer"), studio defaultFunctions crew, shortcut crew, or clean defaults
+  for (const fn of functions) {
+    let finalReqs: Array<{ name: string; qty: number }> = Array.isArray(fn._explicitCrew) ? [...fn._explicitCrew] : [];
+    delete fn._explicitCrew;
+
+    if (globalModifierCrew.length > 0) {
+      for (const gCrew of globalModifierCrew) {
+        if (!finalReqs.some(r => r.name.toLowerCase() === gCrew.name.toLowerCase())) {
+          finalReqs.push({ ...gCrew });
+        }
+      }
+    }
+
+    if (finalReqs.length === 0 && shortcutCrew && shortcutCrew.length > 0) {
+      finalReqs = shortcutCrew.map(c => ({ ...c }));
+    }
+
+    if (finalReqs.length === 0 && studioDefaultFunctions.length > 0) {
+      const cleanEventBase = (s: string) => s.toLowerCase().replace(/\b(?:ceremony|night|party|function|shoot|event|day)\b/gi, '').replace(/\s+/g, ' ').trim();
+      const fnLower = fn.name.toLowerCase().trim();
+      const fnBase = cleanEventBase(fn.name);
+      const matchedDef = studioDefaultFunctions.find(df => {
+        if (!df?.name) return false;
+        const dfLower = df.name.toLowerCase().trim();
+        if (dfLower === fnLower) return true;
+        if (!dfLower.includes('&') && !dfLower.includes('+')) {
+          return cleanEventBase(df.name) === fnBase;
+        }
+        return false;
+      });
+      if (matchedDef) {
+        if (Array.isArray(matchedDef.requirements) && matchedDef.requirements.length > 0) {
+          finalReqs = matchedDef.requirements.map((r: any) => ({
+            name: resolveStudioCrewRole(typeof r === 'string' ? r : r?.name || '', studioCrewRoles),
+            qty: Number(r?.qty || 1)
+          }));
+        }
+        if (!fn.startTime && matchedDef.startTime) fn.startTime = matchedDef.startTime;
+        if (!fn.endTime && matchedDef.endTime) fn.endTime = matchedDef.endTime;
+        if (!fn.notes && matchedDef.notes) fn.notes = matchedDef.notes;
+      }
+    }
+
+    if (finalReqs.length === 0) {
+      finalReqs = [
+        { name: resolveStudioCrewRole('Candid Photographer', studioCrewRoles), qty: 1 },
+        { name: resolveStudioCrewRole('Cinematographer', studioCrewRoles), qty: 1 }
+      ];
+    }
+
+    fn.requirements = finalReqs;
   }
 
   // Update primary location from Wedding ceremony if present
@@ -844,9 +1641,67 @@ export function fallbackHeuristicExtractor(contextData: any) {
     location = weddingFunc.location;
   }
 
+  // Extract Pre-Wedding shoot details dynamically when requested
+  let shootDetailsObj: any = {
+    visible: false,
+    daysText: '',
+    crewText: '',
+    deliverablesText: '',
+    showExclusionsNote: true
+  };
+
+  if (hasPreWed) {
+    const pwText = preWedClauses.join(' ') || userNotes;
+    const daysMatch = pwText.match(/(\d+|एक|दो|तीन|चार|पांच|one|two|three|four|five)\s*(?:days?|दिन|डेज?)/i);
+    const pwDaysNum = daysMatch ? parseSmallCountWord(daysMatch[1]) : 1;
+    const pwDaysText = pwDaysNum === 1 ? '1 Day Shoot' : `${pwDaysNum} Days Shoot`;
+
+    const pwCrewExtracted = extractCrewFromSnippet(pwText);
+    const studioPwReqs: string[] = Array.isArray(studioSettings?.requirements) ? studioSettings.requirements : [];
+    const pwCrewText = pwCrewExtracted.length > 0
+      ? pwCrewExtracted.map(c => `${c.qty}x ${c.name}`).join('\n')
+      : (studioPwReqs.length > 0 ? studioPwReqs.slice(0, 3).join('\n') : '1x Candid Photographer\n1x Cinematographer\n1x Drone Pilot');
+
+    const studioPwDelivs: string[] = Array.isArray(studioSettings?.preWeddingDeliverables) ? studioSettings.preWeddingDeliverables : [];
+    const pwDelivMatches: string[] = [];
+    const pwLower = pwText.toLowerCase();
+    const reelM = pwText.match(/(\d+|एक|दो|तीन|चार|पांच)\s*(?:instagram\s*)?(?:reels?|रील्स?)/i);
+    if (reelM) {
+      const cnt = parseSmallCountWord(reelM[1]);
+      pwDelivMatches.push(`${cnt} Instagram ${cnt === 1 ? 'Reel' : 'Reels'}`);
+    } else if (/reel|रील/i.test(pwLower)) {
+      pwDelivMatches.push('1 Teaser Video Reel');
+    }
+    if (/teaser|टीज़र|टीजर/i.test(pwLower)) pwDelivMatches.push('Pre-Wedding Teaser Video');
+    if (/save\s*the\s*date/i.test(pwLower)) pwDelivMatches.push('3 Save The Dates Photos');
+    if (/countdown/i.test(pwLower)) pwDelivMatches.push('1 Countdown Reel');
+    if (/edited|photo|फ़ोटो|फोटो|images/i.test(pwLower)) pwDelivMatches.push('Approx. 50 High Resolution Edited Images');
+    if (/raw|रॉ/i.test(pwLower)) pwDelivMatches.push('Full Ultra HD Super-Fine Raw Photos');
+    if (/highlight|film/i.test(pwLower)) pwDelivMatches.push('Pre-Wedding Highlight Film');
+
+    const finalPwDelivs = pwDelivMatches.length > 0
+      ? Array.from(new Set(pwDelivMatches)).join('\n')
+      : (studioPwDelivs.length > 0
+          ? studioPwDelivs.slice(0, 3).join('\n')
+          : 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n1 Teaser Video Reel');
+
+    const pwLocation = preWedClauses.length > 0 ? extractLocationFromSnippet(pwText) : '';
+    const pwDate = preWedClauses.length > 0 ? extractDateFromSnippet(pwText) : '';
+
+    shootDetailsObj = {
+      visible: true,
+      daysText: pwDaysText,
+      crewText: pwCrewText,
+      deliverablesText: finalPwDelivs,
+      ...(pwLocation ? { location: pwLocation } : {}),
+      ...(pwDate && pwDate !== 'Date Not Fixed' ? { date: pwDate } : {}),
+      showExclusionsNote: true
+    };
+  }
+
   // 7. Studio Settings Deliverables & Shorthands Sync
-  const studioDeliverables: string[] = Array.isArray(contextData.studioSettings?.deliverables)
-    ? contextData.studioSettings.deliverables
+  const studioDeliverables: string[] = Array.isArray(studioSettings?.deliverables)
+    ? studioSettings.deliverables
         .map((d: any) => typeof d === 'string' ? d : d?.title)
         .filter(Boolean)
     : [];
@@ -856,27 +1711,11 @@ export function fallbackHeuristicExtractor(contextData: any) {
   // Check if "all deliverables" or "all droppers" trigger was spoken or requested (Unicode safe for Hindi/Marathi/English)
   const hasAllDeliverablesRequested = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(fullText);
 
-  // Check if any custom shortcut triggered mapped deliverables (using previously declared shortcutDeliverables)
-  for (const sc of studioShortcuts) {
-    if (!sc.trigger) continue;
-    const trigLower = sc.trigger.toLowerCase().trim();
-    if (fullText.includes(trigLower) || trigLower.split(/\s+/).every((w: string) => fullText.includes(w))) {
-      if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) {
-        shortcutDeliverables.push(...sc.mappedDeliverables);
-      }
-      if (sc.mappedPrice && basePrice <= 0 && !budget) {
-        basePrice = sc.mappedPrice;
-      }
-    }
-  }
-
   if (hasAllDeliverablesRequested && studioDeliverables.length > 0) {
-    // ⚡ FULL SYNC: Add ALL deliverables configured in Quotation Settings!
     deliverables = [...studioDeliverables];
   } else if (shortcutDeliverables.length > 0) {
     deliverables = [...new Set(shortcutDeliverables)];
   } else if (studioDeliverables.length > 0) {
-    // If user mentioned specific words, match against studio deliverables catalog
     const matchedStudioDelivs = studioDeliverables.filter((title: string) => {
       const tLower = title.toLowerCase();
       if (tLower.includes('teaser') && fullText.includes('teaser')) return true;
@@ -895,7 +1734,6 @@ export function fallbackHeuristicExtractor(contextData: any) {
       deliverables = studioDeliverables.slice(0, 6);
     }
   } else {
-    // Base fallback if no studio deliverables configured
     deliverables = [
       'All Raw Photos & Footage in Hard Drive',
       'Cinematic Wedding Highlight Film (15-20 Min)',
@@ -914,13 +1752,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
       eventType,
       locationName: location
     },
-    shootDetails: {
-      visible: hasPreWed,
-      daysText: '1 Day Shoot',
-      crewText: 'Candid Photography\nCinematography\nDrone Pilot',
-      deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n1 Teaser Video Reel',
-      showExclusionsNote: true
-    },
+    shootDetails: shootDetailsObj,
     functionsPage: {
       items: functions
     },
@@ -954,6 +1786,19 @@ export function fallbackHeuristicExtractor(contextData: any) {
  */
 export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextData: any) {
   let rootObj = aiData?.document || aiData?.quotation || aiData;
+
+  const studioSettings = contextData?.studioSettings || {};
+  const studioDefaultFunctions: any[] = Array.isArray(studioSettings?.defaultFunctions) ? studioSettings.defaultFunctions : [];
+  const rawStudioEvents: any[] = Array.isArray(contextData?.studioEventTypes) ? contextData.studioEventTypes : [];
+  const studioEventNames: string[] = Array.from(
+    new Set(
+      rawStudioEvents
+        .filter((e: any) => typeof e === 'string' || String(e?.category || '').toLowerCase() !== 'ritual')
+        .map((e: any) => (typeof e === 'string' ? e : e?.name || ''))
+        .filter(Boolean)
+    )
+  );
+  const studioCrewRoles: any[] = Array.isArray(contextData?.studioCrewRoles) ? contextData.studioCrewRoles : [];
 
   // Canonical top-level field normalizer
   if (rootObj && typeof rootObj === 'object') {
@@ -989,19 +1834,62 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     }
   }
 
-  // Check if user's notes or prompt explicitly confirmed any payment/advance was already received
-  const allUserNotes = [
+  const rawPromptNotes = (contextData?.additional_user_notes || contextData?.additionalNotes || '').trim();
+  const allUserNotesRaw = [
+    contextData?.additional_user_notes,
     contextData?.additionalNotes,
     contextData?.leadNotes,
     contextData?.notes,
+    contextData?.notes_and_comments,
     aiData?.notes
-  ].filter(Boolean).join(' ').toLowerCase();
+  ].filter(Boolean).join(' ');
+  const allUserNotes = allUserNotesRaw.toLowerCase();
+
+  const isDirectJson = Boolean(contextData?._isDirectJson || sanitizeAndParseJson(rawPromptNotes));
+  const formSignals = [
+    contextData?.raw_form_fields?.event_type,
+    contextData?.raw_form_fields?.services,
+    contextData?.raw_form_fields?.event,
+    contextData?.raw_form_fields?.functions
+  ].filter(Boolean).join(' ');
+  const userNegatedPreWed = detectPreWeddingNegation(rawPromptNotes || allUserNotesRaw);
+  const promptPreWedRequested = isDirectJson
+    ? Boolean(rootObj?.shootDetails?.visible)
+    : (!userNegatedPreWed && (
+        rawPromptNotes
+          ? detectPreWeddingIntent(rawPromptNotes)
+          : (detectPreWeddingIntent(contextData?.notes_and_comments || allUserNotesRaw) || detectPreWeddingIntent(formSignals))
+      ));
 
   const hasExplicitPaymentReceived = /\b(advance received|advance paid|already paid|already received|payment received|token received|token paid|amount received|amount paid)\b/i.test(allUserNotes);
 
   // Check if rootObj is ALREADY a structured StudioCore Quotation JSON document
   if (rootObj.cover || rootObj.functionsPage || rootObj.pricingPage || rootObj.pages) {
+    // Enforce Pre-Wedding strict visibility on rootObj BEFORE normalizeQuotationData
+    if (!isDirectJson) {
+      if (!promptPreWedRequested) {
+        rootObj.shootDetails = {
+          ...(rootObj.shootDetails || {}),
+          visible: false,
+          daysText: '',
+          crewText: '',
+          deliverablesText: ''
+        };
+      } else {
+        const sObj = rootObj.shootDetails || {};
+        rootObj.shootDetails = {
+          ...sObj,
+          visible: true,
+          daysText: sObj.daysText || '1 Day Shoot',
+          crewText: sObj.crewText || (Array.isArray(studioSettings?.requirements) && studioSettings.requirements.length > 0 ? studioSettings.requirements.slice(0, 3).join('\n') : '1x Candid Photographer\n1x Cinematographer\n1x Drone Pilot'),
+          deliverablesText: sObj.deliverablesText || (Array.isArray(studioSettings?.preWeddingDeliverables) && studioSettings.preWeddingDeliverables.length > 0 ? studioSettings.preWeddingDeliverables.slice(0, 3).join('\n') : 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n1 Teaser Video Reel'),
+          showExclusionsNote: true
+        };
+      }
+    }
+
     const normDoc = normalizeQuotationData(rootObj, baseSchema);
+    normDoc.pageSequence = syncShootPageInSequence(normDoc.pageSequence, Boolean(normDoc.shootDetails?.visible));
 
     // Strictly ensure payment milestones default to Pending unless explicitly paid
     if (normDoc.paymentTermsPage?.steps && Array.isArray(normDoc.paymentTermsPage.steps)) {
@@ -1015,35 +1903,33 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       });
     }
 
-    // Normalize crew role names and filter out pre-wedding cards from functionsPage
+    // Preserve SEPARATE cards (NO unconditional same-date merging) & map names to Studio Owner Settings!
     if (normDoc.functionsPage?.items && Array.isArray(normDoc.functionsPage.items)) {
       const nonPreWedItems = normDoc.functionsPage.items.filter((fn: any) => {
         const nameLower = (fn.name || '').toLowerCase();
         return !nameLower.includes('pre-wedding') && !nameLower.includes('prewedding') && !nameLower.includes('pre wedding') && !nameLower.includes('previewing');
       });
       const itemsToKeep = nonPreWedItems.length > 0 ? nonPreWedItems : normDoc.functionsPage.items;
-      const mappedItems = itemsToKeep.map((fn: any) => ({
+      normDoc.functionsPage.items = itemsToKeep.map((fn: any, idx: number) => ({
         ...fn,
-        name: fn.name || 'Wedding',
+        id: fn.id || `func-ai-${idx + 1}`,
+        name: resolveStudioFunctionName(fn.name || 'Wedding', studioEventNames, studioDefaultFunctions),
         date: fn.dateNotFixed ? 'Date Not Fixed' : formatQuotationDate(fn.date),
         dateNotFixed: fn.dateNotFixed ?? (!fn.date || fn.date === 'Date Not Fixed'),
         startTime: fn.startTime || '',
         endTime: fn.endTime || '',
         location: fn.location || '',
         notes: fn.notes || '',
-        requirements: Array.isArray(fn.requirements)
+        requirements: Array.isArray(fn.requirements) && fn.requirements.length > 0
           ? fn.requirements.map((r: any) => ({
-              name: normalizeCrewRoleName(typeof r === 'string' ? r : r.name || ''),
+              name: resolveStudioCrewRole(typeof r === 'string' ? r : r.name || '', studioCrewRoles),
               qty: Number(r.qty || 1)
             }))
           : [
-              { name: 'Candid Photographer', qty: 1 },
-              { name: 'Cinematographer', qty: 1 }
+              { name: resolveStudioCrewRole('Candid Photographer', studioCrewRoles), qty: 1 },
+              { name: resolveStudioCrewRole('Cinematographer', studioCrewRoles), qty: 1 }
             ]
       }));
-
-      // ⚡ MANDATE: Automatically merge same-date events (e.g. Haldi + Sangeet)
-      normDoc.functionsPage.items = consolidateSameDateFunctions(mappedItems);
     }
 
     // ⚡ MANDATE: Resolve single primary cover location (Wedding first, no multi-venue concatenation)
@@ -1069,17 +1955,24 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       contextData?.additionalNotes
     ].filter(Boolean).join(' ').toLowerCase();
 
-    const hasAllDelivReq = /\b(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)\b/i.test(allNotesText);
-    const studioDelivs: string[] = Array.isArray(contextData?.studioSettings?.deliverables)
-      ? contextData.studioSettings.deliverables.map((d: any) => typeof d === 'string' ? d : d?.title).filter(Boolean)
+    const hasAllDelivReq = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText);
+    const studioDelivs: string[] = Array.isArray(studioSettings?.deliverables)
+      ? studioSettings.deliverables.map((d: any) => typeof d === 'string' ? d : d?.title).filter(Boolean)
       : [];
 
     if (hasAllDelivReq && studioDelivs.length > 0) {
       if (!normDoc.deliverablesPage) normDoc.deliverablesPage = { selectedItems: [] };
       normDoc.deliverablesPage.selectedItems = [...studioDelivs];
     }
+    if (studioDelivs.length > 0) {
+      if (!normDoc.deliverablesPage) normDoc.deliverablesPage = { selectedItems: [], availableOptions: [] };
+      normDoc.deliverablesPage.availableOptions = Array.from(new Set([
+        ...studioDelivs,
+        ...(normDoc.deliverablesPage.availableOptions || []),
+        ...(normDoc.deliverablesPage.selectedItems || [])
+      ]));
+    }
 
-    // Ensure showExclusionsNote is default ON (true)
     if (normDoc.shootDetails) normDoc.shootDetails.showExclusionsNote = true;
     if (normDoc.pricingPage) normDoc.pricingPage.showExclusionsNote = true;
 
@@ -1093,14 +1986,21 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     const subTot = Math.max(0, baseP - discP + travP + accP + addlP);
     const totAmount = Math.round(subTot * (1 + gstP / 100));
 
+    const maxPhotoQty = Math.max(0, ...(normDoc.functionsPage?.items || []).map((f: any) =>
+      (f.requirements || []).filter((r: any) => /photo/i.test(r.name)).reduce((s: number, r: any) => s + Number(r.qty || 1), 0)
+    ));
+    const maxVideoQty = Math.max(0, ...(normDoc.functionsPage?.items || []).map((f: any) =>
+      (f.requirements || []).filter((r: any) => /cinemat|cine|video/i.test(r.name)).reduce((s: number, r: any) => s + Number(r.qty || 1), 0)
+    ));
+
     const summary = {
       coupleName: cName,
       weddingDate: normDoc.functionsPage?.items?.[0]?.date || normDoc.cover?.weddingDate || 'Date TBD',
       location: normDoc.cover?.locationName || 'Location TBD',
       functionsCount: normDoc.functionsPage?.items?.length || 0,
       functionsList: (normDoc.functionsPage?.items || []).map((f: any) => f.name),
-      photographers: 2,
-      cinematographers: 2,
+      photographers: maxPhotoQty,
+      cinematographers: maxVideoQty,
       totalInvestment: `₹${totAmount.toLocaleString('en-IN')}`
     };
 
@@ -1130,48 +2030,55 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   if (cover.eventType) doc.cover.eventType = cover.eventType;
   doc.cover.locationName = cover.locationName || '';
 
-  // 2. Pre-Wedding Shoot Details Page
-  const isPromptPreWed = allUserNotes.includes('pre-wedding') || allUserNotes.includes('prewedding') || allUserNotes.includes('pre wedding') || allUserNotes.includes('previewing');
-  if (shootDetails.visible || shootDetails.daysText || shootDetails.crewText || isPromptPreWed) {
+  // 2. Pre-Wedding Shoot Details Page (Strictly conditional)
+  if (promptPreWedRequested || (isDirectJson && shootDetails.visible)) {
     if (!doc.shootDetails) doc.shootDetails = {};
     doc.shootDetails.visible = true;
     doc.shootDetails.daysText = shootDetails.daysText || '1 Day Shoot';
-    doc.shootDetails.crewText = shootDetails.crewText || 'Candid Photography\nCinematography\nDrone Pilot';
-    if (shootDetails.deliverablesText) doc.shootDetails.deliverablesText = shootDetails.deliverablesText;
+    doc.shootDetails.crewText = shootDetails.crewText || (Array.isArray(studioSettings?.requirements) && studioSettings.requirements.length > 0 ? studioSettings.requirements.slice(0, 3).join('\n') : '1x Candid Photographer\n1x Cinematographer\n1x Drone Pilot');
+    doc.shootDetails.deliverablesText = shootDetails.deliverablesText || (Array.isArray(studioSettings?.preWeddingDeliverables) && studioSettings.preWeddingDeliverables.length > 0 ? studioSettings.preWeddingDeliverables.slice(0, 3).join('\n') : 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n1 Teaser Video Reel');
     doc.shootDetails.showExclusionsNote = true;
+  } else {
+    doc.shootDetails = {
+      ...(doc.shootDetails || {}),
+      visible: false,
+      daysText: '',
+      crewText: '',
+      deliverablesText: '',
+      showExclusionsNote: true
+    };
   }
 
-  // 3. Functions Page (Strictly Main Wedding Functions - No Pre-Wedding cards)
+  // 3. Functions Page (Strictly Separate Function Cards unless explicitly combined + Exact Studio Names)
   if (!doc.functionsPage) doc.functionsPage = {};
   const rawFuncs = functionsPage.items || aiData.functions || [];
   if (Array.isArray(rawFuncs) && rawFuncs.length > 0) {
-    // Strictly filter out any Pre-Wedding cards from Functions & Coverage
     const nonPreWedFuncs = rawFuncs.filter((fn: any) => {
       const nameLower = (fn.name || '').toLowerCase();
       return !nameLower.includes('pre-wedding') && !nameLower.includes('prewedding') && !nameLower.includes('pre wedding') && !nameLower.includes('previewing');
     });
 
     const funcsToProcess = nonPreWedFuncs.length > 0 ? nonPreWedFuncs : [
-      { name: 'Wedding Ceremony', requirements: [{ name: 'Candid Photographer', qty: 1 }, { name: 'Cinematographer', qty: 1 }] }
+      { name: resolveStudioFunctionName('Wedding', studioEventNames, studioDefaultFunctions), requirements: [{ name: 'Candid Photographer', qty: 1 }, { name: 'Cinematographer', qty: 1 }] }
     ];
 
     doc.functionsPage.items = funcsToProcess.map((fn: any, idx: number) => {
       let requirementsList: { name: string; qty: number }[] = [];
       if (Array.isArray(fn.requirements)) {
         requirementsList = fn.requirements.map((r: any) => ({
-          name: normalizeCrewRoleName(typeof r === 'string' ? r : r.name || ''),
+          name: resolveStudioCrewRole(typeof r === 'string' ? r : r.name || '', studioCrewRoles),
           qty: Number(r.qty || 1)
         }));
       } else {
-        if (fn.photographers) requirementsList.push({ name: 'Candid Photographer', qty: Number(fn.photographers) });
-        if (fn.cinematographers) requirementsList.push({ name: 'Cinematographer', qty: Number(fn.cinematographers) });
-        if (fn.drone) requirementsList.push({ name: 'Drone Pilot', qty: 1 });
+        if (fn.photographers) requirementsList.push({ name: resolveStudioCrewRole('Candid Photographer', studioCrewRoles), qty: Number(fn.photographers) });
+        if (fn.cinematographers) requirementsList.push({ name: resolveStudioCrewRole('Cinematographer', studioCrewRoles), qty: Number(fn.cinematographers) });
+        if (fn.drone) requirementsList.push({ name: resolveStudioCrewRole('Drone Pilot', studioCrewRoles), qty: 1 });
       }
 
       if (requirementsList.length === 0) {
         requirementsList = [
-          { name: 'Candid Photographer', qty: 1 },
-          { name: 'Cinematographer', qty: 1 }
+          { name: resolveStudioCrewRole('Candid Photographer', studioCrewRoles), qty: 1 },
+          { name: resolveStudioCrewRole('Cinematographer', studioCrewRoles), qty: 1 }
         ];
       }
 
@@ -1179,7 +2086,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
 
       return {
         id: fn.id || `func-ai-${Date.now()}-${idx}`,
-        name: fn.name || `Function ${idx + 1}`,
+        name: resolveStudioFunctionName(fn.name || `Function ${idx + 1}`, studioEventNames, studioDefaultFunctions),
         date: isNotFixed ? 'Date Not Fixed' : formatQuotationDate(fn.date),
         dateNotFixed: isNotFixed,
         startTime: fn.startTime || '',
@@ -1189,9 +2096,6 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
         notes: fn.notes || ''
       };
     });
-
-    // ⚡ MANDATE: Automatically merge same-date events (e.g. Haldi + Sangeet)
-    doc.functionsPage.items = consolidateSameDateFunctions(doc.functionsPage.items);
   }
 
   // ⚡ MANDATE: Resolve single primary cover location (Wedding first, no multi-venue concatenation)
@@ -1199,7 +2103,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     doc.cover.locationName = resolvePrimaryCoverLocation(cover.locationName || '', doc.functionsPage?.items || []);
   }
 
-  // 4. Deliverables Page (Main Wedding Deliverables Only - Pre-wedding moved to shootDetails)
+  // 4. Deliverables Page (Main Wedding Deliverables Only - Pre-wedding moved to shootDetails ONLY if Pre-Wedding enabled)
   if (!doc.deliverablesPage) doc.deliverablesPage = {};
   const rawDeliv = deliverablesPage.selectedItems || aiData.deliverables || [];
   if (Array.isArray(rawDeliv) && rawDeliv.length > 0) {
@@ -1217,7 +2121,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
 
     doc.deliverablesPage.selectedItems = weddingDelivs;
 
-    if (preWedDelivs.length > 0) {
+    if (preWedDelivs.length > 0 && promptPreWedRequested) {
       if (!doc.shootDetails) doc.shootDetails = { visible: true };
       doc.shootDetails.visible = true;
       const existingText = doc.shootDetails.deliverablesText || '';
@@ -1228,13 +2132,13 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   }
 
   // ⚡ MANDATE: Enforce Studio Settings Deliverables & Shortcuts synchronization ("x डालेंगे तो y होगा")
-  const studioDeliverables: string[] = Array.isArray(contextData?.studioSettings?.deliverables)
-    ? contextData.studioSettings.deliverables
+  const studioDeliverables: string[] = Array.isArray(studioSettings?.deliverables)
+    ? studioSettings.deliverables
         .map((d: any) => typeof d === 'string' ? d : d?.title)
         .filter(Boolean)
     : [];
-  const studioShortcuts: any[] = Array.isArray(contextData?.studioSettings?.aiRules?.shortcuts)
-    ? contextData.studioSettings.aiRules.shortcuts
+  const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
+    ? studioSettings.aiRules.shortcuts
     : [];
 
   const allNotesText = `${contextData?.additional_user_notes || ''} ${JSON.stringify(contextData?.raw_form_fields || '')}`.toLowerCase();
@@ -1253,7 +2157,12 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       (trigLower.includes('deliverable') && (allNotesText.includes('ऑल डिलीवरेबल्स') || allNotesText.includes('all deliverable')));
 
     if (isMatch) {
-      if (Array.isArray(sc.mappedCrew) && sc.mappedCrew.length > 0) matchedShortcutCrew = sc.mappedCrew;
+      if (Array.isArray(sc.mappedCrew) && sc.mappedCrew.length > 0) {
+        matchedShortcutCrew = sc.mappedCrew.map((c: any) => ({
+          name: resolveStudioCrewRole(typeof c === 'string' ? c : c?.name || '', studioCrewRoles),
+          qty: Number(c?.qty || 1)
+        }));
+      }
       if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) matchedShortcutDelivs.push(...sc.mappedDeliverables);
       if (sc.mappedPrice) matchedShortcutPrice = sc.mappedPrice;
     }
@@ -1274,10 +2183,12 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     ]));
   }
 
-  // Assign matched shortcut crew to functions
+  // Assign matched shortcut crew only if explicit per-function crew was not already extracted
   if (matchedShortcutCrew && matchedShortcutCrew.length > 0 && Array.isArray(doc.functionsPage?.items)) {
     doc.functionsPage.items.forEach((fn: any) => {
-      fn.requirements = matchedShortcutCrew;
+      if (!fn.requirements || fn.requirements.length === 0) {
+        fn.requirements = matchedShortcutCrew;
+      }
     });
   }
 
@@ -1336,7 +2247,6 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       const stepPct = parseFloat(String(step.pct || '').replace(/[^0-9.]/g, '')) || 0;
       let stepAmt = Number(step.amount || 0);
 
-      // If step amount was not provided or 0, calculate mathematically from totalAmount
       if (stepAmt === 0 && totalAmount > 0 && stepPct > 0) {
         const isLast = idx === rawSteps.length - 1;
         stepAmt = isLast ? Math.max(0, totalAmount - allocated) : Math.round((totalAmount * stepPct) / 100);
@@ -1352,18 +2262,29 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     });
   }
 
+  const maxPhotoQty = Math.max(0, ...(doc.functionsPage?.items || []).map((f: any) =>
+    (f.requirements || []).filter((r: any) => /photo/i.test(r.name)).reduce((s: number, r: any) => s + Number(r.qty || 1), 0)
+  ));
+  const maxVideoQty = Math.max(0, ...(doc.functionsPage?.items || []).map((f: any) =>
+    (f.requirements || []).filter((r: any) => /cinemat|cine|video/i.test(r.name)).reduce((s: number, r: any) => s + Number(r.qty || 1), 0)
+  ));
+
   const summary = {
     coupleName,
     weddingDate: doc.functionsPage?.items?.[0]?.date || 'Date TBD',
     location: doc.cover.locationName || 'Location TBD',
     functionsCount: doc.functionsPage?.items?.length || 0,
     functionsList: (doc.functionsPage?.items || []).map((f: any) => f.name),
-    photographers: 2,
-    cinematographers: 2,
+    photographers: maxPhotoQty,
+    cinematographers: maxVideoQty,
     totalInvestment: `₹${totalAmount.toLocaleString('en-IN')}`
   };
 
   const normalizedFinalDoc = normalizeQuotationData(doc, baseSchema);
+  normalizedFinalDoc.pageSequence = syncShootPageInSequence(
+    normalizedFinalDoc.pageSequence,
+    Boolean(normalizedFinalDoc.shootDetails?.visible)
+  );
 
   // Strictly preserve template design and typography tokens from baseSchema
   if (baseSchema) {
@@ -1375,8 +2296,8 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   }
 
   // Consistent title naming everywhere: "${coupleName} - ${eventType}"
-  const eventType = (doc.cover?.eventType || baseSchema?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
-  const calculatedTitle = `${coupleName} - ${eventType}`;
+  const resolvedEventType = (doc.cover?.eventType || baseSchema?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+  const calculatedTitle = `${coupleName} - ${resolvedEventType}`;
   normalizedFinalDoc.designName = calculatedTitle;
   normalizedFinalDoc.title = calculatedTitle;
 
