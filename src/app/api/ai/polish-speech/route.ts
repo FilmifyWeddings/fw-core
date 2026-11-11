@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'No text provided to polish' }, { status: 400 });
     }
 
-    // 1. Fetch Studio Quotation Settings, Event Types & Crew Roles if not provided
+    // 1. Fetch Studio Quotation Settings, Event Types & Crew Roles in parallel when missing
     const candidateWsIds = Array.from(new Set([
       body.userId,
       body.ownerId,
@@ -49,62 +49,71 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
-    if (!studioSettings || !studioSettings.aiRules) {
+    const needSettings = (!studioSettings || !studioSettings.aiRules) && candidateWsIds.length > 0;
+    const needEvents = !(Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0) && candidateWsIds.length > 0;
+    const needRoles = !(Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0) && candidateWsIds.length > 0;
+
+    let studioEventTypes: any[] = Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0 ? body.studioEventTypes : [];
+    let studioCrewRoles: any[] = Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0 ? body.studioCrewRoles : [];
+
+    if (needSettings || needEvents || needRoles) {
       try {
-        for (const cWsId of candidateWsIds) {
-          const { data: row } = await supabaseAdmin
-            .from('workspace_quotation_settings')
-            .select('settings')
-            .eq('workspace_id', cWsId)
-            .maybeSingle();
-          if (row?.settings && typeof row.settings === 'object') {
-            studioSettings = row.settings;
-            break;
+        const [settingsRes, eventsRes, rolesRes] = await Promise.all([
+          needSettings
+            ? supabaseAdmin
+                .from('workspace_quotation_settings')
+                .select('workspace_id, settings')
+                .in('workspace_id', candidateWsIds)
+            : Promise.resolve({ data: null } as any),
+          needEvents
+            ? supabaseAdmin
+                .from('workspace_event_types')
+                .select('workspace_id, name, category, display_order')
+                .in('workspace_id', candidateWsIds)
+                .order('display_order', { ascending: true })
+            : Promise.resolve({ data: null } as any),
+          needRoles
+            ? supabaseAdmin
+                .from('master_crew_roles')
+                .select('workspace_id, name, short_code, display_order')
+                .in('workspace_id', candidateWsIds)
+                .order('display_order', { ascending: true })
+            : Promise.resolve({ data: null } as any),
+        ]);
+
+        if (needSettings && Array.isArray(settingsRes?.data)) {
+          for (const cid of candidateWsIds) {
+            const hit = settingsRes.data.find((r: any) => r.workspace_id === cid && r.settings && typeof r.settings === 'object');
+            if (hit) {
+              studioSettings = hit.settings;
+              break;
+            }
+          }
+        }
+        if (needEvents && Array.isArray(eventsRes?.data)) {
+          for (const cid of candidateWsIds) {
+            const matched = eventsRes.data.filter((e: any) => e.workspace_id === cid && String(e?.category || '').toLowerCase() !== 'ritual');
+            if (matched.length > 0) {
+              studioEventTypes = matched;
+              break;
+            }
+          }
+        }
+        if (needRoles && Array.isArray(rolesRes?.data)) {
+          for (const cid of candidateWsIds) {
+            const matched = rolesRes.data.filter((r: any) => r.workspace_id === cid);
+            if (matched.length > 0) {
+              studioCrewRoles = matched;
+              break;
+            }
           }
         }
       } catch (e) {
-        console.warn('[Polish Speech] Could not fetch workspace_quotation_settings:', e);
+        console.warn('[Polish Speech] Parallel studio config lookup warning:', e);
       }
     }
 
-    let studioEventTypes: any[] = [];
-    if (Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0) {
-      studioEventTypes = body.studioEventTypes;
-    } else {
-      try {
-        for (const cWsId of candidateWsIds) {
-          const { data: evRows } = await supabaseAdmin
-            .from('workspace_event_types')
-            .select('name, category, display_order')
-            .eq('workspace_id', cWsId)
-            .order('display_order', { ascending: true });
-          if (Array.isArray(evRows) && evRows.length > 0) {
-            studioEventTypes = evRows.filter((e: any) => String(e?.category || '').toLowerCase() !== 'ritual');
-            break;
-          }
-        }
-      } catch (_) {}
-    }
     if (studioEventTypes.length === 0) studioEventTypes = DEFAULT_EVENT_TYPES;
-
-    let studioCrewRoles: any[] = [];
-    if (Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0) {
-      studioCrewRoles = body.studioCrewRoles;
-    } else {
-      try {
-        for (const cWsId of candidateWsIds) {
-          const { data: roleRows } = await supabaseAdmin
-            .from('master_crew_roles')
-            .select('name, short_code, display_order')
-            .eq('workspace_id', cWsId)
-            .order('display_order', { ascending: true });
-          if (Array.isArray(roleRows) && roleRows.length > 0) {
-            studioCrewRoles = roleRows;
-            break;
-          }
-        }
-      } catch (_) {}
-    }
     if (studioCrewRoles.length === 0) studioCrewRoles = DEFAULT_CREW_ROLES;
 
     const studioEventNames = Array.from(
@@ -155,7 +164,8 @@ ABSOLUTE MANDATES:
    - Official Studio Crew Roles (USE THESE EXACT NAMES):
      ${studioCrewNames.join(', ')}, Drone Pilot, Semi Cinematic, Semi Standard
    - Fix phonetic mic slips cleanly using the Studio Crew Roles above (e.g. "कैंडिडेट"/"कैंडिड" -> "Candid Photographer", "ट्रेडिशनल फोटो"/"ट्रेडिशनल कैमरामैन" -> "Traditional Photographer", "ट्रेडिशनल वीडियो" -> "Traditional Videographer", "सिनेमा"/"सिनेमैटोग्राफर" -> "Cinematographer", "ड्रोन" -> "Drone Pilot").
-   - Clean up deliverable terms ("ऑल डिलीवरी"/"ऑल डिलीवरेबल्स" -> "All Deliverables Add", "रील"/"रील्स" -> "Reels", "फोटोबुक"/"एल्बम" -> "Photobook / Album").
+   - Keep per-event crew constraints & shortcut triggers verbatim ("Standard Crew", "alag crew", "अलग क्रू", "bas 1 Traditional Photographer", "only"): NEVER merge crew across different events.
+   - Clean up deliverable terms and keep ALL spoken deliverable counts in Arabic digits ("ऑल डिलीवरी"/"ऑल डिलीवरेबल्स" -> "All Deliverables Add", "500 एडिटेड फोटो" -> "500 Edited Photos", "5 रील" -> "5 Instagram Reels", "1 पेनड्राइव" -> "1 Pendrive", "2 एल्बम" -> "2 Albums", "फोटोबुक" -> "Photobook / Album").
    - Format prices cleanly in Indian currency while preserving exact value ("2 लाख" -> "₹2,00,000", "ढाई लाख" -> "₹2,50,000", "50 हजार" -> "₹50,000").
    - Clean up couple and client names into Title Case English (e.g. "रोहन और सिमरन" -> "Rohan & Simran").
    ${leadName ? `- If user mentions a specific couple name in speech, keep the spoken couple name accurately alongside any lead reference "${leadName}".` : ''}
@@ -167,17 +177,30 @@ ${customInstructions ? `\nSTUDIO CUSTOM RULES:\n${customInstructions}` : ''}
 4. OUTPUT RULES:
    - Plain text ONLY. No preambles ("Here is..."), no markdown fences (\`\`\`), no bolding, no bullet points.`;
 
-    // 3. EXCLUSIVE ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash, gemini-flash-latest & gemini-2.5-flash)
+    // 3. PRIMARY ENGINE: Google Gemini (gemini-flash-lite-latest -> gemini-3.1-flash-lite -> gemini-3-flash-preview)
     const rawGeminiKeys = (process.env.GEMINI_API_KEY || '')
       .split(',')
       .map((k) => k.trim())
       .filter(Boolean);
     if (rawGeminiKeys.length > 0) {
-      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+      // Note: gemini-flash-lite-latest rejects thinkingConfig (400 INVALID_ARGUMENT), so only include thinkingConfig where supported
+      const candidateModels: Array<{ id: string; supportsThinkingZero: boolean }> = [
+        { id: 'gemini-flash-lite-latest', supportsThinkingZero: false },
+        { id: 'gemini-3.1-flash-lite', supportsThinkingZero: true },
+        { id: 'gemini-3-flash-preview', supportsThinkingZero: true },
+      ];
       for (const geminiKey of rawGeminiKeys) {
-        for (const model of candidateModels) {
+        for (const { id: model, supportsThinkingZero } of candidateModels) {
           try {
             const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+            const generationConfig: Record<string, any> = {
+              temperature: 0.05,
+              maxOutputTokens: 2500,
+            };
+            if (supportsThinkingZero) {
+              generationConfig.thinkingConfig = { thinkingBudget: 0 };
+            }
+
             const res = await fetch(geminiUrl, {
               method: 'POST',
               headers: {
@@ -194,13 +217,9 @@ ${customInstructions ? `\nSTUDIO CUSTOM RULES:\n${customInstructions}` : ''}
                     ]
                   }
                 ],
-                generationConfig: {
-                  temperature: 0.05,
-                  maxOutputTokens: 2500,
-                  thinkingConfig: { thinkingBudget: 0 }
-                }
+                generationConfig
               }),
-              signal: AbortSignal.timeout(15000)
+              signal: AbortSignal.timeout(12000)
             });
 
             if (res.ok) {
@@ -217,7 +236,7 @@ ${customInstructions ? `\nSTUDIO CUSTOM RULES:\n${customInstructions}` : ''}
                 return NextResponse.json({
                   success: true,
                   polishedText: cleanResult,
-                  engine: `gemini-${model}`
+                  engine: model
                 });
               }
             } else {
@@ -228,6 +247,44 @@ ${customInstructions ? `\nSTUDIO CUSTOM RULES:\n${customInstructions}` : ''}
             console.warn(`[Polish Speech] Gemini ${model} exception:`, geminiErr?.message || geminiErr);
           }
         }
+      }
+    }
+
+    // 4. SECONDARY ENGINE: OpenAI gpt-4.1-mini fallback if Gemini unavailable/throttled
+    const openAiKey = (process.env.OPENAI_API_KEY || '').trim();
+    if (openAiKey) {
+      try {
+        const oaRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openAiKey}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4.1-mini',
+            temperature: 0.05,
+            max_tokens: 2000,
+            messages: [
+              { role: 'system', content: systemInstruction },
+              { role: 'user', content: `Raw Voice Input:\n"${rawText}"\n\nClean Finished Replacement Text:` }
+            ]
+          }),
+          signal: AbortSignal.timeout(12000)
+        });
+        if (oaRes.ok) {
+          const oaJson = await oaRes.json();
+          const polishedText = oaJson?.choices?.[0]?.message?.content?.trim() || '';
+          if (polishedText && polishedText.length > 3) {
+            const cleanResult = enforceLosslessSpeechRetention(rawText, polishedText, leadName);
+            return NextResponse.json({
+              success: true,
+              polishedText: cleanResult,
+              engine: 'gpt-4.1-mini'
+            });
+          }
+        }
+      } catch (oaErr: any) {
+        console.warn('[Polish Speech] OpenAI fallback exception:', oaErr?.message || oaErr);
       }
     }
 

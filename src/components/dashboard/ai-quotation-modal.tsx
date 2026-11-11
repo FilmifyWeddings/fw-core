@@ -40,7 +40,7 @@ interface AiQuotationModalProps {
   selectedTemplateId?: string | null;
   availableTemplates?: StudioTemplateItem[];
   currentDocumentData?: any;
-  onApplied?: (updatedDoc: any, targetQuotationId: string) => void;
+  onApplied?: (updatedDoc: any, targetQuotationId: string, isBackgroundRefine?: boolean) => void;
 }
 
 function tryParsePastedAiJson(rawText: string, baseTemplate?: any, leadContext?: any): any | null {
@@ -156,13 +156,19 @@ export function AiQuotationModal({
   useEffect(() => {
     if (!isOpen) return;
     let active = true;
+    try {
+      router.prefetch('/workspace/quotations/builder/templet/draft');
+    } catch (_) {}
+
     const syncStudioConfig = async () => {
       try {
-        let wsId = effectiveLead?.workspace_id || (effectiveLead as any)?.raw_payload?.workspace_id;
-        if (!wsId) {
-          const { data: { session } } = await supabase.auth.getSession();
-          wsId = session?.user?.id || undefined;
-        }
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!active) return;
+        authSessionRef.current = {
+          token: session?.access_token || '',
+          userId: session?.user?.id || ''
+        };
+        let wsId = effectiveLead?.workspace_id || (effectiveLead as any)?.raw_payload?.workspace_id || session?.user?.id || undefined;
         const [settings, evTypes, roles] = await Promise.all([
           fetchWorkspaceQuotationSettings(wsId).catch(() => null),
           fetchWorkspaceEventTypes(wsId).catch(() => null),
@@ -189,7 +195,7 @@ export function AiQuotationModal({
       window.removeEventListener('workspace_quotation_settings_updated', onSettingsUpdated);
       window.removeEventListener('workspace_crew_roles_updated', onSettingsUpdated);
     };
-  }, [isOpen, effectiveLead?.workspace_id]);
+  }, [isOpen, effectiveLead?.workspace_id, router]);
 
   // 🎙️ Voice MediaRecorder & Real-time Live Streaming State
   const [isRecording, setIsRecording] = useState(false);
@@ -198,6 +204,7 @@ export function AiQuotationModal({
   const [transcribeSuccess, setTranscribeSuccess] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
   const initialAppendTextRef = useRef<string>('');
   const liveCapturedTextRef = useRef<string>('');
@@ -205,19 +212,29 @@ export function AiQuotationModal({
   const committedRawTranscriptRef = useRef<string>('');
   const currentSegmentRawRef = useRef<string>('');
   const isRecordingRef = useRef<boolean>(false);
-  const polishTriggeredRef = useRef<boolean>(false);
+  const dictationFinalizedRef = useRef<boolean>(false);
+  const voiceSessionIdRef = useRef<number>(0);
   const audioChunksRef = useRef<Blob[]>([]);
   const isCancelledRef = useRef<boolean>(false);
   const timerRef = useRef<any>(null);
   const additionalNotesRef = useRef<string>(additionalNotes);
   additionalNotesRef.current = additionalNotes;
   const isPolishingInProgressRef = useRef<boolean>(false);
+  const authSessionRef = useRef<{ token: string; userId: string } | null>(null);
+
+  const joinPrefixAndDictation = (prefix: string, body: string): string => {
+    const cleanPrefix = (prefix || '').trim();
+    const cleanBody = (body || '').trim();
+    if (!cleanPrefix) return cleanBody;
+    if (!cleanBody) return cleanPrefix;
+    return `${cleanPrefix} ${cleanBody}`;
+  };
 
   /**
-   * ⚡ Real-Time Gemini 3.8 Flash AI Polish & Intent Analysis (100% Lossless)
+   * ⚡ Real-Time Gemini Flash AI Polish & Intent Analysis (100% Lossless)
    * Analyzes what the user spoke, fixes speech errors/misheard words without dropping ANY clause,
    * detects couple names, ceremonies, crew, rules, budget, and deliverables,
-   * and updates the textarea seamlessly.
+   * and updates the textarea seamlessly in place.
    */
   const polishTextWithGemini = async (textToPolish: string, replaceEntireField: boolean = false) => {
     const raw = (textToPolish || '').trim();
@@ -225,15 +242,20 @@ export function AiQuotationModal({
     isPolishingInProgressRef.current = true;
     setIsPolishing(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      let cachedSess = authSessionRef.current;
+      if (!cachedSess) {
+        const { data: { session } } = await supabase.auth.getSession();
+        cachedSess = { token: session?.access_token || '', userId: session?.user?.id || '' };
+        authSessionRef.current = cachedSess;
+      }
       const res = await fetch('/api/ai/polish-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rawText: raw,
           leadName: effectiveLead?.name,
-          workspaceId: effectiveLead?.workspace_id || session?.user?.id || null,
-          userId: session?.user?.id || null,
+          workspaceId: effectiveLead?.workspace_id || cachedSess?.userId || null,
+          userId: cachedSess?.userId || null,
           studioSettings: studioSettings,
           studioEventTypes: studioEventTypes,
           studioCrewRoles: studioCrewRoles
@@ -251,7 +273,7 @@ export function AiQuotationModal({
           }
 
           if (!replaceEntireField && initialAppendTextRef.current) {
-            setAdditionalNotes(initialAppendTextRef.current + '\n\n' + cleanPolished);
+            setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, cleanPolished));
           } else {
             setAdditionalNotes(cleanPolished);
           }
@@ -278,26 +300,106 @@ export function AiQuotationModal({
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         try { mediaRecorderRef.current.stop(); } catch (_) {}
       }
+      if (audioStreamRef.current) {
+        try { audioStreamRef.current.getTracks().forEach((t) => t.stop()); } catch (_) {}
+        audioStreamRef.current = null;
+      }
     };
   }, []);
 
-  const finalizeVoicePolish = (spokenRaw: string) => {
+  const finalizeLiveTextFallback = (spokenRaw: string, shouldPolishWithLlm: boolean = true) => {
     const raw = (spokenRaw || '').trim();
-    if (!raw || polishTriggeredRef.current || isCancelledRef.current) return;
-    polishTriggeredRef.current = true;
+    if (!raw || isCancelledRef.current) return;
     const finalCleaned = cleanVoiceTranscript(raw, effectiveLead?.name);
     liveCapturedTextRef.current = finalCleaned;
-    if (initialAppendTextRef.current) {
-      setAdditionalNotes(initialAppendTextRef.current + ' ' + finalCleaned);
-    } else {
-      setAdditionalNotes(finalCleaned);
-    }
+    setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, finalCleaned));
     setTranscribeSuccess(true);
     setIsRecording(false);
     setIsTranscribing(false);
     setTimeout(() => setTranscribeSuccess(false), 4000);
-    if (!isPolishingInProgressRef.current) {
-      polishTextWithGemini(raw);
+    if (shouldPolishWithLlm && !isPolishingInProgressRef.current) {
+      polishTextWithGemini(raw, false);
+    }
+  };
+
+  const transcribeWithAudioAi = async (audioBlob: Blob, detectedMime: string = '', liveFallbackRaw: string = '') => {
+    setIsTranscribing(true);
+    setErrorMsg(null);
+    try {
+      const fd = new FormData();
+      const lowerMime = (detectedMime || '').toLowerCase();
+      let ext = 'webm';
+      let cleanMime = 'audio/webm';
+      if (lowerMime.includes('mp4') || lowerMime.includes('aac') || lowerMime.includes('m4a')) {
+        ext = 'mp4';
+        cleanMime = 'audio/mp4';
+      } else if (lowerMime.includes('wav')) {
+        ext = 'wav';
+        cleanMime = 'audio/wav';
+      } else if (lowerMime.includes('ogg')) {
+        ext = 'ogg';
+        cleanMime = 'audio/ogg';
+      } else if (lowerMime.includes('mp3') || lowerMime.includes('mpeg')) {
+        ext = 'mp3';
+        cleanMime = 'audio/mpeg';
+      }
+
+      const file = new File([audioBlob], `voice_input.${ext}`, { type: cleanMime });
+      fd.append('audio', file, `voice_input.${ext}`);
+      if (effectiveLead?.name) fd.append('leadName', String(effectiveLead.name));
+
+      const evNames = Array.from(new Set(studioEventTypes.map((e) => e?.name || '').filter(Boolean))).join(', ');
+      if (evNames) fd.append('studioEventNames', evNames);
+
+      const roleNames = Array.from(new Set(studioCrewRoles.map((r) => r?.name || '').filter(Boolean))).join(', ');
+      if (roleNames) fd.append('studioCrewRoles', roleNames);
+
+      const triggers = Array.isArray(studioSettings?.aiRules?.shortcuts)
+        ? studioSettings.aiRules.shortcuts.map((s: any) => s?.trigger).filter(Boolean).join(', ')
+        : '';
+      if (triggers) fd.append('shortcutTriggers', triggers);
+      if (liveFallbackRaw) fd.append('liveDraft', liveFallbackRaw);
+
+      const res = await fetch('/api/ai/transcribe-audio', {
+        method: 'POST',
+        body: fd
+      });
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch (parseErr) {
+        console.warn('[Audio AI Non-JSON response]:', rawText?.slice(0, 150));
+        throw new Error('Audio AI service was momentarily busy.');
+      }
+
+      if (res.ok && data.text) {
+        const finalAudioText = String(data.text || '').trim();
+        setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, finalAudioText));
+        setTranscribeSuccess(true);
+        setTimeout(() => setTranscribeSuccess(false), 4500);
+
+        // Gemini 3-Flash Audio AI already produces 1-step clean lossless text (`oneStepPolished: true`).
+        // Only run secondary /api/ai/polish-speech when an OpenAI/Groq raw STT fallback was used!
+        if (!data.oneStepPolished) {
+          polishTextWithGemini(finalAudioText, false);
+        }
+      } else {
+        throw new Error(data.error || 'Could not transcribe audio.');
+      }
+    } catch (err: any) {
+      console.warn('[Audio AI Notice]:', err);
+      if (liveFallbackRaw && liveFallbackRaw.trim().length > 0) {
+        finalizeLiveTextFallback(liveFallbackRaw, true);
+      } else {
+        let friendlyMsg = err.message || 'Audio transcription unavailable. You can type or paste notes directly.';
+        if (friendlyMsg.includes('<!DOCTYPE') || friendlyMsg.includes('Unexpected token') || friendlyMsg.includes('JSON')) {
+          friendlyMsg = 'Voice transcription service was momentarily interrupted. Please speak again or type notes directly.';
+        }
+        setErrorMsg(friendlyMsg);
+      }
+    } finally {
+      setIsTranscribing(false);
     }
   };
 
@@ -306,21 +408,22 @@ export function AiQuotationModal({
     setTranscribeSuccess(false);
     isCancelledRef.current = false;
     isRecordingRef.current = true;
-    polishTriggeredRef.current = false;
+    dictationFinalizedRef.current = false;
+    voiceSessionIdRef.current += 1;
     initialAppendTextRef.current = additionalNotes.trim();
     liveCapturedTextRef.current = '';
     rawLiveTranscriptRef.current = '';
     committedRawTranscriptRef.current = '';
     currentSegmentRawRef.current = '';
 
-    // 1. WebSpeech API for REAL-TIME LIVE STREAMING + RESILIENT PAUSE-RECOVERY
+    // 1. WebSpeech API for 0ms REAL-TIME LIVE STREAMING preview while MediaRecorder captures full fidelity audio
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
         const rec = new SpeechRecognition();
         rec.continuous = true;
         rec.interimResults = true;
-        rec.lang = 'hi-IN'; // Recognizes Hindi, Marathi, Hinglish & English fluently!
+        rec.lang = 'hi-IN'; // Recognizes Hindi, Marathi, Hinglish & English live!
 
         rec.onresult = (event: any) => {
           let currentSegText = '';
@@ -335,14 +438,9 @@ export function AiQuotationModal({
             .trim();
           rawLiveTranscriptRef.current = fullRaw;
 
-          // Real-time cleanup in milliseconds while keeping unmutated raw transcript intact!
           const cleaned = cleanVoiceTranscript(fullRaw, effectiveLead?.name);
           liveCapturedTextRef.current = cleaned;
-          if (initialAppendTextRef.current) {
-            setAdditionalNotes(initialAppendTextRef.current + ' ' + cleaned);
-          } else {
-            setAdditionalNotes(cleaned);
-          }
+          setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, cleaned));
         };
 
         rec.onerror = (e: any) => {
@@ -352,7 +450,6 @@ export function AiQuotationModal({
         };
 
         rec.onend = () => {
-          // Commit current segment so breathing pauses NEVER wipe earlier speech!
           if (currentSegmentRawRef.current) {
             committedRawTranscriptRef.current = [
               committedRawTranscriptRef.current,
@@ -396,6 +493,7 @@ export function AiQuotationModal({
           autoGainControl: true
         }
       });
+      audioStreamRef.current = stream;
       audioChunksRef.current = [];
       const mimeType = getSupportedMimeType();
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -410,6 +508,7 @@ export function AiQuotationModal({
         try {
           stream.getTracks().forEach((track) => track.stop());
         } catch (_) {}
+        if (audioStreamRef.current === stream) audioStreamRef.current = null;
         if (timerRef.current) clearInterval(timerRef.current);
 
         if (isCancelledRef.current) {
@@ -418,37 +517,41 @@ export function AiQuotationModal({
           return;
         }
 
-        // Wait briefly so WebSpeech can deliver its final result token before reading raw transcript
-        await new Promise((r) => setTimeout(r, 150));
+        if (dictationFinalizedRef.current) return;
+        dictationFinalizedRef.current = true;
 
-        const capturedRaw = (rawLiveTranscriptRef.current || liveCapturedTextRef.current || '').trim();
-        if (capturedRaw.length > 0) {
-          console.log('[Live Voice Flow]: Speech captured directly via real-time WebSpeech stream in 0ms.');
-          audioChunksRef.current = [];
-          finalizeVoicePolish(capturedRaw);
-          return;
-        }
+        // Grab live WebSpeech fallback immediately while sending complete audio blob to Gemini 3-Flash Audio AI!
+        const capturedRaw = (
+          rawLiveTranscriptRef.current ||
+          [committedRawTranscriptRef.current, currentSegmentRawRef.current].filter(Boolean).join(' ') ||
+          liveCapturedTextRef.current ||
+          ''
+        ).trim();
 
-        const chunks = audioChunksRef.current;
-        if (!chunks || chunks.length === 0) {
-          setErrorMsg('कोई आवाज़ रिकॉर्ड नहीं हुई। कृपया दोबारा बोलें।');
-          return;
-        }
-
-        const actualMime = recorder.mimeType || mimeType || 'audio/mp4';
-        const audioBlob = new Blob(chunks, { type: actualMime });
+        const chunks = [...audioChunksRef.current];
         audioChunksRef.current = [];
+        const actualMime = recorder.mimeType || mimeType || 'audio/mp4';
+        const audioBlob = chunks.length > 0 ? new Blob(chunks, { type: actualMime }) : null;
 
-        console.log('[Audio Recording Completed]:', audioBlob.size, 'bytes, mime:', actualMime);
-        if (audioBlob.size < 100) {
-          setErrorMsg('रिकॉर्डिंग बहुत छोटी थी। कृपया कम से कम 2-3 सेकंड बोलें।');
+        if (capturedRaw.length > 0) {
+          const previewClean = cleanVoiceTranscript(capturedRaw, effectiveLead?.name);
+          setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, previewClean));
+        }
+
+        if (audioBlob && audioBlob.size >= 400) {
+          console.log('[Audio AI Pipeline] Sending actual recorded audio:', audioBlob.size, 'bytes, mime:', actualMime);
+          await transcribeWithAudioAi(audioBlob, actualMime, capturedRaw);
           return;
         }
 
-        await transcribeWithWhisper(audioBlob, actualMime);
+        if (capturedRaw.length > 0) {
+          finalizeLiveTextFallback(capturedRaw, true);
+        } else {
+          setErrorMsg('कोई आवाज़ रिकॉर्ड नहीं हुई। कृपया दोबारा बोलें।');
+        }
       };
 
-      // CRITICAL FOR IOS: Never pass timeslice! Calling recorder.start() without timeslice prevents 0-byte chunk bug on iOS WebKit.
+      // CRITICAL FOR iOS: Never pass timeslice! Prevents 0-byte chunk bug on iOS WebKit.
       recorder.start();
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
@@ -466,13 +569,17 @@ export function AiQuotationModal({
   const cancelVoiceRecording = () => {
     isCancelledRef.current = true;
     isRecordingRef.current = false;
-    polishTriggeredRef.current = false;
+    dictationFinalizedRef.current = true;
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (_) {}
       recognitionRef.current = null;
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try { mediaRecorderRef.current.stop(); } catch (_) {}
+    }
+    if (audioStreamRef.current) {
+      try { audioStreamRef.current.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      audioStreamRef.current = null;
     }
     audioChunksRef.current = [];
     committedRawTranscriptRef.current = '';
@@ -484,85 +591,53 @@ export function AiQuotationModal({
   };
 
   const stopVoiceRecording = () => {
+    const activeSessId = voiceSessionIdRef.current;
     isRecordingRef.current = false;
     setIsRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    // Give WebSpeech 180ms to flush the final spoken words (e.g. concluding budget or instructions)
+    // Pad 250ms before stopping recorder so concluding words/amounts on click are captured cleanly in audio!
     setTimeout(() => {
+      if (isCancelledRef.current || activeSessId !== voiceSessionIdRef.current) return;
+
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (_) {}
         recognitionRef.current = null;
       }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
         try {
-          mediaRecorderRef.current.stop();
+          recorder.stop();
+          // Safety net in case browser MediaRecorder fails to emit onstop
+          setTimeout(() => {
+            if (!dictationFinalizedRef.current && !isCancelledRef.current && activeSessId === voiceSessionIdRef.current) {
+              dictationFinalizedRef.current = true;
+              const rawFull = (
+                rawLiveTranscriptRef.current ||
+                [committedRawTranscriptRef.current, currentSegmentRawRef.current].filter(Boolean).join(' ')
+              ).trim();
+              if (rawFull) finalizeLiveTextFallback(rawFull, true);
+            }
+          }, 1800);
+          return;
         } catch (e) {
           console.warn('Error stopping media recorder:', e);
         }
       }
 
-      const rawFull = (
-        rawLiveTranscriptRef.current ||
-        [committedRawTranscriptRef.current, currentSegmentRawRef.current].filter(Boolean).join(' ')
-      ).trim();
-      const cleanedCap = (liveCapturedTextRef.current || '').trim();
-      const fallbackText = (additionalNotesRef.current || '').replace(initialAppendTextRef.current || '', '').trim();
-      const spoken = rawFull || cleanedCap || fallbackText;
-
-      if (spoken && spoken.length > 0 && !polishTriggeredRef.current) {
-        finalizeVoicePolish(spoken);
+      if (!dictationFinalizedRef.current && !isCancelledRef.current) {
+        dictationFinalizedRef.current = true;
+        const rawFull = (
+          rawLiveTranscriptRef.current ||
+          [committedRawTranscriptRef.current, currentSegmentRawRef.current].filter(Boolean).join(' ')
+        ).trim();
+        const cleanedCap = (liveCapturedTextRef.current || '').trim();
+        const fallbackText = (additionalNotesRef.current || '').replace(initialAppendTextRef.current || '', '').trim();
+        const spoken = rawFull || cleanedCap || fallbackText;
+        if (spoken) finalizeLiveTextFallback(spoken, true);
       }
-    }, 180);
-  };
-
-  const transcribeWithWhisper = async (audioBlob: Blob, detectedMime: string = '') => {
-    setIsTranscribing(true);
-    setErrorMsg(null);
-    try {
-      const fd = new FormData();
-      const isMp4 = detectedMime.includes('mp4') || detectedMime.includes('aac') || detectedMime.includes('m4a');
-      const ext = isMp4 ? 'mp4' : 'webm';
-      const file = new File([audioBlob], `voice_input.${ext}`, {
-        type: isMp4 ? 'audio/mp4' : 'audio/webm'
-      });
-      fd.append('audio', file, `voice_input.${ext}`);
-      const res = await fetch('/api/ai/transcribe-audio', {
-        method: 'POST',
-        body: fd
-      });
-      const rawText = await res.text();
-      let data: any = {};
-      try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch (parseErr) {
-        console.warn('[Whisper HTML or Non-JSON response]:', rawText?.slice(0, 150));
-        throw new Error('Voice transcription server is momentarily busy. Please speak again or type notes directly.');
-      }
-      if (res.ok && data.text) {
-        const cleanServerText = cleanVoiceTranscript((data.text || '').trim(), effectiveLead?.name);
-        setAdditionalNotes((prev: string) => {
-          const initial = initialAppendTextRef.current || '';
-          return initial ? `${initial} ${cleanServerText}` : cleanServerText;
-        });
-        setTranscribeSuccess(true);
-        setTimeout(() => setTranscribeSuccess(false), 5000);
-
-        // ⚡ Trigger Gemini API intent analysis and replace with polished version
-        polishTextWithGemini(cleanServerText);
-      } else {
-        throw new Error(data.error || 'Could not transcribe audio. Please speak again or type notes directly.');
-      }
-    } catch (err: any) {
-      console.warn('[Whisper Transcribe Notice]:', err);
-      let friendlyMsg = err.message || 'Audio transcription unavailable. You can type or paste notes directly.';
-      if (friendlyMsg.includes('<!DOCTYPE') || friendlyMsg.includes('Unexpected token') || friendlyMsg.includes('JSON')) {
-        friendlyMsg = 'Voice transcription service was momentarily interrupted. Please speak again or type notes directly.';
-      }
-      setErrorMsg(friendlyMsg);
-    } finally {
-      setIsTranscribing(false);
-    }
+    }, 250);
   };
 
   useEffect(() => {
@@ -958,7 +1033,13 @@ LEAD & CLIENT CONTEXT:
     }
   };
 
-  const applyDocAndNavigate = async (docToApply: any) => {
+  const applyDocAndNavigate = async (
+    docToApply: any,
+    options?: {
+      pendingAiNotes?: string | null;
+      isDirectJson?: boolean;
+    }
+  ) => {
     if (!docToApply) return;
 
     const stripTrailingKeywords = (name: string) => {
@@ -1039,6 +1120,18 @@ LEAD & CLIENT CONTEXT:
       }
     };
 
+    const getTokenAndUser = async () => {
+      if (authSessionRef.current?.token) return authSessionRef.current;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const sess = { token: session?.access_token || '', userId: session?.user?.id || '' };
+        authSessionRef.current = sess;
+        return sess;
+      } catch (_) {
+        return { token: '', userId: '' };
+      }
+    };
+
     // ⚡ INSTANT 0ms OPTIMISTIC BUILDER APPLY (Inside Builder):
     if (quotationId && onApplied) {
       const mergedDoc = normalizeQuotationData(docToApply, chosenBaseDoc);
@@ -1072,15 +1165,58 @@ LEAD & CLIENT CONTEXT:
 
       safeSessionStorageSet(`current_quotation_doc_${quotationId}`, JSON.stringify(mergedDoc));
       safeSessionStorageSet('current_active_quotation_doc', JSON.stringify({ id: quotationId, document: mergedDoc }));
+      safeLocalStorageSet(`wg_proposal_draft_${quotationId}`, JSON.stringify(mergedDoc), quotationId);
 
+      // Open/update builder UI immediately (<50ms)!
       onApplied(mergedDoc, quotationId);
       onClose();
 
-      // Silent background cloud persistence
+      // Silent background cloud persistence + optional LLM refinement for natural-language voice notes
       (async () => {
         try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token || '';
+          const { token, userId: cachedUid } = await getTokenAndUser();
+          let finalToPersist = mergedDoc;
+
+          if (options?.pendingAiNotes && !options?.isDirectJson) {
+            try {
+              const aiRes = await fetch('/api/quotations/ai-extract', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  leadId: effectiveLead.id,
+                  workspaceId: effectiveLead.workspace_id || cachedUid || null,
+                  userId: cachedUid || null,
+                  quotationId,
+                  explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
+                  currentDocument: mergedDoc,
+                  additionalNotes: options.pendingAiNotes,
+                  studioSettings,
+                  studioEventTypes,
+                  studioCrewRoles
+                }),
+                signal: AbortSignal.timeout(20000)
+              });
+              if (aiRes.ok) {
+                const aiJson = await aiRes.json();
+                const refinedRaw = aiJson.extractedDocument?.document || aiJson.extractedDocument;
+                if (aiJson.success && refinedRaw) {
+                  const refinedNormalized = normalizeQuotationData(refinedRaw, chosenBaseDoc);
+                  applyVisualTokens(refinedNormalized, chosenBaseDoc);
+                  finalToPersist = refinedNormalized;
+                  safeSessionStorageSet(`current_quotation_doc_${quotationId}`, JSON.stringify(finalToPersist));
+                  safeSessionStorageSet('current_active_quotation_doc', JSON.stringify({ id: quotationId, document: finalToPersist }));
+                  safeLocalStorageSet(`wg_proposal_draft_${quotationId}`, JSON.stringify(finalToPersist), quotationId);
+                  onApplied(finalToPersist, quotationId, true);
+                }
+              }
+            } catch (refineErr) {
+              console.warn('[AI Background Refine In-Builder Notice]:', refineErr);
+            }
+          }
+
           await fetch('/api/quotations/ai-apply', {
             method: 'POST',
             headers: {
@@ -1089,11 +1225,12 @@ LEAD & CLIENT CONTEXT:
             },
             body: JSON.stringify({
               quotationId,
-              document: mergedDoc
-            })
+              document: finalToPersist
+            }),
+            keepalive: true
           });
           const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-          await cacheDocumentLocal(quotationId, mergedDoc, 1);
+          await cacheDocumentLocal(quotationId, finalToPersist, 1);
         } catch (e) {
           console.warn('[AI Apply Background Persist]:', e);
         }
@@ -1101,10 +1238,10 @@ LEAD & CLIENT CONTEXT:
       return;
     }
 
-    // ⚡ INSTANT OPTIMISTIC CREATION FOR LEAD (<50ms):
+    // ⚡ INSTANT <100ms OPTIMISTIC CREATION FOR LEAD -> OPEN BUILDER IMMEDIATELY:
     const lId = effectiveLead.id;
     const leadShort = String(lId || 'LEAD').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
-    const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const randSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
 
     // 1. Calculate next version dynamically across ALL local + raw_payload sources
     let nextVersion = 1;
@@ -1240,9 +1377,29 @@ LEAD & CLIENT CONTEXT:
       } catch (_) {}
     };
 
-    // 2. Prime sessionStorage & list caches immediately (0ms hydration in builder)
+    const resolvedExplicitTemplateId = activeTemplateId || selectedTemplateId || activeTemplateObj?.id || undefined;
+
+    // 2. Prime sessionStorage, localStorage & list caches synchronously (<10ms -> 0ms Builder hydration!)
     safeSessionStorageSet(`current_quotation_doc_${targetQId}`, JSON.stringify(mergedDoc));
     safeSessionStorageSet('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: mergedDoc }));
+    safeSessionStorageSet(`pending_db_create_${targetQId}`, String(Date.now()));
+    safeLocalStorageSet(`wg_proposal_draft_${targetQId}`, JSON.stringify(mergedDoc), targetQId);
+
+    if (options?.pendingAiNotes && !options?.isDirectJson) {
+      safeSessionStorageSet(`ai_pending_refine_${targetQId}`, JSON.stringify({
+        leadId: lId,
+        workspaceId: effectiveLead.workspace_id || authSessionRef.current?.userId || null,
+        userId: authSessionRef.current?.userId || null,
+        quotationId: targetQId,
+        explicitTemplateId: resolvedExplicitTemplateId || null,
+        additionalNotes: options.pendingAiNotes,
+        studioSettings,
+        studioEventTypes,
+        studioCrewRoles,
+        createdAt: Date.now()
+      }));
+    }
+
     persistListCachesSafely(targetQId, nextVersion);
     try {
       window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId, version: nextVersion } }));
@@ -1254,72 +1411,71 @@ LEAD & CLIENT CONTEXT:
       });
     } catch (_) {}
 
-    // 3. Await cloud persistence first so database row is guaranteed created before routing to builder!
-    setApplying(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
+    // 3. Fire non-blocking cloud persistence (`keepalive: true`) and register synchronization promise
+    // so background Gemini refinement inside Builder waits for INSERT before executing AI-Apply!
+    const bgPersistPromise = (async () => {
+      try {
+        const { token } = await getTokenAndUser();
 
-      if (!quotationId && lId && lId !== 'draft') {
-        const createRes = await fetch('/api/quotations/create-for-lead', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            leadId: lId,
-            quotationId: targetQId,
-            clientName: coupleName,
-            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || undefined,
-            initialDocument: mergedDoc
-          })
-        });
+        if (!quotationId && lId && lId !== 'draft') {
+          const createRes = await fetch('/api/quotations/create-for-lead', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              leadId: lId,
+              quotationId: targetQId,
+              clientName: coupleName,
+              explicitTemplateId: resolvedExplicitTemplateId,
+              initialDocument: mergedDoc
+            }),
+            keepalive: true
+          });
 
-        if (createRes.ok) {
-          const createJson = await createRes.json().catch(() => ({}));
-          if (createJson.quotationId && createJson.quotationId !== targetQId) {
-            targetQId = createJson.quotationId;
-            mergedDoc.id = targetQId;
+          if (createRes.ok) {
+            const createJson = await createRes.json().catch(() => ({}));
+            const canonicalId = createJson.quotationId || targetQId;
+            const canonicalVer = typeof createJson.leadVersion === 'number' && createJson.leadVersion > 0
+              ? createJson.leadVersion
+              : nextVersion;
+            if (createJson.document && canonicalId === targetQId) {
+              mergedDoc.lead_version = canonicalVer;
+              persistListCachesSafely(canonicalId, canonicalVer);
+            }
           }
-          if (typeof createJson.leadVersion === 'number' && createJson.leadVersion > 0) {
-            nextVersion = createJson.leadVersion;
-            mergedDoc.lead_version = nextVersion;
-          }
-          if (createJson.document) {
-            // Adopt canonical created document with exact template design tokens
-            Object.assign(mergedDoc, createJson.document);
-            mergedDoc.id = targetQId;
-            mergedDoc.lead_version = nextVersion;
-          }
-          safeSessionStorageSet(`current_quotation_doc_${targetQId}`, JSON.stringify(mergedDoc));
-          safeSessionStorageSet('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: mergedDoc }));
-          persistListCachesSafely(targetQId, nextVersion);
-          window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId, version: nextVersion } }));
+        } else if (targetQId && targetQId !== 'draft') {
+          await fetch('/api/quotations/ai-apply', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              quotationId: targetQId,
+              document: mergedDoc
+            }),
+            keepalive: true
+          });
         }
-      } else if (targetQId && targetQId !== 'draft') {
-        await fetch('/api/quotations/ai-apply', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            quotationId: targetQId,
-            document: mergedDoc
-          })
-        });
-      }
 
-      const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-      await cacheDocumentLocal(targetQId, mergedDoc, 1);
-    } catch (e) {
-      console.warn('[AI Persist Error]:', e);
-    } finally {
-      setApplying(false);
+        const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
+        await cacheDocumentLocal(targetQId, mergedDoc, 1);
+      } catch (e) {
+        console.warn('[AI Background Persist Notice]:', e);
+      } finally {
+        try { sessionStorage.removeItem(`pending_db_create_${targetQId}`); } catch (_) {}
+      }
+    })();
+
+    if (typeof window !== 'undefined') {
+      const w = window as any;
+      if (!w.__pendingCreatePromises) w.__pendingCreatePromises = {};
+      w.__pendingCreatePromises[targetQId] = bgPersistPromise;
     }
 
-    // 4. Trigger navigation or callback now that quotation is committed to DB and storage!
+    // 4. Open Builder IMMEDIATELY (<100ms from click)!
     if (onApplied) {
       onApplied(mergedDoc, targetQId);
     } else if (targetQId && targetQId !== 'draft') {
@@ -1337,10 +1493,10 @@ LEAD & CLIENT CONTEXT:
   const handleQuickCreateAndOpen = async () => {
     setErrorMsg(null);
     try {
-      // If voice polish is currently completing, wait briefly for it (max ~1.2s)
-      if (isPolishingInProgressRef.current) {
-        for (let i = 0; i < 12; i++) {
-          if (!isPolishingInProgressRef.current) break;
+      // Wait briefly ONLY if audio transcription / polish is actively finishing (never blocks normal clicks!)
+      if (isTranscribing || isPolishingInProgressRef.current) {
+        for (let i = 0; i < 30; i++) {
+          if (!isTranscribing && !isPolishingInProgressRef.current) break;
           await new Promise((r) => setTimeout(r, 100));
         }
       }
@@ -1355,15 +1511,16 @@ LEAD & CLIENT CONTEXT:
       setGenerating(true);
       const notes = cleanVoiceTranscript(rawNotes, effectiveLead?.name);
 
-      // FAST PATH 1: Synchronously parse pasted AI JSON in 0ms before any network calls!
+      // FAST PATH 1: Synchronously parse pasted AI JSON in <2ms & open Builder immediately!
       const clientParsedDoc = tryParsePastedAiJson(notes, baseTemplateDoc || currentDocumentData, effectiveLead);
       if (clientParsedDoc) {
         setExtractedDoc(clientParsedDoc);
-        await applyDocAndNavigate(clientParsedDoc);
+        await applyDocAndNavigate(clientParsedDoc, { isDirectJson: true });
         return;
       }
 
-      // ⚡ FAST PATH 2: Instant Client-Side Extraction with Full Mathematical Method Engine (<15ms)
+      // ⚡ FAST PATH 2: Instant Synchronous Client-Side Extraction (<15ms) -> Open Builder IMMEDIATELY (<100ms),
+      // while Gemini AI Verification refines asynchronously in the background inside the open Builder!
       const instantContext = {
         additional_user_notes: notes,
         lead_info: effectiveLead,
@@ -1379,50 +1536,11 @@ LEAD & CLIENT CONTEXT:
       const instantRes = mapAiOutputToQuotationDocument(instantRaw, baseTemplateDoc || currentDocumentData, instantContext);
       const instantDoc = instantRes.document || instantRes;
 
-      let docToApply = instantDoc;
-
-      // 🧠 PRIMARY AI CALCULATION ENGINE: Call Authoritative AI Extraction & Math Evaluation
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token || '';
-        const aiRes = await fetch('/api/quotations/ai-extract', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            leadId: effectiveLead.id,
-            workspaceId: effectiveLead.workspace_id || session?.user?.id || null,
-            userId: session?.user?.id || null,
-            quotationId: quotationId || null,
-            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
-            currentDocument: baseTemplateDoc || currentDocumentData || null,
-            additionalNotes: notes,
-            studioSettings: studioSettings,
-            studioEventTypes: studioEventTypes,
-            studioCrewRoles: studioCrewRoles
-          }),
-          signal: AbortSignal.timeout(30000)
-        });
-
-        if (aiRes.ok) {
-          const aiJson = await aiRes.json();
-          if (aiJson.success && aiJson.extractedDocument) {
-            docToApply = aiJson.extractedDocument?.document || aiJson.extractedDocument;
-            console.log('[AI Modal Quick Create] Successfully applied Gemini AI Engine!');
-          }
-        } else {
-          const errTxt = await aiRes.text().catch(() => '');
-          console.warn('[AI Modal Quick Create] Server extraction returned status:', aiRes.status, errTxt.slice(0, 150));
-        }
-      } catch (geminiErr) {
-        console.warn('[AI Modal Quick Create] AI timeout/error, applying local math evaluation:', geminiErr);
-      }
-
-      const finalDocToApply = docToApply?.document || docToApply;
-      setExtractedDoc(finalDocToApply);
-      await applyDocAndNavigate(finalDocToApply);
+      setExtractedDoc(instantDoc);
+      await applyDocAndNavigate(instantDoc, {
+        pendingAiNotes: notes,
+        isDirectJson: false
+      });
     } catch (err: any) {
       console.error('[AI Modal Quick Create Error]:', err);
       let friendly = err.message || "Could not create quotation. Please try again.";
@@ -1537,8 +1655,24 @@ LEAD & CLIENT CONTEXT:
                     </motion.div>
                   )}
 
-                  {/* AI Polishing Banner */}
-                  {isPolishing && (
+                  {/* AI Audio Analyzing & Polishing Banners */}
+                  {isTranscribing && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center gap-2.5 shadow-xs"
+                    >
+                      <Loader2 className="w-4 h-4 text-amber-600 animate-spin shrink-0" />
+                      <div className="flex-1">
+                        <span className="font-extrabold">🎙️ Gemini 3-Flash Audio AI Analyzing...</span>
+                        <p className="text-[10px] font-normal text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+                          पूरी रिकॉर्डेड ऑडियो सुनकर बिना कोई अंतिम अमाउंट, डेट, डिलीवरेबल या क्रू रूल छोड़े सटीक टेक्स्ट तैयार हो रहा है
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {isPolishing && !isTranscribing && (
                     <motion.div
                       initial={{ opacity: 0, y: -5 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -1546,9 +1680,9 @@ LEAD & CLIENT CONTEXT:
                     >
                       <Sparkles className="w-4 h-4 text-purple-500 animate-spin shrink-0" />
                       <div className="flex-1">
-                        <span className="font-extrabold">✨ Google Gemini AI Analyzing & Polishing your speech...</span>
+                        <span className="font-extrabold">✨ Gemini Flash AI Polishing your speech...</span>
                         <p className="text-[10px] font-normal text-purple-600/80 dark:text-purple-300/80 mt-0.5">
-                          Google Gemini 3.8 Flash आपकी आवाज़ को समझकर कपल नेम, इवेंट्स, क्रू और प्राइज़िंग को तुरंत स्ट्रक्चर कर रहा है
+                          आपकी डिक्टेशन के कपल नेम, इवेंट्स, पर-इवेंट क्रू, डिलीवरेबल्स और प्राइज़िंग को 100% सटीक किया जा रहा है
                         </p>
                       </div>
                     </motion.div>
@@ -1604,13 +1738,28 @@ LEAD & CLIENT CONTEXT:
                         <button
                           type="button"
                           onClick={() => polishTextWithGemini(additionalNotes, true)}
-                          disabled={isPolishing || !additionalNotes.trim() || isRecording}
+                          disabled={isPolishing || isTranscribing || !additionalNotes.trim() || isRecording}
                           className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0 disabled:opacity-40"
-                          title="Google Gemini AI Polish: Automatically analyze intent, fix speech slips, format couple, events & pricing math"
+                          title="Gemini Flash AI Polish: Automatically analyze intent, fix speech slips, format couple, events, crew & pricing"
                         >
                           <Sparkles className={`w-3.5 h-3.5 text-purple-500 ${isPolishing ? 'animate-spin' : ''}`} />
-                          <span>{isPolishing ? 'Gemini Polishing...' : 'Gemini Polish'}</span>
+                          <span>{isPolishing ? 'Polishing...' : 'AI Polish'}</span>
                         </button>
+
+                        {additionalNotes.trim().length > 0 && !isRecording && !isTranscribing && !isPolishing && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdditionalNotes('');
+                              setTranscribeSuccess(false);
+                              setErrorMsg(null);
+                            }}
+                            className="px-2 py-1.5 rounded-xl text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 font-bold text-[11px] transition-all cursor-pointer"
+                            title="Clear notes"
+                          >
+                            Clear
+                          </button>
+                        )}
 
                         {additionalNotes.length > 0 && (
                           <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium hidden sm:inline">
@@ -1662,7 +1811,7 @@ LEAD & CLIENT CONTEXT:
                         ) : isTranscribing ? (
                           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-bold animate-pulse">
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500 shrink-0" />
-                            <span>Transcribing...</span>
+                            <span>Audio AI Analyzing...</span>
                           </div>
                         ) : isPolishing ? (
                           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-700 dark:text-purple-400 text-xs font-bold animate-pulse shadow-sm">

@@ -11,9 +11,24 @@ export default function RootError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const isStaleBundleError = Boolean(
+    error?.name === 'ChunkLoadError' ||
+    (error?.message && /(?:is not defined|Loading chunk|ChunkLoadError|dynamically imported module)/i.test(error.message))
+  );
+
   useEffect(() => {
     console.error('[Root App Error Caught by Boundary]:', error);
-  }, [error]);
+    // Self-heal stale cached client chunks from previous deployments (e.g. `useMemo is not defined`) with a once-per-60s hard reload
+    if (isStaleBundleError && typeof window !== 'undefined') {
+      try {
+        const lastReload = Number(sessionStorage.getItem('sc_error_reload_at') || 0);
+        if (Date.now() - lastReload > 60000) {
+          sessionStorage.setItem('sc_error_reload_at', String(Date.now()));
+          window.location.reload();
+        }
+      } catch (_) {}
+    }
+  }, [error, isStaleBundleError]);
 
   return (
     <div className="min-h-screen w-full bg-[#FAF9F6] flex items-center justify-center p-4">
@@ -25,7 +40,9 @@ export default function RootError({
         <div className="space-y-2">
           <h2 className="text-xl font-black text-zinc-900 tracking-tight">Something went wrong</h2>
           <p className="text-xs text-zinc-500 font-medium">
-            An unexpected error occurred while loading this page. Our team has been notified.
+            {isStaleBundleError
+              ? 'A newer version of StudioCore was deployed. Reloading to load the latest files.'
+              : 'An unexpected error occurred while loading this page. Our team has been notified.'}
           </p>
           {error?.message && (
             <p className="text-[11px] font-mono text-zinc-400 bg-zinc-50 p-2.5 rounded-xl border border-zinc-100 truncate">
@@ -36,7 +53,7 @@ export default function RootError({
 
         <div className="flex items-center justify-center gap-3 pt-2">
           <button
-            onClick={() => reset()}
+            onClick={() => (isStaleBundleError && typeof window !== 'undefined' ? window.location.reload() : reset())}
             className="px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />

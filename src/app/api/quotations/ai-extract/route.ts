@@ -9,7 +9,8 @@ import {
   mapAiOutputToQuotationDocument,
   detectPreWeddingIntent,
   detectPreWeddingNegation,
-  resolveStudioFunctionName
+  resolveStudioFunctionName,
+  buildScopedShortcutPromptHints
 } from '@/lib/ai-quotation-extractor';
 import { DEFAULT_EVENT_TYPES, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
@@ -30,27 +31,30 @@ export async function POST(req: NextRequest) {
     const { leadId, quotationId, explicitTemplateId, selectedTemplateId, currentDocument, additionalNotes } = body;
 
     let workspaceId = body.workspaceId || userId;
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('id, workspace_id, workspace_name')
-      .eq('id', userId)
-      .maybeSingle();
+    const [{ data: profile }, { data: matchedLead }] = await Promise.all([
+      supabaseAdmin
+        .from('profiles')
+        .select('id, workspace_id, workspace_name')
+        .eq('id', userId)
+        .maybeSingle(),
+      leadId && leadId !== 'draft'
+        ? supabaseAdmin
+            .from('leads')
+            .select('*')
+            .eq('id', leadId)
+            .maybeSingle()
+        : Promise.resolve({ data: null } as any),
+    ]);
+
     if (!body.workspaceId) {
       workspaceId = profile?.workspace_id || profile?.id || userId;
     }
 
     // 1. Fetch Lead or Synthesize from Document
     let lead: any = null;
-    if (leadId && leadId !== 'draft') {
-      const { data: matchedLead } = await supabaseAdmin
-        .from('leads')
-        .select('*')
-        .eq('id', leadId)
-        .maybeSingle();
-      if (matchedLead) {
-        lead = matchedLead;
-        if (matchedLead.workspace_id) workspaceId = matchedLead.workspace_id;
-      }
+    if (matchedLead) {
+      lead = matchedLead;
+      if (matchedLead.workspace_id) workspaceId = matchedLead.workspace_id;
     }
 
     if (!lead) {
@@ -65,66 +69,7 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // 2. Fetch Existing Quotation Document or resolve selected template
-    let existingDoc: any = null;
-    if (quotationId) {
-      // Editing existing quotation
-      const { data: qDoc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('content_json')
-        .or(`template_id.eq.${quotationId},id.eq.${quotationId}`)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (qDoc?.content_json) {
-        existingDoc = qDoc.content_json;
-      } else {
-        const { data: qRecord } = await supabaseAdmin
-          .from('quotations')
-          .select('content_json')
-          .eq('id', quotationId)
-          .maybeSingle();
-        if (qRecord?.content_json) existingDoc = qRecord.content_json;
-      }
-      if (!existingDoc && currentDocument) {
-        existingDoc = currentDocument;
-      }
-    } else {
-      // Creating NEW quotation for lead: resolve the explicitly selected template first!
-      const templateToUse = explicitTemplateId || selectedTemplateId || body.templateId;
-      if (templateToUse) {
-        try {
-          const resolved = await resolveUserDefaultQuotationTemplate(
-            workspaceId,
-            userId,
-            templateToUse
-          );
-          if (resolved?.document) {
-            existingDoc = resolved.document;
-          }
-        } catch (e) {
-          console.warn('[AI Extract] Could not resolve template:', e);
-        }
-      }
-      if (!existingDoc && currentDocument) {
-        existingDoc = currentDocument;
-      }
-      if (!existingDoc) {
-        const resolvedDefault = await resolveUserDefaultQuotationTemplate(
-          workspaceId, 
-          userId
-        );
-        existingDoc = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
-      }
-    }
-
-    // 3. Assemble Combined Context Text
-    const rawPayload = lead.raw_payload || {};
-    const metaPayload = lead.raw_meta_payload || {};
-    const commentsText = Array.isArray(lead.comments) ? lead.comments.map((c: any) => c.text || '').join('\n') : '';
-
-    // Fetch Studio Quotation Settings, Official Functions (workspace_event_types), and Crew Roles (master_crew_roles)
+    // 2 & 3. Resolve existing/template doc + Studio Settings, Event Types, Crew Roles in PARALLEL
     const candidateWsIds = Array.from(new Set([
       workspaceId,
       profile?.workspace_id,
@@ -134,69 +79,118 @@ export async function POST(req: NextRequest) {
       lead?.workspace_id
     ].filter(Boolean)));
 
-    let studioSettings: any = body.studioSettings || null;
-    if (!studioSettings || !studioSettings.aiRules) {
+    const hasValidClientDoc = Boolean(
+      currentDocument &&
+      typeof currentDocument === 'object' &&
+      (currentDocument.cover || currentDocument.functionsPage || currentDocument.pages)
+    );
+    const hasClientSettings = Boolean(body.studioSettings && body.studioSettings.aiRules);
+    const hasClientEvents = Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0;
+    const hasClientRoles = Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0;
+
+    const resolveDocPromise = async () => {
+      if (quotationId) {
+        if (hasValidClientDoc) return currentDocument;
+        const { data: qDoc } = await supabaseAdmin
+          .from('quotation_documents')
+          .select('content_json')
+          .or(`template_id.eq.${quotationId},id.eq.${quotationId}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (qDoc?.content_json) return qDoc.content_json;
+        const { data: qRecord } = await supabaseAdmin
+          .from('quotations')
+          .select('content_json')
+          .eq('id', quotationId)
+          .maybeSingle();
+        return qRecord?.content_json || currentDocument || null;
+      }
+      if (hasValidClientDoc) return currentDocument;
+      const templateToUse = explicitTemplateId || selectedTemplateId || body.templateId;
       try {
-        for (const cWsId of candidateWsIds) {
-          const { data: quoteSettingsRow } = await supabaseAdmin
-            .from('workspace_quotation_settings')
-            .select('settings')
-            .eq('workspace_id', cWsId)
-            .maybeSingle();
-          if (quoteSettingsRow?.settings && typeof quoteSettingsRow.settings === 'object') {
-            studioSettings = quoteSettingsRow.settings;
-            break;
-          }
-        }
+        const resolved = await resolveUserDefaultQuotationTemplate(
+          workspaceId,
+          userId,
+          templateToUse
+        );
+        if (resolved?.document) return resolved.document;
       } catch (e) {
-        console.warn('[AI Extract] Could not fetch workspace_quotation_settings:', e);
+        console.warn('[AI Extract] Could not resolve template:', e);
+      }
+      return DEFAULT_AIRY_PROPOSAL;
+    };
+
+    const [resolvedDoc, settingsRes, eventsRes, rolesRes] = await Promise.all([
+      resolveDocPromise().catch(() => currentDocument || DEFAULT_AIRY_PROPOSAL),
+      !hasClientSettings && candidateWsIds.length > 0
+        ? supabaseAdmin
+            .from('workspace_quotation_settings')
+            .select('workspace_id, settings')
+            .in('workspace_id', candidateWsIds)
+        : Promise.resolve({ data: null } as any),
+      !hasClientEvents && candidateWsIds.length > 0
+        ? supabaseAdmin
+            .from('workspace_event_types')
+            .select('workspace_id, id, name, category, display_order')
+            .in('workspace_id', candidateWsIds)
+            .order('display_order', { ascending: true })
+            .order('name', { ascending: true })
+        : Promise.resolve({ data: null } as any),
+      !hasClientRoles && candidateWsIds.length > 0
+        ? supabaseAdmin
+            .from('master_crew_roles')
+            .select('workspace_id, id, name, short_code, category, display_order')
+            .in('workspace_id', candidateWsIds)
+            .order('display_order', { ascending: true })
+        : Promise.resolve({ data: null } as any),
+    ]);
+
+    const existingDoc: any = resolvedDoc || DEFAULT_AIRY_PROPOSAL;
+
+    // Assemble Combined Context Text
+    const rawPayload = lead.raw_payload || {};
+    const metaPayload = lead.raw_meta_payload || {};
+    const commentsText = Array.isArray(lead.comments) ? lead.comments.map((c: any) => c.text || '').join('\n') : '';
+
+    let studioSettings: any = body.studioSettings || null;
+    if (!hasClientSettings && Array.isArray(settingsRes?.data)) {
+      for (const cWsId of candidateWsIds) {
+        const hit = settingsRes.data.find((r: any) => r.workspace_id === cWsId && r.settings && typeof r.settings === 'object');
+        if (hit) {
+          studioSettings = hit.settings;
+          break;
+        }
       }
     }
 
     let studioEventTypes: any[] = [];
-    try {
+    if (hasClientEvents) {
+      studioEventTypes = body.studioEventTypes.filter((e: any) => typeof e === 'string' || String(e?.category || '').toLowerCase() !== 'ritual');
+    } else if (Array.isArray(eventsRes?.data)) {
       for (const cWsId of candidateWsIds) {
-        const { data: evRows } = await supabaseAdmin
-          .from('workspace_event_types')
-          .select('id, name, category, display_order')
-          .eq('workspace_id', cWsId)
-          .order('display_order', { ascending: true })
-          .order('name', { ascending: true });
-        if (Array.isArray(evRows) && evRows.length > 0) {
-          studioEventTypes = evRows.filter((e: any) => String(e?.category || '').toLowerCase() !== 'ritual');
-          if (studioEventTypes.length > 0) break;
-        }
-      }
-    } catch (e) {
-      console.warn('[AI Extract] Could not fetch workspace_event_types:', e);
-    }
-    if (studioEventTypes.length === 0) {
-      studioEventTypes = Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0
-        ? body.studioEventTypes.filter((e: any) => typeof e === 'string' || String(e?.category || '').toLowerCase() !== 'ritual')
-        : DEFAULT_EVENT_TYPES;
-    }
-
-    let studioCrewRoles: any[] = [];
-    try {
-      for (const cWsId of candidateWsIds) {
-        const { data: roleRows } = await supabaseAdmin
-          .from('master_crew_roles')
-          .select('id, name, short_code, category, display_order')
-          .eq('workspace_id', cWsId)
-          .order('display_order', { ascending: true });
-        if (Array.isArray(roleRows) && roleRows.length > 0) {
-          studioCrewRoles = roleRows;
+        const matched = eventsRes.data.filter((e: any) => e.workspace_id === cWsId && String(e?.category || '').toLowerCase() !== 'ritual');
+        if (matched.length > 0) {
+          studioEventTypes = matched;
           break;
         }
       }
-    } catch (e) {
-      console.warn('[AI Extract] Could not fetch master_crew_roles:', e);
     }
-    if (studioCrewRoles.length === 0) {
-      studioCrewRoles = Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0
-        ? body.studioCrewRoles
-        : DEFAULT_CREW_ROLES;
+    if (studioEventTypes.length === 0) studioEventTypes = DEFAULT_EVENT_TYPES;
+
+    let studioCrewRoles: any[] = [];
+    if (hasClientRoles) {
+      studioCrewRoles = body.studioCrewRoles;
+    } else if (Array.isArray(rolesRes?.data)) {
+      for (const cWsId of candidateWsIds) {
+        const matched = rolesRes.data.filter((r: any) => r.workspace_id === cWsId);
+        if (matched.length > 0) {
+          studioCrewRoles = matched;
+          break;
+        }
+      }
     }
+    if (studioCrewRoles.length === 0) studioCrewRoles = DEFAULT_CREW_ROLES;
 
     const contextData = {
       lead_info: {
@@ -236,7 +230,7 @@ export async function POST(req: NextRequest) {
       missingInformation: extractionResult.missingInformation,
       conflicts: extractionResult.conflicts,
       verification_required: extractionResult.conflicts.length > 0,
-      engine: (extractionResult as any).engine || { provider: 'gemini', model: 'gemini-3.8-flash' }
+      engine: (extractionResult as any).engine || { provider: 'gemini', model: 'gemini-3.1-flash-lite' }
     });
   } catch (error: any) {
     console.error('[AI Extract Error]:', error);
@@ -262,35 +256,20 @@ async function performAiExtraction(contextData: any, baseDoc: any, studioSetting
     }
   }
 
-  // 🧠 1. STUDIO AI TRAINING & TRIGGER EXPANSION ENGINE
+  // 🧠 1. SCOPED STUDIO AI TRAINING & PER-EVENT CREW ISOLATION HINTS
   const studioDeliverables: any[] = Array.isArray(studioSettings?.deliverables) ? studioSettings.deliverables : [];
   const studioAiRules = studioSettings?.aiRules || {};
   const studioCustomInstructions = (studioAiRules.customInstructions || '').trim();
-  const studioShortcuts: any[] = Array.isArray(studioAiRules.shortcuts) ? studioAiRules.shortcuts : [];
 
   let expandedNotes = userNotes;
-  const detectedShortcuts: string[] = [];
-
-  for (const sc of studioShortcuts) {
-    if (!sc.trigger) continue;
-    const triggerLower = sc.trigger.toLowerCase().trim();
-    const hasTrigger = userNotes.toLowerCase().includes(triggerLower) ||
-      triggerLower.split(/\s+/).every((w: string) => userNotes.toLowerCase().includes(w));
-
-    if (hasTrigger) {
-      detectedShortcuts.push(sc.trigger);
-      let expansion = `\n[STUDIO TRIGGER DETECTED: "${sc.trigger}"]`;
-      if (sc.mappedDeliverables?.length) {
-        expansion += `\n- Studio Deliverables to include: ${sc.mappedDeliverables.join(', ')}`;
-      }
-      if (sc.mappedCrew?.length) {
-        expansion += `\n- Studio Crew Requirements: ${sc.mappedCrew.map((c: any) => `${c.qty}x ${c.name}`).join(', ')}`;
-      }
-      if (sc.mappedPrice) {
-        expansion += `\n- Package Base Price: ₹${sc.mappedPrice}`;
-      }
-      expandedNotes += expansion;
-    }
+  const scopedPromptHints = buildScopedShortcutPromptHints(
+    userNotes,
+    studioSettings,
+    contextData.studioEventTypes || [],
+    contextData.studioCrewRoles || []
+  );
+  if (scopedPromptHints) {
+    expandedNotes += `\n\n[SCOPED STUDIO SHORTCUT & DELIVERABLE ANALYSIS — STRICTLY OBEY PER-EVENT SCOPE]:\n${scopedPromptHints}`;
   }
 
   // If user says "all deliverables" or "all deliverables add" or "सभी डिलीवरेबल्स":
@@ -299,14 +278,10 @@ async function performAiExtraction(contextData: any, baseDoc: any, studioSetting
   if (isAllDeliverablesSpoken) {
     if (studioDeliverables.length > 0) {
       const allDelivTitles = studioDeliverables.map((d: any) => typeof d === 'string' ? d : d.title).filter(Boolean);
-      expandedNotes += `\n[STUDIO TRIGGER DETECTED: "all deliverables"]\n- Deliverables: ${allDelivTitles.join(', ')}`;
+      expandedNotes += `\n[FULL STUDIO DELIVERABLES CATALOG REQUESTED ("all deliverables")]:\n- Include all of: ${allDelivTitles.join(', ')}`;
     } else {
-      expandedNotes += `\n[STUDIO TRIGGER DETECTED: "all droppers"]\n- Deliverables: 1 Teaser Video (1-2 Min), 1 Main Highlight Film (15-20 Min), Traditional Long Video (2-3 Hours), Custom Printed Coffee Table Album, All Raw Photos & Footage in Hard Drive, 3 Instagram Reels`;
+      expandedNotes += `\n[FULL DELIVERABLES REQUESTED]:\n- Include: 1 Teaser Video (1-2 Min), 1 Main Highlight Film (15-20 Min), Traditional Long Video (2-3 Hours), Custom Printed Coffee Table Album, All Raw Photos & Footage in Hard Drive, 3 Instagram Reels`;
     }
-  }
-
-  if (!detectedShortcuts.some((s) => s.toLowerCase().includes('standard crew')) && /\b(standard crew|स्टैंडर्ड टीम)\b/i.test(userNotes)) {
-    expandedNotes += `\n[STUDIO TRIGGER DETECTED: "standard crew"]\n- Crew: 2x Candid Photographer, 2x Cinematographer, 1x Traditional Videographer, 1x Drone Pilot`;
   }
 
   const leanPromptContext = {
@@ -419,13 +394,17 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
   * If no explicit clock time was stated, keep startTime: "" and endTime: "".
   * For duration-only shoots like "घर पे 2 आवर्स का शूट", put startTime: "", endTime: "", and notes: "2 Hours Duration Coverage".
 
-3. CREW REQUIREMENTS NORMALIZATION:
+3. CREW REQUIREMENTS NORMALIZATION & PER-EVENT ISOLATION:
 - In functionsPage.items, each item MUST have:
   "requirements": [ { "name": string, "qty": number } ]
 - Map all spoken Indian/English crew roles strictly to the Studio's Official Crew Roles Dictionary above (e.g. "Traditional Photographer", "Traditional Videographer", "Candid Photographer", "Cinematographer", "Drone Pilot", "Semi Cinematic", "Semi Standard", "Reel Creator").
+- CRITICAL PER-EVENT CREW LOCK: If one event mentions a shortcut/preset like "Standard Crew" (e.g. "Wedding mein Standard Crew") AND another event specifies its own crew or restrictive phrase ("Haldi mein bas 1 Traditional Photographer aur alag crew" / "Haldi needs only 1 Traditional Photographer"), NEVER copy or leak Standard Crew onto Haldi! Obey every [SCOPED STUDIO SHORTCUT] & [EXPLICIT PER-EVENT CREW LOCK] annotation verbatim!
 
 4. DELIVERABLES (deliverablesPage):
-- selectedItems: Array of professional English strings matching the Studio's Official Deliverables Catalog above whenever possible.
+- selectedItems: Array of professional English deliverable strings combining BOTH:
+  a) Matching Studio Official Deliverables Catalog items (or ALL catalog items when user says "all deliverables add" / "ऑल डिलीवरेबल्स").
+  b) EVERY custom or counted deliverable mentioned in speech/notes — preserve exact counts! E.g. "500 edited photos" / "500 एडिटेड फोटो", "5 Instagram Reels" / "5 रील", "1 Pendrive" / "1 पेनड्राइव", "2 Photo Albums" / "2 एल्बम", "1 Cinematic Teaser Video" / "टीज़र", "Save The Date Video", "Same Day Edit".
+- NEVER drop spoken counted deliverables! Note: "5 Reels" / "5 Instagram reels" is a deliverable in deliverablesPage.selectedItems, NOT a Reel Creator crew member unless user asked for Reel Creator crew.
 - NEVER include pre-wedding deliverables here; those belong solely on shootDetails.
 
 5. ZERO HALLUCINATION & STRICT DATA FIDELITY:
@@ -550,9 +529,9 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
     .filter(Boolean);
   const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // 1. EXCLUSIVE ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash & gemini-flash-latest)
+  // 1. PRIMARY ENGINE: Google Gemini (gemini-3.1-flash-lite -> gemini-3-flash-preview -> gemini-flash-latest)
   if (rawGeminiKeys.length > 0) {
-    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-flash-latest'];
     for (const currentKey of rawGeminiKeys) {
       if (aiRawOutput) break;
       for (const model of candidateModels) {
@@ -582,7 +561,7 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
                 thinkingConfig: { thinkingBudget: 0 }
               }
             }),
-            signal: AbortSignal.timeout(18000)
+            signal: AbortSignal.timeout(15000)
           });
           if (geminiRes.ok) {
             const geminiJson = await geminiRes.json();
@@ -608,6 +587,43 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
           console.warn(`[Gemini ${model} Exception]:`, e?.message || e);
         }
       }
+    }
+  }
+
+  // 2. SECONDARY ENGINE: OpenAI gpt-4.1-mini JSON mode fallback
+  if (!aiRawOutput && openAiKey) {
+    try {
+      const oaRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openAiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4.1-mini',
+          response_format: { type: 'json_object' },
+          temperature: 0.05,
+          max_tokens: 3500,
+          messages: [
+            { role: 'system', content: promptText },
+            { role: 'user', content: `Please extract 100% structured quotation JSON from this context:\n${JSON.stringify(leanPromptContext, null, 2)}` }
+          ]
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+      if (oaRes.ok) {
+        const oaJson = await oaRes.json();
+        const content = oaJson?.choices?.[0]?.message?.content?.trim() || '';
+        if (content) {
+          aiRawOutput = sanitizeAndParseJson(content);
+          activeEngineProvider = 'openai';
+          activeEngineModel = 'gpt-4.1-mini';
+          activeKeyHint = `${openAiKey.slice(0, 10)}...${openAiKey.slice(-4)}`;
+          console.log('[AI Extract] Successfully generated via OpenAI (gpt-4.1-mini)');
+        }
+      }
+    } catch (oaErr: any) {
+      console.warn('[AI Extract OpenAI fallback exception]:', oaErr?.message || oaErr);
     }
   }
 

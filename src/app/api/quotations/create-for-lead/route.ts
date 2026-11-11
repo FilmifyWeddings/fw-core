@@ -33,8 +33,8 @@ export async function POST(req: NextRequest) {
     const leadShortLower = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toLowerCase();
     const leadShortUpper = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
 
-    // 1. Fetch Lead details & existing versions in parallel (Fast indexed lookup)
-    const [{ data: lead }, { data: profile }, { data: existingDocs }] = await Promise.all([
+    // 1. Fetch Lead details, profile, existing versions & direct explicitTemplateId in parallel
+    const [{ data: lead }, { data: profile }, { data: existingDocs }, { data: directTemplateRow }] = await Promise.all([
       supabaseAdmin
         .from('leads')
         .select('id, name, full_name, location, raw_payload, phone, email, workspace_id')
@@ -48,7 +48,16 @@ export async function POST(req: NextRequest) {
       supabaseAdmin
         .from('quotation_documents')
         .select('id, template_id, version, lead_version')
-        .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortLower}%,template_id.ilike.%${leadShortUpper}%`)
+        .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortLower}%,template_id.ilike.%${leadShortUpper}%`),
+      explicitTemplateId && explicitTemplateId !== 'GLOBAL_DEFAULT'
+        ? supabaseAdmin
+            .from('quotation_documents')
+            .select('template_id, content_json')
+            .eq('template_id', explicitTemplateId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null } as any),
     ]);
 
     const clientNameInput = body.clientName || body.leadName || 'Valued Client';
@@ -68,19 +77,24 @@ export async function POST(req: NextRequest) {
       workspaceId = lead.workspace_id;
     }
 
-    // 2. Strict Template Design Resolution: Always load authentic template to guarantee 100% design fidelity
+    // 2. Strict Template Design Resolution: Use fast direct lookup first, else full resolver
     let sourceTemplateId = explicitTemplateId || GLOBAL_SYSTEM_TEMPLATE_ID;
     let templateDoc = DEFAULT_AIRY_PROPOSAL;
 
-    try {
-      const studioWorkspace = profile?.workspace_id || profile?.id || userId || workspaceId;
-      const resolved = await resolveUserDefaultQuotationTemplate(studioWorkspace, userId || profile?.id, explicitTemplateId);
-      if (resolved?.document) {
-        sourceTemplateId = resolved.templateId;
-        templateDoc = resolved.document;
+    if (directTemplateRow?.content_json && typeof directTemplateRow.content_json === 'object') {
+      sourceTemplateId = directTemplateRow.template_id || sourceTemplateId;
+      templateDoc = directTemplateRow.content_json;
+    } else {
+      try {
+        const studioWorkspace = profile?.workspace_id || profile?.id || userId || workspaceId;
+        const resolved = await resolveUserDefaultQuotationTemplate(studioWorkspace, userId || profile?.id, explicitTemplateId);
+        if (resolved?.document) {
+          sourceTemplateId = resolved.templateId;
+          templateDoc = resolved.document;
+        }
+      } catch (tmplErr) {
+        console.warn('[create-for-lead] Error resolving template:', tmplErr);
       }
-    } catch (tmplErr) {
-      console.warn('[create-for-lead] Error resolving template:', tmplErr);
     }
 
     // Calculate max version accurately across quotation_documents and lead.raw_payload.quotation_versions (without heavy content_json)
@@ -115,38 +129,58 @@ export async function POST(req: NextRequest) {
         ].filter(Boolean)));
 
         let studioSettings: any = body.studioSettings || null;
-        let studioEventTypes: any[] = [];
-        let studioCrewRoles: any[] = [];
+        let studioEventTypes: any[] = Array.isArray(body.studioEventTypes) ? body.studioEventTypes : [];
+        let studioCrewRoles: any[] = Array.isArray(body.studioCrewRoles) ? body.studioCrewRoles : [];
 
-        for (const cWsId of candidateWsIds) {
-          if (!studioSettings) {
-            const { data: qsRow } = await supabaseAdmin
-              .from('workspace_quotation_settings')
-              .select('settings')
-              .eq('workspace_id', cWsId)
-              .maybeSingle();
-            if (qsRow?.settings && typeof qsRow.settings === 'object') {
-              studioSettings = qsRow.settings;
+        if (candidateWsIds.length > 0 && (!studioSettings || studioEventTypes.length === 0 || studioCrewRoles.length === 0)) {
+          const [settingsRes, eventsRes, rolesRes] = await Promise.all([
+            !studioSettings
+              ? supabaseAdmin
+                  .from('workspace_quotation_settings')
+                  .select('workspace_id, settings')
+                  .in('workspace_id', candidateWsIds)
+              : Promise.resolve({ data: null } as any),
+            studioEventTypes.length === 0
+              ? supabaseAdmin
+                  .from('workspace_event_types')
+                  .select('workspace_id, id, name, category, display_order')
+                  .in('workspace_id', candidateWsIds)
+                  .order('display_order', { ascending: true })
+              : Promise.resolve({ data: null } as any),
+            studioCrewRoles.length === 0
+              ? supabaseAdmin
+                  .from('master_crew_roles')
+                  .select('workspace_id, id, name, short_code, category, display_order')
+                  .in('workspace_id', candidateWsIds)
+                  .order('display_order', { ascending: true })
+              : Promise.resolve({ data: null } as any),
+          ]);
+
+          if (!studioSettings && Array.isArray(settingsRes?.data)) {
+            for (const cWsId of candidateWsIds) {
+              const hit = settingsRes.data.find((r: any) => r.workspace_id === cWsId && r.settings && typeof r.settings === 'object');
+              if (hit) {
+                studioSettings = hit.settings;
+                break;
+              }
             }
           }
-          if (studioEventTypes.length === 0) {
-            const { data: evRows } = await supabaseAdmin
-              .from('workspace_event_types')
-              .select('id, name, category, display_order')
-              .eq('workspace_id', cWsId)
-              .order('display_order', { ascending: true });
-            if (Array.isArray(evRows) && evRows.length > 0) {
-              studioEventTypes = evRows.filter((e: any) => String(e?.category || '').toLowerCase() !== 'ritual');
+          if (studioEventTypes.length === 0 && Array.isArray(eventsRes?.data)) {
+            for (const cWsId of candidateWsIds) {
+              const matched = eventsRes.data.filter((e: any) => e.workspace_id === cWsId && String(e?.category || '').toLowerCase() !== 'ritual');
+              if (matched.length > 0) {
+                studioEventTypes = matched;
+                break;
+              }
             }
           }
-          if (studioCrewRoles.length === 0) {
-            const { data: roleRows } = await supabaseAdmin
-              .from('master_crew_roles')
-              .select('id, name, short_code, category, display_order')
-              .eq('workspace_id', cWsId)
-              .order('display_order', { ascending: true });
-            if (Array.isArray(roleRows) && roleRows.length > 0) {
-              studioCrewRoles = roleRows;
+          if (studioCrewRoles.length === 0 && Array.isArray(rolesRes?.data)) {
+            for (const cWsId of candidateWsIds) {
+              const matched = rolesRes.data.filter((r: any) => r.workspace_id === cWsId);
+              if (matched.length > 0) {
+                studioCrewRoles = matched;
+                break;
+              }
             }
           }
         }
@@ -222,8 +256,13 @@ export async function POST(req: NextRequest) {
 
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const rawRequestedQId = typeof body.quotationId === 'string' && body.quotationId.trim() ? body.quotationId.trim() : '';
-    const quotationId = rawRequestedQId
-      ? (/-V\d+-/i.test(rawRequestedQId) ? rawRequestedQId.replace(/-V\d+-/i, `-V${nextVersion}-`) : rawRequestedQId)
+    const requestedIdTaken = Boolean(
+      rawRequestedQId &&
+      (existingDocs || []).some((d: any) => String(d.template_id || '').toUpperCase() === rawRequestedQId.toUpperCase())
+    );
+    // Preserve optimistic client URL quotationId verbatim whenever unique & unused so Builder URL === DB template_id 100%!
+    const quotationId = rawRequestedQId && !requestedIdTaken
+      ? rawRequestedQId
       : `FW-Q-${leadShortUpper}-V${nextVersion}-${randomSuffix}`;
 
     const rawInputDoc = body.initialDocument?.document || body.initialDocument || initialDoc?.document || initialDoc;

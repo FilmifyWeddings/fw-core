@@ -712,10 +712,646 @@ function removeCrewFromList(
   );
 }
 
+function normalizeDeliverableCountToken(tok: string): number {
+  const t = (tok || '').trim().toLowerCase();
+  const map: Record<string, number> = {
+    '1': 1, 'एक': 1, 'one': 1, 'ek': 1,
+    '2': 2, 'दो': 2, 'two': 2, 'do': 2,
+    '3': 3, 'तीन': 3, 'three': 3, 'teen': 3,
+    '4': 4, 'चार': 4, 'four': 4, 'char': 4,
+    '5': 5, 'पांच': 5, 'पाँच': 5, 'five': 5, 'paanch': 5, 'panch': 5,
+    '6': 6, 'छह': 6, 'छः': 6, 'six': 6,
+    '10': 10, 'दस': 10, 'ten': 10,
+    '50': 50, 'पचास': 50,
+    '100': 100, 'सौ': 100,
+    '200': 200, 'दो सौ': 200,
+    '300': 300, 'तीन सौ': 300,
+    '400': 400, 'चार सौ': 400,
+    '500': 500, 'पांच सौ': 500, 'पाँच सौ': 500
+  };
+  if (map[t] !== undefined) return map[t];
+  const parsed = parseInt(t.replace(/[^\d]/g, ''), 10);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+const DELIVERABLE_NUM_PREFIX = '(?:(\\d+|पांच\\s*सौ|पाँच\\s*सौ|तीन\\s*सौ|दो\\s*सौ|सौ|एक|दो|तीन|चार|पांच|पाँच|छह|छः|दस|पचास|one|two|three|four|five|six|ten|ek|do|teen|char|paanch|panch)\\s*)';
+
+/**
+ * Bilingual Hindi / Hinglish / English Deliverables Extractor.
+ * Accurately captures counted deliverables ("500 edited photos", "5 Instagram reels", "2 albums", "1 pendrive")
+ * as well as custom & studio catalog items without confusing crew roles ("Reels Creator", "Traditional Videographer").
+ */
+export function extractDeliverablesFromText(
+  rawText: string,
+  studioDeliverables: string[] = []
+): string[] {
+  if (!rawText || !rawText.trim()) return [];
+
+  // Normalize Devanagari digits
+  let sanitized = rawText.replace(/[०-९]/g, (d) => String('०१२३४५६७८९'.indexOf(d)));
+
+  // Strip crew role titles so "Traditional Videographer" / "Reels Creator" NEVER trigger deliverable matches
+  sanitized = sanitized.replace(/(?:सोशल\s*मीडिया\s*)?(?:रील्स?\s*क्रिएटर|reels?\s*creator)/gi, ' __CREW_ROLE__ ');
+  sanitized = sanitized.replace(/(?:traditional|trad|ट्रेडिशनल|ट्रैडिशनल|ट्रेड)\s*video(?:grapher|graphy)|(?:ट्रेडिशनल|ट्रैडिशनल)\s*वीडियोग्राफर/gi, ' __CREW_ROLE__ ');
+  sanitized = sanitized.replace(/(?:traditional|trad|ट्रेडिशनल|ट्रैडिशनल|ट्रेड)\s*photo(?:grapher|graphy)|(?:ट्रेडिशनल|ट्रैडिशनल)\s*फोटोग्राफर/gi, ' __CREW_ROLE__ ');
+  sanitized = sanitized.replace(/(?:candid|कैंडिड)\s*(?:photo(?:grapher|graphy)|फोटोग्राफर)?/gi, ' __CREW_ROLE__ ');
+  sanitized = sanitized.replace(/(?:cinematographer|cinematography|सिनेमैटोग्राफर|सिनेमैटोग्राफी)/gi, ' __CREW_ROLE__ ');
+
+  // Remove Pre-Wedding-only clauses (keep clauses that mention deliverables/main wedding)
+  const nonPreWedParts = sanitized
+    .split(/(?:[\n.;।|]+|\s*,\s*|\s+(?:और|aur|and)\s+)/i)
+    .filter((part) => {
+      const pLower = part.toLowerCase();
+      const isPreWed = /(?:pre[\s-]*wed|prewedding|pre[\s-]*shoot|preshoot|प्री[\s-]*वेडिंग|प्रीवेडिंग|प्री[\s-]*शूट)/i.test(pLower);
+      if (!isPreWed) return true;
+      return /(?:deliverable|डिलीवरेबल|डिलीवरी)/i.test(pLower);
+    });
+
+  const scanText = nonPreWedParts.join(' , ').trim();
+  if (!scanText) return [];
+
+  const matched: string[] = [];
+  const addUnique = (label: string) => {
+    const clean = label.trim();
+    if (!clean) return;
+    if (!matched.some((m) => m.toLowerCase() === clean.toLowerCase())) {
+      matched.push(clean);
+    }
+  };
+
+  const findStudioMatch = (re: RegExp): string | undefined =>
+    studioDeliverables.find((d) => re.test(d));
+
+  // 1. Edited Photos ("500 edited photos", "300+ एडिटेड फोटोज", "कलर करेक्टेड फोटोज")
+  const editedPhotosRe = new RegExp(
+    `(?:${DELIVERABLE_NUM_PREFIX}\\+?\\s*)?(?:high[\\s-]*res(?:olution)?\\s*)?(?:color[\\s-]*(?:corrected|graded)|edited|कलर\\s*करेक्टेड|एडिटेड)\\s*(?:photos?|images?|pics?|pictures?|फोटो(?:ज|ज़|स)?|इमेजेज)|(?:${DELIVERABLE_NUM_PREFIX}\\+?\\s*)(?:photos?|images?|फोटो(?:ज|ज़|स)?)\\b`,
+    'i'
+  );
+  const editedM = scanText.match(editedPhotosRe);
+  if (editedM) {
+    const cnt = normalizeDeliverableCountToken(editedM[1] || editedM[2] || '');
+    if (cnt >= 10) {
+      addUnique(`${cnt} High-Res Edited Photos`);
+    } else {
+      addUnique(findStudioMatch(/edited|color\s*corrected|soft\s*copy/i) || 'High Resolution Edited Photos (300+)');
+    }
+  }
+
+  // 2. Instagram Reels ("5 Instagram reels", "5 reels", "3 रील्स")
+  const reelsRe = new RegExp(
+    `(?:${DELIVERABLE_NUM_PREFIX})?(?:instagram\\s*|insta\\s*|इंस्टाग्राम\\s*)?(?:reels?|रील्स?|रील)(?=[^a-zA-Z0-9\\u0900-\\u097F]|$)`,
+    'i'
+  );
+  const reelsM = scanText.match(reelsRe);
+  if (reelsM) {
+    const cnt = normalizeDeliverableCountToken(reelsM[1] || '');
+    if (cnt > 0) {
+      addUnique(`${cnt} Instagram ${cnt === 1 ? 'Reel' : 'Reels'}`);
+    } else {
+      addUnique(findStudioMatch(/reel/i) || '3 Instagram Reels');
+    }
+  }
+
+  // 3. USB Pendrive ("1 pendrive", "पेनड्राइव", "usb drive")
+  const pendriveRe = new RegExp(
+    `(?:${DELIVERABLE_NUM_PREFIX})?(?:usb\\s*)?(?:pen\\s*drive|pendrive|usb\\s*drive|पेन\\s*ड्राइव|पेनड्राइव)(?=[^a-zA-Z0-9\\u0900-\\u097F]|$)`,
+    'i'
+  );
+  const pdM = scanText.match(pendriveRe);
+  if (pdM) {
+    const cnt = normalizeDeliverableCountToken(pdM[1] || '');
+    if (cnt > 1) {
+      addUnique(`${cnt} USB Pendrives`);
+    } else if (cnt === 1) {
+      addUnique('1 USB Pendrive');
+    } else {
+      addUnique(findStudioMatch(/pen\s*drive|pendrive|usb/i) || '1 USB Pendrive');
+    }
+  }
+
+  // 4. Raw Photos / Hard Drive
+  if (/(?:all\s*raw|raw\s*(?:photos?|footage|data|images?|files?)|hard\s*drive|hdd|रॉ\s*(?:फोटो|डेटा|फुटेज)|हार्ड\s*ड्राइव)/i.test(scanText)) {
+    addUnique(findStudioMatch(/raw|hard\s*drive/i) || 'All Raw Photos & Footage in Hard Drive');
+  }
+
+  // 5. Albums / Photobooks ("2 albums", "2 एल्बम", "फोटोबुक", "coffee table album")
+  const albumRe = new RegExp(
+    `(?:${DELIVERABLE_NUM_PREFIX})?(?:coffee\\s*table\\s*|custom\\s*printed\\s*|karizma\\s*|luxury\\s*|printed\\s*)?(?:photobooks?|photo\\s*books?|albums?|फोटोबुक|एल्बम|अल्बम)(?=[^a-zA-Z0-9\\u0900-\\u097F]|$)`,
+    'i'
+  );
+  const albumM = scanText.match(albumRe);
+  if (albumM) {
+    const cnt = normalizeDeliverableCountToken(albumM[1] || '');
+    if (cnt > 1) {
+      addUnique(`${cnt} Custom Printed Photobook Albums`);
+    } else {
+      addUnique(findStudioMatch(/album|photobook/i) || (cnt === 1 ? '1 Custom Printed Photobook Album' : 'Custom Printed Coffee Table Album'));
+    }
+  }
+
+  // 6. Teaser Video
+  const teaserRe = new RegExp(
+    `(?:${DELIVERABLE_NUM_PREFIX})?(?:cinematic\\s*|wedding\\s*|1[\\s-]*min(?:ute)?\\s*)?(?:teaser|टीज़र|टीजर)(?:\\s*(?:video|film|reel))?`,
+    'i'
+  );
+  const teaserM = scanText.match(teaserRe);
+  if (teaserM) {
+    const cnt = normalizeDeliverableCountToken(teaserM[1] || '');
+    if (cnt > 1) {
+      addUnique(`${cnt} Cinematic Wedding Teasers`);
+    } else {
+      addUnique(findStudioMatch(/teaser/i) || 'Cinematic Wedding Teaser (1-2 Min)');
+    }
+  }
+
+  // 7. Highlight Film / Cinematic Wedding Film
+  if (/(?:highlight(?:\s*film|\s*video)?|cinematic\s*(?:wedding\s*)?film|wedding\s*film|हाईलाइट|हाइलाइट|वेडिंग\s*फिल्म)/i.test(scanText)) {
+    addUnique(findStudioMatch(/highlight|wedding\s*film/i) || 'Cinematic Wedding Highlight Film (15-20 Min)');
+  }
+
+  // 8. Traditional Long Video (safe since crew roles were stripped above!)
+  if (/(?:traditional\s*(?:long\s*)?(?:video|movie|film)|long\s*video|full\s*(?:length\s*)?(?:wedding\s*)?video|लॉन्ग\s*वीडियो|फुल\s*वीडियो|ट्रेडिशनल\s*(?:वीडियो|मूवी))/i.test(scanText)) {
+    addUnique(findStudioMatch(/traditional|long\s*video/i) || 'Traditional Long Video (2-3 Hours)');
+  }
+
+  // 9. Special Deliverables (Save The Date, Same Day Edit, E-Invite, Frame, Calendar)
+  if (/(?:same\s*day\s*edit|\bsde\b|सेम\s*डे\s*एडिट)/i.test(scanText)) {
+    addUnique(findStudioMatch(/same\s*day|sde/i) || 'Same Day Edit (SDE) Film');
+  }
+  if (/(?:save\s*the\s*date|सेव\s*द\s*डेट)/i.test(scanText)) {
+    addUnique(findStudioMatch(/save\s*the\s*date/i) || 'Save The Date Video / E-Invite');
+  }
+  if (/(?:e[\s-]*invite|digital\s*invite|invitation\s*video|ई[\s-]*इनवाइट)/i.test(scanText)) {
+    addUnique(findStudioMatch(/e[\s-]*invite|invite/i) || 'Digital E-Invite Video');
+  }
+  const frameRe = new RegExp(`(?:${DELIVERABLE_NUM_PREFIX})?(?:photo\\s*frames?|framed\\s*(?:prints?|photos?)|canvas\\s*prints?|फोटो\\s*फ्रेम)`, 'i');
+  const frameM = scanText.match(frameRe);
+  if (frameM) {
+    const cnt = normalizeDeliverableCountToken(frameM[1] || '');
+    addUnique(cnt > 1 ? `${cnt} Framed Photo Prints` : (cnt === 1 ? '1 Framed Photo Print' : 'Custom Framed Photo Print'));
+  }
+
+  // 10. Direct Studio Catalog Substring Matches for custom Studio Deliverables (e.g. "Mini Book", "Cloud Gallery")
+  for (const stTitle of studioDeliverables) {
+    const lowerTitle = String(stTitle || '').toLowerCase().trim();
+    if (!lowerTitle || lowerTitle.length < 4) continue;
+    const coreWords = lowerTitle
+      .replace(/\([^)]*\)/g, '')
+      .split(/\s+/)
+      .filter((w) => w.length >= 4 && !['with', 'from', 'photos', 'video', 'high', 'full', 'custom', 'resolution'].includes(w));
+    if (coreWords.length >= 2 && coreWords.every((w) => scanText.toLowerCase().includes(w))) {
+      // Skip downgrading an already-extracted specific counted item (e.g. keep "5 Instagram Reels" instead of "3 Instagram Reels")
+      const isReelsCatalog = lowerTitle.includes('reel') && matched.some((m) => /\breel/i.test(m));
+      const isPhotosCatalog = (lowerTitle.includes('edited') || lowerTitle.includes('photo')) && matched.some((m) => /edited photos/i.test(m));
+      const isAlbumCatalog = (lowerTitle.includes('album') || lowerTitle.includes('photobook')) && matched.some((m) => /album|photobook/i.test(m));
+      if (!isReelsCatalog && !isPhotosCatalog && !isAlbumCatalog) {
+        addUnique(stTitle);
+      }
+    }
+  }
+
+  // 11. Explicit "Deliverables mein X, Y aur Z" clause tail parser for any arbitrary custom deliverable
+  const delivClauseMatch = scanText.match(/(?:deliverables?|डिलीवरेबल्स?|डिलीवरी)\s*(?:में|मे|mein|in|:|-|हैं|है|rakhna|करने\s*हैं)?\s*([^.!?\n।]+)/i);
+  if (delivClauseMatch && delivClauseMatch[1]) {
+    const rawTail = delivClauseMatch[1]
+      .replace(/^(?:add\s*(?:karna|karo|kardo|karne\s*hain)?|ऐड\s*(?:करना|करो|करने)?)\s*(?:,|$)/i, '')
+      .replace(/(?:add\s*(?:karna|karo|kardo|karne\s*hain)?|rakhna|chahiye|dena|ऐड\s*(?:करना|करो)?|रखना|चाहिए|देना)\s*$/i, '')
+      .replace(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:budget|बजट|price|प्राइस|package|पैकेज|amount|अमाउंट|cost|discount|ऑफर|offer|advance|एडवांस|gst|total|टोटल|रुपये|lakh|लाख|हजार|₹).*$/i, '')
+      .trim();
+
+    if (rawTail && !/^(?:all|add|ऑल|सभी|सारे)\b/i.test(rawTail)) {
+      const tokens = rawTail
+        .split(/\s*(?:,(?!\d)|\s+(?:और|aur|and|&|\+)\s+)\s*/i)
+        .map((t) =>
+          t
+            .replace(/^(?:में|मे|mein|add|ऐड|रखना|चाहिए|देना)\s+/i, '')
+            .replace(/\s+(?:add|करना|करो|रखना|चाहिए|है|हैं)$/i, '')
+            .trim()
+        )
+        .filter((t) => {
+          if (!t || t.length < 3) return false;
+          if (/^[\d,\s.+₹\-kKlL]+$/i.test(t)) return false;
+          if (/(?:₹|\bbudget\b|बजट|प्राइस|अमाउंट|एडवांस|लख|लाख|हजार|advance|price|amount|total|package|standard\s*crew|alag\s*crew)/i.test(t)) return false;
+          if (/^(?:__CREW_ROLE__|add|all|ok|karna|karo|rakhna|chahiye|dena|करना|करो)$/i.test(t)) return false;
+          return true;
+        });
+
+      for (const tok of tokens) {
+        const lowerTok = tok.toLowerCase();
+        const alreadyRepresented = matched.some((m) => {
+          const mLow = m.toLowerCase();
+          if (lowerTok.includes('reel') && mLow.includes('reel')) return true;
+          if ((lowerTok.includes('edited') || lowerTok.includes('photo') || lowerTok.includes('फोटो')) && mLow.includes('edited photo')) return true;
+          if ((lowerTok.includes('pendrive') || lowerTok.includes('पेनड्राइव') || lowerTok.includes('usb')) && mLow.includes('pendrive')) return true;
+          if ((lowerTok.includes('raw') || lowerTok.includes('hard drive') || lowerTok.includes('रॉ')) && mLow.includes('raw')) return true;
+          if ((lowerTok.includes('album') || lowerTok.includes('photobook') || lowerTok.includes('एल्बम')) && (mLow.includes('album') || mLow.includes('photobook'))) return true;
+          if ((lowerTok.includes('teaser') || lowerTok.includes('टीज़र')) && mLow.includes('teaser')) return true;
+          if ((lowerTok.includes('highlight') || lowerTok.includes('हाईलाइट')) && mLow.includes('highlight')) return true;
+          if ((lowerTok.includes('long video') || lowerTok.includes('traditional') || lowerTok.includes('वीडियो')) && mLow.includes('long video')) return true;
+          if (lowerTok.includes('save') && mLow.includes('save the date')) return true;
+          if (lowerTok.includes('sde') || (lowerTok.includes('same day') && mLow.includes('same day'))) return true;
+          if ((lowerTok.includes('frame') || lowerTok.includes('फ्रेम')) && mLow.includes('frame')) return true;
+          return mLow === lowerTok;
+        });
+
+        if (!alreadyRepresented) {
+          addUnique(tok.replace(/\b[a-z]/g, (ch) => ch.toUpperCase()));
+        }
+      }
+    }
+  }
+
+  return matched;
+}
+
+export function mergeDeliverablesSmart(
+  baseList: string[] | undefined,
+  additions: string[],
+  preferCountedOverride: boolean = false
+): string[] {
+  let result = Array.isArray(baseList) ? baseList.filter(Boolean).map((s) => String(s).trim()) : [];
+
+  for (const addItem of additions) {
+    const addClean = String(addItem || '').trim();
+    if (!addClean) continue;
+    const addLow = addClean.toLowerCase();
+
+    // If addition is specifically counted (e.g. "500 High-Res Edited Photos" or "5 Instagram Reels"), replace generic equivalent
+    if (preferCountedOverride && /^\d+\s+/.test(addClean)) {
+      if (addLow.includes('reel')) {
+        result = result.filter((r) => !/\breels?\b/i.test(r) || r.toLowerCase() === addLow);
+      } else if (addLow.includes('edited photo')) {
+        result = result.filter((r) => !/edited\s*(?:photo|image)/i.test(r) || r.toLowerCase() === addLow);
+      } else if (addLow.includes('album') || addLow.includes('photobook')) {
+        result = result.filter((r) => !/(?:album|photobook)/i.test(r) || r.toLowerCase() === addLow);
+      }
+    }
+
+    if (!result.some((r) => r.toLowerCase() === addLow)) {
+      result.push(addClean);
+    }
+  }
+  return result;
+}
+
+interface ScopedShortcutMatch {
+  trigger: string;
+  mappedCrew: Array<{ name: string; qty: number }>;
+  mappedDeliverables: string[];
+  mappedPrice: number | null;
+  scopedEvents: Set<string> | null;
+  isBuiltinFallback?: boolean;
+}
+
+interface EventCrewOverrideInfo {
+  eventName: string;
+  explicitCrew: Array<{ name: string; qty: number }>;
+  hasExplicitCrew: boolean;
+  hasRestrictiveOverride: boolean;
+  triggeredShortcuts: Set<string>;
+}
+
+/**
+ * Analyzes userNotes per ceremony clause to determine:
+ * 1) Which shortcuts were triggered specifically inside one event clause vs globally.
+ * 2) Which events explicitly specified their own custom/restricted crew ("bas 1 Traditional Photographer aur alag crew"),
+ *    so other-event or global shortcuts NEVER leak onto them!
+ */
+export function analyzeScopedShortcutsAndCrewOverrides(
+  userNotes: string,
+  studioShortcuts: any[] = [],
+  studioEventNames: string[] = [],
+  studioDefaultFunctions: any[] = [],
+  studioCrewRoles: any[] = [],
+  extraContextText: string = ''
+): {
+  shortcutMatches: ScopedShortcutMatch[];
+  eventOverrides: Map<string, EventCrewOverrideInfo>;
+  anyShortcutScopedToSubset: boolean;
+} {
+  const notes = (userNotes || '').trim();
+  const shortcutMatches: ScopedShortcutMatch[] = [];
+  const eventOverrides = new Map<string, EventCrewOverrideInfo>();
+
+  if (!notes) {
+    return { shortcutMatches, eventOverrides, anyShortcutScopedToSubset: false };
+  }
+
+  const normalizedShortcuts: Array<{
+    trigger: string;
+    triggerLower: string;
+    mappedCrew: Array<{ name: string; qty: number }>;
+    mappedDeliverables: string[];
+    mappedPrice: number | null;
+    isBuiltinFallback?: boolean;
+  }> = [];
+
+  for (const sc of studioShortcuts || []) {
+    if (!sc?.trigger) continue;
+    const trigLower = String(sc.trigger).toLowerCase().trim();
+    const mappedCrew: Array<{ name: string; qty: number }> = [];
+    if (Array.isArray(sc.mappedCrew)) {
+      for (const c of sc.mappedCrew) {
+        const rName = resolveStudioCrewRole(typeof c === 'string' ? c : c?.name || '', studioCrewRoles);
+        const q = Number(c?.qty || 1);
+        if (q > 0) {
+          const idx = mappedCrew.findIndex((m) => m.name.toLowerCase() === rName.toLowerCase());
+          if (idx !== -1) mappedCrew[idx].qty = Math.max(mappedCrew[idx].qty, q);
+          else mappedCrew.push({ name: rName, qty: q });
+        }
+      }
+    }
+    normalizedShortcuts.push({
+      trigger: sc.trigger,
+      triggerLower: trigLower,
+      mappedCrew,
+      mappedDeliverables: Array.isArray(sc.mappedDeliverables) ? sc.mappedDeliverables : [],
+      mappedPrice: sc.mappedPrice ? Number(sc.mappedPrice) : null
+    });
+  }
+
+  // Built-in "Standard Crew" shortcut fallback ONLY if user's Settings don't already define one
+  const hasSettingsStandardCrew = normalizedShortcuts.some((s) => s.triggerLower.includes('standard'));
+  if (!hasSettingsStandardCrew && /\b(?:standard\s*crew|स्टैंडर्ड\s*क्रू|स्टैंडर्ड\s*टीम)\b/i.test(notes)) {
+    normalizedShortcuts.push({
+      trigger: 'standard crew',
+      triggerLower: 'standard crew',
+      mappedCrew: [
+        { name: resolveStudioCrewRole('Candid Photographer', studioCrewRoles), qty: 2 },
+        { name: resolveStudioCrewRole('Cinematographer', studioCrewRoles), qty: 2 },
+        { name: resolveStudioCrewRole('Traditional Videographer', studioCrewRoles), qty: 1 },
+        { name: resolveStudioCrewRole('Drone Pilot', studioCrewRoles), qty: 1 }
+      ],
+      mappedDeliverables: [],
+      mappedPrice: null,
+      isBuiltinFallback: true
+    });
+  }
+
+  const clauseTriggerMaskRegex = normalizedShortcuts.length > 0
+    ? new RegExp(
+        normalizedShortcuts
+          .map((s) => escapeRegExp(s.triggerLower))
+          .sort((a, b) => b.length - a.length)
+          .join('|'),
+        'gi'
+      )
+    : null;
+
+  const builtInEvMatchers: Array<{ rawTitle: string; regex: RegExp }> = [
+    { rawTitle: 'Haldi', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:हल्दी|हळद|पीठी|pithi|haldi)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Sangeet', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:संगीत|sangeet(?:\s*night)?)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Wedding', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:शादी|लग्न|विवाह|फेरे|वेडिंग|बारात|wedding(?:\s*ceremony)?|marriage|pheras|varmala)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Mehendi', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:मेहंदी|मेंहदी|meh[ae]?ndi)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Ring Ceremony', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:सगाई|रिंग\s*सेरेमनी|साखरपुडा|रोका|एंगेजमेंट|engagement(?:\s*ceremony)?|ring\s*ceremony|roka|sagai)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Reception', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:रिसेप्शन|reception(?:\s*dinner)?)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Cocktail Party', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:कॉकटेल(?:\s*पार्टी)?|cocktail(?:\s*party)?)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Pool Party', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:पूल\s*पार्टी|pool\s*party)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Home Entry Shoot', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:गृह\s*प्रवेश|घर\s*का\s*शूट|घर\s*पे\s*एंट्री|home\s*entry(?:\s*shoot)?)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Mayra', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:मायरा|भाता|mayra)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi },
+    { rawTitle: 'Ganesh Puja', regex: /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:गणेश\s*पूजा|ganesh\s*puja|puja|pooja)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi }
+  ];
+
+  for (const sName of studioEventNames || []) {
+    const cleanS = String(sName || '').trim();
+    if (!cleanS || cleanS.length < 3 || /pre[\s-]*wed|prewedding|pre[\s-]*shoot/i.test(cleanS)) continue;
+    if (!builtInEvMatchers.some((b) => { b.regex.lastIndex = 0; return b.regex.test(cleanS); })) {
+      builtInEvMatchers.push({
+        rawTitle: cleanS,
+        regex: new RegExp(`(?:^|[^\\u0900-\\u097Fa-zA-Z0-9])${escapeRegExp(cleanS)}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`, 'gi')
+      });
+    }
+  }
+
+  const getEventsInText = (txt: string, maskTriggers: boolean = true): string[] => {
+    let clean = txt.replace(/(?:pre[\s-]*wed(?:ding)?|prewedding|pre[\s-]*shoot|preshoot|प्री[\s-]*वेडिंग|प्रीवेडिंग|प्री[\s-]*शूट)/gi, ' ');
+    if (maskTriggers && clauseTriggerMaskRegex) {
+      clean = clean.replace(clauseTriggerMaskRegex, ' ');
+    }
+    const found: string[] = [];
+    for (const m of builtInEvMatchers) {
+      m.regex.lastIndex = 0;
+      if (m.regex.test(clean)) {
+        const resolved = resolveStudioFunctionName(m.rawTitle, studioEventNames, studioDefaultFunctions);
+        if (!found.some((x) => x.toLowerCase() === resolved.toLowerCase())) {
+          found.push(resolved);
+        }
+      }
+    }
+    return found;
+  };
+
+  // Split userNotes into sequential clauses while propagating active ceremony to continuation clauses ("aur alag crew rakhna", "usme ...")
+  const rawSegments = notes
+    .split(/(?:\r?\n|[.;।|]|,|\s+(?:और|तथा|व|and|&|aur|फिर|then)\s+)/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const RESTRICTIVE_CREW_RE = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:bas|only|sirf|keval|just|alag(?:\s*(?:crew|team|log))?|separate(?:\s*(?:crew|team))?|different(?:\s*(?:crew|team))?|बस|सिर्फ|केवल|अलग\s*(?:क्रू|टीम|लोग)?|सेपरेट\s*क्रू)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i;
+  const GLOBAL_SCOPE_RE = /(?:(?:सभी|हर|सारे|दोनों|तीनों|चारों|प्रत्येक)\s*(?:इवेंट|इवेंट्स|फंक्शन|फंक्शंस|functions?|events?|ceremon(?:y|ies)|में|मे|को|पे|mein)|(?:दोनों|तीनों|चारों)\b|\b(?:both)\b|\b(?:every|each|all)\s+(?:the\s+)?(?:events?|functions?|ceremon(?:y|ies))\b)/i;
+
+  const clausesWithEvents: Array<{ text: string; events: string[]; isGlobalModifier: boolean }> = [];
+  let activeEvents: string[] = [];
+
+  for (const seg of rawSegments) {
+    const segLower = seg.toLowerCase();
+    const isPreWedOnly = /(?:pre[\s-]*wed|prewedding|pre[\s-]*shoot|प्री[\s-]*वेडिंग|प्री[\s-]*शूट)/i.test(segLower) && getEventsInText(seg, true).length === 0;
+    if (isPreWedOnly) {
+      activeEvents = [];
+      continue;
+    }
+    const isClosingDelivOrBudget = /(?:deliverable|डिलीवरेबल|डिलीवरी|बजट|budget|package|discount|अमाउंट)/i.test(segLower) && getEventsInText(seg, true).length === 0;
+    if (isClosingDelivOrBudget) {
+      activeEvents = [];
+      continue;
+    }
+
+    const evs = getEventsInText(seg, true);
+    const isGlobalMod = GLOBAL_SCOPE_RE.test(seg);
+    if (isGlobalMod) {
+      activeEvents = [];
+    } else if (evs.length > 0) {
+      activeEvents = evs;
+    }
+
+    const attachedEvents = isGlobalMod
+      ? []
+      : (evs.length > 0 ? evs : (activeEvents.length === 1 ? activeEvents : []));
+
+    clausesWithEvents.push({
+      text: seg,
+      events: attachedEvents,
+      isGlobalModifier: isGlobalMod
+    });
+  }
+
+  const allMentionedEvents = Array.from(
+    new Set(clausesWithEvents.flatMap((c) => c.events.map((e) => e.toLowerCase())))
+  );
+
+  // Build per-event crew & restrictive override map + track shortcut trigger scopes
+  for (const cl of clausesWithEvents) {
+    if (cl.events.length === 0 || cl.isGlobalModifier) continue;
+    const clauseNoTriggers = clauseTriggerMaskRegex ? cl.text.replace(clauseTriggerMaskRegex, ' ') : cl.text;
+    const crewInClause = extractCrewRolesFromText(clauseNoTriggers, studioCrewRoles);
+    const hasRestrictive = RESTRICTIVE_CREW_RE.test(cl.text);
+
+    for (const ev of cl.events) {
+      const evKey = ev.toLowerCase();
+      const info = eventOverrides.get(evKey) || {
+        eventName: ev,
+        explicitCrew: [],
+        hasExplicitCrew: false,
+        hasRestrictiveOverride: false,
+        triggeredShortcuts: new Set<string>()
+      };
+
+      if (crewInClause.length > 0) {
+        info.explicitCrew = mergeCrewList(info.explicitCrew, crewInClause, studioCrewRoles);
+        info.hasExplicitCrew = true;
+      }
+      if (hasRestrictive) {
+        info.hasRestrictiveOverride = true;
+      }
+
+      const clLower = cl.text.toLowerCase();
+      for (const sc of normalizedShortcuts) {
+        const words = sc.triggerLower.split(/\s+/).filter(Boolean);
+        const trigMatched =
+          clLower.includes(sc.triggerLower) ||
+          (words.length > 0 && words.every((w) => clLower.includes(w))) ||
+          (sc.triggerLower.includes('standard') && /स्टैंडर्ड\s*(?:क्रू|टीम)/i.test(cl.text));
+        if (trigMatched) {
+          info.triggeredShortcuts.add(sc.triggerLower);
+        }
+      }
+
+      eventOverrides.set(evKey, info);
+    }
+  }
+
+  const allNotesLower = [notes, extraContextText].filter(Boolean).join(' ').toLowerCase();
+
+  for (const sc of normalizedShortcuts) {
+    const words = sc.triggerLower.split(/\s+/).filter(Boolean);
+    const isMatch =
+      allNotesLower.includes(sc.triggerLower) ||
+      (words.length > 0 && words.every((w) => allNotesLower.includes(w))) ||
+      (sc.triggerLower.includes('deliverable') &&
+        (allNotesLower.includes('ऑल डिलीवरेबल्स') || allNotesLower.includes('all deliverable'))) ||
+      (sc.triggerLower.includes('standard') && /स्टैंडर्ड\s*(?:क्रू|टीम)/i.test(notes));
+
+    if (!isMatch) continue;
+
+    // Collect which events explicitly triggered this shortcut in their own clause
+    const triggeredEventsSet = new Set<string>();
+    let appearedWithoutEventClause = false;
+
+    for (const cl of clausesWithEvents) {
+      const clLower = cl.text.toLowerCase();
+      const matchedInClause =
+        clLower.includes(sc.triggerLower) ||
+        (words.length > 0 && words.every((w) => clLower.includes(w))) ||
+        (sc.triggerLower.includes('standard') && /स्टैंडर्ड\s*(?:क्रू|टीम)/i.test(cl.text));
+      if (matchedInClause) {
+        if (cl.events.length > 0 && !cl.isGlobalModifier) {
+          cl.events.forEach((e) => triggeredEventsSet.add(e.toLowerCase()));
+        } else {
+          appearedWithoutEventClause = true;
+        }
+      }
+    }
+
+    // Scope shortcut ONLY to its triggering event(s) when triggered on a specific ceremony subset
+    const scopedEvents =
+      triggeredEventsSet.size > 0 &&
+      !appearedWithoutEventClause &&
+      allMentionedEvents.some((e) => !triggeredEventsSet.has(e))
+        ? triggeredEventsSet
+        : null;
+
+    shortcutMatches.push({
+      trigger: sc.trigger,
+      mappedCrew: sc.mappedCrew,
+      mappedDeliverables: sc.mappedDeliverables,
+      mappedPrice: sc.mappedPrice,
+      scopedEvents,
+      isBuiltinFallback: sc.isBuiltinFallback
+    });
+  }
+
+  return {
+    shortcutMatches,
+    eventOverrides,
+    anyShortcutScopedToSubset: shortcutMatches.some((s) => s.scopedEvents !== null)
+  };
+}
+
+/**
+ * Produces human-readable scoped trigger hints for the LLM extraction prompt so Gemini
+ * applies shortcuts ONLY to matching events and NEVER leaks Standard Crew onto explicit-crew events.
+ */
+export function buildScopedShortcutPromptHints(
+  userNotes: string,
+  studioSettings: any,
+  studioEventTypes: any[] = [],
+  studioCrewRoles: any[] = []
+): string {
+  const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
+    ? studioSettings.aiRules.shortcuts
+    : [];
+  const studioEventNames: string[] = (Array.isArray(studioEventTypes) ? studioEventTypes : [])
+    .filter((e: any) => typeof e === 'string' || String(e?.category || '').toLowerCase() !== 'ritual')
+    .map((e: any) => (typeof e === 'string' ? e : e?.name || '').trim())
+    .filter(Boolean);
+  const studioDefaultFunctions: any[] = Array.isArray(studioSettings?.defaultFunctions)
+    ? studioSettings.defaultFunctions
+    : [];
+
+  const analysis = analyzeScopedShortcutsAndCrewOverrides(
+    userNotes,
+    studioShortcuts,
+    studioEventNames,
+    studioDefaultFunctions,
+    studioCrewRoles
+  );
+
+  const lines: string[] = [];
+  for (const sm of analysis.shortcutMatches) {
+    const scopeDesc = sm.scopedEvents
+      ? `SCOPED ONLY TO: ${Array.from(sm.scopedEvents).join(', ')} (DO NOT copy onto other events!)`
+      : `APPLIES ONLY to events WITHOUT their own explicit crew/override`;
+    const parts: string[] = [];
+    if (sm.mappedCrew.length > 0) parts.push(`Crew: ${sm.mappedCrew.map((c) => `${c.qty}x ${c.name}`).join(', ')}`);
+    if (sm.mappedDeliverables.length > 0) parts.push(`Deliverables: ${sm.mappedDeliverables.join(', ')}`);
+    if (sm.mappedPrice) parts.push(`Price: ₹${sm.mappedPrice}`);
+    if (parts.length > 0) {
+      lines.push(`[STUDIO TRIGGER "${sm.trigger}" — ${scopeDesc}] -> ${parts.join(' | ')}`);
+    }
+  }
+
+  for (const [, ov] of analysis.eventOverrides.entries()) {
+    if (ov.hasExplicitCrew || ov.hasRestrictiveOverride) {
+      const crewStr = ov.explicitCrew.map((c) => `${c.qty}x ${c.name}`).join(', ');
+      lines.push(`[EXPLICIT PER-EVENT CREW LOCK FOR "${ov.eventName}"]: Keep ONLY ${crewStr || 'its explicit crew'} — NEVER merge other-event/Standard Crew here!`);
+    }
+  }
+
+  const studioDelivTitles: string[] = Array.isArray(studioSettings?.deliverables)
+    ? studioSettings.deliverables.map((d: any) => (typeof d === 'string' ? d : d?.title || '').trim()).filter(Boolean)
+    : [];
+  const spokenDelivs = extractDeliverablesFromText(userNotes, studioDelivTitles);
+  if (spokenDelivs.length > 0) {
+    lines.push(`[SPOKEN DELIVERABLES TO INCLUDE VERBATIM]: ${spokenDelivs.join(', ')}`);
+  }
+
+  return lines.join('\n');
+}
+
 /**
  * Deterministically enforces Settings -> AI Training rules (shortcuts + customInstructions)
  * AND spoken voice-note directives (e.g. "सभी इवेंट में 1 Traditional Photographer ऐड करो")
- * onto ANY mapped Quotation Document so 0% of user rules are dropped.
+ * onto ANY mapped Quotation Document while STRICTLY isolating per-event explicit crew overrides!
  */
 export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): void {
   if (!doc || typeof doc !== 'object') return;
@@ -747,64 +1383,106 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
     .filter(Boolean)
     .join('\n')
     .trim();
-  const allNotesText = `${userNotes} ${JSON.stringify(contextData?.raw_form_fields || '')}`.toLowerCase();
+  const rawFormStr = JSON.stringify(contextData?.raw_form_fields || '');
+  const allNotesText = `${userNotes} ${rawFormStr}`.toLowerCase();
 
-  // 1. Studio Shortcuts ("When I Say X -> Do Y")
-  const matchedShortcutCrew: Array<{ name: string; qty: number }> = [];
+  // 1. Scoped Studio Shortcuts & Per-Event Explicit Crew Overrides ("When I Say X on Event A -> NEVER leak onto Event B with alag crew")
+  const analysis = analyzeScopedShortcutsAndCrewOverrides(
+    userNotes,
+    studioShortcuts,
+    studioEventNames,
+    studioDefaultFunctions,
+    studioCrewRoles,
+    rawFormStr
+  );
+
   const matchedShortcutDelivs: string[] = [];
   let matchedShortcutPrice: number | null = null;
+  const functions: any[] = Array.isArray(doc.functionsPage?.items) ? doc.functionsPage.items : [];
+  const anyOtherShortcutMatched = analysis.shortcutMatches.some((sm) => sm.mappedCrew.length > 0);
 
-  for (const sc of studioShortcuts) {
-    if (!sc?.trigger) continue;
-    const trigLower = String(sc.trigger).toLowerCase().trim();
-    const words = trigLower.split(/\s+/).filter(Boolean);
-    const isMatch =
-      allNotesText.includes(trigLower) ||
-      (words.length > 0 && words.every((w: string) => allNotesText.includes(w))) ||
-      (trigLower.includes('deliverable') &&
-        (allNotesText.includes('ऑल डिलीवरेबल्स') || allNotesText.includes('all deliverable')));
+  for (const sm of analysis.shortcutMatches) {
+    if (sm.mappedDeliverables.length > 0) {
+      matchedShortcutDelivs.push(...sm.mappedDeliverables);
+    }
+    if (sm.mappedPrice) matchedShortcutPrice = sm.mappedPrice;
 
-    if (isMatch) {
-      if (Array.isArray(sc.mappedCrew)) {
-        for (const c of sc.mappedCrew) {
-          const rName = resolveStudioCrewRole(typeof c === 'string' ? c : c?.name || '', studioCrewRoles);
-          const q = Number(c?.qty || 1);
-          if (q > 0) {
-            const idx = matchedShortcutCrew.findIndex((m) => m.name.toLowerCase() === rName.toLowerCase());
-            if (idx !== -1) matchedShortcutCrew[idx].qty = Math.max(matchedShortcutCrew[idx].qty, q);
-            else matchedShortcutCrew.push({ name: rName, qty: q });
+    if (sm.mappedCrew.length > 0 && functions.length > 0) {
+      const trigKey = sm.trigger.toLowerCase().trim();
+      functions.forEach((fn: any) => {
+        const fnKey = resolveStudioFunctionName(fn.name || '', studioEventNames, studioDefaultFunctions).toLowerCase();
+        const ov = analysis.eventOverrides.get(fnKey);
+
+        const isExplicitlyTriggeredOnThisFn = Boolean(ov?.triggeredShortcuts?.has(trigKey));
+        if (sm.scopedEvents !== null) {
+          // Scoped shortcut (e.g. "Wedding mein Standard Crew"): ONLY apply to functions inside scopedEvents!
+          if (sm.scopedEvents.has(fnKey)) {
+            if (ov?.hasExplicitCrew && ov.explicitCrew.length > 0) {
+              // Event triggered shortcut PLUS explicitly asked for extra/explicit crew (e.g. "Wedding mein Standard Crew aur 1 Drone")
+              fn.requirements = mergeCrewList(ov.explicitCrew, sm.mappedCrew, studioCrewRoles);
+            } else {
+              fn.requirements = mergeCrewList([], sm.mappedCrew, studioCrewRoles);
+            }
+          }
+        } else {
+          // Global/unscoped shortcut (e.g. "Gold Wedding package on 10 Nov Haldi and 12 Nov Wedding"):
+          // NEVER merge onto a function that explicitly stated its own crew/restrictive override UNLESS this function also invoked the shortcut!
+          if (isExplicitlyTriggeredOnThisFn || (!ov?.hasExplicitCrew && !ov?.hasRestrictiveOverride)) {
+            fn.requirements = mergeCrewList(fn.requirements, sm.mappedCrew, studioCrewRoles);
           }
         }
-      }
-      if (Array.isArray(sc.mappedDeliverables)) {
-        matchedShortcutDelivs.push(...sc.mappedDeliverables);
-      }
-      if (sc.mappedPrice) matchedShortcutPrice = Number(sc.mappedPrice);
+      });
     }
   }
 
-  // Merge matched shortcut crew into every function card (NEVER skip just because requirements.length > 0!)
-  if (matchedShortcutCrew.length > 0 && Array.isArray(doc.functionsPage?.items)) {
-    doc.functionsPage.items.forEach((fn: any) => {
-      fn.requirements = mergeCrewList(fn.requirements, matchedShortcutCrew, studioCrewRoles);
+  // Anti-Leak Sanitization: If Gemini (LLM) accidentally copied another event's Standard Crew / shortcut crew
+  // onto an event where the user explicitly stated different/restricted crew ("Haldi mein bas 1 Traditional Photographer aur alag crew"),
+  // strip leaked shortcut/hallucinated roles and restore strictly that event's explicit spoken crew!
+  if (functions.length > 0) {
+    functions.forEach((fn: any) => {
+      const fnKey = resolveStudioFunctionName(fn.name || '', studioEventNames, studioDefaultFunctions).toLowerCase();
+      const ov = analysis.eventOverrides.get(fnKey);
+      if (!ov) return;
+
+      const hadDirectShortcut = ov.triggeredShortcuts.size > 0;
+      const shouldLockExplicitCrew =
+        !hadDirectShortcut &&
+        (ov.hasRestrictiveOverride || (ov.hasExplicitCrew && anyOtherShortcutMatched));
+
+      if (shouldLockExplicitCrew && ov.explicitCrew.length > 0) {
+        fn.requirements = ov.explicitCrew.map((c) => ({ ...c }));
+      } else if (!hadDirectShortcut && ov.hasExplicitCrew && ov.explicitCrew.length > 0) {
+        // Ensure every explicitly spoken role on this event is at least preserved (and default fallback roles weren't left behind when no shortcut was global)
+        fn.requirements = ov.explicitCrew.map((c) => ({ ...c }));
+      }
     });
   }
 
-  // Merge deliverables
+  // Merge Deliverables (All Deliverables Add + Shortcut Deliverables + Explicit Spoken Deliverables with counts/Hindi support!)
   const hasAllDelivReq = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText);
-  if (!doc.deliverablesPage) doc.deliverablesPage = { selectedItems: [] };
+  const explicitSpokenDelivs = extractDeliverablesFromText(userNotes, studioDeliverables);
+
+  if (!doc.deliverablesPage) doc.deliverablesPage = { selectedItems: [], availableOptions: [] };
   if (hasAllDelivReq && studioDeliverables.length > 0) {
-    doc.deliverablesPage.selectedItems = [...studioDeliverables];
-  } else if (matchedShortcutDelivs.length > 0) {
-    doc.deliverablesPage.selectedItems = Array.from(
-      new Set([...(doc.deliverablesPage.selectedItems || []), ...matchedShortcutDelivs])
-    );
+    doc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...studioDeliverables], explicitSpokenDelivs, true);
+  } else {
+    let baseSelected = Array.isArray(doc.deliverablesPage.selectedItems) ? [...doc.deliverablesPage.selectedItems] : [];
+    if (matchedShortcutDelivs.length > 0) {
+      baseSelected = mergeDeliverablesSmart(baseSelected, matchedShortcutDelivs, false);
+    }
+    if (explicitSpokenDelivs.length > 0) {
+      baseSelected = mergeDeliverablesSmart(baseSelected, explicitSpokenDelivs, true);
+    }
+    doc.deliverablesPage.selectedItems = baseSelected;
   }
-  if (studioDeliverables.length > 0) {
-    doc.deliverablesPage.availableOptions = Array.from(
-      new Set([...studioDeliverables, ...(doc.deliverablesPage.availableOptions || []), ...(doc.deliverablesPage.selectedItems || [])])
-    );
-  }
+
+  doc.deliverablesPage.availableOptions = Array.from(
+    new Set([
+      ...studioDeliverables,
+      ...(doc.deliverablesPage.availableOptions || []),
+      ...(doc.deliverablesPage.selectedItems || [])
+    ])
+  ).filter(Boolean);
 
   // Apply shortcut price if base price isn't explicitly set by spoken numbers
   if (matchedShortcutPrice && doc.pricingPage && (!doc.pricingPage.basePrice || doc.pricingPage.basePrice === 150000)) {
@@ -835,8 +1513,6 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
 
   const EVENT_HINT_RE = /(?:haldi|हल्दी|sangeet|संगीत|mehendi|मेहंदी|wedding|शादी|लग्न|reception|रिसेप्शन|engagement|सगाई|रिंग\s*सेरेमनी|roka|रोका|cocktail|pool\s*party|mayra|मायरा|ganesh\s*puja|गणेश\s*पूजा)/i;
 
-  const functions: any[] = Array.isArray(doc.functionsPage?.items) ? doc.functionsPage.items : [];
-
   for (const entry of ruleEntries) {
     const line = entry.text;
     if (!line || line.length < 4) continue;
@@ -858,6 +1534,12 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
         });
       } else if (hasGlobalScope || hasAddAction || entry.isCustomSetting) {
         functions.forEach((fn) => {
+          const fnKey = resolveStudioFunctionName(fn.name || '', studioEventNames, studioDefaultFunctions).toLowerCase();
+          const ov = analysis.eventOverrides.get(fnKey);
+          // Do not force external Settings customInstructions crew onto a card where user explicitly locked "अलग क्रू" / "bas ... alag crew"
+          if (entry.isCustomSetting && ov?.hasRestrictiveOverride) {
+            return;
+          }
           fn.requirements = mergeCrewList(fn.requirements, crewFound, studioCrewRoles);
         });
       }
@@ -882,6 +1564,11 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
       if (matchingFuncs.length > 0) {
         if (crewFound.length > 0 && (hasAddAction || entry.isCustomSetting)) {
           matchingFuncs.forEach((fn) => {
+            const fnKey = resolveStudioFunctionName(fn.name || '', studioEventNames, studioDefaultFunctions).toLowerCase();
+            const ov = analysis.eventOverrides.get(fnKey);
+            if (entry.isCustomSetting && ov?.hasRestrictiveOverride) {
+              return;
+            }
             if (hasRemoveIntent && !hasAddAction) {
               fn.requirements = removeCrewFromList(fn.requirements, crewFound, studioCrewRoles);
             } else {
@@ -1554,35 +2241,26 @@ export function fallbackHeuristicExtractor(contextData: any) {
   const customStartTime = globalTimes.startTime;
   const customEndTime = globalTimes.endTime;
 
-  // Check studio shortcuts for crew, deliverables & pricing
+  // Check studio shortcuts (scoped per ceremony vs global!) for crew, deliverables & pricing
   const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
     ? studioSettings.aiRules.shortcuts
     : [];
 
-  let shortcutCrew: Array<{ name: string; qty: number }> | null = null;
+  const heuristicScopeAnalysis = analyzeScopedShortcutsAndCrewOverrides(
+    userNotes,
+    studioShortcuts,
+    studioEventNames,
+    studioDefaultFunctions,
+    studioCrewRoles
+  );
+
   let shortcutDeliverables: string[] = [];
-
-  for (const sc of studioShortcuts) {
-    if (!sc.trigger) continue;
-    const trigLower = sc.trigger.toLowerCase().trim();
-    const words = trigLower.split(/\s+/);
-    const isMatch = fullText.includes(trigLower) || 
-      words.every((w: string) => fullText.includes(w)) ||
-      (trigLower.includes('deliverable') && (fullText.includes('ऑल डिलीवरेबल्स') || fullText.includes('all deliverable')));
-
-    if (isMatch) {
-      if (Array.isArray(sc.mappedCrew) && sc.mappedCrew.length > 0) {
-        shortcutCrew = sc.mappedCrew.map((c: any) => ({
-          name: resolveStudioCrewRole(typeof c === 'string' ? c : c?.name || '', studioCrewRoles),
-          qty: Number(c?.qty || 1)
-        }));
-      }
-      if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) {
-        shortcutDeliverables.push(...sc.mappedDeliverables);
-      }
-      if (sc.mappedPrice && basePrice <= 0 && !budget) {
-        basePrice = sc.mappedPrice;
-      }
+  for (const sm of heuristicScopeAnalysis.shortcutMatches) {
+    if (sm.mappedDeliverables.length > 0) {
+      shortcutDeliverables.push(...sm.mappedDeliverables);
+    }
+    if (sm.mappedPrice && basePrice <= 0 && !budget) {
+      basePrice = sm.mappedPrice;
     }
   }
 
@@ -1680,9 +2358,9 @@ export function fallbackHeuristicExtractor(contextData: any) {
         continue;
       }
 
-      // Otherwise split on sequential connectors ("और", "&", "and", "तथा", "व", "फिर", "then", "after that")
+      // Otherwise split on sequential connectors ("और", "aur", "&", "and", "तथा", "व", "फिर", "then", "after that")
       const subParts = part
-        .split(/\s+(?:और|तथा|व|and|&|फिर|उसके\s*बाद|जिसके\s*बाद|then|after\s*that)\s+/i)
+        .split(/\s+(?:और|aur|तथा|व|and|&|फिर|उसके\s*बाद|जिसके\s*बाद|then|after\s*that)\s+/i)
         .map(sp => sp.trim())
         .filter(Boolean);
 
@@ -1715,6 +2393,19 @@ export function fallbackHeuristicExtractor(contextData: any) {
           extractCrewFromSnippet(cur).length === 0 &&
           EXPLICIT_COMBINE_REGEX.test(nxt) &&
           !BOTH_SEPARATE_MODIFIER_REGEX.test(nxt)
+        ) {
+          sequentialClauses.push({ text: `${cur} & ${nxt}`, groupSharedDate });
+          i++; // skip nxt
+        } else if (
+          i === 0 &&
+          nxt &&
+          findEventsInText(cur).length === 0 &&
+          extractCrewFromSnippet(cur).length > 0 &&
+          !extractDateFromSnippet(cur) &&
+          !BOTH_SEPARATE_MODIFIER_REGEX.test(cur) &&
+          !CONTINUATION_PRONOUN_REGEX.test(cur) &&
+          findEventsInText(nxt).length >= 1 &&
+          extractCrewFromSnippet(nxt).length === 0
         ) {
           sequentialClauses.push({ text: `${cur} & ${nxt}`, groupSharedDate });
           i++; // skip nxt
@@ -1900,16 +2591,50 @@ export function fallbackHeuristicExtractor(contextData: any) {
     } else {
       // ALWAYS create SEPARATE function cards for each ceremony!
       for (const hit of eventsInClause) {
-        // Deduplicate ONLY if identical event name on the exact same date AND same time/clause (unless repeated across distinct dates!)
-        const alreadySameNameAndDate = functions.some(
-          f => f.name.toLowerCase() === hit.resolvedName.toLowerCase() && f.date === (effectiveCardDate || 'Date Not Fixed')
+        const resolvedDate = effectiveCardDate || 'Date Not Fixed';
+        const resolvedIsNotFixed = !resolvedDate || resolvedDate === 'Date Not Fixed';
+        const existingDatedMatch = functions.find(
+          f => f.name.toLowerCase() === hit.resolvedName.toLowerCase() && !f.dateNotFixed
         );
-        if (!alreadySameNameAndDate) {
+        const existingUndatedMatch = functions.find(
+          f => f.name.toLowerCase() === hit.resolvedName.toLowerCase() && f.dateNotFixed
+        );
+        const alreadySameNameAndDate = functions.some(
+          f => f.name.toLowerCase() === hit.resolvedName.toLowerCase() && f.date === resolvedDate
+        );
+
+        if (resolvedIsNotFixed && existingDatedMatch) {
+          if (clauseCrew.length > 0) {
+            const baseReqs = Array.isArray(existingDatedMatch._explicitCrew) ? existingDatedMatch._explicitCrew : [];
+            for (const cr of clauseCrew) {
+              if (!baseReqs.some((r: any) => r.name.toLowerCase() === cr.name.toLowerCase())) baseReqs.push(cr);
+            }
+            existingDatedMatch._explicitCrew = baseReqs;
+            existingDatedMatch.requirements = [...baseReqs];
+          }
+          if (!existingDatedMatch.location && effectiveCardLoc) existingDatedMatch.location = effectiveCardLoc;
+          if (!existingDatedMatch.startTime && clauseTimes.startTime) existingDatedMatch.startTime = clauseTimes.startTime;
+          if (!existingDatedMatch.endTime && clauseTimes.endTime) existingDatedMatch.endTime = clauseTimes.endTime;
+        } else if (!resolvedIsNotFixed && existingUndatedMatch && !alreadySameNameAndDate) {
+          existingUndatedMatch.date = resolvedDate;
+          existingUndatedMatch.dateNotFixed = false;
+          if (clauseCrew.length > 0) {
+            const baseReqs = Array.isArray(existingUndatedMatch._explicitCrew) ? existingUndatedMatch._explicitCrew : [];
+            for (const cr of clauseCrew) {
+              if (!baseReqs.some((r: any) => r.name.toLowerCase() === cr.name.toLowerCase())) baseReqs.push(cr);
+            }
+            existingUndatedMatch._explicitCrew = baseReqs;
+            existingUndatedMatch.requirements = [...baseReqs];
+          }
+          if (!existingUndatedMatch.location && effectiveCardLoc) existingUndatedMatch.location = effectiveCardLoc;
+          if (!existingUndatedMatch.startTime && clauseTimes.startTime) existingUndatedMatch.startTime = clauseTimes.startTime;
+          if (!existingUndatedMatch.endTime && clauseTimes.endTime) existingUndatedMatch.endTime = clauseTimes.endTime;
+        } else if (!alreadySameNameAndDate) {
           functions.push({
             id: `func-ai-${functions.length + 1}`,
             name: hit.resolvedName,
-            date: effectiveCardDate || 'Date Not Fixed',
-            dateNotFixed: !effectiveCardDate || effectiveCardDate === 'Date Not Fixed',
+            date: resolvedDate,
+            dateNotFixed: resolvedIsNotFixed,
             startTime: clauseTimes.startTime || customStartTime,
             endTime: clauseTimes.endTime || customEndTime,
             location: effectiveCardLoc,
@@ -1938,12 +2663,15 @@ export function fallbackHeuristicExtractor(contextData: any) {
     });
   }
 
-  // Apply global modifier crew ("दोनों में 1 Traditional Photographer"), studio defaultFunctions crew, shortcut crew, or clean defaults
+  // Apply global modifier crew ("दोनों में 1 Traditional Photographer"), scoped shortcut crew, studio defaultFunctions crew, or clean defaults
   for (const fn of functions) {
     let finalReqs: Array<{ name: string; qty: number }> = Array.isArray(fn._explicitCrew) ? [...fn._explicitCrew] : [];
     delete fn._explicitCrew;
 
-    if (globalModifierCrew.length > 0) {
+    const fnKey = resolveStudioFunctionName(fn.name || '', studioEventNames, studioDefaultFunctions).toLowerCase();
+    const fnOv = heuristicScopeAnalysis.eventOverrides.get(fnKey);
+
+    if (globalModifierCrew.length > 0 && !fnOv?.hasRestrictiveOverride) {
       for (const gCrew of globalModifierCrew) {
         if (!finalReqs.some(r => r.name.toLowerCase() === gCrew.name.toLowerCase())) {
           finalReqs.push({ ...gCrew });
@@ -1951,11 +2679,23 @@ export function fallbackHeuristicExtractor(contextData: any) {
       }
     }
 
-    if (finalReqs.length === 0 && shortcutCrew && shortcutCrew.length > 0) {
-      finalReqs = shortcutCrew.map(c => ({ ...c }));
+    // Apply matching scoped or non-overridden global shortcuts
+    for (const sm of heuristicScopeAnalysis.shortcutMatches) {
+      if (sm.mappedCrew.length === 0) continue;
+      const trigKey = sm.trigger.toLowerCase().trim();
+      const triggeredHere = Boolean(fnOv?.triggeredShortcuts?.has(trigKey));
+      if (sm.scopedEvents !== null) {
+        if (sm.scopedEvents.has(fnKey)) {
+          finalReqs = mergeCrewList(finalReqs, sm.mappedCrew, studioCrewRoles);
+        }
+      } else if (triggeredHere || (!fnOv?.hasExplicitCrew && !fnOv?.hasRestrictiveOverride)) {
+        if (finalReqs.length === 0 || triggeredHere) {
+          finalReqs = mergeCrewList(finalReqs, sm.mappedCrew, studioCrewRoles);
+        }
+      }
     }
 
-    if (finalReqs.length === 0 && studioDefaultFunctions.length > 0) {
+    if (finalReqs.length === 0 && !fnOv?.hasExplicitCrew && !fnOv?.hasRestrictiveOverride && studioDefaultFunctions.length > 0) {
       const cleanEventBase = (s: string) => s.toLowerCase().replace(/\b(?:ceremony|night|party|function|shoot|event|day)\b/gi, '').replace(/\s+/g, ' ').trim();
       const fnLower = fn.name.toLowerCase().trim();
       const fnBase = cleanEventBase(fn.name);
@@ -2055,7 +2795,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     };
   }
 
-  // 7. Studio Settings Deliverables & Shorthands Sync
+  // 7. Studio Settings Deliverables, Bilingual Spoken Deliverables & Shorthands Sync
   const studioDeliverables: string[] = Array.isArray(studioSettings?.deliverables)
     ? studioSettings.deliverables
         .map((d: any) => typeof d === 'string' ? d : d?.title)
@@ -2066,29 +2806,14 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   // Check if "all deliverables" or "all droppers" trigger was spoken or requested (Unicode safe for Hindi/Marathi/English)
   const hasAllDeliverablesRequested = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(fullText);
+  const spokenDeliverables = extractDeliverablesFromText(notes, studioDeliverables);
 
   if (hasAllDeliverablesRequested && studioDeliverables.length > 0) {
-    deliverables = [...studioDeliverables];
-  } else if (shortcutDeliverables.length > 0) {
-    deliverables = [...new Set(shortcutDeliverables)];
+    deliverables = mergeDeliverablesSmart([...studioDeliverables], spokenDeliverables, true);
+  } else if (shortcutDeliverables.length > 0 || spokenDeliverables.length > 0) {
+    deliverables = mergeDeliverablesSmart(shortcutDeliverables, spokenDeliverables, true);
   } else if (studioDeliverables.length > 0) {
-    const matchedStudioDelivs = studioDeliverables.filter((title: string) => {
-      const tLower = title.toLowerCase();
-      if (tLower.includes('teaser') && fullText.includes('teaser')) return true;
-      if (tLower.includes('highlight') && (fullText.includes('highlight') || fullText.includes('film'))) return true;
-      if (tLower.includes('traditional') && (fullText.includes('traditional') || fullText.includes('long video'))) return true;
-      if (tLower.includes('album') && (fullText.includes('album') || fullText.includes('photobook'))) return true;
-      if (tLower.includes('reel') && (fullText.includes('reel') || fullText.includes('instagram'))) return true;
-      if (tLower.includes('raw') && (fullText.includes('raw') || fullText.includes('hard drive'))) return true;
-      if (tLower.includes('edited') && (fullText.includes('edited') || fullText.includes('photos') || fullText.includes('images'))) return true;
-      return false;
-    });
-
-    if (matchedStudioDelivs.length > 0) {
-      deliverables = matchedStudioDelivs;
-    } else {
-      deliverables = studioDeliverables.slice(0, 6);
-    }
+    deliverables = studioDeliverables.slice(0, 6);
   } else {
     deliverables = [
       'All Raw Photos & Footage in Hard Drive',
@@ -2546,19 +3271,25 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   }
 
   if (hasAllDelivReq && studioDeliverables.length > 0) {
-    doc.deliverablesPage.selectedItems = [...studioDeliverables];
+    doc.deliverablesPage.selectedItems = mergeDeliverablesSmart(
+      [...studioDeliverables],
+      Array.isArray(doc.deliverablesPage.selectedItems) ? doc.deliverablesPage.selectedItems : [],
+      false
+    );
   } else if (matchedShortcutDelivs.length > 0) {
-    doc.deliverablesPage.selectedItems = [...new Set(matchedShortcutDelivs)];
+    doc.deliverablesPage.selectedItems = mergeDeliverablesSmart(
+      Array.isArray(doc.deliverablesPage.selectedItems) ? doc.deliverablesPage.selectedItems : [],
+      matchedShortcutDelivs,
+      false
+    );
   }
 
-  // Populate availableOptions with all studio deliverables
-  if (studioDeliverables.length > 0) {
-    doc.deliverablesPage.availableOptions = Array.from(new Set([
-      ...studioDeliverables,
-      ...(doc.deliverablesPage.availableOptions || []),
-      ...(doc.deliverablesPage.selectedItems || [])
-    ]));
-  }
+  // Populate availableOptions with all studio deliverables AND extracted custom deliverables
+  doc.deliverablesPage.availableOptions = Array.from(new Set([
+    ...studioDeliverables,
+    ...(doc.deliverablesPage.availableOptions || []),
+    ...(doc.deliverablesPage.selectedItems || [])
+  ])).filter(Boolean);
 
   // 5. Special Value Additions Page
   if (!doc.specialValueAdditions) doc.specialValueAdditions = {};

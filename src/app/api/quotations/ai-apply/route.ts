@@ -50,8 +50,8 @@ export async function POST(req: NextRequest) {
     // 2. Normalize document schema on top of the existing template
     const normalizedDoc = normalizeQuotationData(document, baseTemplate);
     const coupleName = normalizedDoc.cover?.coupleName || normalizedDoc.cover?.groomName || 'Valued Client';
-    const eventType = normalizedDoc.cover?.eventType || 'Wedding';
-    const quotationTitle = `${coupleName} - ${eventType} Quotation`;
+    const eventType = (normalizedDoc.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+    const quotationTitle = `${coupleName} - ${eventType}`;
     normalizedDoc.designName = quotationTitle;
     normalizedDoc.title = quotationTitle;
     if (existingQDoc?.lead_id && !normalizedDoc.lead_id) normalizedDoc.lead_id = existingQDoc.lead_id;

@@ -43,6 +43,7 @@ const AiQuotationModal = dynamic(
   { ssr: false }
 );
 import { resolvePrimaryCoverLocation } from '@/lib/quotation-defaults';
+import { syncShootPageInSequence } from '@/lib/ai-quotation-extractor';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
@@ -2336,8 +2337,10 @@ function StudioCoreAiryBuilderContent() {
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isAiRefining, setIsAiRefining] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Auto-saved to cloud');
   const isInitialLoadedRef = useRef<boolean>(false);
+  const aiRefinedDoneRef = useRef<boolean>(false);
   const currentVersionRef = useRef<number>(1);
   const clientTabIdRef = useRef<string>(`tab_${Math.random().toString(36).substring(2, 9)}`);
   const realtimeChannelRef = useRef<any>(null);
@@ -3388,21 +3391,26 @@ function StudioCoreAiryBuilderContent() {
         if (loadedData.primaryFont) preloadActiveFont(loadedData.primaryFont);
         if (loadedData.secondaryFont) preloadActiveFont(loadedData.secondaryFont);
 
-        // Cache canonical state locally and hydrate editor
-        cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
-        try {
-          sessionStorage.setItem(`current_quotation_doc_${routeId}`, JSON.stringify(loadedData));
-          localStorage.setItem(`wg_proposal_draft_${routeId}`, JSON.stringify(loadedData));
-        } catch (e) {}
+        // Apply canonical state ONLY if user has not edited locally AND background AI refine has not already completed
+        const canHydrateCanonical = !isDirtyRef.current && !aiRefinedDoneRef.current && (isDocumentValid(docContent) || !isDocumentValid(latestDataRef.current));
+        if (canHydrateCanonical) {
+          cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
+          try {
+            sessionStorage.setItem(`current_quotation_doc_${routeId}`, JSON.stringify(loadedData));
+            localStorage.setItem(`wg_proposal_draft_${routeId}`, JSON.stringify(loadedData));
+          } catch (e) {}
 
-        isRemoteUpdateRef.current = true;
-        setRawData(loadedData);
+          isRemoteUpdateRef.current = true;
+          setRawData(loadedData);
+        }
         setIsDataReady(true);
         setIsCanonicalLoaded(true);
 
-        // If template document did not exist in DB yet (e.g. background duplication in progress), persist loadedData now
-        // CRITICAL: NEVER perform auto-persist in public preview mode or with demo template!
-        if (!isPublicPreview && !isDocumentValid(docContent) && isDocumentValid(loadedData) && loadedData.designName !== 'Personalised Wedding Quotation') {
+        // If template document did not exist in DB yet AND create-for-lead is not actively in flight, persist loadedData now
+        // CRITICAL: NEVER perform auto-persist in public preview mode, with demo template, or during active create-for-lead!
+        const pendingCreateTs = typeof window !== 'undefined' ? Number(sessionStorage.getItem(`pending_db_create_${routeId}`) || 0) : 0;
+        const isCreateInFlight = pendingCreateTs > 0 && (Date.now() - pendingCreateTs) < 15000;
+        if (!isCreateInFlight && !isPublicPreview && !isDocumentValid(docContent) && isDocumentValid(loadedData) && loadedData.designName !== 'Personalised Wedding Quotation') {
           fetch(`/api/templates/${routeId}`, {
             method: 'PATCH',
             headers: {
@@ -3430,7 +3438,7 @@ function StudioCoreAiryBuilderContent() {
             if (matchedLead) {
               setLeadData(matchedLead);
               if (matchedLead.name && (!loadedData?.cover?.coupleName || isPlaceholderCoupleName(loadedData.cover.coupleName))) {
-                setData(prev => ({
+                setData((prev: any) => ({
                   ...prev,
                   cover: {
                     ...prev.cover,
@@ -3477,6 +3485,189 @@ function StudioCoreAiryBuilderContent() {
     }
     initUserAndLoadData();
   }, [params]);
+
+  // ── 1B. ASYNCHRONOUS GEMINI AI VERIFICATION & REFINEMENT (Runs silently after instant <100ms open) ──
+  useEffect(() => {
+    if (isPublicPreview || !userId || userId === 'PUBLIC_USER') return;
+    if (typeof window === 'undefined') return;
+
+    const routeId = params?.id ? String(params.id) : '';
+    if (!routeId || routeId === 'draft') return;
+
+    const refineKey = `ai_pending_refine_${routeId}`;
+    const rawPending = sessionStorage.getItem(refineKey);
+    if (!rawPending) return;
+
+    let payload: any = null;
+    try {
+      payload = JSON.parse(rawPending);
+    } catch (_) {
+      try { sessionStorage.removeItem(refineKey); } catch (_) {}
+      return;
+    }
+
+    // Consume immediately so refresh / React StrictMode does not re-trigger
+    try { sessionStorage.removeItem(refineKey); } catch (_) {}
+
+    if (!payload?.additionalNotes || (payload.createdAt && Date.now() - payload.createdAt > 120000)) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setIsAiRefining(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+
+        const aiRes = await fetch('/api/quotations/ai-extract', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            leadId: payload.leadId,
+            workspaceId: payload.workspaceId || session?.user?.id || null,
+            userId: payload.userId || session?.user?.id || null,
+            quotationId: undefined,
+            explicitTemplateId: payload.explicitTemplateId || null,
+            currentDocument: latestDataRef.current,
+            additionalNotes: payload.additionalNotes,
+            studioSettings: payload.studioSettings || null,
+            studioEventTypes: payload.studioEventTypes || null,
+            studioCrewRoles: payload.studioCrewRoles || null
+          }),
+          ...(typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? { signal: AbortSignal.timeout(22000) } : {})
+        });
+
+        if (cancelled || !aiRes.ok) return;
+        const aiJson = await aiRes.json().catch(() => null);
+        const rawRefined = aiJson?.extractedDocument?.document || aiJson?.extractedDocument;
+        if (!aiJson?.success || !rawRefined || cancelled) return;
+
+        // Wait for initial create-for-lead INSERT before issuing AI-Apply UPDATE so nothing gets overwritten!
+        const pendingCreate = (window as any).__pendingCreatePromises?.[routeId];
+        if (pendingCreate && typeof pendingCreate.then === 'function') {
+          await Promise.race([
+            pendingCreate.catch(() => {}),
+            new Promise((r) => setTimeout(r, 12000))
+          ]);
+        }
+        if (cancelled) return;
+
+        // Strictly never clobber edits if user already started editing in the Builder!
+        if (isDirtyRef.current || localRevisionRef.current > 1) {
+          console.log('[Builder Background AI] Skipped state update because user began manual edits.');
+          return;
+        }
+
+        const baseNow = latestDataRef.current || DEFAULT_AIRY_PROPOSAL;
+        const refinedDoc = normalizeQuotationData({
+          ...baseNow,
+          ...rawRefined,
+          cover: { ...(baseNow.cover || {}), ...(rawRefined.cover || {}) },
+          functionsPage: rawRefined.functionsPage || baseNow.functionsPage,
+          deliverablesPage: rawRefined.deliverablesPage || baseNow.deliverablesPage,
+          shootDetails: rawRefined.shootDetails || baseNow.shootDetails,
+          pricingPage: rawRefined.pricingPage || baseNow.pricingPage,
+          paymentTermsPage: rawRefined.paymentTermsPage || baseNow.paymentTermsPage,
+          specialValueAdditions: rawRefined.specialValueAdditions || baseNow.specialValueAdditions,
+          termsPage: baseNow.termsPage || rawRefined.termsPage,
+          customPages: baseNow.customPages || rawRefined.customPages,
+        });
+
+        // Preserve chosen template visual styling, framing & branding 100%
+        refinedDoc.id = routeId;
+        if (baseNow.lead_id) refinedDoc.lead_id = baseNow.lead_id;
+        if (baseNow.lead_version) refinedDoc.lead_version = baseNow.lead_version;
+        if (baseNow.look) refinedDoc.look = baseNow.look;
+        if (baseNow.theme || baseNow.look) refinedDoc.theme = baseNow.theme || baseNow.look;
+        if (baseNow.primaryFont) refinedDoc.primaryFont = baseNow.primaryFont;
+        if (baseNow.secondaryFont) refinedDoc.secondaryFont = baseNow.secondaryFont;
+        if (baseNow.colorPalette) refinedDoc.colorPalette = baseNow.colorPalette;
+        if (baseNow.source_template_id) refinedDoc.source_template_id = baseNow.source_template_id;
+        if (baseNow.template_id) refinedDoc.template_id = baseNow.template_id;
+        if (Array.isArray(baseNow.pageSequence) && baseNow.pageSequence.length > 0) {
+          refinedDoc.pageSequence = syncShootPageInSequence(
+            JSON.parse(JSON.stringify(baseNow.pageSequence)),
+            Boolean(refinedDoc.shootDetails?.visible)
+          );
+        }
+        if (baseNow.cover) {
+          refinedDoc.cover = {
+            ...(refinedDoc.cover || {}),
+            frameShape: baseNow.cover.frameShape || refinedDoc.cover?.frameShape,
+            photoUrl: baseNow.cover.photoUrl || refinedDoc.cover?.photoUrl,
+            photoHeight: baseNow.cover.photoHeight ?? refinedDoc.cover?.photoHeight,
+            photoWidth: baseNow.cover.photoWidth ?? refinedDoc.cover?.photoWidth,
+            photoFocalY: baseNow.cover.photoFocalY ?? refinedDoc.cover?.photoFocalY,
+            bgOpacity: baseNow.cover.bgOpacity ?? refinedDoc.cover?.bgOpacity,
+            imagePosition: baseNow.cover.imagePosition || refinedDoc.cover?.imagePosition,
+            sideOption: baseNow.cover.sideOption ?? refinedDoc.cover?.sideOption,
+            brandName: baseNow.cover.brandName || refinedDoc.cover?.brandName,
+            brandLogoUrl: baseNow.cover.brandLogoUrl || refinedDoc.cover?.brandLogoUrl,
+            brandLogoSize: baseNow.cover.brandLogoSize ?? refinedDoc.cover?.brandLogoSize,
+            coverStyle: baseNow.cover.coverStyle || refinedDoc.cover?.coverStyle,
+          };
+        }
+        if (baseNow.aboutUs) {
+          refinedDoc.aboutUs = {
+            ...(refinedDoc.aboutUs || {}),
+            photo: baseNow.aboutUs.photo || refinedDoc.aboutUs?.photo,
+            signature: baseNow.aboutUs.signature || refinedDoc.aboutUs?.signature,
+            kicker: baseNow.aboutUs.kicker || refinedDoc.aboutUs?.kicker,
+            heading: baseNow.aboutUs.heading || refinedDoc.aboutUs?.heading,
+            text: baseNow.aboutUs.text || refinedDoc.aboutUs?.text,
+          };
+        }
+        if (baseNow.thankYouPage) {
+          refinedDoc.thankYouPage = {
+            ...(refinedDoc.thankYouPage || {}),
+            photo: baseNow.thankYouPage.photo || refinedDoc.thankYouPage?.photo,
+            signature: baseNow.thankYouPage.signature || refinedDoc.thankYouPage?.signature,
+            brandName: baseNow.thankYouPage.brandName || refinedDoc.thankYouPage?.brandName,
+            phone: baseNow.thankYouPage.phone || refinedDoc.thankYouPage?.phone,
+            email: baseNow.thankYouPage.email || refinedDoc.thankYouPage?.email,
+            website: baseNow.thankYouPage.website || refinedDoc.thankYouPage?.website,
+          };
+        }
+
+        aiRefinedDoneRef.current = true;
+        isRemoteUpdateRef.current = true;
+        setRawData(refinedDoc);
+        cacheDocumentLocal(routeId, refinedDoc, currentVersionRef.current);
+        try {
+          sessionStorage.setItem(`current_quotation_doc_${routeId}`, JSON.stringify(refinedDoc));
+          sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: routeId, document: refinedDoc }));
+          safeLocalStorageSet(`wg_proposal_draft_${routeId}`, JSON.stringify(refinedDoc), routeId);
+        } catch (_) {}
+
+        await fetch('/api/quotations/ai-apply', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            quotationId: routeId,
+            document: refinedDoc
+          }),
+          keepalive: true
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('[Builder Background AI Verification Notice]:', err);
+      } finally {
+        if (!cancelled) {
+          setIsAiRefining(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params, userId, isPublicPreview]);
 
   // Flush state to localStorage on tab unload/refresh
   useEffect(() => {
@@ -6010,9 +6201,13 @@ function StudioCoreAiryBuilderContent() {
               className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[90px] sm:max-w-[130px] lg:max-w-[180px] truncate"
             />
             <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border hidden md:inline-block shrink-0 ${
-              hasUnsavedChanges ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+              isAiRefining
+                ? 'text-purple-700 bg-purple-50 border-purple-200 animate-pulse'
+                : hasUnsavedChanges
+                ? 'text-amber-700 bg-amber-50 border-amber-200'
+                : 'text-emerald-700 bg-emerald-50 border-emerald-200'
             }`}>
-              {autoSaveStatus}
+              {isAiRefining ? '✨ AI Verifying...' : autoSaveStatus}
             </span>
           </div>
 
@@ -8108,9 +8303,16 @@ function StudioCoreAiryBuilderContent() {
         lead={leadData || { id: templateId || routeId, name: data.cover?.coupleName || 'Client', phone: '', email: '', raw_payload: {} }}
         quotationId={templateId || routeId}
         currentDocumentData={data}
-        onApplied={(updatedDoc) => {
+        onApplied={(updatedDoc, _targetId, isBackgroundRefine) => {
           setAiModalOpen(false);
           if (updatedDoc) {
+            if (isBackgroundRefine) {
+              // Only apply background Gemini refine if user hasn't manually edited after opening modal apply
+              const baseRevAfterInstant = (window as any).__aiInstantAppliedRev?.[templateId || routeId];
+              if (baseRevAfterInstant !== undefined && localRevisionRef.current > baseRevAfterInstant) {
+                return;
+              }
+            }
             setData((prev: any) => {
               const merged = normalizeQuotationData({
                 ...prev,
@@ -8128,10 +8330,17 @@ function StudioCoreAiryBuilderContent() {
               } catch (e) {}
               return merged;
             });
-            setAutoSaveStatus('Auto-saved to cloud');
+            if (!isBackgroundRefine && typeof window !== 'undefined') {
+              const w = window as any;
+              if (!w.__aiInstantAppliedRev) w.__aiInstantAppliedRev = {};
+              w.__aiInstantAppliedRev[templateId || routeId] = localRevisionRef.current + 1;
+            }
+            setAutoSaveStatus(isBackgroundRefine ? '✨ AI Verified & Saved' : 'Auto-saved to cloud');
             setHasUnsavedChanges(false);
-            setActionSuccessMsg('✨ AI Quotation applied live! Events, dates & pricing updated.');
-            setTimeout(() => setActionSuccessMsg(null), 4000);
+            if (!isBackgroundRefine) {
+              setActionSuccessMsg('✨ AI Quotation applied live! Events, dates & pricing updated.');
+              setTimeout(() => setActionSuccessMsg(null), 4000);
+            }
             if (!isPublicPreview) {
               triggerRevisionSave();
             }
