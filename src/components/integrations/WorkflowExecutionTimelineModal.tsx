@@ -28,8 +28,37 @@ import {
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
-// Global in-memory cache for instant opening (0ms)
+// Global in-memory caches for instant opening (0ms)
 const workflowTelemetryCache = new Map<string, { executions: ExecutionRow[]; timestamp: number }>();
+const resolvedWorkflowCache = new Map<string, any>();
+const resolvedGroupWorkflowsCache = new Map<string, any[]>();
+
+function getTelemetryCacheKey(wfId: string, leadId?: string | null): string {
+  return `${wfId}::${leadId || 'all'}`;
+}
+
+function pickWorkflowForType(wfs: any[], preferredType?: 'welcome' | 'followup'): any | null {
+  if (!wfs || wfs.length === 0) return null;
+  const welcomeMatch = wfs.find(
+    w =>
+      (w.workflow_name || '').toLowerCase().includes('welcome') ||
+      (w.workflow_name || '').toLowerCase().startsWith('wm')
+  );
+  if (preferredType === 'welcome') {
+    return welcomeMatch || wfs[0];
+  }
+  if (preferredType === 'followup') {
+    return (
+      wfs.find(
+        w =>
+          (w.workflow_name || '').toLowerCase().includes('follow') ||
+          (w.workflow_name || '').toLowerCase().startsWith('fu')
+      ) ||
+      (wfs.length > 1 ? wfs.find(w => w.id !== welcomeMatch?.id) : wfs[0])
+    );
+  }
+  return wfs[0];
+}
 
 interface WorkflowStep {
   template_id: string;
@@ -75,6 +104,10 @@ interface WorkflowExecutionTimelineModalProps {
   workflow: any | null;
   workflowId?: string | null;
   initialLeadId?: string | null;
+  leadName?: string | null;
+  leadPhone?: string | null;
+  groupId?: string | null;
+  preferredType?: 'welcome' | 'followup';
   onEditWorkflow?: (wf: any) => void;
 }
 
@@ -109,80 +142,117 @@ export function WorkflowExecutionTimelineModal({
   workflow,
   workflowId,
   initialLeadId,
+  leadName,
+  leadPhone,
+  groupId,
+  preferredType,
   onEditWorkflow,
 }: WorkflowExecutionTimelineModalProps) {
   const { userId, workspaceId } = useBhamstra();
   const tenantId = (workspaceId && workspaceId !== 'all') ? workspaceId : (userId || '');
 
   const [fetchedWorkflow, setFetchedWorkflow] = useState<any | null>(null);
-
   const [workflowLoading, setWorkflowLoading] = useState(false);
 
-  // If workflow not provided directly, fetch by workflowId or initialLeadId
+  // Cache directly-passed workflow objects so future reopens by workflowId/groupId are 0ms
+  useEffect(() => {
+    if (workflow?.id) {
+      resolvedWorkflowCache.set(workflow.id, workflow);
+    }
+  }, [workflow]);
+
+  // Resolve cached workflow synchronously if available to eliminate spinner flicker
+  const cachedWfSync = useMemo(() => {
+    if (workflow) return workflow;
+    if (workflowId && resolvedWorkflowCache.has(workflowId)) {
+      return resolvedWorkflowCache.get(workflowId);
+    }
+    if (groupId && resolvedGroupWorkflowsCache.has(groupId)) {
+      return pickWorkflowForType(resolvedGroupWorkflowsCache.get(groupId) || [], preferredType);
+    }
+    return null;
+  }, [workflow, workflowId, groupId, preferredType]);
+
+  // If workflow not provided directly (and not in sync cache), fetch by workflowId / groupId / initialLeadId
   useEffect(() => {
     if (!isOpen) {
       setFetchedWorkflow(null);
       setWorkflowLoading(false);
       return;
     }
-    if (workflow) {
+    if (cachedWfSync) {
       setWorkflowLoading(false);
       return;
     }
-    if (workflowId) {
-      setWorkflowLoading(true);
-      supabase
-        .from('whatsapp_custom_workflows')
-        .select('*')
-        .eq('id', workflowId)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data) setFetchedWorkflow(data);
-          setWorkflowLoading(false);
-        })
-        .catch(() => setWorkflowLoading(false));
-    } else if (initialLeadId) {
-      setWorkflowLoading(true);
-      (async () => {
-        try {
+
+    let cancelled = false;
+    setWorkflowLoading(true);
+
+    (async () => {
+      try {
+        if (workflowId) {
+          const { data } = await supabase
+            .from('whatsapp_custom_workflows')
+            .select('*')
+            .eq('id', workflowId)
+            .maybeSingle();
+          if (!cancelled && data) {
+            resolvedWorkflowCache.set(data.id, data);
+            setFetchedWorkflow(data);
+          }
+          return;
+        }
+
+        let targetGroupId = groupId || null;
+        let ws = tenantId;
+
+        if (!targetGroupId && initialLeadId) {
           const { data: lead } = await supabase
             .from('leads')
             .select('whatsapp_group_id, workspace_id')
             .eq('id', initialLeadId)
             .maybeSingle();
-
-          if (lead?.whatsapp_group_id) {
-            const { data: wfs } = await supabase
-              .from('whatsapp_custom_workflows')
-              .select('*')
-              .eq('target_group_id', lead.whatsapp_group_id);
-            if (wfs && wfs.length > 0) {
-              setFetchedWorkflow(wfs[0]);
-              setWorkflowLoading(false);
-              return;
-            }
-          }
-
-          const ws = lead?.workspace_id || tenantId;
-          if (ws) {
-            const { data: wfs } = await supabase
-              .from('whatsapp_custom_workflows')
-              .select('*')
-              .eq('tenant_id', ws)
-              .limit(1);
-            if (wfs && wfs.length > 0) {
-              setFetchedWorkflow(wfs[0]);
-            }
-          }
-        } catch (_) {}
-        finally {
-          setWorkflowLoading(false);
+          targetGroupId = lead?.whatsapp_group_id || null;
+          ws = lead?.workspace_id || ws;
         }
-      })();
-    }
-  }, [isOpen, workflow, workflowId, initialLeadId, tenantId]);
 
-  const activeWorkflow = workflow || fetchedWorkflow;
+        if (targetGroupId) {
+          const { data: wfs } = await supabase
+            .from('whatsapp_custom_workflows')
+            .select('*')
+            .eq('target_group_id', targetGroupId);
+          if (!cancelled && wfs && wfs.length > 0) {
+            resolvedGroupWorkflowsCache.set(targetGroupId, wfs);
+            wfs.forEach((w: any) => resolvedWorkflowCache.set(w.id, w));
+            const picked = pickWorkflowForType(wfs, preferredType);
+            setFetchedWorkflow(picked);
+            return;
+          }
+        }
+
+        if (ws) {
+          const { data: wfs } = await supabase
+            .from('whatsapp_custom_workflows')
+            .select('*')
+            .eq('tenant_id', ws);
+          if (!cancelled && wfs && wfs.length > 0) {
+            wfs.forEach((w: any) => resolvedWorkflowCache.set(w.id, w));
+            const picked = pickWorkflowForType(wfs, preferredType);
+            setFetchedWorkflow(picked);
+          }
+        }
+      } catch (_) {
+      } finally {
+        if (!cancelled) setWorkflowLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, cachedWfSync, workflowId, groupId, initialLeadId, tenantId, preferredType]);
+
+  const activeWorkflow = cachedWfSync || fetchedWorkflow;
 
   const [executions, setExecutions] = useState<ExecutionRow[]>([]);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(initialLeadId || null);
@@ -211,6 +281,12 @@ export function WorkflowExecutionTimelineModal({
 
   const isSingleLeadMode = Boolean(initialLeadId);
 
+  const invalidateTelemetryCache = useCallback(() => {
+    if (!activeWorkflow?.id) return;
+    workflowTelemetryCache.delete(getTelemetryCacheKey(activeWorkflow.id, initialLeadId));
+    workflowTelemetryCache.delete(getTelemetryCacheKey(activeWorkflow.id, null));
+  }, [activeWorkflow?.id, initialLeadId]);
+
   const fetchTelemetry = useCallback(async (skipLoadingState = false) => {
     if (!activeWorkflow?.id) return;
     if (!skipLoadingState) setLoading(true);
@@ -234,25 +310,30 @@ export function WorkflowExecutionTimelineModal({
               .eq('id', initialLeadId)
               .maybeSingle();
 
-            if (leadData) {
+            if (leadData || leadName || leadPhone) {
+              const sortedSteps = (activeWorkflow.workflow_steps || [])
+                .slice()
+                .sort((a: any, b: any) => (a.sort_index ?? 0) - (b.sort_index ?? 0));
               const syntheticRow: ExecutionRow = {
-                leadId: leadData.id,
+                leadId: leadData?.id || initialLeadId,
                 workflowId: activeWorkflow.id,
                 workflowName: activeWorkflow.workflow_name,
-                name: leadData.name || 'Lead',
-                phone: leadData.phone || '',
+                name: leadData?.name || leadName || 'Lead',
+                phone: leadData?.phone || leadPhone || '',
                 status: 'not_started',
-                totalSteps: activeWorkflow.workflow_steps?.length || 0,
+                totalSteps: sortedSteps.length,
                 completedSteps: 0,
-                leftSteps: activeWorkflow.workflow_steps?.length || 0,
+                leftSteps: sortedSteps.length,
                 failedSteps: 0,
                 pendingSteps: 0,
                 runsCount: 0,
                 updatedAt: '—',
-                groupJoinTime: new Date(leadData.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
-                stepsLogs: (activeWorkflow.workflow_steps || []).map((s: any, idx: number) => ({
+                groupJoinTime: leadData?.created_at
+                  ? new Date(leadData.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                  : '—',
+                stepsLogs: sortedSteps.map((s: any, idx: number) => ({
                   id: null,
-                  step_index: idx,
+                  step_index: s.sort_index ?? idx,
                   template_name: s.template_name,
                   status: 'unsent',
                   error_message: null,
@@ -267,7 +348,8 @@ export function WorkflowExecutionTimelineModal({
           }
         }
 
-        workflowTelemetryCache.set(activeWorkflow.id, {
+        const cacheKey = getTelemetryCacheKey(activeWorkflow.id, initialLeadId);
+        workflowTelemetryCache.set(cacheKey, {
           executions: execsList,
           timestamp: Date.now()
         });
@@ -284,11 +366,16 @@ export function WorkflowExecutionTimelineModal({
     } finally {
       setLoading(false);
     }
-  }, [activeWorkflow?.id, tenantId, selectedLeadId, initialLeadId]);
+  }, [activeWorkflow?.id, tenantId, selectedLeadId, initialLeadId, leadName, leadPhone]);
 
   useEffect(() => {
-    if (isOpen && activeWorkflow?.id) {
-      const cached = workflowTelemetryCache.get(activeWorkflow.id);
+    if (!isOpen) {
+      setExecutions([]);
+      return;
+    }
+    if (activeWorkflow?.id) {
+      const cacheKey = getTelemetryCacheKey(activeWorkflow.id, initialLeadId);
+      const cached = workflowTelemetryCache.get(cacheKey);
       if (cached && cached.executions.length > 0) {
         setExecutions(cached.executions);
         if (initialLeadId) setSelectedLeadId(initialLeadId);
@@ -297,6 +384,8 @@ export function WorkflowExecutionTimelineModal({
         // Background refresh without blank flicker
         fetchTelemetry(true);
       } else {
+        setExecutions([]);
+        setSelectedLeadId(initialLeadId || null);
         fetchTelemetry(false);
       }
     }
@@ -369,7 +458,7 @@ export function WorkflowExecutionTimelineModal({
   };
 
   const handleConfirmClearContactLogs = async () => {
-    if (!currentExecution || !workflow) return;
+    if (!currentExecution || !activeWorkflow) return;
     setClearingLogs(true);
     try {
       const activeTenant = tenantId || activeWorkflow.tenant_id || activeWorkflow.workspace_id;
@@ -383,6 +472,7 @@ export function WorkflowExecutionTimelineModal({
         throw new Error(data.error || 'Failed to clear workflow logs');
       }
       setShowDeleteModal(false);
+      invalidateTelemetryCache();
       fetchTelemetry(false);
     } catch (err: any) {
       alert(`Clear logs failed: ${err.message}`);
@@ -413,6 +503,7 @@ export function WorkflowExecutionTimelineModal({
         throw new Error(data.error || 'Failed to retry step');
       }
       alert('✅ Step re-queued for immediate dispatch! (Other steps remained untouched)');
+      invalidateTelemetryCache();
       fetchTelemetry();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
@@ -447,6 +538,7 @@ export function WorkflowExecutionTimelineModal({
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to restart workflow');
       alert(`✅ Full sequence re-queued with ${resendDelayValue} ${resendDelayUnit} pacing!`);
       setResendModalOpen(false);
+      invalidateTelemetryCache();
       fetchTelemetry();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
@@ -491,6 +583,7 @@ export function WorkflowExecutionTimelineModal({
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to retry steps');
       alert(`✅ ${data.message || 'Selected steps re-queued with Anti-Ban pacing!'}`);
       setFailedStepsModalOpen(false);
+      invalidateTelemetryCache();
       fetchTelemetry();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
@@ -517,6 +610,7 @@ export function WorkflowExecutionTimelineModal({
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to stop workflow');
       alert('✅ Workflow stopped. Pending steps cancelled.');
+      invalidateTelemetryCache();
       fetchTelemetry();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
@@ -541,6 +635,7 @@ export function WorkflowExecutionTimelineModal({
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to resume workflow');
       alert(`✅ ${data.message || 'Workflow resumed.'}`);
+      invalidateTelemetryCache();
       fetchTelemetry();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
@@ -699,10 +794,81 @@ export function WorkflowExecutionTimelineModal({
           {/* Right Area: Selected Contact Execution Timeline */}
           <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-zinc-950 overflow-y-auto p-4 sm:p-6 space-y-5">
             {loading && !currentExecution ? (
-              <div className="py-24 text-center text-zinc-400">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-amber-500" />
-                <p className="text-sm font-semibold">Loading execution nodes...</p>
-              </div>
+              isSingleLeadMode && activeWorkflow ? (
+                <>
+                  {/* Immediate 0ms Contact Banner Skeleton */}
+                  <div className="bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center font-black text-amber-500 text-sm">
+                        {(leadName || 'L').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-extrabold text-base text-zinc-900 dark:text-zinc-100">
+                            {leadName || 'Lead'}
+                          </h3>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border bg-zinc-200/70 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300">
+                            <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                            Syncing Live Status
+                          </span>
+                        </div>
+                        {leadPhone && (
+                          <div className="flex items-center gap-3 text-xs text-zinc-500 mt-0.5">
+                            <span className="font-mono flex items-center gap-1">
+                              <Phone className="w-3.5 h-3.5 text-zinc-400" />
+                              +{String(leadPhone).replace(/[^0-9]/g, '')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step Nodes Preview Skeleton */}
+                  <div className="space-y-3">
+                    <h4 className="text-[11px] font-black text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                      <Activity className="w-3.5 h-3.5" />
+                      Execution Sequence Nodes ({(activeWorkflow.workflow_steps || []).length})
+                    </h4>
+                    {(activeWorkflow.workflow_steps || [])
+                      .slice()
+                      .sort((a: any, b: any) => (a.sort_index ?? 0) - (b.sort_index ?? 0))
+                      .map((step: any, idx: number) => (
+                        <div
+                          key={step.sort_index ?? idx}
+                          className="relative border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/30 rounded-2xl p-4"
+                        >
+                          <div className="absolute -top-3 left-4 px-2.5 py-0.5 bg-zinc-900 border border-zinc-700 rounded-full text-[9px] font-black text-zinc-300 tracking-wider uppercase">
+                            Step {idx + 1}
+                          </div>
+                          <div className="flex items-center justify-between gap-4 mt-1">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-zinc-900 dark:text-zinc-200">Send Template</span>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
+                                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                  Checking...
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-zinc-500 font-mono mt-0.5 block truncate">
+                                📄 {step.template_name || `Step ${idx + 1}`}
+                              </span>
+                              <div className="flex items-center gap-1 text-[10px] text-zinc-500 mt-1.5 font-mono">
+                                <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                <span>Delay: {step.delay_value} {step.delay_unit}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </>
+              ) : (
+                <div className="py-24 text-center text-zinc-400">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-amber-500" />
+                  <p className="text-sm font-semibold">Loading execution nodes...</p>
+                </div>
+              )
             ) : !currentExecution ? (
               <div className="py-24 text-center text-zinc-400">
                 <p className="text-sm font-semibold">Select a contact to view execution timeline</p>
@@ -1209,7 +1375,7 @@ export function WorkflowExecutionTimelineModal({
                     Are you sure you want to clear workflow execution history for <span className="font-bold text-zinc-900 dark:text-zinc-100">"{currentExecution.name}"</span>?
                   </p>
                   <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2">
-                    This will delete all scheduling logs and pending queue messages for the <span className="font-bold text-zinc-300">"{workflow.workflow_name}"</span> workflow.
+                    This will delete all scheduling logs and pending queue messages for the <span className="font-bold text-zinc-300">"{activeWorkflow.workflow_name}"</span> workflow.
                     The contact will remain 100% safe in your CRM. Re-syncing the contact will restart the sequence fresh.
                   </p>
                 </div>

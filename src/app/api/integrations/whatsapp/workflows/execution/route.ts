@@ -46,26 +46,89 @@ export async function GET(req: NextRequest) {
   try {
     const isAll = !workflowId || workflowId === 'all';
 
-    // 1. Fetch Workflow(s)
+    // 1 & 2 & 3 & Quota (only for analytics overview when !leadId) — run ALL in parallel!
+    const wfQuery = isAll
+      ? supabaseAdmin
+          .from('whatsapp_custom_workflows')
+          .select('*')
+          .eq('tenant_id', tenantId)
+      : supabaseAdmin
+          .from('whatsapp_custom_workflows')
+          .select('*')
+          .eq('id', workflowId)
+          .eq('tenant_id', tenantId)
+          .maybeSingle();
+
+    let leadsQuery = supabaseAdmin
+      .from('leads')
+      .select('id, name, email, phone, source, status, score, raw_payload, whatsapp_group_id, created_at, updated_at')
+      .eq('workspace_id', tenantId);
+    if (leadId) {
+      leadsQuery = leadsQuery.eq('id', leadId);
+    }
+
+    const fetchLogs = async (): Promise<any[]> => {
+      const PAGE_SIZE = 1000;
+      const buildBase = () => {
+        let q = supabaseAdmin
+          .from('whatsapp_workflow_logs')
+          .select('id, workflow_id, lead_id, step_index, status, error_message, sent_at, updated_at', { count: 'exact' })
+          .eq('tenant_id', tenantId);
+        if (leadId) q = q.eq('lead_id', leadId);
+        if (!isAll) q = q.eq('workflow_id', workflowId);
+        return q.order('step_index', { ascending: true });
+      };
+
+      const { data: firstPage, count } = await buildBase().range(0, PAGE_SIZE - 1);
+      const rows = [...(firstPage || [])];
+      const total = count ?? rows.length;
+      if (total > PAGE_SIZE) {
+        const restPromises: Promise<any>[] = [];
+        for (let from = PAGE_SIZE; from < total; from += PAGE_SIZE) {
+          restPromises.push(Promise.resolve(buildBase().range(from, from + PAGE_SIZE - 1)));
+        }
+        const pages = await Promise.all(restPromises);
+        for (const p of pages) {
+          if (p?.data) rows.push(...p.data);
+        }
+      }
+      return rows;
+    };
+
+    const now = new Date();
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+
+    const [wfRes, leadsRes, allLogs, monthlyCountRes, todayCountRes] = await Promise.all([
+      wfQuery,
+      leadsQuery,
+      fetchLogs(),
+      !leadId
+        ? supabaseAdmin
+            .from('whatsapp_workflow_logs')
+            .select('*', { count: 'exact', head: true })
+            .eq('tenant_id', tenantId)
+            .in('status', ['sent', 'delivered', 'read'])
+            .gte('sent_at', startOfMonth)
+        : Promise.resolve({ count: 0 }),
+      !leadId
+        ? supabaseAdmin
+            .from('whatsapp_workflow_logs')
+            .select('*', { count: 'exact', head: true })
+            .eq('tenant_id', tenantId)
+            .in('status', ['sent', 'delivered', 'read'])
+            .gte('sent_at', startOfToday)
+        : Promise.resolve({ count: 0 }),
+    ]);
+
     let workflowsList: any[] = [];
     if (isAll) {
-      const { data: allWfs } = await supabaseAdmin
-        .from('whatsapp_custom_workflows')
-        .select('*')
-        .eq('tenant_id', tenantId);
-      workflowsList = allWfs || [];
+      workflowsList = (wfRes.data as any[]) || [];
     } else {
-      const { data: singleWf, error: wfError } = await supabaseAdmin
-        .from('whatsapp_custom_workflows')
-        .select('*')
-        .eq('id', workflowId)
-        .eq('tenant_id', tenantId)
-        .maybeSingle();
-
-      if (wfError || !singleWf) {
+      if (wfRes.error || !wfRes.data) {
         return NextResponse.json({ error: 'Workflow not found or access denied' }, { status: 404 });
       }
-      workflowsList = [singleWf];
+      workflowsList = [wfRes.data];
     }
 
     if (workflowsList.length === 0) {
@@ -76,39 +139,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 2. Fetch Leads for targeted groups
-    const targetGroupIds = Array.from(new Set(workflowsList.map(w => w.target_group_id).filter(Boolean)));
-    let leadsQuery = supabaseAdmin
-      .from('leads')
-      .select('id, name, email, phone, source, status, score, raw_payload, whatsapp_group_id, created_at, updated_at')
-      .eq('workspace_id', tenantId);
+    const leads = (leadsRes.data as any[]) || [];
 
-    if (leadId) {
-      leadsQuery = leadsQuery.eq('id', leadId);
-    } else if (!isAll && targetGroupIds.length > 0) {
-      leadsQuery = leadsQuery.in('whatsapp_group_id', targetGroupIds);
-    }
-
-    const { data: leadsData } = await leadsQuery;
-    const leads = leadsData || [];
-
-    // 3. Fetch Workflow Logs
-    let logsQuery = supabaseAdmin
-      .from('whatsapp_workflow_logs')
-      .select('*')
-      .eq('tenant_id', tenantId);
-
-    if (leadId) {
-      logsQuery = logsQuery.eq('lead_id', leadId);
-    }
-    if (!isAll) {
-      logsQuery = logsQuery.eq('workflow_id', workflowId);
-    }
-
-    const { data: logs } = await logsQuery.order('step_index', { ascending: true });
-    const allLogs = logs || [];
-
-    // 4. Load template details for shortcode preview parsing
+    // 4. Load template details for shortcode preview parsing (text only, no heavy media payload blobs)
     const allSteps = workflowsList.flatMap(w => w.workflow_steps || []);
     const templateIds = Array.from(new Set(allSteps.map((s: any) => s.template_id).filter(Boolean))) as string[];
 
@@ -117,7 +150,7 @@ export async function GET(req: NextRequest) {
       try {
         const { data: tenantTpls } = await supabaseAdmin
           .from('tenant_whatsapp_templates')
-          .select('id, body_text, media_url_payload')
+          .select('id, body_text')
           .in('id', templateIds)
           .eq('tenant_id', tenantId);
 
@@ -125,7 +158,6 @@ export async function GET(req: NextRequest) {
           tenantTpls.forEach(t => {
             templatesMap[t.id] = {
               body: t.body_text || '',
-              type: t.media_url_payload ? 'media' : 'text'
             };
           });
         }
@@ -134,7 +166,7 @@ export async function GET(req: NextRequest) {
         if (missingIds.length > 0) {
           const { data: legacyTpls } = await supabaseAdmin
             .from('whatsapp_templates')
-            .select('id, type, payload')
+            .select('id, payload')
             .in('id', missingIds)
             .eq('workspace_id', tenantId);
 
@@ -143,7 +175,6 @@ export async function GET(req: NextRequest) {
               const pl = t.payload || {};
               templatesMap[t.id] = {
                 body: pl.body || pl.question || '',
-                type: t.type
               };
             });
           }
@@ -151,6 +182,18 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         console.error('Error prefetching templates for shortcode parsing:', err);
       }
+    }
+
+    // Index logs by `${workflow_id}:${lead_id}` for O(1) lookup per lead
+    const logsByWfLead = new Map<string, any[]>();
+    for (const log of allLogs) {
+      const key = `${log.workflow_id}:${log.lead_id}`;
+      let arr = logsByWfLead.get(key);
+      if (!arr) {
+        arr = [];
+        logsByWfLead.set(key, arr);
+      }
+      arr.push(log);
     }
 
     // 5. Assemble Telemetry for all matching workflows and leads
@@ -163,7 +206,7 @@ export async function GET(req: NextRequest) {
         ? leads.filter(l => l.whatsapp_group_id === workflow.target_group_id)
         : leads
       ).filter(l => {
-        const hasLogs = allLogs.some(log => log.workflow_id === workflow.id && log.lead_id === l.id);
+        const hasLogs = (logsByWfLead.get(`${workflow.id}:${l.id}`)?.length || 0) > 0;
         if (hasLogs) return true;
         const enrolledIds = l.raw_payload?.enrolled_workflow_ids;
         if (Array.isArray(enrolledIds)) {
@@ -173,7 +216,7 @@ export async function GET(req: NextRequest) {
       });
 
       for (const lead of wfLeads) {
-        const leadLogs = allLogs.filter(log => log.workflow_id === workflow.id && log.lead_id === lead.id);
+        const leadLogs = logsByWfLead.get(`${workflow.id}:${lead.id}`) || [];
         const completedCount = leadLogs.filter(l => ['sent', 'delivered', 'read'].includes(l.status)).length;
         const failedCount    = leadLogs.filter(l => l.status === 'failed').length;
         const pendingCount   = leadLogs.filter(l => l.status === 'pending').length;
@@ -197,7 +240,7 @@ export async function GET(req: NextRequest) {
           if (!isNaN(d.getTime())) groupJoinDate = d;
         } else if (leadLogs.length > 0) {
           const allLogTimes = leadLogs
-            .map(l => new Date(l.created_at || l.sent_at).getTime())
+            .map(l => new Date(l.updated_at || l.sent_at).getTime())
             .filter(t => !isNaN(t));
           if (allLogTimes.length > 0) {
             groupJoinDate = new Date(Math.min(...allLogTimes));
@@ -306,25 +349,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const now = new Date();
-    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
-
-    const [monthlyCountRes, todayCountRes] = await Promise.all([
-      supabaseAdmin
-        .from('whatsapp_workflow_logs')
-        .select('*', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .in('status', ['sent', 'delivered', 'read'])
-        .gte('sent_at', startOfMonth),
-      supabaseAdmin
-        .from('whatsapp_workflow_logs')
-        .select('*', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .in('status', ['sent', 'delivered', 'read'])
-        .gte('sent_at', startOfToday),
-    ]);
-
     const TOTAL_MONTHLY_QUOTA = 5000;
     const monthlySent = monthlyCountRes.count ?? 0;
     const todaySent = todayCountRes.count ?? 0;
@@ -334,12 +358,16 @@ export async function GET(req: NextRequest) {
       success: true,
       workflow: isAll ? { id: 'all', workflow_name: 'All Workflows' } : workflowsList[0],
       executions,
-      quota: {
-        total: TOTAL_MONTHLY_QUOTA,
-        monthlySent,
-        todaySent,
-        remaining: remainingQuota,
-      }
+      ...(leadId
+        ? {}
+        : {
+            quota: {
+              total: TOTAL_MONTHLY_QUOTA,
+              monthlySent,
+              todaySent,
+              remaining: remainingQuota,
+            },
+          }),
     });
   } catch (err: any) {
     console.error('Fetch workflow execution telemetry error:', err);

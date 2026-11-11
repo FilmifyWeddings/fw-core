@@ -1201,6 +1201,82 @@ function releaseLock(workspaceId: string) {
   workspaceLocks.delete(workspaceId);
 }
 
+async function cancelOrDeleteServerlessQueueRow(
+  supabaseAdmin: SupabaseClient,
+  actionId: string,
+  reason: string
+): Promise<void> {
+  const { error: cancelErr } = await supabaseAdmin
+    .from('baileys_action_queue')
+    .update({
+      status: 'cancelled',
+      error_message: reason,
+      failure_reason: reason,
+      processed_at: new Date().toISOString(),
+    })
+    .eq('id', actionId);
+
+  if (cancelErr) {
+    const { error: delErr } = await supabaseAdmin
+      .from('baileys_action_queue')
+      .delete()
+      .eq('id', actionId);
+    if (delErr) {
+      console.error(`[poller] Failed to delete obsolete queue item ${actionId}:`, delErr.message);
+    }
+  }
+}
+
+async function checkQueuePreFlight(
+  supabaseAdmin: SupabaseClient,
+  payload: Record<string, any>
+): Promise<{ skip: boolean; reason?: string }> {
+  const wfLogId = payload?.workflowLogId || payload?.logId;
+  if (wfLogId) {
+    const { data: wfLog, error: wfLogErr } = await supabaseAdmin
+      .from('whatsapp_workflow_logs')
+      .select('id, status, error_message')
+      .eq('id', wfLogId)
+      .maybeSingle();
+
+    if (!wfLogErr) {
+      if (!wfLog) {
+        return { skip: true, reason: 'Workflow log deleted' };
+      }
+      if (['sent', 'delivered', 'read'].includes(wfLog.status)) {
+        return { skip: true, reason: `Workflow log already ${wfLog.status}` };
+      }
+      if (
+        wfLog.status === 'stopped' ||
+        wfLog.status === 'cancelled' ||
+        wfLog.error_message === 'STOPPED' ||
+        wfLog.error_message === 'Cancelled by user stop action.'
+      ) {
+        return { skip: true, reason: 'Workflow step stopped/cancelled' };
+      }
+    }
+  }
+
+  const leadId = payload?.leadId || payload?.lead_id;
+  if (leadId) {
+    const { data: leadRow, error: leadErr } = await supabaseAdmin
+      .from('leads')
+      .select('id, raw_payload')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (!leadErr && !leadRow) {
+      return { skip: true, reason: 'Lead was deleted from CRM' };
+    }
+    const leadRaw = (leadRow as any)?.raw_payload;
+    if (leadRaw?.stop_followup === true || leadRaw?.workflow_status === 'stopped') {
+      return { skip: true, reason: 'Lead follow-up stopped in CRM' };
+    }
+  }
+
+  return { skip: false };
+}
+
 export async function processSingleQueuedAction(
   supabaseAdmin: SupabaseClient,
   action: {
@@ -1616,28 +1692,38 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
         }
 
         if (!canProcess) {
-          // Grace period: only auto-fail if overdue by more than 15 minutes without any connection,
-          // giving transient socket reconnections a safe window instead of killing them instantly!
-          const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-          const { data: overdueItems } = await supabaseAdmin
-            .from('baileys_action_queue')
-            .select('id, attempt_count')
-            .eq('workspace_id', workspaceId)
-            .eq('status', 'pending')
-            .lte('next_retry_at', fifteenMinsAgo);
+          // Grace period: only auto-fail if overdue by more than 15 minutes AND session was explicitly unlinked / has no phone number.
+          // NEVER auto-fail if the studio has a valid paired phone number — preserve queue until connection recovers!
+          const { data: checkSession } = await supabaseAdmin
+            .from('baileys_sessions')
+            .select('phone_number, conn_state, status')
+            .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
+            .maybeSingle();
 
-          if (overdueItems && overdueItems.length > 0) {
-            console.warn(`[poller] No active session for workspace ${workspaceId}. Auto-failing ${overdueItems.length} overdue pending task(s).`);
-            for (const item of overdueItems) {
-              await supabaseAdmin
-                .from('baileys_action_queue')
-                .update({
-                  status: 'failed',
-                  error_message: `[AUTO-FAIL] No active WhatsApp session detected for over 15 minutes. Scan QR code on integrations page to re-establish connection, then use Retry Failed Steps.`,
-                  next_retry_at: null
-                })
-                .eq('id', item.id)
-                .eq('status', 'pending');
+          const hasLinkedPhone = !!(checkSession?.phone_number && String(checkSession.phone_number).trim().length > 5);
+
+          if (!hasLinkedPhone) {
+            const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+            const { data: overdueItems } = await supabaseAdmin
+              .from('baileys_action_queue')
+              .select('id, attempt_count')
+              .eq('workspace_id', workspaceId)
+              .eq('status', 'pending')
+              .lte('next_retry_at', fifteenMinsAgo);
+
+            if (overdueItems && overdueItems.length > 0) {
+              console.warn(`[poller] No active session for unlinked workspace ${workspaceId}. Auto-failing ${overdueItems.length} overdue pending task(s).`);
+              for (const item of overdueItems) {
+                await supabaseAdmin
+                  .from('baileys_action_queue')
+                  .update({
+                    status: 'failed',
+                    error_message: `[AUTO-FAIL] No active WhatsApp session detected for over 15 minutes. Scan QR code on integrations page to re-establish connection, then use Retry Failed Steps.`,
+                    next_retry_at: null
+                  })
+                  .eq('id', item.id)
+                  .eq('status', 'pending');
+              }
             }
           }
           continue;
@@ -1655,8 +1741,9 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
             .eq('status', 'pending')
             .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
             .order('priority', { ascending: true })
+            .order('next_retry_at', { ascending: true, nullsFirst: true })
             .order('created_at', { ascending: true })
-            .limit(3);
+            .limit(5);
 
           if (error || !actions || actions.length === 0) {
             releaseLock(workspaceId);
@@ -1671,14 +1758,6 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
             const stepDesc = `${actionType}[${actionId.slice(0, 8)}]`;
             const payload = (typeof action.payload === 'string' ? (() => { try { return JSON.parse(action.payload); } catch (_) { return {}; } })() : action.payload) || {};
 
-            // Log: Attempting to claim
-            await supabaseAdmin.from('live_logs').insert({
-              workspace_id: workspaceId,
-              event_type: 'queue_action_claimed',
-              message: `⏳ ${stepDesc} — Claiming action (attempt ${action.attempt_count + 1})`,
-              metadata: { action_id: actionId, action_type: actionType, attempt: action.attempt_count + 1, payload: action.payload }
-            });
-
             // Claim action
             const { data: claimed, error: claimErr } = await supabaseAdmin
               .from('baileys_action_queue')
@@ -1692,13 +1771,13 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
               .select();
 
             if (claimErr || !claimed || claimed.length === 0) {
-              // Log: Claim failed (another processor got it)
-              await supabaseAdmin.from('live_logs').insert({
-                workspace_id: workspaceId,
-                event_type: 'queue_action_claim_skipped',
-                message: `⏭️ ${stepDesc} — Already claimed by another processor`,
-                metadata: { action_id: actionId, action_type: actionType }
-              });
+              continue;
+            }
+
+            // Pre-flight guard: skip deleted/stopped/already-sent actions cleanly without waiting
+            const preFlight = await checkQueuePreFlight(supabaseAdmin, payload);
+            if (preFlight.skip) {
+              await cancelOrDeleteServerlessQueueRow(supabaseAdmin, actionId, preFlight.reason || 'Skipped by pre-flight guard');
               continue;
             }
 
@@ -1707,7 +1786,7 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
               workspace_id: workspaceId,
               event_type: 'queue_action_executing',
               message: `▶️ ${stepDesc} — Executing via ${actionType} handler`,
-              metadata: { action_id: actionId, action_type: actionType }
+              metadata: { action_id: actionId, action_type: actionType, attempt: action.attempt_count + 1 }
             });
 
             try {
@@ -1842,23 +1921,51 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
         const stuckTimeout = new Date(Date.now() - 120000).toISOString(); // 2 minutes stuck
         const { data: stuck } = await supabaseAdmin
           .from('baileys_action_queue')
-          .select('id')
+          .select('id, attempt_count, payload')
           .eq('workspace_id', workspaceId)
           .eq('status', 'processing')
           .lt('processed_at', stuckTimeout);
 
         if (stuck && stuck.length > 0) {
-          const stuckIds = stuck.map(s => s.id);
-          console.warn(`[poller] Sweeper found ${stuckIds.length} stuck actions in processing for workspace ${workspaceId}. Recovering...`);
-          
-          await supabaseAdmin
-            .from('baileys_action_queue')
-            .update({
-              status: 'pending',
-              error_message: 'Worker process crashed or timed out. Auto-recovered by sweeper.',
-              next_retry_at: new Date(Date.now() + 5000).toISOString(),
-            })
-            .in('id', stuckIds);
+          const exhaustedIds: string[] = [];
+          const retriableIds: string[] = [];
+
+          for (const item of stuck as any[]) {
+            const p = (typeof item.payload === 'string' ? (() => { try { return JSON.parse(item.payload); } catch (_) { return {}; } })() : item.payload) || {};
+            const pre = await checkQueuePreFlight(supabaseAdmin, p);
+            if (pre.skip) {
+              await cancelOrDeleteServerlessQueueRow(supabaseAdmin, item.id, pre.reason || 'Sweeper obsolete cleanup');
+              continue;
+            }
+            if ((item.attempt_count || 0) >= 5) {
+              exhaustedIds.push(item.id);
+            } else {
+              retriableIds.push(item.id);
+            }
+          }
+
+          if (exhaustedIds.length > 0) {
+            await supabaseAdmin
+              .from('baileys_action_queue')
+              .update({
+                status: 'failed',
+                error_message: 'Worker timed out after 5 attempts. Marked failed by sweeper.',
+                next_retry_at: null,
+              })
+              .in('id', exhaustedIds);
+          }
+
+          if (retriableIds.length > 0) {
+            console.warn(`[poller] Sweeper recovering ${retriableIds.length} stuck actions in processing for workspace ${workspaceId}...`);
+            await supabaseAdmin
+              .from('baileys_action_queue')
+              .update({
+                status: 'pending',
+                error_message: 'Worker process crashed or timed out. Auto-recovered by sweeper.',
+                next_retry_at: new Date(Date.now() + 5000).toISOString(),
+              })
+              .in('id', retriableIds);
+          }
         }
       } catch (err: any) {
         console.error(`[poller] Sweeper error for workspace ${workspaceId}:`, err.message);
@@ -1917,8 +2024,9 @@ export async function forceWakeQueue(supabaseAdmin: SupabaseClient, workspaceId:
           .eq('status', 'pending')
           .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
           .order('priority', { ascending: true })
+          .order('next_retry_at', { ascending: true, nullsFirst: true })
           .order('created_at', { ascending: true })
-          .limit(3);
+          .limit(5);
 
         if (error || !actions || actions.length === 0) {
           return;
@@ -1940,6 +2048,13 @@ export async function forceWakeQueue(supabaseAdmin: SupabaseClient, workspaceId:
             .select();
 
           if (claimErr || !claimed || claimed.length === 0) continue;
+
+          const fwPayload = (typeof action.payload === 'string' ? (() => { try { return JSON.parse(action.payload); } catch (_) { return {}; } })() : action.payload) || {};
+          const preFlight = await checkQueuePreFlight(supabaseAdmin, fwPayload);
+          if (preFlight.skip) {
+            await cancelOrDeleteServerlessQueueRow(supabaseAdmin, action.id, preFlight.reason || 'Skipped by pre-flight guard');
+            continue;
+          }
 
           try {
             const result = await processSingleQueuedAction(supabaseAdmin, action);

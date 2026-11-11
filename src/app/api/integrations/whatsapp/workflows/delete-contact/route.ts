@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { fetchWorkspaceQueueItems, deleteQueueItemsInChunks } from '@/lib/queue-processor';
 
 /**
  * DELETE CONTACT ENDPOINT
@@ -43,27 +44,20 @@ export async function POST(req: NextRequest) {
 
     const logIds = (logs || []).map((l: any) => l.id);
 
-    // ── 2. Purge matching baileys_action_queue rows ──────────────────────────────
+    // ── 2. Purge matching baileys_action_queue rows (paginated, no 1k truncation) ──
     // Only delete queue items whose payload.workflowLogId references our log IDs
     if (logIds.length > 0) {
-      const { data: queueItems } = await supabaseAdmin
-        .from('baileys_action_queue')
-        .select('id, payload')
-        .eq('workspace_id', tenantId)
-        .in('status', ['pending', 'failed', 'processing']);
+      const logIdSet = new Set(logIds);
+      const queueItems = await fetchWorkspaceQueueItems(tenantId, {
+        columns: 'id, payload',
+        statuses: ['pending', 'failed', 'processing', 'cancelled'],
+      });
 
-      const toDelete = (queueItems || []).filter(
-        (item: any) => item.payload?.workflowLogId && logIds.includes(item.payload.workflowLogId)
-      );
+      const toDeleteIds = queueItems
+        .filter((item: any) => item.payload?.workflowLogId && logIdSet.has(item.payload.workflowLogId))
+        .map((item: any) => item.id);
 
-      if (toDelete.length > 0) {
-        const { error: qDelErr } = await supabaseAdmin
-          .from('baileys_action_queue')
-          .delete()
-          .in('id', toDelete.map((i: any) => i.id));
-
-        if (qDelErr) throw qDelErr;
-      }
+      await deleteQueueItemsInChunks(toDeleteIds);
 
       // ── 3. Purge workflow log rows ──────────────────────────────────────────────
       const { error: logDelErr } = await supabaseAdmin

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { forceWakeQueue } from '@/lib/baileys-serverless';
+import { fetchWorkspaceQueueItems, deleteQueueItemsInChunks } from '@/lib/queue-processor';
 
 export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -28,26 +29,19 @@ export async function POST(req: NextRequest) {
 
     const logIds = (logs || []).map(l => l.id);
 
-    // 2. Delete matching queue items from baileys_action_queue
+    // 2. Delete matching queue items from baileys_action_queue (paginated)
     if (logIds.length > 0) {
-      const { data: queueItems } = await supabaseAdmin
-        .from('baileys_action_queue')
-        .select('id, payload')
-        .eq('workspace_id', tenantId)
-        .in('status', ['pending', 'failed', 'processing']);
+      const logIdSet = new Set(logIds);
+      const queueItems = await fetchWorkspaceQueueItems(tenantId, {
+        columns: 'id, payload',
+        statuses: ['pending', 'failed', 'processing', 'cancelled'],
+      });
 
-      const toDelete = (queueItems || []).filter(
-        (item: any) => item.payload?.workflowLogId && logIds.includes(item.payload.workflowLogId)
-      );
+      const toDeleteIds = queueItems
+        .filter((item: any) => item.payload?.workflowLogId && logIdSet.has(item.payload.workflowLogId))
+        .map((item: any) => item.id);
 
-      if (toDelete.length > 0) {
-        const { error: qDelErr } = await supabaseAdmin
-          .from('baileys_action_queue')
-          .delete()
-          .in('id', toDelete.map(i => i.id));
-
-        if (qDelErr) throw qDelErr;
-      }
+      await deleteQueueItemsInChunks(toDeleteIds);
 
       // Delete from whatsapp_workflow_logs
       const { error: logDelErr } = await supabaseAdmin

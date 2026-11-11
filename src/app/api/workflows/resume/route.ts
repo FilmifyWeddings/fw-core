@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { forceWakeQueue, buildLeadVariables } from '@/lib/baileys-serverless';
+import { fetchWorkspaceQueueItems } from '@/lib/queue-processor';
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,11 +50,10 @@ export async function POST(req: NextRequest) {
       ...buildLeadVariables(lead),
     };
 
-    // 4. Retrieve existing queue items
-    const { data: queueItems } = await supabaseAdmin
-      .from('baileys_action_queue')
-      .select('*')
-      .eq('workspace_id', tenantId);
+    // 4. Retrieve existing queue items (paginated)
+    const queueItems = await fetchWorkspaceQueueItems(tenantId, {
+      columns: '*',
+    });
 
     const nowTime = Date.now();
     let futureResumedCount = 0;

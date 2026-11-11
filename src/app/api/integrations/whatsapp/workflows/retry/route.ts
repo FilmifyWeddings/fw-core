@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { forceWakeQueue, buildLeadVariables } from '@/lib/baileys-serverless';
 import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
+import { fetchWorkspaceQueueItems } from '@/lib/queue-processor';
 
 export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -93,12 +94,11 @@ export async function POST(req: NextRequest) {
       ...buildLeadVariables(lead),
     };
 
-    // Fetch both failed and pending queue items for this workspace
-    const { data: queueItems } = await supabaseAdmin
-      .from('baileys_action_queue')
-      .select('*')
-      .eq('workspace_id', tenantId)
-      .in('status', ['failed', 'pending', 'processing']);
+    // Fetch both failed and pending queue items for this workspace (paginated)
+    const queueItems = await fetchWorkspaceQueueItems(tenantId, {
+      columns: '*',
+      statuses: ['failed', 'pending', 'processing', 'cancelled'],
+    });
 
     // SEQUENTIAL DRIFT: Build a sorted list of workflow steps to compute cumulative delays
     // This mirrors the PostgreSQL trigger logic: each step's time = previous step's time + its own delay

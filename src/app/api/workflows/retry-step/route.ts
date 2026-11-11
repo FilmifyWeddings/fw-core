@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { forceWakeQueue, buildLeadVariables } from '@/lib/baileys-serverless';
 import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
+import { fetchWorkspaceQueueItems } from '@/lib/queue-processor';
 
 export async function POST(req: NextRequest) {
   try {
@@ -90,12 +91,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Step log(s) not found to retry.' }, { status: 404 });
     }
 
-    // 4. Retrieve queue items
-    const { data: queueItems } = await supabaseAdmin
-      .from('baileys_action_queue')
-      .select('*')
-      .eq('workspace_id', tenantId)
-      .in('status', ['failed', 'pending', 'processing', 'cancelled']);
+    // 4. Retrieve queue items (paginated so workspaces >1k queue items never duplicate)
+    const queueItems = await fetchWorkspaceQueueItems(tenantId, {
+      columns: '*',
+      statuses: ['failed', 'pending', 'processing', 'cancelled'],
+    });
 
     // 5. Retry ONLY targeted steps with safe Anti-Ban pacing
     // If multiple steps are selected, space them out safely (e.g. 10s + 2-5s random jitter)
@@ -161,6 +161,7 @@ export async function POST(req: NextRequest) {
           .from('baileys_action_queue')
           .update({
             status: 'pending',
+            priority: 2,
             attempt_count: 0,
             error_message: null,
             failure_reason: null,

@@ -221,13 +221,14 @@ export async function POST(req: NextRequest) {
       const stepIdx = typeof stepIndex === 'number' ? stepIndex : 0;
       const tplName = templateName || 'Welcome Message';
 
-      // Queue into baileys_action_queue
+      // Queue into baileys_action_queue (priority 2: immediate / Welcome beats delayed follow-ups)
       const { data: queueItem, error: queueErr } = await supabaseAdmin
         .from('baileys_action_queue')
         .insert({
           workspace_id: tenantId,
           action_type: 'send_template',
           status: 'pending',
+          priority: 2,
           attempt_count: 0,
           next_retry_at: nowIso,
           payload: {
@@ -347,6 +348,7 @@ export async function POST(req: NextRequest) {
             workspace_id: tenantId,
             action_type: 'send_template',
             status: 'pending',
+            priority: 2,
             attempt_count: 0,
             next_retry_at: scheduledTime,
             payload: {

@@ -113,14 +113,21 @@ export async function POST(req: NextRequest) {
     // (Notice: ZERO workspace_id mismatch filter! Cancels across workspace variants safely)
     let cancelledQueueCount = 0;
     try {
-      const { data: queueItems } = await supabaseAdmin
-        .from('baileys_action_queue')
-        .select('id, payload')
-        .in('status', ['pending', 'processing']);
+      const queueItems: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: page } = await supabaseAdmin
+          .from('baileys_action_queue')
+          .select('id, payload')
+          .in('status', ['pending', 'processing'])
+          .range(from, from + 999);
+        if (!page || page.length === 0) break;
+        queueItems.push(...page);
+        if (page.length < 1000) break;
+      }
 
       const queueIdsToCancel: string[] = [];
 
-      for (const item of (queueItems || [])) {
+      for (const item of queueItems) {
         const payload = item.payload || {};
         const matchesLog = payload.workflowLogId && stoppedLogIds.has(payload.workflowLogId);
         const matchesWorkflow = !workflowId || payload.workflowId === workflowId || payload.workflow_id === workflowId;
@@ -141,7 +148,7 @@ export async function POST(req: NextRequest) {
 
       if (queueIdsToCancel.length > 0) {
         cancelledQueueCount = queueIdsToCancel.length;
-        await supabaseAdmin
+        const { error: cancelErr } = await supabaseAdmin
           .from('baileys_action_queue')
           .update({
             status: 'cancelled',
@@ -149,6 +156,14 @@ export async function POST(req: NextRequest) {
             processed_at: now
           })
           .in('id', queueIdsToCancel);
+
+        if (cancelErr) {
+          console.warn('[stop API] Update to cancelled rejected by DB constraint; deleting queue items:', cancelErr.message);
+          await supabaseAdmin
+            .from('baileys_action_queue')
+            .delete()
+            .in('id', queueIdsToCancel);
+        }
       }
     } catch (qErr) {
       console.warn('[stop API] baileys_action_queue purge notice:', qErr);

@@ -1195,6 +1195,19 @@ async function sendGroupAlert(groupId, leadData, templateStr, wsId = WORKSPACE_I
  *
  * Must return { success: boolean, waMessageId?, error? }
  */
+async function cancelOrDeleteQueueRow(actionId, reason) {
+    const { error: cancelErr } = await supabase
+        .from('baileys_action_queue')
+        .update({ status: 'cancelled', error_message: reason, failure_reason: reason, processed_at: new Date().toISOString() })
+        .eq('id', actionId);
+    if (cancelErr) {
+        logger.warn({ actionId, err: cancelErr.message }, 'Update to cancelled rejected by DB constraint; deleting obsolete queue row');
+        const { error: delErr } = await supabase.from('baileys_action_queue').delete().eq('id', actionId);
+        if (delErr) {
+            logger.error({ actionId, err: delErr.message }, 'Failed to delete obsolete queue row');
+        }
+    }
+}
 async function executeAction(action) {
     // Extract workspace / user ID from action payload safely
     let targetWsId = action.workspace_id ||
@@ -1225,21 +1238,30 @@ async function executeAction(action) {
         throw new Error(`[QueueProcessor Error] Missing user_id/workspace_id for action ${action.id}`);
     }
     console.log(`[QueueProcessor Trace] Processing action ${action.id} with resolved targetWsId: ${targetWsId}`);
-    // Pre-flight check: If workflow log, lead, or workflow execution was stopped/deleted, abort dispatch immediately
+    // Pre-flight check: If workflow log, lead, or workflow execution was stopped/deleted/already-sent, abort dispatch immediately
     const actPayload = (action.payload || {});
-    const checkLogId = actPayload.workflowLogId;
+    const checkLogId = actPayload.workflowLogId || actPayload.logId;
     const checkLeadId = actPayload.leadId || actPayload.lead_id;
     const checkWfId = actPayload.workflowId || actPayload.workflow_id;
     if (checkLogId) {
-        const { data: wfLog } = await supabase
+        const { data: wfLog, error: wfLogErr } = await supabase
             .from('whatsapp_workflow_logs')
             .select('id, status, error_message, workflow_id')
             .eq('id', checkLogId)
             .maybeSingle();
-        if (!wfLog || wfLog.status === 'stopped' || wfLog.status === 'cancelled' || wfLog.error_message === 'STOPPED' || wfLog.error_message === 'Cancelled by user stop action.') {
-            logger.info({ actionId: action.id, checkLogId }, '🛑 Workflow log cancelled or stopped. Skipping dispatch.');
-            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: workflow step stopped' }).eq('id', action.id);
-            return { success: true, waMessageId: null };
+        if (!wfLogErr) {
+            const isAlreadySent = wfLog && ['sent', 'delivered', 'read'].includes(wfLog.status);
+            const isStoppedOrDeleted = !wfLog || wfLog.status === 'stopped' || wfLog.status === 'cancelled' || wfLog.error_message === 'STOPPED' || wfLog.error_message === 'Cancelled by user stop action.';
+            if (isStoppedOrDeleted || isAlreadySent) {
+                const reason = !wfLog
+                    ? 'Skipped: workflow log deleted'
+                    : isAlreadySent
+                        ? `Skipped: workflow step already ${wfLog.status}`
+                        : 'Skipped: workflow step stopped';
+                logger.info({ actionId: action.id, checkLogId, reason }, '🛑 Skipping dispatch safely.');
+                await cancelOrDeleteQueueRow(action.id, reason);
+                return { success: true, skipped: true, waMessageId: null };
+            }
         }
     }
     if (checkWfId) {
@@ -1250,20 +1272,25 @@ async function executeAction(action) {
             .maybeSingle();
         if (wfObj && (wfObj.status === 'Inactive' || wfObj.status === 'stopped' || wfObj.status === 'paused')) {
             logger.info({ actionId: action.id, checkWfId }, '🛑 Workflow is inactive/stopped. Skipping dispatch.');
-            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: parent workflow is inactive/stopped' }).eq('id', action.id);
-            return { success: true, waMessageId: null };
+            await cancelOrDeleteQueueRow(action.id, 'Skipped: parent workflow is inactive/stopped');
+            return { success: true, skipped: true, waMessageId: null };
         }
     }
     if (checkLeadId) {
-        const { data: leadRow } = await supabase
+        const { data: leadRow, error: leadErr } = await supabase
             .from('leads')
-            .select('id')
+            .select('id, raw_payload')
             .eq('id', checkLeadId)
             .maybeSingle();
-        if (!leadRow) {
+        if (!leadErr && !leadRow) {
             logger.info({ actionId: action.id, checkLeadId }, '🛑 Lead was deleted from CRM. Skipping dispatch.');
-            await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: lead deleted' }).eq('id', action.id);
-            return { success: true, waMessageId: null };
+            await cancelOrDeleteQueueRow(action.id, 'Skipped: lead deleted');
+            return { success: true, skipped: true, waMessageId: null };
+        }
+        if (leadRow?.raw_payload?.stop_followup === true || leadRow?.raw_payload?.workflow_status === 'stopped') {
+            logger.info({ actionId: action.id, checkLeadId }, '🛑 Lead follow-up is stopped in CRM. Skipping dispatch.');
+            await cancelOrDeleteQueueRow(action.id, 'Skipped: lead follow-up stopped');
+            return { success: true, skipped: true, waMessageId: null };
         }
         if (checkWfId) {
             const { data: execRow } = await supabase
@@ -1274,8 +1301,8 @@ async function executeAction(action) {
                 .maybeSingle();
             if (execRow && execRow.status === 'STOPPED') {
                 logger.info({ actionId: action.id, checkLeadId, checkWfId }, '🛑 Lead execution stopped. Skipping dispatch.');
-                await supabase.from('baileys_action_queue').update({ status: 'cancelled', error_message: 'Skipped: lead execution stopped' }).eq('id', action.id);
-                return { success: true, waMessageId: null };
+                await cancelOrDeleteQueueRow(action.id, 'Skipped: lead execution stopped');
+                return { success: true, skipped: true, waMessageId: null };
             }
         }
     }
@@ -1460,7 +1487,56 @@ async function executeAction(action) {
     }
     catch (err) {
         const errStr = String(err?.message || err);
-        // Sync workflow log failure if applicable
+        const isPermanentLogout = errStr.includes('401') ||
+            errStr.includes('403') ||
+            errStr.toLowerCase().includes('logged out') ||
+            errStr.toLowerCase().includes('unlinked');
+        const isTransientSocketError = errStr.includes('428') ||
+            errStr.includes('515') ||
+            errStr.toLowerCase().includes('connection closed') ||
+            errStr.toLowerCase().includes('not connected') ||
+            errStr.toLowerCase().includes('timed out') ||
+            errStr.toLowerCase().includes('timeout') ||
+            errStr.toLowerCase().includes('socket is closed') ||
+            errStr.toLowerCase().includes('socket closed') ||
+            errStr.toLowerCase().includes('econnreset') ||
+            errStr.toLowerCase().includes('fetch failed');
+        if (isPermanentLogout) {
+            logger.error({ err: errStr, actionId: action.id }, '🔴 [Execute Action] True permanent unpair/logout detected!');
+            if (checkLogId) {
+                try {
+                    await supabase
+                        .from('whatsapp_workflow_logs')
+                        .update({
+                        status: 'failed',
+                        error_message: 'WhatsApp Session Expired. Please reconnect QR code.',
+                        updated_at: new Date().toISOString(),
+                    })
+                        .eq('id', checkLogId);
+                }
+                catch (logErr) {
+                    logger.warn({ logErr, checkLogId }, 'Failed to update workflow log error status');
+                }
+            }
+            await dbWriteCritical(supabase
+                .from('baileys_sessions')
+                .update({
+                conn_state: 'disconnected',
+                status: 'disconnected',
+                updated_at: new Date().toISOString(),
+            })
+                .eq('workspace_id', action.workspace_id), 'execute-action-disconnect');
+            throw new Error('WhatsApp Session Expired. Please reconnect QR code.');
+        }
+        if (isTransientSocketError) {
+            logger.warn({ err: errStr, actionId: action.id, workspaceId: action.workspace_id }, '⚠️ [Execute Action] Transient socket drop detected — preserving session and triggering auto-reconnect');
+            if (hasDiskSession(action.workspace_id)) {
+                startBaileysSocket(false, action.workspace_id).catch(() => { });
+            }
+            // Keep workflow log in pending so it auto-retries when socket recovers
+            throw new Error(`[Transient Socket Error - Will Auto Retry] ${errStr}`);
+        }
+        // Standard non-socket error (invalid number, etc.)
         if (checkLogId) {
             try {
                 await supabase
@@ -1475,21 +1551,6 @@ async function executeAction(action) {
             catch (logErr) {
                 logger.warn({ logErr, checkLogId }, 'Failed to update workflow log error status');
             }
-        }
-        const isDisconnectError = errStr.includes('401') || errStr.includes('403') || errStr.includes('428') ||
-            errStr.includes('515') || errStr.toLowerCase().includes('logged out') ||
-            errStr.toLowerCase().includes('connection closed') || errStr.toLowerCase().includes('not connected');
-        if (isDisconnectError) {
-            logger.error({ err: errStr, actionId: action.id }, '🔴 [Execute Action] Socket error indicates disconnected session!');
-            await dbWriteCritical(supabase
-                .from('baileys_sessions')
-                .update({
-                conn_state: 'disconnected',
-                status: 'disconnected',
-                updated_at: new Date().toISOString(),
-            })
-                .eq('workspace_id', action.workspace_id), 'execute-action-disconnect');
-            throw new Error('WhatsApp Session Expired. Please reconnect QR code.');
         }
         throw err;
     }
@@ -1540,19 +1601,34 @@ async function executeAction(action) {
 }
 // ─── Queue Drain Wrapper (calls the processor engine) ─────────────────────────
 async function runQueueDrain() {
-    if (activeSessions.size === 0) {
-        return;
-    }
     try {
         const { drainQueue } = await import('./src/queue-processor.js');
+        // 1. Drain active authenticated sessions
         for (const wsId of activeSessions.keys()) {
             if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined')
                 continue;
             const sess = activeSessions.get(wsId);
-            // Guard: Only drain queue if this worker has an authenticated live socket for this workspace
             if (!sess?.sock?.user?.id)
                 continue;
-            await drainQueue(wsId, executeAction, 3);
+            await drainQueue(wsId, executeAction, 5);
+        }
+        // 2. Discover workspaces that have pending actions due but no active in-memory socket
+        // (auto-revives sockets from disk so pending actions are never stuck indefinitely)
+        const nowIso = new Date().toISOString();
+        const { data: pendingWorkspaces } = await supabase
+            .from('baileys_action_queue')
+            .select('workspace_id')
+            .eq('status', 'pending')
+            .or(`next_retry_at.is.null,next_retry_at.lte.${nowIso}`)
+            .limit(10);
+        if (pendingWorkspaces && pendingWorkspaces.length > 0) {
+            const uniqueWs = Array.from(new Set(pendingWorkspaces.map((p) => p.workspace_id).filter(Boolean)));
+            for (const targetWs of uniqueWs) {
+                if (!activeSessions.has(targetWs) && hasDiskSession(targetWs)) {
+                    logger.info({ workspaceId: targetWs }, '🔌 Auto-restoring offline socket from disk for pending queue actions...');
+                    startBaileysSocket(false, targetWs).catch(() => { });
+                }
+            }
         }
     }
     catch (err) {
@@ -1702,6 +1778,7 @@ async function syncOpenSessionToDb(wsId, sock, authState) {
             user_id: wsId,
             workspace_id: wsId,
             conn_state: 'open',
+            status: 'open',
             phone_number: phoneNum,
             qr_string: null,
             qr_expires_at: null,
@@ -2615,12 +2692,29 @@ async function scheduleNextDelayedCheck() {
         delayedCheckTimer = null;
     }
     try {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const candidateWsIds = new Set();
+        for (const wsId of activeSessions.keys()) {
+            if (uuidRegex.test(wsId))
+                candidateWsIds.add(wsId);
+        }
+        if (WORKSPACE_ID && uuidRegex.test(WORKSPACE_ID)) {
+            candidateWsIds.add(WORKSPACE_ID);
+        }
+        const activeWsIds = Array.from(candidateWsIds);
+        if (activeWsIds.length === 0) {
+            delayedCheckTimer = setTimeout(async () => {
+                delayedCheckTimer = null;
+                await scheduleNextDelayedCheck();
+            }, 10_000);
+            return;
+        }
         const now = new Date().toISOString();
         // 1. DRAIN OVERDUE/DUE ACTIONS FIRST: Check if any pending action is due now or in the past
         const { data: overdueAction } = await supabase
             .from('baileys_action_queue')
             .select('id')
-            .eq('workspace_id', WORKSPACE_ID)
+            .in('workspace_id', activeWsIds)
             .eq('status', 'pending')
             .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
             .limit(1)
@@ -2629,11 +2723,11 @@ async function scheduleNextDelayedCheck() {
             logger.info('⚡ Overdue or immediate pending action found — draining queue now');
             await runQueueDrain().catch(err => logger.error({ err }, 'Queue drain error'));
         }
-        // 2. Query for next future action
+        // 2. Query for next future action across all active workspaces
         const { data: nextAction } = await supabase
             .from('baileys_action_queue')
             .select('next_retry_at')
-            .eq('workspace_id', WORKSPACE_ID)
+            .in('workspace_id', activeWsIds)
             .eq('status', 'pending')
             .not('next_retry_at', 'is', null)
             .gt('next_retry_at', new Date().toISOString())
@@ -3147,10 +3241,10 @@ async function main() {
                 try {
                     const { data: dbSess } = await supabase
                         .from('baileys_sessions')
-                        .select('phone_number, conn_state')
+                        .select('phone_number, conn_state, status')
                         .or(`user_id.eq.${wsId},workspace_id.eq.${wsId}`)
                         .maybeSingle();
-                    if (!dbSess || dbSess.conn_state !== 'open' || !dbSess.phone_number || dbSess.phone_number === 'null' || dbSess.phone_number === 'Connected Device') {
+                    if (!dbSess || dbSess.conn_state !== 'open' || dbSess.status !== 'open' || !dbSess.phone_number || dbSess.phone_number === 'null' || dbSess.phone_number === 'Connected Device') {
                         console.log(`[Self-Healing Sync] Force-syncing active session for workspace: ${wsId}`);
                         await syncOpenSessionToDb(wsId, sess.sock, sess.authState);
                     }
