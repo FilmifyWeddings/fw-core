@@ -14,6 +14,8 @@ import { supabase } from '@/lib/supabase';
 import { AiQuotationModal } from './ai-quotation-modal';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
+import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
+import { pruneDocumentForListCache, safeLocalStorageSet, safeSessionStorageSet } from '@/lib/storage-safety';
 
 const QuotationDocumentCanvas = dynamic(
   () => import('@/components/QuotationDocumentCanvas'),
@@ -57,21 +59,22 @@ interface LeadQuotationModalProps {
 }
 
 function safeSessionSet(key: string, data: any) {
+  if (typeof window === 'undefined') return;
+  const payload = Array.isArray(data) ? data.map(pruneDocumentForListCache) : data;
   try {
-    sessionStorage.setItem(key, JSON.stringify(data));
-  } catch (err) {
-    try {
+    const serialized = JSON.stringify(payload);
+    if (!safeSessionStorageSet(key, serialized)) {
       const keysToRemove: string[] = [];
       for (let i = 0; i < sessionStorage.length; i++) {
         const k = sessionStorage.key(i);
-        if (k && (k.startsWith('lead_quotes_cache_') || k.startsWith('studio_templates_cache_'))) {
+        if (k && k !== key && (k.startsWith('lead_quotes_cache_') || k.startsWith('studio_templates_cache_'))) {
           keysToRemove.push(k);
         }
       }
       keysToRemove.forEach(k => sessionStorage.removeItem(k));
-      sessionStorage.setItem(key, JSON.stringify(data));
-    } catch (_) {}
-  }
+      safeSessionStorageSet(key, serialized);
+    }
+  } catch (_) {}
 }
 
 function safeSessionGet(key: string) {
@@ -185,20 +188,54 @@ export function LeadQuotationModal({
       } catch (_) {}
 
       const sessionCache = safeSessionGet(cacheKey);
-      const sessionHasFinal = Array.isArray(sessionCache) && sessionCache.some((item: any) => item.is_final);
       const rawPayloadVersions = (lead as any).raw_payload?.quotation_versions || (lead as any).quotation_versions || [];
 
-      // Best candidate for instant display strictly scoped to this lead to prevent cross-lead leakage
-      const rawCandidates = 
-        sessionHasFinal ? sessionCache :
-        (Array.isArray(sessionCache) && sessionCache.length > 0) ? sessionCache :
-        (Array.isArray(localQuotesCache) && localQuotesCache.length > 0) ? localQuotesCache :
-        (Array.isArray(initialQuotations) && initialQuotations.length > 0) ? initialQuotations :
-        (Array.isArray(localSummaryVersions) && localSummaryVersions.length > 0) ? localSummaryVersions :
-        (Array.isArray(rawPayloadVersions) && rawPayloadVersions.length > 0) ? rawPayloadVersions :
-        [];
+      // Union ALL 5 cached sources keyed by uppercase template_id/id so no newly created version is ever masked by a stale partial cache
+      const unionMap = new Map<string, any>();
+      const allSources = [
+        ...(Array.isArray(rawPayloadVersions) ? rawPayloadVersions : []),
+        ...(Array.isArray(localSummaryVersions) ? localSummaryVersions : []),
+        ...(Array.isArray(initialQuotations) ? initialQuotations : []),
+        ...(Array.isArray(localQuotesCache) ? localQuotesCache : []),
+        ...(Array.isArray(sessionCache) ? sessionCache : []),
+      ];
 
-      const candidateVersions = (rawCandidates || []).filter((item: any) => !item.lead_id || item.lead_id === lead.id);
+      for (const item of allSources) {
+        if (!item || typeof item !== 'object') continue;
+        if (item.lead_id && item.lead_id !== lead.id) continue;
+        const tidRaw = String(item.template_id || item.id || '').trim();
+        if (!tidRaw) continue;
+        const tid = tidRaw.toUpperCase();
+        const prev = unionMap.get(tid);
+        if (!prev) {
+          unionMap.set(tid, { ...item });
+        } else {
+          const prevTitle = String(prev.title || '').trim();
+          const curTitle = String(item.title || '').trim();
+          const betterTitle =
+            (curTitle && !curTitle.startsWith('FW-') && curTitle !== 'Wedding - Design 1')
+              ? curTitle
+              : (prevTitle || curTitle);
+          unionMap.set(tid, {
+            ...prev,
+            ...item,
+            id: item.id || prev.id || tidRaw,
+            template_id: item.template_id || prev.template_id || tidRaw,
+            version: Math.max(Number(prev.version) || 0, Number(item.version) || 0) || 1,
+            title: betterTitle,
+            couple_name: item.couple_name || prev.couple_name,
+            public_token: item.public_token || prev.public_token,
+            responseBadge: item.responseBadge || prev.responseBadge,
+            is_final: Boolean(prev.is_final || item.is_final),
+            updated_at: item.updated_at || prev.updated_at,
+            created_at: item.created_at || prev.created_at,
+          });
+        }
+      }
+
+      const candidateVersions = Array.from(unionMap.values()).sort(
+        (a, b) => (Number(b.version) || 0) - (Number(a.version) || 0)
+      );
 
       // Check if we already know this lead has 0 quotations from summary map or lead payload
       let knownHasZero = false;
@@ -356,7 +393,7 @@ export function LeadQuotationModal({
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -380,27 +417,30 @@ export function LeadQuotationModal({
 
       if (json.success && Array.isArray(json.quotations)) {
         const leadScoped = json.quotations.filter((item: any) => !item.lead_id || item.lead_id === lead.id);
-        const serverIds = new Set(leadScoped.map((s: any) => s.template_id || s.id));
+        const serverIds = new Set(leadScoped.map((s: any) => String(s.template_id || s.id).toUpperCase()));
         
         // Retain any locally created versions (AI / New Version) that might still be in-flight to Supabase
-        const localOnly = quotations.filter(q => !serverIds.has(q.template_id) && !serverIds.has(q.id));
+        const localOnly = quotations.filter(q => {
+          const tid = String(q.template_id || q.id || '').toUpperCase();
+          return tid && !serverIds.has(tid);
+        });
         const mergedCandidate = [...leadScoped, ...localOnly];
 
-        // Deduplicate mergedCandidate by template_id and version number so versions (V1, V2) are cleanly preserved
-        const seenVerMap = new Map<number, QuotationVersionItem>();
+        // Deduplicate strictly by canonical uppercase template_id so same-version distinct docs are NEVER collapsed
         const seenIdSet = new Set<string>();
         const deduplicated: QuotationVersionItem[] = [];
 
         for (const item of mergedCandidate) {
-          const tid = String(item.template_id || item.id).toUpperCase();
-          const ver = Number(item.version);
-          if (seenIdSet.has(tid)) continue;
-          if (ver > 0 && seenVerMap.has(ver)) continue;
+          const tid = String(item.template_id || item.id || '').toUpperCase();
+          if (!tid || seenIdSet.has(tid)) continue;
           seenIdSet.add(tid);
-          if (ver > 0) seenVerMap.set(ver, item);
           deduplicated.push(item);
         }
-        deduplicated.sort((a, b) => (Number(b.version) || 0) - (Number(a.version) || 0));
+        deduplicated.sort((a, b) => {
+          const vDiff = (Number(b.version) || 0) - (Number(a.version) || 0);
+          if (vDiff !== 0) return vDiff;
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        });
 
         const finalizedList = deduplicated.map((item: QuotationVersionItem) => ({
           ...item,
@@ -414,14 +454,13 @@ export function LeadQuotationModal({
             item.is_final
           )
         }));
-        setQuotations(finalizedList);
-        safeSessionSet(cacheKey, finalizedList);
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(finalizedList));
-        } catch (_) {}
+        const prunedList = finalizedList.map(pruneDocumentForListCache);
+        setQuotations(prunedList);
+        safeSessionSet(cacheKey, prunedList);
+        safeLocalStorageSet(cacheKey, JSON.stringify(prunedList));
         if (onQuotationChange) {
           queueMicrotask(() => {
-            onQuotationChange(lead.id, finalizedList);
+            onQuotationChange(lead.id, prunedList);
           });
         }
 
@@ -480,9 +519,9 @@ export function LeadQuotationModal({
           count: updated.length,
           hasFinal: !unmark,
           finalVersion: unmark ? undefined : q.version,
-          versions: updated
+          versions: updated.map(pruneDocumentForListCache)
         };
-        localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+        safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(map));
 
         const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
         if (cachedLeadsStr) {
@@ -501,7 +540,7 @@ export function LeadQuotationModal({
               }
               return l;
             });
-            localStorage.setItem('sc_cached_leads', JSON.stringify(updatedLeads));
+            safeLocalStorageSet('sc_cached_leads', JSON.stringify(updatedLeads));
           }
         }
       } catch (_) {}
@@ -596,7 +635,30 @@ export function LeadQuotationModal({
       availableTemplates[0] || null;
     const chosenTemplateId = chosenTemplate?.id || selectedTemplateId || 'FW-AIRY-DEFAULT';
 
-    const nextVersion = (quotations.length > 0 ? Math.max(...quotations.map(q => Number(q.version) || 0)) : 0) + 1;
+    let maxExistingVer = quotations.length > 0 ? Math.max(...quotations.map(q => Number(q.version) || 0)) : 0;
+    if (typeof window !== 'undefined') {
+      try {
+        const lqcRaw = localStorage.getItem(`lead_quotes_cache_${lead.id}`);
+        const lqcArr = lqcRaw ? JSON.parse(lqcRaw) : [];
+        if (Array.isArray(lqcArr)) {
+          for (const v of lqcArr) maxExistingVer = Math.max(maxExistingVer, Number(v?.version) || 0);
+        }
+      } catch (_) {}
+      try {
+        const smRaw = localStorage.getItem('sc_quotation_summary_map');
+        const smObj = smRaw ? JSON.parse(smRaw) : {};
+        const smVers = smObj?.[lead.id]?.versions;
+        if (Array.isArray(smVers)) {
+          for (const v of smVers) maxExistingVer = Math.max(maxExistingVer, Number(v?.version) || 0);
+        }
+      } catch (_) {}
+    }
+    const rawVers = (lead as any)?.raw_payload?.quotation_versions;
+    if (Array.isArray(rawVers)) {
+      for (const v of rawVers) maxExistingVer = Math.max(maxExistingVer, Number(v?.version) || 0);
+    }
+
+    const nextVersion = maxExistingVer + 1;
     const shortLeadId = String(lead.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
     const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
     const qId = `FW-Q-${shortLeadId}-V${nextVersion}-${randSuffix}`;
@@ -621,6 +683,8 @@ export function LeadQuotationModal({
     setOpeningQuotation({ id: qId, title: quotationTitle, step: 'Creating with Selected Template...' });
 
     let finalDocument = clonedDoc;
+    let resolvedQId = qId;
+    let resolvedVer = nextVersion;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -644,8 +708,22 @@ export function LeadQuotationModal({
 
       if (createRes.ok) {
         const createJson = await createRes.json().catch(() => ({}));
+        resolvedQId = createJson.quotationId || createJson.templateId || qId;
+        if (typeof createJson.leadVersion === 'number' && createJson.leadVersion > 0) {
+          resolvedVer = createJson.leadVersion;
+        } else if (typeof createJson.version === 'number' && createJson.version > 0) {
+          resolvedVer = createJson.version;
+        }
         if (createJson.document) {
-          finalDocument = createJson.document;
+          finalDocument = {
+            ...createJson.document,
+            id: resolvedQId,
+            lead_id: lead.id,
+            lead_version: resolvedVer
+          };
+        } else {
+          finalDocument.id = resolvedQId;
+          finalDocument.lead_version = resolvedVer;
         }
       }
     } catch (createErr) {
@@ -654,48 +732,62 @@ export function LeadQuotationModal({
 
     // Synchronously prime sessionStorage & localStorage with authoritative template document (<1ms)
     try {
-      sessionStorage.setItem(`current_quotation_doc_${qId}`, JSON.stringify(finalDocument));
-      sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: qId, document: finalDocument }));
-      localStorage.setItem(`wg_proposal_draft_${qId}`, JSON.stringify(finalDocument));
+      safeSessionStorageSet(`current_quotation_doc_${resolvedQId}`, JSON.stringify(finalDocument));
+      safeSessionStorageSet('current_active_quotation_doc', JSON.stringify({ id: resolvedQId, document: finalDocument }));
+      safeLocalStorageSet(`wg_proposal_draft_${resolvedQId}`, JSON.stringify(finalDocument));
 
       const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-      await cacheDocumentLocal(qId, finalDocument, nextVersion);
+      await cacheDocumentLocal(resolvedQId, finalDocument, resolvedVer);
 
-      const newVer = {
-        id: qId,
-        template_id: qId,
+      const newVer = pruneDocumentForListCache({
+        id: resolvedQId,
+        template_id: resolvedQId,
         lead_id: lead.id,
-        version: nextVersion,
-        version_label: `V${nextVersion}`,
+        version: resolvedVer,
+        version_label: `V${resolvedVer}`,
         title: quotationTitle,
         couple_name: openingCouple,
         is_final: false,
         created_at: new Date().toISOString()
-      };
+      });
 
-      const updatedCache = [newVer, ...quotations.filter((v: any) => v.id !== qId && v.template_id !== qId)];
+      const updatedCache = [
+        newVer,
+        ...quotations
+          .filter((v: any) => String(v.id || v.template_id).toUpperCase() !== resolvedQId.toUpperCase())
+          .map(pruneDocumentForListCache)
+      ];
       setQuotations(updatedCache);
       const cacheKey = `lead_quotes_cache_${lead.id}`;
       safeSessionSet(cacheKey, updatedCache);
-      localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
+      safeLocalStorageSet(cacheKey, JSON.stringify(updatedCache));
+
+      if (onQuotationChange) {
+        onQuotationChange(lead.id, updatedCache);
+      }
 
       const stored = localStorage.getItem('sc_quotation_summary_map');
       const map = stored ? JSON.parse(stored) : {};
       const prev = map[lead.id] || { count: 0, hasFinal: false, versions: [] };
+      const existingVersions = Array.isArray(prev.versions) ? prev.versions.map(pruneDocumentForListCache) : [];
+      const mergedVersions = [
+        newVer,
+        ...existingVersions.filter((v: any) => String(v.id || v.template_id).toUpperCase() !== resolvedQId.toUpperCase())
+      ];
       map[lead.id] = {
-        count: (prev.count || 0) + 1,
+        count: Math.max((prev.count || 0) + 1, mergedVersions.length),
         hasFinal: prev.hasFinal || false,
         finalVersion: prev.finalVersion,
-        versions: [newVer, ...(prev.versions || [])]
+        versions: mergedVersions
       };
-      localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
-      window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lead.id, quotationId: qId } }));
+      safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(map));
+      window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lead.id, quotationId: resolvedQId, version: resolvedVer } }));
 
       broadcastQuotationSync(lead.workspace_id, {
         leadId: lead.id,
-        quotationId: qId,
+        quotationId: resolvedQId,
         action: 'create',
-        version: nextVersion,
+        version: resolvedVer,
         isFinal: false
       });
     } catch (_) {}
@@ -703,7 +795,7 @@ export function LeadQuotationModal({
     setCreating(false);
 
     // Navigate to builder immediately with 100% template fidelity!
-    router.push(`/workspace/quotations/builder/templet/${qId}`);
+    router.push(`/workspace/quotations/builder/templet/${resolvedQId}`);
   };
 
   const handleBranchAndEdit = async (q: QuotationVersionItem) => {
@@ -735,9 +827,10 @@ export function LeadQuotationModal({
 
       if (res.ok && json.success && json.templateId) {
         const qId = json.templateId;
-        const newVerNum = json.version || ((quotations[0]?.version || 1) + 1);
+        const maxLocalVer = quotations.length > 0 ? Math.max(...quotations.map(x => Number(x.version) || 0)) : 1;
+        const newVerNum = json.leadVersion || json.version || (maxLocalVer + 1);
 
-        const newVer: QuotationVersionItem = {
+        const newVer: QuotationVersionItem = pruneDocumentForListCache({
           id: qId,
           template_id: qId,
           lead_id: lead.id,
@@ -747,19 +840,40 @@ export function LeadQuotationModal({
           couple_name: q.couple_name || lead.name,
           is_final: false,
           created_at: new Date().toISOString()
-        };
+        });
 
-        const updatedList = [newVer, ...quotations];
+        const updatedList = [
+          newVer,
+          ...quotations
+            .filter(v => String(v.template_id || v.id).toUpperCase() !== String(qId).toUpperCase())
+            .map(pruneDocumentForListCache)
+        ];
         setQuotations(updatedList);
 
         const cacheKey = `lead_quotes_cache_${lead.id}`;
         safeSessionSet(cacheKey, updatedList);
+        safeLocalStorageSet(cacheKey, JSON.stringify(updatedList));
         try {
-          localStorage.setItem(cacheKey, JSON.stringify(updatedList));
           if (json.quotation) {
-            sessionStorage.setItem(`current_quotation_doc_${qId}`, JSON.stringify(json.quotation));
-            localStorage.setItem(`wg_proposal_draft_${qId}`, JSON.stringify(json.quotation));
+            safeSessionStorageSet(`current_quotation_doc_${qId}`, JSON.stringify(json.quotation));
+            safeLocalStorageSet(`wg_proposal_draft_${qId}`, JSON.stringify(json.quotation));
           }
+          const stored = localStorage.getItem('sc_quotation_summary_map');
+          const map = stored ? JSON.parse(stored) : {};
+          const prev = map[lead.id] || { count: 0, hasFinal: false, versions: [] };
+          const existingVersions = Array.isArray(prev.versions) ? prev.versions.map(pruneDocumentForListCache) : [];
+          const mergedVersions = [
+            newVer,
+            ...existingVersions.filter((v: any) => String(v.id || v.template_id).toUpperCase() !== String(qId).toUpperCase())
+          ];
+          map[lead.id] = {
+            count: Math.max((prev.count || 0) + 1, mergedVersions.length),
+            hasFinal: prev.hasFinal || false,
+            finalVersion: prev.finalVersion,
+            versions: mergedVersions
+          };
+          safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(map));
+          window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lead.id, quotationId: qId, version: newVerNum } }));
         } catch (_) {}
 
         if (onQuotationChange) {
@@ -879,7 +993,7 @@ export function LeadQuotationModal({
       setExportProgress(60);
       setExportStatusText('Rendering 100% Identical Vector A4 Pages...');
 
-      const cleanTitle = (q.title || `${q.couple_name || lead.name || 'Quotation'} - Wedding`).replace(/\.pdf$/i, '').trim();
+      const cleanTitle = (q.title || `${q.couple_name || lead?.name || 'Quotation'} - Wedding`).replace(/\.pdf$/i, '').trim();
       const filename = `${cleanTitle}.pdf`;
 
       try {
@@ -1027,7 +1141,7 @@ export function LeadQuotationModal({
                   <div className="py-12 text-center flex flex-col items-center justify-center gap-2 text-zinc-500 dark:text-zinc-400">
                     <FileText className="w-8 h-8 opacity-30 text-amber-500" />
                     <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">No quotations created yet.</p>
-                    <p className="text-[10px] text-zinc-400">Click below to create the first version for {lead.name}.</p>
+                    <p className="text-[10px] text-zinc-400">Click below to create the first version for {lead?.name}.</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1327,6 +1441,8 @@ export function LeadQuotationModal({
             const openingCouple = updatedDoc?.cover?.coupleName || lead?.raw_payload?.couple_name || lead?.client_name || lead?.name || 'Quotation';
             const eventType = (updatedDoc?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
             const quotationTitle = `${openingCouple} - ${eventType}`;
+            const maxLocalVer = quotations.length > 0 ? Math.max(...quotations.map(q => Number(q.version) || 0)) : 0;
+            const resolvedVer = Number(updatedDoc?.lead_version || updatedDoc?.version) || (maxLocalVer + 1);
             setOpeningQuotation({
               id: targetQId,
               title: quotationTitle,
@@ -1334,8 +1450,36 @@ export function LeadQuotationModal({
             });
             if (updatedDoc) {
               try {
-                sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(updatedDoc));
-                sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: updatedDoc }));
+                const docSerialized = JSON.stringify(updatedDoc);
+                safeSessionStorageSet(`current_quotation_doc_${targetQId}`, docSerialized);
+                safeSessionStorageSet('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: updatedDoc }));
+                safeLocalStorageSet(`wg_proposal_draft_${targetQId}`, docSerialized);
+              } catch (_) {}
+            }
+            if (lead?.id) {
+              try {
+                const newVer: QuotationVersionItem = pruneDocumentForListCache({
+                  id: targetQId,
+                  template_id: targetQId,
+                  lead_id: lead.id,
+                  version: resolvedVer,
+                  version_label: `V${resolvedVer}`,
+                  title: quotationTitle,
+                  couple_name: openingCouple,
+                  is_final: false,
+                  created_at: new Date().toISOString()
+                });
+                const updatedCache = [
+                  newVer,
+                  ...quotations
+                    .filter(v => String(v.template_id || v.id).toUpperCase() !== String(targetQId).toUpperCase())
+                    .map(pruneDocumentForListCache)
+                ];
+                setQuotations(updatedCache);
+                const cacheKey = `lead_quotes_cache_${lead.id}`;
+                safeSessionSet(cacheKey, updatedCache);
+                safeLocalStorageSet(cacheKey, JSON.stringify(updatedCache));
+                if (onQuotationChange) onQuotationChange(lead.id, updatedCache);
               } catch (_) {}
             }
             router.push(`/workspace/quotations/builder/templet/${targetQId}`);

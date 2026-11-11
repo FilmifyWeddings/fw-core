@@ -355,6 +355,9 @@ ${studioCustomInstructions ? `
 🏢 STUDIO-SPECIFIC CUSTOM AI TRAINING RULES (APPLY WITH HIGHEST PRIORITY):
 ${studioCustomInstructions}
 ` : ''}
+==================================================
+🗣️ INLINE VOICE-NOTE / PROMPT DIRECTIVES (CRITICAL):
+If the user's voice note or text includes ANY training/rule directive alongside event details (for example: "सभी इवेंट में 1 Traditional Photographer ऐड करो", "हर फंक्शन में Drone रखो", "always include Traditional Photographer", etc.), you MUST apply that rule across ALL matching ceremony cards in functionsPage.items WITHOUT dropping any explicitly stated crew roles or items!
 ${studioEventNamesList.length > 0 ? `
 ==================================================
 🏷️ STUDIO'S OFFICIAL FUNCTIONS / SUB-EVENTS LIST (USE THESE EXACT VERBATIM NAMES FOR ALL CARDS IN functionsPage.items):
@@ -574,15 +577,21 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
               ],
               generationConfig: {
                 responseMimeType: 'application/json',
-                temperature: 0.1,
-                maxOutputTokens: 3500
+                temperature: 0.05,
+                maxOutputTokens: 3500,
+                thinkingConfig: { thinkingBudget: 0 }
               }
             }),
-            signal: AbortSignal.timeout(25000)
+            signal: AbortSignal.timeout(18000)
           });
           if (geminiRes.ok) {
             const geminiJson = await geminiRes.json();
-            const content = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text;
+            const parts = geminiJson.candidates?.[0]?.content?.parts || [];
+            const content = parts
+              .filter((p: any) => !p?.thought && typeof p?.text === 'string')
+              .map((p: any) => p.text)
+              .join('')
+              .trim();
             if (content) {
               aiRawOutput = sanitizeAndParseJson(content);
               activeEngineProvider = 'gemini';

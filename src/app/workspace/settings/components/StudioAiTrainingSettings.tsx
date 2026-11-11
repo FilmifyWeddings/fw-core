@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Sparkles, Bot, Plus, Trash2, Pencil, Check, Loader2, 
   HelpCircle, Zap, ShieldCheck, ArrowRight, Mic, CheckCircle2, X
@@ -9,6 +9,9 @@ import {
   WorkspaceQuotationSettings, 
   WorkspaceAiShortcut, 
   WorkspaceAiRules,
+  WorkspaceCrewRole,
+  DEFAULT_CREW_ROLES,
+  fetchWorkspaceCrewRoles,
   saveAllWorkspaceQuotationSettings 
 } from '@/lib/workspace-settings';
 
@@ -18,6 +21,19 @@ interface StudioAiTrainingSettingsProps {
   onSettingsChange: (settings: WorkspaceQuotationSettings) => void;
   onShowToast: (message: string) => void;
 }
+
+const SHORTCUT_STANDARD_ROLES = [
+  'Traditional Photographer',
+  'Traditional Videographer',
+  'Candid Photographer',
+  'Cinematographer',
+  'Drone Pilot',
+  'Family Photographer',
+  'Semi Cinematic',
+  'Semi Standard',
+  'Social Media Reels Creator',
+  'Assistant',
+];
 
 export default function StudioAiTrainingSettings({
   workspaceId,
@@ -32,8 +48,53 @@ export default function StudioAiTrainingSettings({
 
   const [instructions, setInstructions] = useState<string>(aiRules.customInstructions || '');
   const [shortcuts, setShortcuts] = useState<WorkspaceAiShortcut[]>(aiRules.shortcuts || []);
+  const [workspaceCrewRoles, setWorkspaceCrewRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [savingShortcuts, setSavingShortcuts] = useState(false);
+
+  // Sync local editor state whenever settings load or change externally
+  useEffect(() => {
+    setInstructions(settings?.aiRules?.customInstructions || '');
+    setShortcuts(Array.isArray(settings?.aiRules?.shortcuts) ? settings.aiRules!.shortcuts! : []);
+  }, [settings?.aiRules]);
+
+  // Fetch workspace crew roles (+ custom roles added in Team/Quotation Settings)
+  useEffect(() => {
+    let active = true;
+    const loadRoles = () => {
+      fetchWorkspaceCrewRoles(workspaceId)
+        .then((roles) => {
+          if (active && Array.isArray(roles) && roles.length > 0) {
+            setWorkspaceCrewRoles(roles);
+          }
+        })
+        .catch(() => {});
+    };
+    loadRoles();
+    window.addEventListener('workspace_crew_roles_updated', loadRoles);
+    return () => {
+      active = false;
+      window.removeEventListener('workspace_crew_roles_updated', loadRoles);
+    };
+  }, [workspaceId]);
+
+  const availableCrewRoles = useMemo(() => {
+    const map = new Map<string, string>();
+    const addRole = (name: string) => {
+      const clean = (name || '').trim();
+      if (!clean) return;
+      const lower = clean.toLowerCase();
+      // Exclude non-shooting internal management roles unless already used in a shortcut
+      if (lower === 'sales person' || lower === 'salesperson' || lower === 'team manager') return;
+      if (!map.has(lower)) map.set(lower, clean);
+    };
+    for (const r of workspaceCrewRoles) addRole(r.name);
+    for (const r of SHORTCUT_STANDARD_ROLES) addRole(r);
+    for (const sc of shortcuts) {
+      for (const mc of sc.mappedCrew || []) addRole(mc.name);
+    }
+    return Array.from(map.values());
+  }, [workspaceCrewRoles, shortcuts]);
 
   // Modal / Form state for Add / Edit Shortcut
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -41,10 +102,10 @@ export default function StudioAiTrainingSettings({
   const [triggerInput, setTriggerInput] = useState('');
   const [descInput, setDescInput] = useState('');
   const [selectedDelivs, setSelectedDelivs] = useState<string[]>([]);
-  const [crewCp, setCrewCp] = useState(2);
-  const [crewCine, setCrewCine] = useState(2);
-  const [crewTradVideo, setCrewTradVideo] = useState(1);
-  const [crewDrone, setCrewDrone] = useState(1);
+  const [crewQtyMap, setCrewQtyMap] = useState<Record<string, number>>({
+    'Candid Photographer': 1,
+    'Cinematographer': 1,
+  });
   const [priceInput, setPriceInput] = useState('');
 
   // 1. Save Custom System Prompt Instructions
@@ -75,10 +136,10 @@ export default function StudioAiTrainingSettings({
     setTriggerInput('');
     setDescInput('');
     setSelectedDelivs([]);
-    setCrewCp(2);
-    setCrewCine(2);
-    setCrewTradVideo(1);
-    setCrewDrone(1);
+    setCrewQtyMap({
+      'Candid Photographer': 1,
+      'Cinematographer': 1,
+    });
     setPriceInput('');
     setIsModalOpen(true);
   };
@@ -88,16 +149,15 @@ export default function StudioAiTrainingSettings({
     setTriggerInput(sc.trigger);
     setDescInput(sc.description || '');
     setSelectedDelivs(sc.mappedDeliverables || []);
-    
-    // Parse crew
-    const cp = sc.mappedCrew?.find(c => c.name.toLowerCase().includes('candid'))?.qty ?? 0;
-    const cine = sc.mappedCrew?.find(c => c.name.toLowerCase().includes('cinema'))?.qty ?? 0;
-    const tv = sc.mappedCrew?.find(c => c.name.toLowerCase().includes('traditional vide'))?.qty ?? 0;
-    const dr = sc.mappedCrew?.find(c => c.name.toLowerCase().includes('drone'))?.qty ?? 0;
-    setCrewCp(cp);
-    setCrewCine(cine);
-    setCrewTradVideo(tv);
-    setCrewDrone(dr);
+
+    const nextMap: Record<string, number> = {};
+    for (const item of sc.mappedCrew || []) {
+      const matched = availableCrewRoles.find((r) => r.toLowerCase() === item.name.trim().toLowerCase()) || item.name.trim();
+      if ((Number(item.qty) || 0) > 0) {
+        nextMap[matched] = Number(item.qty);
+      }
+    }
+    setCrewQtyMap(nextMap);
 
     setPriceInput(sc.mappedPrice ? String(sc.mappedPrice) : '');
     setIsModalOpen(true);
@@ -114,10 +174,15 @@ export default function StudioAiTrainingSettings({
     setSavingShortcuts(true);
     try {
       const mappedCrew: Array<{ name: string; qty: number }> = [];
-      if (crewCp > 0) mappedCrew.push({ name: 'Candid Photographer', qty: crewCp });
-      if (crewCine > 0) mappedCrew.push({ name: 'Cinematographer', qty: crewCine });
-      if (crewTradVideo > 0) mappedCrew.push({ name: 'Traditional Videographer', qty: crewTradVideo });
-      if (crewDrone > 0) mappedCrew.push({ name: 'Drone Pilot', qty: crewDrone });
+      for (const roleName of availableCrewRoles) {
+        const q = Number(crewQtyMap[roleName] || 0);
+        if (q > 0) mappedCrew.push({ name: roleName, qty: q });
+      }
+      for (const [k, q] of Object.entries(crewQtyMap)) {
+        if ((q || 0) > 0 && !mappedCrew.some((m) => m.name.toLowerCase() === k.toLowerCase())) {
+          mappedCrew.push({ name: k, qty: Number(q) });
+        }
+      }
 
       const newShortcut: WorkspaceAiShortcut = {
         id: editingId || `sc_${Date.now()}`,
@@ -406,54 +471,35 @@ export default function StudioAiTrainingSettings({
               />
             </div>
 
-            {/* Crew Selection */}
+            {/* Crew Selection (Supports Traditional Photographer & All Studio Roles) */}
             <div className="space-y-2 pt-2 border-t border-zinc-100">
-              <label className="text-xs font-bold text-zinc-700">Map Crew Requirements (Qty):</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <div className="p-2.5 bg-amber-50/50 border border-amber-200 rounded-xl space-y-1">
-                  <span className="text-[11px] font-bold text-amber-950 block">Candid Photo</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={10}
-                    value={crewCp}
-                    onChange={(e) => setCrewCp(parseInt(e.target.value, 10) || 0)}
-                    className="w-full px-2 py-1 text-xs border border-amber-300 rounded-lg text-center font-bold"
-                  />
-                </div>
-                <div className="p-2.5 bg-amber-50/50 border border-amber-200 rounded-xl space-y-1">
-                  <span className="text-[11px] font-bold text-amber-950 block">Cinematography</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={10}
-                    value={crewCine}
-                    onChange={(e) => setCrewCine(parseInt(e.target.value, 10) || 0)}
-                    className="w-full px-2 py-1 text-xs border border-amber-300 rounded-lg text-center font-bold"
-                  />
-                </div>
-                <div className="p-2.5 bg-amber-50/50 border border-amber-200 rounded-xl space-y-1">
-                  <span className="text-[11px] font-bold text-amber-950 block">Trad. Video</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={10}
-                    value={crewTradVideo}
-                    onChange={(e) => setCrewTradVideo(parseInt(e.target.value, 10) || 0)}
-                    className="w-full px-2 py-1 text-xs border border-amber-300 rounded-lg text-center font-bold"
-                  />
-                </div>
-                <div className="p-2.5 bg-amber-50/50 border border-amber-200 rounded-xl space-y-1">
-                  <span className="text-[11px] font-bold text-amber-950 block">Drone Pilot</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={10}
-                    value={crewDrone}
-                    onChange={(e) => setCrewDrone(parseInt(e.target.value, 10) || 0)}
-                    className="w-full px-2 py-1 text-xs border border-amber-300 rounded-lg text-center font-bold"
-                  />
-                </div>
+              <label className="text-xs font-bold text-zinc-700">Map Crew Requirements (Qty across all Studio Roles):</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs max-h-52 overflow-y-auto pr-1">
+                {availableCrewRoles.map((roleName) => (
+                  <div
+                    key={roleName}
+                    className={`p-2.5 border rounded-xl space-y-1 transition-all ${
+                      (crewQtyMap[roleName] || 0) > 0
+                        ? 'bg-amber-100/70 border-amber-400'
+                        : 'bg-amber-50/40 border-amber-200/80'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold text-amber-950 block truncate" title={roleName}>
+                      {roleName}
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={crewQtyMap[roleName] ?? 0}
+                      onChange={(e) => {
+                        const val = Math.max(0, Math.min(10, parseInt(e.target.value, 10) || 0));
+                        setCrewQtyMap((prev) => ({ ...prev, [roleName]: val }));
+                      }}
+                      className="w-full px-2 py-1 text-xs border border-amber-300 rounded-lg text-center font-bold bg-white"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 

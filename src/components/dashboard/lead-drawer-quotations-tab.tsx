@@ -9,6 +9,7 @@ import {
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
+import { pruneDocumentForListCache, safeLocalStorageSet, safeSessionStorageSet } from '@/lib/storage-safety';
 
 export interface QuotationVersionItem {
   id: string;
@@ -51,8 +52,9 @@ const safeSessionGet = (key: string): any => {
 
 const safeSessionSet = (key: string, data: any) => {
   if (typeof window === 'undefined') return;
+  const payload = Array.isArray(data) ? data.map(pruneDocumentForListCache) : data;
   try {
-    sessionStorage.setItem(key, JSON.stringify(data));
+    safeSessionStorageSet(key, JSON.stringify(payload));
   } catch (_) {}
 };
 
@@ -109,12 +111,66 @@ export function LeadDrawerQuotationsTab({
       }
     }
 
-    const sessionCache = safeSessionGet(cacheKey);
-    const sessionHasFinal = Array.isArray(sessionCache) && sessionCache.some((item: any) => item.is_final);
+    let localSummaryVersions: any[] = [];
+    try {
+      const smStr = localStorage.getItem('sc_quotation_summary_map');
+      if (smStr) {
+        const parsedSm = JSON.parse(smStr);
+        if (Array.isArray(parsedSm[lead.id]?.versions)) {
+          localSummaryVersions = parsedSm[lead.id].versions;
+        }
+      }
+    } catch (_) {}
 
-    const cached = sessionHasFinal
-      ? sessionCache
-      : (initialQuotations && initialQuotations.length > 0 ? initialQuotations : sessionCache);
+    let localQuotesCache: any[] = [];
+    try {
+      const lqcStr = localStorage.getItem(cacheKey);
+      if (lqcStr) {
+        const parsedLqc = JSON.parse(lqcStr);
+        if (Array.isArray(parsedLqc)) localQuotesCache = parsedLqc;
+      }
+    } catch (_) {}
+
+    const sessionCache = safeSessionGet(cacheKey);
+    const rawPayloadVersions = (lead as any).raw_payload?.quotation_versions || (lead as any).quotation_versions || [];
+
+    const unionMap = new Map<string, any>();
+    const allSources = [
+      ...(Array.isArray(rawPayloadVersions) ? rawPayloadVersions : []),
+      ...(Array.isArray(localSummaryVersions) ? localSummaryVersions : []),
+      ...(Array.isArray(initialQuotations) ? initialQuotations : []),
+      ...(Array.isArray(localQuotesCache) ? localQuotesCache : []),
+      ...(Array.isArray(sessionCache) ? sessionCache : []),
+    ];
+    for (const item of allSources) {
+      if (!item || typeof item !== 'object') continue;
+      if (item.lead_id && item.lead_id !== lead.id) continue;
+      const tidRaw = String(item.template_id || item.id || '').trim();
+      if (!tidRaw) continue;
+      const tid = tidRaw.toUpperCase();
+      const prev = unionMap.get(tid);
+      if (!prev) {
+        unionMap.set(tid, { ...item });
+      } else {
+        unionMap.set(tid, {
+          ...prev,
+          ...item,
+          id: item.id || prev.id || tidRaw,
+          template_id: item.template_id || prev.template_id || tidRaw,
+          version: Math.max(Number(prev.version) || 0, Number(item.version) || 0) || 1,
+          title: item.title || prev.title,
+          couple_name: item.couple_name || prev.couple_name,
+          public_token: item.public_token || prev.public_token,
+          responseBadge: item.responseBadge || prev.responseBadge,
+          is_final: Boolean(prev.is_final || item.is_final),
+          updated_at: item.updated_at || prev.updated_at,
+          created_at: item.created_at || prev.created_at,
+        });
+      }
+    }
+    const cached = Array.from(unionMap.values()).sort(
+      (a, b) => (Number(b.version) || 0) - (Number(a.version) || 0)
+    );
 
     if (cached && Array.isArray(cached) && cached.length > 0) {
       const reconciled = cached.map((item: QuotationVersionItem) => ({
@@ -203,7 +259,23 @@ export function LeadDrawerQuotationsTab({
       const json = await res.json().catch(() => ({}));
 
       if (json.success && Array.isArray(json.quotations)) {
-        const finalizedList = json.quotations.map((item: QuotationVersionItem) => ({
+        const leadScoped = json.quotations.filter((item: any) => !item.lead_id || item.lead_id === lead.id);
+        const serverIds = new Set(leadScoped.map((s: any) => String(s.template_id || s.id).toUpperCase()));
+        const localOnly = quotations.filter(q => {
+          const tid = String(q.template_id || q.id || '').toUpperCase();
+          return tid && !serverIds.has(tid);
+        });
+        const seenIdSet = new Set<string>();
+        const deduplicated: QuotationVersionItem[] = [];
+        for (const item of [...leadScoped, ...localOnly]) {
+          const tid = String(item.template_id || item.id || '').toUpperCase();
+          if (!tid || seenIdSet.has(tid)) continue;
+          seenIdSet.add(tid);
+          deduplicated.push(item);
+        }
+        deduplicated.sort((a, b) => (Number(b.version) || 0) - (Number(a.version) || 0));
+
+        const finalizedList = deduplicated.map((item: QuotationVersionItem) => pruneDocumentForListCache({
           ...item,
           is_final: Boolean(
             (targetFinalId && (
@@ -217,6 +289,7 @@ export function LeadDrawerQuotationsTab({
         }));
         setQuotations(finalizedList);
         safeSessionSet(cacheKey, finalizedList);
+        safeLocalStorageSet(cacheKey, JSON.stringify(finalizedList));
 
         if (onQuotationChange) {
           queueMicrotask(() => {
@@ -266,9 +339,9 @@ export function LeadDrawerQuotationsTab({
           count: optimisticUpdated.length,
           hasFinal: !unmark,
           finalVersion: unmark ? undefined : q.version,
-          versions: optimisticUpdated
+          versions: optimisticUpdated.map(pruneDocumentForListCache)
         };
-        localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+        safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(map));
 
         const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
         if (cachedLeadsStr) {
@@ -287,7 +360,7 @@ export function LeadDrawerQuotationsTab({
               }
               return l;
             });
-            localStorage.setItem('sc_cached_leads', JSON.stringify(updatedLeads));
+            safeLocalStorageSet('sc_cached_leads', JSON.stringify(updatedLeads));
           }
         }
       } catch (_) {}
@@ -387,27 +460,33 @@ export function LeadDrawerQuotationsTab({
 
       if (json.success && (json.quotationId || json.templateId)) {
         const qId = json.quotationId || json.templateId;
-        const newVerNum = json.version || ((quotations[0]?.version || 1) + 1);
+        const maxLocalVer = quotations.length > 0 ? Math.max(...quotations.map(x => Number(x.version) || 0)) : 1;
+        const newVerNum = json.leadVersion || json.version || (maxLocalVer + 1);
 
-        const newVer: QuotationVersionItem = {
+        const newVer: QuotationVersionItem = pruneDocumentForListCache({
           id: qId,
           template_id: qId,
+          lead_id: lead.id,
           version: newVerNum,
           version_label: `V${newVerNum}`,
           title: `${q.couple_name || lead.name || 'Client'} - Quotation V${newVerNum}`,
           couple_name: q.couple_name || lead.name,
           is_final: false,
           created_at: new Date().toISOString()
-        };
+        });
 
-        const updatedList = [newVer, ...quotations];
+        const updatedList = [
+          newVer,
+          ...quotations
+            .filter(v => String(v.template_id || v.id).toUpperCase() !== String(qId).toUpperCase())
+            .map(pruneDocumentForListCache)
+        ];
         setQuotations(updatedList);
 
         const cacheKey = `lead_quotes_cache_${lead.id}`;
-        try {
-          sessionStorage.setItem(cacheKey, JSON.stringify(updatedList));
-          localStorage.setItem(cacheKey, JSON.stringify(updatedList));
-        } catch (_) {}
+        safeSessionSet(cacheKey, updatedList);
+        safeLocalStorageSet(cacheKey, JSON.stringify(updatedList));
+        if (onQuotationChange) onQuotationChange(lead.id, updatedList);
 
         if (onCloseDrawer) onCloseDrawer();
         router.push(`/workspace/quotations/builder/templet/${qId}`);
@@ -449,12 +528,38 @@ export function LeadDrawerQuotationsTab({
 
       if (json.success && (json.quotationId || json.templateId)) {
         const qId = json.quotationId || json.templateId;
+        const resolvedVer = Number(json.leadVersion || json.version) || ((quotations.length > 0 ? Math.max(...quotations.map(x => Number(x.version) || 0)) : 0) + 1);
         if (json.document) {
           try {
+            safeSessionStorageSet(`current_quotation_doc_${qId}`, JSON.stringify(json.document));
+            safeLocalStorageSet(`wg_proposal_draft_${qId}`, JSON.stringify(json.document));
             const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-            cacheDocumentLocal(qId, json.document, json.version || 1);
+            cacheDocumentLocal(qId, json.document, resolvedVer);
           } catch (_) {}
         }
+
+        const newVer: QuotationVersionItem = pruneDocumentForListCache({
+          id: qId,
+          template_id: qId,
+          lead_id: lead.id,
+          version: resolvedVer,
+          version_label: `V${resolvedVer}`,
+          title: `${lead.name || 'Client'} - Quotation V${resolvedVer}`,
+          couple_name: lead.name,
+          is_final: false,
+          created_at: new Date().toISOString()
+        });
+        const updatedList = [
+          newVer,
+          ...quotations
+            .filter(v => String(v.template_id || v.id).toUpperCase() !== String(qId).toUpperCase())
+            .map(pruneDocumentForListCache)
+        ];
+        setQuotations(updatedList);
+        const cacheKey = `lead_quotes_cache_${lead.id}`;
+        safeSessionSet(cacheKey, updatedList);
+        safeLocalStorageSet(cacheKey, JSON.stringify(updatedList));
+        if (onQuotationChange) onQuotationChange(lead.id, updatedList);
 
         if (onCloseDrawer) onCloseDrawer();
         router.push(`/workspace/quotations/builder/templet/${qId}`);

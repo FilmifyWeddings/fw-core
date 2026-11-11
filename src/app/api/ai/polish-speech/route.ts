@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cleanVoiceTranscript } from '@/lib/speech-text-cleaner';
+import { cleanVoiceTranscript, enforceLosslessSpeechRetention } from '@/lib/speech-text-cleaner';
 import { supabaseAdmin } from '@/lib/supabase';
 import { DEFAULT_EVENT_TYPES, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
@@ -36,11 +36,16 @@ export async function POST(req: NextRequest) {
       workspaceId
     ].filter(Boolean)));
 
-    if (candidateWsIds.length === 0) {
+    if (body.userId) {
       try {
-        const { data: prof } = await supabaseAdmin.from('profiles').select('id, workspace_id').limit(1).maybeSingle();
-        if (prof?.id) candidateWsIds.push(prof.id);
-        if (prof?.workspace_id) candidateWsIds.push(prof.workspace_id);
+        const { data: prof } = await supabaseAdmin
+          .from('profiles')
+          .select('id, workspace_id')
+          .eq('id', String(body.userId))
+          .maybeSingle();
+        if (prof?.workspace_id && !candidateWsIds.includes(prof.workspace_id)) {
+          candidateWsIds.push(prof.workspace_id);
+        }
       } catch (_) {}
     }
 
@@ -128,45 +133,39 @@ export async function POST(req: NextRequest) {
     // 2. Client-side heuristic baseline (instant fallback)
     const baseCleaned = cleanVoiceTranscript(rawText, leadName);
 
-    const systemInstruction = `You are the AI Speech Transcriber & Polish Assistant for StudioCore wedding photography and cinematography studios.
-The studio owner or sales manager just recorded voice notes into their microphone in Hindi, Hinglish, Marathi, or English.
+    const systemInstruction = `You are a 100% LOSSLESS Verbatim Dictation Polisher for StudioCore wedding photography and cinematography studios.
+The studio owner just dictated a voice note in Hindi, Hinglish, Marathi, or English into the quotation box.
 
-YOUR MISSION:
-Output the complete, accurate, and clean transcript of EVERYTHING the user said.
-Fix speech-to-text recognition errors, stutters, and phonetic slips while faithfully preserving 100% of the user's spoken words, sentences, timing relationships, requests, notes, and instructions.
+YOUR #1 CRITICAL RULE — ZERO DELETION / ZERO SUMMARIZATION:
+You MUST keep 100% of EVERY detail, clause, instruction, rule, number, date, relative-date cue, location, crew count, deliverable, custom rule, and concluding price mentioned by the user!
+- NEVER summarize, condense, shorten, skip, or drop "less important" sentences! Do NOT keep only "main points" — preserve EVERY SINGLE SENTENCE AND CLAUSE spoken by the user in complete detail.
+- Think like ChatGPT / Gemini verbatim dictation cleanup: fix broken phonetic speech-to-text typos, clean stutters ("uh", "umm", "हां हां वो वो"), punctuate cleanly, and translate/normalize studio terms cleanly while keeping 100% of the spoken meaning intact from first word to last word!
 
 ABSOLUTE MANDATES:
-1. PRESERVE ALL SPOKEN CONTENT, RELATIVE DATES, SEPARATE/COMBINED PHRASES & TRAILING BUDGET:
-   - You MUST include every ceremony, date, relative-date cue ("अगले दिन", "उसके अगले दिन", "दूसरे दिन", "उसी दिन", "एक ही दिन पे", "2 दिन बाद", "एक दिन पहले"), crew detail, Pre-Wedding mention, and budget mentioned.
-   - CRITICAL: NEVER drop or reword relative-date phrases or quantity modifiers (e.g., preserve "उसके अगले दिन", "दोनों में", "एक ही दिन पे").
-   - CRITICAL: NEVER drop, truncate, or omit the final words or concluding sentences of the speech!
-   - If the user concluded by stating an amount, budget, or price (e.g. "दो लाख", "₹2,00,000", "50 हजार"), that amount MUST be preserved!
-   - NEVER invent "Pre-Wedding" if the speaker did not say Pre-Wedding! Keep "Pre-Wedding" cleanly if they DID say it ("प्री वेडिंग" / "प्री-वेडिंग" -> "Pre-Wedding").
-   - STRICT: Keep the natural sentence flow of the user's speech (do NOT convert into bullet headings).
+1. PRESERVE EVERY CLAUSE, RULE & INSTRUCTION:
+   - Keep EVERY relative-date phrase ("अगले दिन", "उसके अगले दिन", "दूसरे दिन", "उसी दिन", "एक ही दिन पे", "2 दिन बाद", "एक दिन पहले").
+   - Keep EVERY voice-note instruction / rule command word-for-word clearly (e.g., "सभी इवेंट में 1 Traditional Photographer ऐड करो" / "हर फंक्शन में ड्रोन रखो" / "ट्रैवल अलग से रहेगा" / "Pre-Wedding शामिल नहीं है"). NEVER omit instructions or meta-rules spoken by the user!
+   - NEVER drop trailing sentences, final notes, or closing prices/budgets (e.g., "दो लाख", "₹2,00,000", "50 हजार").
+   - NEVER invent "Pre-Wedding" if the speaker did not say Pre-Wedding! Keep "Pre-Wedding" cleanly if they DID say it.
+   - Do NOT convert speech into markdown headings, bullet lists, or summary cards — output clean natural flowing sentences separated cleanly by periods/punctuation.
 
 2. PHONETIC & TECHNICAL TERM CORRECTIONS (ALIGNED WITH STUDIO OWNER SETTINGS):
    - Official Studio Function / Sub-Event Names (USE THESE EXACT SPELLINGS — NEVER append "Ceremony" or "Night" unless listed here!):
      ${studioEventNames.length > 0 ? studioEventNames.join(', ') : 'Wedding, Haldi, Sangeet, Mehendi, Reception'}
    - Official Studio Crew Roles (USE THESE EXACT NAMES):
      ${studioCrewNames.join(', ')}, Drone Pilot, Semi Cinematic, Semi Standard
-   - Fix camera & crew terms cleanly using the Studio Crew Roles above (e.g. "कैंडिडेट"/"कैंडिड" -> "Candid Photographer", "ट्रेडिशनल फोटो" -> "Traditional Photographer", "ट्रेडिशनल वीडियो" -> "Traditional Videographer", "सिनेमा"/"सिनेमैटोग्राफर" -> "Cinematographer", "ड्रोन" -> "Drone Pilot").
-   - Fix ceremony names cleanly using the Studio Function Names above (e.g. "हल्दी"/"हळद" -> "Haldi", "संगीत" -> "Sangeet", "शादी"/"लग्न"/"वेडिंग" -> exact matching Wedding name from Studio Function Names above, e.g. "Wedding").
+   - Fix phonetic mic slips cleanly using the Studio Crew Roles above (e.g. "कैंडिडेट"/"कैंडिड" -> "Candid Photographer", "ट्रेडिशनल फोटो"/"ट्रेडिशनल कैमरामैन" -> "Traditional Photographer", "ट्रेडिशनल वीडियो" -> "Traditional Videographer", "सिनेमा"/"सिनेमैटोग्राफर" -> "Cinematographer", "ड्रोन" -> "Drone Pilot").
    - Clean up deliverable terms ("ऑल डिलीवरी"/"ऑल डिलीवरेबल्स" -> "All Deliverables Add", "रील"/"रील्स" -> "Reels", "फोटोबुक"/"एल्बम" -> "Photobook / Album").
-   - Format numbers & prices into clean Indian currency ("2 लाख" -> "₹2,00,000", "ढाई लाख" -> "₹2,50,000", "50 हजार" -> "₹50,000").
+   - Format prices cleanly in Indian currency while preserving exact value ("2 लाख" -> "₹2,00,000", "ढाई लाख" -> "₹2,50,000", "50 हजार" -> "₹50,000").
    - Clean up couple and client names into Title Case English (e.g. "रोहन और सिमरन" -> "Rohan & Simran").
-   ${leadName ? `- If user mentions a specific couple name in the speech, prioritize the SPOKEN couple name over the lead name "${leadName}".` : ''}
+   ${leadName ? `- If user mentions a specific couple name in speech, keep the spoken couple name accurately alongside any lead reference "${leadName}".` : ''}
 
-3. CLEANUP STUTTERS & FILLERS NATURALLY:
-   - Remove acoustic glitches, repetitive stutters (e.g. "हां हां वो वो", "uh", "um"), and speech-to-text artifacts without altering the actual meaning or removing any requirements.
-
-4. STUDIO AI TRAINING SHORTCUTS TO RECOGNIZE & EXPAND IF MENTIONED:
+3. STUDIO AI TRAINING SHORTCUTS (PRESERVE & RECOGNIZE):
 ${shortcutsContext}
 ${customInstructions ? `\nSTUDIO CUSTOM RULES:\n${customInstructions}` : ''}
 
-5. OUTPUT RULES:
-   - Output ONLY the clean, clear polished text.
-   - Do NOT add any preamble like "Here is your polished transcript:", explanations, options, or markdown fences (\`\`\`).
-   - Plain text only.`;
+4. OUTPUT RULES:
+   - Plain text ONLY. No preambles ("Here is..."), no markdown fences (\`\`\`), no bolding, no bullet points.`;
 
     // 3. EXCLUSIVE ENGINE: Google Gemini (Tier 1 Paid Plan with gemini-3.8-flash, gemini-flash-latest & gemini-2.5-flash)
     const rawGeminiKeys = (process.env.GEMINI_API_KEY || '')
@@ -196,24 +195,24 @@ ${customInstructions ? `\nSTUDIO CUSTOM RULES:\n${customInstructions}` : ''}
                   }
                 ],
                 generationConfig: {
-                  temperature: 0.1,
-                  maxOutputTokens: 2000
+                  temperature: 0.05,
+                  maxOutputTokens: 2500,
+                  thinkingConfig: { thinkingBudget: 0 }
                 }
               }),
-              signal: AbortSignal.timeout(22000)
+              signal: AbortSignal.timeout(15000)
             });
 
             if (res.ok) {
               const geminiJson = await res.json();
-              const polishedText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-              if (polishedText && polishedText.length > 5) {
-                let cleanResult = polishedText.replace(/^```[a-z]*\n?|```$/g, '').replace(/^["']|["']$/g, '').trim();
-
-                // Anti-drop safeguard: If rawText contained an amount or budget and cleanResult inexplicably dropped it, append it!
-                const rawAmountMatch = rawText.match(/(?:बजट|budget|प्राइस|price|अमाउंट|amount|टोटल|total)?\s*(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?\s*(?:लाख|lakh|lac|हजार|thousand|k|cr|करोड़)|\d{4,7})/i);
-                if (rawAmountMatch && !cleanResult.match(/(?:₹|rs\.?|inr|\d+\s*(?:lakh|lac|लाख|k|हजार|thousand))/i)) {
-                  cleanResult += ` (Budget: ${rawAmountMatch[0].trim()})`;
-                }
+              const parts = geminiJson.candidates?.[0]?.content?.parts || [];
+              const polishedText = parts
+                .filter((p: any) => !p?.thought && typeof p?.text === 'string')
+                .map((p: any) => p.text)
+                .join('')
+                .trim();
+              if (polishedText && polishedText.length > 3) {
+                const cleanResult = enforceLosslessSpeechRetention(rawText, polishedText, leadName);
 
                 return NextResponse.json({
                   success: true,

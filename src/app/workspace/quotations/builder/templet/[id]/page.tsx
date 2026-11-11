@@ -3448,7 +3448,7 @@ function StudioCoreAiryBuilderContent() {
                     count: 1,
                     hasFinal: prev.hasFinal || false,
                     finalVersion: prev.finalVersion,
-                    versions: prev.versions?.length ? prev.versions : [{
+                    versions: prev.versions?.length ? prev.versions.map(pruneDocumentForListCache) : [pruneDocumentForListCache({
                       id: routeId,
                       template_id: routeId,
                       version: loadedData?.lead_version || 1,
@@ -3456,9 +3456,9 @@ function StudioCoreAiryBuilderContent() {
                       title: `${coupleName} - Quotation`,
                       couple_name: coupleName,
                       is_final: false
-                    }]
+                    })]
                   };
-                  localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+                  safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(map), routeId);
                 }
               } catch (_) {}
             }
@@ -3775,8 +3775,8 @@ function StudioCoreAiryBuilderContent() {
               if (cachedRaw) {
                 const list = JSON.parse(cachedRaw);
                 if (Array.isArray(list)) {
-                  const targetIdx = list.findIndex((q: any) => q.template_id === routeId || q.id === routeId);
-                  const updatedItem = {
+                  const targetIdx = list.findIndex((q: any) => String(q.template_id || q.id).toUpperCase() === String(routeId).toUpperCase());
+                  const updatedItem = pruneDocumentForListCache({
                     ...(targetIdx >= 0 ? list[targetIdx] : {}),
                     id: routeId,
                     template_id: routeId,
@@ -3784,14 +3784,15 @@ function StudioCoreAiryBuilderContent() {
                     version: snapshotData.lead_version || (targetIdx >= 0 ? list[targetIdx].version : 1),
                     title: snapshotData.designName || snapshotData.title || `Quotation ${routeId}`,
                     updated_at: new Date().toISOString()
-                  };
+                  });
                   if (targetIdx >= 0) {
                     list[targetIdx] = updatedItem;
                   } else {
                     list.unshift(updatedItem);
                   }
-                  sessionStorage.setItem(leadCacheKey, JSON.stringify(list));
-                  localStorage.setItem(leadCacheKey, JSON.stringify(list));
+                  const prunedList = list.map(pruneDocumentForListCache);
+                  try { sessionStorage.setItem(leadCacheKey, JSON.stringify(prunedList)); } catch (_) {}
+                  safeLocalStorageSet(leadCacheKey, JSON.stringify(prunedList), routeId);
                 }
               }
             } catch (_) {}

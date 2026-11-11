@@ -28,6 +28,7 @@ import { WorkflowExecutionTimelineModal } from '@/components/integrations/Workfl
 import { BulkGroupEnrollModal } from './BulkGroupEnrollModal';
 import { GoogleContactSyncModal } from './GoogleContactSyncModal';
 import { AssignLeadGroupModal } from './AssignLeadGroupModal';
+import { pruneDocumentForListCache, safeLocalStorageSet } from '@/lib/storage-safety';
 
 const MotionDiv = motionImport.div;
 const MotionTr = 'tr' as any;
@@ -733,19 +734,17 @@ export function LeadTable({
                     ...sum,
                     hasFinal: true,
                     finalVersion: finalVer,
-                    versions: preservedVersions.length > 0 ? preservedVersions : (prevItem?.versions || sum.versions)
+                    versions: (preservedVersions.length > 0 ? preservedVersions : (prevItem?.versions || sum.versions)).map(pruneDocumentForListCache)
                   };
                 } else {
                   merged[lId] = {
                     ...sum,
-                    versions: preservedVersions
+                    versions: preservedVersions.map(pruneDocumentForListCache)
                   };
                 }
               }
               if (typeof window !== 'undefined') {
-                try {
-                  localStorage.setItem('sc_quotation_summary_map', JSON.stringify(merged));
-                } catch (_) {}
+                safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(merged));
               }
               return merged;
             });
@@ -767,18 +766,37 @@ export function LeadTable({
       if (detail?.leadId) {
         setQuotationSummaryMap(prev => {
           const prevItem = prev[detail.leadId] || { count: 0, hasFinal: false, versions: [] };
+          const existingVersions = Array.isArray(prevItem.versions) ? prevItem.versions : [];
+          const qId = detail.quotationId ? String(detail.quotationId) : '';
+          const alreadyExists = qId
+            ? existingVersions.some((v: any) => String(v.id || v.template_id || '').toUpperCase() === qId.toUpperCase())
+            : true;
+          const maxVer = existingVersions.reduce((mx: number, v: any) => Math.max(mx, Number(v?.version) || 0), 0);
+          const resolvedVer = (typeof detail.version === 'number' && detail.version > 0)
+            ? detail.version
+            : (maxVer + 1);
+          const newEntry = pruneDocumentForListCache({
+            id: qId,
+            template_id: qId,
+            lead_id: detail.leadId,
+            version: resolvedVer,
+            version_label: `V${resolvedVer}`,
+            is_final: false,
+            created_at: new Date().toISOString()
+          });
+          const mergedVersions = (!alreadyExists && qId)
+            ? [newEntry, ...existingVersions]
+            : existingVersions;
           const updated = {
             ...prev,
             [detail.leadId]: {
               ...prevItem,
-              count: Math.max(prevItem.count || 0, 1),
-              versions: prevItem.versions?.length > 0 ? prevItem.versions : [{ id: detail.quotationId, version: 1 }]
+              count: Math.max(prevItem.count || 0, mergedVersions.length),
+              versions: mergedVersions.map(pruneDocumentForListCache)
             }
           };
           if (typeof window !== 'undefined') {
-            try {
-              localStorage.setItem('sc_quotation_summary_map', JSON.stringify(updated));
-            } catch (_) {}
+            safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(updated));
           }
           return updated;
         });
@@ -809,13 +827,19 @@ export function LeadTable({
               updatedItem.hasFinal = false;
               updatedItem.finalVersion = undefined;
             } else if (payload.action === 'create' || payload.action === 'update') {
-              updatedItem.count = Math.max(updatedItem.count || 0, 1);
-              if (payload.quotationId && !updatedItem.versions?.some((v: any) => v.id === payload.quotationId || v.template_id === payload.quotationId)) {
+              const existingVersions = Array.isArray(updatedItem.versions) ? updatedItem.versions : [];
+              const qId = payload.quotationId ? String(payload.quotationId) : '';
+              if (qId && !existingVersions.some((v: any) => String(v.id || v.template_id || '').toUpperCase() === qId.toUpperCase())) {
+                const maxVer = existingVersions.reduce((mx: number, v: any) => Math.max(mx, Number(v?.version) || 0), 0);
+                const resolvedVer = (typeof payload.version === 'number' && payload.version > 0) ? payload.version : (maxVer + 1);
                 updatedItem.versions = [
-                  { id: payload.quotationId, template_id: payload.quotationId, version: payload.version || 1, is_final: false },
-                  ...(updatedItem.versions || [])
+                  pruneDocumentForListCache({ id: qId, template_id: qId, lead_id: payload.leadId, version: resolvedVer, version_label: `V${resolvedVer}`, is_final: false }),
+                  ...existingVersions.map(pruneDocumentForListCache)
                 ];
+              } else {
+                updatedItem.versions = existingVersions.map(pruneDocumentForListCache);
               }
+              updatedItem.count = Math.max(updatedItem.count || 0, updatedItem.versions.length, 1);
             }
 
             const updatedMap = {
@@ -824,9 +848,7 @@ export function LeadTable({
             };
 
             if (typeof window !== 'undefined') {
-              try {
-                localStorage.setItem('sc_quotation_summary_map', JSON.stringify(updatedMap));
-              } catch (_) {}
+              safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(updatedMap));
             }
             return updatedMap;
           });
@@ -850,13 +872,12 @@ export function LeadTable({
                   ...prev,
                   [newLead.id]: {
                     ...prevItem,
-                    hasFinal: true
+                    hasFinal: true,
+                    versions: (prevItem.versions || []).map(pruneDocumentForListCache)
                   }
                 };
                 if (typeof window !== 'undefined') {
-                  try {
-                    localStorage.setItem('sc_quotation_summary_map', JSON.stringify(updated));
-                  } catch (_) {}
+                  safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(updated));
                 }
                 return updated;
               });
@@ -1030,7 +1051,7 @@ export function LeadTable({
   }, [leads, fetchWaStatuses]);
 
   const handleQuotationChange = React.useCallback((leadId: string, updatedVersions: any[]) => {
-    const versions = [...updatedVersions];
+    const versions = updatedVersions.map(pruneDocumentForListCache);
     const hasFinal = versions.some(v => v.is_final);
     const finalItem = versions.find(v => v.is_final);
 
@@ -1045,9 +1066,7 @@ export function LeadTable({
         }
       };
       if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('sc_quotation_summary_map', JSON.stringify(updated));
-        } catch (_) {}
+        safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(updated));
       }
       return updated;
     });
@@ -1072,9 +1091,7 @@ export function LeadTable({
         });
 
         if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
-          } catch (_) {}
+          safeLocalStorageSet('sc_cached_leads', JSON.stringify(updated));
         }
 
         return updated;
@@ -1102,9 +1119,7 @@ export function LeadTable({
         });
 
         if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
-          } catch (_) {}
+          safeLocalStorageSet('sc_cached_leads', JSON.stringify(updated));
         }
 
         return updated;

@@ -83,15 +83,21 @@ export async function POST(req: NextRequest) {
                   ]
                 }],
                 generationConfig: {
-                  temperature: 0.1,
-                  maxOutputTokens: 2000
+                  temperature: 0.05,
+                  maxOutputTokens: 2000,
+                  thinkingConfig: { thinkingBudget: 0 }
                 }
               }),
-              signal: AbortSignal.timeout(25000),
+              signal: AbortSignal.timeout(18000),
             });
             if (res.ok) {
               const data = await res.json();
-              const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+              const parts = data?.candidates?.[0]?.content?.parts || [];
+              const text = parts
+                .filter((p: any) => !p?.thought && typeof p?.text === 'string')
+                .map((p: any) => p.text)
+                .join('')
+                .trim();
               if (text) {
                 transcript = text;
                 console.log(`[Gemini Audio Transcription Success via ${model}]:`, transcript);

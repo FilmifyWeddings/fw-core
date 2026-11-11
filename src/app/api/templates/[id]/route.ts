@@ -4,6 +4,8 @@ import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { extractCoupleNameFromQuotation, syncBookedLeadOrFinalQuotation } from '@/lib/quotation-finance-sync';
+import { clearLeadSummaryCache } from '@/lib/quotation-summary-cache';
+import { isInvalidCoupleName } from '@/lib/ai-quotation-extractor';
 
 function isValidUUID(str?: string | null): boolean {
   if (!str) return false;
@@ -410,10 +412,10 @@ async function handleUpdate(
 
     // 2. Upsert quotation_documents in-place with strict lead_id & lead_version preservation
     if (document) {
-      // First, fetch existing document to safeguard lead_id and lead_version across multi-device updates
+      // First, fetch existing document scalar metadata (never select non-existent columns client_id/is_final or heavy content_json)
       const { data: currentDoc } = await supabaseAdmin
         .from('quotation_documents')
-        .select('id, lead_id, lead_version, client_id, is_final, version, content_json, created_at')
+        .select('id, lead_id, lead_version, version, workspace_id, created_at')
         .eq('template_id', id)
         .maybeSingle();
 
@@ -429,7 +431,7 @@ async function handleUpdate(
 
       const docUpsertPayload: any = {
         template_id: id,
-        workspace_id: workspaceId,
+        workspace_id: workspaceId || currentDoc?.workspace_id,
         user_id: userId,
         content_json: document,
         updated_at: new Date().toISOString()
@@ -441,6 +443,8 @@ async function handleUpdate(
       await supabaseAdmin
         .from('quotation_documents')
         .upsert(docUpsertPayload, { onConflict: 'template_id' });
+
+      clearLeadSummaryCache();
 
       // Save audit snapshot to quotation_versions table for complete multi-device rollback & history
       try {
@@ -454,7 +458,7 @@ async function handleUpdate(
         });
       } catch (_) {}
 
-      // Non-destructively register version in lead record so all devices see both versions immediately
+      // Non-destructively register version in lead record so all devices see all versions immediately
       if (effectiveLeadId) {
         try {
           const { data: leadRow } = await supabaseAdmin
@@ -467,13 +471,18 @@ async function handleUpdate(
             const rawPayload = leadRow.raw_payload || {};
             const existingVersions = Array.isArray(rawPayload.quotation_versions) ? [...rawPayload.quotation_versions] : [];
             const existingIdx = existingVersions.findIndex((v: any) => v.template_id === id || v.id === id);
-            const vEntry = {
+            const rawExtractedCouple = document?.cover?.coupleName
+              || (document?.cover?.groomName && document?.cover?.brideName ? `${document.cover.groomName} & ${document.cover.brideName}` : null)
+              || extractCoupleNameFromQuotation(document);
+            const cleanCouple = rawExtractedCouple && !isInvalidCoupleName(rawExtractedCouple) ? rawExtractedCouple : undefined;
+            const vEntry: any = {
               template_id: id,
               id: id,
               version: effectiveLeadVersion || (existingIdx >= 0 ? existingVersions[existingIdx].version : existingVersions.length + 1),
               title: newTitle,
               updated_at: new Date().toISOString()
             };
+            if (cleanCouple) vEntry.couple_name = cleanCouple;
             if (existingIdx >= 0) {
               existingVersions[existingIdx] = { ...existingVersions[existingIdx], ...vEntry };
             } else {
@@ -561,12 +570,10 @@ async function handleUpdate(
       try {
         const isFinal = Boolean(
           document?.is_final === true ||
-          document?.content_json?.is_final === true ||
-          currentDoc?.is_final === true ||
-          currentDoc?.content_json?.is_final === true
+          document?.content_json?.is_final === true
         );
 
-        const targetLeadOrClientId = effectiveLeadId || currentDoc?.lead_id || currentDoc?.client_id || (document?.meta?.lead_id) || (document?.lead_id);
+        const targetLeadOrClientId = effectiveLeadId || currentDoc?.lead_id || (document?.meta?.lead_id) || (document?.lead_id);
 
         let isLeadFinal = isFinal;
         if (!isLeadFinal && targetLeadOrClientId) {
@@ -588,6 +595,7 @@ async function handleUpdate(
             forceBookedStatus: false,
             supabaseClient: supabaseAdmin
           });
+          clearLeadSummaryCache();
         }
       } catch (syncErr) {
         console.error('[API templates/[id]] Error syncing to finance/team manager:', syncErr);
@@ -631,9 +639,40 @@ async function handleDelete(
 
     console.log('[PERMANENT DELETE EXECUTED]', { id, isSuperAdmin });
 
+    const { data: docBeforeDel } = await supabaseAdmin
+      .from('quotation_documents')
+      .select('id, lead_id')
+      .eq('template_id', id)
+      .maybeSingle();
+
     await supabaseAdmin.from('quotation_documents').delete().eq('template_id', id);
     await supabaseAdmin.from('quotations').delete().or(`id.eq.${id},quotation_number.eq.${id}`);
     await supabaseAdmin.from('quotation_templates').delete().eq('id', id);
+
+    if (docBeforeDel?.lead_id) {
+      try {
+        const { data: leadRow } = await supabaseAdmin
+          .from('leads')
+          .select('id, quotation_id, final_quotation_id, raw_payload')
+          .eq('id', docBeforeDel.lead_id)
+          .maybeSingle();
+        if (leadRow) {
+          const raw = leadRow.raw_payload || {};
+          const prevVers = Array.isArray(raw.quotation_versions) ? raw.quotation_versions : [];
+          const filteredVers = prevVers.filter((v: any) => v.template_id !== id && v.id !== id);
+          await supabaseAdmin.from('leads').update({
+            quotation_id: leadRow.quotation_id === id ? (filteredVers[0]?.template_id || null) : leadRow.quotation_id,
+            final_quotation_id: leadRow.final_quotation_id === id ? null : leadRow.final_quotation_id,
+            raw_payload: {
+              ...raw,
+              quotation_versions: filteredVers
+            }
+          }).eq('id', docBeforeDel.lead_id);
+        }
+      } catch (_) {}
+    }
+
+    clearLeadSummaryCache();
 
     return NextResponse.json({ success: true, deletedId: id });
   } catch (error: any) {

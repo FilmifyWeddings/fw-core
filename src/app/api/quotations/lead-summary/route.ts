@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
-import { extractCoupleNameFromQuotation, isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
+import { isInvalidCoupleName } from '@/lib/ai-quotation-extractor';
 
 export const runtime = 'nodejs';
 
@@ -11,6 +11,29 @@ import {
   deleteLeadSummaryCache, 
   CACHE_TTL_MS 
 } from '@/lib/quotation-summary-cache';
+
+const pickCleanCoupleName = (...candidates: Array<string | null | undefined>): string => {
+  for (const c of candidates) {
+    if (c && !isInvalidCoupleName(c)) {
+      return String(c)
+        .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+  }
+  return 'Client';
+};
+
+const isBadOrEmptyTitle = (title?: string | null): boolean => {
+  if (!title) return true;
+  const trimmed = String(title).trim();
+  if (!trimmed || trimmed.startsWith('FW-')) return true;
+  if (/^(?:Wedding Quotation|Wedding - Design 1|Quotation Template)$/i.test(trimmed)) return true;
+  if (/^[।|.,:;!?'"\-–—\s]*(?:उनकी|इनकी|उनका|उनके|उनको|मेरी|हमारी)/i.test(trimmed)) return true;
+  const prefix = trimmed.split(/\s*-\s*/)[0]?.trim();
+  if (prefix && isInvalidCoupleName(prefix)) return true;
+  return false;
+};
 
 export async function GET(req: NextRequest) {
   try {
@@ -54,7 +77,7 @@ export async function GET(req: NextRequest) {
       ? validUuidCandidates.map(c => `workspace_id.eq.${c}`).join(',')
       : null;
 
-    // Parallel fetch: quotation_documents (metadata scoped to workspace), quotations, and leads
+    // Parallel SCALAR-ONLY fetch (never select TOASTed multi-MB content_json so query runs in <500ms!)
     const docOrFilter = validUuidCandidates.length > 0
       ? `${wsOrFilter},workspace_id.is.null,user_id.in.(${validUuidCandidates.join(',')})`
       : wsOrFilter;
@@ -63,12 +86,12 @@ export async function GET(req: NextRequest) {
       docOrFilter
         ? supabaseAdmin
             .from('quotation_documents')
-            .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at')
+            .select('id, template_id, lead_id, workspace_id, user_id, version, lead_version, created_at, updated_at')
             .or(docOrFilter)
         : supabaseAdmin
             .from('quotation_documents')
-            .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at')
-            .limit(100),
+            .select('id, template_id, lead_id, workspace_id, user_id, version, lead_version, created_at, updated_at')
+            .limit(200),
       wsOrFilter
         ? supabaseAdmin
             .from('quotations')
@@ -77,7 +100,7 @@ export async function GET(req: NextRequest) {
         : supabaseAdmin
             .from('quotations')
             .select('id, client_id, quotation_number, title, couple_names, client_name, status, is_final, public_token, workspace_id, created_at, updated_at')
-            .limit(100),
+            .limit(200),
       orConditions
         ? supabaseAdmin
             .from('leads')
@@ -99,22 +122,53 @@ export async function GET(req: NextRequest) {
       versions: any[];
     }> = {};
 
-    const leadMap = new Map<string, { name: string; coupleName: string; finalId: string | null; isBooked: boolean }>();
+    const leadMap = new Map<string, {
+      name: string;
+      coupleName: string;
+      finalId: string | null;
+      isBooked: boolean;
+      rawVersions: any[];
+      rawVersionByTid: Map<string, any>;
+    }>();
+    const rawVersionLeadByTid = new Map<string, string>();
+    const leadShortMap = new Map<string, string>();
+
     leads.forEach((l: any) => {
-      // Check final quotation id strictly (do NOT treat draft quotation_id as final!)
       const finalId = l.final_quotation_id || l.raw_payload?.final_quotation_id || null;
       const isBooked = (l.status || '').toLowerCase() === 'booked' || 
                        (l.status || '').toLowerCase() === 'closed' ||
                        (l.raw_payload?.stage || '').toLowerCase() === 'booked' ||
                        (l.stage_id && String(l.stage_id).toLowerCase().includes('book')) ||
                        Boolean(finalId);
-      const coupleName = l.raw_payload?.couple_name || l.raw_payload?.couple_names || (l as any).couple_names || (l as any).full_name || l.name || 'Client';
+      const coupleName = pickCleanCoupleName(
+        l.raw_payload?.couple_name,
+        l.raw_payload?.couple_names,
+        (l as any).couple_names,
+        (l as any).full_name,
+        l.name
+      );
+
+      const rawVersions: any[] = Array.isArray(l.raw_payload?.quotation_versions) ? l.raw_payload.quotation_versions : [];
+      const rawVersionByTid = new Map<string, any>();
+      rawVersions.forEach((rv: any) => {
+        const tids = [rv.template_id, rv.id].filter(Boolean);
+        tids.forEach((t: string) => {
+          const upper = String(t).toUpperCase();
+          rawVersionByTid.set(upper, rv);
+          rawVersionLeadByTid.set(upper, l.id);
+        });
+      });
+
+      const lShort = String(l.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+      if (lShort) leadShortMap.set(lShort, l.id);
 
       leadMap.set(l.id, {
         name: l.name || 'Client',
         coupleName,
         finalId,
-        isBooked
+        isBooked,
+        rawVersions,
+        rawVersionByTid
       });
       if (finalId || isBooked) {
         summary[l.id] = { count: 0, hasFinal: true, versions: [] };
@@ -124,7 +178,11 @@ export async function GET(req: NextRequest) {
     // Filter docs to those belonging to this workspace or matching leads
     const candidateSetRef = new Set(candidates);
     const docs = allDocs.filter((d: any) => 
-      candidateSetRef.has(d.workspace_id) || !d.workspace_id || leadMap.has(d.lead_id)
+      candidateSetRef.has(d.workspace_id) ||
+      candidateSetRef.has(d.user_id) ||
+      !d.workspace_id ||
+      leadMap.has(d.lead_id) ||
+      (d.template_id && rawVersionLeadByTid.has(String(d.template_id).toUpperCase()))
     );
 
     // Filter quotes to those belonging to this workspace or matching leads
@@ -134,7 +192,6 @@ export async function GET(req: NextRequest) {
 
     const quoteByNum = new Map<string, any>();
     quotes.forEach((q: any) => {
-      // Prioritize is_final: true quotations so a draft quotation never overwrites a final quotation!
       if (q.quotation_number) {
         const existing = quoteByNum.get(q.quotation_number);
         if (!existing || (!existing.is_final && q.is_final)) {
@@ -145,89 +202,198 @@ export async function GET(req: NextRequest) {
       if (!existingId || (!existingId.is_final && q.is_final)) {
         quoteByNum.set(q.id, q);
       }
-      if (q.client_id) {
-        const existingClient = quoteByNum.get(q.client_id);
-        if (!existingClient || (!existingClient.is_final && q.is_final)) {
-          quoteByNum.set(q.client_id, q);
-        }
-      }
     });
 
-    // 1. Process quotation_documents
+    // Group quotation_documents per lead first so unversioned auto-stubs never hide real explicit versions
+    const docsByLead = new Map<string, any[]>();
     docs.forEach((d: any) => {
-      let leadId = d.lead_id || d.content_json?.lead_id || d.content_json?.client_id;
-      if (!leadId && d.template_id) {
-        for (const [lId] of leadMap.entries()) {
-          const lShort = lId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-          if (d.template_id.includes(lId) || (lShort && d.template_id.includes(`FW-L-${lShort}`))) {
-            leadId = lId;
-            break;
+      const tidUpper = String(d.template_id || '').toUpperCase();
+      let leadId = d.lead_id || (tidUpper ? rawVersionLeadByTid.get(tidUpper) : undefined);
+      if (!leadId && tidUpper) {
+        const prefixMatch = tidUpper.match(/^FW-[LQ]-([A-Z0-9]{6,8})-/);
+        if (prefixMatch && leadShortMap.has(prefixMatch[1])) {
+          leadId = leadShortMap.get(prefixMatch[1]);
+        } else {
+          for (const [lShort, lId] of leadShortMap.entries()) {
+            if (tidUpper.includes(lId.toUpperCase()) || (lShort && (tidUpper.includes(`FW-L-${lShort}`) || tidUpper.includes(`FW-Q-${lShort}`)))) {
+              leadId = lId;
+              break;
+            }
           }
         }
       }
       if (!leadId) return;
+      if (!docsByLead.has(leadId)) docsByLead.set(leadId, []);
+      docsByLead.get(leadId)!.push(d);
+    });
 
+    // 1. Process quotation_documents cleanly per lead
+    docsByLead.forEach((leadDocs, leadId) => {
       if (!summary[leadId]) {
         summary[leadId] = { count: 0, hasFinal: false, versions: [] };
       }
-
       const leadInfo = leadMap.get(leadId);
-      const matchedQ = quoteByNum.get(d.template_id) || quoteByNum.get(d.id);
-      const isDocFinal = d.content_json?.is_final === true;
-      const isFinal = Boolean(
-        isDocFinal ||
-        matchedQ?.is_final === true ||
-        matchedQ?.status === 'accepted' ||
-        (leadInfo?.finalId && (
-          leadInfo.finalId === d.template_id || 
-          leadInfo.finalId === d.id || 
-          (d.template_id && (leadInfo.finalId.includes(d.template_id) || d.template_id.includes(leadInfo.finalId)))
-        ))
-      );
 
-      if (isFinal) {
-        summary[leadId].hasFinal = true;
+      // Track explicit lead_version numbers so unversioned (lead_version: null) orphan stubs never overwrite them
+      const explicitVerNums = new Set<number>();
+      leadDocs.forEach((d: any) => {
+        if (d.lead_version !== null && d.lead_version !== undefined && Number(d.lead_version) > 0) {
+          explicitVerNums.add(Number(d.lead_version));
+        }
+      });
+
+      const orphanSupersededTids = new Set<string>();
+      const seenTids = new Set<string>();
+
+      // Sort explicit lead_version > 0 FIRST so they are always preserved cleanly
+      const prioritizedDocs = [...leadDocs].sort((a, b) => {
+        const aExp = Number(a.lead_version) > 0 ? 1 : 0;
+        const bExp = Number(b.lead_version) > 0 ? 1 : 0;
+        if (aExp !== bExp) return bExp - aExp;
+        return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime();
+      });
+
+      prioritizedDocs.forEach((d: any) => {
+        const tidRaw = String(d.template_id || d.id || '');
+        const tidUpper = tidRaw.toUpperCase();
+        if (!tidUpper || seenTids.has(tidUpper)) return;
+
+        const matchedQ = quoteByNum.get(d.template_id) || quoteByNum.get(d.id);
+        const rawVer = leadInfo?.rawVersionByTid.get(tidUpper);
+
+        const isFinal = Boolean(
+          matchedQ?.is_final === true ||
+          matchedQ?.status === 'accepted' ||
+          rawVer?.is_final === true ||
+          (leadInfo?.finalId && (
+            leadInfo.finalId === d.template_id || 
+            leadInfo.finalId === d.id || 
+            (d.template_id && (leadInfo.finalId.includes(d.template_id) || d.template_id.includes(leadInfo.finalId)))
+          ))
+        );
+
+        const tidVerMatch = tidRaw.match(/-V(\d+)-/i);
+        const tidVer = tidVerMatch ? parseInt(tidVerMatch[1], 10) : 0;
+        const explicitVer = (d.lead_version !== null && d.lead_version !== undefined && Number(d.lead_version) > 0)
+          ? Number(d.lead_version)
+          : 0;
+        const verNum = explicitVer
+          || (rawVer?.version && Number(rawVer.version) > 0 ? Number(rawVer.version) : 0)
+          || tidVer
+          || (Number(d.version) > 0 ? Number(d.version) : 1);
+
+        // Skip unversioned auto-draft stub (lead_version === null & version === 1) if explicit lead_version docs already exist for that version or lead
+        const isUnversionedOrphanStub = !explicitVer && Number(d.version || 1) === 1 && !matchedQ && !isFinal;
+        if (isUnversionedOrphanStub && (explicitVerNums.has(verNum) || (explicitVerNums.size > 0 && isBadOrEmptyTitle(rawVer?.title)))) {
+          orphanSupersededTids.add(tidUpper);
+          return;
+        }
+
+        seenTids.add(tidUpper);
+        if (isFinal) summary[leadId].hasFinal = true;
+
+        const coupleFromRawTitle = rawVer?.title && !isBadOrEmptyTitle(rawVer.title)
+          ? rawVer.title.split(/\s*-\s*/)[0]?.trim()
+          : null;
+
+        const coupleName = pickCleanCoupleName(
+          rawVer?.couple_name,
+          coupleFromRawTitle,
+          matchedQ?.couple_names,
+          matchedQ?.client_name,
+          leadInfo?.coupleName,
+          leadInfo?.name
+        );
+
+        const candidateTitle = (!isBadOrEmptyTitle(matchedQ?.title) ? matchedQ.title : null)
+          || (!isBadOrEmptyTitle(rawVer?.title) ? rawVer.title : null);
+
+        const cleanTitle = candidateTitle || `${coupleName} - Wedding Quotation`;
+        const quoteTitle = isFinal && !cleanTitle.toLowerCase().includes('final')
+          ? `${coupleName} - Final Quotation`
+          : cleanTitle;
+
+        summary[leadId].versions.push({
+          id: d.id,
+          template_id: d.template_id,
+          lead_id: leadId,
+          version: verNum,
+          version_label: `V${verNum}`,
+          title: quoteTitle,
+          couple_name: coupleName,
+          is_final: isFinal,
+          public_token: matchedQ?.public_token || null,
+          created_at: d.created_at,
+          updated_at: d.updated_at || d.created_at
+        });
+      });
+
+      // Also retain any valid version recorded in leads.raw_payload.quotation_versions that wasn't returned in docsRes
+      (leadInfo?.rawVersions || []).forEach((rv: any) => {
+        const tidRaw = String(rv.template_id || rv.id || '');
+        const tidUpper = tidRaw.toUpperCase();
+        if (!tidUpper || seenTids.has(tidUpper) || orphanSupersededTids.has(tidUpper)) return;
+        const verNum = Number(rv.version) || (summary[leadId].versions.length + 1);
+        if (explicitVerNums.has(verNum) && isBadOrEmptyTitle(rv.title)) return;
+        seenTids.add(tidUpper);
+
+        const isFinal = Boolean(
+          rv.is_final === true ||
+          (leadInfo?.finalId && (leadInfo.finalId === tidRaw || tidRaw.includes(leadInfo.finalId)))
+        );
+        if (isFinal) summary[leadId].hasFinal = true;
+
+        const coupleFromRaw = rv.title && !isBadOrEmptyTitle(rv.title) ? rv.title.split(/\s*-\s*/)[0]?.trim() : null;
+        const coupleName = pickCleanCoupleName(rv.couple_name, coupleFromRaw, leadInfo?.coupleName, leadInfo?.name);
+        const cleanTitle = !isBadOrEmptyTitle(rv.title) ? rv.title : `${coupleName} - Wedding Quotation`;
+
+        summary[leadId].versions.push({
+          id: rv.id || tidRaw,
+          template_id: tidRaw,
+          lead_id: leadId,
+          version: verNum,
+          version_label: rv.version_label || `V${verNum}`,
+          title: isFinal && !cleanTitle.toLowerCase().includes('final') ? `${coupleName} - Final Quotation` : cleanTitle,
+          couple_name: coupleName,
+          is_final: isFinal,
+          public_token: rv.public_token || null,
+          created_at: rv.created_at,
+          updated_at: rv.updated_at || rv.created_at
+        });
+      });
+    });
+
+    // Also include leads that only have versions inside raw_payload.quotation_versions (e.g. brand-new doc just saved)
+    leadMap.forEach((leadInfo, leadId) => {
+      if (docsByLead.has(leadId) || leadInfo.rawVersions.length === 0) return;
+      if (!summary[leadId]) {
+        summary[leadId] = { count: 0, hasFinal: false, versions: [] };
       }
-
-      const verNum = Number(d.lead_version || d.version || 1);
-      const content = d.content_json || {};
-      const cover = content.cover || {};
-      const coupleFromCover = cover.coupleName 
-        || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
-
-      const isPlaceholder = !coupleFromCover || isPlaceholderCoupleName(coupleFromCover);
-
-      const coupleName = (!isPlaceholder && coupleFromCover)
-        ? coupleFromCover
-        : (matchedQ?.couple_names 
-        || matchedQ?.client_name 
-        || leadInfo?.coupleName 
-        || leadInfo?.name 
-        || 'Client');
-
-      const eventType = (cover.eventType || content.eventGroup || 'Wedding').replace(/quotation/i, '').trim();
-      const rawTitle = content.designName || content.title || matchedQ?.title;
-      const cleanTitle = (rawTitle && !rawTitle.startsWith('FW-') && rawTitle !== 'Wedding - Design 1')
-        ? rawTitle
-        : `${coupleName} - ${eventType} Quotation`;
-
-      const quoteTitle = isFinal && !cleanTitle.includes('Final') 
-        ? `${coupleName} - Final Quotation` 
-        : cleanTitle;
-
-      summary[leadId].versions.push({
-        id: d.id,
-        template_id: d.template_id,
-        lead_id: leadId,
-        version: verNum,
-        version_label: `V${verNum}`,
-        title: quoteTitle,
-        couple_name: coupleName,
-        content_json: { cover },
-        is_final: isFinal,
-        public_token: matchedQ?.public_token || null,
-        created_at: d.created_at,
-        updated_at: d.updated_at || d.created_at
+      const seenTids = new Set<string>();
+      leadInfo.rawVersions.forEach((rv: any, idx: number) => {
+        const tidRaw = String(rv.template_id || rv.id || '');
+        const tidUpper = tidRaw.toUpperCase();
+        if (!tidUpper || seenTids.has(tidUpper)) return;
+        seenTids.add(tidUpper);
+        const verNum = Number(rv.version) || (idx + 1);
+        const isFinal = Boolean(rv.is_final === true || (leadInfo.finalId && leadInfo.finalId === tidRaw));
+        if (isFinal) summary[leadId].hasFinal = true;
+        const coupleFromRaw = rv.title && !isBadOrEmptyTitle(rv.title) ? rv.title.split(/\s*-\s*/)[0]?.trim() : null;
+        const coupleName = pickCleanCoupleName(rv.couple_name, coupleFromRaw, leadInfo.coupleName, leadInfo.name);
+        const cleanTitle = !isBadOrEmptyTitle(rv.title) ? rv.title : `${coupleName} - Wedding Quotation`;
+        summary[leadId].versions.push({
+          id: rv.id || tidRaw,
+          template_id: tidRaw,
+          lead_id: leadId,
+          version: verNum,
+          version_label: rv.version_label || `V${verNum}`,
+          title: isFinal && !cleanTitle.toLowerCase().includes('final') ? `${coupleName} - Final Quotation` : cleanTitle,
+          couple_name: coupleName,
+          is_final: isFinal,
+          public_token: rv.public_token || null,
+          created_at: rv.created_at,
+          updated_at: rv.updated_at || rv.created_at
+        });
       });
     });
 
@@ -252,14 +418,16 @@ export async function GET(req: NextRequest) {
       }
 
       const existingDoc = summary[leadId].versions.find(
-        (v: any) => v.template_id === (q.quotation_number || q.id) || v.id === q.id
+        (v: any) =>
+          String(v.template_id || '').toUpperCase() === String(q.quotation_number || q.id || '').toUpperCase() ||
+          v.id === q.id
       );
 
-      const coupleName = q.couple_names || q.client_name || leadInfo?.coupleName || leadInfo?.name || 'Client';
+      const coupleName = pickCleanCoupleName(q.couple_names, q.client_name, leadInfo?.coupleName, leadInfo?.name);
 
       if (existingDoc) {
         if (isFinal) existingDoc.is_final = true;
-        if (q.title && !q.title.startsWith('FW-') && q.title !== 'Wedding - Design 1') {
+        if (!isBadOrEmptyTitle(q.title)) {
           if (existingDoc.is_final && !q.title.toLowerCase().includes('final')) {
             existingDoc.title = `${coupleName} - Final Quotation`;
           } else {
@@ -267,16 +435,18 @@ export async function GET(req: NextRequest) {
           }
         }
         if (q.public_token) existingDoc.public_token = q.public_token;
-        if (!existingDoc.couple_name && coupleName) existingDoc.couple_name = coupleName;
+        if (isInvalidCoupleName(existingDoc.couple_name) && coupleName) existingDoc.couple_name = coupleName;
       } else {
-        const verNum = summary[leadId].versions.length + 1;
+        const tidStr = String(q.quotation_number || q.id || '');
+        const tidVerMatch = tidStr.match(/-V(\d+)-/i);
+        const verNum = tidVerMatch ? parseInt(tidVerMatch[1], 10) : (summary[leadId].versions.length + 1);
         summary[leadId].versions.push({
           id: q.id,
-          template_id: q.quotation_number || q.id,
+          template_id: tidStr,
           lead_id: leadId,
           version: verNum,
           version_label: `V${verNum}`,
-          title: q.title || `${coupleName} - Quotation V${verNum}`,
+          title: !isBadOrEmptyTitle(q.title) ? q.title : `${coupleName} - Quotation V${verNum}`,
           couple_name: coupleName,
           is_final: isFinal,
           public_token: q.public_token || null,

@@ -5,6 +5,31 @@
  */
 
 /**
+ * Strips multi-megabyte inline data URIs (e.g. data:image/..., data:video/...) from
+ * JSON payloads when storing lightweight list/summary metadata, preserving regular URLs.
+ */
+export function stripBase64Images<T = any>(val: T): T {
+  if (!val) return val;
+  if (typeof val === 'string') {
+    if (val.length > 256 && /^data:(?:image|video|audio|application\/octet-stream)\//i.test(val)) {
+      return '' as unknown as T;
+    }
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => stripBase64Images(item)) as unknown as T;
+  }
+  if (typeof val === 'object') {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val as Record<string, any>)) {
+      out[k] = stripBase64Images(v);
+    }
+    return out as T;
+  }
+  return val;
+}
+
+/**
  * Strips huge quotation content bodies down to lightweight presentation metadata
  * (< 2KB per card) suitable for gallery caches and dropdowns without filling LocalStorage.
  */
@@ -13,26 +38,32 @@ export function pruneDocumentForListCache(item: any): any {
 
   const content = item.content_json || item.canvas_data || item;
   const cover = content?.cover || {};
+  const rawPhoto = typeof cover.photoUrl === 'string' ? cover.photoUrl : '';
+  const safePhoto = rawPhoto && /^data:(?:image|video)\//i.test(rawPhoto) && rawPhoto.length > 256 ? '' : rawPhoto;
 
   return {
-    id: item.id || item.quotation_number,
-    quotation_number: item.quotation_number || item.id,
+    id: item.id || item.template_id || item.quotation_number,
+    template_id: item.template_id || item.id || item.quotation_number,
+    quotation_number: item.quotation_number || item.template_id || item.id,
+    version: item.version ?? content?.lead_version ?? null,
+    version_label: item.version_label || (item.version ? `V${item.version}` : undefined),
     title: item.title || content?.designName || content?.title || 'Quotation Template',
     designName: content?.designName || item.title || 'Quotation Template',
-    client_name: item.client_name || cover.coupleName || (cover.groomName ? `${cover.groomName} & ${cover.brideName}` : 'Couple'),
-    couple_names: item.couple_names || cover.coupleName || item.client_name,
+    client_name: item.client_name || item.couple_name || cover.coupleName || (cover.groomName ? `${cover.groomName} & ${cover.brideName}` : 'Couple'),
+    couple_name: item.couple_name || cover.coupleName || item.client_name || '',
+    couple_names: item.couple_names || cover.coupleName || item.couple_name || item.client_name,
     category: item.category || content?.eventGroup || 'Wedding',
     status: item.status || 'draft',
     is_default: Boolean(item.is_default),
     is_system_template: Boolean(item.is_system_template),
     lead_id: item.lead_id || content?.lead_id || null,
-    lead_version: item.lead_version || content?.lead_version || null,
+    lead_version: item.lead_version ?? content?.lead_version ?? null,
     is_final: Boolean(item.is_final || content?.is_final),
     total_amount: item.total_amount || content?.pricingPage?.finalAmount || content?.pricing?.grandTotal || null,
     financials: item.financials || {},
     updated_at: item.updated_at || new Date().toISOString(),
     created_at: item.created_at || new Date().toISOString(),
-    // Keep ONLY lightweight cover metadata for instant card thumbnail preview
+    // Keep ONLY lightweight cover + pricing metadata (omit massive base64 photos, aboutUs, pageSequence, functionsPage)
     content_json: {
       designName: content?.designName || item.title,
       eventGroup: content?.eventGroup || 'Wedding',
@@ -42,15 +73,47 @@ export function pruneDocumentForListCache(item: any): any {
         coupleName: cover.coupleName || '',
         groomName: cover.groomName || '',
         brideName: cover.brideName || '',
-        photoUrl: cover.photoUrl || '',
+        photoUrl: safePhoto,
         eventType: cover.eventType || 'Wedding',
         locationName: cover.locationName || '',
         brandName: cover.brandName || '',
         bgOpacity: cover.bgOpacity || 40,
         frameShape: cover.frameShape || 'arch'
-      }
+      },
+      pricingPage: content?.pricingPage
+        ? {
+            finalAmount: content.pricingPage.finalAmount,
+            packagePrice: content.pricingPage.packagePrice,
+            discount: content.pricingPage.discount,
+          }
+        : undefined
     }
   };
+}
+
+/**
+ * Defensive SessionStorage setter that swallows QuotaExceededError gracefully.
+ */
+export function safeSessionStorageSet(key: string, value: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    sessionStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    console.warn(`[StorageSafety] SessionStorage write failed for "${key}". Cleaning heavy draft keys...`);
+    try {
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const k = sessionStorage.key(i);
+        if (k && k !== key && k.startsWith('current_quotation_doc_')) {
+          sessionStorage.removeItem(k);
+        }
+      }
+      sessionStorage.setItem(key, value);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 /**

@@ -2,6 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-resolver';
 import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, syncQuotationToTeamManagerEvents, isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
+import { pruneDocumentForListCache } from '@/lib/storage-safety';
+import { isInvalidCoupleName } from '@/lib/ai-quotation-extractor';
+import { clearLeadSummaryCache } from '@/lib/quotation-summary-cache';
+
+const isBadVersionTitle = (title?: string | null): boolean => {
+  if (!title) return true;
+  const trimmed = String(title).trim();
+  if (!trimmed || trimmed.startsWith('FW-')) return true;
+  if (/^(?:Wedding Quotation|Wedding - Design 1|Quotation Template)$/i.test(trimmed)) return true;
+  if (/^[।|.,:;!?'"\-–—\s]*(?:उनकी|इनकी|उनका|उनके|उनको|मेरी|हमारी)/i.test(trimmed)) return true;
+  const prefix = trimmed.split(/\s*-\s*/)[0]?.trim();
+  if (prefix && isInvalidCoupleName(prefix)) return true;
+  return false;
+};
+
+const pickCleanCouple = (...candidates: Array<string | null | undefined>): string => {
+  for (const c of candidates) {
+    if (c && !isInvalidCoupleName(c)) {
+      return String(c)
+        .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+  }
+  return 'Couple';
+};
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -228,6 +254,7 @@ export async function GET(
 ) {
   try {
     const { id: leadId } = await params;
+    const includeFull = req.nextUrl.searchParams.get('includeFull') === 'true';
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
 
@@ -248,19 +275,21 @@ export async function GET(
     const leadShort6Lower = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toLowerCase();
     const leadShort6Upper = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
 
-    // 1. Fetch lead details first to collect all known quotation IDs
+    // 1. Fetch lead details first to collect all known quotation IDs & cached metadata
     const { data: leadRow } = await supabaseAdmin
       .from('leads')
       .select('id, workspace_id, name, full_name, email, phone, quotation_id, final_quotation_id, raw_payload')
       .eq('id', leadId)
       .maybeSingle();
 
-    const effectiveLead = leadRow || {
+    const effectiveLead: any = leadRow || {
       id: leadId,
+      workspace_id: null,
       name: 'Client',
       full_name: 'Client',
       email: '',
       phone: '',
+      quotation_id: null,
       final_quotation_id: null,
       raw_payload: {}
     };
@@ -271,12 +300,18 @@ export async function GET(
     if (effectiveLead.final_quotation_id) knownIds.add(effectiveLead.final_quotation_id);
     if (rawPayload.quotation_id) knownIds.add(rawPayload.quotation_id);
     if (rawPayload.final_quotation_id) knownIds.add(rawPayload.final_quotation_id);
-    if (Array.isArray(rawPayload.quotation_versions)) {
-      rawPayload.quotation_versions.forEach((v: any) => {
-        if (v.id) knownIds.add(v.id);
-        if (v.template_id) knownIds.add(v.template_id);
-      });
-    }
+    const rawVersions: any[] = Array.isArray(rawPayload.quotation_versions) ? rawPayload.quotation_versions : [];
+    const rawVersionByTid = new Map<string, any>();
+    rawVersions.forEach((v: any) => {
+      if (v.id) {
+        knownIds.add(v.id);
+        rawVersionByTid.set(String(v.id).toUpperCase(), v);
+      }
+      if (v.template_id) {
+        knownIds.add(v.template_id);
+        rawVersionByTid.set(String(v.template_id).toUpperCase(), v);
+      }
+    });
 
     const knownIdsList = Array.from(knownIds);
 
@@ -294,11 +329,19 @@ export async function GET(
       }
     }
 
-    // 2. Fetch quotation documents, responses & legacy quotes in parallel for ultra-fast response
+    // 2. Fetch quotation documents (scalar-only unless includeFull=true to avoid 6MB TOAST decompression!),
+    // responses & legacy quotes in parallel for <500ms latency
+    const docSelectCols = includeFull
+      ? 'id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at'
+      : 'id, template_id, lead_id, version, lead_version, created_at, updated_at';
+    const quoteSelectCols = includeFull
+      ? 'id, quotation_number, title, status, client_name, couple_names, client_notes, canvas_data, public_token, is_final, created_at, updated_at'
+      : 'id, quotation_number, title, status, client_name, couple_names, client_notes, public_token, is_final, created_at, updated_at';
+
     const [docsRes, responsesRes, quotesRes] = await Promise.all([
       supabaseAdmin
         .from('quotation_documents')
-        .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
+        .select(docSelectCols as any)
         .or(docOrFilters.join(',')),
       supabaseAdmin
         .from('quotation_responses')
@@ -306,12 +349,12 @@ export async function GET(
         .eq('lead_id', leadId),
       supabaseAdmin
         .from('quotations')
-        .select('id, quotation_number, title, status, client_name, client_notes, content_json, public_token, is_final, created_at, updated_at')
+        .select(quoteSelectCols as any)
         .or(`client_id.eq.${leadId},quotation_number.ilike.%${leadShortLower}%,quotation_number.ilike.%${leadShortUpper}%`)
     ]);
 
     // 3. Process quotation documents specifically for this lead with case-insensitive matching
-    let matchedDocs = (docsRes.data || []).filter((doc: any) => {
+    const matchedDocs: any[] = ((docsRes.data || []) as any[]).filter((doc: any) => {
       const docLeadId = doc.lead_id || doc.content_json?.lead_id;
       if (docLeadId && docLeadId === leadId) return true;
       if (doc.template_id) {
@@ -329,31 +372,126 @@ export async function GET(
       }
     });
 
-    const allResponses = responsesRes.data || [];
-    const allQuotes = quotesRes.data || [];
+    const allResponses: any[] = (responsesRes.data || []) as any[];
+    const allQuotes: any[] = (quotesRes.data || []) as any[];
+
+    const finalTargetId = (effectiveLead as any).final_quotation_id || (effectiveLead as any).raw_payload?.final_quotation_id;
+
+    // Identify explicit lead_version > 0 docs so unversioned auto-stubs (lead_version: null & version: 1) never hide them
+    const explicitVerNums = new Set<number>();
+    matchedDocs.forEach((d: any) => {
+      if (d.lead_version !== null && d.lead_version !== undefined && Number(d.lead_version) > 0) {
+        explicitVerNums.add(Number(d.lead_version));
+      }
+    });
+
+    const findMatchingQuote = (doc: any) =>
+      allQuotes.find((q: any) =>
+        q.id === doc.template_id ||
+        q.quotation_number === doc.template_id ||
+        q.id === doc.id ||
+        (q.quotation_number && doc.template_id && (q.quotation_number.includes(doc.template_id) || doc.template_id.includes(q.quotation_number)))
+      );
+
+    // Filter out unversioned empty auto-draft stubs superseded by explicit lead_version docs
+    const orphanSupersededTids = new Set<string>();
+    const activeMatchedDocs = matchedDocs.filter((d: any) => {
+      const tidUpper = String(d.template_id || d.id || '').toUpperCase();
+      const matchedQ = findMatchingQuote(d);
+      const rawVer = rawVersionByTid.get(tidUpper);
+      const isFinalMatch = Boolean(
+        (finalTargetId && (finalTargetId === d.template_id || finalTargetId === d.id)) ||
+        matchedQ?.is_final === true ||
+        matchedQ?.status === 'accepted' ||
+        rawVer?.is_final === true
+      );
+      const explicitVer = (d.lead_version !== null && d.lead_version !== undefined && Number(d.lead_version) > 0)
+        ? Number(d.lead_version)
+        : 0;
+      const tidVerMatch = typeof d.template_id === 'string' ? d.template_id.match(/-V(\d+)-/i) : null;
+      const tidVer = tidVerMatch ? parseInt(tidVerMatch[1], 10) : 0;
+
+      if (!explicitVer && Number(d.version || 1) === 1 && !matchedQ && !isFinalMatch) {
+        if ((tidVer > 0 && explicitVerNums.has(tidVer)) || (explicitVerNums.size > 0 && isBadVersionTitle(rawVer?.title))) {
+          orphanSupersededTids.add(tidUpper);
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Lightweight targeted enrichment ONLY for docs whose clean title/couple isn't in raw_payload or quotations yet
+    const docMetaById = new Map<string, any>();
+    if (!includeFull) {
+      const missingMetaIds = activeMatchedDocs
+        .filter((d: any) => {
+          const tidUpper = String(d.template_id || d.id || '').toUpperCase();
+          const matchedQ = findMatchingQuote(d);
+          const rawVer = rawVersionByTid.get(tidUpper);
+          const hasValidQuoteTitle = matchedQ && !isBadVersionTitle(matchedQ.title);
+          const hasValidRawMeta = rawVer && (!isBadVersionTitle(rawVer.title) || (rawVer.couple_name && !isInvalidCoupleName(rawVer.couple_name)));
+          return !hasValidQuoteTitle && !hasValidRawMeta;
+        })
+        .map((d: any) => d.id)
+        .filter(Boolean);
+
+      if (missingMetaIds.length > 0 && missingMetaIds.length <= 6) {
+        try {
+          const metaFetchPromise = supabaseAdmin
+            .from('quotation_documents')
+            .select([
+              'id',
+              'couple_name:content_json->cover->>coupleName',
+              'groom_name:content_json->cover->>groomName',
+              'bride_name:content_json->cover->>brideName',
+              'event_type:content_json->cover->>eventType',
+              'location_name:content_json->cover->>locationName',
+              'design_name:content_json->>designName',
+              'doc_title:content_json->>title',
+              'event_group:content_json->>eventGroup',
+              'doc_is_final:content_json->>is_final',
+              'final_amount:content_json->pricingPage->>finalAmount'
+            ].join(','))
+            .in('id', missingMetaIds);
+          const { data: metaRows } = await Promise.race([
+            metaFetchPromise,
+            new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 2800))
+          ]);
+          (metaRows || []).forEach((m: any) => {
+            if (m?.id) docMetaById.set(m.id, m);
+          });
+        } catch (_) {}
+      }
+    }
 
     // Merge docs from quotation_documents and any legacy quotes from quotations table
-    const docTemplateIds = new Set((matchedDocs || []).map((d: any) => d.template_id));
-    const legacyOnlyQuotes = allQuotes.filter((q: any) => 
-      !docTemplateIds.has(q.id) && !docTemplateIds.has(q.quotation_number)
-    );
+    const docTemplateIds = new Set(activeMatchedDocs.map((d: any) => String(d.template_id).toUpperCase()));
+    const legacyOnlyQuotes = allQuotes.filter((q: any) => {
+      const qIdU = String(q.id || '').toUpperCase();
+      const qNumU = String(q.quotation_number || '').toUpperCase();
+      return !docTemplateIds.has(qIdU) && !docTemplateIds.has(qNumU);
+    });
 
-    // Merge any version recorded in raw_payload.quotation_versions that might be missing from docsRes
-    const rawVersions: any[] = Array.isArray(rawPayload.quotation_versions) ? rawPayload.quotation_versions : [];
+    // Merge any version recorded in raw_payload.quotation_versions not present in docsRes or orphan-superseded
     const missingRawVersions = rawVersions.filter((rv: any) => {
-      const rId = rv.template_id || rv.id;
-      return rId && !docTemplateIds.has(rId) && !legacyOnlyQuotes.some((q: any) => q.id === rId || q.quotation_number === rId);
+      const rId = String(rv.template_id || rv.id || '').toUpperCase();
+      if (!rId || orphanSupersededTids.has(rId)) return false;
+      const rvVer = Number(rv.version || 0);
+      if (rvVer > 0 && explicitVerNums.has(rvVer) && isBadVersionTitle(rv.title)) return false;
+      return !docTemplateIds.has(rId) && !legacyOnlyQuotes.some((q: any) =>
+        String(q.id || '').toUpperCase() === rId || String(q.quotation_number || '').toUpperCase() === rId
+      );
     });
 
     const combinedList = [
-      ...(matchedDocs || []),
+      ...activeMatchedDocs,
       ...legacyOnlyQuotes.map((q: any, i: number) => ({
         id: q.id,
         template_id: q.quotation_number || q.id,
         lead_id: leadId,
-        version: (matchedDocs?.length || 0) + i + 1,
-        lead_version: (matchedDocs?.length || 0) + i + 1,
-        content_json: q.content_json || {},
+        version: (activeMatchedDocs.length || 0) + i + 1,
+        lead_version: (activeMatchedDocs.length || 0) + i + 1,
+        content_json: includeFull ? (q.canvas_data || q.content_json || {}) : {},
         created_at: q.created_at || new Date().toISOString(),
         updated_at: q.updated_at || q.created_at || new Date().toISOString()
       })),
@@ -363,55 +501,78 @@ export async function GET(
         lead_id: leadId,
         version: rv.version || i + 1,
         lead_version: rv.version || i + 1,
-        content_json: rv.content_json || {},
+        content_json: includeFull ? (rv.content_json || {}) : {},
         created_at: rv.created_at || new Date().toISOString(),
         updated_at: rv.updated_at || rv.created_at || new Date().toISOString()
       }))
     ];
 
-    const sortedByAge = combinedList.sort((a: any, b: any) =>
-      new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
-    );
+    // Prioritize explicit lead_version > 0 docs first, then sort chronologically
+    const sortedDocs = combinedList.sort((a: any, b: any) => {
+      const aExp = (a.lead_version !== null && a.lead_version !== undefined && Number(a.lead_version) > 0) ? 1 : 0;
+      const bExp = (b.lead_version !== null && b.lead_version !== undefined && Number(b.lead_version) > 0) ? 1 : 0;
+      if (aExp !== bExp) return bExp - aExp;
+      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+    });
 
-    const formattedQuotations = sortedByAge.map((doc: any, idx: number) => {
+    const formattedQuotations = sortedDocs.map((doc: any, idx: number) => {
       const content = doc.content_json || {};
+      const extractedMeta = docMetaById.get(doc.id);
+      const tidUpper = String(doc.template_id || doc.id || '').toUpperCase();
+      const rawVer = rawVersionByTid.get(tidUpper);
+      const matchingQuote = findMatchingQuote(doc);
+
       const tidVerMatch = typeof doc.template_id === 'string' ? doc.template_id.match(/-V(\d+)-/i) : null;
       const tidVer = tidVerMatch ? parseInt(tidVerMatch[1], 10) : null;
-      const explicitVer = doc.lead_version || content.lead_version || tidVer || (doc.version > 1 ? doc.version : null);
-      const leadVer = (explicitVer && typeof explicitVer === 'number' && explicitVer > 0)
-        ? explicitVer
-        : (idx + 1);
+
+      // Strictly prefer explicit doc.lead_version > content.lead_version > rawVer.version > tidVer > doc.version
+      const explicitLeadVer = (doc.lead_version !== null && doc.lead_version !== undefined && Number(doc.lead_version) > 0)
+        ? Number(doc.lead_version)
+        : null;
+      const resolvedVer = explicitLeadVer
+        || (Number(content.lead_version) > 0 ? Number(content.lead_version) : null)
+        || (rawVer?.version && Number(rawVer.version) > 0 ? Number(rawVer.version) : null)
+        || tidVer
+        || (doc.version && Number(doc.version) > 0 ? Number(doc.version) : null);
+      const leadVer = resolvedVer || (idx + 1);
 
       const cover = content.cover || {};
-      const rawLeadCouple = 
-        effectiveLead.raw_payload?.couple_name ||
-        effectiveLead.raw_payload?.couple_names ||
-        (effectiveLead as any).couple_names ||
-        ((effectiveLead as any).full_name && !['client', 'valued client', 'lead'].includes((effectiveLead as any).full_name.toLowerCase().trim()) ? (effectiveLead as any).full_name : '') ||
-        (effectiveLead.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : '');
+      const coverCouple = cover.coupleName
+        || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''))
+        || extractedMeta?.couple_name
+        || (extractedMeta?.groom_name && extractedMeta?.bride_name ? `${extractedMeta.groom_name} & ${extractedMeta.bride_name}` : (extractedMeta?.groom_name || extractedMeta?.bride_name || ''));
 
-      const coverCouple = cover.coupleName 
-        || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
+      const rawTitlePrefix = rawVer?.title && !isBadVersionTitle(rawVer.title)
+        ? String(rawVer.title).split(/\s*-\s*/)[0]?.trim()
+        : null;
 
-      const coupleName = (!isPlaceholderCoupleName(coverCouple) && coverCouple)
-        ? coverCouple
-        : (rawLeadCouple || coverCouple || 'Couple');
-
-      const eventType = cover.eventType 
-        || content.eventGroup 
-        || 'Wedding';
-
-      const cleanEventType = eventType.replace(/quotation/i, '').trim() || 'Wedding';
-      let title = `${coupleName} - ${cleanEventType} Quotation`;
-
-      const matchingQuote = allQuotes.find((q: any) =>
-        q.id === doc.template_id || 
-        q.quotation_number === doc.template_id ||
-        q.id === doc.id ||
-        (q.quotation_number && doc.template_id && (q.quotation_number.includes(doc.template_id) || doc.template_id.includes(q.quotation_number)))
+      const coupleName = pickCleanCouple(
+        coverCouple,
+        rawVer?.couple_name,
+        rawTitlePrefix,
+        matchingQuote?.couple_names,
+        matchingQuote?.client_name,
+        effectiveLead.raw_payload?.couple_name,
+        effectiveLead.raw_payload?.couple_names,
+        (effectiveLead as any).couple_names,
+        (effectiveLead as any).full_name,
+        effectiveLead.name
       );
 
-      // Determine response badges for this version
+      const eventType = cover.eventType
+        || extractedMeta?.event_type
+        || content.eventGroup
+        || extractedMeta?.event_group
+        || 'Wedding';
+
+      const cleanEventType = String(eventType).replace(/quotation/i, '').trim() || 'Wedding';
+      const customMetaDesign = (!isBadVersionTitle(extractedMeta?.design_name) ? extractedMeta.design_name : null)
+        || (!isBadVersionTitle(content.designName) ? content.designName : null)
+        || (!isBadVersionTitle(matchingQuote?.title) ? matchingQuote?.title : null)
+        || (!isBadVersionTitle(rawVer?.title) ? rawVer?.title : null);
+
+      const title = customMetaDesign || `${coupleName} - ${cleanEventType} Quotation`;
+
       const versionResponsesList = allResponses.filter((r: any) =>
         r.quotation_id === doc.template_id || Number(r.lead_version) === Number(leadVer)
       );
@@ -439,17 +600,17 @@ export async function GET(
 
       const responseBadge = versionResponses[0] || null;
 
-      const finalTargetId = (effectiveLead as any).final_quotation_id || (effectiveLead as any).raw_payload?.final_quotation_id;
       const isFinal = Boolean(
         (finalTargetId && (
-          finalTargetId === doc.template_id || 
-          finalTargetId === doc.id || 
+          finalTargetId === doc.template_id ||
+          finalTargetId === doc.id ||
           (matchingQuote && (matchingQuote.id === finalTargetId || matchingQuote.quotation_number === finalTargetId)) ||
           (doc.template_id && (finalTargetId.includes(doc.template_id) || doc.template_id.includes(finalTargetId)))
         )) ||
-        content.is_final === true || 
-        doc.content_json?.is_final === true || 
-        (matchingQuote as any)?.is_final === true || 
+        content.is_final === true ||
+        extractedMeta?.doc_is_final === 'true' ||
+        rawVer?.is_final === true ||
+        (matchingQuote as any)?.is_final === true ||
         matchingQuote?.status === 'accepted'
       );
 
@@ -457,7 +618,7 @@ export async function GET(
         ? `${coupleName || 'Client'} - Final Quotation`
         : title;
 
-      return {
+      const baseItem = {
         id: doc.id,
         template_id: doc.template_id,
         lead_id: leadId,
@@ -465,7 +626,16 @@ export async function GET(
         version_label: `V${leadVer}`,
         title: displayTitle,
         couple_name: coupleName,
-        content_json: content,
+        content_json: includeFull ? content : {
+          designName: displayTitle,
+          eventGroup: cleanEventType,
+          cover: {
+            coupleName,
+            eventType: cleanEventType,
+            locationName: cover.locationName || extractedMeta?.location_name || ''
+          },
+          ...(extractedMeta?.final_amount ? { pricingPage: { finalAmount: Number(extractedMeta.final_amount) || undefined } } : {})
+        },
         is_final: isFinal,
         updated_at: doc.updated_at || doc.created_at || new Date().toISOString(),
         created_at: doc.created_at || new Date().toISOString(),
@@ -473,45 +643,59 @@ export async function GET(
         responseBadge,
         responses: versionResponses
       };
+
+      return includeFull ? baseItem : {
+        ...pruneDocumentForListCache(baseItem),
+        public_token: baseItem.public_token,
+        responseBadge: baseItem.responseBadge,
+        responses: baseItem.responses
+      };
     });
 
-    // Deduplicate formattedQuotations by template_id and version so versions never duplicate
+    // Deduplicate STRICTLY by canonical template_id (never silently drop a distinct version on version-number collision!)
     const seenTids = new Set<string>();
-    const seenVers = new Set<number>();
     const uniqueQuotations: typeof formattedQuotations = [];
     for (const q of formattedQuotations) {
       const tid = String(q.template_id || q.id).toUpperCase();
-      const ver = Number(q.version);
-      if (seenTids.has(tid) || (ver > 0 && seenVers.has(ver))) continue;
+      if (!tid || seenTids.has(tid)) continue;
       seenTids.add(tid);
-      if (ver > 0) seenVers.add(ver);
       uniqueQuotations.push(q);
     }
 
-    // Sort versions descending for modal display: V3, V2, V1
-    uniqueQuotations.sort((a, b) => b.version - a.version);
+    // Sort versions descending for modal display: V3, V2, V1 (tie-break by updated_at desc)
+    uniqueQuotations.sort((a, b) => {
+      if (b.version !== a.version) return b.version - a.version;
+      return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime();
+    });
 
-    // Non-blocking sync of versions into lead.raw_payload for instant 0ms retrieval
+    // Sync cleaned lightweight versions into lead.raw_payload whenever items or titles differ (fixes corrupted/stale cache)
     try {
       const existingRaw = effectiveLead.raw_payload || {};
       const existingVers = Array.isArray(existingRaw.quotation_versions) ? existingRaw.quotation_versions : [];
-      if (existingVers.length !== uniqueQuotations.length) {
-        const lightweightVersions = uniqueQuotations.map(q => ({
-          id: q.id,
-          template_id: q.template_id,
-          version: q.version,
-          version_label: q.version_label,
-          title: q.title,
-          is_final: q.is_final,
-          created_at: q.created_at,
-          updated_at: q.updated_at
-        }));
+      const sig = (arr: any[]) =>
+        arr.map(x => `${x.template_id || x.id}:${x.version}:${x.title || ''}:${Boolean(x.is_final)}`).join('|');
+
+      const lightweightVersions = uniqueQuotations.map(q => ({
+        id: q.id,
+        template_id: q.template_id,
+        version: q.version,
+        version_label: q.version_label,
+        title: q.title,
+        couple_name: q.couple_name,
+        is_final: q.is_final,
+        created_at: q.created_at,
+        updated_at: q.updated_at
+      }));
+
+      if (sig(existingVers) !== sig(lightweightVersions)) {
         supabaseAdmin.from('leads').update({
           raw_payload: {
             ...existingRaw,
             quotation_versions: lightweightVersions
           }
-        }).eq('id', leadId).then(() => {});
+        }).eq('id', leadId).then(() => {
+          clearLeadSummaryCache(effectiveLead.workspace_id || undefined);
+        });
       }
     } catch (_) {}
 
@@ -560,20 +744,31 @@ export async function POST(
       return NextResponse.json({ error: 'Lead not found in Supabase' }, { status: 404 });
     }
 
-    // 2. Fetch existing quotations for this lead to calculate next version V
+    // 2. Fetch existing quotations (scalar-only) for this lead to calculate next version V
+    const leadShort8 = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
     const { data: existingDocs } = await supabaseAdmin
       .from('quotation_documents')
-      .select('template_id, version, lead_version, content_json')
-      .or(`lead_id.eq.${leadId},template_id.ilike.%${leadId}%`);
+      .select('id, template_id, version, lead_version')
+      .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShort8}%`);
 
     let maxVersion = 0;
     (existingDocs || []).forEach((d: any) => {
-      const v = d.lead_version || d.content_json?.lead_version || d.version || 0;
+      const explicitV = Number(d.lead_version) > 0 ? Number(d.lead_version) : 0;
+      const tidMatch = typeof d.template_id === 'string' ? d.template_id.match(/-V(\d+)-/i) : null;
+      const tidV = tidMatch ? parseInt(tidMatch[1], 10) : 0;
+      const fallbackV = Number(d.version) > 1 ? Number(d.version) : 0;
+      const v = explicitV || tidV || fallbackV;
       if (v > maxVersion) maxVersion = v;
+    });
+    const rawVersList: any[] = Array.isArray(lead.raw_payload?.quotation_versions) ? lead.raw_payload.quotation_versions : [];
+    rawVersList.forEach((rv: any) => {
+      const rvV = Number(rv?.version) || 0;
+      if (rvV > maxVersion) maxVersion = rvV;
     });
 
     const nextLeadVersion = maxVersion + 1;
-    const newTemplateId = `FW-L-${leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}-V${nextLeadVersion}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const effectiveWsId = lead.workspace_id || currentUserId;
+    const newTemplateId = `FW-L-${leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase()}-V${nextLeadVersion}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const now = new Date().toISOString();
 
     const body = await req.json().catch(() => ({}));
@@ -693,9 +888,10 @@ export async function POST(
       }));
     }
 
-    // 4. Save to quotation_documents with lead_id & lead_version
+    // 4. Save to quotation_documents with workspace_id, lead_id & lead_version
     const docPayload: any = {
       template_id: newTemplateId,
+      workspace_id: effectiveWsId,
       user_id: currentUserId,
       version: nextLeadVersion,
       lead_id: leadId,
@@ -708,12 +904,11 @@ export async function POST(
     const { data: savedDoc, error: saveErr } = await supabaseAdmin
       .from('quotation_documents')
       .upsert(docPayload, { onConflict: 'template_id' })
-      .select()
+      .select('id')
       .maybeSingle();
 
     if (saveErr) {
       console.warn('[POST /api/leads/[id]/quotations] Save warning (fallback without top-level lead_id):', saveErr.message);
-      // Fallback without top-level lead_id column if schema constraint occurs
       delete docPayload.lead_id;
       delete docPayload.lead_version;
       await supabaseAdmin
@@ -721,43 +916,28 @@ export async function POST(
         .upsert(docPayload, { onConflict: 'template_id' });
     }
 
-    // 6. Save audit version, legacy quote sync and live log in parallel non-blocking background tasks
-    const bgPromises: Promise<any>[] = [];
-
-    if (savedDoc?.id) {
-      bgPromises.push(
-        (async () => {
-          try {
-            await supabaseAdmin.from('quotation_versions').insert({
-              document_id: savedDoc.id,
-              template_id: newTemplateId,
-              user_id: currentUserId,
-              version: nextLeadVersion,
-              content_json: newQuotationJson,
-              created_at: now
-            });
-          } catch (_) {}
-        })()
-      );
-    }
+    // 5. Synchronously update leads.raw_payload.quotation_versions & quotations summary, plus clear summary cache
+    const criticalSyncPromises: Promise<any>[] = [];
 
     try {
       const calcFin = extractFinancialsFromQuotation(newQuotationJson);
-      bgPromises.push(
+      criticalSyncPromises.push(
         (async () => {
           try {
             await supabaseAdmin.from('quotations').upsert({
-              workspace_id: currentUserId,
+              workspace_id: effectiveWsId,
+              user_id: currentUserId,
               quotation_number: newTemplateId,
               title: quotationTitle,
               client_name: leadName,
+              couple_names: leadName,
               total_amount: calcFin.final_total_amount,
               client_id: leadId,
               status: 'draft',
               is_final: false,
               created_at: now,
               updated_at: now
-            });
+            }, { onConflict: 'workspace_id,quotation_number' });
           } catch (_) {}
         })()
       );
@@ -765,7 +945,7 @@ export async function POST(
       console.warn('[leads/[id]/quotations] extractFinancials note:', finErr);
     }
 
-    bgPromises.push(
+    criticalSyncPromises.push(
       (async () => {
         try {
           const { data: curLead } = await supabaseAdmin
@@ -782,6 +962,7 @@ export async function POST(
             version: nextLeadVersion,
             version_label: `V${nextLeadVersion}`,
             title: quotationTitle,
+            couple_name: leadName,
             is_final: false,
             created_at: now,
             updated_at: now
@@ -799,28 +980,42 @@ export async function POST(
       })()
     );
 
-    bgPromises.push(
+    await Promise.allSettled(criticalSyncPromises);
+    clearLeadSummaryCache();
+
+    // Non-blocking audit history & live logs
+    if (savedDoc?.id) {
       (async () => {
         try {
-          await supabaseAdmin.from('live_logs').insert({
-            workspace_id: lead?.workspace_id || currentUserId,
-            lead_id: leadId,
-            event_type: 'lead_activity',
-            message: `Created Quotation Version ${nextLeadVersion} ("${quotationTitle}")`,
-            metadata: {
-              action_type: 'quote_created',
-              actor_name: 'Studio Admin',
-              version: nextLeadVersion,
-              template_id: newTemplateId,
-              logged_at: now
-            }
+          await supabaseAdmin.from('quotation_versions').insert({
+            document_id: savedDoc.id,
+            template_id: newTemplateId,
+            user_id: currentUserId,
+            version: nextLeadVersion,
+            content_json: newQuotationJson,
+            created_at: now
           });
         } catch (_) {}
-      })()
-    );
+      })();
+    }
 
-    // Run all non-blocking background tasks without delaying user response
-    Promise.allSettled(bgPromises).catch(() => {});
+    (async () => {
+      try {
+        await supabaseAdmin.from('live_logs').insert({
+          workspace_id: effectiveWsId,
+          lead_id: leadId,
+          event_type: 'lead_activity',
+          message: `Created Quotation Version ${nextLeadVersion} ("${quotationTitle}")`,
+          metadata: {
+            action_type: 'quote_created',
+            actor_name: 'Studio Admin',
+            version: nextLeadVersion,
+            template_id: newTemplateId,
+            logged_at: now
+          }
+        });
+      } catch (_) {}
+    })();
 
     return NextResponse.json({
       success: true,

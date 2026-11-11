@@ -118,7 +118,8 @@ export function normalizeToIsoDate(rawDate?: any, fallbackDate?: string | null):
   return fallback;
 }
 
-export { TEMPLATE_PLACEHOLDER_NAMES, isPlaceholderCoupleName } from '@/lib/quotation-defaults';
+import { TEMPLATE_PLACEHOLDER_NAMES, isPlaceholderCoupleName } from '@/lib/quotation-defaults';
+export { TEMPLATE_PLACEHOLDER_NAMES, isPlaceholderCoupleName };
 
 
 /**

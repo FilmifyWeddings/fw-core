@@ -457,6 +457,8 @@ export function normalizeCrewRoleName(rawRole: string): string {
   // 3. Traditional Photographer
   if (
     s.includes('traditional photo') || 
+    s.includes('traditional camera') ||
+    s.includes('traditional still') ||
     s.includes('trad photo') || 
     s.includes('tred photo') || 
     s.includes('treational photo') ||
@@ -464,6 +466,11 @@ export function normalizeCrewRoleName(rawRole: string): string {
     s === 'tp'
   ) {
     return 'Traditional Photographer';
+  }
+
+  // 3.1 Family Photographer
+  if (s.includes('family photo') || s.includes('family photog') || s === 'fp') {
+    return 'Family Photographer';
   }
 
   // 4. Traditional Videographer
@@ -516,6 +523,411 @@ export function normalizeCrewRoleName(rawRole: string): string {
 
   // Capitalize custom role nicely
   return rawRole.trim().replace(/\b\w/g, l => l.toUpperCase());
+}
+
+const COUPLE_INVALID_WORDS = new Set([
+  'होगी', 'होगा', 'रहेगा', 'रहेगी', 'रखना', 'चाहिए', 'शादी', 'हल्दी', 'संगीत', 'फेरे', 'लग्न', 'विवाह',
+  'मेहंदी', 'सगाई', 'रिसेप्शन', 'कैंडिड', 'सिनेमैटोग्राफर', 'ड्रोन', 'ट्रेडिशनल', 'फोटोग्राफर', 'वीडियोग्राफर',
+  'शूट', 'कोटेशन', 'प्रपोजल', 'बजट', 'पैकेज', 'वेडिंग', 'प्री', 'अगले', 'दूसरे', 'उसी', 'नेक्स्ट', 'पहले',
+  'बाद', 'दिन', 'दोनों', 'सभी', 'एक', 'उसके', 'उसमें', 'नहीं',
+  'उनकी', 'इनकी', 'उनका', 'उनके', 'उनको', 'मेरी', 'हमारी', 'तुम्हारी', 'आपकी', 'इसका', 'उसका', 'क्लाइंट',
+  'wedding', 'marriage', 'proposal', 'quotation', 'haldi', 'sangeet', 'mehendi', 'mehndi', 'reception',
+  'engagement', 'roka', 'cocktail', 'mayra', 'puja', 'pre', 'shoot', 'candid', 'cine', 'cinematographer',
+  'traditional', 'drone', 'photographer', 'videographer', 'budget', 'price', 'rate', 'cost', 'date',
+  'day', 'days', 'hours', 'next', 'same', 'both', 'all', 'each', 'every', 'after', 'before', 'client', 'lead'
+]);
+
+/**
+ * Returns true if a couple name candidate is empty, punctuation/pronoun artifact ("। उनकी"), or a placeholder.
+ */
+export function isInvalidCoupleName(rawCandidate?: string | null): boolean {
+  const cleaned = String(rawCandidate || '')
+    .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned || cleaned.length < 2) return true;
+  if (isPlaceholderCoupleName(cleaned)) return true;
+  const stripped = cleaned.replace(/[\s।|.,:;!?'"\-–—&+]/g, '');
+  if (stripped.length < 2) return true;
+  const parts = cleaned.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i).map(p => p.trim()).filter(Boolean);
+  if (parts.length === 0) return true;
+  return parts.every(p => {
+    const words = p.split(/\s+/).filter(Boolean);
+    return words.length === 0 || words.every(w => COUPLE_INVALID_WORDS.has(w));
+  });
+}
+
+/**
+ * Strips punctuation artifacts ("। उनकी") and rejects pronoun/stopword pseudo-names.
+ */
+export function sanitizeExtractedCoupleName(rawCandidate?: string | null, leadFallback?: string | null): string {
+  const cleanStr = (v?: string | null) =>
+    String(v || '')
+      .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const primary = cleanStr(rawCandidate);
+  if (primary && !isInvalidCoupleName(primary)) {
+    return primary;
+  }
+  const fallback = cleanStr(leadFallback);
+  if (fallback && !isInvalidCoupleName(fallback)) {
+    return fallback;
+  }
+  return 'Groom & Bride';
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Extracts ALL crew roles & quantities from a snippet (while-loop multi-role, Hindi phonetic variants,
+ * plus any custom role defined in Studio Settings master_crew_roles).
+ */
+export function extractCrewRolesFromText(
+  snippet: string,
+  studioCrewRoles: Array<string | { name?: string; short_code?: string }> = []
+): Array<{ name: string; qty: number }> {
+  if (!snippet || !snippet.trim()) return [];
+  const numPrefix = '(?:(\\d+|एक|दो|तीन|चार|पांच|पाँच|one|two|three|four|five)\\s*(?:x|\\*|-)?)';
+  const numSuffix = '(?:x|\\*|:|-)?\\s*(\\d+)';
+
+  const builtInCrewDefs: Array<{ name: string; regex: RegExp }> = [
+    {
+      name: 'Semi Cinematic',
+      regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सेमी[\\s-]*काइनेमैटिक|सेमी[\\s-]*सिनेमैटिक|semi[\\s-]*(?:cinematic|kinematic|cine))(?:\\s*${numSuffix})?`, 'gi')
+    },
+    {
+      name: 'Semi Standard',
+      regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सेमी[\\s-]*स्टैंडर्ड|सेमी[\\s-]*ट्रेडिशनल|semi[\\s-]*(?:standard|traditional|trad))(?:\\s*${numSuffix})?`, 'gi')
+    },
+    {
+      name: 'Traditional Photographer',
+      regex: new RegExp(`(?:${numPrefix}\\s+)?(?:(?:ट्रेडिशनल|ट्रैडिशनल|ट्रेड)\\s*(?:फोटोग्राफर|फोटोग्राफी|कैमरामैन|फोटो\\s*वाला|फोटो)|(?:traditional|trad)\\s*(?:photo(?:grapher|graphy|s)?|cameraman|still)|\\btp\\b)(?:\\s*${numSuffix})?`, 'gi')
+    },
+    {
+      name: 'Traditional Videographer',
+      regex: new RegExp(`(?:${numPrefix}\\s+)?(?:(?:ट्रेडिशनल|ट्रैडिशनल|ट्रेड)\\s*(?:वीडियोग्राफर|वीडियोग्राफी|वीडियो)|(?:traditional|trad)\\s*video(?:grapher|graphy)?|\\btv\\b)(?:\\s*${numSuffix})?`, 'gi')
+    },
+    {
+      name: 'Candid Photographer',
+      regex: new RegExp(`(?:${numPrefix}\\s+)?(?:कैंडिड\\s*(?:फोटोग्राफर|फोटोग्राफी|कैमरामैन|फोटो)|कैंडिड|candid\\s*(?:photo(?:grapher|graphy|s)?)?|\\bcp\\b)(?:\\s*${numSuffix})?`, 'gi')
+    },
+    {
+      name: 'Cinematographer',
+      regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सिनेमैटोग्राफर|सिनेमैटोग्राफी|सिनेमैटिक\\s*(?:वीडियो|विडियो)?|सिनेमा|cinematog(?:rapher|raphy)?|cinematic(?:\\s*video)?|\\bcine\\b|\\bcv\\b)(?:\\s*${numSuffix})?`, 'gi')
+    },
+    {
+      name: 'Drone Pilot',
+      regex: new RegExp(`(?:${numPrefix}\\s+)?(?:ड्रोन\\s*(?:पायलट|कैमरा)?|drone\\s*(?:pilot|coverage|shoot)?|aerial\\s*drone)(?:\\s*${numSuffix})?`, 'gi')
+    },
+    {
+      name: 'Family Photographer',
+      regex: new RegExp(`(?:${numPrefix}\\s+)?(?:फैमिली\\s*(?:फोटोग्राफर|फोटो)|family\\s*photo(?:grapher|graphy)?)(?:\\s*${numSuffix})?`, 'gi')
+    },
+    {
+      name: 'Social Media Reels Creator',
+      regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सोशल\\s*मीडिया\\s*रील्स?\\s*क्रिएटर|रील्स?\\s*क्रिएटर|social\\s*media\\s*reels?\\s*creator|reels?\\s*creator)(?:\\s*${numSuffix})?`, 'gi')
+    }
+  ];
+
+  // Dynamically include custom roles configured in master_crew_roles (longest names first)
+  const customCrewDefs: Array<{ name: string; regex: RegExp }> = [];
+  const seenNames = new Set(builtInCrewDefs.map((d) => d.name.toLowerCase()));
+  const sortedStudioRoles = [...(studioCrewRoles || [])].sort((a, b) => {
+    const na = typeof a === 'string' ? a : (a?.name || '');
+    const nb = typeof b === 'string' ? b : (b?.name || '');
+    return nb.length - na.length;
+  });
+
+  for (const r of sortedStudioRoles) {
+    const roleName = (typeof r === 'string' ? r : r?.name || '').trim();
+    if (!roleName || roleName.length < 3) continue;
+    const rl = roleName.toLowerCase();
+    if (seenNames.has(rl) || rl === 'sales person' || rl === 'salesperson' || rl === 'team manager') continue;
+    seenNames.add(rl);
+    customCrewDefs.push({
+      name: roleName,
+      regex: new RegExp(`(?:${numPrefix}\\s+)?${escapeRegExp(roleName)}(?:\\s*${numSuffix})?`, 'gi')
+    });
+  }
+
+  const allDefs = [...customCrewDefs, ...builtInCrewDefs];
+  const foundMap = new Map<string, number>();
+  let maskedSnippet = snippet;
+
+  for (const c of allDefs) {
+    let iter = 0;
+    while (iter < 10) {
+      iter++;
+      c.regex.lastIndex = 0;
+      const m = c.regex.exec(maskedSnippet);
+      if (!m || !m[0]) break;
+      const qtyToken = m[1] || m[2] || '1';
+      const qty = parseSmallCountWord(qtyToken);
+      const resolvedRole = resolveStudioCrewRole(c.name, studioCrewRoles);
+      foundMap.set(resolvedRole, Math.max(foundMap.get(resolvedRole) || 0, qty));
+      maskedSnippet =
+        maskedSnippet.slice(0, m.index) +
+        ' '.repeat(m[0].length) +
+        maskedSnippet.slice(m.index + m[0].length);
+    }
+  }
+
+  return Array.from(foundMap.entries()).map(([name, qty]) => ({ name, qty }));
+}
+
+function mergeCrewList(
+  existing: Array<{ name: string; qty: number }> | undefined,
+  additions: Array<{ name: string; qty: number }>,
+  studioCrewRoles: Array<string | { name?: string; short_code?: string }> = []
+): Array<{ name: string; qty: number }> {
+  const result = Array.isArray(existing)
+    ? existing.map((r) => ({ name: resolveStudioCrewRole(r.name, studioCrewRoles), qty: Number(r.qty || 1) }))
+    : [];
+
+  for (const add of additions) {
+    const canonName = resolveStudioCrewRole(add.name, studioCrewRoles);
+    const qty = Math.max(1, Number(add.qty || 1));
+    const idx = result.findIndex((r) => r.name.toLowerCase() === canonName.toLowerCase());
+    if (idx !== -1) {
+      result[idx] = { ...result[idx], qty: Math.max(result[idx].qty, qty) };
+    } else {
+      result.push({ name: canonName, qty });
+    }
+  }
+  return result;
+}
+
+function removeCrewFromList(
+  existing: Array<{ name: string; qty: number }> | undefined,
+  removals: Array<{ name: string; qty: number }>,
+  studioCrewRoles: Array<string | { name?: string; short_code?: string }> = []
+): Array<{ name: string; qty: number }> {
+  const remNames = new Set(removals.map((r) => resolveStudioCrewRole(r.name, studioCrewRoles).toLowerCase()));
+  return (Array.isArray(existing) ? existing : []).filter(
+    (r) => !remNames.has(resolveStudioCrewRole(r.name, studioCrewRoles).toLowerCase())
+  );
+}
+
+/**
+ * Deterministically enforces Settings -> AI Training rules (shortcuts + customInstructions)
+ * AND spoken voice-note directives (e.g. "सभी इवेंट में 1 Traditional Photographer ऐड करो")
+ * onto ANY mapped Quotation Document so 0% of user rules are dropped.
+ */
+export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): void {
+  if (!doc || typeof doc !== 'object') return;
+
+  const studioSettings = contextData?.studioSettings || {};
+  const studioCrewRoles: any[] = Array.isArray(contextData?.studioCrewRoles) ? contextData.studioCrewRoles : [];
+  const studioEventNames: string[] = Array.isArray(contextData?.studioEventTypes)
+    ? contextData.studioEventTypes
+        .filter((e: any) => typeof e === 'string' || String(e?.category || '').toLowerCase() !== 'ritual')
+        .map((e: any) => (typeof e === 'string' ? e : e?.name || '').trim())
+        .filter(Boolean)
+    : [];
+  const studioDefaultFunctions: any[] = Array.isArray(studioSettings?.defaultFunctions)
+    ? studioSettings.defaultFunctions
+    : [];
+  const studioDeliverables: string[] = Array.isArray(studioSettings?.deliverables)
+    ? studioSettings.deliverables.map((d: any) => (typeof d === 'string' ? d : d?.title || '').trim()).filter(Boolean)
+    : [];
+  const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
+    ? studioSettings.aiRules.shortcuts
+    : [];
+  const customInstructions: string = String(studioSettings?.aiRules?.customInstructions || '').trim();
+
+  const userNotes = [
+    contextData?.additional_user_notes,
+    contextData?.additionalNotes,
+    contextData?.leadNotes,
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  const allNotesText = `${userNotes} ${JSON.stringify(contextData?.raw_form_fields || '')}`.toLowerCase();
+
+  // 1. Studio Shortcuts ("When I Say X -> Do Y")
+  const matchedShortcutCrew: Array<{ name: string; qty: number }> = [];
+  const matchedShortcutDelivs: string[] = [];
+  let matchedShortcutPrice: number | null = null;
+
+  for (const sc of studioShortcuts) {
+    if (!sc?.trigger) continue;
+    const trigLower = String(sc.trigger).toLowerCase().trim();
+    const words = trigLower.split(/\s+/).filter(Boolean);
+    const isMatch =
+      allNotesText.includes(trigLower) ||
+      (words.length > 0 && words.every((w: string) => allNotesText.includes(w))) ||
+      (trigLower.includes('deliverable') &&
+        (allNotesText.includes('ऑल डिलीवरेबल्स') || allNotesText.includes('all deliverable')));
+
+    if (isMatch) {
+      if (Array.isArray(sc.mappedCrew)) {
+        for (const c of sc.mappedCrew) {
+          const rName = resolveStudioCrewRole(typeof c === 'string' ? c : c?.name || '', studioCrewRoles);
+          const q = Number(c?.qty || 1);
+          if (q > 0) {
+            const idx = matchedShortcutCrew.findIndex((m) => m.name.toLowerCase() === rName.toLowerCase());
+            if (idx !== -1) matchedShortcutCrew[idx].qty = Math.max(matchedShortcutCrew[idx].qty, q);
+            else matchedShortcutCrew.push({ name: rName, qty: q });
+          }
+        }
+      }
+      if (Array.isArray(sc.mappedDeliverables)) {
+        matchedShortcutDelivs.push(...sc.mappedDeliverables);
+      }
+      if (sc.mappedPrice) matchedShortcutPrice = Number(sc.mappedPrice);
+    }
+  }
+
+  // Merge matched shortcut crew into every function card (NEVER skip just because requirements.length > 0!)
+  if (matchedShortcutCrew.length > 0 && Array.isArray(doc.functionsPage?.items)) {
+    doc.functionsPage.items.forEach((fn: any) => {
+      fn.requirements = mergeCrewList(fn.requirements, matchedShortcutCrew, studioCrewRoles);
+    });
+  }
+
+  // Merge deliverables
+  const hasAllDelivReq = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText);
+  if (!doc.deliverablesPage) doc.deliverablesPage = { selectedItems: [] };
+  if (hasAllDelivReq && studioDeliverables.length > 0) {
+    doc.deliverablesPage.selectedItems = [...studioDeliverables];
+  } else if (matchedShortcutDelivs.length > 0) {
+    doc.deliverablesPage.selectedItems = Array.from(
+      new Set([...(doc.deliverablesPage.selectedItems || []), ...matchedShortcutDelivs])
+    );
+  }
+  if (studioDeliverables.length > 0) {
+    doc.deliverablesPage.availableOptions = Array.from(
+      new Set([...studioDeliverables, ...(doc.deliverablesPage.availableOptions || []), ...(doc.deliverablesPage.selectedItems || [])])
+    );
+  }
+
+  // Apply shortcut price if base price isn't explicitly set by spoken numbers
+  if (matchedShortcutPrice && doc.pricingPage && (!doc.pricingPage.basePrice || doc.pricingPage.basePrice === 150000)) {
+    const hasExplicitBudgetInNotes = /(?:₹|rs\.?|inr|लख|लाख|lakh|lac|हजार|thousand|\d{2,}k)\s*/i.test(userNotes) || /\b\d{5,7}\b/.test(userNotes);
+    if (!hasExplicitBudgetInNotes) {
+      doc.pricingPage.basePrice = matchedShortcutPrice;
+    }
+  }
+
+  // 2. Parse Settings Custom Instructions & Spoken Voice-Note Rule Commands
+  const ruleEntries: Array<{ text: string; isCustomSetting: boolean }> = [];
+
+  if (customInstructions) {
+    customInstructions
+      .split(/[\n;।]+|(?<=\S)\.\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .forEach((s) => ruleEntries.push({ text: s, isCustomSetting: true }));
+  }
+
+  if (userNotes) {
+    userNotes
+      .split(/[\n;।]+|(?<=\S)\.\s+|(?=(?:सभी|हर|सारे|every|all)\s+(?:इवेंट|इवेंट्स|फंक्शन|फंक्शंस|functions?|events?|ceremon(?:y|ies)))/i)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .forEach((s) => ruleEntries.push({ text: s, isCustomSetting: false }));
+  }
+
+  const EVENT_HINT_RE = /(?:haldi|हल्दी|sangeet|संगीत|mehendi|मेहंदी|wedding|शादी|लग्न|reception|रिसेप्शन|engagement|सगाई|रिंग\s*सेरेमनी|roka|रोका|cocktail|pool\s*party|mayra|मायरा|ganesh\s*puja|गणेश\s*पूजा)/i;
+
+  const functions: any[] = Array.isArray(doc.functionsPage?.items) ? doc.functionsPage.items : [];
+
+  for (const entry of ruleEntries) {
+    const line = entry.text;
+    if (!line || line.length < 4) continue;
+
+    const hasGlobalScope =
+      /(?:सभी|हर|सारे|every|each|all)\s*(?:इवेंट|इवेंट्स|फंक्शन|फंक्शंस|functions?|events?|ceremon(?:y|ies)|शूट|days?)/i.test(line) ||
+      /\b(?:always|हमेशा|प्रत्येक)\b/i.test(line);
+    const hasEventHint = EVENT_HINT_RE.test(line);
+    const hasRemoveIntent = /(?:हटा|निकाल|remove|exclude|without|don'?t\s+(?:want|need|include|add)|मत\s*(?:रखो|लगाओ|ऐड))/i.test(line);
+    const hasAddAction = /(?:ऐड|जोड़|डाल|शामिल|रख|रखो|लगा|add|include|append|put|with)/i.test(line);
+
+    const crewFound = extractCrewRolesFromText(line, studioCrewRoles);
+
+    // A) Global Crew Rule (e.g. "सभी इवेंट में 1 Traditional Photographer ऐड करो" OR Settings rule "Add 1 Traditional Photographer")
+    if (crewFound.length > 0 && (hasGlobalScope || (entry.isCustomSetting && !hasEventHint))) {
+      if (hasRemoveIntent && !hasAddAction) {
+        functions.forEach((fn) => {
+          fn.requirements = removeCrewFromList(fn.requirements, crewFound, studioCrewRoles);
+        });
+      } else if (hasGlobalScope || hasAddAction || entry.isCustomSetting) {
+        functions.forEach((fn) => {
+          fn.requirements = mergeCrewList(fn.requirements, crewFound, studioCrewRoles);
+        });
+      }
+      continue;
+    }
+
+    // B) Per-Event Crew / Timing Rule (especially from Settings customInstructions or explicit voice add)
+    if (hasEventHint && functions.length > 0) {
+      const eventMatches = line.match(new RegExp(EVENT_HINT_RE.source, 'gi')) || [];
+      const targetResolvedNames = Array.from(
+        new Set(eventMatches.map((m) => resolveStudioFunctionName(m, studioEventNames, studioDefaultFunctions).toLowerCase()))
+      );
+
+      const matchingFuncs = functions.filter((fn) => {
+        const fnLower = String(fn.name || '').toLowerCase();
+        return (
+          targetResolvedNames.some((t) => fnLower === t || fnLower.includes(t) || t.includes(fnLower)) ||
+          eventMatches.some((em) => fnLower.includes(em.toLowerCase()))
+        );
+      });
+
+      if (matchingFuncs.length > 0) {
+        if (crewFound.length > 0 && (hasAddAction || entry.isCustomSetting)) {
+          matchingFuncs.forEach((fn) => {
+            if (hasRemoveIntent && !hasAddAction) {
+              fn.requirements = removeCrewFromList(fn.requirements, crewFound, studioCrewRoles);
+            } else {
+              fn.requirements = mergeCrewList(fn.requirements, crewFound, studioCrewRoles);
+            }
+          });
+        }
+        // Apply default ceremony time window from Settings customInstructions when card lacks timing
+        if (entry.isCustomSetting) {
+          const timeMatch = line.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm))\s*(?:से|to|till|-|–)\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm))/i);
+          if (timeMatch) {
+            matchingFuncs.forEach((fn) => {
+              if (!fn.startTime) fn.startTime = timeMatch[1].toUpperCase().trim();
+              if (!fn.endTime) fn.endTime = timeMatch[2].toUpperCase().trim();
+            });
+          }
+        }
+      }
+    }
+
+    // C) Custom Instructions Travel / Minimum Package Pricing Policies
+    if (entry.isCustomSetting && doc.pricingPage) {
+      if (/(?:डेस्टिनेशन|destination)/i.test(line) && /(?:ट्रैवल|travel)/i.test(line)) {
+        const isDestLead = /(?:डेस्टिनेशन|destination|udaipur|उदयपुर|jaipur|जयपुर|goa|गोवा|jodhpur|जोधपुर)/i.test(allNotesText);
+        const amtM = line.match(/₹?\s*([\d,]+)\s*(हजार|लाख|k|lakh)?/i);
+        if (isDestLead && amtM && !doc.pricingPage.travelCharges) {
+          let val = parseInt(amtM[1].replace(/,/g, ''), 10) || 0;
+          if (/लाख|lakh/i.test(amtM[2] || '')) val *= 100000;
+          else if (/हजार|k/i.test(amtM[2] || '')) val *= 1000;
+          if (val > 0) doc.pricingPage.travelCharges = val;
+        }
+      }
+      if (/(?:मिनिमम|minimum)/i.test(line) && /(?:पैकेज|package)/i.test(line)) {
+        const amtM = line.match(/₹?\s*([\d,]+)\s*(हजार|लाख|k|lakh)?/i);
+        if (amtM && doc.pricingPage.basePrice > 0) {
+          let minVal = parseInt(amtM[1].replace(/,/g, ''), 10) || 0;
+          if (/लाख|lakh/i.test(amtM[2] || '')) minVal *= 100000;
+          else if (/हजार|k/i.test(amtM[2] || '')) minVal *= 1000;
+          const explicitBudget = /(?:बजट|budget|अमाउंट|amount|₹)\s*[:=-]?\s*(\d[\d,]*)/i.test(userNotes);
+          if (minVal > 0 && !explicitBudget && doc.pricingPage.basePrice < minVal) {
+            doc.pricingPage.basePrice = minVal;
+          }
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -867,24 +1279,19 @@ export function fallbackHeuristicExtractor(contextData: any) {
   let leadName = '';
 
   const INVALID_NAME_WORDS = new Set([
-    'होगी', 'होगा', 'रहेगा', 'रहेगी', 'रखना', 'चाहिए', 'शादी', 'हल्दी', 'संगीत', 'फेरे', 'लग्न', 'विवाह',
-    'मेहंदी', 'सगाई', 'रिसेप्शन', 'कैंडिड', 'सिनेमैटोग्राफर', 'ड्रोन', 'ट्रेडिशनल', 'फोटोग्राफर', 'वीडियोग्राफर',
-    'शूट', 'कोटेशन', 'प्रपोजल', 'बजट', 'पैकेज', 'वेडिंग', 'प्री', 'अगले', 'दूसरे', 'उसी', 'नेक्स्ट', 'पहले',
-    'बाद', 'दिन', 'दोनों', 'सभी', 'एक', 'उसके', 'उसमें', 'नहीं',
-    'wedding', 'marriage', 'proposal', 'quotation', 'haldi', 'sangeet', 'mehendi', 'mehndi', 'reception',
-    'engagement', 'roka', 'cocktail', 'mayra', 'puja', 'pre', 'shoot', 'candid', 'cine', 'cinematographer',
-    'traditional', 'drone', 'photographer', 'videographer', 'budget', 'price', 'rate', 'cost', 'date',
-    'day', 'days', 'hours', 'next', 'same', 'both', 'all', 'each', 'every', 'after', 'before',
+    ...COUPLE_INVALID_WORDS,
     ...allConfiguredEventNames.map(s => s.toLowerCase())
   ]);
   const isValidCoupleCandidate = (cand: string): boolean => {
     if (!cand) return false;
-    const parts = cand.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i).map(p => p.trim()).filter(Boolean);
+    const stripped = cand.replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '').trim();
+    if (!stripped || stripped.length < 2) return false;
+    const parts = stripped.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i).map(p => p.trim()).filter(Boolean);
     if (parts.length === 0) return false;
     return !parts.some(p => {
       if (INVALID_NAME_WORDS.has(p)) return true;
       const words = p.split(/\s+/);
-      return words.some(w => INVALID_NAME_WORDS.has(w));
+      return words.every(w => INVALID_NAME_WORDS.has(w));
     });
   };
 
@@ -1109,59 +1516,8 @@ export function fallbackHeuristicExtractor(contextData: any) {
     return { startTime, endTime };
   };
 
-  const numPrefix = '(?:(\\d+|एक|दो|तीन|चार|पांच|पाँच|one|two|three|four|five)\\s*(?:x|\\*|-)?)';
-  const numSuffix = '(?:x|\\*|:|-)?\\s*(\\d+)';
-
   const extractCrewFromSnippet = (snippet: string): Array<{ name: string; qty: number }> => {
-    if (!snippet || !snippet.trim()) return [];
-    const crewDefs: Array<{ name: string; regex: RegExp }> = [
-      {
-        name: 'Semi Cinematic',
-        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सेमी[\\s-]*काइनेमैटिक|सेमी[\\s-]*सिनेमैटिक|semi[\\s-]*(?:cinematic|kinematic|cine))(?:\\s*${numSuffix})?`, 'gi')
-      },
-      {
-        name: 'Semi Standard',
-        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सेमी[\\s-]*स्टैंडर्ड|सेमी[\\s-]*ट्रेडिशनल|semi[\\s-]*(?:standard|traditional|trad))(?:\\s*${numSuffix})?`, 'gi')
-      },
-      {
-        name: 'Candid Photographer',
-        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:कैंडिड\\s*(?:फोटोग्राफर|फोटोग्राफी|फोटो)|कैंडिड|candid\\s*(?:photo(?:grapher|graphy|s)?)?|cp\\b)(?:\\s*${numSuffix})?`, 'gi')
-      },
-      {
-        name: 'Cinematographer',
-        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:सिनेमैटोग्राफर|सिनेमैटोग्राफी|सिनेमैटिक\\s*(?:वीडियो|विडियो)?|सिनेमा|cinematog(?:rapher|raphy)?|cinematic(?:\\s*video)?|\\bcine\\b|\\bcv\\b)(?:\\s*${numSuffix})?`, 'gi')
-      },
-      {
-        name: 'Traditional Photographer',
-        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:(?:ट्रेडिशनल|ट्रेड)\\s*(?:फोटोग्राफर|फोटोग्राफी|फोटो)|(?:traditional|trad)\\s*photo(?:grapher|graphy|s)?|\\btp\\b)(?:\\s*${numSuffix})?`, 'gi')
-      },
-      {
-        name: 'Traditional Videographer',
-        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:(?:ट्रेडिशनल|ट्रेड)\\s*(?:वीडियोग्राफर|वीडियोग्राफी|वीडियो)|(?:traditional|trad)\\s*video(?:grapher|graphy)?|\\btv\\b)(?:\\s*${numSuffix})?`, 'gi')
-      },
-      {
-        name: 'Drone Pilot',
-        regex: new RegExp(`(?:${numPrefix}\\s+)?(?:ड्रोन\\s*(?:पायलट|कैमरा)?|drone\\s*(?:pilot|coverage|shoot)?|aerial\\s*drone)(?:\\s*${numSuffix})?`, 'gi')
-      }
-    ];
-
-    const foundMap = new Map<string, number>();
-    let maskedSnippet = snippet;
-
-    for (const c of crewDefs) {
-      const m = c.regex.exec(maskedSnippet);
-      c.regex.lastIndex = 0;
-      if (m) {
-        const qtyToken = m[1] || m[2] || '1';
-        const qty = parseSmallCountWord(qtyToken);
-        const resolvedRole = resolveStudioCrewRole(c.name, studioCrewRoles);
-        foundMap.set(resolvedRole, Math.max(foundMap.get(resolvedRole) || 0, qty));
-        // Mask matched span so Semi Cinematic isn't double-matched as Cinematographer, or Traditional Photographer matched twice
-        maskedSnippet = maskedSnippet.replace(m[0], ' ');
-      }
-    }
-
-    return Array.from(foundMap.entries()).map(([name, qty]) => ({ name, qty }));
+    return extractCrewRolesFromText(snippet, studioCrewRoles);
   };
 
   let location = extractLocationFromSnippet(userNotes) || raw.venue || raw.location || raw.city || raw.destination || '';
@@ -1744,9 +2100,11 @@ export function fallbackHeuristicExtractor(contextData: any) {
     ];
   }
 
-  return {
+  const sanitizedFallbackCouple = sanitizeExtractedCoupleName(coupleName, contextData?.lead_info?.name || '');
+
+  const heuristicDoc = {
     cover: {
-      coupleName,
+      coupleName: sanitizedFallbackCouple,
       groomName,
       brideName,
       eventType,
@@ -1779,6 +2137,9 @@ export function fallbackHeuristicExtractor(contextData: any) {
     missingInformation: location ? [] : ['Wedding venue / location'],
     conflicts: []
   };
+
+  applyAiTrainingAndVoiceDirectives(heuristicDoc, contextData);
+  return heuristicDoc;
 }
 
 /**
@@ -1976,7 +2337,18 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     if (normDoc.shootDetails) normDoc.shootDetails.showExclusionsNote = true;
     if (normDoc.pricingPage) normDoc.pricingPage.showExclusionsNote = true;
 
-    const cName = normDoc.cover?.coupleName || (normDoc.cover?.groomName ? `${normDoc.cover.groomName} & ${normDoc.cover.brideName}` : 'Client & Partner');
+    // Enforce Settings AI Training (Shortcuts + Custom Instructions) & Spoken Rules!
+    if (!isDirectJson) {
+      applyAiTrainingAndVoiceDirectives(normDoc, contextData);
+    }
+
+    // Sanitize coupleName (prevent invalid pronouns/punctuation like "। उनकी")
+    const leadFallbackName = contextData?.lead_info?.name || '';
+    const candidateCouple = normDoc.cover?.coupleName || (normDoc.cover?.groomName ? `${normDoc.cover.groomName} & ${normDoc.cover.brideName}` : '');
+    const cName = sanitizeExtractedCoupleName(candidateCouple, leadFallbackName);
+    if (!normDoc.cover) normDoc.cover = {};
+    normDoc.cover.coupleName = cName;
+
     const baseP = normDoc.pricingPage?.basePrice || 0;
     const discP = normDoc.pricingPage?.discountAmount || 0;
     const travP = normDoc.pricingPage?.travelCharges || 0;
@@ -2003,6 +2375,11 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       cinematographers: maxVideoQty,
       totalInvestment: `₹${totAmount.toLocaleString('en-IN')}`
     };
+
+    const resolvedEv = (normDoc.cover?.eventType || baseSchema?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
+    const docTitle = `${cName} - ${resolvedEv}`;
+    normDoc.designName = docTitle;
+    normDoc.title = docTitle;
 
     return {
       document: normDoc,
@@ -2183,20 +2560,6 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     ]));
   }
 
-  // Assign matched shortcut crew only if explicit per-function crew was not already extracted
-  if (matchedShortcutCrew && matchedShortcutCrew.length > 0 && Array.isArray(doc.functionsPage?.items)) {
-    doc.functionsPage.items.forEach((fn: any) => {
-      if (!fn.requirements || fn.requirements.length === 0) {
-        fn.requirements = matchedShortcutCrew;
-      }
-    });
-  }
-
-  // Assign matched shortcut price
-  if (matchedShortcutPrice && doc.pricingPage && (!doc.pricingPage.basePrice || doc.pricingPage.basePrice === 150000)) {
-    doc.pricingPage.basePrice = matchedShortcutPrice;
-  }
-
   // 5. Special Value Additions Page
   if (!doc.specialValueAdditions) doc.specialValueAdditions = {};
   const rawSpecial = specialValueAdditions.selectedItems || [];
@@ -2225,8 +2588,16 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   if (pricingPage.additionalCharges !== undefined) doc.pricingPage.additionalCharges = Number(pricingPage.additionalCharges);
   doc.pricingPage.showExclusionsNote = true;
 
-  // Calculate Summary
-  const coupleName = doc.cover.coupleName || `${doc.cover.groomName || 'Client'} & ${doc.cover.brideName || 'Partner'}`;
+  // Enforce Settings AI Training (Shortcuts + Custom Instructions) & Spoken Rules!
+  if (!isDirectJson) {
+    applyAiTrainingAndVoiceDirectives(doc, contextData);
+  }
+
+  // Calculate Summary (sanitized coupleName so "। उनकी" can never appear)
+  const leadFallbackName = contextData?.lead_info?.name || '';
+  const rawCandidateCouple = doc.cover.coupleName || (doc.cover.groomName ? `${doc.cover.groomName} & ${doc.cover.brideName}` : '');
+  const coupleName = sanitizeExtractedCoupleName(rawCandidateCouple, leadFallbackName);
+  doc.cover.coupleName = coupleName;
   const baseAmt = doc.pricingPage.basePrice || 150000;
   const discAmtVal = doc.pricingPage.discountAmount || 0;
   const travAmt = doc.pricingPage.travelCharges || 0;

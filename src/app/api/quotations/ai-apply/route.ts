@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { normalizeQuotationData } from '@/lib/quotation-defaults';
+import { clearLeadSummaryCache } from '@/lib/quotation-summary-cache';
 
 /**
  * Authoritative Route to Apply AI Extracted Data to Current Quotation Draft
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     // 1. Fetch existing quotation document to preserve custom theme, design, fonts, branding
     const { data: existingQDoc } = await supabaseAdmin
       .from('quotation_documents')
-      .select('content_json')
+      .select('content_json, lead_id, lead_version, version')
       .eq('template_id', targetId)
       .maybeSingle();
 
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest) {
     const quotationTitle = `${coupleName} - ${eventType} Quotation`;
     normalizedDoc.designName = quotationTitle;
     normalizedDoc.title = quotationTitle;
+    if (existingQDoc?.lead_id && !normalizedDoc.lead_id) normalizedDoc.lead_id = existingQDoc.lead_id;
+    if (existingQDoc?.lead_version && !normalizedDoc.lead_version) normalizedDoc.lead_version = existingQDoc.lead_version;
 
     // 3. Update quotation_documents content_json in place
     const { error: docErr } = await supabaseAdmin
@@ -74,11 +77,13 @@ export async function POST(req: NextRequest) {
         .update({
           title: quotationTitle,
           client_name: coupleName,
-          total_amount: normalizedDoc.pricingPage?.basePrice || 0,
+          total_amount: normalizedDoc.pricingPage?.finalAmount || normalizedDoc.pricingPage?.basePrice || 0,
           updated_at: new Date().toISOString()
         })
         .or(`id.eq.${targetId},quotation_number.eq.${targetId}`);
     } catch (e) {}
+
+    clearLeadSummaryCache();
 
     return NextResponse.json({
       success: true,

@@ -15,6 +15,7 @@ import { QuotationTemplateSelector, StudioTemplateItem, getSynchronousCachedTemp
 import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument, syncShootPageInSequence } from '@/lib/ai-quotation-extractor';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { cleanVoiceTranscript } from '@/lib/speech-text-cleaner';
+import { safeLocalStorageSet, safeSessionStorageSet, pruneDocumentForListCache } from '@/lib/storage-safety';
 import {
   fetchWorkspaceQuotationSettings,
   fetchWorkspaceEventTypes,
@@ -154,20 +155,40 @@ export function AiQuotationModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    const wsId = effectiveLead?.workspace_id;
-    Promise.all([
-      fetchWorkspaceQuotationSettings(wsId).catch(() => null),
-      fetchWorkspaceEventTypes(wsId).catch(() => null),
-      fetchWorkspaceCrewRoles(wsId).catch(() => null)
-    ]).then(([settings, evTypes, roles]) => {
-      if (settings) setStudioSettings(settings);
-      if (Array.isArray(evTypes) && evTypes.length > 0) {
-        setStudioEventTypes(evTypes.filter(e => String(e?.category || '').toLowerCase() !== 'ritual'));
+    let active = true;
+    const syncStudioConfig = async () => {
+      try {
+        let wsId = effectiveLead?.workspace_id || (effectiveLead as any)?.raw_payload?.workspace_id;
+        if (!wsId) {
+          const { data: { session } } = await supabase.auth.getSession();
+          wsId = session?.user?.id || undefined;
+        }
+        const [settings, evTypes, roles] = await Promise.all([
+          fetchWorkspaceQuotationSettings(wsId).catch(() => null),
+          fetchWorkspaceEventTypes(wsId).catch(() => null),
+          fetchWorkspaceCrewRoles(wsId).catch(() => null)
+        ]);
+        if (!active) return;
+        if (settings) setStudioSettings(settings);
+        if (Array.isArray(evTypes) && evTypes.length > 0) {
+          setStudioEventTypes(evTypes.filter(e => String(e?.category || '').toLowerCase() !== 'ritual'));
+        }
+        if (Array.isArray(roles) && roles.length > 0) {
+          setStudioCrewRoles(roles);
+        }
+      } catch (err) {
+        console.warn('[AiQuotationModal] Error fetching studio settings:', err);
       }
-      if (Array.isArray(roles) && roles.length > 0) {
-        setStudioCrewRoles(roles);
-      }
-    }).catch(err => console.warn('[AiQuotationModal] Error fetching studio settings:', err));
+    };
+    syncStudioConfig();
+    const onSettingsUpdated = () => { syncStudioConfig(); };
+    window.addEventListener('workspace_quotation_settings_updated', onSettingsUpdated);
+    window.addEventListener('workspace_crew_roles_updated', onSettingsUpdated);
+    return () => {
+      active = false;
+      window.removeEventListener('workspace_quotation_settings_updated', onSettingsUpdated);
+      window.removeEventListener('workspace_crew_roles_updated', onSettingsUpdated);
+    };
   }, [isOpen, effectiveLead?.workspace_id]);
 
   // 🎙️ Voice MediaRecorder & Real-time Live Streaming State
@@ -180,6 +201,11 @@ export function AiQuotationModal({
   const recognitionRef = useRef<any>(null);
   const initialAppendTextRef = useRef<string>('');
   const liveCapturedTextRef = useRef<string>('');
+  const rawLiveTranscriptRef = useRef<string>('');
+  const committedRawTranscriptRef = useRef<string>('');
+  const currentSegmentRawRef = useRef<string>('');
+  const isRecordingRef = useRef<boolean>(false);
+  const polishTriggeredRef = useRef<boolean>(false);
   const audioChunksRef = useRef<Blob[]>([]);
   const isCancelledRef = useRef<boolean>(false);
   const timerRef = useRef<any>(null);
@@ -188,10 +214,10 @@ export function AiQuotationModal({
   const isPolishingInProgressRef = useRef<boolean>(false);
 
   /**
-   * ⚡ Real-Time Gemini 3.8 Flash AI Polish & Intent Analysis
-   * Analyzes what the user spoke, fixes speech errors/misheard words,
-   * detects couple names, ceremonies, crew, budget, and deliverables,
-   * and REPLACES the text in the textarea seamlessly.
+   * ⚡ Real-Time Gemini 3.8 Flash AI Polish & Intent Analysis (100% Lossless)
+   * Analyzes what the user spoke, fixes speech errors/misheard words without dropping ANY clause,
+   * detects couple names, ceremonies, crew, rules, budget, and deliverables,
+   * and updates the textarea seamlessly.
    */
   const polishTextWithGemini = async (textToPolish: string, replaceEntireField: boolean = false) => {
     const raw = (textToPolish || '').trim();
@@ -206,7 +232,7 @@ export function AiQuotationModal({
         body: JSON.stringify({
           rawText: raw,
           leadName: effectiveLead?.name,
-          workspaceId: effectiveLead?.workspace_id,
+          workspaceId: effectiveLead?.workspace_id || session?.user?.id || null,
           userId: session?.user?.id || null,
           studioSettings: studioSettings,
           studioEventTypes: studioEventTypes,
@@ -221,7 +247,7 @@ export function AiQuotationModal({
           // Client-side safeguard: if raw voice input had an amount/budget and cleanPolished missed it, keep it
           const rawAmt = raw.match(/(?:बजट|budget|प्राइस|price|अमाउंट|amount)?\s*(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?\s*(?:लाख|lakh|lac|हजार|thousand|k|cr|करोड़)|\d{4,7})/i);
           if (rawAmt && !cleanPolished.match(/(?:₹|rs\.?|inr|\d+\s*(?:lakh|lac|लाख|k|हजार|thousand))/i)) {
-            cleanPolished += ` (Budget: ${rawAmt[0].trim()})`;
+            cleanPolished += `. Budget: ${rawAmt[0].trim()}`;
           }
 
           if (!replaceEntireField && initialAppendTextRef.current) {
@@ -243,6 +269,7 @@ export function AiQuotationModal({
 
   useEffect(() => {
     return () => {
+      isRecordingRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (_) {}
@@ -254,14 +281,39 @@ export function AiQuotationModal({
     };
   }, []);
 
+  const finalizeVoicePolish = (spokenRaw: string) => {
+    const raw = (spokenRaw || '').trim();
+    if (!raw || polishTriggeredRef.current || isCancelledRef.current) return;
+    polishTriggeredRef.current = true;
+    const finalCleaned = cleanVoiceTranscript(raw, effectiveLead?.name);
+    liveCapturedTextRef.current = finalCleaned;
+    if (initialAppendTextRef.current) {
+      setAdditionalNotes(initialAppendTextRef.current + ' ' + finalCleaned);
+    } else {
+      setAdditionalNotes(finalCleaned);
+    }
+    setTranscribeSuccess(true);
+    setIsRecording(false);
+    setIsTranscribing(false);
+    setTimeout(() => setTranscribeSuccess(false), 4000);
+    if (!isPolishingInProgressRef.current) {
+      polishTextWithGemini(raw);
+    }
+  };
+
   const startVoiceRecording = async () => {
     setErrorMsg(null);
     setTranscribeSuccess(false);
     isCancelledRef.current = false;
+    isRecordingRef.current = true;
+    polishTriggeredRef.current = false;
     initialAppendTextRef.current = additionalNotes.trim();
     liveCapturedTextRef.current = '';
+    rawLiveTranscriptRef.current = '';
+    committedRawTranscriptRef.current = '';
+    currentSegmentRawRef.current = '';
 
-    // 1. WebSpeech API for REAL-TIME LIVE STREAMING + AUTO-REPLACEMENT FLOW!
+    // 1. WebSpeech API for REAL-TIME LIVE STREAMING + RESILIENT PAUSE-RECOVERY
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
@@ -271,13 +323,20 @@ export function AiQuotationModal({
         rec.lang = 'hi-IN'; // Recognizes Hindi, Marathi, Hinglish & English fluently!
 
         rec.onresult = (event: any) => {
-          let currentSessionText = '';
+          let currentSegText = '';
           for (let i = 0; i < event.results.length; i++) {
-            currentSessionText += event.results[i][0].transcript + ' ';
+            currentSegText += event.results[i][0].transcript + ' ';
           }
-          const trimmed = currentSessionText.trim();
-          // ⚡ Real-time cleanup in milliseconds (Hindi, Marathi, Hinglish, English)
-          const cleaned = cleanVoiceTranscript(trimmed, effectiveLead?.name);
+          currentSegmentRawRef.current = currentSegText.trim();
+          const fullRaw = [committedRawTranscriptRef.current, currentSegmentRawRef.current]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          rawLiveTranscriptRef.current = fullRaw;
+
+          // Real-time cleanup in milliseconds while keeping unmutated raw transcript intact!
+          const cleaned = cleanVoiceTranscript(fullRaw, effectiveLead?.name);
           liveCapturedTextRef.current = cleaned;
           if (initialAppendTextRef.current) {
             setAdditionalNotes(initialAppendTextRef.current + ' ' + cleaned);
@@ -287,7 +346,34 @@ export function AiQuotationModal({
         };
 
         rec.onerror = (e: any) => {
-          console.warn('[WebSpeech Warning]:', e.error);
+          if (e?.error !== 'no-speech' && e?.error !== 'aborted') {
+            console.warn('[WebSpeech Warning]:', e?.error);
+          }
+        };
+
+        rec.onend = () => {
+          // Commit current segment so breathing pauses NEVER wipe earlier speech!
+          if (currentSegmentRawRef.current) {
+            committedRawTranscriptRef.current = [
+              committedRawTranscriptRef.current,
+              currentSegmentRawRef.current
+            ]
+              .filter(Boolean)
+              .join(' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+            currentSegmentRawRef.current = '';
+            rawLiveTranscriptRef.current = committedRawTranscriptRef.current;
+          }
+          if (isRecordingRef.current && !isCancelledRef.current) {
+            setTimeout(() => {
+              if (isRecordingRef.current && !isCancelledRef.current && recognitionRef.current === rec) {
+                try {
+                  rec.start();
+                } catch (_) {}
+              }
+            }, 60);
+          }
         };
 
         rec.start();
@@ -299,6 +385,7 @@ export function AiQuotationModal({
 
     try {
       if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        isRecordingRef.current = false;
         alert('Microphone access is not supported in this browser.');
         return;
       }
@@ -331,32 +418,16 @@ export function AiQuotationModal({
           return;
         }
 
-        // ⚡ INSTANT 0ms FINISH: If WebSpeech already captured the speech in real-time, complete immediately!
-        // No server fetch delay, no "fetching...", no Arabic hallucinations, 100% accuracy!
-        if (liveCapturedTextRef.current && liveCapturedTextRef.current.trim().length > 0) {
-          const spoken = liveCapturedTextRef.current.trim();
-          console.log('[Live Voice Flow]: Speech captured directly via real-time WebSpeech stream in 0ms.');
-          const finalCleaned = cleanVoiceTranscript(spoken, effectiveLead?.name);
-          if (initialAppendTextRef.current) {
-            setAdditionalNotes(initialAppendTextRef.current + ' ' + finalCleaned);
-          } else {
-            setAdditionalNotes(finalCleaned);
-          }
-          setTranscribeSuccess(true);
-          setIsRecording(false);
-          setIsTranscribing(false);
-          setTimeout(() => setTranscribeSuccess(false), 4000);
-          audioChunksRef.current = [];
+        // Wait briefly so WebSpeech can deliver its final result token before reading raw transcript
+        await new Promise((r) => setTimeout(r, 150));
 
-          // ⚡ Trigger Gemini API intent analysis and replace with polished version
-          if (!isPolishingInProgressRef.current) {
-            polishTextWithGemini(spoken);
-          }
+        const capturedRaw = (rawLiveTranscriptRef.current || liveCapturedTextRef.current || '').trim();
+        if (capturedRaw.length > 0) {
+          console.log('[Live Voice Flow]: Speech captured directly via real-time WebSpeech stream in 0ms.');
+          audioChunksRef.current = [];
+          finalizeVoicePolish(capturedRaw);
           return;
         }
-
-        // Resilient delay for iOS WebKit to flush dataavailable event
-        await new Promise((r) => setTimeout(r, 150));
 
         const chunks = audioChunksRef.current;
         if (!chunks || chunks.length === 0) {
@@ -386,6 +457,7 @@ export function AiQuotationModal({
         setRecordSeconds((s) => s + 1);
       }, 1000);
     } catch (err: any) {
+      isRecordingRef.current = false;
       console.error('[Microphone Permission Error]:', err);
       alert('Microphone access was denied. Please allow microphone permissions in your browser.');
     }
@@ -393,6 +465,8 @@ export function AiQuotationModal({
 
   const cancelVoiceRecording = () => {
     isCancelledRef.current = true;
+    isRecordingRef.current = false;
+    polishTriggeredRef.current = false;
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (_) {}
       recognitionRef.current = null;
@@ -401,16 +475,20 @@ export function AiQuotationModal({
       try { mediaRecorderRef.current.stop(); } catch (_) {}
     }
     audioChunksRef.current = [];
+    committedRawTranscriptRef.current = '';
+    currentSegmentRawRef.current = '';
+    rawLiveTranscriptRef.current = '';
     setIsRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
     setAdditionalNotes(initialAppendTextRef.current || '');
   };
 
   const stopVoiceRecording = () => {
+    isRecordingRef.current = false;
     setIsRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    // Give WebSpeech 250ms to flush the last spoken words (e.g. final amount "दो लाख")
+    // Give WebSpeech 180ms to flush the final spoken words (e.g. concluding budget or instructions)
     setTimeout(() => {
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (_) {}
@@ -424,27 +502,18 @@ export function AiQuotationModal({
         }
       }
 
-      // Read most up-to-date captured text
-      const candidateText = (liveCapturedTextRef.current || '').trim();
+      const rawFull = (
+        rawLiveTranscriptRef.current ||
+        [committedRawTranscriptRef.current, currentSegmentRawRef.current].filter(Boolean).join(' ')
+      ).trim();
+      const cleanedCap = (liveCapturedTextRef.current || '').trim();
       const fallbackText = (additionalNotesRef.current || '').replace(initialAppendTextRef.current || '', '').trim();
-      const spoken = candidateText || fallbackText;
+      const spoken = rawFull || cleanedCap || fallbackText;
 
-      if (spoken && spoken.length > 0) {
-        const finalCleaned = cleanVoiceTranscript(spoken, effectiveLead?.name);
-        liveCapturedTextRef.current = finalCleaned;
-        if (initialAppendTextRef.current) {
-          setAdditionalNotes(initialAppendTextRef.current + ' ' + finalCleaned);
-        } else {
-          setAdditionalNotes(finalCleaned);
-        }
-        setTranscribeSuccess(true);
-        setIsTranscribing(false);
-        setTimeout(() => setTranscribeSuccess(false), 4000);
-
-        // ⚡ Trigger Gemini API intent analysis and replace with polished version
-        polishTextWithGemini(spoken);
+      if (spoken && spoken.length > 0 && !polishTriggeredRef.current) {
+        finalizeVoicePolish(spoken);
       }
-    }, 250);
+    }, 180);
   };
 
   const transcribeWithWhisper = async (audioBlob: Blob, detectedMime: string = '') => {
@@ -847,7 +916,7 @@ LEAD & CLIENT CONTEXT:
           },
           body: JSON.stringify({
             leadId: effectiveLead.id,
-            workspaceId: effectiveLead.workspace_id,
+            workspaceId: effectiveLead.workspace_id || session?.user?.id || null,
             userId: session?.user?.id || null,
             quotationId: quotationId || null,
             explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
@@ -1001,10 +1070,8 @@ LEAD & CLIENT CONTEXT:
       mergedDoc.designName = quotationTitle;
       mergedDoc.title = quotationTitle;
 
-      try {
-        sessionStorage.setItem(`current_quotation_doc_${quotationId}`, JSON.stringify(mergedDoc));
-        sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quotationId, document: mergedDoc }));
-      } catch (_) {}
+      safeSessionStorageSet(`current_quotation_doc_${quotationId}`, JSON.stringify(mergedDoc));
+      safeSessionStorageSet('current_active_quotation_doc', JSON.stringify({ id: quotationId, document: mergedDoc }));
 
       onApplied(mergedDoc, quotationId);
       onClose();
@@ -1039,32 +1106,45 @@ LEAD & CLIENT CONTEXT:
     const leadShort = String(lId || 'LEAD').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
     const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
 
-    // 1. Calculate next version dynamically from local caches
+    // 1. Calculate next version dynamically across ALL local + raw_payload sources
     let nextVersion = 1;
     if (lId && lId !== 'draft') {
       try {
+        let maxFoundVer = 0;
         const scRaw = sessionStorage.getItem(`lead_quotes_cache_${lId}`) || localStorage.getItem(`lead_quotes_cache_${lId}`);
         if (scRaw) {
           const parsed = JSON.parse(scRaw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            nextVersion = Math.max(...parsed.map((v: any) => Number(v.version) || 0)) + 1;
+          if (Array.isArray(parsed)) {
+            parsed.forEach((v: any) => {
+              const vn = Number(v.version || v.lead_version) || 0;
+              if (vn > maxFoundVer) maxFoundVer = vn;
+            });
           }
         }
-        if (nextVersion === 1) {
-          const stored = localStorage.getItem('sc_quotation_summary_map');
-          if (stored) {
-            const map = JSON.parse(stored);
-            if (map[lId]?.versions?.length > 0) {
-              nextVersion = Math.max(...map[lId].versions.map((v: any) => Number(v.version) || 0)) + 1;
-            } else if (map[lId]?.count > 0) {
-              nextVersion = (map[lId].count || 0) + 1;
-            }
+        const stored = localStorage.getItem('sc_quotation_summary_map');
+        if (stored) {
+          const map = JSON.parse(stored);
+          if (Array.isArray(map[lId]?.versions)) {
+            map[lId].versions.forEach((v: any) => {
+              const vn = Number(v.version || v.lead_version) || 0;
+              if (vn > maxFoundVer) maxFoundVer = vn;
+            });
+          } else if (map[lId]?.count > maxFoundVer) {
+            maxFoundVer = Number(map[lId].count) || 0;
           }
         }
+        const rawVers = (effectiveLead as any)?.raw_payload?.quotation_versions;
+        if (Array.isArray(rawVers)) {
+          rawVers.forEach((v: any) => {
+            const vn = Number(v.version || v.lead_version) || 0;
+            if (vn > maxFoundVer) maxFoundVer = vn;
+          });
+        }
+        nextVersion = maxFoundVer + 1;
       } catch (_) {}
     }
 
-    const targetQId = quotationId || `FW-Q-${leadShort}-V${nextVersion}-${randSuffix}`;
+    let targetQId = quotationId || `FW-Q-${leadShort}-V${nextVersion}-${randSuffix}`;
 
     const mergedDoc = normalizeQuotationData(docToApply, chosenBaseDoc);
     applyVisualTokens(mergedDoc, chosenBaseDoc);
@@ -1100,53 +1180,78 @@ LEAD & CLIENT CONTEXT:
     mergedDoc.designName = quotationTitle;
     mergedDoc.title = quotationTitle;
 
-    // 2. Prime sessionStorage & localStorage immediately (0ms hydration in builder)
-    try {
-      sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(mergedDoc));
-      sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: mergedDoc }));
-      localStorage.setItem(`wg_proposal_draft_${targetQId}`, JSON.stringify(mergedDoc));
-
-      if (lId && lId !== 'draft') {
-        const newVer = {
-          id: targetQId,
-          template_id: targetQId,
+    // Helper to safely update list/summary caches with pruned metadata (zero QuotaExceededError!)
+    const persistListCachesSafely = (canonicalQId: string, canonicalVer: number) => {
+      if (!lId || lId === 'draft') return;
+      try {
+        const newVer = pruneDocumentForListCache({
+          id: canonicalQId,
+          template_id: canonicalQId,
           lead_id: lId,
-          version: nextVersion,
-          version_label: `V${nextVersion}`,
+          version: canonicalVer,
+          lead_version: canonicalVer,
+          version_label: `V${canonicalVer}`,
           title: quotationTitle,
           couple_name: coupleName,
           is_final: false,
-          created_at: new Date().toISOString()
-        };
+          created_at: new Date().toISOString(),
+          content_json: mergedDoc,
+        });
 
         let existingCache: any[] = [];
         try {
           const scRaw = sessionStorage.getItem(`lead_quotes_cache_${lId}`) || localStorage.getItem(`lead_quotes_cache_${lId}`);
           if (scRaw) existingCache = JSON.parse(scRaw);
         } catch (_) {}
-        const updatedCache = [newVer, ...existingCache.filter((v: any) => v.id !== targetQId && v.template_id !== targetQId)];
-        sessionStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
-        localStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
+        const updatedCache = [
+          newVer,
+          ...existingCache
+            .filter((v: any) => v.id !== canonicalQId && v.template_id !== canonicalQId && v.id !== targetQId && v.template_id !== targetQId)
+            .map(pruneDocumentForListCache),
+        ];
+        safeSessionStorageSet(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
+        safeLocalStorageSet(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache), canonicalQId);
 
         const stored = localStorage.getItem('sc_quotation_summary_map');
         const map = stored ? JSON.parse(stored) : {};
         const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
+        const mergedVers = [
+          {
+            id: canonicalQId,
+            template_id: canonicalQId,
+            version: canonicalVer,
+            version_label: `V${canonicalVer}`,
+            title: quotationTitle,
+            couple_name: coupleName,
+            is_final: false,
+            created_at: newVer.created_at,
+          },
+          ...(prev.versions || []).filter(
+            (v: any) => v.template_id !== canonicalQId && v.id !== canonicalQId && v.template_id !== targetQId && v.id !== targetQId
+          ),
+        ];
         map[lId] = {
-          count: (prev.count || 0) + 1,
+          count: Math.max((prev.count || 0), mergedVers.length),
           hasFinal: prev.hasFinal || false,
           finalVersion: prev.finalVersion,
-          versions: [newVer, ...(prev.versions || []).filter((v: any) => v.template_id !== targetQId && v.id !== targetQId)]
+          versions: mergedVers,
         };
-        localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
-        window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));
+        safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(map), canonicalQId);
+      } catch (_) {}
+    };
 
-        broadcastQuotationSync(lead?.workspace_id, {
-          leadId: lId,
-          quotationId: targetQId,
-          action: 'create',
-          isFinal: false
-        });
-      }
+    // 2. Prime sessionStorage & list caches immediately (0ms hydration in builder)
+    safeSessionStorageSet(`current_quotation_doc_${targetQId}`, JSON.stringify(mergedDoc));
+    safeSessionStorageSet('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: mergedDoc }));
+    persistListCachesSafely(targetQId, nextVersion);
+    try {
+      window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId, version: nextVersion } }));
+      broadcastQuotationSync(lead?.workspace_id, {
+        leadId: lId,
+        quotationId: targetQId,
+        action: 'create',
+        isFinal: false
+      });
     } catch (_) {}
 
     // 3. Await cloud persistence first so database row is guaranteed created before routing to builder!
@@ -1173,13 +1278,24 @@ LEAD & CLIENT CONTEXT:
 
         if (createRes.ok) {
           const createJson = await createRes.json().catch(() => ({}));
+          if (createJson.quotationId && createJson.quotationId !== targetQId) {
+            targetQId = createJson.quotationId;
+            mergedDoc.id = targetQId;
+          }
+          if (typeof createJson.leadVersion === 'number' && createJson.leadVersion > 0) {
+            nextVersion = createJson.leadVersion;
+            mergedDoc.lead_version = nextVersion;
+          }
           if (createJson.document) {
             // Adopt canonical created document with exact template design tokens
             Object.assign(mergedDoc, createJson.document);
-            sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(mergedDoc));
-            sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: mergedDoc }));
-            localStorage.setItem(`wg_proposal_draft_${targetQId}`, JSON.stringify(mergedDoc));
+            mergedDoc.id = targetQId;
+            mergedDoc.lead_version = nextVersion;
           }
+          safeSessionStorageSet(`current_quotation_doc_${targetQId}`, JSON.stringify(mergedDoc));
+          safeSessionStorageSet('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: mergedDoc }));
+          persistListCachesSafely(targetQId, nextVersion);
+          window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId, version: nextVersion } }));
         }
       } else if (targetQId && targetQId !== 'draft') {
         await fetch('/api/quotations/ai-apply', {
@@ -1221,15 +1337,15 @@ LEAD & CLIENT CONTEXT:
   const handleQuickCreateAndOpen = async () => {
     setErrorMsg(null);
     try {
-      // If voice polish is currently completing, wait briefly for it
+      // If voice polish is currently completing, wait briefly for it (max ~1.2s)
       if (isPolishingInProgressRef.current) {
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 12; i++) {
           if (!isPolishingInProgressRef.current) break;
           await new Promise((r) => setTimeout(r, 100));
         }
       }
 
-      const rawNotes = additionalNotes.trim();
+      const rawNotes = (additionalNotesRef.current || additionalNotes || '').trim();
 
       if (!rawNotes) {
         setErrorMsg('कृपया पहले माइक से बोलें या कोटेशन की कुछ डिटेल्स लिखें (या Paste करें) ताकि AI कोटेशन बना सके!');
@@ -1277,7 +1393,7 @@ LEAD & CLIENT CONTEXT:
           },
           body: JSON.stringify({
             leadId: effectiveLead.id,
-            workspaceId: effectiveLead.workspace_id,
+            workspaceId: effectiveLead.workspace_id || session?.user?.id || null,
             userId: session?.user?.id || null,
             quotationId: quotationId || null,
             explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,

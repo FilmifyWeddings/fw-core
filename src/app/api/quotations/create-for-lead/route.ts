@@ -4,8 +4,15 @@ import { resolveUserDefaultQuotationTemplate, GLOBAL_SYSTEM_TEMPLATE_ID } from '
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { DEFAULT_AIRY_PROPOSAL, normalizeQuotationData } from '@/lib/quotation-defaults';
 import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
-import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument, syncShootPageInSequence } from '@/lib/ai-quotation-extractor';
+import {
+  fallbackHeuristicExtractor,
+  mapAiOutputToQuotationDocument,
+  syncShootPageInSequence,
+  sanitizeExtractedCoupleName,
+  isInvalidCoupleName
+} from '@/lib/ai-quotation-extractor';
 import { DEFAULT_EVENT_TYPES, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
+import { clearLeadSummaryCache } from '@/lib/quotation-summary-cache';
 
 /**
  * Authoritative Fast Backend Route for Lead Quotation Creation (<100ms Response)
@@ -40,7 +47,7 @@ export async function POST(req: NextRequest) {
         .maybeSingle(),
       supabaseAdmin
         .from('quotation_documents')
-        .select('version, lead_version, content_json')
+        .select('id, template_id, version, lead_version')
         .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortLower}%,template_id.ilike.%${leadShortUpper}%`)
     ]);
 
@@ -76,11 +83,22 @@ export async function POST(req: NextRequest) {
       console.warn('[create-for-lead] Error resolving template:', tmplErr);
     }
 
-    // Calculate max version
+    // Calculate max version accurately across quotation_documents and lead.raw_payload.quotation_versions (without heavy content_json)
     let maxVersion = 0;
     (existingDocs || []).forEach((d: any) => {
-      const v = d.lead_version || d.content_json?.lead_version || d.version || 0;
+      const explicitV = Number(d.lead_version) > 0 ? Number(d.lead_version) : 0;
+      const tidMatch = typeof d.template_id === 'string' ? d.template_id.match(/-V(\d+)-/i) : null;
+      const tidV = tidMatch ? parseInt(tidMatch[1], 10) : 0;
+      const fallbackV = Number(d.version) > 1 ? Number(d.version) : 0;
+      const v = explicitV || tidV || fallbackV;
       if (v > maxVersion) maxVersion = v;
+    });
+    const prevVersForMax = Array.isArray(effectiveLead.raw_payload?.quotation_versions)
+      ? effectiveLead.raw_payload.quotation_versions
+      : [];
+    prevVersForMax.forEach((rv: any) => {
+      const rvV = Number(rv?.version) || 0;
+      if (rvV > maxVersion) maxVersion = rvV;
     });
     const nextVersion = body.version ? Math.max(Number(body.version), maxVersion + 1) : (maxVersion + 1);
 
@@ -159,14 +177,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const docCoupleName = (
+    const rawDocCouple = (
       initialDoc?.cover?.coupleName || 
       (initialDoc as any)?.coupleName || 
       body.initialDocument?.cover?.coupleName || 
       (body.initialDocument as any)?.coupleName || 
       ''
     ).trim();
-    const hasValidDocCouple = docCoupleName && !isPlaceholderCoupleName(docCoupleName);
+    const hasValidDocCouple = Boolean(rawDocCouple && !isInvalidCoupleName(rawDocCouple));
 
     const rawGroomBride = [
       effectiveLead.raw_payload?.groom_name,
@@ -174,37 +192,44 @@ export async function POST(req: NextRequest) {
     ].filter(Boolean).map((s: string) => s.trim()).filter(Boolean).join(' & ');
 
     const rawLeadCouple = 
-      (hasValidDocCouple ? docCoupleName : null) ||
-      effectiveLead.raw_payload?.couple_name ||
-      effectiveLead.raw_payload?.couple_names ||
-      (effectiveLead as any).couple_names ||
-      (rawGroomBride && !isPlaceholderCoupleName(rawGroomBride) ? rawGroomBride : null) ||
-      ((effectiveLead as any).full_name && !['client', 'valued client', 'lead'].includes((effectiveLead as any).full_name.toLowerCase().trim()) ? (effectiveLead as any).full_name : '') ||
-      (effectiveLead.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : '') ||
-      clientNameInput ||
+      (hasValidDocCouple ? rawDocCouple : null) ||
+      (!isInvalidCoupleName(effectiveLead.raw_payload?.couple_name) ? effectiveLead.raw_payload.couple_name : null) ||
+      (!isInvalidCoupleName(effectiveLead.raw_payload?.couple_names) ? effectiveLead.raw_payload.couple_names : null) ||
+      (!isInvalidCoupleName((effectiveLead as any).couple_names) ? (effectiveLead as any).couple_names : null) ||
+      (rawGroomBride && !isInvalidCoupleName(rawGroomBride) ? rawGroomBride : null) ||
+      ((effectiveLead as any).full_name && !isInvalidCoupleName((effectiveLead as any).full_name) ? (effectiveLead as any).full_name : '') ||
+      (effectiveLead.name && !isInvalidCoupleName(effectiveLead.name) ? effectiveLead.name : '') ||
+      (!isInvalidCoupleName(clientNameInput) ? clientNameInput : '') ||
       'Valued Client';
 
-    const effectiveCoupleName = hasValidDocCouple ? docCoupleName : rawLeadCouple;
+    const effectiveCoupleName = sanitizeExtractedCoupleName(
+      hasValidDocCouple ? rawDocCouple : rawLeadCouple,
+      rawLeadCouple
+    );
     const leadName = effectiveCoupleName;
 
-    const groomName = (initialDoc?.cover?.groomName && !isPlaceholderCoupleName(initialDoc.cover.groomName))
-      ? initialDoc.cover.groomName.trim()
-      : (body.initialDocument?.cover?.groomName && !isPlaceholderCoupleName(body.initialDocument.cover.groomName))
-      ? body.initialDocument.cover.groomName.trim()
+    const groomName = (initialDoc?.cover?.groomName && !isInvalidCoupleName(initialDoc.cover.groomName))
+      ? sanitizeExtractedCoupleName(initialDoc.cover.groomName, effectiveCoupleName)
+      : (body.initialDocument?.cover?.groomName && !isInvalidCoupleName(body.initialDocument.cover.groomName))
+      ? sanitizeExtractedCoupleName(body.initialDocument.cover.groomName, effectiveCoupleName)
       : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[0].trim() : effectiveCoupleName);
 
-    const brideName = (initialDoc?.cover?.brideName && !isPlaceholderCoupleName(initialDoc.cover.brideName))
-      ? initialDoc.cover.brideName.trim()
-      : (body.initialDocument?.cover?.brideName && !isPlaceholderCoupleName(body.initialDocument.cover.brideName))
-      ? body.initialDocument.cover.brideName.trim()
+    const brideName = (initialDoc?.cover?.brideName && !isInvalidCoupleName(initialDoc.cover.brideName))
+      ? sanitizeExtractedCoupleName(initialDoc.cover.brideName, 'Partner')
+      : (body.initialDocument?.cover?.brideName && !isInvalidCoupleName(body.initialDocument.cover.brideName))
+      ? sanitizeExtractedCoupleName(body.initialDocument.cover.brideName, 'Partner')
       : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[1].trim() : 'Partner');
 
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const quotationId = body.quotationId || `FW-Q-${leadShortUpper}-V${nextVersion}-${randomSuffix}`;
+    const rawRequestedQId = typeof body.quotationId === 'string' && body.quotationId.trim() ? body.quotationId.trim() : '';
+    const quotationId = rawRequestedQId
+      ? (/-V\d+-/i.test(rawRequestedQId) ? rawRequestedQId.replace(/-V\d+-/i, `-V${nextVersion}-`) : rawRequestedQId)
+      : `FW-Q-${leadShortUpper}-V${nextVersion}-${randomSuffix}`;
 
     const rawInputDoc = body.initialDocument?.document || body.initialDocument || initialDoc?.document || initialDoc;
     const baseSourceDoc = rawInputDoc ? normalizeQuotationData(rawInputDoc, templateDoc) : templateDoc;
     const clonedDoc = JSON.parse(JSON.stringify(baseSourceDoc || DEFAULT_AIRY_PROPOSAL));
+    clonedDoc.id = quotationId;
     clonedDoc.lead_id = leadId;
     clonedDoc.lead_version = nextVersion;
 
@@ -308,22 +333,24 @@ export async function POST(req: NextRequest) {
     if (templateDoc.shootDetails?.kicker) clonedDoc.shootDetails.kicker = templateDoc.shootDetails.kicker;
     if (templateDoc.shootDetails?.heading) clonedDoc.shootDetails.heading = templateDoc.shootDetails.heading;
 
-    if (!clonedDoc.deliverablesPage) clonedDoc.deliverablesPage = {};
-    if (templateDoc.deliverablesPage?.kicker) clonedDoc.deliverablesPage.kicker = templateDoc.deliverablesPage.kicker;
-    if (templateDoc.deliverablesPage?.heading) clonedDoc.deliverablesPage.heading = templateDoc.deliverablesPage.heading;
-    if (templateDoc.deliverablesPage?.photo && !clonedDoc.deliverablesPage.photo) clonedDoc.deliverablesPage.photo = templateDoc.deliverablesPage.photo;
+    if (!clonedDoc.deliverablesPage) (clonedDoc as any).deliverablesPage = {};
+    if ((templateDoc as any).deliverablesPage?.kicker) clonedDoc.deliverablesPage.kicker = (templateDoc as any).deliverablesPage.kicker;
+    if ((templateDoc as any).deliverablesPage?.heading) clonedDoc.deliverablesPage.heading = (templateDoc as any).deliverablesPage.heading;
+    if ((templateDoc as any).deliverablesPage?.photo && !(clonedDoc.deliverablesPage as any).photo) (clonedDoc.deliverablesPage as any).photo = (templateDoc as any).deliverablesPage.photo;
 
-    if (!clonedDoc.thankYouPage) clonedDoc.thankYouPage = {};
-    if (templateDoc.thankYouPage?.brandName) clonedDoc.thankYouPage.brandName = templateDoc.thankYouPage.brandName;
-    if (templateDoc.thankYouPage?.photo && !clonedDoc.thankYouPage.photo) clonedDoc.thankYouPage.photo = templateDoc.thankYouPage.photo;
-    if (templateDoc.thankYouPage?.phone) clonedDoc.thankYouPage.phone = templateDoc.thankYouPage.phone;
-    if (templateDoc.thankYouPage?.contactNumber) clonedDoc.thankYouPage.contactNumber = templateDoc.thankYouPage.contactNumber;
-    if (templateDoc.thankYouPage?.email) clonedDoc.thankYouPage.email = templateDoc.thankYouPage.email;
-    if (templateDoc.thankYouPage?.website) clonedDoc.thankYouPage.website = templateDoc.thankYouPage.website;
-    if (templateDoc.thankYouPage?.signature) clonedDoc.thankYouPage.signature = templateDoc.thankYouPage.signature;
-    if (templateDoc.thankYouPage?.kicker) clonedDoc.thankYouPage.kicker = templateDoc.thankYouPage.kicker;
-    if (templateDoc.thankYouPage?.heading) clonedDoc.thankYouPage.heading = templateDoc.thankYouPage.heading;
-    if (templateDoc.thankYouPage?.subHeading) clonedDoc.thankYouPage.subHeading = templateDoc.thankYouPage.subHeading;
+    if (!clonedDoc.thankYouPage) (clonedDoc as any).thankYouPage = {};
+    const tThank: any = templateDoc.thankYouPage || {};
+    const cThank: any = clonedDoc.thankYouPage;
+    if (tThank.brandName) cThank.brandName = tThank.brandName;
+    if (tThank.photo && !cThank.photo) cThank.photo = tThank.photo;
+    if (tThank.phone) cThank.phone = tThank.phone;
+    if (tThank.contactNumber) cThank.contactNumber = tThank.contactNumber;
+    if (tThank.email) cThank.email = tThank.email;
+    if (tThank.website) cThank.website = tThank.website;
+    if (tThank.signature) cThank.signature = tThank.signature;
+    if (tThank.kicker) cThank.kicker = tThank.kicker;
+    if (tThank.heading) cThank.heading = tThank.heading;
+    if (tThank.subHeading) cThank.subHeading = tThank.subHeading;
 
     // Preserve layout framing & photo dimensions strictly from template
     ['cover', 'aboutUs', 'shootDetails', 'deliverablesPage', 'thankYouPage'].forEach((pageKey) => {
@@ -370,6 +397,8 @@ export async function POST(req: NextRequest) {
       }));
     }
 
+    const nowIso = new Date().toISOString();
+
     // 3. Fast Single Insert into quotation_documents
     const docPayload: any = {
       template_id: quotationId,
@@ -379,8 +408,8 @@ export async function POST(req: NextRequest) {
       lead_version: nextVersion,
       version: nextVersion,
       content_json: clonedDoc,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      created_at: nowIso,
+      updated_at: nowIso
     };
 
     const { error: docInsErr } = await supabaseAdmin
@@ -391,82 +420,82 @@ export async function POST(req: NextRequest) {
       console.error('Error inserting quotation document:', docInsErr);
     }
 
-    // Non-blocking background sync to legacy quotations table with "{coupleName} - {eventType} Quotation"
+    // 4. Synchronously persist quotations summary + leads.raw_payload.quotation_versions BEFORE returning
+    // so lead-summary & /api/leads/[id]/quotations see every new version immediately!
+    const prevVersions = Array.isArray(effectiveLead.raw_payload?.quotation_versions)
+      ? effectiveLead.raw_payload.quotation_versions
+      : [];
+    const newVerItem = {
+      id: quotationId,
+      template_id: quotationId,
+      version: nextVersion,
+      version_label: `V${nextVersion}`,
+      title: quotationTitle,
+      couple_name: leadName,
+      is_final: false,
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+    const updatedVersions = [newVerItem, ...prevVersions.filter((v: any) => v.template_id !== quotationId && v.id !== quotationId)];
+
+    await Promise.allSettled([
+      supabaseAdmin.from('quotations').upsert({
+        quotation_number: quotationId,
+        workspace_id: workspaceId,
+        user_id: userId,
+        client_id: leadId,
+        title: quotationTitle,
+        client_name: leadName,
+        couple_names: leadName,
+        total_amount: clonedDoc.pricingPage?.finalAmount || clonedDoc.pricingPage?.basePrice || 0,
+        status: 'draft',
+        is_final: false,
+        canvas_data: clonedDoc,
+        created_at: nowIso,
+        updated_at: nowIso
+      }, { onConflict: 'workspace_id,quotation_number' }),
+      supabaseAdmin.from('leads').update({
+        quotation_id: quotationId,
+        raw_payload: {
+          ...(effectiveLead.raw_payload || {}),
+          quotation_id: quotationId,
+          couple_name: leadName,
+          quotation_versions: updatedVersions
+        },
+        updated_at: nowIso
+      }).eq('id', leadId)
+    ]);
+
+    clearLeadSummaryCache();
+
+    // Non-blocking audit log into live_logs
     (async () => {
       try {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceTemplateId);
-        await supabaseAdmin.from('quotations').insert({
-          quotation_number: quotationId,
-          workspace_id: workspaceId,
-          user_id: userId,
-          client_id: leadId,
-          template_id: isUuid ? sourceTemplateId : null,
-          title: quotationTitle,
-          client_name: leadName,
-          couple_names: leadName,
-          total_amount: clonedDoc.pricingPage?.basePrice || 0,
-          status: 'draft',
-          is_final: false,
-          content_json: clonedDoc,
-          canvas_data: clonedDoc,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-
-        // Also update lead's quotation_id and raw_payload so lead-summary reflects this immediately
-        const prevVersions = Array.isArray(effectiveLead.raw_payload?.quotation_versions)
-          ? effectiveLead.raw_payload.quotation_versions
-          : [];
-        const newVerItem = {
-          id: quotationId,
-          template_id: quotationId,
-          version: nextVersion,
-          version_label: `V${nextVersion}`,
-          title: quotationTitle,
-          is_final: false,
-          created_at: new Date().toISOString()
-        };
-        const updatedVersions = [newVerItem, ...prevVersions.filter((v: any) => v.template_id !== quotationId)];
-
-        await supabaseAdmin.from('leads').update({
-          quotation_id: quotationId,
-          raw_payload: {
-            ...(effectiveLead.raw_payload || {}),
-            quotation_id: quotationId,
-            couple_name: leadName,
-            quotation_versions: updatedVersions
-          },
-          updated_at: new Date().toISOString()
-        }).eq('id', leadId);
-
-        // Insert audit log into live_logs
-        try {
-          const isValidUUID = (val?: string | null) => val && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
-          let logWsId = workspaceId;
-          if (!isValidUUID(logWsId)) {
-            const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
-            logWsId = prof?.id;
-          }
-          if (isValidUUID(logWsId)) {
-            const actor = body.actor_name || profile?.workspace_name || 'Studio Admin';
-            const qTitle = clonedDoc.designName || `${leadName} - Quotation V${nextVersion}`;
-            await supabaseAdmin.from('live_logs').insert({
-              workspace_id: logWsId,
-              lead_id: leadId,
-              event_type: 'lead_activity',
-              message: `${actor} created Quotation V${nextVersion} ("${qTitle}")`,
-              metadata: {
-                action_type: 'quotation_created',
-                actor_name: actor,
-                quotation_id: quotationId,
-                version: nextVersion,
-                title: qTitle,
-                logged_at: new Date().toISOString()
-              }
-            });
-          }
-        } catch (_) {}
-      } catch (e) {}
+        const isValidUUID = (val?: string | null) => val && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+        let logWsId = workspaceId;
+        if (!isValidUUID(logWsId)) {
+          const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
+          logWsId = prof?.id;
+        }
+        if (isValidUUID(logWsId)) {
+          const actor = body.actor_name || profile?.workspace_name || 'Studio Admin';
+          const qTitle = clonedDoc.designName || `${leadName} - Quotation V${nextVersion}`;
+          await supabaseAdmin.from('live_logs').insert({
+            workspace_id: logWsId,
+            lead_id: leadId,
+            event_type: 'lead_activity',
+            message: `${actor} created Quotation V${nextVersion} ("${qTitle}")`,
+            metadata: {
+              action_type: 'quotation_created',
+              actor_name: actor,
+              quotation_id: quotationId,
+              version: nextVersion,
+              title: qTitle,
+              logged_at: nowIso
+            }
+          });
+        }
+      } catch (_) {}
     })();
 
     return NextResponse.json({
@@ -474,6 +503,7 @@ export async function POST(req: NextRequest) {
       quotationId,
       templateId: quotationId,
       version: nextVersion,
+      leadVersion: nextVersion,
       document: clonedDoc
     });
   } catch (error: any) {

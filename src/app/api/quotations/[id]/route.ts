@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { clearLeadSummaryCache } from '@/lib/quotation-summary-cache';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -159,19 +160,17 @@ export async function PUT(
       try {
         const { data: currentDoc } = await supabaseAdmin
           .from('quotation_documents')
-          .select('id, lead_id, client_id, is_final, content_json')
+          .select('id, lead_id, lead_version')
           .eq('template_id', id)
           .maybeSingle();
 
         const isFinal = Boolean(
           content_json?.is_final === true ||
           status === 'accepted' ||
-          status === 'final' ||
-          currentDoc?.is_final === true ||
-          currentDoc?.content_json?.is_final === true
+          status === 'final'
         );
 
-        const targetLeadOrClientId = currentDoc?.lead_id || currentDoc?.client_id || content_json?.meta?.lead_id || content_json?.lead_id;
+        const targetLeadOrClientId = currentDoc?.lead_id || content_json?.meta?.lead_id || content_json?.lead_id;
 
         let isLeadFinal = isFinal;
         if (!isLeadFinal && targetLeadOrClientId) {
@@ -254,6 +253,8 @@ export async function PUT(
     if (saveErr) {
       console.warn('[API PUT /api/quotations/[id]] DB Upsert Warning:', saveErr.message);
     }
+
+    clearLeadSummaryCache();
 
     return NextResponse.json({
       success: true,
