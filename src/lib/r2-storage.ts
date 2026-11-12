@@ -109,29 +109,48 @@ export async function deleteFromR2(keyOrUrl: string): Promise<boolean> {
 }
 
 /**
- * Normalizes any relative path, key, or proxy URL to the full Cloudflare R2 streaming URL.
+ * Normalizes any relative path, key, or proxy URL to the proper streaming URL.
+ * Supports both new Backblaze B2 (/api/media/moodboard/...) and legacy Cloudflare R2 (/api/media/r2/...).
  */
 export function getMediaUrl(urlOrPath?: string | null): string {
   if (!urlOrPath) return '';
-  if (urlOrPath.startsWith('data:')) return urlOrPath;
+  if (urlOrPath.startsWith('data:') || urlOrPath.startsWith('blob:')) return urlOrPath;
+
+  const trimmed = urlOrPath.trim();
+
+  // Preserve Backblaze B2 Moodboard proxy routes (and normalize absolute B2/studiocore moodboard URLs)
+  if (trimmed.includes('/api/media/moodboard/')) {
+    const idx = trimmed.indexOf('/api/media/moodboard/');
+    return trimmed.slice(idx);
+  }
+
+  if (trimmed.includes('backblazeb2.com/') && trimmed.includes('moodboards/')) {
+    const idx = trimmed.indexOf('moodboards/');
+    if (idx >= 0) {
+      return `/api/media/moodboard/${trimmed.slice(idx)}`;
+    }
+  }
 
   // Convert old broken pub-*.r2.dev URLs to working /api/media/r2/ streaming route
-  if (urlOrPath.includes('.r2.dev/') || urlOrPath.includes('r2.cloudflarestorage.com/')) {
-    const parts = urlOrPath.split('.dev/');
-    const pathPart = parts[1] || urlOrPath.split('.com/')[1] || '';
+  if (trimmed.includes('.r2.dev/') || trimmed.includes('r2.cloudflarestorage.com/')) {
+    const parts = trimmed.split('.dev/');
+    const pathPart = parts[1] || trimmed.split('.com/')[1] || '';
     if (pathPart) {
       return `/api/media/r2/${pathPart.replace(/^\/+/, '')}`;
     }
   }
 
   // External URLs (like Pinterest, Instagram, etc.)
-  if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://')) {
-    if (!urlOrPath.includes('studiocore.in') && !urlOrPath.includes('localhost') && !urlOrPath.includes('.r2.')) {
-      return urlOrPath;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    if (!trimmed.includes('studiocore.in') && !trimmed.includes('localhost') && !trimmed.includes('.r2.')) {
+      return trimmed;
     }
   }
 
-  const cleanPath = urlOrPath.replace(/^\/+/, '');
+  const cleanPath = trimmed.replace(/^\/+/, '');
+  if (cleanPath.startsWith('api/media/moodboard/')) {
+    return `/${cleanPath}`;
+  }
   if (cleanPath.startsWith('api/media/r2/')) {
     return `/${cleanPath}`;
   }

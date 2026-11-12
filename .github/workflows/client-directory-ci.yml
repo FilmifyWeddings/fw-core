@@ -1,0 +1,149 @@
+name: Client Directory & Moodboard Isolated CI
+
+on:
+  push:
+    branches:
+      - feature/client-directory
+  pull_request:
+    branches:
+      - feature/client-directory
+      - main
+    paths:
+      - 'src/app/workspace/clients/**'
+      - 'src/app/api/workspace/clients/**'
+      - 'src/app/api/moodboard/**'
+      - 'src/app/api/upload/moodboard/**'
+      - 'src/app/api/media/moodboard/**'
+      - 'src/components/moodboard/**'
+      - 'src/lib/storage/moodboardB2Client.ts'
+      - 'src/lib/r2-storage.ts'
+      - 'src/lib/compressor.ts'
+      - 'src/components/modals/ProjectManagerAssignModal.tsx'
+      - '.github/workflows/client-directory-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: client-directory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  module-isolation-guard:
+    name: Enforce Client Directory Module Isolation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify no protected external modules were modified
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_REF="${{ github.base_ref || 'main' }}"
+          git fetch origin "$BASE_REF" --depth=50 2>/dev/null || true
+
+          if git rev-parse --verify "origin/$BASE_REF" >/dev/null 2>&1; then
+            MERGE_BASE=$(git merge-base HEAD "origin/$BASE_REF" || echo "")
+          else
+            MERGE_BASE=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$MERGE_BASE" ]; then
+            echo "No comparison base found; skipping diff guard."
+            exit 0
+          fi
+
+          CHANGED_FILES=$(git diff --name-only "$MERGE_BASE"...HEAD || git diff --name-only HEAD~1 HEAD || true)
+          echo "Changed files in this Client Directory scope:"
+          echo "$CHANGED_FILES"
+
+          PROTECTED_PATTERNS=(
+            '^src/app/team-manager/'
+            '^src/app/api/leads/'
+            '^src/app/api/upload/r2/'
+            '^src/app/api/media/r2/'
+            '^src/app/workspace/gallery/'
+            '^src/app/workspace/finance/'
+            '^src/app/workspace/post-production/'
+            '^baileys-worker/'
+            '^\.github/workflows/deploy\.yml$'
+          )
+
+          ALLOWED_PATTERNS=(
+            '^src/app/workspace/clients/'
+            '^src/app/api/workspace/clients/'
+            '^src/app/api/moodboard/'
+            '^src/app/api/upload/moodboard/'
+            '^src/app/api/media/moodboard/'
+            '^src/components/moodboard/'
+            '^src/lib/storage/moodboardB2Client\.ts$'
+            '^src/lib/r2-storage\.ts$'
+            '^src/lib/compressor\.ts$'
+            '^src/components/modals/ProjectManagerAssignModal\.tsx$'
+            '^\.github/workflows/client-directory-ci\.yml$'
+          )
+
+          VIOLATIONS=()
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+
+            for pat in "${PROTECTED_PATTERNS[@]}"; do
+              if [[ "$file" =~ $pat ]]; then
+                VIOLATIONS+=("PROTECTED: $file")
+              fi
+            done
+
+            allowed=false
+            for apat in "${ALLOWED_PATTERNS[@]}"; do
+              if [[ "$file" =~ $apat ]]; then
+                allowed=true
+                break
+              fi
+            done
+            if [ "$allowed" = false ]; then
+              VIOLATIONS+=("OUTSIDE_CLIENT_DIRECTORY_SCOPE: $file")
+            fi
+          done <<< "$CHANGED_FILES"
+
+          if [ ${#VIOLATIONS[@]} -gt 0 ]; then
+            echo "::error::Client Directory branch isolation check failed!"
+            printf '%s\n' "${VIOLATIONS[@]}"
+            exit 1
+          fi
+
+          echo "All modified files are strictly isolated to Client Directory, Moodboard, and B2 storage helpers."
+
+  build-and-typecheck:
+    name: TypeScript & Next.js Build Verification
+    needs: module-isolation-guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: TypeScript check (Client Directory & Moodboard files)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+        run: |
+          set -euo pipefail
+          npx next typegen 2>/dev/null || true
+          TSC_OUT=$(npx tsc --noEmit --pretty false 2>&1 || true)
+          echo "$TSC_OUT" | grep -E "src/app/workspace/clients|src/app/api/workspace/clients|src/app/api/moodboard|src/app/api/upload/moodboard|src/app/api/media/moodboard|src/components/moodboard|src/components/modals/ProjectManagerAssignModal|src/lib/storage/moodboardB2Client|src/lib/r2-storage|src/lib/compressor" && exit 1 || true
+          echo "Zero TypeScript errors in Client Directory & Moodboard modules."
+
+      - name: Production Next.js Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+        run: npm run build

@@ -61,6 +61,7 @@ export interface ClientRowProps {
   hasFinanceAccess?: boolean;
   isReadOnly?: boolean;
   onSelectClient?: (client: WorkspaceClient) => void;
+  onPrefetchClient?: (client: WorkspaceClient) => void;
   onOpenQuickAssign?: (client: WorkspaceClient) => void;
   onToggleStatus?: (client: WorkspaceClient) => void;
   onStatusChange?: (client: WorkspaceClient, newStatus: 'active' | 'completed') => void;
@@ -73,6 +74,7 @@ export const ClientRow: React.FC<ClientRowProps> = ({
   hasFinanceAccess = true,
   isReadOnly = false,
   onSelectClient,
+  onPrefetchClient,
   onOpenQuickAssign,
   onToggleStatus,
   onStatusChange,
@@ -88,7 +90,16 @@ export const ClientRow: React.FC<ClientRowProps> = ({
 
   return (
     <div
-      onClick={() => onSelectClient?.(client)}
+      onMouseEnter={() => onPrefetchClient?.(client)}
+      onTouchStart={() => onPrefetchClient?.(client)}
+      onClick={() => {
+        if (typeof window !== 'undefined') {
+          try {
+            sessionStorage.setItem(`sc_client_snapshot_${client.id}`, JSON.stringify(client));
+          } catch (_) {}
+        }
+        onSelectClient?.(client);
+      }}
       className="p-4 rounded-2xl bg-white border border-[#EAE5DA] hover:border-amber-400 hover:shadow-md transition-all grid grid-cols-1 lg:grid-cols-12 gap-4 items-center group cursor-pointer"
     >
       {/* Col 1-5: Client Name & Contact */}

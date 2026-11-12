@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -16,32 +17,37 @@ import {
 import { supabase } from '@/lib/supabase';
 import { getMediaUrl } from '@/lib/r2-storage';
 import AiMicButton from '@/components/AiMicButton';
-import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import { fetchWorkspaceEventTypes, DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
-import { ClientFinanceCard } from '@/app/workspace/finance/components/ClientFinanceCard';
-import PricingEditModal from '@/app/workspace/finance/components/PricingEditModal';
 import { extractFinanceMembers, isPlaceholderName } from '@/app/workspace/finance/components/HandledByMultiSelect';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
-import PostProductionCard, { PostProductionProjectData } from '@/app/workspace/post-production/components/PostProductionCard';
-import DeliverableCommentDrawer from '@/app/workspace/post-production/components/DeliverableCommentDrawer';
-import { PostProductionDeliverable } from '@/app/workspace/post-production/components/DeliverableCategorySection';
-import ClientHistoryDrawer from '../components/ClientHistoryDrawer';
+import type { PostProductionProjectData } from '@/app/workspace/post-production/components/PostProductionCard';
+import type { PostProductionDeliverable } from '@/app/workspace/post-production/components/DeliverableCategorySection';
 import { logClientAudit } from '@/lib/client-audit';
 import { 
-  parseClientExtended, serializeClientExtended, type ClientEventItem, type ClientExtendedData, type StudioCommentItem 
+  parseClientExtended, serializeClientExtended, type ClientExtendedData, type StudioCommentItem 
 } from '@/components/clients/client-insider-modal';
-import { fetchWorkspaceTeamMembers, isInHouseMember, getDedupedInHouseMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import { fetchWorkspaceTeamMembers, isInHouseMember, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
-import { extractFinancialsFromQuotation, normalizeToIsoDate, normalizeSubEventTitle } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, normalizeSubEventTitle } from '@/lib/quotation-finance-sync';
 import type { 
   WorkspaceClient, PostProductionProject, DeliverableItem, ClientFinanceRecord, DeliverableStatus, DeliverableComment, FinanceMilestoneItem
 } from '@/types';
-import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import ClientStatusDropdown from '@/app/workspace/clients/components/ClientStatusDropdown';
 import { compressMoodboardImage } from '@/lib/compressor';
 import { parseQuotationDeliverables, isDemoDeliverables, persistDeliverablesDecoupled } from '@/lib/services/postProductionSyncService';
+
+const InvoiceModalDialog = dynamic(
+  () => import('@/components/finance/invoice-modal-dialog').then((m) => m.InvoiceModalDialog),
+  { ssr: false }
+);
+const ClientFinanceCard = dynamic(() => import('@/app/workspace/finance/components/ClientFinanceCard'), { ssr: false });
+const PricingEditModal = dynamic(() => import('@/app/workspace/finance/components/PricingEditModal'), { ssr: false });
+const PostProductionCard = dynamic(() => import('@/app/workspace/post-production/components/PostProductionCard'), { ssr: false });
+const DeliverableCommentDrawer = dynamic(() => import('@/app/workspace/post-production/components/DeliverableCommentDrawer'), { ssr: false });
+const ClientHistoryDrawer = dynamic(() => import('../components/ClientHistoryDrawer'), { ssr: false });
+const ClientBookingEventsSection = dynamic(() => import('../components/ClientBookingEventsSection'), { ssr: false });
 
 // Helper to compute initials from client name
 function getClientInitials(name: string): string {
@@ -50,6 +56,95 @@ function getClientInitials(name: string): string {
   const parts = clean.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function hydrateClientFromBrowserCache(idOrCode: string, preferredWsId?: string | null): WorkspaceClient | null {
+  if (typeof window === 'undefined' || !idOrCode) return null;
+  const target = idOrCode.trim();
+  const targetLower = target.toLowerCase();
+
+  try {
+    const snapRaw = sessionStorage.getItem(`sc_client_snapshot_${target}`);
+    if (snapRaw) {
+      const snap = JSON.parse(snapRaw);
+      if (snap && (snap.id === target || snap.id)) {
+        return snap;
+      }
+    }
+  } catch (_) {}
+
+  const candidateKeys: string[] = [];
+  if (preferredWsId) candidateKeys.push(`sc_cached_clients_${preferredWsId}`);
+  candidateKeys.push('sc_cached_clients');
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('sc_cached_clients_') && !candidateKeys.includes(k)) {
+        candidateKeys.push(k);
+      }
+    }
+  } catch (_) {}
+
+  for (const key of candidateKeys) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed: WorkspaceClient[] = JSON.parse(raw);
+      if (!Array.isArray(parsed)) continue;
+      const match = parsed.find((c) => {
+        if (!c) return false;
+        if (c.id === target) return true;
+        try {
+          return parseClientExtended(c).client_code.toLowerCase() === targetLower;
+        } catch {
+          return false;
+        }
+      });
+      if (match) return match;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function syncClientBrowserCache(updated: WorkspaceClient, preferredWsId?: string | null): void {
+  if (typeof window === 'undefined' || !updated?.id) return;
+  try {
+    sessionStorage.setItem(`sc_client_snapshot_${updated.id}`, JSON.stringify(updated));
+    const code = parseClientExtended(updated).client_code;
+    if (code) {
+      sessionStorage.setItem(`sc_client_snapshot_${code}`, JSON.stringify(updated));
+    }
+  } catch (_) {}
+
+  const keys = new Set<string>(['sc_cached_clients']);
+  const ws = preferredWsId || updated.workspace_id || (updated as any).user_id;
+  if (ws) keys.add(`sc_cached_clients_${ws}`);
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('sc_cached_clients_')) keys.add(k);
+    }
+  } catch (_) {}
+
+  for (const key of keys) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) continue;
+      let changed = false;
+      const next = parsed.map((c: any) => {
+        if (c?.id === updated.id) {
+          changed = true;
+          return { ...c, ...updated };
+        }
+        return c;
+      });
+      if (changed) {
+        localStorage.setItem(key, JSON.stringify(next));
+      }
+    } catch (_) {}
+  }
 }
 
 interface QuotationVersionItem {
@@ -179,16 +274,11 @@ export default function ClientWorkspaceDetailPage() {
   const [settingFinalId, setSettingFinalId] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState<string | null>(null);
+  const quotesCheckedClientIdRef = useRef<string | null>(null);
 
-  // Tab 3: Events & Bookings
-  const [showAddEventModal, setShowAddEventModal] = useState(false);
-  const [newEventName, setNewEventName] = useState('');
-  const [newEventDate, setNewEventDate] = useState('');
-  const [newEventTimeStart, setNewEventTimeStart] = useState('');
-  const [newEventTimeEnd, setNewEventTimeEnd] = useState('');
-  const [newEventVenue, setNewEventVenue] = useState('');
-  const [newEventCity, setNewEventCity] = useState('');
-  const [newEventCrew, setNewEventCrew] = useState('');
+  // Tab 3: Events & Bookings (Synced with fw_projects / fw_sub_events / fw_assignments)
+  const [fwProject, setFwProject] = useState<any>(null);
+  const [crewRoles, setCrewRoles] = useState<any[]>([]);
 
   // Tab 4: Post-Production
   const [postProductionProject, setPostProductionProject] = useState<PostProductionProject | null>(null);
@@ -597,6 +687,16 @@ export default function ClientWorkspaceDetailPage() {
 
       const serializedNotes = serializeClientExtended(updatedExtended);
 
+      const nextClientSnapshot: WorkspaceClient = {
+        ...client,
+        project_manager_id: newPmId || null,
+        project_manager_name: pmN || null,
+        project_manager_email: pmE || null,
+        project_manager_phone: pmP || null,
+        handled_by: pmN || null,
+        notes: serializedNotes
+      } as WorkspaceClient;
+
       // Keep local client state in sync
       setClient(prev => prev ? {
         ...prev,
@@ -608,30 +708,10 @@ export default function ClientWorkspaceDetailPage() {
         notes: serializedNotes
       } : prev);
 
-      // 1. Immediately update localStorage cached clients so outside directory card updates in 0 ms!
+      // 1. Immediately update workspace-scoped caches + sessionStorage so directory & reload update in 0 ms!
       if (typeof window !== 'undefined') {
         try {
-          const cached = localStorage.getItem('sc_cached_clients');
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed)) {
-              const nextClients = parsed.map(c => {
-                if (c.id === client.id) {
-                  return {
-                    ...c,
-                    project_manager_id: newPmId || null,
-                    project_manager_name: pmN || null,
-                    project_manager_email: pmE || null,
-                    project_manager_phone: pmP || null,
-                    handled_by: pmN || null,
-                    notes: serializedNotes
-                  };
-                }
-                return c;
-              });
-              localStorage.setItem('sc_cached_clients', JSON.stringify(nextClients));
-            }
-          }
+          syncClientBrowserCache(nextClientSnapshot, activeWorkspace?.workspaceId || currentWsId);
           localStorage.setItem('sc_booking_sync_event', Date.now().toString());
         } catch (_) {}
 
@@ -904,25 +984,6 @@ export default function ClientWorkspaceDetailPage() {
       if (pContacts.some((c: any) => c?.name?.trim() || c?.phone?.trim())) score += 5;
       return Math.min(100, score);
     }
-  };
-
-  // Helper date parts extractor for Team Manager / Bookings card layout
-  const parseEventDateParts = (dateStr?: string) => {
-    if (!dateStr || dateStr.toLowerCase().includes('tbd') || dateStr.toLowerCase().includes('not fix')) {
-      return { weekday: 'DATE', day: 'NOT', monthYear: 'FIX', valid: false };
-    }
-    let d = new Date(dateStr);
-    if (isNaN(d.getTime())) {
-      const iso = normalizeToIsoDate(dateStr);
-      if (iso) d = new Date(iso);
-    }
-    if (!isNaN(d.getTime())) {
-      const weekday = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-      const day = d.getDate().toString().padStart(2, '0');
-      const monthYear = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase();
-      return { weekday, day, monthYear, valid: true };
-    }
-    return { weekday: 'DATE', day: 'NOT', monthYear: 'FIX', valid: false };
   };
 
   // ClientFinanceCard Milestones Handlers (Bi-directional Real-Time Sync)
@@ -1503,42 +1564,46 @@ export default function ClientWorkspaceDetailPage() {
     };
   }, [clientIdOrCode]);
 
-  // Load client data by ID or Code
+  // Load client data by ID or Code with instant synchronous snapshot/workspace cache hydration
   useEffect(() => {
     setIsMounted(true);
-    try {
-      const stored = localStorage.getItem('sc_cached_clients');
-      if (stored) {
-        const parsed: WorkspaceClient[] = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          const match = parsed.find(c => 
-            c.id === clientIdOrCode || 
-            parseClientExtended(c).client_code.toLowerCase() === clientIdOrCode.toLowerCase()
-          );
-          if (match && !client) {
-            setClient(match);
-            const ext = parseClientExtended(match);
-            setExtended(ext);
-            setName(match.name || '');
-            setPhone(match.phone || '');
-            setEmail(match.email || '');
-            setEventType(match.event_type || 'Wedding');
-            setEventDate(match.event_date || '');
-            setStatus((match.status as any) || 'active');
-            setProjectManagerId(match.project_manager_id || ext.project_manager_id || '');
-            setProjectManagerName(match.project_manager_name || ext.project_manager_name || '');
-            setProjectManagerEmail(match.project_manager_email || ext.project_manager_email || '');
-            setProjectManagerPhone(match.project_manager_phone || ext.project_manager_phone || '');
-            setLoading(false);
-          }
-        }
-      }
-    } catch (_) {}
+    quotesCheckedClientIdRef.current = null;
+
+    const cachedMatch = hydrateClientFromBrowserCache(
+      clientIdOrCode,
+      activeWorkspace?.workspaceId || currentWsId
+    );
+    if (cachedMatch) {
+      setClient(cachedMatch);
+      const ext = parseClientExtended(cachedMatch);
+      setExtended(ext);
+      setName(cachedMatch.name || '');
+      setPhone(cachedMatch.phone || '');
+      setEmail(cachedMatch.email || '');
+      setEventType(cachedMatch.event_type || 'Wedding');
+      setEventDate(cachedMatch.event_date || '');
+      setStatus((cachedMatch.status as any) || 'active');
+      setProjectManagerId(cachedMatch.project_manager_id || ext.project_manager_id || '');
+      setProjectManagerName(cachedMatch.project_manager_name || ext.project_manager_name || '');
+      setProjectManagerEmail(cachedMatch.project_manager_email || ext.project_manager_email || '');
+      setProjectManagerPhone(cachedMatch.project_manager_phone || ext.project_manager_phone || '');
+      setLoading(false);
+    }
+
     fetchClientFullData();
   }, [clientIdOrCode]);
 
+  // If workspace context resolves slightly after initial mount on direct deep-link, retry once when client is not yet loaded
+  useEffect(() => {
+    if (isMounted && !client && (activeWorkspace?.workspaceId || currentWsId)) {
+      fetchClientFullData();
+    }
+  }, [activeWorkspace?.workspaceId, currentWsId]);
+
   const fetchClientFullData = async () => {
-    if (!client) setLoading(true);
+    if (!client && !hydrateClientFromBrowserCache(clientIdOrCode, activeWorkspace?.workspaceId || currentWsId)) {
+      setLoading(true);
+    }
     setErrorMsg(null);
 
     if (!clientIdOrCode) {
@@ -1556,7 +1621,8 @@ export default function ClientWorkspaceDetailPage() {
       // 1. Fetch complete client workspace data through server endpoint (bypasses RLS blockers)
       let foundClient: any = null;
       let apiSucceeded = false;
-    let apiResDataQuotationCount = 0;
+      let apiProvidedQuotes = false;
+      let apiProvidedTeamMembers = false;
 
       try {
         const res = await fetch(`/api/workspace/clients/${encodeURIComponent(clientIdOrCode)}?workspace_id=${encodeURIComponent(effectiveWsId)}`, {
@@ -1571,15 +1637,32 @@ export default function ClientWorkspaceDetailPage() {
           if (apiData.success && apiData.client) {
             foundClient = apiData.client;
             apiSucceeded = true;
-            if (Array.isArray(apiData.quotationDocs) && apiData.quotationDocs.length > 0) {
+            if (Array.isArray(apiData.quotationDocs)) {
               setQuotationDocs(apiData.quotationDocs);
-              apiResDataQuotationCount = apiData.quotationDocs.length;
+              apiProvidedQuotes = true;
+              quotesCheckedClientIdRef.current = apiData.client.id;
+            }
+            if ('fwProject' in apiData) {
+              setFwProject(apiData.fwProject || null);
+            }
+            if (Array.isArray(apiData.crewRoles)) {
+              setCrewRoles(apiData.crewRoles);
             }
             if (apiData.postProductionProject) setPostProductionProject(apiData.postProductionProject);
             if (apiData.financeRecord) setFinanceRecord(apiData.financeRecord);
-            if (Array.isArray(apiData.moodboards)) setMoodboards(apiData.moodboards);
+            if (Array.isArray(apiData.moodboards)) {
+              setMoodboards(apiData.moodboards);
+              if (apiData.moodboards.length > 0) {
+                setSelectedMoodboardId(prev =>
+                  prev && apiData.moodboards.some((m: any) => m.id === prev) ? prev : apiData.moodboards[0].id
+                );
+              }
+            }
             if (Array.isArray(apiData.tasks)) setClientTasks(apiData.tasks);
-            if (Array.isArray(apiData.teamMembers)) setTeamMembers(apiData.teamMembers);
+            if (Array.isArray(apiData.teamMembers) && apiData.teamMembers.length > 0) {
+              setTeamMembers(apiData.teamMembers);
+              apiProvidedTeamMembers = true;
+            }
           }
         }
       } catch (apiErr) {
@@ -1618,7 +1701,6 @@ export default function ClientWorkspaceDetailPage() {
         return;
       }
 
-      setClient(foundClient);
       const ext = parseClientExtended(foundClient);
 
       // Strict Granular RBAC Check: If ASSIGNED_VIEW or ASSIGNED_EDIT, restrict to PM only
@@ -1657,6 +1739,9 @@ export default function ClientWorkspaceDetailPage() {
         }
       }
 
+      setClient(foundClient);
+      syncClientBrowserCache(foundClient, effectiveWsId);
+
       setExtended(ext);
       setName(foundClient.name || '');
       setPhone(foundClient.phone || '');
@@ -1675,22 +1760,28 @@ export default function ClientWorkspaceDetailPage() {
       setProjectManagerEmail(pmEmail);
       setProjectManagerPhone(pmPhone);
 
-      // Fetch Workspace Team Members for PM Assignment
-      try {
-        const members = await fetchWorkspaceTeamMembers(foundClient.workspace_id);
-        setTeamMembers(members);
-      } catch (_) {}
+      // Unblock UI immediately now that primary client profile is ready
+      setLoading(false);
 
-      // Fetch Workspace Event Types from Settings
-      try {
-        const evs = await fetchWorkspaceEventTypes(foundClient.workspace_id);
-        if (evs && evs.length > 0) {
-          setEventTypes(evs.map(e => e.name));
-        }
-      } catch (_) {}
+      // Non-blocking background enrichment for team members & event types
+      if (!apiProvidedTeamMembers) {
+        fetchWorkspaceTeamMembers(foundClient.workspace_id || effectiveWsId)
+          .then((members) => {
+            if (members && members.length > 0) setTeamMembers(members);
+          })
+          .catch(() => {});
+      }
 
-      // Always ensure quotation versions are fetched if not provided or empty
-      if (!apiSucceeded || !apiResDataQuotationCount) {
+      fetchWorkspaceEventTypes(foundClient.workspace_id || effectiveWsId)
+        .then((evs) => {
+          if (evs && evs.length > 0) {
+            setEventTypes(evs.map(e => e.name));
+          }
+        })
+        .catch(() => {});
+
+      // Fetch quotation versions only if API didn't already resolve them
+      if (!apiProvidedQuotes) {
         fetchLeadQuotationVersions(foundClient);
       }
 
@@ -1720,28 +1811,46 @@ export default function ClientWorkspaceDetailPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
+      const effectiveWsId = activeWorkspace?.workspaceId || currentWsId || c.workspace_id || '';
 
-      const targetLeadId = c.lead_id;
+      // 1. First try unified server client API (checks client_id, linked lead phone/name, raw_payload, quotation_documents & quotations)
+      try {
+        const clientApiRes = await fetch(
+          `/api/workspace/clients/${encodeURIComponent(c.id)}?workspace_id=${encodeURIComponent(effectiveWsId)}`,
+          { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined }
+        );
+        if (clientApiRes.ok) {
+          const clientApiJson = await clientApiRes.json();
+          if (clientApiJson.success && Array.isArray(clientApiJson.quotationDocs) && clientApiJson.quotationDocs.length > 0) {
+            setQuotationDocs(clientApiJson.quotationDocs);
+            if ('fwProject' in clientApiJson && clientApiJson.fwProject) {
+              setFwProject(clientApiJson.fwProject);
+            }
+            return;
+          }
+        }
+      } catch (_) {}
+
+      const targetLeadId = (c as any).linkedLeadId || c.lead_id;
 
       if (targetLeadId) {
         // Fetch through identical Leads CRM endpoint
         const res = await fetch(`/api/leads/${targetLeadId}/quotations`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: token ? { 'Authorization': `Bearer ${token}` } : undefined
         });
         const text = await res.text();
         const json = text ? JSON.parse(text) : {};
 
         if (json.success && Array.isArray(json.quotations) && json.quotations.length > 0) {
           setQuotationDocs(json.quotations);
-          setLoadingQuotes(false);
           return;
         }
       }
 
       // Fallback: Direct database query on quotation_documents & quotations
-      let docsQuery = supabase.from('quotation_documents').select('*').order('created_at', { ascending: false });
-      if (c.lead_id) {
-        docsQuery = docsQuery.or(`lead_id.eq.${c.lead_id},template_id.ilike.%${c.lead_id.slice(0, 8)}%`);
+      let docsQuery = supabase.from('quotation_documents').select('*').order('created_at', { ascending: true });
+      if (targetLeadId) {
+        docsQuery = docsQuery.or(`client_id.eq.${c.id},lead_id.eq.${targetLeadId},template_id.ilike.%${String(targetLeadId).slice(0, 8)}%`);
       } else {
         docsQuery = docsQuery.eq('client_id', c.id);
       }
@@ -1753,8 +1862,8 @@ export default function ClientWorkspaceDetailPage() {
           id: d.id,
           template_id: d.template_id || d.id,
           lead_id: d.lead_id,
-          version: d.version || (idx + 1),
-          version_label: `Version ${d.version || (idx + 1)}`,
+          version: d.lead_version || d.version || (idx + 1),
+          version_label: `Version ${d.lead_version || d.version || (idx + 1)}`,
           title: d.title || d.content_json?.heroPage?.coupleNames || `Quotation Version ${idx + 1}`,
           is_final: d.is_final || d.content_json?.is_final === true,
           updated_at: d.updated_at || d.created_at,
@@ -1765,19 +1874,22 @@ export default function ClientWorkspaceDetailPage() {
         }));
         setQuotationDocs(formatted);
       } else {
-        // Check quotations table
-        const { data: qRows } = await supabase.from('quotations').select('*').eq('client_id', c.id).order('created_at', { ascending: false });
+        // Check quotations table by both client_id and resolved lead_id
+        const { data: qRows } = targetLeadId
+          ? await supabase.from('quotations').select('*').or(`client_id.eq.${c.id},client_id.eq.${targetLeadId}`).order('created_at', { ascending: true })
+          : await supabase.from('quotations').select('*').eq('client_id', c.id).order('created_at', { ascending: true });
         if (qRows && qRows.length > 0) {
           const formatted: QuotationVersionItem[] = qRows.map((q, idx) => ({
             id: q.id,
             template_id: q.quotation_number || q.id,
             version: idx + 1,
             title: q.title || `Quotation ${q.quotation_number || idx + 1}`,
-            is_final: q.status === 'accepted' || q.status === 'final',
+            is_final: q.is_final === true || q.status === 'accepted' || q.status === 'final',
             updated_at: q.updated_at || q.created_at,
             created_at: q.created_at,
             public_token: q.public_token,
-            total_amount: q.total_amount || c.total_package_amount
+            total_amount: q.total_amount || c.total_package_amount,
+            content_json: q.canvas_data || q.content_json || undefined,
           }));
           setQuotationDocs(formatted);
         } else {
@@ -1787,16 +1899,22 @@ export default function ClientWorkspaceDetailPage() {
     } catch (e) {
       console.error('Error fetching quotation versions:', e);
     } finally {
+      quotesCheckedClientIdRef.current = c.id;
       setLoadingQuotes(false);
     }
   };
 
-  // Auto-fetch quotation versions on tab open if list is empty
+  // Auto-fetch quotation versions on tab open once per client (avoids infinite loop when client truly has 0 quotations)
   useEffect(() => {
-    if (activeTab === 'quotations' && client && quotationDocs.length === 0 && !loadingQuotes) {
+    if (
+      activeTab === 'quotations' &&
+      client &&
+      quotesCheckedClientIdRef.current !== client.id &&
+      !loadingQuotes
+    ) {
       fetchLeadQuotationVersions(client);
     }
-  }, [activeTab, client, quotationDocs.length, loadingQuotes]);
+  }, [activeTab, client?.id, loadingQuotes]);
 
   // ─────────────────────────────────────────────────────────────
   // 2. SET FINAL QUOTATION (TWO-WAY SYNC WITH LEADS CRM)
@@ -2331,12 +2449,16 @@ export default function ClientWorkspaceDetailPage() {
     const file = e.target.files[0];
     try {
       setUploadingMbPhoto(placeId ? `${placeId}-${photoField}` : 'couple');
-      const compressed = await compressMoodboardImage(file, 1280, 0.72);
+      const compressed = await compressMoodboardImage(file, 1080, 0.68);
       const formData = new FormData();
       formData.append('file', compressed, compressed instanceof File ? compressed.name : 'photo.webp');
-      formData.append('folder', `moodboards/${currentMoodboard.token}`);
+      formData.append('token', currentMoodboard.token || '');
+      formData.append('section', type === 'place' ? 'shoot-place' : 'studio-couple');
+      if (client?.id) formData.append('clientId', client.id);
+      const wsId = activeWorkspace?.workspaceId || currentWsId || client?.workspace_id || '';
+      if (wsId) formData.append('workspaceId', wsId);
 
-      const uploadRes = await fetch('/api/upload/r2', {
+      const uploadRes = await fetch('/api/upload/moodboard', {
         method: 'POST',
         body: formData,
       });
@@ -2504,42 +2626,31 @@ export default function ClientWorkspaceDetailPage() {
         console.warn('[handleSaveClientDetails] PM sync warning:', pmSyncErr);
       }
 
-      // 4. Dispatch global window events for instant sub-millisecond sync across tabs
+      // 4. Dispatch global window events & sync workspace-scoped caches + sessionStorage snapshot
+      const updatedClientObj: WorkspaceClient = {
+        ...client,
+        ...updatedFields,
+        name: newCoupleName,
+        project_manager_id: projectManagerId || null,
+        project_manager_name: updatedPmName || null,
+        project_manager_email: updatedPmEmail || null,
+        project_manager_phone: updatedPmPhone || null,
+        handled_by: updatedPmName || null,
+        notes: serializedNotes
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          syncClientBrowserCache(updatedClientObj, activeWorkspace?.workspaceId || currentWsId);
+          localStorage.setItem('sc_booking_sync_event', Date.now().toString());
+        } catch (_) {}
+      }
       window.dispatchEvent(new CustomEvent('client_updated', { detail: { newName: newCoupleName, pmId: projectManagerId, pmName: updatedPmName } }));
       window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { newName: newCoupleName, pmId: projectManagerId, pmName: updatedPmName } }));
       window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { newName: newCoupleName, pmId: projectManagerId, pmName: updatedPmName } }));
       window.dispatchEvent(new CustomEvent('finance_updated', { detail: { newName: newCoupleName } }));
-      if (typeof window !== 'undefined') {
-        try {
-          const cached = localStorage.getItem('sc_cached_clients');
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed)) {
-              const updatedCache = parsed.map(c => {
-                if (c.id === client.id) {
-                  return {
-                    ...c,
-                    ...updatedFields,
-                    name: newCoupleName,
-                    project_manager_id: projectManagerId || null,
-                    project_manager_name: updatedPmName || null,
-                    project_manager_email: updatedPmEmail || null,
-                    project_manager_phone: updatedPmPhone || null,
-                    handled_by: updatedPmName || null,
-                    notes: serializedNotes
-                  };
-                }
-                return c;
-              });
-              localStorage.setItem('sc_cached_clients', JSON.stringify(updatedCache));
-            }
-          }
-          localStorage.setItem('sc_booking_sync_event', Date.now().toString());
-        } catch (_) {}
-      }
 
       setExtended(updatedExtended);
-      setClient(prev => prev ? ({ ...prev, ...updatedFields, name: newCoupleName, project_manager_name: updatedPmName }) : null);
+      setClient(updatedClientObj);
       setProjectManagerName(updatedPmName);
       setProjectManagerEmail(updatedPmEmail);
       setProjectManagerPhone(updatedPmPhone);
@@ -2587,44 +2698,6 @@ export default function ClientWorkspaceDetailPage() {
     } finally {
       setIsDeleting(false);
     }
-  };
-
-  // Add Ceremony Event
-  const handleAddEvent = () => {
-    if (!newEventName.trim() || !client) return;
-
-    const newEv: ClientEventItem = {
-      id: `ev_${Date.now()}`,
-      name: newEventName.trim(),
-      date: newEventDate || eventDate || new Date().toISOString().split('T')[0],
-      time_start: newEventTimeStart,
-      time_end: newEventTimeEnd,
-      venue: newEventVenue.trim(),
-      city: newEventCity.trim(),
-      assigned_crew: newEventCrew.trim()
-    };
-
-    const updatedEvents = [...extended.events, newEv];
-    const newExt = { ...extended, events: updatedEvents };
-    setExtended(newExt);
-
-    const serializedNotes = serializeClientExtended(newExt);
-    supabase.from('workspace_clients').update({ notes: serializedNotes }).eq('id', client.id).then();
-
-    setShowAddEventModal(false);
-    setNewEventName('');
-    setNewEventVenue('');
-  };
-
-  // Delete Ceremony Event
-  const handleDeleteEvent = (evId: string) => {
-    if (!client || !confirm('Are you sure you want to delete this ceremony?')) return;
-    const updatedEvents = extended.events.filter(e => e.id !== evId);
-    const newExt = { ...extended, events: updatedEvents };
-    setExtended(newExt);
-
-    const serializedNotes = serializeClientExtended(newExt);
-    supabase.from('workspace_clients').update({ notes: serializedNotes }).eq('id', client.id).then();
   };
 
   // Deliverable Update in Post-Production
@@ -2872,9 +2945,41 @@ export default function ClientWorkspaceDetailPage() {
     window.open(waUrl, '_blank');
   };
 
-  // Loading View (Consistent SSR & client hydration)
+  // Loading View (Fast Cream Skeleton matching route loading.tsx)
   if (!isMounted || (loading && !client)) {
-    return <StudioCoreLiquidLoader label="Loading Client 360 Workspace..." />;
+    return (
+      <div className="min-h-screen bg-[#FAF9F5] pb-24 pt-2 px-4 sm:px-6 lg:px-8 animate-pulse">
+        <div className="w-full space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="h-9 w-44 rounded-xl bg-[#EAE5DA]/60" />
+            <div className="h-4 w-36 rounded-lg bg-[#EAE5DA]/50" />
+          </div>
+          <div className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 border border-[#EAE5DA] flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex items-center gap-4 sm:gap-5">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-amber-200/60 shrink-0" />
+              <div className="space-y-2.5">
+                <div className="h-7 w-56 rounded-xl bg-stone-200/80" />
+                <div className="h-4 w-40 rounded-lg bg-stone-200/60" />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-52 rounded-2xl bg-[#EAE5DA]/60" />
+              <div className="h-11 w-28 rounded-2xl bg-[#EAE5DA]/60" />
+            </div>
+          </div>
+          <div className="flex gap-2 overflow-hidden">
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <div key={n} className="h-10 w-36 rounded-2xl bg-[#FFFDF9] border border-[#EAE5DA] shrink-0" />
+            ))}
+          </div>
+          <div className="bg-[#FFFDF9] rounded-3xl p-6 border border-[#EAE5DA] grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="h-40 rounded-2xl bg-stone-100/80" />
+            <div className="h-40 rounded-2xl bg-stone-100/80" />
+            <div className="h-40 rounded-2xl bg-stone-100/80" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Error View
@@ -2946,7 +3051,9 @@ export default function ClientWorkspaceDetailPage() {
                     const prevStatus = status;
                     setStatus(newStatus);
                     if (client) {
+                      const updatedSnap = { ...client, status: newStatus };
                       setClient(prev => prev ? { ...prev, status: newStatus } : null);
+                      syncClientBrowserCache(updatedSnap as WorkspaceClient, activeWorkspace?.workspaceId || currentWsId);
                       try {
                         await supabase
                           .from('workspace_clients')
@@ -3433,8 +3540,11 @@ export default function ClientWorkspaceDetailPage() {
                 <p className="text-xs text-slate-500 font-medium">All proposal versions from CRM. The Final accepted quotation is highlighted in emerald green.</p>
               </div>
               <button
-                onClick={() => fetchLeadQuotationVersions(client)}
-                className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-[#EAE5DA] rounded-xl transition flex items-center gap-1.5 shadow-2xs"
+                onClick={() => {
+                  quotesCheckedClientIdRef.current = null;
+                  fetchLeadQuotationVersions(client);
+                }}
+                className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-[#EAE5DA] rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loadingQuotes ? 'animate-spin text-amber-600' : ''}`} />
                 Sync Versions
@@ -3449,8 +3559,10 @@ export default function ClientWorkspaceDetailPage() {
             ) : quotationDocs.length === 0 ? (
               <div className="p-10 text-center bg-[#FFFDF9] rounded-3xl border border-dashed border-[#EAE5DA] space-y-3 shadow-xs">
                 <FileText className="w-10 h-10 mx-auto text-amber-500" />
-                <h4 className="text-sm font-black text-slate-900">No Quotations Found For This Client</h4>
-                <p className="text-xs text-slate-500">Quotations created in the Leads CRM will appear here automatically.</p>
+                <h4 className="text-sm font-black text-slate-900">Not Quoted Yet</h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  No quotation proposals have been created for this client yet. Quotations created in the Leads CRM will appear here automatically.
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4">
@@ -3553,184 +3665,47 @@ export default function ClientWorkspaceDetailPage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 3: EVENTS & BOOKINGS (MULTI-DAY ITINERARY CARDS)
+            TAB 3: EVENTS & BOOKINGS (EXACT BOOKING EVENTS CARD UI)
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'events' && allowedModules.includes('events') && (
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-black text-slate-900">Multi-Day Wedding Ceremonies & Bookings</h3>
-                  {finalQuotationDoc && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                      <Crown className="w-3 h-3 text-emerald-600" /> Synced from Final Quotation
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 font-medium">
-                  Ceremony schedules, timings, venues, and crew requirements.
-                </p>
-              </div>
-
-              {!isReadOnly && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowAddEventModal(true)}
-                    className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    + Add Ceremony / Event
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {displayedEvents.length === 0 ? (
-              <div className="p-12 text-center bg-[#FFFDF9] rounded-3xl border border-dashed border-[#EAE5DA] space-y-3">
-                <Calendar className="w-10 h-10 mx-auto text-amber-500" />
-                <h4 className="text-sm font-black text-slate-900">No Ceremonies Tracked Yet</h4>
-                <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  Add ceremonies manually using &quot;+ Add Ceremony&quot; or accept a Quotation to automatically sync your multi-day itinerary.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {displayedEvents.map((ev, index) => {
-                  const dateParts = parseEventDateParts(ev.date);
-
-                  return (
-                    <div
-                      key={ev.id || index}
-                      className="p-5 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs hover:border-amber-300 transition-all flex flex-col sm:flex-row items-stretch gap-4"
-                    >
-                      {/* Left Date Block (Team Manager / Bookings Standard Layout) */}
-                      <div className="w-20 sm:w-22 shrink-0 bg-gradient-to-b from-[#FAF8F2] to-[#F3EFE6] border border-[#EAE5DA] rounded-2xl flex flex-col items-center justify-center p-2.5 text-center shadow-2xs">
-                        {dateParts.valid ? (
-                          <>
-                            <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">
-                              {dateParts.weekday}
-                            </span>
-                            <span className="text-2xl sm:text-3xl font-black text-slate-900 font-mono my-0.5 leading-none">
-                              {dateParts.day}
-                            </span>
-                            <span className="text-[10px] font-extrabold uppercase text-slate-600 truncate w-full">
-                              {dateParts.monthYear}
-                            </span>
-                          </>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center py-1">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-rose-600 leading-tight">DATE</span>
-                            <span className="text-xs font-black text-rose-700 font-mono leading-tight my-0.5">NOT</span>
-                            <span className="text-[10px] font-extrabold uppercase text-rose-600 leading-tight">FIX</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Right Details */}
-                      <div className="flex-1 min-w-0 space-y-2.5">
-                        <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2">
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="text-sm font-black text-slate-900 tracking-tight">
-                                {ev.name}
-                              </h4>
-                              {ev.source === 'quotation' ? (
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  Quotation
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
-                                  Custom
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Time & Duration */}
-                            <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 font-medium">
-                              <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                              <span>
-                                {ev.time_start ? `${ev.time_start} - ${ev.time_end}` : 'Timings TBD'}
-                              </span>
-                              {ev.duration && (
-                                <span className="text-[11px] text-slate-400 font-normal">
-                                  ({ev.duration})
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {!isReadOnly && ev.source === 'manual' && (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteEvent(ev.id)}
-                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
-                              title="Delete Ceremony"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Venue / Location */}
-                        {ev.venue && (
-                          <p className="flex items-center gap-1.5 text-xs text-slate-700 font-medium">
-                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span className="truncate">{ev.venue}</span>
-                          </p>
-                        )}
-
-                        {/* Crew Required Badges (STAFF NAMES STRICTLY HIDDEN) */}
-                        {ev.requirements && ev.requirements.length > 0 && (
-                          <div className="pt-1">
-                            <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
-                              <Users className="w-3 h-3 text-indigo-500" />
-                              <span>Crew Requirements</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {ev.requirements.map((req: any, rIdx: number) => {
-                                const reqLabel = typeof req === 'string' ? req : `${req.qty ? `${req.qty} × ` : ''}${req.name}`;
-                                return (
-                                  <span
-                                    key={rIdx}
-                                    className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-indigo-50 text-indigo-900 border border-indigo-200/80 shadow-2xs"
-                                  >
-                                    {reqLabel}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Deliverables / Scope */}
-                        {ev.notes && (
-                          <div className="pt-1">
-                            <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
-                              <Package className="w-3 h-3 text-amber-600" />
-                              <span>Deliverables & Coverage</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {ev.notes
-                                .split(/[\n,;•]+/)
-                                .map((item: string) => item.trim())
-                                .filter(Boolean)
-                                .map((item: string, dIdx: number) => (
-                                  <span
-                                    key={dIdx}
-                                    className="px-2.5 py-1 rounded-xl text-[11px] font-medium bg-amber-50 text-amber-900 border border-amber-200/80 shadow-2xs"
-                                  >
-                                    {item}
-                                  </span>
-                                ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
+            <ClientBookingEventsSection
+              client={client}
+              initialProject={fwProject}
+              fallbackEvents={displayedEvents}
+              teamMembers={teamMembers as any}
+              crewRoles={crewRoles}
+              workspaceId={activeWorkspace?.workspaceId || currentWsId || client.workspace_id || ''}
+              studioName={activeWorkspace?.studioName || 'Filmify Weddings'}
+              isReadOnly={isReadOnly}
+              canManage={!isReadOnly}
+              hasSyncedFinalQuote={Boolean(finalQuotationDoc)}
+              onClientPmUpdated={(pmId, pmName) => {
+                setProjectManagerId(pmId || '');
+                setProjectManagerName(pmName || '');
+                setClient(prev => {
+                  if (!prev) return null;
+                  const next = {
+                    ...prev,
+                    project_manager_id: pmId || null,
+                    project_manager_name: pmName || null,
+                    handled_by: pmName || null,
+                  };
+                  syncClientBrowserCache(next as WorkspaceClient, activeWorkspace?.workspaceId || currentWsId);
+                  return next;
+                });
+              }}
+              onCoupleRenamed={(newName) => {
+                setName(newName);
+                setClient(prev => {
+                  if (!prev) return null;
+                  const next = { ...prev, name: newName };
+                  syncClientBrowserCache(next as WorkspaceClient, activeWorkspace?.workspaceId || currentWsId);
+                  return next;
+                });
+              }}
+              onRefreshParent={() => fetchClientFullData()}
+            />
           </motion.div>
         )}
 
@@ -4094,7 +4069,7 @@ export default function ClientWorkspaceDetailPage() {
                   isAssignedView={false}
                   isAllView={true}
                   canManage={!isReadOnly}
-                  currentUser={{ id: userId, name: userName || userEmail || '', role: isOwner ? 'Studio Owner' : 'Team Member' }}
+                  currentUser={{ id: userId || undefined, name: userName || userEmail || '', role: isOwner ? 'Studio Owner' : 'Team Member' }}
                   currentMemberId={(activeWorkspace as any)?.memberId || userId || null}
                   onToggleExpand={() => {}}
                   onUpdateProject={handleUpdatePostProdProject}
@@ -4695,7 +4670,13 @@ export default function ClientWorkspaceDetailPage() {
                             {currentMoodboard.photo_references.map((inspo: any, idx: number) => {
                               const url = typeof inspo === 'string' ? inspo : inspo.url;
                               const notes = typeof inspo === 'object' ? inspo.notes : '';
-                              const isImage = url?.match(/\.(jpeg|jpg|png|webp|gif)/i) || url?.includes('/api/upload') || url?.includes('r2.cloudflarestorage.com') || url?.includes('studiocore.in');
+                              const isImage =
+                                url?.match(/\.(jpeg|jpg|png|webp|gif)/i) ||
+                                url?.includes('/api/upload') ||
+                                url?.includes('/api/media/') ||
+                                url?.includes('backblazeb2.com') ||
+                                url?.includes('r2.cloudflarestorage.com') ||
+                                url?.includes('studiocore.in');
 
                               return (
                                 <div key={idx} className="p-2 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5 shadow-2xs">
@@ -5365,96 +5346,6 @@ export default function ClientWorkspaceDetailPage() {
                     className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition"
                   >
                     Copy Link & Close
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ─────────────────────────────────────────────────────────────
-          POPUP: ADD CEREMONY / EVENT MODAL
-      ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showAddEventModal && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#EAE5DA] shadow-2xl space-y-4"
-            >
-              <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-3">
-                <h3 className="text-base font-black text-slate-900">Add Ceremony / Event Function</h3>
-                <button onClick={() => setShowAddEventModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Ceremony Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Sangeet & Cocktail, Haldi, Reception, Phere..."
-                    value={newEventName}
-                    onChange={(e) => setNewEventName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Event Date</label>
-                    <input
-                      type="date"
-                      value={newEventDate}
-                      onChange={(e) => setNewEventDate(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Timings</label>
-                    <input
-                      type="text"
-                      placeholder="06:00 PM - 11:00 PM"
-                      value={newEventTimeStart}
-                      onChange={(e) => setNewEventTimeStart(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Venue & Location</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. The Grand Palace, Mumbai"
-                    value={newEventVenue}
-                    onChange={(e) => setNewEventVenue(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-medium text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Assigned Crew</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 2 Photographers, 2 Cinematographers, 1 Drone"
-                    value={newEventCrew}
-                    onChange={(e) => setNewEventCrew(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-medium text-slate-900"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2 border-t border-[#EAE5DA]">
-                  <button onClick={() => setShowAddEventModal(false)} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl">
-                    Cancel
-                  </button>
-                  <button onClick={handleAddEvent} className="px-4 py-2 bg-amber-400 hover:bg-amber-500 font-black text-slate-900 rounded-xl shadow-xs">
-                    Add Ceremony
                   </button>
                 </div>
               </div>

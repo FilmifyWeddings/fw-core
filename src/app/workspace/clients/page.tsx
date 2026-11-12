@@ -133,6 +133,29 @@ export default function ClientsPage() {
   const [showCustomEventInput, setShowCustomEventInput] = useState(false);
   const [newCustomEventType, setNewCustomEventType] = useState('');
   const eventTypeDropdownRef = useRef<HTMLDivElement | null>(null);
+  const prefetchedRoutesRef = useRef<Set<string>>(new Set());
+
+  const prefetchClientRoute = (clientId: string) => {
+    if (!clientId || prefetchedRoutesRef.current.has(clientId)) return;
+    prefetchedRoutesRef.current.add(clientId);
+    try {
+      router.prefetch(`/workspace/clients/${clientId}`);
+    } catch (_) {}
+  };
+
+  const openClientCard = (client: WorkspaceClient) => {
+    if (typeof window !== 'undefined') {
+      try {
+        const snapshot = JSON.stringify(client);
+        sessionStorage.setItem(`sc_client_snapshot_${client.id}`, snapshot);
+        const ext = parseClientExtended(client);
+        if (ext?.client_code) {
+          sessionStorage.setItem(`sc_client_snapshot_${ext.client_code}`, snapshot);
+        }
+      } catch (_) {}
+    }
+    router.push(`/workspace/clients/${client.id}`);
+  };
 
   // Selected Client for 360 Workspace Window Modal
   const [selectedClient, setSelectedClient] = useState<WorkspaceClient | null>(null);
@@ -349,7 +372,7 @@ export default function ClientsPage() {
         }
 
         const { data: leadsData } = await leadsQuery;
-        leadList = leadsData || [];
+        leadList = (leadsData || []) as any[];
         setLeads(leadList);
       }
 
@@ -559,6 +582,11 @@ export default function ClientsPage() {
           if (typeof window !== 'undefined') {
             try {
               localStorage.setItem(`sc_cached_clients_${effectiveWsId}`, JSON.stringify(next));
+              localStorage.setItem('sc_cached_clients', JSON.stringify(next));
+              const updatedTarget = next.find((c) => c.id === targetClient.id);
+              if (updatedTarget) {
+                sessionStorage.setItem(`sc_client_snapshot_${targetClient.id}`, JSON.stringify(updatedTarget));
+              }
               localStorage.setItem('sc_booking_sync_event', Date.now().toString());
             } catch (_) {}
           }
@@ -770,10 +798,32 @@ export default function ClientsPage() {
           .single();
         if (fallbackErr) throw fallbackErr;
         if (fallbackClient) {
-          setClients(prev => [fallbackClient, ...prev]);
+          setClients(prev => {
+            const next = [fallbackClient, ...prev];
+            if (effectiveWsId) memCachedClientsByWorkspace.set(effectiveWsId, next);
+            if (typeof window !== 'undefined') {
+              try {
+                if (effectiveWsId) localStorage.setItem(`sc_cached_clients_${effectiveWsId}`, JSON.stringify(next));
+                sessionStorage.setItem(`sc_client_snapshot_${fallbackClient.id}`, JSON.stringify(fallbackClient));
+              } catch (_) {}
+            }
+            return next;
+          });
+          prefetchClientRoute(fallbackClient.id);
         }
       } else if (newClient) {
-        setClients(prev => [newClient, ...prev]);
+        setClients(prev => {
+          const next = [newClient, ...prev];
+          if (effectiveWsId) memCachedClientsByWorkspace.set(effectiveWsId, next);
+          if (typeof window !== 'undefined') {
+            try {
+              if (effectiveWsId) localStorage.setItem(`sc_cached_clients_${effectiveWsId}`, JSON.stringify(next));
+              sessionStorage.setItem(`sc_client_snapshot_${newClient.id}`, JSON.stringify(newClient));
+            } catch (_) {}
+          }
+          return next;
+        });
+        prefetchClientRoute(newClient.id);
         if (assignedPm) {
           handleAssignClientPM(newClient.id, newClient.name, assignedPm).catch(() => {});
         }
@@ -807,8 +857,25 @@ export default function ClientsPage() {
 
   // Update Active / Completed status directly from directory card dropdown
   const handleUpdateClientStatus = async (clientId: string, newStatus: 'active' | 'completed') => {
-    // Optimistic local state update
-    setClients(prev => prev.map(c => c.id === clientId ? { ...c, status: newStatus } : c));
+    // Optimistic local state update + cache sync
+    setClients(prev => {
+      const next = prev.map(c => c.id === clientId ? { ...c, status: newStatus } : c);
+      if (effectiveWsId) {
+        memCachedClientsByWorkspace.set(effectiveWsId, next);
+      }
+      if (typeof window !== 'undefined') {
+        try {
+          if (effectiveWsId) {
+            localStorage.setItem(`sc_cached_clients_${effectiveWsId}`, JSON.stringify(next));
+          }
+          const updatedTarget = next.find(c => c.id === clientId);
+          if (updatedTarget) {
+            sessionStorage.setItem(`sc_client_snapshot_${clientId}`, JSON.stringify(updatedTarget));
+          }
+        } catch (_) {}
+      }
+      return next;
+    });
 
     try {
       const { error } = await supabase
@@ -1039,7 +1106,7 @@ export default function ClientsPage() {
     return (clients || []).filter(client => {
       // STRICT WORKSPACE ISOLATION: Never display clients across workspaces
       if (effectiveWsId && effectiveWsId !== 'all') {
-        const cWs = client.workspace_id || client.user_id;
+        const cWs = client.workspace_id || (client as any).user_id;
         if (cWs && cWs !== effectiveWsId) return false;
       }
 
@@ -1852,11 +1919,12 @@ export default function ClientsPage() {
               const isClientTrashed = (client.status as string) === 'trash' || (client as any).status === 'trashed' || (client as any).is_deleted === true || (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'));
 
               return (
-                <motion.div
+                <div
                   key={client.id}
-                  layout
-                  onClick={() => router.push(`/workspace/clients/${client.id}`)}
-                  className={`rounded-2xl border p-4 sm:p-5 shadow-2xs transition-all cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-4 items-center group ${
+                  onMouseEnter={() => prefetchClientRoute(client.id)}
+                  onTouchStart={() => prefetchClientRoute(client.id)}
+                  onClick={() => openClientCard(client)}
+                  className={`rounded-2xl border p-4 sm:p-5 shadow-2xs transition-colors duration-150 cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-4 items-center group ${
                     isClientTrashed
                       ? 'bg-rose-50/20 hover:bg-rose-50/40 border-rose-200 hover:border-rose-300'
                       : 'bg-[#FFFDF9] hover:bg-[#FFFBF2] border-[#EAE5DA] hover:border-amber-400/80'
@@ -2045,7 +2113,7 @@ export default function ClientsPage() {
                       <ChevronRight className="w-4 h-4" />
                     </div>
                   </div>
-                </motion.div>
+                </div>
               );
             })}
           </div>
@@ -2107,7 +2175,16 @@ export default function ClientsPage() {
               });
               if (typeof window !== 'undefined') {
                 try {
+                  const wsKey = currentWorkspaceId || effectiveWsId;
+                  if (wsKey) {
+                    memCachedClientsByWorkspace.set(wsKey, updated);
+                    localStorage.setItem(`sc_cached_clients_${wsKey}`, JSON.stringify(updated));
+                  }
                   localStorage.setItem('sc_cached_clients', JSON.stringify(updated));
+                  const updatedTarget = updated.find(c => c.id === quickAssignClient.id);
+                  if (updatedTarget) {
+                    sessionStorage.setItem(`sc_client_snapshot_${quickAssignClient.id}`, JSON.stringify(updatedTarget));
+                  }
                   localStorage.setItem('sc_booking_sync_event', Date.now().toString());
                 } catch (_) {}
               }
