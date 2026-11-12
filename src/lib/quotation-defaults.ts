@@ -1013,9 +1013,26 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
 
   // 7. Normalize Special Value Additions
   const valAddSrc = loaded.specialValueAdditions || pagesObj.special_value_additions || {};
-  const valAddItems = Array.isArray(valAddSrc.selectedItems)
+  const valExplicitItems = Array.isArray(valAddSrc.selectedItems)
     ? valAddSrc.selectedItems
-    : (Array.isArray(valAddSrc.items) ? valAddSrc.items : (d.specialValueAdditions?.selectedItems || []));
+    : (Array.isArray(valAddSrc.items) ? valAddSrc.items : undefined);
+  const rawValAddItems = valExplicitItems !== undefined
+    ? valExplicitItems
+    : (d.specialValueAdditions?.selectedItems || []);
+
+  const hasSpecialInLoadedSeq = Array.isArray(loaded.pageSequence)
+    ? loaded.pageSequence.some((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) === 'specialValueAdditions')
+    : undefined;
+  const specialValVisible = valAddSrc.visible !== undefined
+    ? Boolean(valAddSrc.visible)
+    : (hasSpecialInLoadedSeq !== undefined
+        ? hasSpecialInLoadedSeq
+        : (valExplicitItems !== undefined
+            ? valExplicitItems.length > 0
+            : (d.specialValueAdditions?.visible !== undefined
+                ? Boolean(d.specialValueAdditions.visible)
+                : rawValAddItems.length > 0)));
+  const valAddItems = specialValVisible ? rawValAddItems : [];
 
   const valCombinedOptions = Array.from(new Set([
     ...(d.specialValueAdditions?.availableOptions || []),
@@ -1026,11 +1043,12 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   const specialValueAdditions = {
     ...(d.specialValueAdditions || {}),
     ...valAddSrc,
+    visible: specialValVisible,
     kicker: d.specialValueAdditions?.kicker || valAddSrc.kicker || 'SPECIAL VALUE ADDITIONS',
     heading: valAddSrc.heading || d.specialValueAdditions?.heading || 'Special Value Additions',
     selectedItems: valAddItems,
     availableOptions: valCombinedOptions,
-    note: valAddSrc.note || d.specialValueAdditions?.note || ''
+    note: specialValVisible ? (valAddSrc.note || d.specialValueAdditions?.note || '') : ''
   };
 
   // 8. Normalize Pricing Page (with Regular Price vs Best Offer Price Separation)
@@ -1169,6 +1187,7 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
       .map(toPageSequenceItem)
       .filter((p: PageSequenceItem) => {
         if (p.type === 'shootDetails' && !shootDetails.visible) return false;
+        if (p.type === 'specialValueAdditions' && !specialValueAdditions.visible) return false;
         if (p.type === 'termsPage' && termsPage.visible === false) return false;
         return true;
       });
@@ -1177,7 +1196,7 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     if (shootDetails.visible) rawTypes.push('shootDetails');
     rawTypes.push('functionsPage');
     rawTypes.push('deliverablesPage');
-    if (specialValueAdditions.selectedItems && specialValueAdditions.selectedItems.length > 0) {
+    if (specialValueAdditions.visible && specialValueAdditions.selectedItems && specialValueAdditions.selectedItems.length > 0) {
       rawTypes.push('specialValueAdditions');
     }
     rawTypes.push('pricingPage');
@@ -1206,6 +1225,21 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     finalPageSequence = [
       ...finalPageSequence.slice(0, insertAt),
       { id: 'shootDetails-std', type: 'shootDetails', label: 'Pre-Wedding Shoot', isStandard: true },
+      ...finalPageSequence.slice(insertAt)
+    ];
+  }
+
+  // Strictly synchronize specialValueAdditions presence in pageSequence with specialValueAdditions.visible
+  if (!specialValueAdditions.visible) {
+    finalPageSequence = finalPageSequence.filter((p: PageSequenceItem) => p.type !== 'specialValueAdditions');
+  } else if (!finalPageSequence.some((p: PageSequenceItem) => p.type === 'specialValueAdditions')) {
+    const delivIdx = finalPageSequence.findIndex((p: PageSequenceItem) => p.type === 'deliverablesPage');
+    const funcIdx = finalPageSequence.findIndex((p: PageSequenceItem) => p.type === 'functionsPage');
+    const priceIdx = finalPageSequence.findIndex((p: PageSequenceItem) => p.type === 'pricingPage');
+    const insertAt = delivIdx >= 0 ? delivIdx + 1 : (funcIdx >= 0 ? funcIdx + 1 : (priceIdx >= 0 ? priceIdx : finalPageSequence.length));
+    finalPageSequence = [
+      ...finalPageSequence.slice(0, insertAt),
+      { id: 'specialValueAdditions-std', type: 'specialValueAdditions', label: 'Special Value Additions', isStandard: true },
       ...finalPageSequence.slice(insertAt)
     ];
   }

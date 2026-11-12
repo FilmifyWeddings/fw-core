@@ -12,7 +12,7 @@ import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 import { QuotationTemplateSelector, StudioTemplateItem, getSynchronousCachedTemplates } from './quotation-template-selector';
-import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument, syncShootPageInSequence } from '@/lib/ai-quotation-extractor';
+import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument, syncShootPageInSequence, syncSpecialValuePageInSequence } from '@/lib/ai-quotation-extractor';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { cleanVoiceTranscript, normalizeComparisonTokens } from '@/lib/speech-text-cleaner';
 import { safeLocalStorageSet, safeSessionStorageSet, pruneDocumentForListCache } from '@/lib/storage-safety';
@@ -68,7 +68,7 @@ function tryParsePastedAiJson(rawText: string, baseTemplate?: any, leadContext?:
   }
 
   // If input is natural language / spoken voice notes (not valid structured JSON), return null
-  // so the caller invokes OpenAI GPT-4o-mini route (/api/quotations/ai-extract) with 100% full extraction!
+  // so the caller invokes Google Gemini (/api/quotations/ai-extract) with 100% full extraction!
   return null;
 }
 
@@ -232,6 +232,8 @@ export function AiQuotationModal({
   const timerRef = useRef<any>(null);
   const additionalNotesRef = useRef<string>(additionalNotes);
   additionalNotesRef.current = additionalNotes;
+  const notesTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const autoScrollOnNextNotesRef = useRef<boolean>(false);
   const isPolishingInProgressRef = useRef<boolean>(false);
   const authSessionRef = useRef<{ token: string; userId: string } | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -300,6 +302,7 @@ export function AiQuotationModal({
             cleanPolished += `. Budget: ${rawAmt[0].trim()}`;
           }
 
+          autoScrollOnNextNotesRef.current = true;
           if (!replaceEntireField && initialAppendTextRef.current) {
             setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, cleanPolished));
           } else {
@@ -341,6 +344,7 @@ export function AiQuotationModal({
     if (!raw || isCancelledRef.current) return;
     const finalCleaned = cleanVoiceTranscript(raw, effectiveLead?.name);
     liveCapturedTextRef.current = finalCleaned;
+    autoScrollOnNextNotesRef.current = true;
     setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, finalCleaned));
     setTranscribeSuccess(true);
     setIsRecording(false);
@@ -436,12 +440,13 @@ export function AiQuotationModal({
             }
           }
         }
+        autoScrollOnNextNotesRef.current = true;
         setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, finalAudioText));
         setTranscribeSuccess(true);
         setTimeout(() => setTranscribeSuccess(false), 4500);
 
-        // Gemini 3-Flash Audio AI already produces 1-step clean lossless text (`oneStepPolished: true`).
-        // Only run secondary /api/ai/polish-speech when an OpenAI/Groq raw STT fallback was used!
+        // Google Gemini Audio AI already produces 1-step clean lossless text (`oneStepPolished: true`).
+        // Only run secondary /api/ai/polish-speech when needed.
         if (!data.oneStepPolished) {
           polishTextWithGemini(finalAudioText, false);
         }
@@ -501,6 +506,7 @@ export function AiQuotationModal({
 
           const cleaned = cleanVoiceTranscript(fullRaw, effectiveLead?.name);
           liveCapturedTextRef.current = cleaned;
+          autoScrollOnNextNotesRef.current = true;
           setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, cleaned));
         };
 
@@ -616,7 +622,7 @@ export function AiQuotationModal({
         if (dictationFinalizedRef.current) return;
         dictationFinalizedRef.current = true;
 
-        // Grab live WebSpeech fallback immediately while sending complete audio blob to Gemini 3-Flash Audio AI!
+        // Grab live WebSpeech fallback immediately while sending complete audio blob to Google Gemini Audio AI!
         const capturedRaw = (
           rawLiveTranscriptRef.current ||
           [committedRawTranscriptRef.current, currentSegmentRawRef.current].filter(Boolean).join(' ') ||
@@ -637,6 +643,7 @@ export function AiQuotationModal({
 
         if (capturedRaw.length > 0) {
           const previewClean = cleanVoiceTranscript(capturedRaw, effectiveLead?.name);
+          autoScrollOnNextNotesRef.current = true;
           setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, previewClean));
         }
 
@@ -809,6 +816,19 @@ export function AiQuotationModal({
       })
       .catch(err => console.warn('[AI Modal] Template content fetch error:', err));
   }, [activeTemplateId, selectedTemplateId, activeTemplateObj]);
+
+  // Auto-scroll live voice dictation box to bottom when recording/transcribing updates notes
+  useEffect(() => {
+    if (!autoScrollOnNextNotesRef.current && !isRecording) return;
+    autoScrollOnNextNotesRef.current = false;
+    const el = notesTextareaRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      if (notesTextareaRef.current) {
+        notesTextareaRef.current.scrollTop = notesTextareaRef.current.scrollHeight;
+      }
+    });
+  }, [additionalNotes, isRecording, isTranscribing, isPolishing]);
 
   if (!isOpen) return null;
 
@@ -1082,7 +1102,7 @@ LEAD & CLIENT CONTEXT:
         totalInvestment: `₹${initialTotal.toLocaleString('en-IN')}`
       };
 
-      // 🧠 PRIMARY AI CALCULATION ENGINE: Call Google Gemini 3.8 Flash for authoritative extraction & math evaluation
+      // 🧠 PRIMARY AI CALCULATION ENGINE: Call Google Gemini for authoritative extraction & math evaluation
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token || '';
@@ -1146,7 +1166,12 @@ LEAD & CLIENT CONTEXT:
     if (!docToApply) return;
 
     const stripTrailingKeywords = (name: string) => {
-      return (name || '').replace(/\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|\d|all|deliverable|days|day).*$/i, '').trim();
+      return (name || '')
+        .replace(
+          /\s+(?:\b(?:wedding|marriage|shaadi|quotation|quotion|qution|qoutation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|all|deliverables?|days?|day)\b|\d).*$/i,
+          ''
+        )
+        .trim();
     };
 
     const chosenBaseDoc = baseTemplateDoc || activeTemplateObj?.content_json || currentDocumentData || DEFAULT_AIRY_PROPOSAL;
@@ -1175,11 +1200,15 @@ LEAD & CLIENT CONTEXT:
         if (baseDoc.cover.coverStyle) targetDoc.cover.coverStyle = baseDoc.cover.coverStyle;
       }
 
+      const shootVisible = Boolean(targetDoc.shootDetails?.visible);
+      const specialVisible = Boolean(targetDoc.specialValueAdditions?.visible);
       if (Array.isArray(baseDoc.pageSequence) && baseDoc.pageSequence.length > 0) {
         const clonedSeq = JSON.parse(JSON.stringify(baseDoc.pageSequence));
-        targetDoc.pageSequence = syncShootPageInSequence(clonedSeq, Boolean(targetDoc.shootDetails?.visible));
+        const withShoot = syncShootPageInSequence(clonedSeq, shootVisible);
+        targetDoc.pageSequence = syncSpecialValuePageInSequence(withShoot, specialVisible);
       } else {
-        targetDoc.pageSequence = syncShootPageInSequence(targetDoc.pageSequence, Boolean(targetDoc.shootDetails?.visible));
+        const withShoot = syncShootPageInSequence(targetDoc.pageSequence, shootVisible);
+        targetDoc.pageSequence = syncSpecialValuePageInSequence(withShoot, specialVisible);
       }
       if (Array.isArray(baseDoc.customPages) && baseDoc.customPages.length > 0) {
         targetDoc.customPages = baseDoc.customPages;
@@ -1651,9 +1680,52 @@ LEAD & CLIENT CONTEXT:
       const instantRes = mapAiOutputToQuotationDocument(instantRaw, baseTemplateDoc || currentDocumentData, instantContext);
       const instantDoc = instantRes.document || instantRes;
 
-      setExtractedDoc(instantDoc);
-      await applyDocAndNavigate(instantDoc, {
-        pendingAiNotes: notes,
+      // Resolve Google Gemini extraction before opening Builder so client/couple name
+      // renders accurately from Frame 0 with zero post-navigation flicker.
+      let finalDocToApply = instantDoc;
+      let geminiSucceeded = false;
+      try {
+        let sess = authSessionRef.current;
+        if (!sess?.token) {
+          const { data: { session } } = await supabase.auth.getSession();
+          sess = { token: session?.access_token || '', userId: session?.user?.id || '' };
+          authSessionRef.current = sess;
+        }
+        const aiRes = await fetch('/api/quotations/ai-extract', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${sess.token}`
+          },
+          body: JSON.stringify({
+            leadId: effectiveLead.id,
+            workspaceId: effectiveLead.workspace_id || sess.userId || null,
+            userId: sess.userId || null,
+            quotationId: quotationId || null,
+            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
+            currentDocument: baseTemplateDoc || currentDocumentData || null,
+            additionalNotes: notes,
+            studioSettings,
+            studioEventTypes,
+            studioCrewRoles
+          }),
+          signal: AbortSignal.timeout(12000)
+        });
+        if (aiRes.ok) {
+          const aiJson = await aiRes.json();
+          const extracted = aiJson?.extractedDocument?.document || aiJson?.extractedDocument;
+          if (aiJson?.success && extracted) {
+            finalDocToApply = extracted;
+            geminiSucceeded = true;
+          }
+        }
+      } catch (quickGeminiErr) {
+        console.warn('[AI Modal Quick Create Gemini fallback]:', quickGeminiErr);
+      }
+
+      setExtractedDoc(finalDocToApply);
+      await applyDocAndNavigate(finalDocToApply, {
+        pendingAiNotes: geminiSucceeded ? null : notes,
         isDirectJson: false
       });
     } catch (err: any) {
@@ -1770,36 +1842,15 @@ LEAD & CLIENT CONTEXT:
                     </motion.div>
                   )}
 
-                  {/* AI Audio Analyzing & Polishing Banners */}
-                  {isTranscribing && (
+                  {/* Audio AI Analyzing Banner (clean unified indicator) */}
+                  {(isTranscribing || isPolishing) && (
                     <motion.div
                       initial={{ opacity: 0, y: -5 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center gap-2.5 shadow-xs"
                     >
                       <Loader2 className="w-4 h-4 text-amber-600 animate-spin shrink-0" />
-                      <div className="flex-1">
-                        <span className="font-extrabold">🎙️ Gemini 3-Flash Audio AI Analyzing...</span>
-                        <p className="text-[10px] font-normal text-amber-700/80 dark:text-amber-300/80 mt-0.5">
-                          पूरी रिकॉर्डेड ऑडियो सुनकर बिना कोई अंतिम अमाउंट, डेट, डिलीवरेबल या क्रू रूल छोड़े सटीक टेक्स्ट तैयार हो रहा है
-                        </p>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {isPolishing && !isTranscribing && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3 rounded-2xl bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-purple-500/10 border border-purple-500/30 text-purple-700 dark:text-purple-300 text-xs font-bold flex items-center gap-2.5 shadow-xs"
-                    >
-                      <Sparkles className="w-4 h-4 text-purple-500 animate-spin shrink-0" />
-                      <div className="flex-1">
-                        <span className="font-extrabold">✨ Gemini Flash AI Polishing your speech...</span>
-                        <p className="text-[10px] font-normal text-purple-600/80 dark:text-purple-300/80 mt-0.5">
-                          आपकी डिक्टेशन के कपल नेम, इवेंट्स, पर-इवेंट क्रू, डिलीवरेबल्स और प्राइज़िंग को 100% सटीक किया जा रहा है
-                        </p>
-                      </div>
+                      <span>Audio AI Analyzing...</span>
                     </motion.div>
                   )}
 
@@ -1807,7 +1858,7 @@ LEAD & CLIENT CONTEXT:
                   <div className={`relative rounded-2xl border transition-all duration-200 bg-white dark:bg-zinc-900 ${
                     isRecording 
                       ? 'border-rose-500 ring-4 ring-rose-500/20 shadow-lg' 
-                      : isTranscribing
+                      : (isTranscribing || isPolishing)
                       ? 'border-amber-500 ring-4 ring-amber-500/20'
                       : 'border-zinc-200 dark:border-zinc-800 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 shadow-xs'
                   }`}>
@@ -1820,16 +1871,17 @@ LEAD & CLIENT CONTEXT:
                     )}
                     {/* Textarea */}
                     <textarea
+                      ref={notesTextareaRef}
                       rows={5}
                       value={additionalNotes}
                       onChange={(e) => setAdditionalNotes(e.target.value)}
-                      placeholder={isRecording ? "🔴 आपकी आवाज़ लाइव रिकॉर्ड और टाइप हो रही है, बोलते रहें..." : isTranscribing ? "🎙️ आपकी आवाज़ प्रोसेस हो रही है, कृपया रुकें..." : "माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):\nजैसे: 'रोहन और पूजा की शादी 18-19 नवंबर को लोनावला में, 18 को संगीत और हल्दी, 2 कैंडिड और 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज 2.2 लाख, 20k डिस्काउंट, 25% एडवांस...'\n\n💡 या AI का JSON सीधे यहाँ पेस्ट करें!"}
-                      className="w-full p-4 bg-transparent text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none resize-none leading-relaxed"
+                      placeholder={isRecording ? "🔴 आपकी आवाज़ लाइव रिकॉर्ड और टाइप हो रही है, बोलते रहें..." : (isTranscribing || isPolishing) ? "Audio AI Analyzing..." : "माइक से बोलें या यहाँ लिखें (हिंदी, मराठी, English):\nजैसे: 'रोहन और पूजा की शादी 18-19 नवंबर को लोनावला में, 18 को संगीत और हल्दी, 2 कैंडिड और 2 सिनेमैटोग्राफर, 1 ड्रोन, पैकेज 2.2 लाख, 20k डिस्काउंट, 25% एडवांस...'\n\n💡 या AI का JSON सीधे यहाँ पेस्ट करें!"}
+                      className="w-full p-4 min-h-[110px] max-h-[160px] overflow-y-auto bg-transparent text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none resize-none leading-relaxed"
                     />
 
-                    {/* Gemini Bottom Action Bar */}
+                    {/* Bottom Action Bar */}
                     <div className="flex items-center justify-between p-3 border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-zinc-900/60 rounded-b-2xl">
-                      {/* Left: Copy Prompt / Info */}
+                      {/* Left: Copy Prompt / Clear / Char count */}
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -1848,17 +1900,6 @@ LEAD & CLIENT CONTEXT:
                               <span>Copy Prompt</span>
                             </>
                           )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => polishTextWithGemini(additionalNotes, true)}
-                          disabled={isPolishing || isTranscribing || !additionalNotes.trim() || isRecording}
-                          className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0 disabled:opacity-40"
-                          title="Gemini Flash AI Polish: Automatically analyze intent, fix speech slips, format couple, events, crew & pricing"
-                        >
-                          <Sparkles className={`w-3.5 h-3.5 text-purple-500 ${isPolishing ? 'animate-spin' : ''}`} />
-                          <span>{isPolishing ? 'Polishing...' : 'AI Polish'}</span>
                         </button>
 
                         {additionalNotes.trim().length > 0 && !isRecording && !isTranscribing && !isPolishing && (
@@ -1923,15 +1964,10 @@ LEAD & CLIENT CONTEXT:
                               <span>Done</span>
                             </button>
                           </div>
-                        ) : isTranscribing ? (
+                        ) : (isTranscribing || isPolishing) ? (
                           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-bold animate-pulse">
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500 shrink-0" />
                             <span>Audio AI Analyzing...</span>
-                          </div>
-                        ) : isPolishing ? (
-                          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-700 dark:text-purple-400 text-xs font-bold animate-pulse shadow-sm">
-                            <Sparkles className="w-3.5 h-3.5 animate-spin text-purple-500 shrink-0" />
-                            <span>Gemini Polishing...</span>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">

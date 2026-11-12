@@ -43,7 +43,7 @@ const AiQuotationModal = dynamic(
   { ssr: false }
 );
 import { resolvePrimaryCoverLocation } from '@/lib/quotation-defaults';
-import { syncShootPageInSequence } from '@/lib/ai-quotation-extractor';
+import { syncShootPageInSequence, syncSpecialValuePageInSequence } from '@/lib/ai-quotation-extractor';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
@@ -2741,6 +2741,13 @@ function StudioCoreAiryBuilderContent() {
         shootDetails: { ...(prev.shootDetails || {}), visible: false }
       }));
       setHasUnsavedChanges(true);
+    } else if (removed?.type === 'specialValueAdditions') {
+      setData((prev: any) => ({
+        ...prev,
+        pageSequence: newSeq,
+        specialValueAdditions: { ...(prev.specialValueAdditions || {}), visible: false }
+      }));
+      setHasUnsavedChanges(true);
     } else {
       updatePageSequence(newSeq);
     }
@@ -2831,6 +2838,16 @@ function StudioCoreAiryBuilderContent() {
           daysText: prev.shootDetails?.daysText || '1 Day Shoot',
           crewText: prev.shootDetails?.crewText || '1x Candid Photographer\n1x Cinematographer\n1x Drone Pilot',
           deliverablesText: prev.shootDetails?.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n1 Teaser Video Reel',
+        }
+      }));
+      setHasUnsavedChanges(true);
+    } else if (stdType === 'specialValueAdditions') {
+      setData((prev: any) => ({
+        ...prev,
+        pageSequence: newSeq,
+        specialValueAdditions: {
+          ...(prev.specialValueAdditions || {}),
+          visible: true,
         }
       }));
       setHasUnsavedChanges(true);
@@ -3605,10 +3622,15 @@ function StudioCoreAiryBuilderContent() {
         if (baseNow.source_template_id) refinedDoc.source_template_id = baseNow.source_template_id;
         if (baseNow.template_id) refinedDoc.template_id = baseNow.template_id;
         if (Array.isArray(baseNow.pageSequence) && baseNow.pageSequence.length > 0) {
-          refinedDoc.pageSequence = syncShootPageInSequence(
+          let syncedSeq = syncShootPageInSequence(
             JSON.parse(JSON.stringify(baseNow.pageSequence)),
             Boolean(refinedDoc.shootDetails?.visible)
           );
+          syncedSeq = syncSpecialValuePageInSequence(
+            syncedSeq,
+            Boolean(refinedDoc.specialValueAdditions?.visible)
+          );
+          refinedDoc.pageSequence = syncedSeq;
         }
         if (baseNow.cover) {
           refinedDoc.cover = {

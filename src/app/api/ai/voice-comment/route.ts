@@ -3,15 +3,16 @@ import { NextRequest, NextResponse } from 'next/server';
 export const maxDuration = 120; // 2 minutes server execution timeout
 
 /**
- * Server-side AI Voice Comment API Route
+ * Server-side Google Gemini AI Voice Comment API Route
  * Multi-Lingual Architecture with Indian Regional Languages:
  * Supports: Marathi, Marathish (Eng), Hindi, Hinglish, English, Gujarati, Punjabi, Bengali, Tamil, Telugu, Kannada, Malayalam
  */
 export async function POST(req: NextRequest) {
   try {
-    const groqKey = process.env.GROQ_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
-    const openAiKey = process.env.OPENAI_API_KEY;
+    const geminiKeys = (process.env.GEMINI_API_KEY || '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
 
     let rawTranscript = '';
     let liveFallbackText = '';
@@ -45,75 +46,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Step A: Transcribe Audio via Groq Whisper Large-v3
+    // Step A: Transcribe Audio 100% via Google Gemini Multimodal Audio AI
     if (!rawTranscript && audioFile) {
       const audioArrayBuffer = await audioFile.arrayBuffer();
 
-      if (audioArrayBuffer && audioArrayBuffer.byteLength > 500) {
-        // 1. Try Groq Whisper Large-v3
-        if (groqKey) {
-          try {
-            const groqFormData = new FormData();
-            const fileObj = new File([audioArrayBuffer], 'voice_note.webm', {
-              type: audioFile.type || 'audio/webm',
-            });
-            groqFormData.append('file', fileObj);
-            groqFormData.append('model', 'whisper-large-v3');
-            groqFormData.append('temperature', '0');
+      if (audioArrayBuffer && audioArrayBuffer.byteLength > 500 && geminiKeys.length > 0) {
+        const base64Audio = Buffer.from(audioArrayBuffer).toString('base64');
+        const candidateModels = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+        for (const geminiKey of geminiKeys) {
+          if (rawTranscript) break;
+          for (const model of candidateModels) {
+            if (rawTranscript) break;
+            try {
+              const generationConfig: Record<string, any> = {
+                temperature: 0,
+                maxOutputTokens: 1500,
+              };
+              if (model.startsWith('gemini-3')) {
+                generationConfig.thinkingConfig = { thinkingBudget: 0 };
+              }
 
-            // Pass language hint if available
-            const whisperLangMap: Record<string, string> = {
-              'mr-IN': 'mr',
-              'mr-ENG': 'mr',
-              'hi-IN': 'hi',
-              'hi-ENG': 'hi',
-              'en-IN': 'en',
-              'gu-IN': 'gu',
-              'pa-IN': 'pa',
-              'bn-IN': 'bn',
-              'ta-IN': 'ta',
-              'te-IN': 'te',
-              'kn-IN': 'kn',
-              'ml-IN': 'ml',
-            };
-
-            const whisperCode = whisperLangMap[selectedLanguage];
-            if (whisperCode && whisperCode !== 'en') {
-              groqFormData.append('language', whisperCode);
-            }
-
-            groqFormData.append(
-              'prompt',
-              'StudioCore Wedding Photography Client Notes in Marathi, Hindi, Hinglish, Gujarati, Bengali, Tamil, Telugu, and English.'
-            );
-
-            const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${groqKey}`,
-              },
-              body: groqFormData,
-            });
-
-            if (groqRes.ok) {
-              const groqJson = await groqRes.json();
-              rawTranscript = (groqJson.text || '').trim();
-              console.log('[Groq Whisper Large-v3 Result]:', rawTranscript);
-            } else {
-              const errBody = await groqRes.text();
-              console.warn('[Groq Whisper Error Body]:', errBody);
-            }
-          } catch (e) {
-            console.warn('[Groq Whisper Exception]:', e);
-          }
-        }
-
-        // Multimodal Gemini Audio Transcription fallback if needed
-        if (!rawTranscript && geminiKey) {
-          try {
-            const base64Audio = Buffer.from(audioArrayBuffer).toString('base64');
-            const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
-            for (const model of candidateModels) {
               const geminiRes = await fetch(
                 `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
                 {
@@ -126,7 +78,7 @@ export async function POST(req: NextRequest) {
                     contents: [
                       {
                         parts: [
-                          { text: "Accurately transcribe this voice recording verbatim. Output ONLY the words spoken." },
+                          { text: 'Accurately transcribe this voice recording verbatim. Output ONLY the words spoken.' },
                           {
                             inlineData: {
                               mimeType: audioFile.type || 'audio/webm',
@@ -136,26 +88,33 @@ export async function POST(req: NextRequest) {
                         ],
                       },
                     ],
+                    generationConfig,
                   }),
+                  signal: AbortSignal.timeout(20000),
                 }
               );
               if (geminiRes.ok) {
                 const geminiJson = await geminiRes.json();
-                const t = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+                const parts = geminiJson.candidates?.[0]?.content?.parts || [];
+                const t = parts
+                  .filter((p: any) => !p?.thought && typeof p?.text === 'string')
+                  .map((p: any) => p.text)
+                  .join('')
+                  .trim();
                 if (t) {
                   rawTranscript = t;
                   break;
                 }
               }
+            } catch (e) {
+              console.warn(`[Gemini ${model} Voice Comment Transcribe Exception]:`, e);
             }
-          } catch (e) {
-            console.warn('[Gemini Voice Comment Transcribe Exception]:', e);
           }
         }
       }
     }
 
-    // 3. Fallback to client-side real-time transcript if whisper did not return
+    // Fallback to client-side real-time WebSpeech transcript if audio AI returned empty
     if (!rawTranscript && liveFallbackText) {
       rawTranscript = liveFallbackText;
       console.log('[Using Live WebSpeech Fallback]:', rawTranscript);
@@ -168,7 +127,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step B: Text Cleanup & Formatting via Google Gemini 1.5 Flash (or GPT-4o fallback)
+    // Step B: Text Cleanup & Formatting via Google Gemini
     let cleanedComment = rawTranscript;
 
     let languageRule = '';
@@ -215,48 +174,64 @@ TERMINOLOGY & POLISHING RULES:
 2. Standardize wedding photography terms (Haldi, Mehendi, Sangeet, Wedding, Pre-Wedding, Candid Photography, Cinematography, Drone, Album, Teaser, Deliverables, Token Advance, GST).
 3. Return ONLY the final polished comment text. Do NOT wrap in quotes, do NOT add introductory conversational filler like "Here is your text:".`;
 
-    if (geminiKey) {
-      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
-      for (const model of candidateModels) {
-        try {
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': geminiKey,
-              },
-              body: JSON.stringify({
-                contents: [
-                  {
-                    parts: [
-                      {
-                        text: `${systemInstruction}\n\nRaw Voice Transcript:\n"${rawTranscript}"\n\nReturn ONLY the clean polished text string:`,
-                      },
-                    ],
-                  },
-                ],
-                generationConfig: {
-                  temperature: 0.1,
-                },
-              }),
+    if (geminiKeys.length > 0) {
+      const candidateModels = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+      let updated = false;
+      for (const geminiKey of geminiKeys) {
+        if (updated) break;
+        for (const model of candidateModels) {
+          try {
+            const generationConfig: Record<string, any> = {
+              temperature: 0.1,
+            };
+            if (model.startsWith('gemini-3')) {
+              generationConfig.thinkingConfig = { thinkingBudget: 0 };
             }
-          );
 
-          if (geminiRes.ok) {
-            const geminiJson = await geminiRes.json();
-            const gText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            if (gText) {
-              cleanedComment = gText.replace(/^["']|["']$/g, '');
-              break;
+            const geminiRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-goog-api-key': geminiKey,
+                },
+                body: JSON.stringify({
+                  contents: [
+                    {
+                      parts: [
+                        {
+                          text: `${systemInstruction}\n\nRaw Voice Transcript:\n"${rawTranscript}"\n\nReturn ONLY the clean polished text string:`,
+                        },
+                      ],
+                    },
+                  ],
+                  generationConfig,
+                }),
+                signal: AbortSignal.timeout(15000),
+              }
+            );
+
+            if (geminiRes.ok) {
+              const geminiJson = await geminiRes.json();
+              const parts = geminiJson.candidates?.[0]?.content?.parts || [];
+              const gText = parts
+                .filter((p: any) => !p?.thought && typeof p?.text === 'string')
+                .map((p: any) => p.text)
+                .join('')
+                .trim();
+              if (gText) {
+                cleanedComment = gText.replace(/^["']|["']$/g, '');
+                updated = true;
+                break;
+              }
+            } else {
+              const gErr = await geminiRes.text();
+              console.warn(`[Gemini ${model} Error]:`, gErr.slice(0, 150));
             }
-          } else {
-            const gErr = await geminiRes.text();
-            console.warn(`[Gemini ${model} Error]:`, gErr);
+          } catch (e) {
+            console.warn(`[Gemini ${model} Exception]:`, e);
           }
-        } catch (e) {
-          console.warn(`[Gemini ${model} Exception]:`, e);
         }
       }
     }

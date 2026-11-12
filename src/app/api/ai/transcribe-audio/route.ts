@@ -76,7 +76,7 @@ function isPhantomOrHallucinatedTranscript(rawText: string, liveDraft: string): 
     return true;
   }
 
-  // Known Whisper / STT silence phantom outputs across languages
+  // Known STT silence phantom outputs across languages
   const phantomPhrases = [
     'tervetuloa',
     'thank you for watching',
@@ -122,14 +122,11 @@ function isPhantomOrHallucinatedTranscript(rawText: string, liveDraft: string): 
 
 /**
  * Server-side Strict Verbatim Audio Transcription & Lossless Cleaner
- * Primary: Google Gemini Multimodal Audio AI (gemini-3-flash-preview -> gemini-3.1-flash-lite -> gemini-flash-latest)
- * Fallback: OpenAI Audio API (gpt-4o-mini-transcribe -> whisper-1), then Groq Whisper if configured.
+ * 100% Powered by Google Gemini Multimodal Audio AI (gemini-3-flash-preview -> gemini-3.1-flash-lite -> gemini-flash-latest).
  * Supports Hindi, Marathi, English, and Hinglish without hallucinating unspoken names, events, or budgets.
  */
 export async function POST(req: NextRequest) {
   try {
-    const openAiKey = (process.env.OPENAI_API_KEY || '').trim();
-    const groqKey = (process.env.GROQ_API_KEY || '').trim();
     const geminiKeys = (process.env.GEMINI_API_KEY || '')
       .split(',')
       .map((k) => k.trim())
@@ -151,7 +148,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Detect true audio container format (iPhone MP4/AAC vs Android/Desktop WebM/WAV/OGG/MP3)
-    let fileExt = 'webm';
     let mimeType = 'audio/webm';
     const magic = new Uint8Array(audioBuffer.slice(0, 12));
     const isEbmlWebm = magic[0] === 0x1a && magic[1] === 0x45 && magic[2] === 0xdf && magic[3] === 0xa3;
@@ -161,19 +157,14 @@ export async function POST(req: NextRequest) {
     const clientType = (audioFile.type || '').toLowerCase();
 
     if (isFtypMp4 || clientType.includes('mp4') || clientType.includes('m4a') || clientType.includes('aac')) {
-      fileExt = 'mp4';
       mimeType = 'audio/mp4';
     } else if (isRiffWav || clientType.includes('wav')) {
-      fileExt = 'wav';
       mimeType = 'audio/wav';
     } else if (isOgg || clientType.includes('ogg')) {
-      fileExt = 'ogg';
       mimeType = 'audio/ogg';
     } else if (clientType.includes('mp3') || clientType.includes('mpeg')) {
-      fileExt = 'mp3';
       mimeType = 'audio/mpeg';
     } else if (isEbmlWebm || clientType.includes('webm')) {
-      fileExt = 'webm';
       mimeType = 'audio/webm';
     }
 
@@ -201,7 +192,7 @@ export async function POST(req: NextRequest) {
     const vocabEvents = (studioEventNames || 'Haldi, Mehendi, Sangeet, Wedding, Engagement, Reception').slice(0, 220);
     const vocabRoles = (studioCrewRoles || 'Candid Photographer, Traditional Photographer, Cinematographer, Traditional Videographer, Drone Pilot, Semi Cinematic, Semi Standard, Reels Creator').slice(0, 260);
 
-    // 1. PRIMARY ENGINE: Google Gemini Multimodal Audio AI (Strict Verbatim with [NO_SPEECH] sentinel)
+    // 1. Google Gemini Multimodal Audio AI (Strict Verbatim with [NO_SPEECH] sentinel)
     if (geminiKeys.length > 0) {
       const base64Audio = Buffer.from(audioBuffer).toString('base64');
       const audioPrompt = `You are a strictly VERBATIM audio speech transcriber.
@@ -223,6 +214,14 @@ Output ONLY the verbatim heard words, or [NO_SPEECH].`;
         for (const model of candidateModels) {
           if (transcript || noSpeechConfirmedByPrimary) break;
           try {
+            const generationConfig: Record<string, any> = {
+              temperature: 0,
+              maxOutputTokens: 2500,
+            };
+            if (model.startsWith('gemini-3')) {
+              generationConfig.thinkingConfig = { thinkingBudget: 0 };
+            }
+
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
               method: 'POST',
               headers: {
@@ -241,11 +240,7 @@ Output ONLY the verbatim heard words, or [NO_SPEECH].`;
                     }
                   ]
                 }],
-                generationConfig: {
-                  temperature: 0,
-                  maxOutputTokens: 2500,
-                  thinkingConfig: { thinkingBudget: 0 }
-                }
+                generationConfig
               }),
               signal: AbortSignal.timeout(20000),
             });
@@ -287,6 +282,8 @@ Output ONLY the verbatim heard words, or [NO_SPEECH].`;
           }
         }
       }
+    } else {
+      lastErrorDetail = 'GEMINI_API_KEY not configured';
     }
 
     if (noSpeechConfirmedByPrimary && !transcript) {
@@ -298,90 +295,6 @@ Output ONLY the verbatim heard words, or [NO_SPEECH].`;
         },
         { status: 422 }
       );
-    }
-
-    // 2. SECONDARY FALLBACK: OpenAI Speech-to-Text (gpt-4o-mini-transcribe -> whisper-1)
-    // Neutral vocabulary-only hint (NEVER inject Couple/Lead Name or sample amounts/shortcuts so Whisper never hallucinates them!)
-    if (!transcript && !noSpeechConfirmedByPrimary && openAiKey) {
-      const openAiModels = ['gpt-4o-mini-transcribe', 'whisper-1'];
-      const hintPrompt = `Spelling vocabulary only: ${vocabEvents}, ${vocabRoles}. Do not invent speech if silent.`;
-      for (const oaModel of openAiModels) {
-        try {
-          const oaForm = new FormData();
-          const fileObj = new File([audioBuffer], `recording.${fileExt}`, { type: mimeType });
-          oaForm.append('file', fileObj);
-          oaForm.append('model', oaModel);
-          oaForm.append('prompt', hintPrompt.slice(0, 500));
-          oaForm.append('temperature', '0');
-
-          const oaRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${openAiKey}`,
-            },
-            body: oaForm,
-            signal: AbortSignal.timeout(20000),
-          });
-
-          if (oaRes.ok) {
-            const oaJson = await oaRes.json();
-            const rawText = (oaJson.text || '').trim();
-            if (!isPhantomOrHallucinatedTranscript(rawText, liveDraft)) {
-              transcript = cleanVoiceTranscript(rawText) || rawText;
-              activeEngine = `openai-${oaModel}`;
-              oneStepPolished = false;
-              console.log(`[OpenAI ${oaModel} Audio Fallback Success]:`, transcript);
-              break;
-            }
-          } else {
-            const errTxt = await oaRes.text().catch(() => '');
-            lastErrorDetail = `openai-${oaModel}: ${oaRes.status}`;
-            console.warn(`[OpenAI ${oaModel} Error]:`, oaRes.status, errTxt.slice(0, 120));
-          }
-        } catch (oaErr: any) {
-          lastErrorDetail = oaErr?.message || String(oaErr);
-          console.warn(`[OpenAI ${oaModel} Exception]:`, lastErrorDetail);
-        }
-      }
-    }
-
-    // 3. TERTIARY FALLBACK: Groq Whisper Large-v3-turbo (only if GROQ_API_KEY configured)
-    if (!transcript && !noSpeechConfirmedByPrimary && groqKey) {
-      try {
-        const groqFormData = new FormData();
-        const fileObj = new File([audioBuffer], `recording.${fileExt}`, {
-          type: mimeType,
-        });
-        groqFormData.append('file', fileObj);
-        groqFormData.append('model', 'whisper-large-v3-turbo');
-        groqFormData.append('temperature', '0');
-        groqFormData.append(
-          'prompt',
-          'Haldi, Mehendi, Sangeet, Wedding, Reception, Candid Photographer, Cinematographer, Drone.'
-        );
-
-        const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${groqKey}`,
-          },
-          body: groqFormData,
-          signal: AbortSignal.timeout(20000),
-        });
-
-        if (groqRes.ok) {
-          const groqJson = await groqRes.json();
-          const rawText = (groqJson.text || '').trim();
-          if (!isPhantomOrHallucinatedTranscript(rawText, liveDraft)) {
-            transcript = cleanVoiceTranscript(rawText) || rawText;
-            activeEngine = 'groq-whisper-large-v3-turbo';
-            oneStepPolished = false;
-            console.log('[Groq Whisper Fallback Success]:', transcript);
-          }
-        }
-      } catch (err: any) {
-        console.warn('[Groq Whisper Fallback Exception]:', err?.message || err);
-      }
     }
 
     if (!transcript) {

@@ -8,6 +8,7 @@ import {
   fallbackHeuristicExtractor,
   mapAiOutputToQuotationDocument,
   syncShootPageInSequence,
+  syncSpecialValuePageInSequence,
   sanitizeExtractedCoupleName,
   isInvalidCoupleName
 } from '@/lib/ai-quotation-extractor';
@@ -309,6 +310,28 @@ export async function POST(req: NextRequest) {
       } else if (Array.isArray(rawInputDoc.pageSequence)) {
         const hasShoot = rawInputDoc.pageSequence.some((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) === 'shootDetails');
         clonedDoc.pageSequence = syncShootPageInSequence(clonedDoc.pageSequence, hasShoot);
+      }
+      if (rawInputDoc.specialValueAdditions !== undefined) {
+        const specialVisible = Boolean(
+          rawInputDoc.specialValueAdditions.visible ??
+          (Array.isArray(rawInputDoc.specialValueAdditions.selectedItems) &&
+            rawInputDoc.specialValueAdditions.selectedItems.length > 0)
+        );
+        clonedDoc.specialValueAdditions = {
+          ...(clonedDoc.specialValueAdditions || {}),
+          ...rawInputDoc.specialValueAdditions,
+          visible: specialVisible,
+          selectedItems: specialVisible
+            ? (Array.isArray(rawInputDoc.specialValueAdditions.selectedItems)
+                ? rawInputDoc.specialValueAdditions.selectedItems
+                : [])
+            : [],
+          note: specialVisible ? (rawInputDoc.specialValueAdditions.note || '') : ''
+        };
+        clonedDoc.pageSequence = syncSpecialValuePageInSequence(clonedDoc.pageSequence, specialVisible);
+      } else if (Array.isArray(rawInputDoc.pageSequence)) {
+        const hasSpecial = rawInputDoc.pageSequence.some((p: any) => (typeof p === 'string' ? p : p?.type || p?.id) === 'specialValueAdditions');
+        clonedDoc.pageSequence = syncSpecialValuePageInSequence(clonedDoc.pageSequence, hasSpecial);
       }
       if (rawInputDoc.cover?.locationName) {
         clonedDoc.cover.locationName = rawInputDoc.cover.locationName;

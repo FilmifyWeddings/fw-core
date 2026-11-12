@@ -6,10 +6,9 @@ import { DEFAULT_EVENT_TYPES, DEFAULT_CREW_ROLES } from '@/lib/workspace-setting
 export const maxDuration = 30; // 30 seconds server execution timeout
 
 /**
- * High-Speed AI Voice Polish & Intent Replacement Route (ChatGPT Manager)
- * Primary Engine: OpenAI GPT-4o-mini (Tier 1 Ultra-Low-Latency, Superior Multilingual Hindi/Hinglish/Marathi & Math)
- * Secondary Engine: Google Gemini (gemini-flash-latest)
- * Tertiary Fallback: Instant Rule-Based Cleaner
+ * High-Speed Google Gemini Voice Polish & Intent Replacement Route
+ * Primary Engine: Google Gemini (gemini-flash-lite-latest -> gemini-3.1-flash-lite -> gemini-3-flash-preview)
+ * Safety Fallback: Instant Deterministic Rule-Based Cleaner
  *
  * Analyzes raw spoken audio transcript from microphone, understands user true intent,
  * fixes speech-to-text recognition errors, stutters, and phonetic slips,
@@ -250,45 +249,7 @@ ${customInstructions ? `\nSTUDIO CUSTOM RULES:\n${customInstructions}` : ''}
       }
     }
 
-    // 4. SECONDARY ENGINE: OpenAI gpt-4.1-mini fallback if Gemini unavailable/throttled
-    const openAiKey = (process.env.OPENAI_API_KEY || '').trim();
-    if (openAiKey) {
-      try {
-        const oaRes = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openAiKey}`
-          },
-          body: JSON.stringify({
-            model: 'gpt-4.1-mini',
-            temperature: 0.05,
-            max_tokens: 2000,
-            messages: [
-              { role: 'system', content: systemInstruction },
-              { role: 'user', content: `Raw Voice Input:\n"${rawText}"\n\nClean Finished Replacement Text:` }
-            ]
-          }),
-          signal: AbortSignal.timeout(12000)
-        });
-        if (oaRes.ok) {
-          const oaJson = await oaRes.json();
-          const polishedText = oaJson?.choices?.[0]?.message?.content?.trim() || '';
-          if (polishedText && polishedText.length > 3) {
-            const cleanResult = enforceLosslessSpeechRetention(rawText, polishedText, leadName);
-            return NextResponse.json({
-              success: true,
-              polishedText: cleanResult,
-              engine: 'gpt-4.1-mini'
-            });
-          }
-        }
-      } catch (oaErr: any) {
-        console.warn('[Polish Speech] OpenAI fallback exception:', oaErr?.message || oaErr);
-      }
-    }
-
-    // 5. Graceful Fallback: Return rule-based cleaned transcript
+    // 4. Deterministic Safety Fallback: Return rule-based cleaned transcript
     return NextResponse.json({
       success: true,
       polishedText: baseCleaned,

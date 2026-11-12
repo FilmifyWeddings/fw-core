@@ -161,6 +161,141 @@ export function syncShootPageInSequence(pageSequence: any[] | undefined, shootVi
 }
 
 /**
+ * Unicode-safe detection of explicit Special Value Additions / complimentary / freebie intent.
+ * Ignores non-freebie English phrases like "freelance", "feel free", "hassle-free".
+ */
+export function detectSpecialValueIntent(text: string): boolean {
+  if (!text || !text.trim()) return false;
+  const scrubbed = text.replace(
+    /\b(?:freelance(?:r|rs)?|feel[\s-]+free|hassle[\s-]+free|stress[\s-]+free|tension[\s-]+free|free[\s-]+time|duty[\s-]+free)\b/gi,
+    ' '
+  );
+  return /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:special[\s-]+value[\s-]+additions?|value[\s-]+additions?|special[\s-]+add[\s-]*ons?|complimentary|complementary|free[\s-]+(?:drone|gift|gifts|addon|addons|add-on|add-ons|bonus|item|items|frame|frames|usb|box|storage|cloud|gallery|reel|reels|teaser|invite|e-?invite|calendar|album|mini\s*book|pre[\s-]*wed(?:ding)?|service|coverage|shoot)|(?:drone|frame|frames|usb|pendrive|pen\s*drive|album|mini\s*(?:album|book)|teaser|e-?invite|invite|gift|gifts)\s+(?:free|फ्री)|free\s+(?:mein|me|de\s+(?:rahe|dena|dijiye)|denge|dijiye|add|karo|rakhna|rakh\s+dena|laga\s+dena)|बोनस|कॉम्प्लिमेंट्री|कम्प्लिमेंट्री|स्पेशल\s*वैल्यू\s*एडिशन|स्पेशल\s*ऐड\s*ऑन|फ्री\s*(?:में|मे|देना|दे\s*देना|देंगे|रखो|रखना|ऐड|ड्रोन|फ्रेम|गिफ्ट|रील|टीज़र|एल्बम|पेनड्राइव|कवरेज)|मुफ़्त|मुफ्त)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(scrubbed);
+}
+
+/**
+ * Extracts complimentary / Special Value Addition items from spoken/written user notes.
+ */
+export function extractSpecialValueAdditionsFromText(
+  rawText: string,
+  studioSpecialAddons: string[] = []
+): string[] {
+  if (!rawText || !rawText.trim()) return [];
+  const scrubbed = rawText.replace(
+    /\b(?:freelance(?:r|rs)?|feel[\s-]+free|hassle[\s-]+free|stress[\s-]+free|tension[\s-]+free|free[\s-]+time|duty[\s-]+free)\b/gi,
+    ' '
+  );
+  if (!detectSpecialValueIntent(scrubbed)) return [];
+  const results: string[] = [];
+  const addItem = (label: string) => {
+    const clean = (label || '').trim();
+    if (!clean) return;
+    if (!results.some((r) => r.toLowerCase() === clean.toLowerCase())) {
+      results.push(clean);
+    }
+  };
+  const findCatalog = (re: RegExp): string | undefined =>
+    studioSpecialAddons.find((a) => re.test(a));
+
+  const scrubbedLower = scrubbed.toLowerCase();
+  for (const addonTitle of studioSpecialAddons) {
+    const clean = String(addonTitle || '').trim();
+    if (!clean || clean.length < 4) continue;
+    const low = clean.toLowerCase();
+    if (scrubbedLower.includes(low)) {
+      addItem(clean);
+      continue;
+    }
+    const coreWords = low
+      .replace(/\([^)]*\)/g, '')
+      .split(/\s+/)
+      .filter((w) => w.length >= 4 && !['with', 'from', 'for', 'all', 'wedding', 'complimentary', 'free', 'custom'].includes(w));
+    if (coreWords.length >= 2 && coreWords.every((w) => scrubbedLower.includes(w))) {
+      addItem(clean);
+    }
+  }
+
+  if (/(?:free|complimentary|complementary|फ्री|मुफ्त|मुफ़्त)\s*(?:4k\s*)?(?:drone|ड्रोन)|(?:drone|ड्रोन)\s*(?:free|फ्री|मुफ्त|मुफ़्त)/i.test(scrubbed)) {
+    addItem(findCatalog(/drone/i) || 'Complimentary Drone Coverage');
+  }
+  if (/(?:free|complimentary|complementary|फ्री|मुफ्त|मुफ़्त)\s*(?:\d+\s*)?(?:photo\s*)?(?:frames?|फ्रेम)|(?:photo\s*)?(?:frames?|फ्रेम)\s*(?:free|फ्री|मुफ्त|मुफ़्त)/i.test(scrubbed)) {
+    addItem(findCatalog(/frame/i) || 'Complimentary Framed Photo Print');
+  }
+  if (/(?:free|complimentary|complementary|फ्री|मुफ्त|मुफ़्त)\s*(?:wooden\s*|crystal\s*)?(?:usb|pen\s*drive|pendrive|पेनड्राइव)|(?:usb|pen\s*drive|pendrive|पेनड्राइव)\s*(?:free|फ्री|मुफ्त|मुफ़्त)/i.test(scrubbed)) {
+    addItem(findCatalog(/usb|pendrive/i) || 'Complimentary Wooden USB Presentation Box');
+  }
+  if (/(?:free|complimentary|complementary|फ्री|मुफ्त|मुफ़्त)\s*(?:1[\s-]*day\s*|1[\s-]*minute\s*)?(?:pre[\s-]*wed(?:ding)?\s*)?(?:teaser|टीज़र)|(?:pre[\s-]*wed(?:ding)?\s*)?(?:teaser|टीज़र)\s*(?:free|फ्री|मुफ्त|मुफ़्त)/i.test(scrubbed)) {
+    addItem(findCatalog(/teaser/i) || 'Complimentary Pre-Wedding Teaser');
+  }
+  if (/(?:free|complimentary|complementary|फ्री|मुफ्त|मुफ़्त)\s*(?:e[\s-]*invite|save\s*the\s*date|invite|इनवाइट)|(?:e[\s-]*invite|save\s*the\s*date|invite|इनवाइट)\s*(?:free|फ्री|मुफ्त|मुफ़्त)/i.test(scrubbed)) {
+    addItem(findCatalog(/invite|save\s*the\s*date/i) || 'Complimentary Save the Date Animated E-Invite');
+  }
+  if (/(?:free|complimentary|complementary|फ्री|मुफ्त|मुफ़्त)\s*(?:mini\s*(?:album|book)|parent\s*album|मिनी\s*एल्बम)|(?:mini\s*(?:album|book)|parent\s*album|मिनी\s*एल्बम)\s*(?:free|फ्री|मुफ्त|मुफ़्त)/i.test(scrubbed)) {
+    addItem(findCatalog(/mini|parent\s*album/i) || 'Complimentary Mini Parent Album');
+  }
+  if (/(?:free|complimentary|complementary|फ्री|मुफ्त|मुफ़्त)\s*(?:cloud\s*storage|online\s*gallery|sneak\s*peek)|(?:cloud\s*storage|online\s*gallery)\s*(?:free|फ्री|मुफ्त|मुफ़्त)/i.test(scrubbed)) {
+    addItem(findCatalog(/cloud|gallery|sneak/i) || 'Complimentary Online Gallery & Cloud Storage');
+  }
+
+  const protectedText = scrubbed.replace(/(\d),(?=\d)/g, '$1__NCOMMA__');
+  const specialClauseRe = /(?:special\s+value\s+additions?|complimentary|complementary|बोनस|कॉम्प्लिमेंट्री)\s*(?:में|मे|mein|is|are|:|-|add)?\s*([^.!?\n।]+)/gi;
+  for (const m of protectedText.matchAll(specialClauseRe)) {
+    const tail = (m[1] || '')
+      .replace(/__NCOMMA__/g, ',')
+      .replace(/^(?:mein|me|में|मे|add|ऐड|करो|रखो|is|are|:|-)\s*/i, '')
+      .replace(/\s+(?:free|mein|me|रखो|करो|ऐड|add|dena|dene|chahiye|hai|hain|रहेगा|रहेगी)$/i, '')
+      .trim();
+    if (!tail || tail.length < 3 || tail.length > 80) continue;
+    if (
+      isValidDeliverableItem(tail, studioSpecialAddons) &&
+      !/^(?:item|items|addon|add-on|option|options|page|section|special|value|addition|additions)$/i.test(tail)
+    ) {
+      const prefixed = /^(?:complimentary|free|complementary)/i.test(tail)
+        ? tail.replace(/\b[a-z]/g, (c) => c.toUpperCase())
+        : `Complimentary ${tail.replace(/\b[a-z]/g, (c) => c.toUpperCase())}`;
+      addItem(prefixed);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Synchronizes Special Value Additions (`specialValueAdditions`) presence in pageSequence based strictly on visibility.
+ */
+export function syncSpecialValuePageInSequence(pageSequence: any[] | undefined, specialVisible: boolean): any[] {
+  const base = Array.isArray(pageSequence) && pageSequence.length > 0 ? [...pageSequence] : [];
+  const filtered = specialVisible
+    ? base
+    : base.filter((p: any) => {
+        const typeStr = typeof p === 'string' ? p : (p?.type || p?.id || '');
+        return typeStr !== 'specialValueAdditions';
+      });
+
+  if (specialVisible) {
+    const alreadyHas = filtered.some((p: any) => {
+      const typeStr = typeof p === 'string' ? p : (p?.type || p?.id || '');
+      return typeStr === 'specialValueAdditions';
+    });
+    if (!alreadyHas) {
+      const stdDef = STANDARD_PAGE_DEFINITIONS.find(s => s.type === 'specialValueAdditions');
+      const item = {
+        id: 'specialValueAdditions-std',
+        type: 'specialValueAdditions',
+        label: stdDef?.label || 'Special Value Additions',
+        isStandard: true
+      };
+      const delivIdx = filtered.findIndex((p: any) => (typeof p === 'string' ? p : p?.type) === 'deliverablesPage');
+      const funcIdx = filtered.findIndex((p: any) => (typeof p === 'string' ? p : p?.type) === 'functionsPage');
+      const priceIdx = filtered.findIndex((p: any) => (typeof p === 'string' ? p : p?.type) === 'pricingPage');
+      const insertAt = delivIdx >= 0 ? delivIdx + 1 : (funcIdx >= 0 ? funcIdx + 1 : (priceIdx >= 0 ? priceIdx : filtered.length));
+      filtered.splice(insertAt, 0, item);
+    }
+  }
+  return filtered;
+}
+
+/**
  * Resolves any spoken/extracted ceremony name to the exact function name configured in the Studio Owner's Settings
  * (`workspace_event_types` + `workspace_quotation_settings.defaultFunctions`) so Quotations sync seamlessly to Team Manager & Post-Production.
  */
@@ -559,7 +694,10 @@ const COUPLE_INVALID_WORDS = new Set([
   'rahega', 'rahegi', 'rahna', 'rakhna', 'dena', 'dene', 'chahiye', 'hui', 'hua', 'hai', 'hain', 'ki', 'ka', 'ke', 'ko',
   'mein', 'me', 'se', 'par', 'aur', 'and', 'with', 'for', 'the', 'this', 'that', 'is', 'are', 'will', 'be', 'hum', 'humein',
   'humko', 'humare', 'hamare', 'mera', 'meri', 'mere', 'hamara', 'hamari', 'aap', 'aapka', 'aapki', 'aapke', 'unke', 'inke',
-  'aaj', 'kal', 'parso', 'bhi', 'toh', 'haan', 'han', 'ok', 'okay', 'sir', 'ji', 'customer', 'demo', 'sample', 'new', 'naya', 'nayi'
+  'aaj', 'kal', 'parso', 'bhi', 'toh', 'haan', 'han', 'ok', 'okay', 'sir', 'ji', 'customer', 'demo', 'sample', 'new', 'naya', 'nayi',
+  'jo', 'wo', 'woh', 'ye', 'yeh', 'mujhe', 'mujhko', 'unko', 'inko', 'share', 'karna', 'karo', 'kardo', 'karne', 'karni',
+  'bhejna', 'bhejo', 'usme', 'usmein', 'jisme', 'jismein', 'quotion', 'qution', 'qoutation', 'kotation', 'koteshan', 'kotesan',
+  'venue', 'venues', 'add', 'kar', 'karke'
 ]);
 
 const SPOKEN_NAME_MONTHS = new Set([
@@ -680,7 +818,7 @@ export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEven
   };
 
   // 1. Explicit English labels: "Couple: X & Y", "Client name: X", "Name: X"
-  const explicitMatch = userNotes.match(/(?:^|[\s.;,\n])(?:couple(?:\s*name)?|client(?:\s*name)?|bride\s*(?:&|and)\s*groom|groom\s*(?:&|and)\s*bride)\s*[:=\-]+\s*([A-Za-z\u0900-\u097F\s&'+.-]{2,45}?)(?=\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|ke\s+liye|ki|ka|\d|₹|rs|all|deliverable)|[,\n\r.;।]|$)/i);
+  const explicitMatch = userNotes.match(/(?:^|[\s.;,\n])(?:couple(?:\s*name)?|client(?:\s*name)?|bride\s*(?:&|and)\s*groom|groom\s*(?:&|and)\s*bride)\s*[:=\-]+\s*([A-Za-z\u0900-\u097F\s&'+.-]{2,45}?)(?=\s+(?:wedding|marriage|shaadi|quotation|quotion|qution|qoutation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|ke\s+liye|ki|ka|\d|₹|rs|all|deliverable)|[,\n\r.;।]|$)/i);
   if (explicitMatch?.[1]) {
     const valid = isStrictValidCandidate(explicitMatch[1]);
     if (valid) return valid;
@@ -694,8 +832,8 @@ export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEven
   }
 
   // 3. Direct Hinglish/Hindi single or couple intro:
-  //    "O Piya ke liye quotation...", "Rohit ke liye ek quotation banani hai...", "Priya ki wedding...", "राहुल की शादी..."
-  const introRe = /(?:^|[।.,;\n]\s*|\s+)([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)\s+(?:ke\s+liye|ke\s+liya|k\s+liye|के\s+लिए|के\s+लिये|ka|ki|ke|का|की|के)\s+(?:(?:ek|a|one|new|naya|nayi|final|एक|नया|नयी)\s+)?(?:quotation|quote|proposal|wedding|marriage|shaadi|shadi|engagement|haldi|sangeet|mehendi|reception|event|shoot|package|banan[ai]|banao|कोटेशन|प्रपोजल|वेडिंग|शादी|लग्न|सगाई|इवेंट|शूट|पैकेज|बनान[ाी])/gi;
+  //    "O Piya ke liye quotation...", "O Piya ke liye quotion...", "Rohit ke liye ek quotation banani hai...", "Priya ki wedding..."
+  const introRe = /(?:^|[।.,;\n]\s*|\s+)([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)\s+(?:ke\s+liye|ke\s+liya|k\s+liye|के\s+लिए|के\s+लिये|ka|ki|ke|का|की|के)\s+(?:(?:ek|a|one|new|naya|nayi|final|total|\d+|एक|नया|नयी)\s+)?(?:events?\s*(?:ka|ki|ke)?\s*)?(?:quotation|quotion|qution|qoutation|quote|koteshan|proposal|wedding|marriage|shaadi|shadi|engagement|haldi|sangeet|mehendi|reception|event|shoot|package|banan[ai]|banao|कोटेशन|प्रपोजल|वेडिंग|शादी|लग्न|सगाई|इवेंट|शूट|पैकेज|बनान[ाी])/gi;
   for (const m of userNotes.matchAll(introRe)) {
     if (m[1]) {
       const valid = isStrictValidCandidate(m[1]);
@@ -704,12 +842,20 @@ export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEven
   }
 
   // 4. Explicit English prefix: "quotation for X", "quote for X", "proposal for X", "wedding for X"
-  const forRe = /(?:quotation|quote|proposal|wedding)\s+for\s+([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)(?=\s+(?:wedding|marriage|shaadi|reception|event|pre-wedding|haldi|sangeet|mehendi|on|date|in|budget|total|\d|₹)|[,\n\r.;।]|$)/gi;
+  const forRe = /(?:quotation|quotion|qution|qoutation|quote|proposal|wedding)\s+for\s+([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)(?=\s+(?:wedding|marriage|shaadi|reception|event|events|pre-wedding|haldi|sangeet|mehendi|on|date|in|budget|total|\d|₹)|[,\n\r.;।]|$)/gi;
   for (const m of userNotes.matchAll(forRe)) {
     if (m[1]) {
       const valid = isStrictValidCandidate(m[1]);
       if (valid) return valid;
     }
+  }
+
+  // 4B. Leading name before comma + event/quotation summary ("O Piya, total 3 events hain...")
+  const commaIntroRe = /^(?:client\s+|couple\s+)?([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)\s*,\s*(?:total\s+\d+\s+events?|wedding|haldi|sangeet|engagement|mehendi|reception|quotation|quotion)/i;
+  const commaMatch = userNotes.match(commaIntroRe);
+  if (commaMatch?.[1]) {
+    const valid = isStrictValidCandidate(commaMatch[1]);
+    if (valid) return valid;
   }
 
   // 5. Scan ALL standalone couple pairs ("Sagar & Vruddhi", "Rohan aur Pooja") skipping non-name pairs like "Standard Crew aur Premium"
@@ -904,6 +1050,48 @@ function normalizeDeliverableCountToken(tok: string): number {
 const DELIVERABLE_NUM_PREFIX = '(?:(\\d+|पांच\\s*सौ|पाँच\\s*सौ|तीन\\s*सौ|दो\\s*सौ|सौ|एक|दो|तीन|चार|पांच|पाँच|छह|छः|दस|पचास|one|two|three|four|five|six|ten|ek|do|teen|char|paanch|panch)\\s*)';
 
 /**
+ * Validates that a deliverable string is a genuine photography/video deliverable item
+ * and NOT a conversational Hindi/Hinglish sentence fragment or split currency number ("3", "000 Ka Hai Usme").
+ */
+export function isValidDeliverableItem(rawItem?: string | null, studioDeliverables: string[] = []): boolean {
+  const clean = String(rawItem || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean || clean.length < 3 || clean.length > 95) return false;
+
+  // Always trust exact matches configured in Studio Settings
+  if (studioDeliverables.some((sd) => String(sd || '').trim().toLowerCase() === clean.toLowerCase())) {
+    return true;
+  }
+
+  // Reject pure numbers, currencies, or dangling split thousands like "000" / "000 Ka Hai Usme"
+  if (/^\s*0{2,}\b/.test(clean)) return false;
+  if (/^[\d,\s.+₹\-–—/%kKlL]+$/i.test(clean)) return false;
+
+  // Reject pricing/budget/financial terms inside deliverables
+  if (/(?:₹|\brs\.?\b|\binr\b|\bbudget\b|बजट|\bprice\b|प्राइस|\bpackage\b|पैकेज|\bamount\b|अमाउंट|\badvance\b|एडवांस|\bdiscount\b|डिस्काउंट|छूट|\btoken\b|टोकन|\bpayment\b|पेमेंट|\bcost\b|\blakh\b|लाख|\bthousand\b|हजार|हज़ार|\b\d+\s*k\b|\b\d{1,3},\d{3})/i.test(clean)) {
+    return false;
+  }
+
+  // Reject conversational Hindi / Hinglish / English dictation prose
+  if (/\b(?:quotation|quotion|qution|qoutation|proposal|share|mujhe|mujhko|unko|inko|humein|humko|apne|unke|inke|karna|karo|kardo|karne|karni|bhejna|bhejo|banani|banana|banane|rahega|rahegi|chahiye|lena|dena|dene|bolna|bola|bataya|ka\s+hai|ki\s+hai|ke\s+liye|ke\s+liya|ka\s+package|wo|woh|ye|yeh|jo|usme|usmein|isme|ismein|jisme|jismein|iske|uske|total\s+\d+\s+events?)\b|(?:कोटेशन|प्रपोजल|मुझे|उनको|इनको|हमें|करना|करो|करने|करनी|भेजना|बनानी|बनाना|रहेगा|रहेगी|चाहिए|लेना|देना|बोलना|बोला|बताया|वो|यह|ये|जो|उसमें|उसमे|इसमें|इसमे|जिसमें|जिसमे)/i.test(clean)) {
+    return false;
+  }
+
+  // Reject dangling multi-word prose containing digits without any deliverable noun
+  const hasDeliverableNoun = /(?:photo|image|pic|picture|video|film|teaser|trailer|highlight|reel|album|photobook|photo\s*book|raw|hard\s*drive|hdd|ssd|usb|pendrive|pen\s*drive|frame|print|canvas|edit|sde|invite|invitation|calendar|book|copy|soft\s*copy|gallery|cloud|minutes?|mins?|hours?|hrs?|sheets?|pages?|फोटो|वीडियो|एल्बम|रील|पेनड्राइव|टीज़र|टीजर|हाईलाइट|फिल्म|रॉ)/i.test(clean);
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length > 4 && /\d/.test(clean) && !hasDeliverableNoun) {
+    return false;
+  }
+  if (words.length > 8 && !hasDeliverableNoun) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Bilingual Hindi / Hinglish / English Deliverables Extractor.
  * Accurately captures counted deliverables ("500 edited photos", "5 Instagram reels", "2 albums", "1 pendrive")
  * as well as custom & studio catalog items without confusing crew roles ("Reels Creator", "Traditional Videographer").
@@ -924,9 +1112,13 @@ export function extractDeliverablesFromText(
   sanitized = sanitized.replace(/(?:candid|कैंडिड)\s*(?:photo(?:grapher|graphy)|फोटोग्राफर)?/gi, ' __CREW_ROLE__ ');
   sanitized = sanitized.replace(/(?:cinematographer|cinematography|सिनेमैटोग्राफर|सिनेमैटोग्राफी)/gi, ' __CREW_ROLE__ ');
 
+  // Protect numeric thousands commas ("3,000", "30,000", "2,50,000") before clause splitting
+  const protectedSanitized = sanitized.replace(/(\d),(?=\d)/g, '$1__NCOMMA__');
+
   // Remove Pre-Wedding-only clauses (keep clauses that mention deliverables/main wedding)
-  const nonPreWedParts = sanitized
+  const nonPreWedParts = protectedSanitized
     .split(/(?:[\n.;।|]+|\s*,\s*|\s+(?:और|aur|and)\s+)/i)
+    .map((part) => part.replace(/__NCOMMA__/g, ','))
     .filter((part) => {
       const pLower = part.toLowerCase();
       const isPreWed = /(?:pre[\s-]*wed|prewedding|pre[\s-]*shoot|preshoot|प्री[\s-]*वेडिंग|प्रीवेडिंग|प्री[\s-]*शूट)/i.test(pLower);
@@ -940,7 +1132,7 @@ export function extractDeliverablesFromText(
   const matched: string[] = [];
   const addUnique = (label: string) => {
     const clean = label.trim();
-    if (!clean) return;
+    if (!clean || !isValidDeliverableItem(clean, studioDeliverables)) return;
     if (!matched.some((m) => m.toLowerCase() === clean.toLowerCase())) {
       matched.push(clean);
     }
@@ -1080,17 +1272,21 @@ export function extractDeliverablesFromText(
   // 11. Explicit "Deliverables mein X, Y aur Z" clause tail parser for any arbitrary custom deliverable
   const delivClauseMatch = scanText.match(/(?:deliverables?|डिलीवरेबल्स?|डिलीवरी)\s*(?:में|मे|mein|in|:|-|हैं|है|rakhna|करने\s*हैं?)?\s*([^.!?\n।]+)/i);
   if (delivClauseMatch && delivClauseMatch[1]) {
-    const rawTail = delivClauseMatch[1]
+    const protectedClause = delivClauseMatch[1].replace(/(\d),(?=\d)/g, '$1__NCOMMA__');
+    const rawTail = protectedClause
+      .replace(/^[\s,:\-]+/, '')
       .replace(/^(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं)?)?|करने\s*(?:हैं|है)?)\s*(?:,|$|\s+)/i, '')
+      .replace(/^[\s,:\-]+/, '')
       .replace(/(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं)?)?|करने\s*(?:हैं|है)?|rakhna|chahiye|dena|रखना|चाहिए|देना)\s*$/i, '')
-      .replace(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:budget|बजट|price|प्राइस|package|पैकेज|amount|अमाउंट|cost|discount|ऑफर|offer|advance|एडवांस|gst|total|टोटल|रुपये|lakh|लाख|हजार|₹).*$/i, '')
+      .replace(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:budget|बजट|price|प्राइस|package|पैकेज|amount|अमाउंट|cost|discount|ऑफर|offer|advance|एडवांस|gst|total|टोटल|रुपये|lakh|लाख|हजार|₹|quotation|quotion|qution|qoutation|mujhe|mujhko|unko|inko|share\s+karna|मुझे|उनको|इनको).*$/i, '')
       .trim();
 
-    if (rawTail && !/^(?:all|add|ऑल|सभी|सारे|ऐड|करने|करना|है|हैं)\b/i.test(rawTail)) {
+    if (rawTail && !/^(?:all|add|ऑल|सभी|सारे|ऐड|करने|करना|है|हैं|jo|wo|woh|ye|yeh|mujhe|mujhko|unko|inko)\b/i.test(rawTail)) {
       const tokens = rawTail
-        .split(/\s*(?:,(?!\d)|\s+(?:और|aur|and|&|\+)\s+)\s*/i)
+        .split(/\s*(?:,|\s+(?:और|aur|and|&|\+)\s+)\s*/i)
         .map((t) =>
           t
+            .replace(/__NCOMMA__/g, ',')
             .replace(/^(?:में|मे|mein|और|aur|and|इसका|उसका|साथ\s*ही|add|ऐड|रखना|चाहिए|देना|करने|करना)\s+/gi, '')
             .replace(/\s+(?:add|ऐड|करना|करो|करने|रखना|चाहिए|रहेगा|रहेंगी|है|हैं)$/gi, '')
             .trim()
@@ -1100,7 +1296,7 @@ export function extractDeliverablesFromText(
           if (/^[\d,\s.+₹\-kKlL]+$/i.test(t)) return false;
           if (/(?:₹|\bbudget\b|बजट|प्राइस|अमाउंट|एडवांस|लख|लाख|हजार|advance|price|amount|total|package|standard\s*crew|alag\s*crew)/i.test(t)) return false;
           if (/^(?:__CREW_ROLE__|add|all|ok|karna|karo|karne|rakhna|chahiye|dena|hain?|iska|uska|aur\s+iska|करना|करो|करने|करें|रहेगा|रहेंगी|रखना|चाहिए|देना|इसका|उसका|और\s+इसका|साथ\s+ही)$/i.test(t)) return false;
-          return true;
+          return isValidDeliverableItem(t, studioDeliverables);
         });
 
       for (const tok of tokens) {
@@ -1128,7 +1324,7 @@ export function extractDeliverablesFromText(
     }
   }
 
-  return matched;
+  return matched.filter((item) => isValidDeliverableItem(item, studioDeliverables));
 }
 
 export function mergeDeliverablesSmart(
@@ -1166,9 +1362,30 @@ interface ScopedShortcutMatch {
   mappedCrew: Array<{ name: string; qty: number }>;
   mappedDeliverables: string[];
   mappedPrice: number | null;
+  mappedSpecialAddons: string[];
   scopedEvents: Set<string> | null;
   isBuiltinFallback?: boolean;
 }
+
+const hasUnicodeWord = (haystack: string, needle: string): boolean => {
+  const cleanNeedle = String(needle || '').trim();
+  if (!cleanNeedle) return false;
+  const re = new RegExp(
+    `(?:^|[^\\u0900-\\u097Fa-zA-Z0-9])${escapeRegExp(cleanNeedle)}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`,
+    'i'
+  );
+  return re.test(haystack);
+};
+
+const matchesShortcutTriggerText = (text: string, trigLower: string): boolean => {
+  if (!text || !trigLower) return false;
+  if (hasUnicodeWord(text, trigLower)) return true;
+  const words = trigLower.split(/\s+/).filter(Boolean);
+  if (words.length > 0 && words.every((w) => hasUnicodeWord(text, w))) return true;
+  if (trigLower.includes('deliverable') && /(?:ऑल\s*डिलीवरेबल्स|all\s*deliverable)/i.test(text)) return true;
+  if (trigLower.includes('standard') && /स्टैंडर्ड\s*(?:क्रू|टीम)/i.test(text)) return true;
+  return false;
+};
 
 interface EventCrewOverrideInfo {
   eventName: string;
@@ -1210,6 +1427,7 @@ export function analyzeScopedShortcutsAndCrewOverrides(
     mappedCrew: Array<{ name: string; qty: number }>;
     mappedDeliverables: string[];
     mappedPrice: number | null;
+    mappedSpecialAddons: string[];
     isBuiltinFallback?: boolean;
   }> = [];
 
@@ -1232,8 +1450,11 @@ export function analyzeScopedShortcutsAndCrewOverrides(
       trigger: sc.trigger,
       triggerLower: trigLower,
       mappedCrew,
-      mappedDeliverables: Array.isArray(sc.mappedDeliverables) ? sc.mappedDeliverables : [],
-      mappedPrice: sc.mappedPrice ? Number(sc.mappedPrice) : null
+      mappedDeliverables: Array.isArray(sc.mappedDeliverables) ? sc.mappedDeliverables.filter(Boolean) : [],
+      mappedPrice: sc.mappedPrice ? Number(sc.mappedPrice) : null,
+      mappedSpecialAddons: Array.isArray(sc.mappedSpecialAddons)
+        ? sc.mappedSpecialAddons.map((x: any) => String(x || '').trim()).filter(Boolean)
+        : []
     });
   }
 
@@ -1251,6 +1472,7 @@ export function analyzeScopedShortcutsAndCrewOverrides(
       ],
       mappedDeliverables: [],
       mappedPrice: null,
+      mappedSpecialAddons: [],
       isBuiltinFallback: true
     });
   }
@@ -1381,14 +1603,8 @@ export function analyzeScopedShortcutsAndCrewOverrides(
         info.hasRestrictiveOverride = true;
       }
 
-      const clLower = cl.text.toLowerCase();
       for (const sc of normalizedShortcuts) {
-        const words = sc.triggerLower.split(/\s+/).filter(Boolean);
-        const trigMatched =
-          clLower.includes(sc.triggerLower) ||
-          (words.length > 0 && words.every((w) => clLower.includes(w))) ||
-          (sc.triggerLower.includes('standard') && /स्टैंडर्ड\s*(?:क्रू|टीम)/i.test(cl.text));
-        if (trigMatched) {
+        if (matchesShortcutTriggerText(cl.text, sc.triggerLower)) {
           info.triggeredShortcuts.add(sc.triggerLower);
         }
       }
@@ -1397,16 +1613,10 @@ export function analyzeScopedShortcutsAndCrewOverrides(
     }
   }
 
-  const allNotesLower = [notes, extraContextText].filter(Boolean).join(' ').toLowerCase();
+  const allNotesTextCombined = [notes, extraContextText].filter(Boolean).join(' ');
 
   for (const sc of normalizedShortcuts) {
-    const words = sc.triggerLower.split(/\s+/).filter(Boolean);
-    const isMatch =
-      allNotesLower.includes(sc.triggerLower) ||
-      (words.length > 0 && words.every((w) => allNotesLower.includes(w))) ||
-      (sc.triggerLower.includes('deliverable') &&
-        (allNotesLower.includes('ऑल डिलीवरेबल्स') || allNotesLower.includes('all deliverable'))) ||
-      (sc.triggerLower.includes('standard') && /स्टैंडर्ड\s*(?:क्रू|टीम)/i.test(notes));
+    const isMatch = matchesShortcutTriggerText(allNotesTextCombined, sc.triggerLower);
 
     if (!isMatch) continue;
 
@@ -1415,11 +1625,7 @@ export function analyzeScopedShortcutsAndCrewOverrides(
     let appearedWithoutEventClause = false;
 
     for (const cl of clausesWithEvents) {
-      const clLower = cl.text.toLowerCase();
-      const matchedInClause =
-        clLower.includes(sc.triggerLower) ||
-        (words.length > 0 && words.every((w) => clLower.includes(w))) ||
-        (sc.triggerLower.includes('standard') && /स्टैंडर्ड\s*(?:क्रू|टीम)/i.test(cl.text));
+      const matchedInClause = matchesShortcutTriggerText(cl.text, sc.triggerLower);
       if (matchedInClause) {
         if (cl.events.length > 0 && !cl.isGlobalModifier) {
           cl.events.forEach((e) => triggeredEventsSet.add(e.toLowerCase()));
@@ -1442,6 +1648,7 @@ export function analyzeScopedShortcutsAndCrewOverrides(
       mappedCrew: sc.mappedCrew,
       mappedDeliverables: sc.mappedDeliverables,
       mappedPrice: sc.mappedPrice,
+      mappedSpecialAddons: sc.mappedSpecialAddons,
       scopedEvents,
       isBuiltinFallback: sc.isBuiltinFallback
     });
@@ -1492,6 +1699,7 @@ export function buildScopedShortcutPromptHints(
     if (sm.mappedCrew.length > 0) parts.push(`Crew: ${sm.mappedCrew.map((c) => `${c.qty}x ${c.name}`).join(', ')}`);
     if (sm.mappedDeliverables.length > 0) parts.push(`Deliverables: ${sm.mappedDeliverables.join(', ')}`);
     if (sm.mappedPrice) parts.push(`Price: ₹${sm.mappedPrice}`);
+    if (sm.mappedSpecialAddons.length > 0) parts.push(`Special Value Add-ons: ${sm.mappedSpecialAddons.join(', ')}`);
     if (parts.length > 0) {
       lines.push(`[STUDIO TRIGGER "${sm.trigger}" — ${scopeDesc}] -> ${parts.join(' | ')}`);
     }
@@ -1537,6 +1745,9 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
   const studioDeliverables: string[] = Array.isArray(studioSettings?.deliverables)
     ? studioSettings.deliverables.map((d: any) => (typeof d === 'string' ? d : d?.title || '').trim()).filter(Boolean)
     : [];
+  const studioSpecialAddons: string[] = Array.isArray(studioSettings?.specialAddons)
+    ? studioSettings.specialAddons.map((a: any) => (typeof a === 'string' ? a : a?.title || '').trim()).filter(Boolean)
+    : [];
   const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
     ? studioSettings.aiRules.shortcuts
     : [];
@@ -1550,6 +1761,8 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
     .filter(Boolean)
     .join('\n')
     .trim();
+  const effectivePromptNotes =
+    String(contextData?.additional_user_notes || contextData?.additionalNotes || '').trim() || userNotes;
   const rawFormStr = JSON.stringify(contextData?.raw_form_fields || '');
   const allNotesText = `${userNotes} ${rawFormStr}`.toLowerCase();
 
@@ -1564,6 +1777,7 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
   );
 
   const matchedShortcutDelivs: string[] = [];
+  const matchedShortcutSpecialAddons: string[] = [];
   let matchedShortcutPrice: number | null = null;
   const functions: any[] = Array.isArray(doc.functionsPage?.items) ? doc.functionsPage.items : [];
   const anyOtherShortcutMatched = analysis.shortcutMatches.some((sm) => sm.mappedCrew.length > 0);
@@ -1571,6 +1785,9 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
   for (const sm of analysis.shortcutMatches) {
     if (sm.mappedDeliverables.length > 0) {
       matchedShortcutDelivs.push(...sm.mappedDeliverables);
+    }
+    if (sm.mappedSpecialAddons && sm.mappedSpecialAddons.length > 0) {
+      matchedShortcutSpecialAddons.push(...sm.mappedSpecialAddons);
     }
     if (sm.mappedPrice) matchedShortcutPrice = sm.mappedPrice;
 
@@ -1633,14 +1850,18 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
   if (hasAllDelivReq && studioDeliverables.length > 0) {
     doc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...studioDeliverables], explicitSpokenDelivs, true);
   } else {
-    let baseSelected = Array.isArray(doc.deliverablesPage.selectedItems) ? [...doc.deliverablesPage.selectedItems] : [];
+    let baseSelected = Array.isArray(doc.deliverablesPage.selectedItems)
+      ? doc.deliverablesPage.selectedItems.filter((item: string) => isValidDeliverableItem(item, studioDeliverables))
+      : [];
     if (matchedShortcutDelivs.length > 0) {
       baseSelected = mergeDeliverablesSmart(baseSelected, matchedShortcutDelivs, false);
     }
     if (explicitSpokenDelivs.length > 0) {
       baseSelected = mergeDeliverablesSmart(baseSelected, explicitSpokenDelivs, true);
     }
-    doc.deliverablesPage.selectedItems = baseSelected;
+    doc.deliverablesPage.selectedItems = baseSelected.filter((item: string) =>
+      isValidDeliverableItem(item, studioDeliverables)
+    );
   }
 
   doc.deliverablesPage.availableOptions = Array.from(
@@ -1650,6 +1871,49 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
       ...(doc.deliverablesPage.selectedItems || [])
     ])
   ).filter(Boolean);
+
+  // Enforce Special Value Additions visibility strictly when spoken/complimentary or triggered via shortcut
+  const spokenSpecialAddons = extractSpecialValueAdditionsFromText(effectivePromptNotes, studioSpecialAddons);
+  const hasSpecialValueSignal =
+    detectSpecialValueIntent(effectivePromptNotes) ||
+    matchedShortcutSpecialAddons.length > 0 ||
+    spokenSpecialAddons.length > 0;
+
+  if (hasSpecialValueSignal) {
+    const existingSpecial = Array.isArray(doc.specialValueAdditions?.selectedItems)
+      ? doc.specialValueAdditions.selectedItems.filter(Boolean)
+      : [];
+    const combinedSpecial = Array.from(
+      new Set([...existingSpecial, ...matchedShortcutSpecialAddons, ...spokenSpecialAddons])
+    ).filter(Boolean);
+    doc.specialValueAdditions = {
+      ...(doc.specialValueAdditions || {}),
+      visible: true,
+      selectedItems: combinedSpecial,
+      availableOptions: Array.from(
+        new Set([
+          ...studioSpecialAddons,
+          ...(doc.specialValueAdditions?.availableOptions || []),
+          ...combinedSpecial
+        ])
+      ).filter(Boolean),
+      note: doc.specialValueAdditions?.note || ''
+    };
+  } else {
+    doc.specialValueAdditions = {
+      ...(doc.specialValueAdditions || {}),
+      visible: false,
+      selectedItems: [],
+      note: ''
+    };
+  }
+
+  if (Array.isArray(doc.pageSequence) && doc.pageSequence.length > 0) {
+    doc.pageSequence = syncSpecialValuePageInSequence(
+      doc.pageSequence,
+      Boolean(doc.specialValueAdditions?.visible)
+    );
+  }
 
   // Apply shortcut price if base price isn't explicitly set by spoken numbers
   if (matchedShortcutPrice && doc.pricingPage && (!doc.pricingPage.basePrice || doc.pricingPage.basePrice === 150000)) {
@@ -2157,7 +2421,12 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   const splitRegex = /\s*(?:&|weds|and|\+|तथा|और)\s*/i;
   const stripKeywords = (s: string) => {
-    return s.replace(/\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|\d|all|deliverable|days|day).*$/i, '').trim();
+    return s
+      .replace(
+        /\s+(?:\b(?:wedding|marriage|shaadi|quotation|quotion|qution|qoutation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|all|deliverables?|days?|day)\b|\d).*$/i,
+        ''
+      )
+      .trim();
   };
 
   if (cleanNameStr && splitRegex.test(cleanNameStr)) {
@@ -2908,19 +3177,45 @@ export function fallbackHeuristicExtractor(contextData: any) {
   if (hasAllDeliverablesRequested && studioDeliverables.length > 0) {
     deliverables = mergeDeliverablesSmart([...studioDeliverables], spokenDeliverables, true);
   } else if (shortcutDeliverables.length > 0 || spokenDeliverables.length > 0) {
-    deliverables = mergeDeliverablesSmart(shortcutDeliverables, spokenDeliverables, true);
-  } else if (studioDeliverables.length > 0) {
-    deliverables = studioDeliverables.slice(0, 6);
-  } else {
-    deliverables = [
-      'All Raw Photos & Footage in Hard Drive',
-      'Cinematic Wedding Highlight Film (15-20 Min)',
-      'Cinematic Wedding Teaser (1-2 Min)',
-      '3 Instagram Reels',
-      'Traditional Long Video (2-3 Hours)',
-      'Custom Printed Coffee Table Album'
-    ];
+    deliverables = mergeDeliverablesSmart(shortcutDeliverables, spokenDeliverables, true)
+      .filter((item) => isValidDeliverableItem(item, studioDeliverables));
   }
+
+  if (deliverables.length === 0) {
+    if (studioDeliverables.length > 0) {
+      deliverables = studioDeliverables.slice(0, 6);
+    } else {
+      deliverables = [
+        'All Raw Photos & Footage in Hard Drive',
+        'Cinematic Wedding Highlight Film (15-20 Min)',
+        'Cinematic Wedding Teaser (1-2 Min)',
+        '3 Instagram Reels',
+        'Traditional Long Video (2-3 Hours)',
+        'Custom Printed Coffee Table Album'
+      ];
+    }
+  }
+
+  const studioSpecialAddons: string[] = Array.isArray(studioSettings?.specialAddons)
+    ? studioSettings.specialAddons
+        .map((a: any) => (typeof a === 'string' ? a : a?.title))
+        .filter(Boolean)
+    : [];
+  const shortcutSpecialAddons: string[] = [];
+  for (const sm of heuristicScopeAnalysis.shortcutMatches) {
+    if (sm.mappedSpecialAddons && sm.mappedSpecialAddons.length > 0) {
+      shortcutSpecialAddons.push(...sm.mappedSpecialAddons);
+    }
+  }
+  const effectiveSpecialNotes = userNotes || notes;
+  const spokenSpecialAddons = extractSpecialValueAdditionsFromText(effectiveSpecialNotes, studioSpecialAddons);
+  const hasSpecialValueAddons =
+    detectSpecialValueIntent(effectiveSpecialNotes) ||
+    shortcutSpecialAddons.length > 0 ||
+    spokenSpecialAddons.length > 0;
+  const resolvedSpecialAddons = hasSpecialValueAddons
+    ? Array.from(new Set([...shortcutSpecialAddons, ...spokenSpecialAddons])).filter(Boolean)
+    : [];
 
   const sanitizedFallbackCouple = cleanNameStr
     ? sanitizeExtractedCoupleName(coupleName, contextData?.lead_info?.name || '')
@@ -2944,7 +3239,8 @@ export function fallbackHeuristicExtractor(contextData: any) {
       selectedItems: deliverables
     },
     specialValueAdditions: {
-      selectedItems: fullText.includes('free drone') ? ['Complimentary Drone Coverage'] : [],
+      visible: hasSpecialValueAddons,
+      selectedItems: resolvedSpecialAddons,
       note: ''
     },
     pricingPage: {
@@ -3052,7 +3348,60 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
 
   // Check if rootObj is ALREADY a structured StudioCore Quotation JSON document
   if (rootObj.cover || rootObj.functionsPage || rootObj.pricingPage || rootObj.pages) {
-    // Enforce Pre-Wedding strict visibility on rootObj BEFORE normalizeQuotationData
+    const studioDelivs1: string[] = Array.isArray(studioSettings?.deliverables)
+      ? studioSettings.deliverables.map((d: any) => (typeof d === 'string' ? d : d?.title)).filter(Boolean)
+      : [];
+    const studioSpecialAddons1: string[] = Array.isArray(studioSettings?.specialAddons)
+      ? studioSettings.specialAddons.map((a: any) => (typeof a === 'string' ? a : a?.title)).filter(Boolean)
+      : [];
+    const studioShortcuts1: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
+      ? studioSettings.aiRules.shortcuts
+      : [];
+    const allNotesText1 = [
+      contextData?.additional_user_notes,
+      contextData?.notes_and_comments,
+      contextData?.additionalNotes
+    ].filter(Boolean).join(' ').toLowerCase();
+    const rawPromptOrAll1 = rawPromptNotes || allUserNotesRaw;
+    const rawFormStr1 = JSON.stringify(contextData?.raw_form_fields || '');
+    const branch1Shortcuts = analyzeScopedShortcutsAndCrewOverrides(
+      rawPromptOrAll1,
+      studioShortcuts1,
+      studioEventNames,
+      studioDefaultFunctions,
+      studioCrewRoles,
+      rawFormStr1
+    );
+    const shortcutDelivs1 = branch1Shortcuts.shortcutMatches.flatMap((sm) => sm.mappedDeliverables || []);
+    const shortcutSpecial1 = branch1Shortcuts.shortcutMatches.flatMap((sm) => sm.mappedSpecialAddons || []);
+    const spokenDelivs1 = !isDirectJson ? extractDeliverablesFromText(rawPromptOrAll1, studioDelivs1) : [];
+    const hasAllDelivReq1 = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText1);
+
+    // Capture valid explicit deliverables BEFORE normalizeQuotationData fills baseSchema template defaults
+    const rawRootDelivs: string[] = Array.isArray(rootObj.deliverablesPage?.selectedItems)
+      ? rootObj.deliverablesPage.selectedItems
+          .map((item: any) => String(item || '').trim())
+          .filter((s: string) => {
+            if (!s) return false;
+            const low = s.toLowerCase();
+            if (low.includes('pre-wedding') || low.includes('prewedding') || low.includes('pre wedding') || low.includes('previewing')) {
+              return false;
+            }
+            return isDirectJson || isValidDeliverableItem(s, studioDelivs1);
+          })
+      : [];
+
+    const spokenSpecial1 = !isDirectJson
+      ? extractSpecialValueAdditionsFromText(rawPromptOrAll1, studioSpecialAddons1)
+      : [];
+    const hasSpecialSignal1 = isDirectJson
+      ? Boolean(
+          rootObj?.specialValueAdditions?.visible ??
+          (Array.isArray(rootObj?.specialValueAdditions?.selectedItems) && rootObj.specialValueAdditions.selectedItems.length > 0)
+        )
+      : (detectSpecialValueIntent(rawPromptOrAll1) || shortcutSpecial1.length > 0 || spokenSpecial1.length > 0);
+
+    // Enforce Pre-Wedding & Special Value Additions strict visibility on rootObj BEFORE normalizeQuotationData
     if (!isDirectJson) {
       if (!promptPreWedRequested) {
         rootObj.shootDetails = {
@@ -3073,10 +3422,34 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
           showExclusionsNote: true
         };
       }
+
+      if (!hasSpecialSignal1) {
+        rootObj.specialValueAdditions = {
+          ...(rootObj.specialValueAdditions || {}),
+          visible: false,
+          selectedItems: [],
+          note: ''
+        };
+      } else {
+        rootObj.specialValueAdditions = {
+          ...(rootObj.specialValueAdditions || {}),
+          visible: true
+        };
+      }
     }
 
     const normDoc = normalizeQuotationData(rootObj, baseSchema);
+    if (!isDirectJson) {
+      if (!normDoc.deliverablesPage) normDoc.deliverablesPage = { selectedItems: [], availableOptions: [] };
+      if (hasAllDelivReq1 && studioDelivs1.length > 0) {
+        normDoc.deliverablesPage.selectedItems = [...studioDelivs1];
+      } else if (shortcutDelivs1.length > 0 || spokenDelivs1.length > 0 || rawRootDelivs.length > 0) {
+        // Prevent baseSchema demo deliverables from leaking alongside triggered shortcut or spoken deliverables
+        normDoc.deliverablesPage.selectedItems = [...rawRootDelivs];
+      }
+    }
     normDoc.pageSequence = syncShootPageInSequence(normDoc.pageSequence, Boolean(normDoc.shootDetails?.visible));
+    normDoc.pageSequence = syncSpecialValuePageInSequence(normDoc.pageSequence, Boolean(normDoc.specialValueAdditions?.visible));
 
     // Strictly ensure payment milestones default to Pending unless explicitly paid
     if (normDoc.paymentTermsPage?.steps && Array.isArray(normDoc.paymentTermsPage.steps)) {
@@ -3127,34 +3500,26 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       );
     }
 
-    // Filter out any pre-wedding deliverables from deliverablesPage
+    // Filter out any pre-wedding or invalid conversational deliverables from deliverablesPage
     if (normDoc.deliverablesPage?.selectedItems && Array.isArray(normDoc.deliverablesPage.selectedItems)) {
       normDoc.deliverablesPage.selectedItems = normDoc.deliverablesPage.selectedItems.filter((item: string) => {
         const itemLower = String(item || '').toLowerCase();
-        return !itemLower.includes('pre-wedding') && !itemLower.includes('prewedding') && !itemLower.includes('pre wedding') && !itemLower.includes('previewing');
+        if (itemLower.includes('pre-wedding') || itemLower.includes('prewedding') || itemLower.includes('pre wedding') || itemLower.includes('previewing')) {
+          return false;
+        }
+        return isDirectJson || isValidDeliverableItem(item, studioDelivs1);
       });
     }
 
     // ⚡ FULL DELIVERABLES SYNC: If user requested "all deliverables", inject ALL deliverables from Studio Settings!
-    const allNotesText = [
-      contextData?.additional_user_notes,
-      contextData?.notes_and_comments,
-      contextData?.additionalNotes
-    ].filter(Boolean).join(' ').toLowerCase();
-
-    const hasAllDelivReq = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText);
-    const studioDelivs: string[] = Array.isArray(studioSettings?.deliverables)
-      ? studioSettings.deliverables.map((d: any) => typeof d === 'string' ? d : d?.title).filter(Boolean)
-      : [];
-
-    if (hasAllDelivReq && studioDelivs.length > 0) {
+    if (hasAllDelivReq1 && studioDelivs1.length > 0) {
       if (!normDoc.deliverablesPage) normDoc.deliverablesPage = { selectedItems: [] };
-      normDoc.deliverablesPage.selectedItems = [...studioDelivs];
+      normDoc.deliverablesPage.selectedItems = [...studioDelivs1];
     }
-    if (studioDelivs.length > 0) {
+    if (studioDelivs1.length > 0) {
       if (!normDoc.deliverablesPage) normDoc.deliverablesPage = { selectedItems: [], availableOptions: [] };
       normDoc.deliverablesPage.availableOptions = Array.from(new Set([
-        ...studioDelivs,
+        ...studioDelivs1,
         ...(normDoc.deliverablesPage.availableOptions || []),
         ...(normDoc.deliverablesPage.selectedItems || [])
       ]));
@@ -3166,6 +3531,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     // Enforce Settings AI Training (Shortcuts + Custom Instructions) & Spoken Rules!
     if (!isDirectJson) {
       applyAiTrainingAndVoiceDirectives(normDoc, contextData);
+      normDoc.pageSequence = syncSpecialValuePageInSequence(normDoc.pageSequence, Boolean(normDoc.specialValueAdditions?.visible));
     }
 
     // Sanitize coupleName (prevent invalid pronouns/punctuation & enforce explicit spoken prompt name priority)
@@ -3414,20 +3780,33 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
 
   // 4. Deliverables Page (Main Wedding Deliverables Only - Pre-wedding moved to shootDetails ONLY if Pre-Wedding enabled)
   if (!doc.deliverablesPage) doc.deliverablesPage = {};
+  const studioDeliverables: string[] = Array.isArray(studioSettings?.deliverables)
+    ? studioSettings.deliverables
+        .map((d: any) => typeof d === 'string' ? d : d?.title)
+        .filter(Boolean)
+    : [];
+  const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
+    ? studioSettings.aiRules.shortcuts
+    : [];
+
   const rawDeliv = deliverablesPage.selectedItems || aiData.deliverables || [];
+  let validAiWeddingDelivs: string[] = [];
   if (Array.isArray(rawDeliv) && rawDeliv.length > 0) {
     const preWedDelivs: string[] = [];
     const weddingDelivs: string[] = [];
 
     rawDeliv.forEach((item: string) => {
-      const itemLower = String(item || '').toLowerCase();
+      const cleanItem = String(item || '').trim();
+      if (!cleanItem) return;
+      const itemLower = cleanItem.toLowerCase();
       if (itemLower.includes('pre-wedding') || itemLower.includes('prewedding') || itemLower.includes('pre wedding') || itemLower.includes('previewing')) {
-        preWedDelivs.push(item);
-      } else {
-        weddingDelivs.push(item);
+        preWedDelivs.push(cleanItem);
+      } else if (isDirectJson || isValidDeliverableItem(cleanItem, studioDeliverables)) {
+        weddingDelivs.push(cleanItem);
       }
     });
 
+    validAiWeddingDelivs = weddingDelivs;
     doc.deliverablesPage.selectedItems = weddingDelivs;
 
     if (preWedDelivs.length > 0 && promptPreWedRequested) {
@@ -3441,41 +3820,28 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   }
 
   // ⚡ MANDATE: Enforce Studio Settings Deliverables & Shortcuts synchronization ("x डालेंगे तो y होगा")
-  const studioDeliverables: string[] = Array.isArray(studioSettings?.deliverables)
-    ? studioSettings.deliverables
-        .map((d: any) => typeof d === 'string' ? d : d?.title)
-        .filter(Boolean)
-    : [];
-  const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
-    ? studioSettings.aiRules.shortcuts
-    : [];
-
-  const allNotesText = `${contextData?.additional_user_notes || ''} ${JSON.stringify(contextData?.raw_form_fields || '')}`.toLowerCase();
+  const rawNotesForBranch2 = rawPromptNotes || allUserNotesRaw;
+  const rawFormStr2 = JSON.stringify(contextData?.raw_form_fields || '');
+  const allNotesText = `${contextData?.additional_user_notes || ''} ${rawFormStr2}`.toLowerCase();
   const hasAllDelivReq = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText);
 
-  let matchedShortcutCrew: Array<{ name: string; qty: number }> | null = null;
-  let matchedShortcutPrice: number | null = null;
-  let matchedShortcutDelivs: string[] = [];
-
-  for (const sc of studioShortcuts) {
-    if (!sc.trigger) continue;
-    const trigLower = sc.trigger.toLowerCase().trim();
-    const words = trigLower.split(/\s+/);
-    const isMatch = allNotesText.includes(trigLower) || 
-      words.every((w: string) => allNotesText.includes(w)) ||
-      (trigLower.includes('deliverable') && (allNotesText.includes('ऑल डिलीवरेबल्स') || allNotesText.includes('all deliverable')));
-
-    if (isMatch) {
-      if (Array.isArray(sc.mappedCrew) && sc.mappedCrew.length > 0) {
-        matchedShortcutCrew = sc.mappedCrew.map((c: any) => ({
-          name: resolveStudioCrewRole(typeof c === 'string' ? c : c?.name || '', studioCrewRoles),
-          qty: Number(c?.qty || 1)
-        }));
-      }
-      if (Array.isArray(sc.mappedDeliverables) && sc.mappedDeliverables.length > 0) matchedShortcutDelivs.push(...sc.mappedDeliverables);
-      if (sc.mappedPrice) matchedShortcutPrice = sc.mappedPrice;
+  const branch2Analysis = analyzeScopedShortcutsAndCrewOverrides(
+    rawNotesForBranch2,
+    studioShortcuts,
+    studioEventNames,
+    studioDefaultFunctions,
+    studioCrewRoles,
+    rawFormStr2
+  );
+  const matchedShortcutDelivs: string[] = [];
+  const matchedShortcutSpecialAddons2: string[] = [];
+  for (const sm of branch2Analysis.shortcutMatches) {
+    if (sm.mappedDeliverables.length > 0) matchedShortcutDelivs.push(...sm.mappedDeliverables);
+    if (sm.mappedSpecialAddons && sm.mappedSpecialAddons.length > 0) {
+      matchedShortcutSpecialAddons2.push(...sm.mappedSpecialAddons);
     }
   }
+  const spokenDelivsBranch2 = !isDirectJson ? extractDeliverablesFromText(rawNotesForBranch2, studioDeliverables) : [];
 
   if (hasAllDelivReq && studioDeliverables.length > 0) {
     doc.deliverablesPage.selectedItems = mergeDeliverablesSmart(
@@ -3483,11 +3849,17 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       Array.isArray(doc.deliverablesPage.selectedItems) ? doc.deliverablesPage.selectedItems : [],
       false
     );
-  } else if (matchedShortcutDelivs.length > 0) {
+  } else if (matchedShortcutDelivs.length > 0 || spokenDelivsBranch2.length > 0) {
     doc.deliverablesPage.selectedItems = mergeDeliverablesSmart(
-      Array.isArray(doc.deliverablesPage.selectedItems) ? doc.deliverablesPage.selectedItems : [],
-      matchedShortcutDelivs,
-      false
+      validAiWeddingDelivs,
+      [...matchedShortcutDelivs, ...spokenDelivsBranch2],
+      true
+    );
+  }
+
+  if (!isDirectJson && Array.isArray(doc.deliverablesPage.selectedItems)) {
+    doc.deliverablesPage.selectedItems = doc.deliverablesPage.selectedItems.filter((item: string) =>
+      isValidDeliverableItem(item, studioDeliverables)
     );
   }
 
@@ -3498,11 +3870,33 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     ...(doc.deliverablesPage.selectedItems || [])
   ])).filter(Boolean);
 
-  // 5. Special Value Additions Page
-  if (!doc.specialValueAdditions) doc.specialValueAdditions = {};
-  const rawSpecial = specialValueAdditions.selectedItems || [];
-  if (Array.isArray(rawSpecial)) {
-    doc.specialValueAdditions.selectedItems = rawSpecial;
+  // 5. Special Value Additions Page (strictly conditional unless complimentary/freebie spoken or mapped by shortcut)
+  const studioSpecialAddons2: string[] = Array.isArray(studioSettings?.specialAddons)
+    ? studioSettings.specialAddons.map((a: any) => (typeof a === 'string' ? a : a?.title)).filter(Boolean)
+    : [];
+  const spokenSpecial2 = !isDirectJson ? extractSpecialValueAdditionsFromText(rawNotesForBranch2, studioSpecialAddons2) : [];
+  const hasSpecialSignal2 = isDirectJson
+    ? Boolean(specialValueAdditions.visible ?? (Array.isArray(specialValueAdditions.selectedItems) && specialValueAdditions.selectedItems.length > 0))
+    : (detectSpecialValueIntent(rawNotesForBranch2) || matchedShortcutSpecialAddons2.length > 0 || spokenSpecial2.length > 0);
+
+  if (hasSpecialSignal2) {
+    const rawSpecial = Array.isArray(specialValueAdditions.selectedItems) ? specialValueAdditions.selectedItems : [];
+    const mergedSpecial2 = Array.from(
+      new Set([...rawSpecial, ...matchedShortcutSpecialAddons2, ...spokenSpecial2])
+    ).filter(Boolean);
+    doc.specialValueAdditions = {
+      ...(doc.specialValueAdditions || {}),
+      visible: true,
+      selectedItems: mergedSpecial2,
+      note: specialValueAdditions.note || doc.specialValueAdditions?.note || ''
+    };
+  } else {
+    doc.specialValueAdditions = {
+      ...(doc.specialValueAdditions || {}),
+      visible: false,
+      selectedItems: [],
+      note: ''
+    };
   }
 
   // 6. Pricing Page
@@ -3604,6 +3998,10 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   normalizedFinalDoc.pageSequence = syncShootPageInSequence(
     normalizedFinalDoc.pageSequence,
     Boolean(normalizedFinalDoc.shootDetails?.visible)
+  );
+  normalizedFinalDoc.pageSequence = syncSpecialValuePageInSequence(
+    normalizedFinalDoc.pageSequence,
+    Boolean(normalizedFinalDoc.specialValueAdditions?.visible)
   );
 
   // Strictly preserve template design and typography tokens from baseSchema

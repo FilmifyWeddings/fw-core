@@ -214,7 +214,7 @@ export const CRM_PLANS: SubscriptionTier[] = [
       { text: 'Tasks & Notes Productivity Suite', included: true },
       { text: 'Finance, Invoices & Salary Slips', included: true },
       { text: 'Studio Settings & Help & Support', included: true },
-      { text: 'Create Quotation with AI (Voice/Whisper)', included: false },
+      { text: 'Create Quotation with AI (Voice & Gemini AI)', included: false },
       { text: 'Frame-Accurate Video Review Engine', included: false },
       { text: 'Clients Directory & Kundali Insights', included: false },
       { text: 'Smart Attendance & GPS Check-in', included: false },
@@ -258,7 +258,7 @@ export const CRM_PLANS: SubscriptionTier[] = [
     features: [
       { text: 'Everything in Solo, plus:', included: true, highlight: true },
       { text: 'Client Directory & Full CRM Kundali', included: true, highlight: true },
-      { text: 'Create Quotation with AI (Voice & Whisper)', included: true, highlight: true },
+      { text: 'Create Quotation with AI (Voice & Gemini AI)', included: true, highlight: true },
       { text: 'Frame-Accurate Video Review & Timestamps', included: true, highlight: true },
       { text: 'Team & Partners (Up to 15 Crew Members)', included: true },
       { text: 'Studio Storage (150 GB Cloud Storage)', included: true, highlight: true },
@@ -545,7 +545,7 @@ export const CRM_FEATURE_MATRIX: FeatureMatrixItem[] = [
   },
   {
     category: 'Quotations & AI',
-    feature: 'Create with AI (Voice / OpenAI Whisper)',
+    feature: 'Create with AI (Voice & Gemini AI)',
     values: {
       solo: false,
       pro: true,

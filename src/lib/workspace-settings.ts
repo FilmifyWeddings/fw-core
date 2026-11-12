@@ -69,6 +69,7 @@ export interface WorkspaceAiShortcut {
   mappedDeliverables?: string[];
   mappedCrew?: Array<{ name: string; qty: number }>;
   mappedPrice?: number;
+  mappedSpecialAddons?: string[];
 }
 
 export interface WorkspaceAiRules {

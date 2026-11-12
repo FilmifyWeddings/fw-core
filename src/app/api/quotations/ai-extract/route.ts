@@ -9,6 +9,7 @@ import {
   mapAiOutputToQuotationDocument,
   detectPreWeddingIntent,
   detectPreWeddingNegation,
+  detectSpecialValueIntent,
   resolveStudioFunctionName,
   buildScopedShortcutPromptHints
 } from '@/lib/ai-quotation-extractor';
@@ -239,8 +240,8 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Executes AI Extraction using OpenAI API or Gemini API,
- * or falls back to an intelligent structured extraction engine.
+ * Executes AI Extraction strictly using Google Gemini API,
+ * or falls back cleanly to the local structured extraction engine.
  */
 async function performAiExtraction(contextData: any, baseDoc: any, studioSettings: any = null) {
   const userNotes = (contextData.additional_user_notes || '').trim();
@@ -353,7 +354,7 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 🌟 CRITICAL TOP PRIORITY OVERRIDE MANDATES (MUST FOLLOW):
 
 1. COUPLE NAME, EVENT TYPE & ROLES (HIGHEST PRIORITY):
-- If user notes, prompt, or speech mentions ANY couple or client name (e.g. "सागर और रिद्धि" / "Sagar & Riddhi", "O Piya ke liye quotation...", "Rohit ke liye quotation..."):
+- If user notes, prompt, or speech mentions ANY couple or client name (e.g. "सागर और रिद्धि" / "Sagar & Riddhi", "O Piya ke liye quotation...", "O Piya ke liye quotion...", "O Piya, total 3 events...", "Rohit ke liye quotation..."):
   THIS STRICTLY AND ABSOLUTELY OVERRIDES any existing lead name or default template name!
 - ALWAYS preserve the FULL spoken client/couple name verbatim (including short prefixes like "O" in "O Piya") and transliterate/translate names into clean Latin/English Title Case:
   * Couple example -> coupleName: "Sagar & Riddhi", groomName: "Sagar", brideName: "Riddhi"
@@ -400,9 +401,13 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 - CRITICAL PER-EVENT CREW LOCK: If one event mentions a shortcut/preset like "Standard Crew" (e.g. "Wedding mein Standard Crew") AND another event specifies its own crew or restrictive phrase ("Haldi mein bas 1 Traditional Photographer aur alag crew" / "Haldi needs only 1 Traditional Photographer"), NEVER copy or leak Standard Crew onto Haldi! Obey every [SCOPED STUDIO SHORTCUT] & [EXPLICIT PER-EVENT CREW LOCK] annotation verbatim!
 
 4. DELIVERABLES (deliverablesPage):
-- selectedItems: Array of professional English deliverable strings combining BOTH:
+- selectedItems: Array of genuine photography/video deliverable strings ONLY:
   a) Matching Studio Official Deliverables Catalog items (or ALL catalog items when user says "all deliverables add" / "ऑल डिलीवरेबल्स").
-  b) EVERY custom or counted deliverable mentioned in speech/notes — preserve exact counts! E.g. "500 edited photos" / "500 एडिटेड फोटो", "5 Instagram Reels" / "5 रील", "1 Pendrive" / "1 पेनड्राइव", "2 Photo Albums" / "2 एल्बम", "1 Cinematic Teaser Video" / "टीज़र", "Save The Date Video", "Same Day Edit".
+  b) Deliverables mapped by any [STUDIO TRIGGER ... -> Deliverables: ...] annotation.
+  c) Genuine custom or counted deliverables explicitly spoken in speech/notes — preserve exact counts! E.g. "500 edited photos" / "500 एडिटेड फोटो", "5 Instagram Reels" / "5 रील", "1 Pendrive" / "1 पेनड्राइव", "2 Photo Albums" / "2 एल्बम", "1 Cinematic Teaser Video" / "टीज़र", "Save The Date Video", "Same Day Edit".
+- STRICT SANITIZATION: NEVER put conversational Hindi/Hinglish prose or pricing fragments into selectedItems (e.g. NEVER output "Jo Quotation Mujhe Unko Share Karna Hai Wo 3" or "000 Ka Hai Usme" or spoken budget sentences!).
+- If a [STUDIO TRIGGER] specifies Deliverables OR user explicitly mentions specific deliverables, include ONLY those items (do NOT pad with unrequested template sample items!).
+- If NO deliverables are mentioned and NO [STUDIO TRIGGER] specifies Deliverables, return an empty array [].
 - NEVER drop spoken counted deliverables! Note: "5 Reels" / "5 Instagram reels" is a deliverable in deliverablesPage.selectedItems, NOT a Reel Creator crew member unless user asked for Reel Creator crew.
 - NEVER include pre-wedding deliverables here; those belong solely on shootDetails.
 
@@ -431,6 +436,10 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 - IF Pre-Wedding IS explicitly mentioned:
   * Set shootDetails.visible = true.
   * Populate daysText (e.g. "1 Day Shoot" or "2 Days Shoot"), crewText (exact crew mentioned, else studio defaults: ${studioPwReqsList.length > 0 ? studioPwReqsList.slice(0, 3).join(', ') : '1x Candid Photographer, 1x Cinematographer, 1x Drone Pilot'}), and deliverablesText (exact deliverables mentioned, else studio defaults: ${studioPwDelivsList.length > 0 ? studioPwDelivsList.slice(0, 3).join(', ') : 'Full Ultra HD Super-Fine Raw Photos, Approx. 50 High Resolution Edited Images, 1 Teaser Video Reel'}).
+
+9. SPECIAL VALUE ADDITIONS (specialValueAdditions) — STRICT CONDITIONAL VISIBILITY:
+- YOU MUST set specialValueAdditions.visible = false and selectedItems: [] UNLESS the user explicitly asks for complimentary / freebie / bonus / special value addition items (e.g. "complimentary", "free drone", "free frame", "free mini album", "bonus", "special value additions", "मुफ़्त", "कॉम्प्लिमेंट्री") OR a [STUDIO TRIGGER] includes Special Value Add-ons!
+- Never copy sample freebies if none were spoken or triggered!
 
 ==================================================
 OUTPUT FORMAT & CRITICAL JSON MANDATE:
@@ -486,14 +495,10 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
     ]
   },
   "deliverablesPage": {
-    "selectedItems": [
-      "Full Ultra HD Super-Fine Raw Photos",
-      "High Resolution Edited Photos (300+)",
-      "Cinematic Teaser (3-5 Mins)",
-      "Traditional Wedding Film (30-45 Mins)"
-    ]
+    "selectedItems": []
   },
   "specialValueAdditions": {
+    "visible": false,
     "selectedItems": [],
     "note": ""
   },
@@ -526,9 +531,8 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
     .split(',')
     .map((k) => k.trim())
     .filter(Boolean);
-  const openAiKey = process.env.OPENAI_API_KEY || '';
 
-  // 1. PRIMARY ENGINE: Google Gemini (gemini-3.1-flash-lite -> gemini-3-flash-preview -> gemini-flash-latest)
+  // 100% Google Gemini Extraction (gemini-3.1-flash-lite -> gemini-3-flash-preview -> gemini-flash-latest)
   if (rawGeminiKeys.length > 0) {
     const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-flash-latest'];
     for (const currentKey of rawGeminiKeys) {
@@ -557,7 +561,7 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
                 responseMimeType: 'application/json',
                 temperature: 0.05,
                 maxOutputTokens: 3500,
-                thinkingConfig: { thinkingBudget: 0 }
+                ...(model.startsWith('gemini-3') ? { thinkingConfig: { thinkingBudget: 0 } } : {})
               }
             }),
             signal: AbortSignal.timeout(15000)
@@ -589,44 +593,7 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
     }
   }
 
-  // 2. SECONDARY ENGINE: OpenAI gpt-4.1-mini JSON mode fallback
-  if (!aiRawOutput && openAiKey) {
-    try {
-      const oaRes = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openAiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4.1-mini',
-          response_format: { type: 'json_object' },
-          temperature: 0.05,
-          max_tokens: 3500,
-          messages: [
-            { role: 'system', content: promptText },
-            { role: 'user', content: `Please extract 100% structured quotation JSON from this context:\n${JSON.stringify(leanPromptContext, null, 2)}` }
-          ]
-        }),
-        signal: AbortSignal.timeout(15000)
-      });
-      if (oaRes.ok) {
-        const oaJson = await oaRes.json();
-        const content = oaJson?.choices?.[0]?.message?.content?.trim() || '';
-        if (content) {
-          aiRawOutput = sanitizeAndParseJson(content);
-          activeEngineProvider = 'openai';
-          activeEngineModel = 'gpt-4.1-mini';
-          activeKeyHint = `${openAiKey.slice(0, 10)}...${openAiKey.slice(-4)}`;
-          console.log('[AI Extract] Successfully generated via OpenAI (gpt-4.1-mini)');
-        }
-      }
-    } catch (oaErr: any) {
-      console.warn('[AI Extract OpenAI fallback exception]:', oaErr?.message || oaErr);
-    }
-  }
-
-  // Pre-wedding strict isolation check (Unicode-safe Hindi/Marathi/Hinglish/English)
+  // Pre-wedding & Special Value Additions strict isolation check (Unicode-safe Hindi/Marathi/Hinglish/English)
   const formSignals = [
     contextData?.raw_form_fields?.event_type,
     contextData?.raw_form_fields?.services,
@@ -639,6 +606,9 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
       ? detectPreWeddingIntent(userNotes)
       : (detectPreWeddingIntent(contextData?.notes_and_comments || '') || detectPreWeddingIntent(formSignals))
   );
+  const hasSpecialValueSignal =
+    detectSpecialValueIntent(userNotes || contextData?.notes_and_comments || '') ||
+    scopedPromptHints.includes('Special Value Add-ons:');
   if (aiRawOutput) {
     if (!aiRawOutput.shootDetails) aiRawOutput.shootDetails = {};
     aiRawOutput.shootDetails.visible = hasPreWedSignal;
@@ -646,6 +616,12 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
       aiRawOutput.shootDetails.daysText = '';
       aiRawOutput.shootDetails.crewText = '';
       aiRawOutput.shootDetails.deliverablesText = '';
+    }
+    if (!aiRawOutput.specialValueAdditions) aiRawOutput.specialValueAdditions = {};
+    aiRawOutput.specialValueAdditions.visible = hasSpecialValueSignal;
+    if (!hasSpecialValueSignal) {
+      aiRawOutput.specialValueAdditions.selectedItems = [];
+      aiRawOutput.specialValueAdditions.note = '';
     }
   }
 
