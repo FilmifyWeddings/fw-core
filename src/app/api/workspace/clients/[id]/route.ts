@@ -366,16 +366,16 @@ export async function GET(
       allQuotes.find(
         (q: any) =>
           q.id === doc.template_id ||
-          q.quotation_number === doc.template_id ||
-          q.id === doc.id ||
-          (q.quotation_number &&
-            doc.template_id &&
-            (q.quotation_number.includes(doc.template_id) || doc.template_id.includes(q.quotation_number)))
+          (q.quotation_number && doc.template_id && q.quotation_number === doc.template_id) ||
+          q.id === doc.id
       );
 
-    const orphanSupersededTids = new Set<string>();
+    // Deduplicate matchedDocs strictly by normalized template_id / id while keeping ALL distinct versions
+    const seenMatchedDocKeys = new Set<string>();
     const activeMatchedDocs = matchedDocs.filter((d: any) => {
       const tidUpper = String(d.template_id || d.id || '').toUpperCase();
+      if (!tidUpper || seenMatchedDocKeys.has(tidUpper)) return false;
+
       const matchedQ = findMatchingQuote(d);
       const rawVer = rawVersionByTid.get(tidUpper);
       const isFinalMatch = Boolean(
@@ -392,13 +392,14 @@ export async function GET(
           : 0;
       const tidVerMatch = typeof d.template_id === 'string' ? d.template_id.match(/-V(\d+)-/i) : null;
       const tidVer = tidVerMatch ? parseInt(tidVerMatch[1], 10) : 0;
+      const hasContent = Boolean(d.content_json && Object.keys(d.content_json).length > 0);
 
-      if (!explicitVer && Number(d.version || 1) === 1 && !matchedQ && !isFinalMatch) {
-        if ((tidVer > 0 && explicitVerNums.has(tidVer)) || (explicitVerNums.size > 0 && isBadVersionTitle(rawVer?.title))) {
-          orphanSupersededTids.add(tidUpper);
-          return false;
-        }
+      // Only filter out empty unlinked stub duplicates for a version that already has an explicit doc
+      if (!explicitVer && !hasContent && !matchedQ && !isFinalMatch && tidVer > 0 && explicitVerNums.has(tidVer)) {
+        return false;
       }
+
+      seenMatchedDocKeys.add(tidUpper);
       return true;
     });
 
@@ -409,11 +410,11 @@ export async function GET(
       return !docTemplateIds.has(qIdU) && (!qNumU || !docTemplateIds.has(qNumU));
     });
 
+    const seenRawKeys = new Set<string>();
     const missingRawVersions = rawVersions.filter((rv: any) => {
       const rId = String(rv?.template_id || rv?.id || '').toUpperCase();
-      if (!rId || orphanSupersededTids.has(rId)) return false;
-      const rvVer = Number(rv.version || 0);
-      if (rvVer > 0 && explicitVerNums.has(rvVer) && isBadVersionTitle(rv.title)) return false;
+      if (!rId || seenRawKeys.has(rId)) return false;
+      seenRawKeys.add(rId);
       return (
         !docTemplateIds.has(rId) &&
         !legacyOnlyQuotes.some(
@@ -462,6 +463,49 @@ export async function GET(
       return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
     });
 
+    // Resolve single authoritative Final quotation key so cloned content_json.is_final never marks two versions final
+    let authoritativeFinalKey: string | null = null;
+    if (finalTargetId) {
+      const exactFinal = sortedQuoteRows.find((d: any) => {
+        const matchedQ = findMatchingQuote(d);
+        return (
+          d.template_id === finalTargetId ||
+          d.id === finalTargetId ||
+          (matchedQ && (matchedQ.id === finalTargetId || matchedQ.quotation_number === finalTargetId))
+        );
+      });
+      if (exactFinal) {
+        authoritativeFinalKey = String(exactFinal.template_id || exactFinal.id);
+      }
+    }
+    if (!authoritativeFinalKey) {
+      const colFinal = [...sortedQuoteRows]
+        .sort((a: any, b: any) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())
+        .find((d: any) => {
+          const tidUpper = String(d.template_id || d.id || '').toUpperCase();
+          const rawVer = rawVersionByTid.get(tidUpper);
+          const matchedQ = findMatchingQuote(d);
+          return Boolean(
+            d.is_final === true ||
+            rawVer?.is_final === true ||
+            matchedQ?.is_final === true ||
+            matchedQ?.status === 'accepted' ||
+            matchedQ?.status === 'final'
+          );
+        });
+      if (colFinal) {
+        authoritativeFinalKey = String(colFinal.template_id || colFinal.id);
+      }
+    }
+    if (!authoritativeFinalKey) {
+      const contentFinal = [...sortedQuoteRows]
+        .sort((a: any, b: any) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())
+        .find((d: any) => d.content_json?.is_final === true);
+      if (contentFinal) {
+        authoritativeFinalKey = String(contentFinal.template_id || contentFinal.id);
+      }
+    }
+
     const quotationDocs = sortedQuoteRows.map((d: any, idx: number) => {
       const content = d.content_json || {};
       const tidUpper = String(d.template_id || d.id || '').toUpperCase();
@@ -488,19 +532,8 @@ export async function GET(
           ? `${cover.groomName} & ${cover.brideName}`
           : cover.groomName || cover.brideName || '');
 
-      const isFinal = Boolean(
-        (finalTargetId &&
-          (finalTargetId === d.template_id ||
-            finalTargetId === d.id ||
-            (matchedQ && (matchedQ.id === finalTargetId || matchedQ.quotation_number === finalTargetId)) ||
-            (d.template_id && (finalTargetId.includes(d.template_id) || d.template_id.includes(finalTargetId))))) ||
-          d.is_final === true ||
-          content.is_final === true ||
-          rawVer?.is_final === true ||
-          matchedQ?.is_final === true ||
-          matchedQ?.status === 'accepted' ||
-          matchedQ?.status === 'final'
-      );
+      const docKey = String(d.template_id || d.id);
+      const isFinal = Boolean(authoritativeFinalKey && docKey === authoritativeFinalKey);
 
       const totalAmt =
         Number(content?.pricingPage?.finalAmount) ||
@@ -531,7 +564,7 @@ export async function GET(
         is_final: isFinal,
         updated_at: d.updated_at || d.created_at,
         created_at: d.created_at,
-        public_token: d.public_token || matchedQ?.public_token || content?.public_token,
+        public_token: d.public_token || matchedQ?.public_token,
         total_amount: totalAmt,
         content_json: content,
         responseBadge: versionResponses[0]
@@ -685,18 +718,68 @@ export async function GET(
     );
 
     // 8. Pick Best Matching fw_projects Record & Hydrate Sub-Events / Assignments
-    const candidateProjects: any[] = (fwProjectsRes.data || []).filter(
-      (p: any) => p.user_id === clientWsId || p.user_id === effectiveWsId || p.client_id === foundClient.id
-    );
     const clientNameNorm = normalizeNameKey(foundClient.name);
+    const candidateProjects: any[] = (fwProjectsRes.data || []).filter((p: any) => {
+      if (p.client_id && p.client_id === foundClient.id) return true;
+      if (resolvedLeadId && p.lead_id && p.lead_id === resolvedLeadId) return true;
+      if (clientNameNorm && normalizeNameKey(p.client_name) === clientNameNorm) return true;
+      return false;
+    });
+
+    const scoreProject = (p: any): number => {
+      let score = 0;
+      if (p.client_id === foundClient.id) score += 1000;
+      if (resolvedLeadId && p.lead_id === resolvedLeadId) score += 500;
+      if (clientNameNorm && normalizeNameKey(p.client_name) === clientNameNorm) score += 200;
+      if (p.user_id === clientWsId || p.user_id === effectiveWsId) score += 100;
+      const subs = Array.isArray(p.fw_sub_events) ? p.fw_sub_events : [];
+      if (subs.length > 0) score += 50;
+      subs.forEach((se: any) => {
+        score += (Array.isArray(se.fw_assignments) ? se.fw_assignments.length : 0) * 10;
+        score += (Array.isArray(se.roles) ? se.roles.length : 0) * 5;
+      });
+      return score;
+    };
 
     const matchedFwProjectRaw =
-      candidateProjects.find((p: any) => p.client_id === foundClient.id) ||
-      (resolvedLeadId ? candidateProjects.find((p: any) => p.lead_id === resolvedLeadId) : null) ||
-      (clientNameNorm
-        ? candidateProjects.find((p: any) => normalizeNameKey(p.client_name) === clientNameNorm)
-        : null) ||
-      null;
+      candidateProjects.length > 0
+        ? [...candidateProjects].sort((a, b) => scoreProject(b) - scoreProject(a))[0]
+        : null;
+
+    // Extract fallback crew roles per ceremony from Final Quotation (when fw_sub_events.roles is empty)
+    const fallbackCeremonyRoles: Array<{ normTitle: string; roles: string[] }> = [];
+    const expandReqsToRoles = (reqs: any): string[] => {
+      if (!Array.isArray(reqs)) return [];
+      const out: string[] = [];
+      reqs.forEach((r: any) => {
+        if (!r) return;
+        const rName = typeof r === 'string' ? r.trim() : String(r.name || r.role || '').trim();
+        if (!rName) return;
+        const qty = Math.max(1, Number(typeof r === 'object' ? (r.qty ?? r.quantity ?? r.count ?? 1) : 1) || 1);
+        for (let k = 0; k < qty; k++) out.push(rName);
+      });
+      return out;
+    };
+    if (finalQuoteDoc?.content_json) {
+      const quoteItems = finalQuoteDoc.content_json?.functionsPage?.items;
+      if (Array.isArray(quoteItems)) {
+        quoteItems.forEach((item: any) => {
+          const roles = expandReqsToRoles(item?.requirements);
+          const normTitle = normalizeNameKey(item?.name || '');
+          if (normTitle && roles.length > 0) {
+            fallbackCeremonyRoles.push({ normTitle, roles });
+          }
+        });
+      }
+      const shoot = finalQuoteDoc.content_json?.shootDetails;
+      if (shoot && shoot.crewText) {
+        const shootRoles = String(shoot.crewText).split(/[,+\n]/).map((s) => s.trim()).filter(Boolean);
+        const shootNorm = normalizeNameKey(shoot.heading || 'Pre-Wedding Shoot');
+        if (shootNorm && shootRoles.length > 0) {
+          fallbackCeremonyRoles.push({ normTitle: shootNorm, roles: shootRoles });
+        }
+      }
+    }
 
     let hydratedFwProject: any = null;
     if (matchedFwProjectRaw) {
@@ -725,9 +808,8 @@ export async function GET(
           }
           return (Number(a.display_order) || 0) - (Number(b.display_order) || 0);
         })
-        .map((se: any) => ({
-          ...se,
-          fw_assignments: (se.fw_assignments || []).map((a: any) => {
+        .map((se: any) => {
+          const mappedAssignments = (se.fw_assignments || []).map((a: any) => {
             const cleanAssigneeName = String(
               a.assigned_member_name || a.clean_name || a.member_name || (a.fw_team_members as any)?.name || ''
             )
@@ -752,8 +834,25 @@ export async function GET(
               ...a,
               fw_team_members: matchedMem || a.fw_team_members || null,
             };
-          }),
-        }));
+          });
+
+          let resolvedRoles = Array.isArray(se.roles) ? se.roles : [];
+          if (resolvedRoles.length === 0 && mappedAssignments.length === 0) {
+            const seNorm = normalizeNameKey(se.event_title || se.name || '');
+            const matchedFallback = fallbackCeremonyRoles.find(
+              (fc) => fc.normTitle === seNorm || (seNorm && (fc.normTitle.includes(seNorm) || seNorm.includes(fc.normTitle)))
+            );
+            if (matchedFallback && matchedFallback.roles.length > 0) {
+              resolvedRoles = matchedFallback.roles;
+            }
+          }
+
+          return {
+            ...se,
+            roles: resolvedRoles,
+            fw_assignments: mappedAssignments,
+          };
+        });
 
       hydratedFwProject = {
         ...matchedFwProjectRaw,

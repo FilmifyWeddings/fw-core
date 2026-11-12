@@ -259,7 +259,7 @@ export default function ClientWorkspaceDetailPage() {
       { id: 'overview', label: 'Overview & Profile', icon: User },
       { id: 'quotations', label: 'Quotations & Versions', icon: FileText },
       { id: 'events', label: 'Events & Bookings', icon: Calendar },
-      { id: 'moodboard', label: 'Mood Board ✨', icon: Sparkles },
+      { id: 'moodboard', label: 'Mood Board', icon: Sparkles },
       { id: 'tasks', label: 'Tasks & Workflow', icon: CheckSquare },
       { id: 'post_production', label: 'Post-Production', icon: Film },
       { id: 'finance', label: 'Finance & Invoices', icon: DollarSign },
@@ -314,6 +314,11 @@ export default function ClientWorkspaceDetailPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [isEditingPin, setIsEditingPin] = useState(false);
+  const [isEditingSharePin, setIsEditingSharePin] = useState(false);
+  const [draftPortalPin, setDraftPortalPin] = useState('');
+  const [savingPin, setSavingPin] = useState(false);
+  const [pinSavedNotice, setPinSavedNotice] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -475,12 +480,34 @@ export default function ClientWorkspaceDetailPage() {
 
   // ── Synced Multi-Day Events from Quotation / Extended ──
   const displayedEvents = useMemo(() => {
+    const expandReqsToRoles = (reqs: any): string[] => {
+      if (!Array.isArray(reqs)) return [];
+      const out: string[] = [];
+      reqs.forEach((req: any) => {
+        if (!req) return;
+        if (typeof req === 'string') {
+          req.split(/[,+\n]/).map((s) => s.trim()).filter(Boolean).forEach((s) => out.push(s));
+          return;
+        }
+        const rName = String(req.name || req.role || '').trim();
+        if (!rName) return;
+        const qty = Math.max(1, Number(req.qty ?? req.quantity ?? req.count ?? 1) || 1);
+        if (rName.includes(',') && qty === 1) {
+          rName.split(/[,+\n]/).map((s) => s.trim()).filter(Boolean).forEach((s) => out.push(s));
+        } else {
+          for (let i = 0; i < qty; i++) out.push(rName);
+        }
+      });
+      return out;
+    };
+
     const quoteEvents: any[] = [];
 
     // 1. Check functionsPage items
     const quoteItems = finalQuotationDoc?.content_json?.functionsPage?.items;
     if (Array.isArray(quoteItems) && quoteItems.length > 0) {
       quoteItems.forEach((item: any, idx: number) => {
+        const reqs = Array.isArray(item.requirements) ? item.requirements : [];
         quoteEvents.push({
           id: item.id || `quote_event_${idx}`,
           name: normalizeSubEventTitle(item.name || `Ceremony ${idx + 1}`),
@@ -489,7 +516,8 @@ export default function ClientWorkspaceDetailPage() {
           time_end: item.endTime || '',
           duration: item.durationSlot || '',
           venue: item.location || '',
-          requirements: Array.isArray(item.requirements) ? item.requirements : [],
+          requirements: reqs,
+          roles: expandReqsToRoles(reqs),
           notes: item.notes || '',
           source: 'quotation' as const,
         });
@@ -502,6 +530,7 @@ export default function ClientWorkspaceDetailPage() {
       const shootTitle = normalizeSubEventTitle(shoot.heading || 'Pre-Wedding Shoot');
       const alreadyHasShoot = quoteEvents.some(e => e.name.toLowerCase() === shootTitle.toLowerCase());
       if (!alreadyHasShoot) {
+        const shootReqs = shoot.crewText ? [{ name: shoot.crewText, qty: 1 }] : [];
         quoteEvents.unshift({
           id: 'quote_shootDetails',
           name: shootTitle,
@@ -510,7 +539,8 @@ export default function ClientWorkspaceDetailPage() {
           time_end: '06:00 PM',
           duration: shoot.daysText || '1 Day Shoot',
           venue: shoot.location || shoot.venue || '',
-          requirements: shoot.crewText ? [{ name: shoot.crewText, qty: 1 }] : [],
+          requirements: shootReqs,
+          roles: shoot.crewText ? String(shoot.crewText).split(/[,+\n]/).map((s: string) => s.trim()).filter(Boolean) : [],
           notes: shoot.notes || shoot.description || '',
           source: 'quotation' as const,
         });
@@ -530,6 +560,7 @@ export default function ClientWorkspaceDetailPage() {
       duration: '',
       venue: [e.venue, e.city].filter(Boolean).join(', '),
       requirements: e.assigned_crew ? [{ name: e.assigned_crew, qty: 1 }] : [],
+      roles: e.assigned_crew ? String(e.assigned_crew).split(/[,+\n]/).map((s: string) => s.trim()).filter(Boolean) : [],
       notes: '',
       source: 'manual' as const,
     }));
@@ -2071,49 +2102,61 @@ export default function ClientWorkspaceDetailPage() {
       }
 
       const { data: docs } = await docsQuery;
+      const { data: qRows } = targetLeadId
+        ? await supabase.from('quotations').select('*').or(`client_id.eq.${c.id},client_id.eq.${targetLeadId}`).order('created_at', { ascending: true })
+        : await supabase.from('quotations').select('*').eq('client_id', c.id).order('created_at', { ascending: true });
+
+      const combinedFallback: QuotationVersionItem[] = [];
+      const seenFallbackIds = new Set<string>();
 
       if (docs && docs.length > 0) {
-        const formatted: QuotationVersionItem[] = docs.map((d, idx) => ({
-          id: d.id,
-          template_id: d.template_id || d.id,
-          lead_id: d.lead_id,
-          version: d.lead_version || d.version || (idx + 1),
-          version_label: `Version ${d.lead_version || d.version || (idx + 1)}`,
-          title: d.title || d.content_json?.heroPage?.coupleNames || `Quotation Version ${idx + 1}`,
-          is_final: d.is_final || d.content_json?.is_final === true,
-          updated_at: d.updated_at || d.created_at,
-          created_at: d.created_at,
-          public_token: d.public_token || d.content_json?.public_token,
-          total_amount: d.content_json?.pricingPage?.finalAmount || d.content_json?.pricing?.finalAmount || c.total_package_amount,
-          content_json: d.content_json
-        }));
-        setQuotationDocs(formatted);
-        syncClientBundleBrowserCache([clientIdOrCode, c.id, parseClientExtended(c).client_code], { quotationDocs: formatted });
-      } else {
-        // Check quotations table by both client_id and resolved lead_id
-        const { data: qRows } = targetLeadId
-          ? await supabase.from('quotations').select('*').or(`client_id.eq.${c.id},client_id.eq.${targetLeadId}`).order('created_at', { ascending: true })
-          : await supabase.from('quotations').select('*').eq('client_id', c.id).order('created_at', { ascending: true });
-        if (qRows && qRows.length > 0) {
-          const formatted: QuotationVersionItem[] = qRows.map((q, idx) => ({
+        docs.forEach((d, idx) => {
+          const tid = d.template_id || d.id;
+          const tidUpper = String(tid).toUpperCase();
+          if (seenFallbackIds.has(tidUpper)) return;
+          seenFallbackIds.add(tidUpper);
+          const matchedQ = (qRows || []).find((q: any) => q.id === tid || (q.quotation_number && q.quotation_number === tid) || q.id === d.id);
+          combinedFallback.push({
+            id: d.id,
+            template_id: tid,
+            lead_id: d.lead_id,
+            version: d.lead_version || d.version || (idx + 1),
+            version_label: `Version ${d.lead_version || d.version || (idx + 1)}`,
+            title: d.title || d.content_json?.heroPage?.coupleNames || `Quotation Version ${d.lead_version || d.version || (idx + 1)}`,
+            is_final: Boolean(d.is_final || d.content_json?.is_final === true || matchedQ?.is_final === true || matchedQ?.status === 'accepted'),
+            updated_at: d.updated_at || d.created_at,
+            created_at: d.created_at,
+            public_token: d.public_token || matchedQ?.public_token,
+            total_amount: d.content_json?.pricingPage?.finalAmount || d.content_json?.pricing?.finalAmount || matchedQ?.total_amount || c.total_package_amount,
+            content_json: d.content_json
+          });
+        });
+      }
+
+      if (qRows && qRows.length > 0) {
+        qRows.forEach((q, idx) => {
+          const tid = q.quotation_number || q.id;
+          const tidUpper = String(tid).toUpperCase();
+          if (seenFallbackIds.has(tidUpper) || seenFallbackIds.has(String(q.id).toUpperCase())) return;
+          seenFallbackIds.add(tidUpper);
+          combinedFallback.push({
             id: q.id,
-            template_id: q.quotation_number || q.id,
-            version: idx + 1,
-            title: q.title || `Quotation ${q.quotation_number || idx + 1}`,
+            template_id: tid,
+            version: combinedFallback.length + idx + 1,
+            version_label: `Version ${combinedFallback.length + idx + 1}`,
+            title: q.title || `Quotation ${q.quotation_number || combinedFallback.length + idx + 1}`,
             is_final: q.is_final === true || q.status === 'accepted' || q.status === 'final',
             updated_at: q.updated_at || q.created_at,
             created_at: q.created_at,
             public_token: q.public_token,
             total_amount: q.total_amount || c.total_package_amount,
             content_json: q.canvas_data || q.content_json || undefined,
-          }));
-          setQuotationDocs(formatted);
-          syncClientBundleBrowserCache([clientIdOrCode, c.id, parseClientExtended(c).client_code], { quotationDocs: formatted });
-        } else {
-          setQuotationDocs([]);
-          syncClientBundleBrowserCache([clientIdOrCode, c.id, parseClientExtended(c).client_code], { quotationDocs: [] });
-        }
+          });
+        });
       }
+
+      setQuotationDocs(combinedFallback);
+      syncClientBundleBrowserCache([clientIdOrCode, c.id, parseClientExtended(c).client_code], { quotationDocs: combinedFallback });
     } catch (e) {
       console.error('Error fetching quotation versions:', e);
     } finally {
@@ -2146,7 +2189,8 @@ export default function ClientWorkspaceDetailPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      const targetLeadId = client.lead_id || client.id;
+      const resolvedLead = (client as any).linkedLeadId || client.lead_id;
+      const targetLeadId = resolvedLead || client.id;
 
       // 1. Call standard set-final API
       await fetch('/api/quotations/set-final', {
@@ -2166,18 +2210,18 @@ export default function ClientWorkspaceDetailPage() {
       await supabase
         .from('quotation_documents')
         .update({ is_final: false })
-        .or(`lead_id.eq.${targetLeadId},template_id.ilike.%${targetLeadId.slice(0, 8)}%`);
+        .or(`client_id.eq.${client.id},lead_id.eq.${targetLeadId},template_id.ilike.%${targetLeadId.slice(0, 8)}%`);
 
       await supabase
         .from('quotation_documents')
         .update({ is_final: true, updated_at: new Date().toISOString() })
         .eq('template_id', q.template_id);
 
-      if (client.lead_id) {
+      if (resolvedLead) {
         await supabase
           .from('leads')
           .update({ final_quotation_id: q.template_id, updated_at: new Date().toISOString() })
-          .eq('id', client.lead_id);
+          .eq('id', resolvedLead);
       }
 
       // Update local state
@@ -2852,6 +2896,106 @@ export default function ClientWorkspaceDetailPage() {
       }
     } catch (e) {
       console.error('Error updating moodboard:', e);
+    }
+  };
+
+  // Immediately persist 6-digit Security PIN toggle or PIN edit to DB & browser cache
+  const persistPortalSecuritySettings = async (opts: {
+    portalEnabled?: boolean;
+    portalPin?: string;
+  }) => {
+    if (!client || isReadOnly) return false;
+    const nextEnabled = opts.portalEnabled !== undefined ? opts.portalEnabled : extended.portal_enabled !== false;
+    const nextPin = (opts.portalPin !== undefined ? opts.portalPin : extended.portal_pin || '').replace(/\D/g, '').slice(0, 6);
+
+    if (nextEnabled && !/^\d{6}$/.test(nextPin)) {
+      alert('Please enter a valid 6-digit numeric Security PIN.');
+      return false;
+    }
+
+    const finalPin = nextPin || extended.portal_pin || deriveSixDigitPin({ id: client.id, phone });
+    const prevEnabled = extended.portal_enabled !== false;
+    const prevPin = extended.portal_pin;
+
+    const updatedExtended: ClientExtendedData = {
+      ...extended,
+      portal_enabled: nextEnabled,
+      portal_pin: finalPin,
+    };
+
+    const serializedNotes = serializeClientExtended(updatedExtended);
+    setExtended(updatedExtended);
+    setSavingPin(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const effectiveWsId = activeWorkspace?.workspaceId || currentWsId || client.workspace_id || '';
+
+      try {
+        await fetch(`/api/workspace/clients/${client.id}?workspace_id=${encodeURIComponent(effectiveWsId)}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            clientUpdate: { notes: serializedNotes },
+          }),
+        });
+      } catch (_) {}
+
+      await supabase
+        .from('workspace_clients')
+        .update({ notes: serializedNotes, updated_at: new Date().toISOString() })
+        .eq('id', client.id);
+
+      const updatedClientObj: WorkspaceClient = {
+        ...client,
+        notes: serializedNotes,
+      };
+      setClient(updatedClientObj);
+      syncClientBrowserCache(updatedClientObj, activeWorkspace?.workspaceId || currentWsId);
+
+      if (opts.portalPin !== undefined && opts.portalPin !== prevPin) {
+        logClientAudit({
+          clientId: client.id,
+          workspaceId: currentWsId || client.workspace_id,
+          actorId: userId || undefined,
+          actorName: userName || userEmail || 'Studio Member',
+          actorEmail: userEmail || undefined,
+          module: 'overview',
+          actionType: 'UPDATE',
+          title: 'Updated Client Portal 6-Digit Security PIN',
+          description: `Changed Client Portal access PIN.`,
+          oldValue: prevPin,
+          newValue: finalPin,
+        });
+      }
+      if (opts.portalEnabled !== undefined && opts.portalEnabled !== prevEnabled) {
+        logClientAudit({
+          clientId: client.id,
+          workspaceId: currentWsId || client.workspace_id,
+          actorId: userId || undefined,
+          actorName: userName || userEmail || 'Studio Member',
+          actorEmail: userEmail || undefined,
+          module: 'overview',
+          actionType: 'STATUS_CHANGE',
+          title: `Portal PIN Protection ${nextEnabled ? 'Enabled' : 'Disabled'}`,
+          oldValue: prevEnabled ? 'ON' : 'OFF',
+          newValue: nextEnabled ? 'ON' : 'OFF',
+        });
+      }
+
+      setPinSavedNotice('Saved');
+      setTimeout(() => setPinSavedNotice(null), 2000);
+      return true;
+    } catch (e) {
+      console.error('Error saving portal PIN settings:', e);
+      alert('Failed to update portal PIN settings.');
+      return false;
+    } finally {
+      setSavingPin(false);
     }
   };
 
@@ -3597,11 +3741,16 @@ export default function ClientWorkspaceDetailPage() {
 
               <button
                 type="button"
-                onClick={() => setShowShareModal(true)}
-                className="px-5 py-3 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-2xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer h-[42px] whitespace-nowrap"
+                onClick={() => {
+                  setIsEditingSharePin(false);
+                  setDraftPortalPin(extended.portal_pin || '');
+                  setShowShareModal(true);
+                }}
+                title="Share Client Portal & PIN"
+                aria-label="Share Client Portal & PIN"
+                className="w-[42px] h-[42px] text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-2xl shadow-xs transition flex items-center justify-center cursor-pointer shrink-0"
               >
                 <Share2 className="w-4 h-4" />
-                <span>Share PIN</span>
               </button>
             </div>
           </div>
@@ -3776,43 +3925,125 @@ export default function ClientWorkspaceDetailPage() {
                       </div>
 
                       <div>
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <label className="font-bold text-slate-700">6-Digit Security PIN</label>
-                          <button
-                            type="button"
-                            disabled={isReadOnly}
-                            onClick={() => setExtended(prev => ({ ...prev, portal_enabled: prev.portal_enabled === false }))}
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border transition flex items-center gap-1 ${
-                              isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                            } ${
-                              extended.portal_enabled !== false
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-slate-100 text-slate-500 border-slate-200'
-                            }`}
-                          >
-                            <Lock className="w-2.5 h-2.5" />
-                            <span>{extended.portal_enabled !== false ? 'PIN ON' : 'PIN OFF'}</span>
-                          </button>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <label className="font-bold text-slate-700 flex items-center gap-1.5">
+                            <span>6-Digit Security PIN</span>
+                            {pinSavedNotice && (
+                              <span className="text-[10px] font-black text-emerald-600">{pinSavedNotice}</span>
+                            )}
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-black ${
+                              extended.portal_enabled !== false ? 'text-emerald-700' : 'text-slate-400'
+                            }`}>
+                              {extended.portal_enabled !== false ? 'ON' : 'OFF'}
+                            </span>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={extended.portal_enabled !== false}
+                              aria-label="Toggle 6-Digit Security PIN"
+                              disabled={isReadOnly || savingPin}
+                              onClick={async () => {
+                                const nextState = extended.portal_enabled === false;
+                                if (!nextState) setIsEditingPin(false);
+                                await persistPortalSecuritySettings({ portalEnabled: nextState });
+                              }}
+                              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                                isReadOnly || savingPin ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                              } ${
+                                extended.portal_enabled !== false ? 'bg-emerald-500' : 'bg-slate-300'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ${
+                                  extended.portal_enabled !== false ? 'translate-x-4' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </div>
                         </div>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          disabled={isReadOnly || extended.portal_enabled === false}
-                          maxLength={6}
-                          placeholder="6-digit PIN"
-                          value={extended.portal_pin}
-                          onChange={(e) =>
-                            setExtended(prev => ({
-                              ...prev,
-                              portal_pin: e.target.value.replace(/\D/g, '').slice(0, 6),
-                            }))
-                          }
-                          className={`w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono font-black tracking-widest text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 ${
-                            extended.portal_enabled === false
-                              ? 'bg-slate-50 text-slate-400 opacity-60 cursor-not-allowed'
-                              : 'text-amber-900 disabled:bg-slate-50 disabled:text-slate-600'
-                          }`}
-                        />
+
+                        {isEditingPin && !isReadOnly ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoFocus
+                              maxLength={6}
+                              placeholder="6-digit PIN"
+                              value={draftPortalPin}
+                              onChange={(e) => setDraftPortalPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const ok = await persistPortalSecuritySettings({ portalPin: draftPortalPin });
+                                  if (ok) setIsEditingPin(false);
+                                } else if (e.key === 'Escape') {
+                                  setIsEditingPin(false);
+                                  setDraftPortalPin(extended.portal_pin || '');
+                                }
+                              }}
+                              className="w-full px-3.5 py-2.5 bg-white border border-amber-400 rounded-xl font-mono font-black tracking-widest text-sm text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                            />
+                            <button
+                              type="button"
+                              disabled={savingPin}
+                              onClick={async () => {
+                                const ok = await persistPortalSecuritySettings({ portalPin: draftPortalPin });
+                                if (ok) setIsEditingPin(false);
+                              }}
+                              title="Save PIN"
+                              className="p-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition cursor-pointer shrink-0 disabled:opacity-50"
+                            >
+                              {savingPin ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingPin}
+                              onClick={() => {
+                                setIsEditingPin(false);
+                                setDraftPortalPin(extended.portal_pin || '');
+                              }}
+                              title="Cancel"
+                              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition cursor-pointer shrink-0"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`flex-1 px-3.5 py-2.5 border border-[#EAE5DA] rounded-xl font-mono font-black tracking-widest text-sm flex items-center justify-between ${
+                                extended.portal_enabled === false
+                                  ? 'bg-slate-50 text-slate-400'
+                                  : 'bg-slate-50 text-amber-900'
+                              }`}
+                            >
+                              <span>{extended.portal_enabled === false ? 'PIN OFF' : (extended.portal_pin || '------')}</span>
+                              <Lock className={`w-3.5 h-3.5 ${extended.portal_enabled === false ? 'text-slate-300' : 'text-amber-600'}`} />
+                            </div>
+                            {!isReadOnly && (
+                              <button
+                                type="button"
+                                disabled={extended.portal_enabled === false}
+                                onClick={() => {
+                                  setDraftPortalPin(extended.portal_pin || '');
+                                  setIsEditingPin(true);
+                                }}
+                                title="Edit 6-Digit Security PIN"
+                                aria-label="Edit 6-Digit Security PIN"
+                                className={`p-2.5 rounded-xl border border-[#EAE5DA] transition shrink-0 ${
+                                  extended.portal_enabled === false
+                                    ? 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                                    : 'bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-800 cursor-pointer shadow-2xs'
+                                }`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -4148,7 +4379,10 @@ export default function ClientWorkspaceDetailPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            const clientUrl = `/p/quotation/${doc.public_token || doc.template_id}?internal=true`;
+                            const exactTid = doc.template_id ? encodeURIComponent(doc.template_id) : '';
+                            const clientUrl = exactTid
+                              ? `/workspace/quotations/builder/templet/${exactTid}?preview=public&token=${exactTid}&internal=true`
+                              : `/p/quotation/${doc.public_token || doc.id}?internal=true`;
                             window.open(clientUrl, '_blank');
                           }}
                           className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA] transition text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
@@ -4563,7 +4797,7 @@ export default function ClientWorkspaceDetailPage() {
                 <p className="text-xs font-bold">Loading deliverables...</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-4 [&_button[title*='History']_span]:hidden [&_button[title*='History']]:px-2.5 [&_button[title*='History']]:gap-0">
                 <PostProductionCard
                   project={postProdProjectData}
                   teamMembers={teamMembers.map(m => ({
@@ -4644,7 +4878,7 @@ export default function ClientWorkspaceDetailPage() {
                   className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  + Record Payment
+                  <span>Record Payment</span>
                 </button>
                 <button
                   type="button"
@@ -4728,7 +4962,7 @@ export default function ClientWorkspaceDetailPage() {
                     className="px-6 py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black text-xs rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer inline-flex items-center gap-2"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>+ Add Event Moodboard</span>
+                    <span>Add Event Moodboard</span>
                   </button>
                 )}
               </div>
@@ -4749,17 +4983,6 @@ export default function ClientWorkspaceDetailPage() {
                             : 'bg-white text-slate-700 hover:bg-amber-50/60 border-[#EAE5DA]'
                         }`}
                       >
-                        <span>
-                          {mb.event_type === 'Pre-Wedding'
-                            ? '💍'
-                            : mb.event_type === 'Wedding'
-                            ? '💒'
-                            : mb.event_type === 'Reception'
-                            ? '🎉'
-                            : mb.event_type === 'Haldi' || mb.event_type === 'Mehendi'
-                            ? '🌸'
-                            : '✨'}
-                        </span>
                         <span>{mb.title || `${mb.event_type || 'Event'} Moodboard`}</span>
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
                           isSelected ? 'bg-black/15 text-slate-950 font-bold' : 'bg-slate-100 text-slate-600'
@@ -5835,22 +6058,126 @@ export default function ClientWorkspaceDetailPage() {
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">6-Digit Security Access PIN</label>
-                  <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center justify-between">
-                    <div>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <label className="font-bold text-slate-700 flex items-center gap-1.5">
+                      <span>6-Digit Security Access PIN</span>
+                      {pinSavedNotice && (
+                        <span className="text-[10px] font-black text-emerald-600">{pinSavedNotice}</span>
+                      )}
+                    </label>
+                    {!isReadOnly && (
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-black ${
+                          extended.portal_enabled !== false ? 'text-emerald-700' : 'text-slate-400'
+                        }`}>
+                          {extended.portal_enabled !== false ? 'ON' : 'OFF'}
+                        </span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={extended.portal_enabled !== false}
+                          aria-label="Toggle Security Access PIN"
+                          disabled={savingPin}
+                          onClick={async () => {
+                            const nextState = extended.portal_enabled === false;
+                            if (!nextState) setIsEditingSharePin(false);
+                            await persistPortalSecuritySettings({ portalEnabled: nextState });
+                          }}
+                          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none cursor-pointer disabled:opacity-50 ${
+                            extended.portal_enabled !== false ? 'bg-emerald-500' : 'bg-slate-300'
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ${
+                              extended.portal_enabled !== false ? 'translate-x-4' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
                       {extended.portal_enabled !== false ? (
-                        <>
-                          <span className="text-2xl font-black font-mono text-amber-900 tracking-widest">{extended.portal_pin}</span>
-                          <p className="text-[10px] text-amber-700 mt-0.5 font-medium">Client enters this 6-digit PIN to unlock the portal</p>
-                        </>
+                        isEditingSharePin && !isReadOnly ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoFocus
+                              maxLength={6}
+                              placeholder="6-digit PIN"
+                              value={draftPortalPin}
+                              onChange={(e) => setDraftPortalPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const ok = await persistPortalSecuritySettings({ portalPin: draftPortalPin });
+                                  if (ok) setIsEditingSharePin(false);
+                                } else if (e.key === 'Escape') {
+                                  setIsEditingSharePin(false);
+                                  setDraftPortalPin(extended.portal_pin || '');
+                                }
+                              }}
+                              className="w-36 px-3 py-1.5 bg-white border border-amber-400 rounded-xl text-lg font-black font-mono text-amber-900 tracking-widest focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                            />
+                            <button
+                              type="button"
+                              disabled={savingPin}
+                              onClick={async () => {
+                                const ok = await persistPortalSecuritySettings({ portalPin: draftPortalPin });
+                                if (ok) setIsEditingSharePin(false);
+                              }}
+                              title="Save PIN"
+                              className="p-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition cursor-pointer shrink-0 disabled:opacity-50"
+                            >
+                              {savingPin ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingPin}
+                              onClick={() => {
+                                setIsEditingSharePin(false);
+                                setDraftPortalPin(extended.portal_pin || '');
+                              }}
+                              title="Cancel"
+                              className="p-2 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl transition cursor-pointer shrink-0"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-2xl font-black font-mono text-amber-900 tracking-widest">{extended.portal_pin}</span>
+                            <p className="text-[10px] text-amber-700 mt-0.5 font-medium">Client enters this 6-digit PIN to unlock the portal</p>
+                          </>
+                        )
                       ) : (
                         <>
                           <span className="text-sm font-black text-slate-700">PIN Protection OFF — Direct Access</span>
-                          <p className="text-[10px] text-slate-500 mt-0.5 font-medium">Turn PIN ON in Overview if you want PIN protection</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5 font-medium">Turn the green switch ON anytime to enable PIN protection</p>
                         </>
                       )}
                     </div>
-                    <Key className="w-6 h-6 text-amber-600" />
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!isReadOnly && extended.portal_enabled !== false && !isEditingSharePin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftPortalPin(extended.portal_pin || '');
+                            setIsEditingSharePin(true);
+                          }}
+                          title="Edit 6-Digit PIN"
+                          aria-label="Edit 6-Digit PIN"
+                          className="p-2 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 rounded-xl transition cursor-pointer shadow-2xs"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      {(!isEditingSharePin || extended.portal_enabled === false) && (
+                        <Key className="w-6 h-6 text-amber-600" />
+                      )}
+                    </div>
                   </div>
                 </div>
 

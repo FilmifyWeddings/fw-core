@@ -1540,10 +1540,27 @@ export default function ClientsPage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            VIEW TABS (ACTIVE, COMPLETED, ALL, TRASH)
+            VIEW TABS (ALL CLIENTS, ACTIVE CLIENTS, COMPLETED, TRASH)
         ───────────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EAE5DA] pb-2">
           <div className="flex items-center gap-2 overflow-x-auto py-1">
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA]'
+              }`}
+            >
+              <span>All Clients</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {totalClientsCount}
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={() => setStatusFilter('active')}
@@ -1575,23 +1592,6 @@ export default function ClientsPage() {
                 statusFilter === 'completed' ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
                 {completedClientsCount}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setStatusFilter('all')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                statusFilter === 'all'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA]'
-              }`}
-            >
-              <span>All Clients</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'
-              }`}>
-                {totalClientsCount}
               </span>
             </button>
 

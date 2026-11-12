@@ -246,27 +246,83 @@ export default function ClientBookingEventsSection({
 
   // Build displayProject: uses real `fw_projects` row when present, or synthesizes virtual project from fallbackEvents
   const displayProject: FWProject = useMemo(() => {
+    const expandEventRoles = (ev: any): string[] => {
+      if (Array.isArray(ev?.roles) && ev.roles.length > 0) {
+        return ev.roles.map((r: any) => (typeof r === 'string' ? r.trim() : String(r?.name || r?.role || '').trim())).filter(Boolean);
+      }
+      if (Array.isArray(ev?.crew) && ev.crew.length > 0) {
+        return ev.crew.map((r: any) => (typeof r === 'string' ? r.trim() : String(r?.name || r?.role || '').trim())).filter(Boolean);
+      }
+      if (Array.isArray(ev?.requirements) && ev.requirements.length > 0) {
+        const expanded: string[] = [];
+        ev.requirements.forEach((req: any) => {
+          if (!req) return;
+          if (typeof req === 'string') {
+            req.split(/[,+\n]/).map((s) => s.trim()).filter(Boolean).forEach((s) => expanded.push(s));
+            return;
+          }
+          const rName = String(req.name || req.role || '').trim();
+          if (!rName) return;
+          const qty = Math.max(1, Number(req.qty ?? req.quantity ?? req.count ?? 1) || 1);
+          if (rName.includes(',') && qty === 1) {
+            rName.split(/[,+\n]/).map((s) => s.trim()).filter(Boolean).forEach((s) => expanded.push(s));
+          } else {
+            for (let i = 0; i < qty; i++) expanded.push(rName);
+          }
+        });
+        if (expanded.length > 0) return expanded;
+      }
+      if (ev?.assigned_crew) {
+        return String(ev.assigned_crew)
+          .split(/[,+\n]/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+      return [];
+    };
+
+    const normalizeTitle = (s?: string) =>
+      String(s || '')
+        .toLowerCase()
+        .replace(/&/g, 'and')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
     if (localProject) {
+      const hydratedSubs = (localProject.fw_sub_events || []).map((se: any, idx: number) => {
+        const existingRoles = Array.isArray(se.roles) ? se.roles : [];
+        const existingAssigns = Array.isArray(se.fw_assignments) ? se.fw_assignments : [];
+        if (existingRoles.length > 0 || existingAssigns.length > 0) return se;
+
+        const seNorm = normalizeTitle(se.event_title || se.name);
+        const matchedFallback =
+          (fallbackEvents || []).find((fe) => {
+            const feNorm = normalizeTitle(fe.name || (fe as any).event_title);
+            return feNorm && seNorm && (feNorm === seNorm || feNorm.includes(seNorm) || seNorm.includes(feNorm));
+          }) || (fallbackEvents || [])[idx];
+
+        const fallbackRoles = matchedFallback ? expandEventRoles(matchedFallback) : [];
+        if (fallbackRoles.length === 0) return se;
+
+        return {
+          ...se,
+          roles: fallbackRoles,
+        };
+      });
+
       return {
         ...localProject,
         client_name: localProject.client_name || client.name,
         project_manager_id: localProject.project_manager_id ?? client.project_manager_id ?? null,
         project_manager_name: localProject.project_manager_name ?? client.project_manager_name ?? null,
+        fw_sub_events: hydratedSubs,
       };
     }
 
     const virtualProjId = `virtual_${client.id}`;
     const synthesizedSubs: FWSubEvent[] = (fallbackEvents || []).map((ev, idx) => {
-      const rolesFromCrew = Array.isArray(ev.roles) && ev.roles.length > 0
-        ? ev.roles
-        : Array.isArray(ev.crew) && ev.crew.length > 0
-        ? ev.crew
-        : ev.assigned_crew
-        ? String(ev.assigned_crew)
-            .split(/[,+]/)
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [];
+      const rolesFromCrew = expandEventRoles(ev);
       const hasValidDate = isValidDateVal(ev.date);
       return {
         id: ev.id || `${virtualProjId}_se_${idx}`,

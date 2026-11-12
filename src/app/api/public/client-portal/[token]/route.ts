@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getMediaUrl } from '@/lib/r2-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -177,32 +178,65 @@ async function resolveStudioBranding(clientRow: any) {
       }
     }
 
+    let profile: any = null;
     if (ownerId) {
-      const { data: profile } = await supabaseAdmin
+      const { data: profileData } = await supabaseAdmin
         .from('profiles')
         .select('*')
         .eq('id', ownerId)
         .maybeSingle();
+      profile = profileData || null;
+    }
 
-      if (profile) {
-        const prefs = (profile.leads_table_preferences as any) || {};
-        const settings = (profile.studio_settings as any) || {};
+    let authAvatarUrl = '';
+    if (ownerId && (!profile?.avatar_url)) {
+      try {
+        const authRes: any = await Promise.race([
+          supabaseAdmin.auth.admin.getUserById(ownerId),
+          new Promise((resolve) => setTimeout(() => resolve(null), 1500)),
+        ]);
+        const meta = authRes?.data?.user?.user_metadata || {};
+        authAvatarUrl = meta.avatar_url || meta.picture || '';
+      } catch (_) {}
+    }
 
-        studioName =
-          profile.business_name ||
-          profile.company ||
-          prefs.invoice_company_name ||
-          profile.workspace_name ||
-          studioName ||
-          profile.full_name ||
-          'Filmify Weddings';
+    const prefs = (profile?.leads_table_preferences as any) || {};
+    const settings = (profile?.studio_settings as any) || {};
 
-        studioLogo = profile.logo_url || studioLogo || prefs.invoice_qr_image_url || '';
-        studioPhone = profile.phone || prefs.invoice_phone || settings.phone || '';
-        studioEmail = profile.email || prefs.invoice_email || settings.email || '';
-        studioWebsite = profile.website || prefs.invoice_website || settings.website || '';
-        studioInstagram = profile.instagram_handle || profile.instagram || prefs.invoice_instagram || settings.instagram || '';
+    if (profile) {
+      studioName =
+        profile.business_name ||
+        profile.company ||
+        prefs.invoice_company_name ||
+        profile.workspace_name ||
+        studioName ||
+        profile.full_name ||
+        'Filmify Weddings';
+
+      studioPhone = profile.phone || prefs.invoice_phone || settings.phone || '';
+      studioEmail = profile.email || prefs.invoice_email || settings.email || '';
+      studioWebsite = profile.website || prefs.invoice_website || settings.website || '';
+      studioInstagram = profile.instagram_handle || profile.instagram || prefs.invoice_instagram || settings.instagram || '';
+    }
+
+    // Strictly prioritize Studio Owner's Profile Photo (never use payment QR images)
+    const rawOwnerPhoto =
+      profile?.avatar_url ||
+      authAvatarUrl ||
+      profile?.logo_url ||
+      studioLogo ||
+      prefs?.invoice_logo_url ||
+      '';
+
+    if (rawOwnerPhoto) {
+      const trimmed = String(rawOwnerPhoto).trim();
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('/')) {
+        studioLogo = trimmed;
+      } else {
+        studioLogo = getMediaUrl(trimmed) || '';
       }
+    } else {
+      studioLogo = '';
     }
   } catch (brandErr) {
     console.warn('[Client Portal API] Studio branding lookup warning:', brandErr);
@@ -226,70 +260,91 @@ async function buildFullPortalPayload(clientRow: any, ext: ReturnType<typeof par
       supabaseAdmin.from('client_moodboards').select('*').eq('client_id', clientRow.id).maybeSingle(),
     ]);
 
-    // 4. Fetch Quotations & Quotation Documents
+    // 4. Resolve Linked Lead & Fetch Quotations / Quotation Documents cleanly
     const allQuotes: any[] = [];
-    let leadFinalQuoteId: string | null = null;
+    let resolvedLeadRow: any = null;
 
-    if (clientRow.lead_id) {
-      // Check quotation_documents by lead_id
-      const { data: qDocs } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('*')
-        .eq('lead_id', clientRow.lead_id)
-        .order('created_at', { ascending: false });
-
-      if (qDocs && qDocs.length > 0) {
-        allQuotes.push(...qDocs);
-      }
-
-      // Check leads table for final_quotation_id
-      try {
-        const { data: leadRow } = await supabaseAdmin
+    try {
+      if (clientRow.lead_id) {
+        const { data: directLead } = await supabaseAdmin
           .from('leads')
-          .select('id, final_quotation_id, quotation_id')
+          .select('id, final_quotation_id, quotation_id, raw_payload')
           .eq('id', clientRow.lead_id)
           .maybeSingle();
+        if (directLead) resolvedLeadRow = directLead;
+      }
+      if (!resolvedLeadRow) {
+        const { data: linkedLead } = await supabaseAdmin
+          .from('leads')
+          .select('id, final_quotation_id, quotation_id, raw_payload')
+          .eq('client_id', clientRow.id)
+          .limit(1)
+          .maybeSingle();
+        if (linkedLead) resolvedLeadRow = linkedLead;
+      }
+    } catch (_) {}
 
-        if (leadRow?.final_quotation_id) {
-          leadFinalQuoteId = leadRow.final_quotation_id;
-          const already = allQuotes.some(q => q.template_id === leadFinalQuoteId || q.id === leadFinalQuoteId);
-          if (!already) {
-            const { data: specificQuote } = await supabaseAdmin
+    const resolvedLeadId: string | null = resolvedLeadRow?.id || clientRow.lead_id || null;
+    const leadFinalQuoteId: string | null =
+      resolvedLeadRow?.final_quotation_id || resolvedLeadRow?.raw_payload?.final_quotation_id || null;
+
+    const docOrParts = [`client_id.eq.${clientRow.id}`];
+    if (resolvedLeadId) {
+      docOrParts.push(`lead_id.eq.${resolvedLeadId}`);
+      const shortSeed = String(resolvedLeadId).replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+      if (shortSeed.length >= 6) {
+        docOrParts.push(`template_id.ilike.%${shortSeed}%`);
+      }
+    }
+    if (!resolvedLeadId || resolvedLeadId !== clientRow.id) {
+      docOrParts.push(`lead_id.eq.${clientRow.id}`);
+    }
+
+    const { data: qDocs } = await supabaseAdmin
+      .from('quotation_documents')
+      .select('*')
+      .or(docOrParts.join(','))
+      .order('created_at', { ascending: false });
+
+    if (qDocs && qDocs.length > 0) {
+      allQuotes.push(...qDocs);
+    }
+
+    if (leadFinalQuoteId) {
+      const already = allQuotes.some((q) => q.template_id === leadFinalQuoteId || q.id === leadFinalQuoteId);
+      if (!already) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadFinalQuoteId);
+        const { data: specificQuote } = isUuid
+          ? await supabaseAdmin
               .from('quotation_documents')
               .select('*')
               .or(`id.eq.${leadFinalQuoteId},template_id.eq.${leadFinalQuoteId}`)
+              .maybeSingle()
+          : await supabaseAdmin
+              .from('quotation_documents')
+              .select('*')
+              .eq('template_id', leadFinalQuoteId)
               .maybeSingle();
 
-            if (specificQuote) {
-              allQuotes.push({ ...specificQuote, is_final: true });
-            }
-          }
+        if (specificQuote) {
+          allQuotes.push(specificQuote);
         }
-      } catch (_) {}
-    }
-
-    // Also check quotation_documents by client_id = lead_id column
-    const { data: qClientDocs } = await supabaseAdmin
-      .from('quotation_documents')
-      .select('*')
-      .eq('lead_id', clientRow.id)
-      .order('created_at', { ascending: false });
-
-    if (qClientDocs && qClientDocs.length > 0) {
-      allQuotes.push(...qClientDocs);
+      }
     }
 
     // Also check quotations table
+    let qRowsList: any[] = [];
     try {
       let qQuery = supabaseAdmin.from('quotations').select('*');
-      if (clientRow.lead_id) {
-        qQuery = qQuery.or(`client_id.eq.${clientRow.id},client_id.eq.${clientRow.lead_id}`);
+      if (resolvedLeadId) {
+        qQuery = qQuery.or(`client_id.eq.${clientRow.id},client_id.eq.${resolvedLeadId}`);
       } else {
         qQuery = qQuery.eq('client_id', clientRow.id);
       }
 
       const { data: qRows } = await qQuery.order('created_at', { ascending: false });
       if (qRows && qRows.length > 0) {
+        qRowsList = qRows;
         qRows.forEach((q: any) => {
           const key = q.quotation_number || q.id;
           const already = allQuotes.some(ex => ex.id === q.id || ex.template_id === key);
@@ -299,40 +354,70 @@ async function buildFullPortalPayload(clientRow: any, ext: ReturnType<typeof par
               template_id: key,
               title: q.title || `${clientRow.name} Quotation`,
               is_final: q.status === 'accepted' || q.status === 'final' || q.is_final === true,
+              public_token: q.public_token,
               total_amount: q.total_amount || clientRow.total_package_amount,
-              content_json: q.content_json || {}
+              content_json: q.canvas_data || q.content_json || {},
+              created_at: q.created_at,
+              updated_at: q.updated_at || q.created_at,
             });
           }
         });
       }
     } catch (_) {}
 
-    // Deduplicate quotations
+    // Deduplicate quotations strictly by uppercase key
     const uniqueQuotesMap = new Map<string, any>();
     allQuotes.forEach((q, idx) => {
-      const key = q.template_id || q.id;
-      if (!uniqueQuotesMap.has(key)) {
-        const isMarkedFinal = Boolean(
-          q.is_final || 
-          q.content_json?.is_final === true || 
-          (leadFinalQuoteId && (q.template_id === leadFinalQuoteId || q.id === leadFinalQuoteId))
+      const rawKey = q.template_id || q.id;
+      const keyU = String(rawKey).toUpperCase();
+      if (!uniqueQuotesMap.has(keyU)) {
+        const matchedQ = qRowsList.find(
+          (qr) => qr.id === q.template_id || (qr.quotation_number && q.template_id && qr.quotation_number === q.template_id) || qr.id === q.id
         );
-        uniqueQuotesMap.set(key, {
+        uniqueQuotesMap.set(keyU, {
           ...q,
-          template_id: key,
-          version: q.version || (idx + 1),
-          is_final: isMarkedFinal,
-          total_amount: q.total_amount || q.content_json?.pricingPage?.finalAmount || q.content_json?.pricing?.finalAmount || clientRow.total_package_amount,
+          template_id: rawKey,
+          version: q.lead_version || q.version || (idx + 1),
+          public_token: q.public_token || matchedQ?.public_token,
+          _matchedQ: matchedQ,
+          total_amount: q.total_amount || q.content_json?.pricingPage?.finalAmount || q.content_json?.pricing?.finalAmount || matchedQ?.total_amount || clientRow.total_package_amount,
           updated_at: q.updated_at || q.created_at || new Date().toISOString()
         });
       }
     });
 
-    let quotationDocs = Array.from(uniqueQuotesMap.values());
-    if (quotationDocs.length > 0 && !quotationDocs.some(q => q.is_final)) {
-      quotationDocs[0].is_final = true;
+    const dedupedQuotes = Array.from(uniqueQuotesMap.values());
+
+    // Pick single authoritative Final quotation (exact leads.final_quotation_id > explicit column > content_json.is_final > first)
+    let authoritativeFinalKey: string | null = null;
+    if (leadFinalQuoteId) {
+      const exactMatch = dedupedQuotes.find(
+        (q) => q.template_id === leadFinalQuoteId || q.id === leadFinalQuoteId || q._matchedQ?.id === leadFinalQuoteId || q._matchedQ?.quotation_number === leadFinalQuoteId
+      );
+      if (exactMatch) authoritativeFinalKey = String(exactMatch.template_id || exactMatch.id);
     }
-    quotationDocs.sort((a, b) => (b.is_final ? 1 : 0) - (a.is_final ? 1 : 0));
+    if (!authoritativeFinalKey) {
+      const colMatch = [...dedupedQuotes]
+        .sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime())
+        .find((q) => q.is_final === true || q._matchedQ?.is_final === true || q._matchedQ?.status === 'accepted' || q._matchedQ?.status === 'final');
+      if (colMatch) authoritativeFinalKey = String(colMatch.template_id || colMatch.id);
+    }
+    if (!authoritativeFinalKey) {
+      const contentMatch = [...dedupedQuotes]
+        .sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime())
+        .find((q) => q.content_json?.is_final === true);
+      if (contentMatch) authoritativeFinalKey = String(contentMatch.template_id || contentMatch.id);
+    }
+    if (!authoritativeFinalKey && dedupedQuotes.length > 0) {
+      authoritativeFinalKey = String(dedupedQuotes[0].template_id || dedupedQuotes[0].id);
+    }
+
+    const quotationDocs = dedupedQuotes
+      .map(({ _matchedQ, ...q }) => ({
+        ...q,
+        is_final: Boolean(authoritativeFinalKey && String(q.template_id || q.id) === authoritativeFinalKey),
+      }))
+      .sort((a, b) => (b.is_final ? 1 : 0) - (a.is_final ? 1 : 0));
 
     // 5. Fetch Team Manager / Bookings Sub-Events (fw_projects & fw_sub_events)
     let fwProject = null;
