@@ -272,6 +272,8 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(() => !cachedInit.hasCache);
+  const [hasLoadedFromServer, setHasLoadedFromServer] = useState<boolean>(false);
+  const [showAiAutomationModal, setShowAiAutomationModal] = useState<boolean>(false);
   const [mounted, setMounted] = useState<boolean>(false);
   const [quotationSettings, setQuotationSettings] = useState<WorkspaceQuotationSettings>(
     DEFAULT_WORKSPACE_QUOTATION_SETTINGS
@@ -985,14 +987,16 @@ export default function WorkspaceQuotationsGalleryPage() {
                     }
                     return item;
                   });
-                memCachedQuotations = hydrated;
-                setQuotations(prev => areQuotationsEqual(prev, hydrated) ? prev : hydrated);
-                setLoading(false);
-                const primary = hydrated[0];
-                if (primary) {
-                  setActiveQuotationId(primary.quotation_number || primary.id || '1');
-                  if (primary.client_name) setActiveCoupleName(primary.client_name);
-                  if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
+                if (hydrated.length > 0) {
+                  memCachedQuotations = hydrated;
+                  setQuotations(prev => areQuotationsEqual(prev, hydrated) ? prev : hydrated);
+                  setLoading(false);
+                  const primary = hydrated[0];
+                  if (primary) {
+                    setActiveQuotationId(primary.quotation_number || primary.id || '1');
+                    if (primary.client_name) setActiveCoupleName(primary.client_name);
+                    if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
+                  }
                 }
               }
             }
@@ -1009,45 +1013,58 @@ export default function WorkspaceQuotationsGalleryPage() {
           } catch {}
         }
 
-        // 1. Fetch user & system quotation templates, gallery images, and Studio AI settings concurrently
+        // 1. Fetch quotation templates independently so cards appear immediately without waiting for gallery/settings
         const token = session?.access_token;
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
         if (session?.user?.email) headers['x-user-email'] = session.user.email;
         const targetWsId = contextWsId || (currentUserId !== 'demo_user' ? currentUserId : '');
 
-        const [res, imgRes, qSettingsRes] = await Promise.all([
-          fetch(`/api/quotation-templates?workspace_id=${encodeURIComponent(targetWsId || currentUserId)}`, { 
-            headers,
-            signal: AbortSignal.timeout(12000) 
-          }).catch(err => {
-            console.warn('[QuotationsPage] Fast fetch templates timeout or network error:', err);
-            return null;
-          }),
-          supabase
-            .from('user_gallery_images')
-            .select('*')
-            .eq('workspace_id', targetWsId || currentUserId)
-            .order('created_at', { ascending: false }),
-          targetWsId
-            ? fetchWorkspaceQuotationSettings(targetWsId).catch(() => null)
-            : Promise.resolve(null),
-        ]);
+        const templatesPromise = fetch(`/api/quotation-templates?workspace_id=${encodeURIComponent(targetWsId || currentUserId)}`, {
+          headers,
+          signal: AbortSignal.timeout(12000)
+        }).catch(err => {
+          console.warn('[QuotationsPage] Fast fetch templates timeout or network error:', err);
+          return null;
+        });
 
-        if (qSettingsRes) {
-          setQuotationSettings(qSettingsRes);
-        }
+        const imgPromise = supabase
+          .from('user_gallery_images')
+          .select('*')
+          .eq('workspace_id', targetWsId || currentUserId)
+          .order('created_at', { ascending: false })
+          .then((imgRes) => {
+            if (imgRes?.data) {
+              setUserImages(imgRes.data as UserGalleryImage[]);
+              memCachedUserImages = imgRes.data as UserGalleryImage[];
+              try {
+                localStorage.setItem(`wg_gallery_cache_${currentUserId}`, JSON.stringify(imgRes.data));
+              } catch (_) {}
+            }
+            return imgRes;
+          })
+          .catch(() => null);
 
-        if (imgRes?.data) {
-          setUserImages(imgRes.data as UserGalleryImage[]);
-          memCachedUserImages = imgRes.data as UserGalleryImage[];
-          localStorage.setItem(`wg_gallery_cache_${currentUserId}`, JSON.stringify(imgRes.data));
-        }
+        const settingsPromise = targetWsId
+          ? fetchWorkspaceQuotationSettings(targetWsId)
+              .then((qSettingsRes) => {
+                if (qSettingsRes) {
+                  setQuotationSettings(qSettingsRes);
+                }
+                return qSettingsRes;
+              })
+              .catch(() => null)
+          : Promise.resolve(null);
+
+        const res = await templatesPromise;
+        // Fire-and-forget secondary loads; ensure we await them at end of background task only for cleanliness
+        void Promise.allSettled([imgPromise, settingsPromise]);
 
         // 🛡️ CRITICAL GUARD: If server fetch timed out or returned error, RETAIN cached designs!
         // Never wipe out user's cached designs with empty list!
         if (!res || !res.ok) {
           console.warn('[QuotationsPage] Server fetch timed out or failed, keeping existing cached designs');
+          setHasLoadedFromServer(true);
           setLoading(false);
           return;
         }
@@ -1176,6 +1193,8 @@ export default function WorkspaceQuotationsGalleryPage() {
           if (areQuotationsEqual(prev, combined)) return prev;
           return combined;
         });
+        setHasLoadedFromServer(true);
+        setLoading(false);
         memCachedQuotations = combined;
         if (typeof window !== 'undefined') {
           try {
@@ -1352,13 +1371,31 @@ export default function WorkspaceQuotationsGalleryPage() {
     <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#070708] text-slate-800 dark:text-zinc-100 p-4 lg:p-8 space-y-6 lg:space-y-8 pb-24 lg:pb-8">
       
       {/* Page Header */}
-      <div className="space-y-1">
-        <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-          Quotation Designs
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-300 font-semibold leading-relaxed max-w-4xl">
-          Win more bookings with a presentation that feels premium. Customize cover images, pricing, deliverables, and payment schedules.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+            Quotation Designs
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-300 font-semibold leading-relaxed max-w-4xl">
+            Win more bookings with a presentation that feels premium. Customize cover images, pricing, deliverables, and payment schedules.
+          </p>
+        </div>
+
+        {mounted && (
+          <button
+            type="button"
+            onClick={() => setShowAiAutomationModal(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs sm:text-sm font-extrabold shadow-sm hover:shadow transition-all cursor-pointer shrink-0 self-start sm:self-center"
+          >
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span>AI Voice Automation</span>
+            {Array.isArray(quotationSettings?.aiRules?.shortcuts) && quotationSettings.aiRules.shortcuts.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-white/25 text-[10px] font-black leading-none">
+                {quotationSettings.aiRules.shortcuts.length}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Top Stats Cards */}
@@ -1471,7 +1508,7 @@ export default function WorkspaceQuotationsGalleryPage() {
       {/* Responsive Designs Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
         
-        {loading && quotations.length === 0 ? (
+        {(loading || !hasLoadedFromServer) && quotations.length === 0 ? (
           <div className="col-span-full py-16 flex flex-col items-center justify-center">
             <StudioCoreLiquidLoader fullscreen={false} label="Loading Quotation Designs..." />
           </div>
@@ -1677,20 +1714,68 @@ export default function WorkspaceQuotationsGalleryPage() {
 
       </div>
 
-      {/* Studio AI Voice & Text Training (Synced directly with Settings -> Quotations -> Studio AI Training) */}
-      {effectiveWsId && effectiveWsId !== 'demo_user' && (
-        <div className="pt-4">
-          <StudioAiTrainingSettings
-            workspaceId={effectiveWsId}
-            settings={quotationSettings}
-            onSettingsChange={(newSettings) => setQuotationSettings(newSettings)}
-            onShowToast={(msg) => {
-              setToastMessage(msg);
-              setTimeout(() => setToastMessage(null), 3500);
+      {/* AI Voice Automation Responsive Popup Modal */}
+      <AnimatePresence>
+        {showAiAutomationModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/65 backdrop-blur-sm"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowAiAutomationModal(false);
             }}
-          />
-        </div>
-      )}
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.96, opacity: 0, y: 10 }}
+              transition={{ duration: 0.16 }}
+              className="bg-[#FAF9F6] dark:bg-zinc-950 border border-amber-200/80 dark:border-zinc-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+            >
+              <div className="px-4 sm:px-6 py-3.5 bg-white dark:bg-zinc-900 border-b border-slate-200/80 dark:border-zinc-800 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">
+                      AI Voice Automation
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
+                      Voice On-Demand Shortcuts (When I Say X → Do Y)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAiAutomationModal(false)}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 transition-colors cursor-pointer shrink-0"
+                  aria-label="Close AI Voice Automation"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+                {effectiveWsId && effectiveWsId !== 'demo_user' ? (
+                  <StudioAiTrainingSettings
+                    compactPopup={true}
+                    workspaceId={effectiveWsId}
+                    settings={quotationSettings}
+                    onSettingsChange={(newSettings) => setQuotationSettings(newSettings)}
+                    onShowToast={(msg) => {
+                      setToastMessage(msg);
+                      setTimeout(() => setToastMessage(null), 3500);
+                    }}
+                  />
+                ) : (
+                  <div className="py-12 flex flex-col items-center justify-center text-center gap-2">
+                    <StudioCoreLiquidLoader fullscreen={false} label="Loading Studio Automation..." />
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Saved Quotations List Drawer Modal */}
       <AnimatePresence>

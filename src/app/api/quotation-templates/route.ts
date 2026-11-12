@@ -47,8 +47,8 @@ export async function GET(req: NextRequest) {
     const safeWsParam = cleanId(workspaceIdParam);
     if (safeEffectiveId) candidateIdSet.add(safeEffectiveId);
 
-    // Run auth metadata, studio tenant lookup, and active system template query concurrently
-    const [userRecRes, profileRes, memberRes, sysTmplRes] = await Promise.all([
+    // Run auth metadata, studio tenant lookup, active system template, and primary owner templates concurrently
+    const [userRecRes, profileRes, memberRes, sysTmplRes, directUserTmplsRes] = await Promise.all([
       safeEffectiveId
         ? supabaseAdmin.auth.admin.getUserById(safeEffectiveId).catch(() => ({ data: null }))
         : Promise.resolve({ data: null }),
@@ -63,6 +63,18 @@ export async function GET(req: NextRequest) {
         .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
         .eq('id', 'FW-USER-SJ05RN')
         .limit(1),
+      safeEffectiveId
+        ? supabaseAdmin
+            .from('quotation_templates')
+            .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+            .not('status', 'in', '("archived","deleted")')
+            .not('id', 'ilike', 'FW-Q-%')
+            .not('id', 'ilike', 'FW-L-%')
+            .eq('is_system_template', false)
+            .or(`workspace_id.eq.${safeEffectiveId},user_id.eq.${safeEffectiveId}`)
+            .order('is_default', { ascending: false })
+            .order('updated_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (userRecRes?.data?.user?.user_metadata?.default_template_id) {
@@ -80,13 +92,16 @@ export async function GET(req: NextRequest) {
       candidateIdSet.add(safeWsParam);
     }
 
-    const candidateIds = Array.from(candidateIdSet);
+    const extraCandidateIds = Array.from(candidateIdSet).filter((id) => id !== safeEffectiveId);
     let validTemplates: any[] = [];
 
-    // 1. Fetch Studio's Own Created Quotation Templates across authorized studio/owner IDs
-    let userTemplates: any[] = [];
-    if (candidateIds.length > 0) {
-      const idList = candidateIds.join(',');
+    // 1. Merge already-fetched user templates + fetch any additional studio/team workspace IDs if different
+    let userTemplates: any[] = Array.isArray((directUserTmplsRes as any)?.data) ? (directUserTmplsRes as any).data : [];
+    if ((directUserTmplsRes as any)?.error) {
+      console.warn('[Quotation Templates] direct templates fetch warning:', (directUserTmplsRes as any).error.message);
+    }
+    if (extraCandidateIds.length > 0) {
+      const idList = extraCandidateIds.join(',');
       const { data: uTmpls, error: uErr } = await supabaseAdmin
         .from('quotation_templates')
         .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
@@ -98,8 +113,10 @@ export async function GET(req: NextRequest) {
         .order('is_default', { ascending: false })
         .order('updated_at', { ascending: false });
 
-      if (uErr) console.warn('[Quotation Templates] user templates fetch warning:', uErr.message);
-      userTemplates = uTmpls || [];
+      if (uErr) console.warn('[Quotation Templates] extra templates fetch warning:', uErr.message);
+      if (uTmpls && uTmpls.length > 0) {
+        userTemplates = [...userTemplates, ...uTmpls];
+      }
     }
 
     // 2. Active System Template (FW-USER-SJ05RN / "Premium") already fetched in parallel above

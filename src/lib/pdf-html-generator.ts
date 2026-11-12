@@ -302,7 +302,7 @@ function calculatePricingTotals(pricing: any) {
     : 0;
   const totalAddl = addl + customAddl;
   const gross = Math.max(0, base - disc + accom + travel + totalAddl);
-  const gstPct = Number(p?.gstPct ?? p?.gstPercent ?? 18);
+  const gstPct = Number(p?.gstPct ?? p?.gstPercent ?? 0);
   const gstAmount = Math.round(gross * (gstPct / 100));
   const netTotal = gross + gstAmount;
   return { base, disc, accom, travel, addl, customAddl, totalAddl, gross, gstPct, gstAmount, netTotal };
@@ -333,22 +333,106 @@ const DEFAULT_PAGE_SEQUENCE = [
   { id: 'thankYouPage', type: 'thankYouPage', label: 'Thank You Page' }
 ];
 
-// Helper to embed custom font files from disk as Base64 Data URIs safely in Node.js env
-export function getEmbeddedCustomFontsBase64CSS(): string {
-  let css = '';
-  if (typeof window !== 'undefined') {
-    return css;
+// Maps each custom font filename in public/custom-fonts to its canonical display aliases
+function resolveCustomFontAliases(file: string): string[] {
+  const baseName = file.replace(/\.[^/.]+$/, '');
+  const familyAliases = new Set<string>([baseName]);
+
+  if (file.includes('BevolaDemo')) {
+    familyAliases.add('Bevola Demo Regular');
+    familyAliases.add('Bevola Demo');
+    familyAliases.add('BevolaDemo-Regular');
+  } else if (file.includes('BlackRunters')) {
+    familyAliases.add('Black Runters');
+    familyAliases.add('BlackRunters');
+  } else if (file.includes('Edwardian')) {
+    familyAliases.add('Edwardian');
+  } else if (file.includes('Mirella')) {
+    familyAliases.add('Mirella');
+  } else if (file.includes('Qasira')) {
+    familyAliases.add('Qasira');
+  } else if (file.includes('RivagePersonalUse')) {
+    familyAliases.add('Rivage Personal Use');
+    familyAliases.add('RivagePersonalUse');
+  } else if (file.includes('Soligant')) {
+    familyAliases.add('Soligant');
+  } else if (file.includes('Wondershine')) {
+    familyAliases.add('Wondershine');
+  } else if (file.includes('aligin')) {
+    familyAliases.add('Aligin');
+    familyAliases.add('aligin');
+  } else if (file.includes('amida')) {
+    familyAliases.add('Amida');
+    familyAliases.add('amida');
+  } else if (file.includes('auroragirl')) {
+    familyAliases.add('Aurora Girl');
+    familyAliases.add('auroragirl');
+  } else if (file.includes('gloci')) {
+    familyAliases.add('Gloci');
+    familyAliases.add('gloci');
+  } else if (file.includes('hakuna')) {
+    familyAliases.add('Hakuna');
+    familyAliases.add('hakuna');
+  } else if (file.includes('lostgun')) {
+    familyAliases.add('Lostgun Regular');
+    familyAliases.add('lostgun-regular');
+  } else if (file.includes('monic')) {
+    familyAliases.add('Monic');
+    familyAliases.add('monic');
+  } else if (file.includes('morgena')) {
+    familyAliases.add('Morgena Regular');
+    familyAliases.add('morgenaregular');
+  } else if (file.includes('tan-pearl')) {
+    familyAliases.add('Tan Pearl');
+    familyAliases.add('tan-pearl');
+  } else if (file.includes('the-baethmy-italic')) {
+    familyAliases.add('The Baethmy Italic');
+  } else if (file.includes('the-baethmy')) {
+    familyAliases.add('The Baethmy');
+  } else if (file.includes('vigro-italic')) {
+    familyAliases.add('Vigro Italic');
+  } else if (file.includes('vigro')) {
+    familyAliases.add('Vigro');
   }
+  return Array.from(familyAliases);
+}
+
+interface CachedCustomFontEntry {
+  file: string;
+  aliases: string[];
+  aliasesLower: string[];
+  cssBlock: string;
+}
+
+function getCachedCustomFontCatalog(): CachedCustomFontEntry[] {
+  const g = globalThis as any;
+  if (Array.isArray(g.__scCustomFontCatalog)) {
+    return g.__scCustomFontCatalog;
+  }
+  const entries: CachedCustomFontEntry[] = [];
+  if (typeof window !== 'undefined') return entries;
   try {
     const nodeReq = eval('require');
     const fs = nodeReq('fs');
     const path = nodeReq('path');
     const customFontsDir = path.join(process.cwd(), 'public', 'custom-fonts');
     if (fs.existsSync(customFontsDir)) {
-      const files = fs.readdirSync(customFontsDir);
+      // Prefer .ttf before .otf when duplicate base families exist (e.g. Soligant.ttf vs Soligant.otf) to keep HTML lean
+      const files: string[] = fs.readdirSync(customFontsDir).sort((a: string, b: string) => {
+        const aIsTtf = a.toLowerCase().endsWith('.ttf') ? 0 : 1;
+        const bIsTtf = b.toLowerCase().endsWith('.ttf') ? 0 : 1;
+        return aIsTtf - bIsTtf || a.localeCompare(b);
+      });
+      const seenPrimaryKeys = new Set<string>();
 
       for (const file of files) {
         const ext = path.extname(file).toLowerCase();
+        if (!['.ttf', '.otf', '.woff2', '.woff'].includes(ext)) continue;
+        const aliases = resolveCustomFontAliases(file);
+        const primaryKey = (aliases[1] || aliases[0] || file).toLowerCase();
+        if (seenPrimaryKeys.has(primaryKey)) continue;
+        seenPrimaryKeys.add(primaryKey);
+
         let mime = 'font/ttf';
         let format = 'truetype';
         if (ext === '.otf') { mime = 'font/otf'; format = 'opentype'; }
@@ -360,84 +444,52 @@ export function getEmbeddedCustomFontsBase64CSS(): string {
         const base64 = fileBuf.toString('base64');
         const dataUri = `data:${mime};charset=utf-8;base64,${base64}`;
 
-        const baseName = file.replace(/\.[^/.]+$/, '');
-        const familyAliases = new Set<string>();
-        familyAliases.add(baseName);
-
-        if (file.includes('BevolaDemo')) {
-          familyAliases.add('Bevola Demo Regular');
-          familyAliases.add('Bevola Demo');
-          familyAliases.add('BevolaDemo-Regular');
-        } else if (file.includes('BlackRunters')) {
-          familyAliases.add('Black Runters');
-          familyAliases.add('BlackRunters');
-        } else if (file.includes('Edwardian')) {
-          familyAliases.add('Edwardian');
-        } else if (file.includes('Mirella')) {
-          familyAliases.add('Mirella');
-        } else if (file.includes('Qasira')) {
-          familyAliases.add('Qasira');
-        } else if (file.includes('RivagePersonalUse')) {
-          familyAliases.add('Rivage Personal Use');
-          familyAliases.add('RivagePersonalUse');
-        } else if (file.includes('Soligant')) {
-          familyAliases.add('Soligant');
-        } else if (file.includes('Wondershine')) {
-          familyAliases.add('Wondershine');
-        } else if (file.includes('aligin')) {
-          familyAliases.add('Aligin');
-          familyAliases.add('aligin');
-        } else if (file.includes('amida')) {
-          familyAliases.add('Amida');
-          familyAliases.add('amida');
-        } else if (file.includes('auroragirl')) {
-          familyAliases.add('Aurora Girl');
-          familyAliases.add('auroragirl');
-        } else if (file.includes('gloci')) {
-          familyAliases.add('Gloci');
-          familyAliases.add('gloci');
-        } else if (file.includes('hakuna')) {
-          familyAliases.add('Hakuna');
-          familyAliases.add('hakuna');
-        } else if (file.includes('lostgun')) {
-          familyAliases.add('Lostgun Regular');
-          familyAliases.add('lostgun-regular');
-        } else if (file.includes('monic')) {
-          familyAliases.add('Monic');
-          familyAliases.add('monic');
-        } else if (file.includes('morgena')) {
-          familyAliases.add('Morgena Regular');
-          familyAliases.add('morgenaregular');
-        } else if (file.includes('tan-pearl')) {
-          familyAliases.add('Tan Pearl');
-          familyAliases.add('tan-pearl');
-        } else if (file.includes('the-baethmy-italic')) {
-          familyAliases.add('The Baethmy Italic');
-        } else if (file.includes('the-baethmy')) {
-          familyAliases.add('The Baethmy');
-        } else if (file.includes('vigro-italic')) {
-          familyAliases.add('Vigro Italic');
-        } else if (file.includes('vigro')) {
-          familyAliases.add('Vigro');
-        }
-
-        familyAliases.forEach((fam) => {
-          css += `
+        const cssBlock = aliases
+          .map(
+            (fam) => `
             @font-face {
               font-family: '${fam}';
               src: url('${dataUri}') format('${format}');
-              font-weight: normal;
+              font-weight: 100 900;
               font-style: normal;
               font-display: block;
-            }
-          `;
+            }`
+          )
+          .join('\n');
+
+        entries.push({
+          file,
+          aliases,
+          aliasesLower: aliases.map((a) => a.toLowerCase()),
+          cssBlock
         });
       }
     }
+    g.__scCustomFontCatalog = entries;
   } catch (err) {
     console.warn('[PDF Generator Font Base64 Warning]:', err);
   }
-  return css;
+  return entries;
+}
+
+// Helper to embed ONLY requested custom font files from disk as Base64 Data URIs (cached cleanly in memory)
+export function getEmbeddedCustomFontsBase64CSS(requestedFontNames?: string[]): string {
+  if (typeof window !== 'undefined') return '';
+  const catalog = getCachedCustomFontCatalog();
+  if (catalog.length === 0) return '';
+
+  if (Array.isArray(requestedFontNames)) {
+    const cleanTargets = requestedFontNames
+      .map((n) => String(n || '').replace(/['"]/g, '').split(',')[0].trim().toLowerCase())
+      .filter(Boolean);
+    if (cleanTargets.length === 0) return '';
+    return catalog
+      .filter((entry) => cleanTargets.some((t) => entry.aliasesLower.includes(t)))
+      .map((entry) => entry.cssBlock)
+      .join('\n');
+  }
+
+  return catalog.map((entry) => entry.cssBlock).join('\n');
 }
 
 function getBirdsSVG(textColor: string, customStyle = 'width:220px;height:auto;object-fit:contain;display:block;') {
@@ -602,27 +654,74 @@ export function renderQuotationToHTML(documentData: any): string {
     };
   }
 
-  const rawPrimary = documentData?.primaryFont || documentData?.fontFamily || documentData?.headingFont || "'Cormorant Garamond', serif";
+  const rawPrimary = documentData?.primaryFont || documentData?.styling?.primaryFont || documentData?.fontFamily || documentData?.headingFont || "'Cormorant Garamond', serif";
   const cleanPrimaryName = String(rawPrimary).replace(/['"]/g, '').split(',')[0].trim();
   const isSans = cleanPrimaryName.toLowerCase().includes('sans') || cleanPrimaryName.toLowerCase().includes('montserrat') || cleanPrimaryName.toLowerCase().includes('inter') || cleanPrimaryName.toLowerCase().includes('outfit') || cleanPrimaryName.toLowerCase().includes('aligin') || cleanPrimaryName.toLowerCase().includes('amida') || cleanPrimaryName.toLowerCase().includes('aurora') || cleanPrimaryName.toLowerCase().includes('bevola') || cleanPrimaryName.toLowerCase().includes('gloci') || cleanPrimaryName.toLowerCase().includes('hakuna') || cleanPrimaryName.toLowerCase().includes('lostgun') || cleanPrimaryName.toLowerCase().includes('monic');
   const isCursive = cleanPrimaryName.toLowerCase().includes('script') || cleanPrimaryName.toLowerCase().includes('vibes') || cleanPrimaryName.toLowerCase().includes('wondershine');
   const primaryFont = `'${cleanPrimaryName}', ${isCursive ? 'cursive' : isSans ? 'sans-serif' : 'serif'}`;
 
-  const rawSecondary = documentData?.secondaryFont || documentData?.bodyFont || "'Plus Jakarta Sans', sans-serif";
+  const rawSecondary = documentData?.secondaryFont || documentData?.styling?.secondaryFont || documentData?.bodyFont || "'Plus Jakarta Sans', sans-serif";
   const cleanSecondaryName = String(rawSecondary).replace(/['"]/g, '').split(',')[0].trim();
   const secondaryFont = `'${cleanSecondaryName}', sans-serif`;
 
-  const embeddedFontsCSS = getEmbeddedCustomFontsBase64CSS();
+  const embeddedFontsCSS = getEmbeddedCustomFontsBase64CSS([cleanPrimaryName, cleanSecondaryName]);
+  const customCatalog = getCachedCustomFontCatalog();
+  const isCustomOrSystemFont = (name: string) => {
+    const low = name.toLowerCase();
+    if (['arial', 'georgia', 'brush script mt', 'sans-serif', 'serif', 'cursive', 'system-ui'].includes(low)) return true;
+    return customCatalog.some((e) => e.aliasesLower.includes(low));
+  };
+  const GOOGLE_FONT_SPECS: Record<string, string> = {
+    'bodoni moda': 'Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900',
+    'cinzel': 'Cinzel:wght@400..900',
+    'cormorant garamond': 'Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,400',
+    'dancing script': 'Dancing+Script:wght@400..700',
+    'dm serif display': 'DM+Serif+Display',
+    'great vibes': 'Great+Vibes',
+    'inter': 'Inter:wght@300;400;500;600;700',
+    'italiana': 'Italiana',
+    'josefin sans': 'Josefin+Sans:wght@300;400;600;700',
+    'marcellus': 'Marcellus',
+    'montserrat': 'Montserrat:ital,wght@0,300;0,400;0,600;0,700;1,400',
+    'outfit': 'Outfit:wght@300;400;500;600;700',
+    'playfair display': 'Playfair+Display:ital,wght@0,400..900;1,400..900',
+    'plus jakarta sans': 'Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800',
+    'prata': 'Prata',
+    'tenor sans': 'Tenor+Sans',
+  };
+  const neededGoogleSpecs: string[] = [];
+  for (const fname of [cleanPrimaryName, cleanSecondaryName]) {
+    if (!fname || isCustomOrSystemFont(fname)) continue;
+    const spec = GOOGLE_FONT_SPECS[fname.toLowerCase()] || `${encodeURIComponent(fname).replace(/%20/g, '+')}:wght@300;400;500;600;700;800;900`;
+    if (!neededGoogleSpecs.includes(spec)) neededGoogleSpecs.push(spec);
+  }
+  const googleFontsLinkHTML = neededGoogleSpecs.length > 0
+    ? `<link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?${neededGoogleSpecs.map((s) => `family=${s}`).join('&')}&display=swap" rel="stylesheet" />`
+    : '';
 
-  const pageSequence = (documentData?.pageSequence && documentData.pageSequence.length > 0) 
+  const hasRealDocument = Boolean(
+    documentData &&
+    (documentData.cover || documentData.functionsPage || documentData.pricingPage || documentData.deliverablesPage)
+  );
+
+  const rawSequence = (documentData?.pageSequence && documentData.pageSequence.length > 0) 
     ? documentData.pageSequence 
     : DEFAULT_PAGE_SEQUENCE;
+
+  const pageSequence = rawSequence.filter((pageItem: any) => {
+    const pt = pageItem?.type || pageItem?.id;
+    if (hasRealDocument && pt === 'shootDetails' && documentData?.shootDetails?.visible === false) return false;
+    if (hasRealDocument && pt === 'specialValueAdditions' && documentData?.specialValueAdditions?.visible === false) return false;
+    return true;
+  });
 
   const cover = documentData?.cover || {};
   const coupleName = cover.coupleName !== undefined ? cover.coupleName : (cover.groomName ? (cover.brideName ? `${cover.groomName} & ${cover.brideName}` : cover.groomName) : 'Client');
   const eventType = (cover.eventType || 'WEDDING').toUpperCase();
-  const sideOption = (cover.sideOption || 'BOTH SIDES').trim().toUpperCase();
-  const locationName = (cover.locationName || cover.location || 'MUMBAI').trim().toUpperCase();
+  const sideOption = (cover.sideOption ?? (hasRealDocument ? '' : 'BOTH SIDES')).trim().toUpperCase();
+  const locationName = (cover.locationName || cover.location || (hasRealDocument ? '' : 'MUMBAI')).trim().toUpperCase();
   const brandName = cover.brandName || 'FILMIFY WEDDINGS';
   const brandLogoUrl = cover.brandLogoUrl || '';
   const brandLogoSize = cover.brandLogoSize || 64;
@@ -636,86 +735,111 @@ export function renderQuotationToHTML(documentData: any): string {
   const aboutUs = documentData?.aboutUs || documentData?.about || {
     kicker: 'INTRODUCTION',
     heading: 'ABOUT US',
-    text: 'Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever'
+    text: 'We strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever'
   };
 
   const shootDetails = documentData?.shootDetails || {
     kicker: 'WHAT WE DO',
     heading: 'Pre-Wedding Shoot',
-    daysText: '1 Day Shoot\nCandid Photography\nCinematography\nPortable Changing Room',
-    crewText: 'Full Ultra HD Super-Fine Raw Photos\nApprox 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel'
+    daysText: '1 Day Shoot',
+    crewText: '1x Candid Photographer\n1x Cinematographer',
+    deliverablesText: ''
   };
 
-  const functionsPage = documentData?.functionsPage || {
-    kicker: 'EVENT SCHEDULE',
-    heading: 'Functions & Coverage',
-    items: [
-      { id: '1', title: 'HALDI & SANGEET', dateTime: '4 MAR 26 • 10:00 AM TO 05:00 PM • (7 Hours)', venue: 'JW MARRIOTT, MUMBAI', team: '2x Candid Photographers | 2x Cinematographers | 1x Drone' },
-      { id: '2', title: 'WEDDING', dateTime: '5 MAR 26 • 04:00 PM TO 11:00 PM • (7 Hours)', venue: 'PALACE GROUNDS, MUMBAI', team: '2x Candid Photographers | 2x Cinematographers | 1x Drone | 1x Traditional Video' }
-    ]
-  };
+  const functionsPage = documentData?.functionsPage || (hasRealDocument
+    ? { kicker: 'EVENT SCHEDULE', heading: 'Functions & Coverage', items: [] }
+    : {
+        kicker: 'EVENT SCHEDULE',
+        heading: 'Functions & Coverage',
+        items: [
+          { id: '1', title: 'HALDI & SANGEET', dateTime: '4 MAR 26 • 10:00 AM TO 05:00 PM • (7 Hours)', venue: 'JW MARRIOTT, MUMBAI', team: '2x Candid Photographers | 2x Cinematographers | 1x Drone' },
+          { id: '2', title: 'WEDDING', dateTime: '5 MAR 26 • 04:00 PM TO 11:00 PM • (7 Hours)', venue: 'PALACE GROUNDS, MUMBAI', team: '2x Candid Photographers | 2x Cinematographers | 1x Drone | 1x Traditional Video' }
+        ]
+      });
 
-  const deliverablesPage = documentData?.deliverablesPage || {
-    kicker: 'WHAT WE DELIVER',
-    heading: 'DELIVERABLES',
-    selectedItems: ['Teaser Video (1-2 Min)', 'Main Highlight Film (15-20 Min)', 'Instagram Reels', 'All Raw Photos & Footage in Hard Drive', '75-80 Retouched High-Res Images']
-  };
+  const deliverablesPage = documentData?.deliverablesPage || (hasRealDocument
+    ? { kicker: 'WHAT WE DELIVER', heading: 'DELIVERABLES', selectedItems: [] }
+    : {
+        kicker: 'WHAT WE DELIVER',
+        heading: 'DELIVERABLES',
+        selectedItems: ['Teaser Video (1-2 Min)', 'Main Highlight Film (15-20 Min)', 'Instagram Reels', 'All Raw Photos & Footage in Hard Drive', '75-80 Retouched High-Res Images']
+      });
 
-  const specialValueAdditions = documentData?.specialValueAdditions || {
-    kicker: 'COMPLIMENTARY',
-    heading: 'SPECIAL VALUE ADDITIONS',
-    items: [
-      { id: '1', title: 'Complimentary Pre-Wedding Session (1 Day)', free: true },
-      { id: '2', title: 'Free Luxury Album Upgrade (40 Pages)', free: true },
-      { id: '3', title: 'Drone Coverage Included for Wedding & Sangeet', free: true },
-      { id: '4', title: 'Same Day Edit Reel for Instagram', free: true }
-    ]
-  };
+  const specialValueAdditions = documentData?.specialValueAdditions || (hasRealDocument
+    ? { kicker: 'COMPLIMENTARY', heading: 'SPECIAL VALUE ADDITIONS', visible: false, selectedItems: [] }
+    : {
+        kicker: 'COMPLIMENTARY',
+        heading: 'SPECIAL VALUE ADDITIONS',
+        items: [
+          { id: '1', title: 'Complimentary Pre-Wedding Session (1 Day)', free: true },
+          { id: '2', title: 'Free Luxury Album Upgrade (40 Pages)', free: true },
+          { id: '3', title: 'Drone Coverage Included for Wedding & Sangeet', free: true },
+          { id: '4', title: 'Same Day Edit Reel for Instagram', free: true }
+        ]
+      });
 
-  const pricingPage = documentData?.pricingPage || {
-    kicker: 'INVESTMENT SUMMARY',
-    heading: 'PRICING DETAILS',
-    basePrice: 170000,
-    discountAmount: 10000,
-    discountPercent: 5
-  };
+  const pricingPage = documentData?.pricingPage || (hasRealDocument
+    ? { kicker: 'INVESTMENT SUMMARY', heading: 'PRICING DETAILS', basePrice: 0, discountAmount: 0, gstPct: 0 }
+    : {
+        kicker: 'INVESTMENT SUMMARY',
+        heading: 'PRICING DETAILS',
+        basePrice: 170000,
+        discountAmount: 10000,
+        discountPercent: 5
+      });
 
-  const paymentTermsPage = documentData?.paymentTermsPage || {
-    kicker: 'PAYMENT SCHEDULE',
-    heading: 'PAYMENT TERMS & SCHEDULE',
-    steps: [
-      { id: '1', stepName: 'Token Booking Amount', date: '10 FEB 26', amount: 25000, status: 'PENDING' },
-      { id: '2', stepName: 'Advance Amount (Pre-Event)', date: '01 MAR 26', amount: 75000, status: 'PENDING' },
-      { id: '3', stepName: 'On Wedding Day', date: '06 MAR 26', amount: 50000, status: 'PENDING' },
-      { id: '4', stepName: 'Final Delivery Amount', date: '25 MAR 26', amount: 20000, status: 'PENDING' }
-    ]
-  };
+  const paymentTermsPage = documentData?.paymentTermsPage || (hasRealDocument
+    ? { kicker: 'PAYMENT SCHEDULE', heading: 'PAYMENT TERMS & SCHEDULE', steps: [] }
+    : {
+        kicker: 'PAYMENT SCHEDULE',
+        heading: 'PAYMENT TERMS & SCHEDULE',
+        steps: [
+          { id: '1', stepName: 'Token Booking Amount', date: '10 FEB 26', amount: 25000, status: 'PENDING' },
+          { id: '2', stepName: 'Advance Amount (Pre-Event)', date: '01 MAR 26', amount: 75000, status: 'PENDING' },
+          { id: '3', stepName: 'On Wedding Day', date: '06 MAR 26', amount: 50000, status: 'PENDING' },
+          { id: '4', stepName: 'Final Delivery Amount', date: '25 MAR 26', amount: 20000, status: 'PENDING' }
+        ]
+      });
 
-  const addOnsPage = documentData?.addOnsPage || {
-    kicker: "EMBRACE YOUR DAY - YOU'RE IN CONTROL",
-    heading: 'ADD-ONS & UPGRADES',
-    items: [
-      { id: '1', title: 'Additional Candid Photographer', price: 15000 },
-      { id: '2', title: 'Additional Cinematographer', price: 22000 },
-      { id: '3', title: 'Extra Album Pages (Per 10 Pages)', price: 5000 }
-    ]
-  };
+  const addOnsPage = documentData?.addOnsPage || (hasRealDocument
+    ? { kicker: "EMBRACE YOUR DAY - YOU'RE IN CONTROL", heading: 'ADD-ONS & UPGRADES', items: [] }
+    : {
+        kicker: "EMBRACE YOUR DAY - YOU'RE IN CONTROL",
+        heading: 'ADD-ONS & UPGRADES',
+        items: [
+          { id: '1', title: 'Additional Candid Photographer', price: 15000 },
+          { id: '2', title: 'Additional Cinematographer', price: 22000 },
+          { id: '3', title: 'Extra Album Pages (Per 10 Pages)', price: 5000 }
+        ]
+      });
 
-  const termsPage = documentData?.termsPage || {
-    kicker: 'POLICIES & RULES',
-    heading: 'TERMS & CONDITIONS',
-    text: '1. Advance payment is non-refundable upon booking confirmation.\n2. Travel and accommodation charges outside base city shall be borne by client.\n3. Raw footage and unedited photos will be delivered as per agreed timelines.\n4. One cycle of revision is included for final video edits within 30 days of delivery.'
-  };
+  const termsPage = documentData?.termsPage || (hasRealDocument
+    ? { kicker: 'POLICIES & RULES', heading: 'TERMS & CONDITIONS', text: '' }
+    : {
+        kicker: 'POLICIES & RULES',
+        heading: 'TERMS & CONDITIONS',
+        text: '1. Advance payment is non-refundable upon booking confirmation.\n2. Travel and accommodation charges outside base city shall be borne by client.\n3. Raw footage and unedited photos will be delivered as per agreed timelines.\n4. One cycle of revision is included for final video edits within 30 days of delivery.'
+      });
 
-  const thankYouPage = documentData?.thankYouPage || {
-    heading: 'THANK YOU',
-    subHeading: 'LOOKING FORWARD TO CREATING MAGIC',
-    message: 'We would be honored to capture your celebration and create memories for a lifetime.',
-    brandName: brandName,
-    contactNumber: '+91 98765 43210',
-    email: 'contact@filmifyweddings.com',
-    website: 'www.filmifyweddings.com'
-  };
+  const thankYouPage = documentData?.thankYouPage || (hasRealDocument
+    ? {
+        heading: 'THANK YOU',
+        subHeading: 'LOOKING FORWARD TO CREATING MAGIC',
+        message: 'We would be honored to capture your celebration and create memories for a lifetime.',
+        brandName: brandName,
+        contactNumber: '',
+        email: '',
+        website: ''
+      }
+    : {
+        heading: 'THANK YOU',
+        subHeading: 'LOOKING FORWARD TO CREATING MAGIC',
+        message: 'We would be honored to capture your celebration and create memories for a lifetime.',
+        brandName: brandName,
+        contactNumber: '+91 98765 43210',
+        email: 'contact@filmifyweddings.com',
+        website: 'www.filmifyweddings.com'
+      });
 
   let pagesHTML = '';
 
@@ -727,9 +851,7 @@ export function renderQuotationToHTML(documentData: any): string {
     if (pageType === 'cover') {
       const imgHTML = renderSectionImage(coverPhoto, coverFrameShape, coverPhotoHeight, coverPhotoWidth, coverPhotoFocalY, cover.bgOpacity || 40, theme.background, true);
 
-      const sideText = (cover.sideOption || '').trim().toUpperCase();
-      const locText = (cover.locationName || cover.location || '').trim().toUpperCase();
-      const subtitleText = [sideText, locText].filter(Boolean).join(' – ');
+      const subtitleText = [sideOption, locationName].filter(Boolean).join(' – ');
 
       const isFullWidthText = coverFrameShape === 'full-width';
       const textPaddingStyle = isFullWidthText ? 'padding:0 48px;' : '';
@@ -1579,9 +1701,7 @@ export function renderQuotationToHTML(documentData: any): string {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=794, initial-scale=1" />
         <title>${documentData?.designName || 'Quotation Preview'} - PDF</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Cinzel:wght@400;600;700;800;900&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Dancing+Script:wght@400..700&family=DM+Serif+Display&family=Great+Vibes&family=Inter:wght@300;400;500;600;700&family=Italiana&family=Josefin+Sans:wght@300;400;600;700&family=Marcellus&family=Montserrat:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Prata&family=Tenor+Sans&display=swap" rel="stylesheet" />
+        ${googleFontsLinkHTML}
         <style>
           ${embeddedFontsCSS}
 

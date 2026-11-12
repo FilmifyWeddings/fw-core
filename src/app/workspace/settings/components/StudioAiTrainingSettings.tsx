@@ -36,6 +36,7 @@ interface StudioAiTrainingSettingsProps {
   settings: WorkspaceQuotationSettings;
   onSettingsChange: (settings: WorkspaceQuotationSettings) => void;
   onShowToast: (message: string) => void;
+  compactPopup?: boolean;
 }
 
 const SHORTCUT_STANDARD_ROLES = [
@@ -56,6 +57,7 @@ export default function StudioAiTrainingSettings({
   settings,
   onSettingsChange,
   onShowToast,
+  compactPopup = false,
 }: StudioAiTrainingSettingsProps) {
   const aiRules: WorkspaceAiRules = settings.aiRules || {
     customInstructions: '',
@@ -386,66 +388,55 @@ export default function StudioAiTrainingSettings({
   ].filter(Boolean).length;
 
   return (
-    <div className="space-y-6">
-      {/* 1. Header Banner (No model provider branding shown) */}
-      <div className="rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-6 text-white shadow-md relative overflow-hidden">
-        <div className="relative z-10 max-w-3xl space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-bold uppercase tracking-wider">
-            <Bot className="w-4 h-4" />
-            <span>Studio AI Quotation Assistant</span>
+    <div className={compactPopup ? 'space-y-4' : 'space-y-6'}>
+      {/* 1. Header Banner (Minimal & Responsive, No model provider branding shown) */}
+      <div className={`rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-md relative overflow-hidden ${compactPopup ? 'p-4 sm:p-5' : 'p-6'}`}>
+        <div className="relative z-10 max-w-3xl space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-white/20 backdrop-blur-md rounded-full text-[11px] font-bold uppercase tracking-wider">
+              <Bot className="w-3.5 h-3.5" />
+              <span>Voice &amp; Text Automation</span>
+            </div>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-zinc-900/75 text-amber-200 rounded-full text-[11px] font-bold">
+              <Zap className="w-3 h-3 text-amber-300" />
+              <span>Voice On-Demand Shortcut (X → Y)</span>
+            </span>
           </div>
-          <h2 className="text-2xl font-black tracking-tight">Voice &amp; Text Shorthand Automation</h2>
-          <p className="text-sm font-medium text-amber-50 leading-relaxed">
-            Set voice and text automation triggers for your studio. Whenever you speak in the mic or type notes in Create with AI, your studio&apos;s triggers apply automatically.
+          {!compactPopup && (
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight">Voice &amp; Text Automation</h2>
+          )}
+          <p className="text-xs sm:text-sm font-medium text-amber-50 leading-snug">
+            Say your trigger phrase &ldquo;X&rdquo; in mic or text — your stacked crew, deliverables, price &amp; add-ons &ldquo;Y&rdquo; apply automatically.
           </p>
         </div>
         <div className="absolute -right-8 -bottom-8 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none" />
       </div>
 
-      {/* 1B. Hinglish Quick Guide: Voice & Text Shorthand Triggers */}
-      <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-2.5">
-        <div className="flex items-center gap-2 text-amber-950">
-          <HelpCircle className="w-4 h-4 text-amber-600 shrink-0" />
-          <h3 className="text-sm font-extrabold">
-            Voice &amp; Text Triggers Kaise Kaam Karte Hain? (Quick Guide)
-          </h3>
-        </div>
-        <div className="bg-white border border-orange-200/80 rounded-xl p-3.5 space-y-1.5 text-xs">
-          <div className="flex items-center gap-1.5 font-bold text-amber-950">
-            <Zap className="w-3.5 h-3.5 text-orange-600 shrink-0" />
-            <span>On-Demand Shortcuts (When I Say X → Do Y)</span>
-          </div>
-          <p className="text-zinc-600 leading-relaxed">
-            Jab aap mic mein apna codeword bolein (jaise <em>&ldquo;standard crew&rdquo;</em> ya <em>&ldquo;premium package&rdquo;</em>), tab uske andar ke <strong>1 ya ek saath multiple actions</strong> (Crew + Deliverables + Price + Special Value Add-ons) us event ya quotation par automatically apply ho jaate hain. Har studio account ke triggers sirf usi studio par kaam karte hain.
-          </p>
-        </div>
-      </div>
-
-      {/* 2. Voice & Text Trigger Shortcuts */}
-      <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+      {/* 2. Voice & Text Shorthand Triggers */}
+      <div className={`bg-white border border-amber-200/90 rounded-2xl shadow-xs ${compactPopup ? 'p-4 sm:p-5 space-y-4' : 'p-5 sm:p-6 space-y-5'}`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-100 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center shadow-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
               <Zap className="w-4 h-4" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-base font-bold text-amber-950">
-                  Voice & Text Shorthand Triggers
+                <h3 className="text-sm sm:text-base font-bold text-amber-950">
+                  Voice &amp; Text Shorthand Triggers
                 </h3>
                 <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-zinc-900 text-amber-300">
-                  When I Say X → Do Y
+                  X → Y
                 </span>
               </div>
-              <p className="text-xs text-zinc-500">
-                Build modular Apple Shortcuts-style triggers: stack 1 or combine Crew + Deliverables + Price + Special Value Add-ons in a single phrase.
+              <p className="text-[11px] sm:text-xs text-zinc-500">
+                Tap a card to edit or add a new studio trigger.
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={openAddModal}
-            className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 self-start sm:self-auto"
+            className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 w-full sm:w-auto shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 text-amber-400" />
             <span>Add Trigger</span>
@@ -454,17 +445,17 @@ export default function StudioAiTrainingSettings({
 
         {/* Shortcuts List */}
         {shortcuts.length === 0 ? (
-          <div className="p-8 text-center bg-zinc-50/80 border border-dashed border-zinc-200 rounded-2xl space-y-2.5">
+          <div className="p-6 sm:p-8 text-center bg-zinc-50/80 border border-dashed border-zinc-200 rounded-2xl space-y-2.5">
             <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 mx-auto flex items-center justify-center">
               <Layers className="w-5 h-5" />
             </div>
             <p className="text-xs font-bold text-zinc-700">No Voice/Text Shortcuts Created Yet</p>
             <p className="text-[11px] text-zinc-500 max-w-md mx-auto">
-              Click <strong>&ldquo;+ Add Trigger&rdquo;</strong> to build a shortcut like <em>&ldquo;standard crew&rdquo;</em> or <em>&ldquo;royal package&rdquo;</em> and stack up to 4 actions underneath it.
+              Tap <strong>&ldquo;+ Add Trigger&rdquo;</strong> to create a shortcut like <em>&ldquo;standard crew&rdquo;</em> or <em>&ldquo;all deliverables&rdquo;</em>.
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
             {shortcuts.map((sc) => {
               const stepCount = [
                 sc.mappedCrew && sc.mappedCrew.length > 0,

@@ -920,7 +920,12 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
   }
   const eventType = coverSrc.eventType ?? coverSrc.title ?? coverSrc.event_type ?? d.cover?.eventType ?? 'Wedding Photography & Films';
   
-  const rawLoc = coverSrc.locationName !== undefined ? coverSrc.locationName : (coverSrc.wedding_location || coverSrc.city || d.cover?.locationName || '');
+  const rawLoc =
+    (coverSrc.locationName !== undefined && String(coverSrc.locationName).trim() !== '')
+      ? coverSrc.locationName
+      : (coverSrc.location && String(coverSrc.location).trim() !== '')
+        ? coverSrc.location
+        : (coverSrc.locationName !== undefined ? coverSrc.locationName : (coverSrc.wedding_location || coverSrc.city || d.cover?.locationName || ''));
   const locationName = resolvePrimaryCoverLocation(rawLoc, funcItems);
 
   const rawWeddingDate = coverSrc.weddingDate || coverSrc.quotation_date || coverSrc.wedding_date || (funcItems[0]?.date !== 'Date Not Fixed' ? funcItems[0]?.date : '') || d.cover?.weddingDate || '';
