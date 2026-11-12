@@ -1078,28 +1078,28 @@ export function extractDeliverablesFromText(
   }
 
   // 11. Explicit "Deliverables mein X, Y aur Z" clause tail parser for any arbitrary custom deliverable
-  const delivClauseMatch = scanText.match(/(?:deliverables?|डिलीवरेबल्स?|डिलीवरी)\s*(?:में|मे|mein|in|:|-|हैं|है|rakhna|करने\s*हैं)?\s*([^.!?\n।]+)/i);
+  const delivClauseMatch = scanText.match(/(?:deliverables?|डिलीवरेबल्स?|डिलीवरी)\s*(?:में|मे|mein|in|:|-|हैं|है|rakhna|करने\s*हैं?)?\s*([^.!?\n।]+)/i);
   if (delivClauseMatch && delivClauseMatch[1]) {
     const rawTail = delivClauseMatch[1]
-      .replace(/^(?:add\s*(?:karna|karo|kardo|karne\s*hain)?|ऐड\s*(?:करना|करो|करने)?)\s*(?:,|$)/i, '')
-      .replace(/(?:add\s*(?:karna|karo|kardo|karne\s*hain)?|rakhna|chahiye|dena|ऐड\s*(?:करना|करो)?|रखना|चाहिए|देना)\s*$/i, '')
+      .replace(/^(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं)?)?|करने\s*(?:हैं|है)?)\s*(?:,|$|\s+)/i, '')
+      .replace(/(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं)?)?|करने\s*(?:हैं|है)?|rakhna|chahiye|dena|रखना|चाहिए|देना)\s*$/i, '')
       .replace(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:budget|बजट|price|प्राइस|package|पैकेज|amount|अमाउंट|cost|discount|ऑफर|offer|advance|एडवांस|gst|total|टोटल|रुपये|lakh|लाख|हजार|₹).*$/i, '')
       .trim();
 
-    if (rawTail && !/^(?:all|add|ऑल|सभी|सारे)\b/i.test(rawTail)) {
+    if (rawTail && !/^(?:all|add|ऑल|सभी|सारे|ऐड|करने|करना|है|हैं)\b/i.test(rawTail)) {
       const tokens = rawTail
         .split(/\s*(?:,(?!\d)|\s+(?:और|aur|and|&|\+)\s+)\s*/i)
         .map((t) =>
           t
-            .replace(/^(?:में|मे|mein|add|ऐड|रखना|चाहिए|देना)\s+/i, '')
-            .replace(/\s+(?:add|करना|करो|रखना|चाहिए|है|हैं)$/i, '')
+            .replace(/^(?:में|मे|mein|और|aur|and|इसका|उसका|साथ\s*ही|add|ऐड|रखना|चाहिए|देना|करने|करना)\s+/gi, '')
+            .replace(/\s+(?:add|ऐड|करना|करो|करने|रखना|चाहिए|रहेगा|रहेंगी|है|हैं)$/gi, '')
             .trim()
         )
         .filter((t) => {
           if (!t || t.length < 3) return false;
           if (/^[\d,\s.+₹\-kKlL]+$/i.test(t)) return false;
           if (/(?:₹|\bbudget\b|बजट|प्राइस|अमाउंट|एडवांस|लख|लाख|हजार|advance|price|amount|total|package|standard\s*crew|alag\s*crew)/i.test(t)) return false;
-          if (/^(?:__CREW_ROLE__|add|all|ok|karna|karo|rakhna|chahiye|dena|करना|करो)$/i.test(t)) return false;
+          if (/^(?:__CREW_ROLE__|add|all|ok|karna|karo|karne|rakhna|chahiye|dena|hain?|iska|uska|aur\s+iska|करना|करो|करने|करें|रहेगा|रहेंगी|रखना|चाहिए|देना|इसका|उसका|और\s+इसका|साथ\s+ही)$/i.test(t)) return false;
           return true;
         });
 
