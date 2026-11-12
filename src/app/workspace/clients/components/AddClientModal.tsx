@@ -167,8 +167,8 @@ export default function AddClientModal({
         advance_amount: leadPaid || prev.advance_amount,
         is_advance_received: Boolean(leadPaid && parseFloat(leadPaid) > 0),
         notes: (lead as any).notes || prev.notes,
-        whatsapp_group_link: lead.whatsapp_group_id
-          ? 'https://chat.whatsapp.com/' + lead.whatsapp_group_id
+        whatsapp_group_link: /^https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]{15,}/i.test(String((lead as any).whatsapp_group_link || ''))
+          ? String((lead as any).whatsapp_group_link).trim()
           : prev.whatsapp_group_link,
       }));
     }

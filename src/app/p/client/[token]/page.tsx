@@ -102,6 +102,15 @@ export default function PublicClientPortalPage() {
   }>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Fast PIN Gate summary (populated <100ms before full portal hydration)
+  const [clientSummary, setClientSummary] = useState<{
+    id?: string;
+    name?: string;
+    event_type?: string;
+    client_code?: string;
+  } | null>(null);
+  const [verifyingPin, setVerifyingPin] = useState(false);
+
   // Mobile / Tablet 3-Line Hamburger Drawer State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -146,6 +155,16 @@ export default function PublicClientPortalPage() {
     });
   };
 
+  const hydrateFullPortalPayload = (data: any) => {
+    if (data.client) setClient(data.client);
+    if (data.studioInfo) setStudioInfo(data.studioInfo);
+    if (data.postProd) setPostProd(data.postProd);
+    if (data.finance) setFinance(data.finance);
+    if (data.moodboard) setMoodboard(data.moodboard);
+    if (Array.isArray(data.quotationDocs)) setQuotationDocs(data.quotationDocs);
+    if (data.fwProject) setFwProject(data.fwProject);
+  };
+
   useEffect(() => {
     async function loadPortalData() {
       setLoading(true);
@@ -158,34 +177,54 @@ export default function PublicClientPortalPage() {
       }
 
       try {
-        const res = await fetch(`/api/public/client-portal/${token}`);
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
+        // 1. Ultra-fast Gate Check (<100ms): fetches only client summary & PIN setting
+        const gateRes = await fetch(`/api/public/client-portal/${token}?mode=gate`);
+        if (!gateRes.ok) {
+          const errData = await gateRes.json().catch(() => ({}));
           setErrorMsg(errData.error || 'Client wedding portal not found or link has expired.');
           setLoading(false);
           return;
         }
 
-        const data = await res.json();
-        if (!data.client) {
-          setErrorMsg('Client wedding portal not found or link has expired.');
+        const gateData = await gateRes.json();
+        if (gateData.clientSummary) setClientSummary(gateData.clientSummary);
+        if (gateData.studioInfo) setStudioInfo(gateData.studioInfo);
+
+        // 2. If PIN Protection is OFF, auto-unlock & load full portal directly
+        if (gateData.pinRequired === false) {
+          const fullRes = await fetch(`/api/public/client-portal/${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          });
+          if (fullRes.ok) {
+            const fullData = await fullRes.json();
+            hydrateFullPortalPayload(fullData);
+            setIsUnlocked(true);
+          } else {
+            setErrorMsg('Unable to open wedding portal. Please try again later.');
+          }
           setLoading(false);
           return;
         }
 
-        setClient(data.client);
-        if (data.studioInfo) setStudioInfo(data.studioInfo);
-        if (data.postProd) setPostProd(data.postProd);
-        if (data.finance) setFinance(data.finance);
-        if (data.moodboard) setMoodboard(data.moodboard);
-        if (Array.isArray(data.quotationDocs)) setQuotationDocs(data.quotationDocs);
-        if (data.fwProject) setFwProject(data.fwProject);
-
-        // Check if session has cached unlock for this token
+        // 3. If PIN previously unlocked in this browser session, silently verify & hydrate
         const cachedPin = sessionStorage.getItem(`portal_unlocked_${token}`);
-        const ext = data.ext || parseClientExtended(data.client);
-        if (cachedPin && (cachedPin === ext.portal_pin || cachedPin === '123456' || !ext.portal_pin)) {
-          setIsUnlocked(true);
+        if (cachedPin) {
+          const verifyRes = await fetch(`/api/public/client-portal/${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: cachedPin }),
+          });
+          if (verifyRes.ok) {
+            const fullData = await verifyRes.json();
+            hydrateFullPortalPayload(fullData);
+            setIsUnlocked(true);
+            setLoading(false);
+            return;
+          } else {
+            sessionStorage.removeItem(`portal_unlocked_${token}`);
+          }
         }
       } catch (e) {
         console.error('Error loading client portal:', e);
@@ -198,20 +237,37 @@ export default function PublicClientPortalPage() {
     loadPortalData();
   }, [token]);
 
-  // Handle PIN Unlock
-  const handleVerifyPin = (e: React.FormEvent) => {
+  // Handle Server-Verified 6-Digit PIN Unlock
+  const handleVerifyPin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!client) return;
+    const submitted = enteredPin.trim();
+    if (!submitted || !token || verifyingPin) return;
 
-    const ext = parseClientExtended(client);
-    const correctPin = ext.portal_pin || '123456';
+    setVerifyingPin(true);
+    setPinError(false);
 
-    if (enteredPin.trim() === correctPin.trim() || enteredPin.trim() === '123456') {
+    try {
+      const res = await fetch(`/api/public/client-portal/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: submitted }),
+      });
+
+      if (!res.ok) {
+        setPinError(true);
+        return;
+      }
+
+      const data = await res.json();
+      hydrateFullPortalPayload(data);
       setIsUnlocked(true);
       setPinError(false);
-      sessionStorage.setItem(`portal_unlocked_${token}`, enteredPin.trim());
-    } else {
+      sessionStorage.setItem(`portal_unlocked_${token}`, submitted);
+    } catch (err) {
+      console.error('Error verifying portal PIN:', err);
       setPinError(true);
+    } finally {
+      setVerifyingPin(false);
     }
   };
 
@@ -347,7 +403,7 @@ export default function PublicClientPortalPage() {
           const roleCounts: Record<string, number> = {};
           if (Array.isArray(se.fw_assignments)) {
             se.fw_assignments.forEach((asgn: any) => {
-              const role = asgn.role || 'Crew Member';
+              const role = asgn.required_role || asgn.role || 'Crew Member';
               roleCounts[role] = (roleCounts[role] || 0) + 1;
             });
           }
@@ -570,7 +626,7 @@ export default function PublicClientPortalPage() {
   }
 
   // Error state
-  if (errorMsg || !client) {
+  if (errorMsg || (!client && !clientSummary)) {
     return (
       <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center p-6 text-center text-slate-900 font-sans">
         <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mb-4 shadow-sm">
@@ -582,12 +638,13 @@ export default function PublicClientPortalPage() {
     );
   }
 
-  const ext = parseClientExtended(client);
+  // ─────────────────────────────────────────────────────────────
+  // 1. PIN VERIFICATION LOCK SCREEN (FAST 6-DIGIT GATE)
+  // ─────────────────────────────────────────────────────────────
+  if (!isUnlocked || !client) {
+    const gateClientCode = client ? parseClientExtended(client).client_code : clientSummary?.client_code;
+    const gateClientName = client?.name || clientSummary?.name || 'Wedding Portal';
 
-  // ─────────────────────────────────────────────────────────────
-  // 1. PIN VERIFICATION LOCK SCREEN
-  // ─────────────────────────────────────────────────────────────
-  if (!isUnlocked) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#FAF9F5] via-[#FFFDF9] to-[#FAF8F2] flex items-center justify-center p-4 text-slate-900 font-sans selection:bg-amber-100 selection:text-amber-900">
         <motion.div
@@ -606,9 +663,9 @@ export default function PublicClientPortalPage() {
 
           <div className="space-y-1.5">
             <span className="px-3 py-1 rounded-full text-[11px] font-black bg-amber-50 text-amber-900 border border-amber-200 uppercase tracking-widest font-mono">
-              {ext.client_code || 'WEDDING PORTAL'}
+              {gateClientCode || 'WEDDING PORTAL'}
             </span>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-2">{client.name}</h1>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-2">{gateClientName}</h1>
             <p className="text-xs text-slate-500 font-medium">Welcome to your Personal Wedding Space</p>
           </div>
 
@@ -616,17 +673,18 @@ export default function PublicClientPortalPage() {
           <form onSubmit={handleVerifyPin} className="space-y-4 pt-1">
             <div className="space-y-2 text-left">
               <label className="text-xs font-black text-slate-700 block text-center uppercase tracking-wider">
-                Enter Your Access PIN
+                Enter Your 6-Digit Access PIN
               </label>
               <div className="relative">
                 <input
                   type="password"
+                  inputMode="numeric"
                   maxLength={6}
                   autoFocus
                   placeholder="• • • • • •"
                   value={enteredPin}
                   onChange={(e) => {
-                    setEnteredPin(e.target.value);
+                    setEnteredPin(e.target.value.replace(/\D/g, '').slice(0, 6));
                     setPinError(false);
                   }}
                   className={`w-full text-center text-2xl font-black tracking-[0.5em] py-3.5 bg-white border rounded-2xl focus:outline-none transition ${
@@ -638,18 +696,18 @@ export default function PublicClientPortalPage() {
               </div>
               {pinError && (
                 <p className="text-[11px] font-bold text-rose-500 text-center animate-shake">
-                  Incorrect PIN. Please check the PIN shared by your studio.
+                  Incorrect PIN. Please check the 6-digit PIN shared by your studio.
                 </p>
               )}
             </div>
 
             <button
               type="submit"
-              disabled={!enteredPin.trim()}
+              disabled={verifyingPin || !enteredPin.trim()}
               className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:brightness-105 disabled:opacity-50 text-white font-black text-xs rounded-2xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
             >
-              <Key className="w-4 h-4" />
-              <span>Unlock Wedding Space</span>
+              {verifyingPin ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+              <span>{verifyingPin ? 'Verifying PIN...' : 'Unlock Wedding Space'}</span>
             </button>
           </form>
 
@@ -660,6 +718,8 @@ export default function PublicClientPortalPage() {
       </div>
     );
   }
+
+  const ext = parseClientExtended(client);
 
   // ─────────────────────────────────────────────────────────────
   // 2. UNLOCKED LUXURY CLIENT PORTAL

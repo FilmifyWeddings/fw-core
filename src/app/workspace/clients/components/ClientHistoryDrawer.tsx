@@ -16,6 +16,7 @@ export interface ClientAuditItem {
   actor_id?: string;
   actor_name: string;
   actor_email?: string;
+  actor_avatar?: string | null;
   actor_role?: string;
   module: 'overview' | 'quotations' | 'events' | 'moodboard' | 'tasks' | 'post_production' | 'finance' | string;
   action_type: string;
@@ -23,7 +24,30 @@ export interface ClientAuditItem {
   description?: string;
   old_value?: any;
   new_value?: any;
+  metadata?: {
+    event_title?: string | null;
+    event_date?: string | null;
+    is_date_tbd?: boolean;
+    crew_name?: string | null;
+    crew_avatar?: string | null;
+    crew_role?: string | null;
+    amount?: number | string | null;
+    deliverable_title?: string | null;
+    [key: string]: any;
+  };
   created_at: string;
+}
+
+function formatEventDatePill(dateStr?: string | null, isTbd?: boolean): string | null {
+  if (isTbd || dateStr === 'TBD' || dateStr === 'Date Not Fixed') return 'Date Not Fixed';
+  if (!dateStr) return null;
+  try {
+    const parsed = new Date(`${String(dateStr).split('T')[0]}T00:00:00`);
+    if (isNaN(parsed.getTime())) return String(dateStr);
+    return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return String(dateStr);
+  }
 }
 
 interface ClientHistoryDrawerProps {
@@ -102,7 +126,7 @@ export default function ClientHistoryDrawer({
     }
   }, [isOpen, clientId, selectedModule]);
 
-  // Filter logs by search query
+  // Filter logs by search query (including event title, crew name/role, old/new diffs)
   const filteredLogs = useMemo(() => {
     if (!searchQuery.trim()) return logs;
     const q = searchQuery.toLowerCase();
@@ -110,7 +134,12 @@ export default function ClientHistoryDrawer({
       (l.title && l.title.toLowerCase().includes(q)) ||
       (l.description && l.description.toLowerCase().includes(q)) ||
       (l.actor_name && l.actor_name.toLowerCase().includes(q)) ||
-      (l.module && l.module.toLowerCase().includes(q))
+      (l.module && l.module.toLowerCase().includes(q)) ||
+      (l.metadata?.event_title && String(l.metadata.event_title).toLowerCase().includes(q)) ||
+      (l.metadata?.crew_name && String(l.metadata.crew_name).toLowerCase().includes(q)) ||
+      (l.metadata?.crew_role && String(l.metadata.crew_role).toLowerCase().includes(q)) ||
+      (l.old_value && String(l.old_value).toLowerCase().includes(q)) ||
+      (l.new_value && String(l.new_value).toLowerCase().includes(q))
     );
   }, [logs, searchQuery]);
 
@@ -301,6 +330,50 @@ export default function ClientHistoryDrawer({
                             {log.title}
                           </h4>
 
+                          {/* Event Date & Crew Metadata Badges */}
+                          {(log.metadata?.event_title || log.metadata?.crew_name || log.metadata?.deliverable_title) && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {log.metadata?.event_title && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-200/80 text-[10px] font-bold">
+                                  <Calendar className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+                                  <span>{log.metadata.event_title}</span>
+                                  {formatEventDatePill(log.metadata.event_date, log.metadata.is_date_tbd) && (
+                                    <span className="text-blue-600/90 font-semibold">
+                                      • {formatEventDatePill(log.metadata.event_date, log.metadata.is_date_tbd)}
+                                    </span>
+                                  )}
+                                </span>
+                              )}
+
+                              {log.metadata?.crew_name && (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-200/80 text-[10px] font-bold">
+                                  {log.metadata.crew_avatar ? (
+                                    <img
+                                      src={log.metadata.crew_avatar}
+                                      alt={log.metadata.crew_name}
+                                      className="w-4 h-4 rounded-full object-cover border border-white shrink-0"
+                                    />
+                                  ) : (
+                                    <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[8px] font-black flex items-center justify-center shrink-0">
+                                      {String(log.metadata.crew_name).slice(0, 2).toUpperCase()}
+                                    </span>
+                                  )}
+                                  <span>{log.metadata.crew_name}</span>
+                                  {log.metadata.crew_role && (
+                                    <span className="text-emerald-700/80 font-semibold">({log.metadata.crew_role})</span>
+                                  )}
+                                </span>
+                              )}
+
+                              {log.metadata?.deliverable_title && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200/80 text-[10px] font-bold">
+                                  <Film className="w-2.5 h-2.5 text-rose-600 shrink-0" />
+                                  <span>{log.metadata.deliverable_title}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                           {/* Description */}
                           {log.description && (
                             <p className="text-[11px] text-slate-600 font-medium leading-relaxed bg-white/70 p-2 rounded-xl border border-slate-100">
@@ -329,9 +402,17 @@ export default function ClientHistoryDrawer({
                           {/* Actor Footer */}
                           <div className="pt-1.5 border-t border-slate-200/60 flex items-center justify-between text-[10.5px] text-slate-500">
                             <div className="flex items-center gap-1.5">
-                              <div className="w-4 h-4 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[9px] font-bold">
-                                {log.actor_name ? log.actor_name[0].toUpperCase() : 'U'}
-                              </div>
+                              {log.actor_avatar ? (
+                                <img
+                                  src={log.actor_avatar}
+                                  alt={log.actor_name || 'Actor'}
+                                  className="w-4 h-4 rounded-full object-cover border border-slate-200 shrink-0"
+                                />
+                              ) : (
+                                <div className="w-4 h-4 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[9px] font-bold shrink-0">
+                                  {log.actor_name ? log.actor_name[0].toUpperCase() : 'U'}
+                                </div>
+                              )}
                               <span className="font-bold text-slate-800">{log.actor_name || 'Team Member'}</span>
                               {log.actor_role && (
                                 <span className="text-slate-400 text-[10px]">({log.actor_role})</span>

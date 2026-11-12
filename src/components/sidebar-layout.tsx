@@ -132,8 +132,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const router = useRouter();
   const rawPathname = usePathname();
   const pathname = rawPathname || '';
-  const isStandalonePage = isPublicStandaloneRoute(pathname);
   const searchParams = useSearchParams();
+  const isPublicPreviewParam = searchParams?.get('preview') === 'public';
+  const isStandalonePage = isPublicStandaloneRoute(pathname) || isPublicPreviewParam;
   const { isOwner, userRole, permissions, availableWorkspaces, activeWorkspace } = useWorkspace();
   const hasFetchedRef = useRef(false);
   const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';

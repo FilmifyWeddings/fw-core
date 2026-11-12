@@ -62,9 +62,39 @@ interface ClientInsiderModalProps {
   onClientDelete?: (deletedClientId: string) => void;
 }
 
+export function sanitizeWhatsappLink(val?: string | null): string {
+  const trimmed = String(val || '').trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\/chat\.whatsapp\.com\/(\d+|[^/]*@g\.us)\/?$/i.test(trimmed)) return '';
+  if (/^(\d+|[^/]*@g\.us)$/.test(trimmed)) return '';
+  return trimmed;
+}
+
+export function sanitizeWhatsappGroupId(val?: string | null): string {
+  const trimmed = String(val || '').trim();
+  if (!trimmed) return '';
+  return trimmed.toLowerCase().endsWith('@g.us') ? trimmed : '';
+}
+
+export function deriveSixDigitPin(client: { id?: string; phone?: string | null }): string {
+  const digits = (client.phone || '').replace(/[^0-9]/g, '');
+  if (digits.length >= 6) {
+    const candidate = digits.slice(-6);
+    if (candidate !== '123456' && candidate !== '000000') return candidate;
+  }
+  const seed = String(client.id || '000000');
+  let hash = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const code = 100000 + (Math.abs(hash) % 900000);
+  return code === 123456 ? '123457' : String(code);
+}
+
 export function parseClientExtended(client: WorkspaceClient): ClientExtendedData {
   const fallbackCode = `CL-${(client.id || '0000').slice(0, 6).toUpperCase()}`;
-  const defaultPin = client.phone ? client.phone.replace(/[^0-9]/g, '').slice(-4) || '1234' : '1234';
+  const defaultPin = deriveSixDigitPin(client);
   const defaultToken = client.id || `token_${Date.now()}`;
 
   let client_code = fallbackCode;
@@ -97,10 +127,13 @@ export function parseClientExtended(client: WorkspaceClient): ClientExtendedData
 
   if (parsed) {
     if (parsed.client_code) client_code = parsed.client_code;
-    if (parsed.whatsapp_group_link) whatsapp_group_link = parsed.whatsapp_group_link;
-    if (parsed.whatsapp_group_id) whatsapp_group_id = parsed.whatsapp_group_id;
+    if (parsed.whatsapp_group_link) whatsapp_group_link = sanitizeWhatsappLink(parsed.whatsapp_group_link);
+    if (parsed.whatsapp_group_id) whatsapp_group_id = sanitizeWhatsappGroupId(parsed.whatsapp_group_id);
     if (parsed.portal_token) portal_token = parsed.portal_token;
-    if (parsed.portal_pin) portal_pin = parsed.portal_pin;
+    if (parsed.portal_pin) {
+      const rawPin = String(parsed.portal_pin).trim();
+      portal_pin = /^\d{6}$/.test(rawPin) ? rawPin : defaultPin;
+    }
     if (parsed.portal_enabled !== undefined) portal_enabled = parsed.portal_enabled;
     if (!project_manager_id && parsed.project_manager_id) project_manager_id = parsed.project_manager_id;
     if (!project_manager_name && parsed.project_manager_name) project_manager_name = parsed.project_manager_name;
@@ -358,9 +391,20 @@ export function ClientInsiderModal({
 
   // Save changes to Supabase
   const handleSaveClientDetails = async () => {
+    const cleanPin = (extended.portal_pin || '').trim();
+    if (extended.portal_enabled !== false && !/^\d{6}$/.test(cleanPin)) {
+      alert('Please enter a valid 6-digit numeric Security PIN (or turn PIN protection OFF).');
+      return;
+    }
     setIsSaving(true);
     try {
-      const serializedNotes = serializeClientExtended(extended);
+      const sanitizedExtended: ClientExtendedData = {
+        ...extended,
+        portal_pin: cleanPin || deriveSixDigitPin({ id: client.id, phone }),
+        whatsapp_group_link: sanitizeWhatsappLink(extended.whatsapp_group_link),
+        whatsapp_group_id: (extended.whatsapp_group_id || '').trim(),
+      };
+      const serializedNotes = serializeClientExtended(sanitizedExtended);
       const updatedFields: Partial<WorkspaceClient> = {
         name,
         phone,
@@ -545,8 +589,7 @@ export function ClientInsiderModal({
   const portalUrl = typeof window !== 'undefined' ? `${window.location.origin}/p/client/${extended.portal_token}` : `/p/client/${extended.portal_token}`;
 
   const copyPortalLink = () => {
-    const textToCopy = `StudioCore Wedding Portal\n🔗 Link: ${portalUrl}\n🔐 Access PIN: ${extended.portal_pin}`;
-    navigator.clipboard.writeText(textToCopy);
+    navigator.clipboard.writeText(portalUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
   };
@@ -560,7 +603,10 @@ export function ClientInsiderModal({
   };
 
   const shareOnWhatsApp = () => {
-    const msg = `Namaste ${name} Ji! 🙏\nHere is your personal StudioCore Wedding Portal to access your Event Schedule, Quotations, Post-Production status & Google Drive delivery links:\n\n🔗 *Portal Link:* ${portalUrl}\n🔐 *Access PIN:* ${extended.portal_pin}\n\nPlease enter your 4-digit PIN to access your wedding space anytime!`;
+    const pinBlock = extended.portal_enabled !== false
+      ? `🔐 *Access PIN:* ${extended.portal_pin}\n\nPlease enter your 6-digit PIN to access your wedding space anytime!`
+      : `✨ PIN protection is off — tap the link to open your wedding space anytime!`;
+    const msg = `Namaste ${name} Ji! 🙏\nHere is your personal StudioCore Wedding Portal to access your Event Schedule, Quotations, Post-Production status & Google Drive delivery links:\n\n🔗 *Portal Link:* ${portalUrl}\n${pinBlock}`;
     const cleanPhone = phone.replace(/[^0-9]/g, '');
     const waUrl = cleanPhone 
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}` 
@@ -791,7 +837,7 @@ export function ClientInsiderModal({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="font-bold text-slate-600 block mb-1">WhatsApp Group ID (JID)</label>
                           <input
@@ -804,13 +850,31 @@ export function ClientInsiderModal({
                         </div>
 
                         <div>
-                          <label className="font-bold text-slate-600 block mb-1">4-Digit Security PIN</label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold text-slate-600">6-Digit Security PIN</label>
+                            <button
+                              type="button"
+                              onClick={() => setExtended(prev => ({ ...prev, portal_enabled: prev.portal_enabled === false }))}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-black border transition cursor-pointer ${
+                                extended.portal_enabled !== false
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200'
+                              }`}
+                            >
+                              {extended.portal_enabled !== false ? 'PIN ON' : 'PIN OFF'}
+                            </button>
+                          </div>
                           <input
                             type="text"
+                            inputMode="numeric"
                             maxLength={6}
+                            placeholder="6-digit PIN"
+                            disabled={extended.portal_enabled === false}
                             value={extended.portal_pin}
-                            onChange={(e) => setExtended(prev => ({ ...prev, portal_pin: e.target.value }))}
-                            className="w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono font-black text-amber-800 focus:outline-none"
+                            onChange={(e) => setExtended(prev => ({ ...prev, portal_pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                            className={`w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono font-black tracking-widest focus:outline-none ${
+                              extended.portal_enabled === false ? 'text-slate-400 opacity-60 cursor-not-allowed' : 'text-amber-800'
+                            }`}
                           />
                         </div>
                       </div>
@@ -855,6 +919,7 @@ export function ClientInsiderModal({
                   <AiMicButton
                     size="sm"
                     buttonText="AI Voice"
+                    showTrailingIcon={false}
                     onInsertComment={(text) => {
                       setExtended(prev => ({
                         ...prev,
@@ -1309,7 +1374,11 @@ export function ClientInsiderModal({
                   </div>
                   <div>
                     <h3 className="text-base font-black text-slate-900">Share Client Portal</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">Unique access link with 4-digit PIN security</p>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {extended.portal_enabled !== false
+                        ? 'Unique access link with 6-digit PIN security'
+                        : 'Unique open access link (PIN protection is OFF)'}
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => setShowShareModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
@@ -1337,11 +1406,20 @@ export function ClientInsiderModal({
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">4-Digit Security Access PIN</label>
+                  <label className="font-bold text-slate-700 block mb-1">6-Digit Security Access PIN</label>
                   <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center justify-between">
                     <div>
-                      <span className="text-xl font-black font-mono text-amber-900 tracking-widest">{extended.portal_pin}</span>
-                      <p className="text-[10px] text-amber-700 mt-0.5">Client must enter this PIN to unlock the portal</p>
+                      {extended.portal_enabled !== false ? (
+                        <>
+                          <span className="text-xl font-black font-mono text-amber-900 tracking-widest">{extended.portal_pin}</span>
+                          <p className="text-[10px] text-amber-700 mt-0.5">Client must enter this 6-digit PIN to unlock the portal</p>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-sm font-black text-slate-700">PIN Protection OFF</span>
+                          <p className="text-[10px] text-slate-500 mt-0.5">Client can open the portal directly using the link</p>
+                        </>
+                      )}
                     </div>
                     <Key className="w-5 h-5 text-amber-600" />
                   </div>

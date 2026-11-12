@@ -1023,14 +1023,14 @@ export async function syncQuotationToTeamManagerEvents(
 
       // Find matching existing sub-event:
       // 1. Exact title match
-      let matchedSe = existingSubEventsList.find(se => !usedExistingSubEventIds.has(se.id) && se.event_title?.trim().toLowerCase() === evTitleNorm);
+      let matchedSe = existingSubEventsList.find((se: any) => !usedExistingSubEventIds.has(se.id) && se.event_title?.trim().toLowerCase() === evTitleNorm);
       // 2. Same date match
       if (!matchedSe && evDate) {
-        matchedSe = existingSubEventsList.find(se => !usedExistingSubEventIds.has(se.id) && se.event_date === evDate);
+        matchedSe = existingSubEventsList.find((se: any) => !usedExistingSubEventIds.has(se.id) && se.event_date === evDate);
       }
       // 3. Fuzzy title match (e.g. Wedding vs Wedding & Reception)
       if (!matchedSe) {
-        matchedSe = existingSubEventsList.find(se => !usedExistingSubEventIds.has(se.id) && (
+        matchedSe = existingSubEventsList.find((se: any) => !usedExistingSubEventIds.has(se.id) && (
           (se.event_title || '').toLowerCase().includes(evTitleNorm) ||
           evTitleNorm.includes((se.event_title || '').toLowerCase())
         ));
@@ -1135,13 +1135,13 @@ export async function syncQuotationToTeamManagerEvents(
           .eq('id', matchedSe.id);
 
         // Check assignments for this sub-event:
-        const currentSubAssignments = existingAssignmentsList.filter(a => a.sub_event_id === matchedSe.id);
+        const currentSubAssignments = existingAssignmentsList.filter((a: any) => a.sub_event_id === matchedSe.id);
 
         // Count existing assignments by canonical key to prevent duplicate alias inserts!
         const existingRolesCount: Record<string, number> = {};
         const existingRolesPreferredName: Record<string, string> = {};
 
-        currentSubAssignments.forEach(a => {
+        currentSubAssignments.forEach((a: any) => {
           const cKey = getCanonicalRoleKey(a.required_role || '');
           if (cKey) {
             existingRolesCount[cKey] = (existingRolesCount[cKey] || 0) + 1;
@@ -1481,15 +1481,41 @@ export async function syncBookedLeadOrFinalQuotation({
         };
       });
 
+      let existingNotesObj: any = {};
+      if (existingWsClient?.notes && typeof existingWsClient.notes === 'string') {
+        const fBrace = existingWsClient.notes.indexOf('{');
+        const lBrace = existingWsClient.notes.lastIndexOf('}');
+        if (fBrace !== -1 && lBrace > fBrace) {
+          try {
+            existingNotesObj = JSON.parse(existingWsClient.notes.substring(fBrace, lBrace + 1)) || {};
+          } catch (_) {}
+        }
+      }
+
+      const rawLeadWaId = typeof lead.whatsapp_group_id === 'string' ? lead.whatsapp_group_id.trim() : '';
+      const validLeadWaJid = rawLeadWaId.endsWith('@g.us') ? rawLeadWaId : '';
+      const rawLeadWaLink = typeof (lead as any).whatsapp_group_link === 'string' ? (lead as any).whatsapp_group_link.trim() : '';
+      const validLeadWaLink = /^https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]{15,}/i.test(rawLeadWaLink) ? rawLeadWaLink : '';
+
+      const existingPinDigits = String(existingNotesObj.portal_pin || '').replace(/\D/g, '');
+      const phoneDigits = String(lead.phone || '').replace(/\D/g, '');
+      const fallbackSixPin = phoneDigits.length >= 6
+        ? phoneDigits.slice(-6)
+        : String(Math.floor(100000 + Math.random() * 900000));
+      const preservedPin = existingPinDigits.length === 6 && existingPinDigits !== '123456'
+        ? existingPinDigits
+        : fallbackSixPin;
+
       const extendedNotesPayload = JSON.stringify({
-        client_code: `CL-${Math.floor(1000 + Math.random() * 9000)}`,
-        whatsapp_group_link: lead.whatsapp_group_id ? `https://chat.whatsapp.com/${lead.whatsapp_group_id}` : '',
-        whatsapp_group_id: lead.whatsapp_group_id || '',
-        portal_token: `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`,
-        portal_pin: '1234',
-        portal_enabled: true,
-        plain_notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
-        notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
+        ...existingNotesObj,
+        client_code: existingNotesObj.client_code || `CL-${Math.floor(1000 + Math.random() * 9000)}`,
+        whatsapp_group_link: existingNotesObj.whatsapp_group_link || validLeadWaLink || '',
+        whatsapp_group_id: existingNotesObj.whatsapp_group_id || validLeadWaJid || '',
+        portal_token: existingNotesObj.portal_token || `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`,
+        portal_pin: preservedPin,
+        portal_enabled: typeof existingNotesObj.portal_enabled === 'boolean' ? existingNotesObj.portal_enabled : true,
+        plain_notes: existingNotesObj.plain_notes || `Auto-synced from Booked CRM Lead (${coupleName})`,
+        notes: existingNotesObj.notes || `Auto-synced from Booked CRM Lead (${coupleName})`,
         events: clientEventsList
       });
 

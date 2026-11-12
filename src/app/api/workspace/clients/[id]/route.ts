@@ -701,7 +701,11 @@ export async function GET(
     let hydratedFwProject: any = null;
     if (matchedFwProjectRaw) {
       const seenSubEvents = new Set<string>();
-      const cleanSubEvents = (matchedFwProjectRaw.fw_sub_events || [])
+      const rawSortedForDedup = [...(matchedFwProjectRaw.fw_sub_events || [])].sort(
+        (a: any, b: any) => (b.fw_assignments?.length || 0) - (a.fw_assignments?.length || 0)
+      );
+
+      const cleanSubEvents = rawSortedForDedup
         .filter((se: any) => {
           const normTitle = (se.event_title || se.name || '').trim().toLowerCase();
           const dateStr = se.event_date || '';
@@ -710,7 +714,17 @@ export async function GET(
           seenSubEvents.add(key);
           return true;
         })
-        .sort((a: any, b: any) => (Number(a.display_order) || 0) - (Number(b.display_order) || 0))
+        .sort((a: any, b: any) => {
+          const aTbd = Boolean(a.is_date_tbd) || !a.event_date || String(a.event_date).toLowerCase().includes('tbd') || isNaN(new Date(a.event_date).getTime());
+          const bTbd = Boolean(b.is_date_tbd) || !b.event_date || String(b.event_date).toLowerCase().includes('tbd') || isNaN(new Date(b.event_date).getTime());
+          if (aTbd && !bTbd) return -1;
+          if (!aTbd && bTbd) return 1;
+          if (!aTbd && !bTbd) {
+            const diff = new Date(a.event_date).getTime() - new Date(b.event_date).getTime();
+            if (diff !== 0) return diff;
+          }
+          return (Number(a.display_order) || 0) - (Number(b.display_order) || 0);
+        })
         .map((se: any) => ({
           ...se,
           fw_assignments: (se.fw_assignments || []).map((a: any) => {
@@ -726,15 +740,13 @@ export async function GET(
 
             const matchedMem =
               a.fw_team_members ||
-              (a.assigned_member_id
-                ? mappedTeamMembers.find(
-                    (m) =>
-                      m.id === a.assigned_member_id ||
-                      (!isPlaceholder && m.name.trim().toLowerCase() === cleanAssigneeName)
-                  )
-                : !isPlaceholder
-                ? mappedTeamMembers.find((m) => m.name.trim().toLowerCase() === cleanAssigneeName)
-                : null);
+              mappedTeamMembers.find(
+                (m) =>
+                  (a.assigned_member_id &&
+                    (m.id === a.assigned_member_id || (m as any).auth_user_id === a.assigned_member_id)) ||
+                  (!isPlaceholder && String(m.name || '').trim().toLowerCase() === cleanAssigneeName)
+              ) ||
+              null;
 
             return {
               ...a,
