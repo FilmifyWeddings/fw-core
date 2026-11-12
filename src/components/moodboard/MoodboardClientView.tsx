@@ -559,18 +559,26 @@ export function MoodboardClientView({
         const file = filesToUpload[i];
         let fileToSend: File | Blob = file;
         try {
-          fileToSend = await compressMoodboardImage(file, 1280, 0.72);
+          fileToSend = await compressMoodboardImage(file, 1080, 0.68);
         } catch (compErr) {
           console.warn('[Image compression skipped, uploading original]:', compErr);
           fileToSend = file;
         }
 
         const formData = new FormData();
-        const uploadName = (fileToSend instanceof File && fileToSend.name) ? fileToSend.name : (file.name || 'image.jpg');
+        const uploadName = (fileToSend instanceof File && fileToSend.name) ? fileToSend.name : (file.name || 'image.webp');
         formData.append('file', fileToSend, uploadName);
+        formData.append('token', token);
+        formData.append('section', sectionKey || 'photos');
         formData.append('folder', `moodboards/${token}`);
+        if (client?.id || initialData?.client_id) {
+          formData.append('clientId', String(client?.id || initialData?.client_id));
+        }
+        if (initialData?.workspace_id) {
+          formData.append('workspaceId', String(initialData.workspace_id));
+        }
 
-        const uploadRes = await fetch('/api/upload/r2', {
+        const uploadRes = await fetch('/api/upload/moodboard', {
           method: 'POST',
           body: formData,
         });
@@ -594,13 +602,13 @@ export function MoodboardClientView({
   async function deleteImageFromStorage(url?: string) {
     if (!url) return;
     try {
-      await fetch('/api/upload/r2', {
+      await fetch('/api/upload/moodboard', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
     } catch (err) {
-      console.warn('[Failed to delete image from Cloudflare R2]:', err);
+      console.warn('[Failed to delete moodboard image from storage]:', err);
     }
   }
 
@@ -3117,6 +3125,8 @@ export function MoodboardClientView({
           isOpen={true}
           imageUrl={annotatingPhoto.url}
           token={token}
+          clientId={client?.id || initialData?.client_id}
+          workspaceId={initialData?.workspace_id}
           onClose={() => setAnnotatingPhoto(null)}
           onSaveAnnotatedImage={(newUrl: string) => {
             if (annotatingPhoto.side === 'Bride') {

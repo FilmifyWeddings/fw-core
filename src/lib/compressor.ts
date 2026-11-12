@@ -129,13 +129,13 @@ export async function compressImage(
 
 /**
  * Ultra-Lightweight Moodboard Image Compressor
- * Resizes to 1280px max dimension and applies high-compression WebP/JPEG encoding.
- * Reduces 10MB-50MB photos down to ~70KB - 150KB while retaining excellent screen clarity.
+ * Resizes to 1080px max dimension and applies high-compression WebP/JPEG encoding
+ * before server-side Backblaze B2 WebP optimization (~25KB - 80KB).
  */
 export async function compressMoodboardImage(
   file: File | Blob,
-  maxDimension = 1280,
-  quality = 0.72
+  maxDimension = 1080,
+  quality = 0.68
 ): Promise<File | Blob> {
   return compressImage(file, maxDimension, quality);
 }
