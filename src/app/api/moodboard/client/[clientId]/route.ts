@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { deleteFromR2 } from '@/lib/r2-storage';
+import {
+  deleteMoodboardFromB2,
+  extractAllMoodboardMediaUrls,
+  isMoodboardB2Url,
+  isR2MoodboardUrl,
+} from '@/lib/storage/moodboardB2Client';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -209,6 +216,13 @@ export async function DELETE(
       return NextResponse.json({ error: 'Client ID and Moodboard ID are required' }, { status: 400 });
     }
 
+    const { data: existingMb } = await supabaseAdmin
+      .from('client_moodboards')
+      .select('*')
+      .eq('id', moodboardId)
+      .eq('client_id', clientId)
+      .maybeSingle();
+
     const { error: delErr } = await supabaseAdmin
       .from('client_moodboards')
       .delete()
@@ -217,6 +231,22 @@ export async function DELETE(
 
     if (delErr) {
       return NextResponse.json({ error: delErr.message }, { status: 500 });
+    }
+
+    // Best-effort purge of moodboard images stored in Backblaze B2 or legacy Cloudflare R2
+    if (existingMb) {
+      const mediaUrls = extractAllMoodboardMediaUrls(existingMb);
+      if (mediaUrls.length > 0) {
+        Promise.allSettled(
+          mediaUrls.map((url) => {
+            if (isMoodboardB2Url(url)) return deleteMoodboardFromB2(url);
+            if (isR2MoodboardUrl(url)) return deleteFromR2(url);
+            return Promise.resolve(false);
+          })
+        ).catch((err) => {
+          console.warn('[Moodboard DELETE storage cleanup notice]:', err);
+        });
+      }
     }
 
     return NextResponse.json({

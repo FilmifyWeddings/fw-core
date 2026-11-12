@@ -3,7 +3,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { X, Undo, Trash2, Check, Sparkles, Pencil } from 'lucide-react';
-import { compressImage } from '@/lib/compressor';
+import { compressMoodboardImage } from '@/lib/compressor';
 
 interface PhotoDrawModalProps {
   imageUrl: string;
@@ -11,6 +11,8 @@ interface PhotoDrawModalProps {
   onClose: () => void;
   onSaveAnnotatedImage: (newUrl: string) => void;
   token: string;
+  clientId?: string;
+  workspaceId?: string;
 }
 
 const COLORS = [
@@ -33,6 +35,8 @@ export function PhotoDrawModal({
   onClose,
   onSaveAnnotatedImage,
   token,
+  clientId,
+  workspaceId,
 }: PhotoDrawModalProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -166,33 +170,42 @@ export function PhotoDrawModal({
     try {
       setSaving(true);
       canvas.toBlob(async (blob) => {
-        if (!blob) {
-          throw new Error('Failed to generate image from canvas');
+        try {
+          if (!blob) {
+            throw new Error('Failed to generate image from canvas');
+          }
+
+          const file = new File([blob], `annotated-vip-${Date.now()}.webp`, { type: 'image/webp' });
+          const compressed = await compressMoodboardImage(file, 1080, 0.72);
+
+          const formData = new FormData();
+          formData.append('file', compressed, compressed instanceof File ? compressed.name : 'annotated-vip.webp');
+          formData.append('token', token);
+          formData.append('section', 'family-annotated');
+          formData.append('folder', `moodboards/${token}`);
+          if (clientId) formData.append('clientId', clientId);
+          if (workspaceId) formData.append('workspaceId', workspaceId);
+
+          const res = await fetch('/api/upload/moodboard', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Failed to upload tagged photo');
+          }
+
+          onSaveAnnotatedImage(data.url);
+          onClose();
+        } catch (err: any) {
+          alert(`Save error: ${err.message || 'Could not save'}`);
+        } finally {
+          setSaving(false);
         }
-
-        const file = new File([blob], `annotated-vip-${Date.now()}.webp`, { type: 'image/webp' });
-        const compressed = await compressImage(file, 1920, 0.85);
-
-        const formData = new FormData();
-        formData.append('file', compressed);
-        formData.append('folder', `moodboards/${token}`);
-
-        const res = await fetch('/api/upload/r2', {
-          method: 'POST',
-          body: formData,
-        });
-
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Failed to upload tagged photo');
-        }
-
-        onSaveAnnotatedImage(data.url);
-        onClose();
-      }, 'image/webp', 0.9);
+      }, 'image/webp', 0.85);
     } catch (err: any) {
       alert(`Save error: ${err.message || 'Could not save'}`);
-    } finally {
       setSaving(false);
     }
   };

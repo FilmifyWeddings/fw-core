@@ -25,6 +25,7 @@ import { isInHouseMember, getDedupedInHouseMembers } from '@/lib/team-helpers';
 export interface ProjectManagerAssignClient {
   id: string;
   name: string;
+  workspace_id?: string | null;
   phone?: string | null;
   event_type?: string | null;
   project_manager_id?: string | null;
@@ -80,7 +81,7 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
   // Sync initial state when modal opens
   useEffect(() => {
     if (isOpen && client) {
-      const ext = parseClientExtended(client);
+      const ext = parseClientExtended(client as any);
       const effectivePMId = client.project_manager_id || ext.project_manager_id || null;
       const effectivePMName = (client.project_manager_name || ext.project_manager_name || '').trim();
 
@@ -193,36 +194,46 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
         throw new Error(jsonRes.error || 'Failed to save Project Manager assignment');
       }
 
-      // CRITICAL: Immediately update localStorage cached clients so outside & inside cards update in 0ms!
+      // CRITICAL: Immediately update localStorage & sessionStorage cached clients so outside & inside cards update in 0ms!
       if (typeof window !== 'undefined') {
         try {
-          const cached = localStorage.getItem('sc_cached_clients');
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed)) {
-              const updatedCache = parsed.map(c => {
-                if (c.id === client.id) {
-                  const oldExt = parseClientExtended(c);
-                  const newExt = {
-                    ...oldExt,
-                    project_manager_id: effectivePmId || '',
-                    project_manager_name: effectivePmName || '',
-                    project_manager_email: pmEmail || '',
-                    project_manager_phone: pmPhone || '',
-                  };
-                  return {
-                    ...c,
-                    project_manager_id: effectivePmId,
-                    project_manager_name: effectivePmName,
-                    project_manager_email: pmEmail,
-                    project_manager_phone: pmPhone,
-                    notes: serializeClientExtended(newExt)
-                  };
-                }
-                return c;
-              });
-              localStorage.setItem('sc_cached_clients', JSON.stringify(updatedCache));
-            }
+          const patchCachedList = (rawJson: string | null) => {
+            if (!rawJson) return null;
+            const parsed = JSON.parse(rawJson);
+            if (!Array.isArray(parsed)) return null;
+            return parsed.map((c: any) => {
+              if (c.id !== client.id) return c;
+              const oldExt = parseClientExtended(c);
+              const newExt = {
+                ...oldExt,
+                project_manager_id: effectivePmId || '',
+                project_manager_name: effectivePmName || '',
+                project_manager_email: pmEmail || '',
+                project_manager_phone: pmPhone || '',
+              };
+              const updatedClient = {
+                ...c,
+                project_manager_id: effectivePmId,
+                project_manager_name: effectivePmName,
+                project_manager_email: pmEmail,
+                project_manager_phone: pmPhone,
+                notes: serializeClientExtended(newExt),
+              };
+              try {
+                sessionStorage.setItem(`sc_client_snapshot_${client.id}`, JSON.stringify(updatedClient));
+              } catch (_) {}
+              return updatedClient;
+            });
+          };
+
+          const legacyPatched = patchCachedList(localStorage.getItem('sc_cached_clients'));
+          if (legacyPatched) localStorage.setItem('sc_cached_clients', JSON.stringify(legacyPatched));
+
+          const activeWsId = client.workspace_id || workspaceId || localStorage.getItem('sc_active_workspace_id');
+          if (activeWsId) {
+            const wsKey = `sc_cached_clients_${activeWsId}`;
+            const wsPatched = patchCachedList(localStorage.getItem(wsKey));
+            if (wsPatched) localStorage.setItem(wsKey, JSON.stringify(wsPatched));
           }
           localStorage.setItem('sc_booking_sync_event', Date.now().toString());
         } catch (_) {}
