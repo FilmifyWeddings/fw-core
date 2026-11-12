@@ -1545,7 +1545,7 @@ export default function QuotationDocumentCanvas({
                     {/* Subtitle Side Type & Location with blank filtering */}
                     {(() => {
                       const sideText = (data.cover.sideOption || '').trim().toUpperCase();
-                      const locText = (data.cover.locationName || '').trim().toUpperCase();
+                      const locText = (data.cover.locationName || (data.cover as any).location || '').trim().toUpperCase();
                       const subtitleText = [sideText, locText].filter(Boolean).join(' – ');
                       if (!subtitleText) return null;
                       return (

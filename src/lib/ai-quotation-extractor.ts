@@ -343,15 +343,17 @@ export function resolveStudioFunctionName(
     return resolveStudioSingleEvent('Wedding', orderedPool);
   }
 
-  // Handle combined names like "Wedding + Haldi" or "Haldi + Sangeet"
-  if (cleanRaw.includes('+')) {
+  // Handle combined names like "Wedding + Haldi", "Haldi + Sangeet", or "Haldi & Mehendi"
+  if (cleanRaw.includes('+') || /\s+(?:&|and|और)\s+/i.test(cleanRaw)) {
     const exactCombined = orderedPool.find(s => s.toLowerCase() === cleanRaw.toLowerCase());
     if (exactCombined) return exactCombined;
     const parts = cleanRaw
-      .split('+')
+      .split(/\s*(?:\+|&|\band\b|और)\s*/i)
       .map(p => resolveStudioSingleEvent(p.trim(), orderedPool))
       .filter(Boolean);
-    return Array.from(new Set(parts)).join(' + ') || 'Wedding';
+    if (parts.length > 0) {
+      return Array.from(new Set(parts)).join(' + ');
+    }
   }
 
   // Try authoritative workspace_event_types list first; only check secondary defaultFunctions if nothing matched
@@ -1472,6 +1474,110 @@ interface ScopedShortcutMatch {
   isBuiltinFallback?: boolean;
 }
 
+const ALL_DELIVERABLES_TRIGGER_RE =
+  /(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables?|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)/i;
+
+/**
+ * Returns true ONLY if the studio owner has explicitly configured a custom shortcut for "all deliverables"
+ * with specific mappedDeliverables in Settings -> AI Training. When true, saying "all deliverables" MUST
+ * execute that exact custom shortcut instead of dumping the entire deliverables catalog!
+ */
+export function hasCustomAllDeliverablesShortcut(
+  shortcutMatches: Array<{ trigger?: string; mappedDeliverables?: string[] }> = []
+): boolean {
+  return (shortcutMatches || []).some(
+    (sm) =>
+      ALL_DELIVERABLES_TRIGGER_RE.test(String(sm?.trigger || '').trim()) &&
+      Array.isArray(sm?.mappedDeliverables) &&
+      sm.mappedDeliverables.length > 0
+  );
+}
+
+const INDIAN_CITY_MAP_GLOBAL: Record<string, string> = {
+  'उदयपुर': 'Udaipur', 'udaipur': 'Udaipur',
+  'जयपुर': 'Jaipur', 'jaipur': 'Jaipur',
+  'गोवा': 'Goa', 'goa': 'Goa',
+  'मुंबई': 'Mumbai', 'बंबई': 'Mumbai', 'mumbai': 'Mumbai',
+  'दिल्ली': 'Delhi', 'नई दिल्ली': 'New Delhi', 'delhi': 'Delhi', 'new delhi': 'New Delhi',
+  'पुणे': 'Pune', 'pune': 'Pune',
+  'नासिक': 'Nashik', 'nashik': 'Nashik',
+  'सूरत': 'Surat', 'surat': 'Surat',
+  'अहमदाबाद': 'Ahmedabad', 'ahmedabad': 'Ahmedabad',
+  'इंदौर': 'Indore', 'indore': 'Indore',
+  'भोपाल': 'Bhopal', 'bhopal': 'Bhopal',
+  'नागपुर': 'Nagpur', 'nagpur': 'Nagpur',
+  'जोधपुर': 'Jodhpur', 'jodhpur': 'Jodhpur',
+  'जैसलमेर': 'Jaisalmer', 'jaisalmer': 'Jaisalmer',
+  'आगरा': 'Agra', 'agra': 'Agra',
+  'वाराणसी': 'Varanasi', 'varanasi': 'Varanasi', 'बनारस': 'Varanasi',
+  'ऋषिकेश': 'Rishikesh', 'rishikesh': 'Rishikesh',
+  'जिम कॉर्बेट': 'Jim Corbett', 'jim corbett': 'Jim Corbett',
+  'हैदराबाद': 'Hyderabad', 'hyderabad': 'Hyderabad',
+  'बेंगलुरु': 'Bengaluru', 'bangalore': 'Bengaluru', 'bengaluru': 'Bengaluru',
+  'कोलकाता': 'Kolkata', 'kolkata': 'Kolkata',
+  'चंडीगढ़': 'Chandigarh', 'chandigarh': 'Chandigarh',
+  'लखनऊ': 'Lucknow', 'lucknow': 'Lucknow'
+};
+
+function cleanExtractedLocationCandidate(rawLoc: string): string {
+  if (!rawLoc) return '';
+  let s = String(rawLoc).replace(/["']/g, '').split(/[,\n.;।]/)[0].trim();
+  // Stop before unrelated trailing clauses ("location Delhi aur..." / "location Delhi for...")
+  s = s.split(/\s+(?:saare|all\s+events?|sabhi|total\s+\d+|for\s+\d+)\b/i)[0].trim();
+  // Strip trailing Hindi/Hinglish postpositions & copulas repeatedly ("Delhi ki hai" -> "Delhi")
+  for (let i = 0; i < 4; i++) {
+    const next = s
+      .replace(
+        /\s+(?:ki|ka|ke|ko|me|mein|par|pe|se|hai|hain|h|rahega|rahegi|hoga|hogi|is|are|को|का|की|के|में|मे|पर|पे|से|है|हैं|रहेगा|रहेगी|होगा|होगी)$/i,
+        ''
+      )
+      .trim();
+    if (next === s) break;
+    s = next;
+  }
+  const lower = s.toLowerCase();
+  if (
+    !s ||
+    s.length <= 2 ||
+    /^(?:same\s*(?:venue|place|hotel|location)?|same|शादी|वेडिंग|हल्दी|संगीत|रिसेप्शन|मेहंदी|में|दोनों|सभी|par|hai|hain|ki|ka|ke|tbd|not\s*fix(?:ed)?)$/i.test(lower)
+  ) {
+    return '';
+  }
+  for (const [k, v] of Object.entries(INDIAN_CITY_MAP_GLOBAL)) {
+    if (lower === k.toLowerCase()) return v;
+  }
+  return s;
+}
+
+export function extractSpokenLocationFromNotes(snippet: string): string {
+  if (!snippet) return '';
+  // 1. Check explicit location/venue/city label first ("Location Delhi ki hai", "Venue Taj Palace Jaipur rahega")
+  const explicitLocMatch = snippet.match(
+    /(?:^|[\s.;,\n])(?:at|venue|location|city|destination|लोकेशन|वेन्यू|स्थान|जगह|शहर)(?:\s+(?:is|are|hai|हैं|है|में|मे|पर|पे|:))?[:\s-]+(["']?[A-Za-z\u0900-\u097F0-9\s.-]{2,45}["']?)(?=[,\n\r.;।]|$)/i
+  );
+  if (explicitLocMatch?.[1]) {
+    const cleanedExplicit = cleanExtractedLocationCandidate(explicitLocMatch[1]);
+    if (cleanedExplicit) {
+      // If cleanedExplicit is a longer phrase containing a known city, prefer clean city unless it's a hotel/palace venue name
+      if (!/hotel|palace|resort|lawn|banquet|bhavan|mandap|gardens?|villa|club|fort/i.test(cleanedExplicit)) {
+        for (const [k, v] of Object.entries(INDIAN_CITY_MAP_GLOBAL)) {
+          if (new RegExp(`(?:^|[^\\u0900-\\u097Fa-zA-Z0-9])${k}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`, 'i').test(cleanedExplicit)) {
+            return v;
+          }
+        }
+      }
+      return cleanedExplicit;
+    }
+  }
+  // 2. Fallback: scan entire snippet for well-known Indian wedding cities
+  for (const [k, v] of Object.entries(INDIAN_CITY_MAP_GLOBAL)) {
+    if (new RegExp(`(?:^|[^\\u0900-\\u097Fa-zA-Z0-9])${k}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`, 'i').test(snippet)) {
+      return v;
+    }
+  }
+  return '';
+}
+
 const hasUnicodeWord = (haystack: string, needle: string): boolean => {
   const cleanNeedle = String(needle || '').trim();
   if (!cleanNeedle) return false;
@@ -1486,9 +1592,21 @@ const matchesShortcutTriggerText = (text: string, trigLower: string): boolean =>
   if (!text || !trigLower) return false;
   if (hasUnicodeWord(text, trigLower)) return true;
   const words = trigLower.split(/\s+/).filter(Boolean);
-  if (words.length > 0 && words.every((w) => hasUnicodeWord(text, w))) return true;
-  if (trigLower.includes('deliverable') && /(?:ऑल\s*डिलीवरेबल्स|all\s*deliverable)/i.test(text)) return true;
+  // Require multi-word triggers to appear close together (never match "standard" from Event 1 + "crew" from Event 2!)
+  if (words.length > 1) {
+    const nearRe = new RegExp(
+      `(?:^|[^\\u0900-\\u097Fa-zA-Z0-9])${words.map(escapeRegExp).join('[^\\n.;।,]{0,25}?')}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`,
+      'i'
+    );
+    if (nearRe.test(text)) return true;
+  } else if (words.length === 1 && hasUnicodeWord(text, words[0])) {
+    return true;
+  }
+  if (/(?:all|sabhi|saare|ऑल|सभी|सारे).*deliverable|deliverable.*all/i.test(trigLower) && ALL_DELIVERABLES_TRIGGER_RE.test(text)) {
+    return true;
+  }
   if (trigLower.includes('standard') && /स्टैंडर्ड\s*(?:क्रू|टीम)/i.test(text)) return true;
+  if (trigLower.includes('premium') && /प्रीमियम\s*(?:क्रू|टीम)/i.test(text)) return true;
   return false;
 };
 
@@ -1635,11 +1753,37 @@ export function analyzeScopedShortcutsAndCrewOverrides(
     return found;
   };
 
-  // Split userNotes into sequential clauses while propagating active ceremony to continuation clauses ("aur alag crew rakhna", "usme ...")
-  const rawSegments = notes
-    .split(/(?:\r?\n|[.;।|]|,|\s+(?:और|तथा|व|and|&|aur|फिर|then)\s+)/i)
+  // Split userNotes into sequential clauses while keeping same-comma multi-ceremony phrases grouped together
+  // UNLESS internal conjunctions separate distinct per-event crews/shortcuts/dates.
+  const sentences = notes
+    .split(/(?:\r?\n|[.;।|])+/)
     .map((s) => s.trim())
     .filter(Boolean);
+
+  const rawSegments: string[] = [];
+  for (const sent of sentences) {
+    const commaParts = sent.split(/\s*,\s*/).map((s) => s.trim()).filter(Boolean);
+    for (const cp of commaParts) {
+      const conjSplit = cp
+        .split(/\s+(?:और|तथा|व|and|&|aur|फिर|then)\s+/i)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const cpEvents = getEventsInText(cp, true);
+      // Keep commaPart intact when 2+ events share ONE non-crew phrase ("15 Dec ko Haldi aur Mehendi hai, isme...")
+      const partsWithCrewOrShortcut = conjSplit.filter((sp) => {
+        const noTrig = clauseTriggerMaskRegex ? sp.replace(clauseTriggerMaskRegex, ' ') : sp;
+        return (
+          extractCrewRolesFromText(noTrig, studioCrewRoles).length > 0 ||
+          normalizedShortcuts.some((sc) => matchesShortcutTriggerText(sp, sc.triggerLower))
+        );
+      });
+      if (cpEvents.length >= 2 && conjSplit.length >= 2 && partsWithCrewOrShortcut.length === 0) {
+        rawSegments.push(cp);
+      } else {
+        rawSegments.push(...conjSplit);
+      }
+    }
+  }
 
   const RESTRICTIVE_CREW_RE = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:bas|only|sirf|keval|just|alag(?:\s*(?:crew|team|log))?|separate(?:\s*(?:crew|team))?|different(?:\s*(?:crew|team))?|बस|सिर्फ|केवल|अलग\s*(?:क्रू|टीम|लोग)?|सेपरेट\s*क्रू)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i;
   const GLOBAL_SCOPE_RE = /(?:(?:सभी|हर|सारे|दोनों|तीनों|चारों|प्रत्येक)\s*(?:इवेंट|इवेंट्स|फंक्शन|फंक्शंस|functions?|events?|ceremon(?:y|ies)|में|मे|को|पे|mein)|(?:दोनों|तीनों|चारों)\b|\b(?:both)\b|\b(?:every|each|all)\s+(?:the\s+)?(?:events?|functions?|ceremon(?:y|ies))\b)/i;
@@ -1670,7 +1814,7 @@ export function analyzeScopedShortcutsAndCrewOverrides(
 
     const attachedEvents = isGlobalMod
       ? []
-      : (evs.length > 0 ? evs : (activeEvents.length === 1 ? activeEvents : []));
+      : (evs.length > 0 ? evs : (activeEvents.length >= 1 ? activeEvents : []));
 
     clausesWithEvents.push({
       text: seg,
@@ -1886,6 +2030,18 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
   let matchedShortcutPrice: number | null = null;
   const functions: any[] = Array.isArray(doc.functionsPage?.items) ? doc.functionsPage.items : [];
   const anyOtherShortcutMatched = analysis.shortcutMatches.some((sm) => sm.mappedCrew.length > 0);
+  const hasCustomAllDelivShortcut = hasCustomAllDeliverablesShortcut(analysis.shortcutMatches);
+
+  // Resolve exact + component keys for combined ceremony cards (e.g. "Haldi + Mehendi" -> ["haldi + mehendi", "haldi", "mehendi"])
+  const getFnOverrideKeys = (fnName: string): string[] => {
+    const resolvedFull = resolveStudioFunctionName(fnName || '', studioEventNames, studioDefaultFunctions).toLowerCase();
+    const parts = String(fnName || '')
+      .split(/\s*(?:\+|&|\band\b|\/)\s*/i)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => resolveStudioFunctionName(p, studioEventNames, studioDefaultFunctions).toLowerCase());
+    return Array.from(new Set([resolvedFull, ...parts].filter(Boolean)));
+  };
 
   for (const sm of analysis.shortcutMatches) {
     if (sm.mappedDeliverables.length > 0) {
@@ -1899,24 +2055,32 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
     if (sm.mappedCrew.length > 0 && functions.length > 0) {
       const trigKey = sm.trigger.toLowerCase().trim();
       functions.forEach((fn: any) => {
-        const fnKey = resolveStudioFunctionName(fn.name || '', studioEventNames, studioDefaultFunctions).toLowerCase();
-        const ov = analysis.eventOverrides.get(fnKey);
+        const fnKeys = getFnOverrideKeys(fn.name || '');
+        const matchingOvs = fnKeys
+          .map((k) => analysis.eventOverrides.get(k))
+          .filter((v): v is NonNullable<typeof v> => Boolean(v));
+        const hasAnyExplicitCrew = matchingOvs.some((o) => o.hasExplicitCrew && o.explicitCrew.length > 0);
+        const hasAnyRestrictive = matchingOvs.some((o) => o.hasRestrictiveOverride);
+        const hasAnyDirectShortcutHere = matchingOvs.some((o) => o.triggeredShortcuts.size > 0);
+        const combinedOvCrew = matchingOvs.reduce<Array<{ name: string; qty: number }>>(
+          (acc, o) => mergeCrewList(acc, o.explicitCrew || [], studioCrewRoles),
+          []
+        );
 
-        const isExplicitlyTriggeredOnThisFn = Boolean(ov?.triggeredShortcuts?.has(trigKey));
+        const isExplicitlyTriggeredOnThisFn = matchingOvs.some((o) => o.triggeredShortcuts.has(trigKey));
         if (sm.scopedEvents !== null) {
           // Scoped shortcut (e.g. "Wedding mein Standard Crew"): ONLY apply to functions inside scopedEvents!
-          if (sm.scopedEvents.has(fnKey)) {
-            if (ov?.hasExplicitCrew && ov.explicitCrew.length > 0) {
-              // Event triggered shortcut PLUS explicitly asked for extra/explicit crew (e.g. "Wedding mein Standard Crew aur 1 Drone")
-              fn.requirements = mergeCrewList(ov.explicitCrew, sm.mappedCrew, studioCrewRoles);
+          if (fnKeys.some((k) => sm.scopedEvents!.has(k))) {
+            if (hasAnyExplicitCrew && combinedOvCrew.length > 0) {
+              fn.requirements = mergeCrewList(combinedOvCrew, sm.mappedCrew, studioCrewRoles);
             } else {
               fn.requirements = mergeCrewList([], sm.mappedCrew, studioCrewRoles);
             }
           }
         } else {
-          // Global/unscoped shortcut (e.g. "Gold Wedding package on 10 Nov Haldi and 12 Nov Wedding"):
-          // NEVER merge onto a function that explicitly stated its own crew/restrictive override UNLESS this function also invoked the shortcut!
-          if (isExplicitlyTriggeredOnThisFn || (!ov?.hasExplicitCrew && !ov?.hasRestrictiveOverride)) {
+          // Global/unscoped shortcut: NEVER leak onto a function that explicitly stated its own crew,
+          // restrictive override, OR already invoked its own distinct shortcut trigger!
+          if (isExplicitlyTriggeredOnThisFn || (!hasAnyExplicitCrew && !hasAnyRestrictive && !hasAnyDirectShortcutHere)) {
             fn.requirements = mergeCrewList(fn.requirements, sm.mappedCrew, studioCrewRoles);
           }
         }
@@ -1932,26 +2096,33 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
       // Never allow shortcut trigger names ("Standard Crew", "Premium Crew", custom triggers) to leak into card notes!
       fn.notes = sanitizeEventFunctionNotes(fn.notes, studioShortcuts);
 
-      const fnKey = resolveStudioFunctionName(fn.name || '', studioEventNames, studioDefaultFunctions).toLowerCase();
-      const ov = analysis.eventOverrides.get(fnKey);
-      if (!ov) return;
+      const fnKeys = getFnOverrideKeys(fn.name || '');
+      const matchingOvs = fnKeys
+        .map((k) => analysis.eventOverrides.get(k))
+        .filter((v): v is NonNullable<typeof v> => Boolean(v));
+      if (matchingOvs.length === 0) return;
 
-      const hadDirectShortcut = ov.triggeredShortcuts.size > 0;
+      const hadDirectShortcut = matchingOvs.some((o) => o.triggeredShortcuts.size > 0);
+      const hasRestrictive = matchingOvs.some((o) => o.hasRestrictiveOverride);
+      const hasExplicit = matchingOvs.some((o) => o.hasExplicitCrew && o.explicitCrew.length > 0);
+      const explicitCombined = matchingOvs.reduce<Array<{ name: string; qty: number }>>(
+        (acc, o) => mergeCrewList(acc, o.explicitCrew || [], studioCrewRoles),
+        []
+      );
       const shouldLockExplicitCrew =
         !hadDirectShortcut &&
-        (ov.hasRestrictiveOverride || (ov.hasExplicitCrew && anyOtherShortcutMatched));
+        (hasRestrictive || (hasExplicit && anyOtherShortcutMatched));
 
-      if (shouldLockExplicitCrew && ov.explicitCrew.length > 0) {
-        fn.requirements = ov.explicitCrew.map((c) => ({ ...c }));
-      } else if (!hadDirectShortcut && ov.hasExplicitCrew && ov.explicitCrew.length > 0) {
-        // Ensure every explicitly spoken role on this event is at least preserved (and default fallback roles weren't left behind when no shortcut was global)
-        fn.requirements = ov.explicitCrew.map((c) => ({ ...c }));
+      if (shouldLockExplicitCrew && explicitCombined.length > 0) {
+        fn.requirements = explicitCombined.map((c) => ({ ...c }));
+      } else if (!hadDirectShortcut && hasExplicit && explicitCombined.length > 0) {
+        fn.requirements = explicitCombined.map((c) => ({ ...c }));
       }
     });
   }
 
   // Merge Deliverables (All Deliverables Add + Shortcut Deliverables + Explicit Spoken Deliverables with counts/Hindi support!)
-  const hasAllDelivReq = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText);
+  const hasAllDelivReq = ALL_DELIVERABLES_TRIGGER_RE.test(allNotesText) && !hasCustomAllDelivShortcut;
   const explicitSpokenDelivs = extractDeliverablesFromText(userNotes, studioDeliverables);
 
   if (!doc.deliverablesPage) doc.deliverablesPage = { selectedItems: [], availableOptions: [] };
@@ -1959,6 +2130,10 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
     const fullCatalog = studioDeliverables.length > 0 ? studioDeliverables : DEFAULT_EXTRACTED_DELIVERABLES;
     doc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...fullCatalog], explicitSpokenDelivs, true)
       .filter((item: string) => isValidDeliverableItem(item, fullCatalog));
+  } else if (hasCustomAllDelivShortcut) {
+    // User explicitly configured an "all deliverables" custom shortcut -> obey THAT shortcut's Y list strictly!
+    doc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...matchedShortcutDelivs], explicitSpokenDelivs, true)
+      .filter((item: string) => isValidDeliverableItem(item, studioDeliverables));
   } else {
     let baseSelected = Array.isArray(doc.deliverablesPage.selectedItems)
       ? doc.deliverablesPage.selectedItems.filter((item: string) => isValidDeliverableItem(item, studioDeliverables))
@@ -2621,20 +2796,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
   };
 
   const extractLocationFromSnippet = (snippet: string): string => {
-    if (!snippet) return '';
-    for (const [k, v] of Object.entries(INDIAN_CITY_MAP)) {
-      if (new RegExp(`(?:^|[^\\u0900-\\u097Fa-zA-Z0-9])${k}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`, 'i').test(snippet)) {
-        return v;
-      }
-    }
-    const explicitLocMatch = snippet.match(/(?:at|venue|location|city|destination|लोकेशन|वेन्यू|स्थान|जगह|शहर)[:\s]+(["']?[A-Za-z\u0900-\u097F0-9\s,.-]+["']?)/i);
-    if (explicitLocMatch) {
-      const clean = explicitLocMatch[1].replace(/["']/g, '').split(/[,\n]/)[0].trim();
-      if (clean && clean.length > 2 && !['शादी', 'वेडिंग', 'हल्दी', 'संगीत', 'रिसेप्शन', 'में', 'दोनों'].includes(clean.toLowerCase())) {
-        return clean;
-      }
-    }
-    return '';
+    return extractSpokenLocationFromNotes(snippet);
   };
 
   const extractDateFromSnippet = (snippet: string, fallbackMonthYear?: { monthIdx: number; year: number } | null): string => {
@@ -2805,14 +2967,16 @@ export function fallbackHeuristicExtractor(contextData: any) {
     return hits.sort((a, b) => a.startIdx - b.startIdx);
   };
 
-  // Explicit combine indicator: user EXPLICITLY says two+ functions are combined on same day / same card
+  // Explicit combine indicator vs explicit separate indicator
   const EXPLICIT_COMBINE_REGEX = /(?:एक\s*ही\s*दिन|ek\s*hi\s*din|ek\s*din\s*pe|एक\s*ही\s*तारीख|एक\s*ही\s*डेट|ek\s*hi\s*date|एक\s*साथ|ek\s*sath|साथ\s*में|saath\s*mein|एक\s*ही\s*फंक्शन|ek\s*hi\s*function|एक\s*ही\s*इवेंट|एक\s*कार्ड|single\s*card|single\s*function|combine(?:d)?|clubbed|merged|together)/i;
-  const BOTH_SEPARATE_MODIFIER_REGEX = /(?:दोनों\s*(?:में|मे|को|पे)|तीनों\s*(?:में|मे|को|पे)|चारों\s*(?:में|मे|को|पे)|सभी\s*(?:में|मे|को|पे)|हर\s*(?:फंक्शन|इवेंट)|both\s*(?:events?|functions?)?|all\s*(?:events?|functions?)|each\s*(?:event|function)?|every\s*(?:event|function)?|separate(?:ly)?|अलग[\s-]*अलग)/i;
+  const EXPLICIT_SPLIT_CARD_REGEX = /(?:अलग[\s-]*अलग(?:\s*(?:कार्ड|इवेंट|फंक्शन|events?|cards?))?|alag[\s-]*alag(?:\s*(?:card|cards|event|events))?|separate(?:\s*(?:card|cards|event|events))?|seperate(?:\s*(?:card|cards))?|split\s*cards?)/i;
+  const BOTH_SEPARATE_MODIFIER_REGEX = /(?:दोनों\s*(?:में|मे|को|पे)|तीनों\s*(?:में|मे|को|पे)|चारों\s*(?:में|मे|को|पे)|सभी\s*(?:में|मे|को|पे)|हर\s*(?:फंक्शन|इवेंट)|both\s*(?:events?|functions?)?|all\s*(?:events?|functions?)|each\s*(?:event|function)?|every\s*(?:event|function)?|separate(?:ly)?|अलग[\s-]*अलग|alag[\s-]*alag)/i;
   const CONTINUATION_PRONOUN_REGEX = /(?:उसमें|इसमें|उसमे|इसमे|जिसमें|जिसमे|usme|isme|jisme|jismein|there|for\s*that)/i;
+  const partHasExplicitSplitRequest = EXPLICIT_SPLIT_CARD_REGEX.test(userNotes);
 
   const explicitDateCountInNotes = (userNotes.match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s*(?:जनवरी|फ़रवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|सितम्बर|अक्टूबर|अक्तूबर|नवंबर|नवम्बर|दिसंबर|दिसम्बर|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/gi) || []).length;
 
-  // Split into sentence blocks by hard boundaries, then split conjunctions UNLESS conjunction directly joins two combined events without separate dates/timing/crew
+  // Split into sentence blocks by hard boundaries, then split conjunctions ONLY when events have distinct dates/times/crews/venues or explicit split request
   const hardSentences = preWedMaskedNotes
     .split(/(?:\r?\n|[.;।|])+/)
     .map(s => s.trim())
@@ -2820,31 +2984,53 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   const sequentialClauses: Array<{ text: string; groupSharedDate?: string }> = [];
   for (const sent of hardSentences) {
-    // Also split commas, except protect comma between two events inside explicit combine sentence
+    const sentHasExplicitSplit = EXPLICIT_SPLIT_CARD_REGEX.test(sent);
     const commaParts = sent.split(/\s*,\s*/).map(p => p.trim()).filter(Boolean);
     for (const part of commaParts) {
       const partEvents = findEventsInText(part);
       const hasCombineWord = EXPLICIT_COMBINE_REGEX.test(part);
       const hasPlusJoin = partEvents.length >= 2 && /\+/.test(part.slice(partEvents[0].startIdx, partEvents[partEvents.length - 1].endIdx));
-      const hasExplicitSeparateHints = BOTH_SEPARATE_MODIFIER_REGEX.test(part) || /(?:सुबह|शाम|morning|evening|में|मे)\b/i.test(part);
+      const hasTimeWindowSplit =
+        (/(?:सुबह|morning|subah)/i.test(part) && /(?:शाम|evening|night|raat|sham)/i.test(part)) ||
+        (part.match(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/gi) || []).length >= 2;
+      const hasExplicitSeparateHints = sentHasExplicitSplit || EXPLICIT_SPLIT_CARD_REGEX.test(part) || hasTimeWindowSplit;
 
-      // If this part explicitly combines adjacent events (e.g., "Wedding और Haldi एक ही दिन पे है 10 November को" or "Haldi + Sangeet 22 Feb"), keep the whole part together!
-      if ((hasCombineWord || hasPlusJoin) && partEvents.length >= 2 && !hasExplicitSeparateHints) {
-        sequentialClauses.push({ text: part });
-        continue;
-      }
-
-      // Otherwise split on sequential connectors ("और", "aur", "&", "and", "तथा", "व", "फिर", "then", "after that")
+      // Split on sequential connectors ("और", "aur", "&", "and", "तथा", "व", "फिर", "then", "after that") to inspect whether subParts differ by date, time, location, or crew
       const subParts = part
         .split(/\s+(?:और|aur|तथा|व|and|&|फिर|उसके\s*बाद|जिसके\s*बाद|then|after\s*that)\s+/i)
         .map(sp => sp.trim())
         .filter(Boolean);
 
-      // Check if all subParts in this single comma-group share ONE explicit date (e.g. "10 Nov को Haldi और Sangeet है" or "Haldi और Sangeet 10 Nov को है")
       const datedSubIndices = subParts
         .map((sp, idx) => ({ idx, dt: extractDateFromSnippet(sp) }))
         .filter(x => x.dt && x.dt !== 'Date Not Fixed');
+      const distinctDates = new Set(datedSubIndices.map((x) => x.dt));
       const hasAnyRelOffset = subParts.some(sp => detectRelativeDayOffset(sp) !== null);
+      const distinctLocs = new Set(subParts.map(sp => extractLocationFromSnippet(sp)).filter(Boolean));
+      const subPartsWithOwnCrew = subParts.filter(sp => {
+        const spCrew = extractCrewFromSnippet(sp);
+        const spTrig = studioShortcuts.some(sc => sc?.trigger && matchesShortcutTriggerText(sp, String(sc.trigger).toLowerCase()));
+        const isJustContinuation = CONTINUATION_PRONOUN_REGEX.test(sp) && findEventsInText(sp).length === 0;
+        return !isJustContinuation && (spCrew.length > 0 || spTrig);
+      });
+
+      const shouldCombinePartByDefault =
+        partEvents.length >= 2 &&
+        !hasExplicitSeparateHints &&
+        !partHasExplicitSplitRequest &&
+        !hasAnyRelOffset &&
+        distinctDates.size <= 1 &&
+        distinctLocs.size <= 1 &&
+        subPartsWithOwnCrew.length <= 1 &&
+        !BOTH_SEPARATE_MODIFIER_REGEX.test(part);
+
+      // Keep same-day multi-ceremony comma phrases combined as ONE card ("10 तारीख को हल्दी और संगीत है" -> "Haldi + Sangeet", "15 Dec Haldi aur Mehendi hai" -> "Haldi + Mehendi")!
+      if ((hasCombineWord || hasPlusJoin || shouldCombinePartByDefault) && partEvents.length >= 2 && !hasExplicitSeparateHints) {
+        sequentialClauses.push({ text: part, _forceCombined: true } as any);
+        continue;
+      }
+
+      // Check if all subParts in this single comma-group share ONE explicit date (e.g. when split explicitly for alag-alag cards)
       const hasNotFixedHint = /(?:not\s*fix|tbd|फिक्स\s*नहीं|तय\s*नहीं)/i.test(part);
       const groupSharedDate =
         subParts.length >= 2 &&
@@ -3045,7 +3231,8 @@ export function fallbackHeuristicExtractor(contextData: any) {
     const isExplicitlyCombinedCard =
       eventsInClause.length >= 2 &&
       !BOTH_SEPARATE_MODIFIER_REGEX.test(clause) &&
-      (EXPLICIT_COMBINE_REGEX.test(clause) || /\+/.test(betweenEventsText));
+      !EXPLICIT_SPLIT_CARD_REGEX.test(clause) &&
+      (Boolean((clauseItem as any)._forceCombined) || EXPLICIT_COMBINE_REGEX.test(clause) || /\+/.test(betweenEventsText));
 
     if (isExplicitlyCombinedCard) {
       const uniqueNames = Array.from(new Set(eventsInClause.map(e => e.resolvedName)));
@@ -3140,14 +3327,30 @@ export function fallbackHeuristicExtractor(contextData: any) {
   }
 
   // Apply global modifier crew ("दोनों में 1 Traditional Photographer"), scoped shortcut crew, studio defaultFunctions crew, or clean defaults
+  const getHeuristicFnKeys = (fnName: string): string[] => {
+    const resolvedFull = resolveStudioFunctionName(fnName || '', studioEventNames, studioDefaultFunctions).toLowerCase();
+    const parts = String(fnName || '')
+      .split(/\s*(?:\+|&|\band\b|\/)\s*/i)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => resolveStudioFunctionName(p, studioEventNames, studioDefaultFunctions).toLowerCase());
+    return Array.from(new Set([resolvedFull, ...parts].filter(Boolean)));
+  };
+
   for (const fn of functions) {
     let finalReqs: Array<{ name: string; qty: number }> = Array.isArray(fn._explicitCrew) ? [...fn._explicitCrew] : [];
     delete fn._explicitCrew;
 
-    const fnKey = resolveStudioFunctionName(fn.name || '', studioEventNames, studioDefaultFunctions).toLowerCase();
-    const fnOv = heuristicScopeAnalysis.eventOverrides.get(fnKey);
+    const fnKeys = getHeuristicFnKeys(fn.name || '');
+    const matchingOvs = fnKeys
+      .map((k) => heuristicScopeAnalysis.eventOverrides.get(k))
+      .filter((v): v is NonNullable<typeof v> => Boolean(v));
+    const hasAnyRestrictive = matchingOvs.some((o) => o.hasRestrictiveOverride);
+    const hasAnyExplicit = matchingOvs.some((o) => o.hasExplicitCrew);
+    const hasAnyDirectShortcut = matchingOvs.some((o) => o.triggeredShortcuts.size > 0);
+    const fnKey = fnKeys[0];
 
-    if (globalModifierCrew.length > 0 && !fnOv?.hasRestrictiveOverride) {
+    if (globalModifierCrew.length > 0 && !hasAnyRestrictive) {
       for (const gCrew of globalModifierCrew) {
         if (!finalReqs.some(r => r.name.toLowerCase() === gCrew.name.toLowerCase())) {
           finalReqs.push({ ...gCrew });
@@ -3159,19 +3362,19 @@ export function fallbackHeuristicExtractor(contextData: any) {
     for (const sm of heuristicScopeAnalysis.shortcutMatches) {
       if (sm.mappedCrew.length === 0) continue;
       const trigKey = sm.trigger.toLowerCase().trim();
-      const triggeredHere = Boolean(fnOv?.triggeredShortcuts?.has(trigKey));
+      const triggeredHere = matchingOvs.some((o) => o.triggeredShortcuts.has(trigKey));
       if (sm.scopedEvents !== null) {
-        if (sm.scopedEvents.has(fnKey)) {
+        if (fnKeys.some((k) => sm.scopedEvents!.has(k))) {
           finalReqs = mergeCrewList(finalReqs, sm.mappedCrew, studioCrewRoles);
         }
-      } else if (triggeredHere || (!fnOv?.hasExplicitCrew && !fnOv?.hasRestrictiveOverride)) {
+      } else if (triggeredHere || (!hasAnyExplicit && !hasAnyRestrictive && !hasAnyDirectShortcut)) {
         if (finalReqs.length === 0 || triggeredHere) {
           finalReqs = mergeCrewList(finalReqs, sm.mappedCrew, studioCrewRoles);
         }
       }
     }
 
-    if (finalReqs.length === 0 && !fnOv?.hasExplicitCrew && !fnOv?.hasRestrictiveOverride && studioDefaultFunctions.length > 0) {
+    if (finalReqs.length === 0 && !hasAnyExplicit && !hasAnyRestrictive && studioDefaultFunctions.length > 0) {
       const cleanEventBase = (s: string) => s.toLowerCase().replace(/\b(?:ceremony|night|party|function|shoot|event|day)\b/gi, '').replace(/\s+/g, ' ').trim();
       const fnLower = fn.name.toLowerCase().trim();
       const fnBase = cleanEventBase(fn.name);
@@ -3281,14 +3484,18 @@ export function fallbackHeuristicExtractor(contextData: any) {
 
   let deliverables: string[] = [];
 
-  // Check if "all deliverables" or "all droppers" trigger was spoken or requested (Unicode safe for Hindi/Marathi/English)
-  const hasAllDeliverablesRequested = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(fullText);
+  // Check if "all deliverables" or "all droppers" trigger was spoken or requested — UNLESS a custom "all deliverables" shortcut is configured!
+  const hasCustomAllDelivHeuristic = hasCustomAllDeliverablesShortcut(heuristicScopeAnalysis.shortcutMatches);
+  const hasAllDeliverablesRequested = ALL_DELIVERABLES_TRIGGER_RE.test(fullText) && !hasCustomAllDelivHeuristic;
   const spokenDeliverables = extractDeliverablesFromText(notes, studioDeliverables);
 
   if (hasAllDeliverablesRequested) {
     const fullCatalog = studioDeliverables.length > 0 ? studioDeliverables : DEFAULT_EXTRACTED_DELIVERABLES;
     deliverables = mergeDeliverablesSmart([...fullCatalog], spokenDeliverables, true)
       .filter((item) => isValidDeliverableItem(item, fullCatalog));
+  } else if (hasCustomAllDelivHeuristic) {
+    deliverables = mergeDeliverablesSmart(shortcutDeliverables, spokenDeliverables, true)
+      .filter((item) => isValidDeliverableItem(item, studioDeliverables));
   } else if (shortcutDeliverables.length > 0 || spokenDeliverables.length > 0) {
     deliverables = mergeDeliverablesSmart(shortcutDeliverables, spokenDeliverables, true)
       .filter((item) => isValidDeliverableItem(item, studioDeliverables));
@@ -3481,7 +3688,8 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     const shortcutDelivs1 = branch1Shortcuts.shortcutMatches.flatMap((sm) => sm.mappedDeliverables || []);
     const shortcutSpecial1 = branch1Shortcuts.shortcutMatches.flatMap((sm) => sm.mappedSpecialAddons || []);
     const spokenDelivs1 = !isDirectJson ? extractDeliverablesFromText(rawPromptOrAll1, studioDelivs1) : [];
-    const hasAllDelivReq1 = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText1);
+    const hasCustomAllDeliv1 = hasCustomAllDeliverablesShortcut(branch1Shortcuts.shortcutMatches);
+    const hasAllDelivReq1 = ALL_DELIVERABLES_TRIGGER_RE.test(allNotesText1) && !hasCustomAllDeliv1;
 
     // Capture valid explicit deliverables BEFORE normalizeQuotationData fills baseSchema template defaults
     const rawRootDelivs: string[] = Array.isArray(rootObj.deliverablesPage?.selectedItems)
@@ -3600,12 +3808,29 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       }));
     }
 
-    // ⚡ MANDATE: Resolve single primary cover location (Wedding first, no multi-venue concatenation)
+    // ⚡ MANDATE: Resolve single primary cover location (prefer spoken location, never let base template Mumbai leak)
+    const spokenCoverLoc1 = !isDirectJson ? extractSpokenLocationFromNotes(rawPromptOrAll1) : '';
+    const cleanedRootLoc1 = cleanExtractedLocationCandidate(rootObj.cover?.locationName || '');
+    const promptMentionsMumbai1 = /\bmumbai\b|\bमुंबई\b/i.test(rawPromptOrAll1);
+    if (!isDirectJson && normDoc.functionsPage?.items && Array.isArray(normDoc.functionsPage.items)) {
+      normDoc.functionsPage.items = normDoc.functionsPage.items.map((fn: any) => {
+        let loc = cleanExtractedLocationCandidate(fn.location || '') || (fn.location || '');
+        if (!promptMentionsMumbai1 && /^mumbai$/i.test(loc.trim()) && spokenCoverLoc1) {
+          loc = spokenCoverLoc1;
+        }
+        if (!loc && spokenCoverLoc1) loc = spokenCoverLoc1;
+        return { ...fn, location: loc };
+      });
+    }
     if (normDoc.cover) {
-      normDoc.cover.locationName = resolvePrimaryCoverLocation(
-        normDoc.cover.locationName || '', 
+      const resolvedPrimary1 = resolvePrimaryCoverLocation(
+        spokenCoverLoc1 || cleanedRootLoc1 || normDoc.cover.locationName || '',
         normDoc.functionsPage?.items || []
       );
+      normDoc.cover.locationName =
+        spokenCoverLoc1 && (!resolvedPrimary1 || (!promptMentionsMumbai1 && /^mumbai$/i.test(resolvedPrimary1.trim())))
+          ? spokenCoverLoc1
+          : resolvedPrimary1;
     }
 
     // Filter out any pre-wedding or invalid conversational deliverables from deliverablesPage
@@ -3883,9 +4108,29 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     });
   }
 
-  // ⚡ MANDATE: Resolve single primary cover location (Wedding first, no multi-venue concatenation)
+  // ⚡ MANDATE: Resolve single primary cover location (prefer spoken location, never let stale/demo location overwrite it)
+  const spokenCoverLoc2 = !isDirectJson ? extractSpokenLocationFromNotes(rawPromptNotes || allUserNotesRaw) : '';
+  const cleanedAiLoc2 = cleanExtractedLocationCandidate(cover.locationName || '');
+  const promptMentionsMumbai2 = /\bmumbai\b|\bमुंबई\b/i.test(rawPromptNotes || allUserNotesRaw);
+  if (!isDirectJson && doc.functionsPage?.items && Array.isArray(doc.functionsPage.items)) {
+    doc.functionsPage.items = doc.functionsPage.items.map((fn: any) => {
+      let loc = cleanExtractedLocationCandidate(fn.location || '') || (fn.location || '');
+      if (!promptMentionsMumbai2 && /^mumbai$/i.test(loc.trim()) && spokenCoverLoc2) {
+        loc = spokenCoverLoc2;
+      }
+      if (!loc && spokenCoverLoc2) loc = spokenCoverLoc2;
+      return { ...fn, location: loc };
+    });
+  }
   if (doc.cover) {
-    doc.cover.locationName = resolvePrimaryCoverLocation(cover.locationName || '', doc.functionsPage?.items || []);
+    const resolvedPrimary2 = resolvePrimaryCoverLocation(
+      spokenCoverLoc2 || cleanedAiLoc2 || cover.locationName || '',
+      doc.functionsPage?.items || []
+    );
+    doc.cover.locationName =
+      spokenCoverLoc2 && (!resolvedPrimary2 || (!promptMentionsMumbai2 && /^mumbai$/i.test(resolvedPrimary2.trim())))
+        ? spokenCoverLoc2
+        : resolvedPrimary2;
   }
 
   // 4. Deliverables Page (Main Wedding Deliverables Only - Pre-wedding moved to shootDetails ONLY if Pre-Wedding enabled)
@@ -3933,7 +4178,6 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   const rawNotesForBranch2 = rawPromptNotes || allUserNotesRaw;
   const rawFormStr2 = JSON.stringify(contextData?.raw_form_fields || '');
   const allNotesText = `${contextData?.additional_user_notes || ''} ${rawFormStr2}`.toLowerCase();
-  const hasAllDelivReq = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(allNotesText);
 
   const branch2Analysis = analyzeScopedShortcutsAndCrewOverrides(
     rawNotesForBranch2,
@@ -3943,6 +4187,8 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     studioCrewRoles,
     rawFormStr2
   );
+  const hasCustomAllDeliv2 = hasCustomAllDeliverablesShortcut(branch2Analysis.shortcutMatches);
+  const hasAllDelivReq = ALL_DELIVERABLES_TRIGGER_RE.test(allNotesText) && !hasCustomAllDeliv2;
   const matchedShortcutDelivs: string[] = [];
   const matchedShortcutSpecialAddons2: string[] = [];
   for (const sm of branch2Analysis.shortcutMatches) {
@@ -3960,6 +4206,12 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       [...spokenDelivsBranch2, ...(Array.isArray(doc.deliverablesPage.selectedItems) ? doc.deliverablesPage.selectedItems : [])],
       true
     ).filter((item: string) => isValidDeliverableItem(item, fullCatalog2));
+  } else if (hasCustomAllDeliv2) {
+    doc.deliverablesPage.selectedItems = mergeDeliverablesSmart(
+      matchedShortcutDelivs,
+      spokenDelivsBranch2,
+      true
+    );
   } else if (matchedShortcutDelivs.length > 0 || spokenDelivsBranch2.length > 0) {
     doc.deliverablesPage.selectedItems = mergeDeliverablesSmart(
       validAiWeddingDelivs,

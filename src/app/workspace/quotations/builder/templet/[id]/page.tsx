@@ -3334,14 +3334,25 @@ function StudioCoreAiryBuilderContent() {
 
         const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
 
-        // 0. SYNCHRONOUS IMMEDIATE SESSION STORAGE PRE-HYDRATION (0ms)
+        // 0. SYNCHRONOUS IMMEDIATE SESSION/LOCAL STORAGE PRE-HYDRATION (0ms)
+        let hasFreshPreviewOverride = false;
         if (typeof window !== 'undefined') {
           try {
             let sessDocJson: any = null;
-            const direct = sessionStorage.getItem(`current_quotation_doc_${routeId}`);
+            if (isPublicPreview && !new URLSearchParams(window.location.search).get('token')) {
+              const previewRaw = localStorage.getItem(`wg_preview_override_${routeId}`);
+              if (previewRaw) {
+                const parsedPrev = JSON.parse(previewRaw);
+                if (parsedPrev?.doc && parsedPrev?.ts && (Date.now() - Number(parsedPrev.ts)) < 15000) {
+                  sessDocJson = parsedPrev.doc;
+                  hasFreshPreviewOverride = true;
+                }
+              }
+            }
+            const direct = !sessDocJson ? sessionStorage.getItem(`current_quotation_doc_${routeId}`) : null;
             if (direct) {
               sessDocJson = JSON.parse(direct);
-            } else {
+            } else if (!sessDocJson) {
               const draft = localStorage.getItem(`wg_proposal_draft_${routeId}`);
               if (draft) {
                 sessDocJson = JSON.parse(draft);
@@ -3431,8 +3442,8 @@ function StudioCoreAiryBuilderContent() {
         if (loadedData.primaryFont) preloadActiveFont(loadedData.primaryFont);
         if (loadedData.secondaryFont) preloadActiveFont(loadedData.secondaryFont);
 
-        // Apply canonical state ONLY if user has not edited locally AND background AI refine has not already completed
-        const canHydrateCanonical = !isDirtyRef.current && !aiRefinedDoneRef.current && (isDocumentValid(docContent) || !isDocumentValid(latestDataRef.current));
+        // Apply canonical state ONLY if user has not edited locally, background AI refine has not completed, and no fresh same-browser Preview override is active
+        const canHydrateCanonical = !hasFreshPreviewOverride && !isDirtyRef.current && !aiRefinedDoneRef.current && (isDocumentValid(docContent) || !isDocumentValid(latestDataRef.current));
         if (canHydrateCanonical) {
           cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
           try {
@@ -6386,7 +6397,19 @@ function StudioCoreAiryBuilderContent() {
             <button
               type="button"
               onClick={() => {
-                const previewUrl = `/workspace/quotations/builder/templet/${templateId || 'templet'}?preview=public`;
+                const currentId = templateId || routeId || 'templet';
+                try {
+                  if (latestDataRef.current) {
+                    sessionStorage.setItem(`current_quotation_doc_${currentId}`, JSON.stringify(latestDataRef.current));
+                    safeLocalStorageSet(`wg_proposal_draft_${currentId}`, JSON.stringify(latestDataRef.current), currentId);
+                    localStorage.setItem(`wg_preview_override_${currentId}`, JSON.stringify({ ts: Date.now(), doc: latestDataRef.current }));
+                    cacheDocumentLocal(currentId, latestDataRef.current, currentVersionRef.current);
+                  }
+                  if (isDirtyRef.current && flushSaveRef.current) {
+                    flushSaveRef.current().catch(() => {});
+                  }
+                } catch (_) {}
+                const previewUrl = `/workspace/quotations/builder/templet/${currentId}?preview=public`;
                 window.open(previewUrl, '_blank');
               }}
               className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-black text-white border border-zinc-700/70 transition-all flex items-center justify-center cursor-pointer shadow-sm hover:shadow active:scale-95 shrink-0"
@@ -6399,6 +6422,9 @@ function StudioCoreAiryBuilderContent() {
             <button
               type="button"
               onClick={async () => {
+                if (isDirtyRef.current && flushSaveRef.current) {
+                  try { await flushSaveRef.current(); } catch (_) {}
+                }
                 const shareId = data.public_token || templateId || 'templet';
                 const shareUrl = `${window.location.origin}/p/quotation/${shareId}`;
                 try {

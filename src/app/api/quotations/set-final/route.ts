@@ -13,8 +13,10 @@ export const runtime = 'nodejs';
  */
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = await resolveRequestUser(req);
-    const body = await req.json().catch(() => ({}));
+    const [{ userId }, body] = await Promise.all([
+      resolveRequestUser(req),
+      req.json().catch(() => ({}))
+    ]);
     const { quotationId, leadId, unmark = false, isFinal } = body;
 
     const shouldUnmark = unmark === true || isFinal === false;
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest) {
     const isQuotationUUID = isValidUUID(quotationId);
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
-    // 1. Fetch all quotation documents for this lead or matching target quotationId
+    // 1. Fetch quotation documents + lead details in parallel
     let docsQuery = supabaseAdmin
       .from('quotation_documents')
       .select('id, template_id, lead_id, version, lead_version, content_json');
@@ -39,7 +41,17 @@ export async function POST(req: NextRequest) {
       docsQuery = docsQuery.or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%,template_id.eq.${quotationId}`);
     }
 
-    let { data: allDocs } = await docsQuery;
+    const [docsRes, leadRes] = await Promise.all([
+      docsQuery,
+      supabaseAdmin
+        .from('leads')
+        .select('id, name, full_name, raw_payload, status, stage_id, workspace_id')
+        .eq('id', leadId)
+        .maybeSingle()
+    ]);
+
+    let allDocs = docsRes.data;
+    const currentLead = leadRes.data;
 
     if (!allDocs || allDocs.length === 0) {
       let directQuery = supabaseAdmin
@@ -57,15 +69,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Prepare updated quotation_documents payloads synchronously so finalDoc & clientName are known immediately
     let finalDoc: any = null;
+    const docUpdateTasks: Promise<any>[] = [];
 
     if (allDocs && allDocs.length > 0) {
-      await Promise.all(allDocs.map(async (doc: any) => {
-        const isTarget = doc.template_id === quotationId || 
+      for (const doc of allDocs) {
+        const isTarget = doc.template_id === quotationId ||
           (isQuotationUUID && doc.id === quotationId) ||
           (doc.template_id && quotationId && (doc.template_id.includes(quotationId) || quotationId.includes(doc.template_id)));
         const updatedContent = { ...(doc.content_json || {}) };
-        
+
         if (shouldUnmark) {
           updatedContent.is_final = false;
         } else {
@@ -82,56 +96,52 @@ export async function POST(req: NextRequest) {
           updated_at: now
         };
 
-        const { error: docUpdateErr } = await supabaseAdmin
-          .from('quotation_documents')
-          .update(updatePayload)
-          .eq('id', doc.id);
-
-        if (docUpdateErr) {
-          console.warn('[Set-Final] Warning updating quotation_document:', docUpdateErr.message);
-        }
-      }));
+        docUpdateTasks.push(
+          supabaseAdmin
+            .from('quotation_documents')
+            .update(updatePayload)
+            .eq('id', doc.id)
+            .then(({ error: docUpdateErr }) => {
+              if (docUpdateErr) {
+                console.warn('[Set-Final] Warning updating quotation_document:', docUpdateErr.message);
+              }
+            })
+        );
+      }
     }
 
-    // Fetch current lead details
-    const { data: currentLead } = await supabaseAdmin
-      .from('leads')
-      .select('id, name, full_name, raw_payload, status, stage_id, workspace_id')
-      .eq('id', leadId)
-      .maybeSingle();
-
-    const rawLeadCouple = 
+    const rawLeadCouple =
       currentLead?.raw_payload?.couple_name ||
       currentLead?.raw_payload?.couple_names ||
       (currentLead as any)?.couple_names ||
       ((currentLead as any)?.full_name && !['client', 'valued client', 'lead'].includes((currentLead as any).full_name.toLowerCase().trim()) ? (currentLead as any).full_name : '') ||
       (currentLead?.name && !['client', 'valued client', 'lead'].includes(currentLead.name.toLowerCase().trim()) ? currentLead.name : '');
 
-    const clientName = finalDoc?.content_json 
+    const clientName = finalDoc?.content_json
       ? extractCoupleNameFromQuotation(finalDoc.content_json, rawLeadCouple)
       : (rawLeadCouple || 'Client');
 
-    // Query workspace stages to resolve the exact 'Booked' stage UUID if available
+    // 2 & 3. Execute quotation_documents updates, crm_stages lookup, quotations update, leads update, and audit log concurrently!
     let bookedStageId: string | null = null;
-    let bookedStageName = 'Booked';
-    try {
-      const targetWs = currentLead?.workspace_id || userId;
-      const { data: wsStages } = await supabaseAdmin
-        .from('crm_stages')
-        .select('id, name')
-        .or(`workspace_id.eq.${targetWs},workspace_id.eq.${userId}`);
 
-      const matchedStage = (wsStages || []).find((s: any) =>
-        s.id === 'booked' || String(s.name || '').toLowerCase().includes('book')
-      );
-      if (matchedStage?.id && isValidUUID(matchedStage.id)) {
-        bookedStageId = matchedStage.id;
-        bookedStageName = matchedStage.name || 'Booked';
-      }
-    } catch (_) {}
-
-    // 2 & 3. Parallel update quotations and leads tables
     await Promise.all([
+      ...docUpdateTasks,
+      (async () => {
+        try {
+          const targetWs = currentLead?.workspace_id || userId;
+          const { data: wsStages } = await supabaseAdmin
+            .from('crm_stages')
+            .select('id, name')
+            .or(`workspace_id.eq.${targetWs},workspace_id.eq.${userId}`);
+
+          const matchedStage = (wsStages || []).find((s: any) =>
+            s.id === 'booked' || String(s.name || '').toLowerCase().includes('book')
+          );
+          if (matchedStage?.id && isValidUUID(matchedStage.id)) {
+            bookedStageId = matchedStage.id;
+          }
+        } catch (_) {}
+      })(),
       (async () => {
         try {
           if (shouldUnmark) {
@@ -140,45 +150,48 @@ export async function POST(req: NextRequest) {
               .update({ status: 'draft', is_final: false, updated_at: now })
               .eq('client_id', leadId);
           } else {
-            await supabaseAdmin
-              .from('quotations')
-              .update({ status: 'draft', is_final: false, updated_at: now })
-              .eq('client_id', leadId);
-
-            const quoteTitle = clientName ? `${clientName} - Final Quotation` : 'Final Quotation';
-
             const matchFilter = isQuotationUUID
               ? `id.eq.${quotationId},quotation_number.eq.${quotationId}`
               : `quotation_number.eq.${quotationId}`;
 
-            const { data: existingRows } = await supabaseAdmin
-              .from('quotations')
-              .select('id, quotation_number')
-              .or(matchFilter);
+            // Run draft reset and existing row lookup concurrently
+            const [, existingRowsRes] = await Promise.all([
+              supabaseAdmin
+                .from('quotations')
+                .update({ status: 'draft', is_final: false, updated_at: now })
+                .eq('client_id', leadId),
+              supabaseAdmin
+                .from('quotations')
+                .select('id, quotation_number')
+                .or(matchFilter)
+            ]);
+
+            const quoteTitle = clientName ? `${clientName} - Final Quotation` : 'Final Quotation';
+            const existingRows = existingRowsRes.data;
 
             if (existingRows && existingRows.length > 0) {
               const primaryId = existingRows[0].id;
-              await supabaseAdmin
-                .from('quotations')
-                .update({
-                  client_id: leadId,
-                  title: quoteTitle,
-                  client_name: clientName || undefined,
-                  couple_names: clientName || undefined,
-                  status: 'accepted',
-                  is_final: true,
-                  updated_at: now
-                })
-                .or(matchFilter);
-
-              // Clean up any stale duplicate quotations with the same quotation_number
-              try {
-                await supabaseAdmin
+              await Promise.all([
+                supabaseAdmin
                   .from('quotations')
-                  .delete()
-                  .eq('quotation_number', quotationId)
-                  .neq('id', primaryId);
-              } catch (_) {}
+                  .update({
+                    client_id: leadId,
+                    title: quoteTitle,
+                    client_name: clientName || undefined,
+                    couple_names: clientName || undefined,
+                    status: 'accepted',
+                    is_final: true,
+                    updated_at: now
+                  })
+                  .or(matchFilter),
+                existingRows.length > 1
+                  ? supabaseAdmin
+                      .from('quotations')
+                      .delete()
+                      .eq('quotation_number', quotationId)
+                      .neq('id', primaryId)
+                  : Promise.resolve()
+              ]);
             } else {
               await supabaseAdmin
                 .from('quotations')
@@ -228,44 +241,44 @@ export async function POST(req: NextRequest) {
         } catch (lErr) {
           console.error('[Set-Final] Error updating lead raw_payload and final_quotation_id:', lErr);
         }
+      })(),
+      (async () => {
+        try {
+          const actor = body.actor_name || 'Studio Admin';
+          const versionNum = finalDoc?.lead_version || finalDoc?.version || body.version || 1;
+          const rawTitle = finalDoc?.title || finalDoc?.content_json?.designName || finalDoc?.content_json?.title || clientName || 'Quotation';
+          const cleanTitle = (rawTitle && !rawTitle.startsWith('FW-') && rawTitle !== 'Wedding - Design 1')
+            ? rawTitle
+            : `${clientName || 'Quotation'} - Quotation V${versionNum}`;
+
+          let logWsId = currentLead?.workspace_id || (isValidUUID(userId) ? userId : null);
+          if (!isValidUUID(logWsId)) {
+            const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
+            logWsId = prof?.id;
+          }
+          if (isValidUUID(logWsId)) {
+            await supabaseAdmin.from('live_logs').insert({
+              workspace_id: logWsId,
+              lead_id: leadId,
+              event_type: 'lead_activity',
+              message: shouldUnmark
+                ? `${actor} unfinalized Quotation V${versionNum} ("${cleanTitle}")`
+                : `${actor} marked Quotation V${versionNum} ("${cleanTitle}") as Final Quotation`,
+              metadata: {
+                action_type: shouldUnmark ? 'quote_unfinal' : 'quote_final',
+                actor_name: actor,
+                quotation_id: quotationId,
+                version: versionNum,
+                title: cleanTitle,
+                logged_at: now
+              }
+            });
+          }
+        } catch (_) {}
       })()
     ]);
 
     clearLeadSummaryCache();
-
-    // Audit logging into live_logs
-    try {
-      const actor = body.actor_name || 'Studio Admin';
-      const versionNum = finalDoc?.lead_version || finalDoc?.version || body.version || 1;
-      const rawTitle = finalDoc?.title || finalDoc?.content_json?.designName || finalDoc?.content_json?.title || clientName || 'Quotation';
-      const cleanTitle = (rawTitle && !rawTitle.startsWith('FW-') && rawTitle !== 'Wedding - Design 1')
-        ? rawTitle
-        : `${clientName || 'Quotation'} - Quotation V${versionNum}`;
-
-      let logWsId = currentLead?.workspace_id;
-      if (!isValidUUID(logWsId)) {
-        const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
-        logWsId = prof?.id;
-      }
-      if (isValidUUID(logWsId)) {
-        await supabaseAdmin.from('live_logs').insert({
-          workspace_id: logWsId,
-          lead_id: leadId,
-          event_type: 'lead_activity',
-          message: shouldUnmark 
-            ? `${actor} unfinalized Quotation V${versionNum} ("${cleanTitle}")`
-            : `${actor} marked Quotation V${versionNum} ("${cleanTitle}") as Final Quotation`,
-          metadata: {
-            action_type: shouldUnmark ? 'quote_unfinal' : 'quote_final',
-            actor_name: actor,
-            quotation_id: quotationId,
-            version: versionNum,
-            title: cleanTitle,
-            logged_at: now
-          }
-        });
-      }
-    } catch (_) {}
 
     if (shouldUnmark) {
       return NextResponse.json({

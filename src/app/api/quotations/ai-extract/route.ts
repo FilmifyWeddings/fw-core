@@ -11,7 +11,9 @@ import {
   detectPreWeddingNegation,
   detectSpecialValueIntent,
   resolveStudioFunctionName,
-  buildScopedShortcutPromptHints
+  buildScopedShortcutPromptHints,
+  analyzeScopedShortcutsAndCrewOverrides,
+  hasCustomAllDeliverablesShortcut
 } from '@/lib/ai-quotation-extractor';
 import { DEFAULT_EVENT_TYPES, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
@@ -309,10 +311,21 @@ async function performAiExtraction(contextData: any, baseDoc: any, studioSetting
     expandedNotes += `\n\n[SCOPED STUDIO SHORTCUT & DELIVERABLE ANALYSIS — STRICTLY OBEY PER-EVENT SCOPE]:\n${scopedPromptHints}`;
   }
 
-  // If user says "all deliverables" or "all deliverables add" or "सभी डिलीवरेबल्स":
+  // Check if user says "all deliverables" AND verify whether studio owner configured a custom "all deliverables" shortcut!
+  const studioEventNamesRaw: string[] = (Array.isArray(contextData.studioEventTypes) ? contextData.studioEventTypes : [])
+    .map((e: any) => (typeof e === 'string' ? e : e?.name || '').trim())
+    .filter(Boolean);
+  const shortcutCheck = analyzeScopedShortcutsAndCrewOverrides(
+    userNotes,
+    studioAiRules?.shortcuts || [],
+    studioEventNamesRaw,
+    studioSettings?.defaultFunctions || [],
+    contextData.studioCrewRoles || []
+  );
+  const hasCustomAllShortcut = hasCustomAllDeliverablesShortcut(shortcutCheck.shortcutMatches);
   const isAllDeliverablesSpoken = /\b(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)\b/i.test(userNotes);
 
-  if (isAllDeliverablesSpoken) {
+  if (isAllDeliverablesSpoken && !hasCustomAllShortcut) {
     if (studioDeliverables.length > 0) {
       const allDelivTitles = studioDeliverables.map((d: any) => typeof d === 'string' ? d : d.title).filter(Boolean);
       expandedNotes += `\n[FULL STUDIO DELIVERABLES CATALOG REQUESTED ("all deliverables")]:\n- Include all of: ${allDelivTitles.join(', ')}`;
@@ -416,15 +429,18 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
     - "2 दिन बाद" / "2 days later" / "परसों" => + 2 days!
     - "एक दिन पहले" / "पिछले दिन" / "previous day" / "day before" => - 1 day!
     - "उसी दिन" / "सेम डे" / "same day" => exact same date (+0 days)!
-- SEPARATE FUNCTION CARDS BY DEFAULT vs EXPLICIT COMBINED CARDS (CRITICAL!):
-  * By default, ALWAYS create a SEPARATE function card in functionsPage.items for EVERY ceremony/event mentioned — EVEN IF two ceremonies fall on the SAME date! Each card gets its own name, date, and crew requirements.
-  * Example ("दोनों में"): "Wedding 10 November को है और उसके अगले दिन Haldi है, दोनों में 1 Traditional Photographer चाहिए"
-    => MUST produce TWO SEPARATE cards:
-       1) { name: "${sampleFunc2}", date: "10 - Nov - 2026", requirements: [{ name: "Traditional Photographer", qty: 1 }] }
-       2) { name: "${sampleFunc1}", date: "11 - Nov - 2026", requirements: [{ name: "Traditional Photographer", qty: 1 }] }
-  * Same-date SEPARATE example: "10 Nov सुबह Haldi में 1 Traditional Photographer और शाम को Wedding में 2 Candid Photographer"
-    => MUST produce TWO SEPARATE cards (both on "10 - Nov - 2026") with their own separate crew!
-  * EXPLICIT COMBINATION EXCEPTION: ONLY combine ceremonies into a single "${sampleFunc2} + ${sampleFunc1}" card when the user EXPLICITLY says they are together / combined into one day/function (e.g. "Wedding और Haldi एक ही दिन पे है", "Haldi + Sangeet एक साथ में", "combine Haldi and Sangeet on same card").
+- COMBINED SAME-DAY CARDS BY DEFAULT vs SEPARATE CARDS (CRITICAL!):
+  * Whenever 2 or more ceremonies are mentioned together on the SAME day/clause WITHOUT separate per-event timings (morning/evening or clock times), WITHOUT separate venues, WITHOUT different per-event crews, and WITHOUT explicit split words ("alag alag", "अलग अलग कार्ड बनाओ", "separate cards"), COMBINE them into ONE card joined with " + " (e.g. "${sampleFunc1} + ${resolveStudioFunctionName('Sangeet', studioEventNamesList)}" or "${sampleFunc1} + ${resolveStudioFunctionName('Mehendi', studioEventNamesList)}")!
+  * Combined Example 1: "10 तारीख को हल्दी और संगीत है" -> ONE card: { name: "${sampleFunc1} + ${resolveStudioFunctionName('Sangeet', studioEventNamesList)}" }.
+  * Combined Example 2: "15 December ko Haldi aur Mehendi hai, isme Standard Crew rahega" -> ONE card: { name: "${sampleFunc1} + ${resolveStudioFunctionName('Mehendi', studioEventNamesList)}", date: "15 - Dec - 2026" } with Standard Crew.
+  * SEPARATE CARDS CASES: Create separate cards in functionsPage.items ONLY when:
+    1. User explicitly asks to separate/split ("अलग अलग कार्ड बनाओ", "alag alag", "separate cards"): e.g. "10 Nov Haldi aur Sangeet hai, alag alag card banao" -> TWO cards (${sampleFunc1}, ${resolveStudioFunctionName('Sangeet', studioEventNamesList)}).
+    2. Ceremonies are on DIFFERENT dates or relative days ("अगले दिन", "next day"): e.g. "10 Nov Wedding aur uske agle din Haldi" -> TWO cards.
+    3. Different morning/evening/clock times ("सुबह Haldi और शाम को Wedding").
+    4. Different venues or different per-event crews ("Haldi mein 1 Candid aur Sangeet mein Premium Crew").
+- LOCATION EXTRACTION (cover.locationName & function location):
+  * ALWAYS extract spoken location/venue cleanly into cover.locationName (strip Hindi fillers like "ki hai", "me hai", "par hai": "Location Delhi ki hai" -> "Delhi", "Dwarka hai" -> "Dwarka").
+  * If user says "Saare events same venue par hain" / "same venue", put the extracted location on EVERY function card too. NEVER copy any example city like Mumbai unless actually mentioned!
 - TIMINGS & TIMES:
   * Convert times to standard 12-hour format with AM/PM (e.g. startTime: "11:00 AM", endTime: "11:00 PM").
   * If no explicit clock time was stated, keep startTime: "" and endTime: "".
@@ -492,7 +508,7 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
     "groomName": "Sagar",
     "brideName": "Riddhi",
     "eventType": "Wedding",
-    "locationName": "Mumbai"
+    "locationName": ""
   },
   "shootDetails": {
     "visible": false,
@@ -510,7 +526,7 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
         "dateNotFixed": false,
         "startTime": "",
         "endTime": "",
-        "location": "Mumbai",
+        "location": "",
         "requirements": [
           { "name": "Traditional Photographer", "qty": 1 }
         ],
@@ -523,7 +539,7 @@ POPULATE THIS EXACT SCHEMA WITH ACTUAL EXTRACTED CLIENT DATA:
         "dateNotFixed": false,
         "startTime": "",
         "endTime": "",
-        "location": "Mumbai",
+        "location": "",
         "requirements": [
           { "name": "Traditional Photographer", "qty": 1 }
         ],

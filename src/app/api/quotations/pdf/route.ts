@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 import { createClient } from '@supabase/supabase-js';
-import { renderQuotationToHTML, getEmbeddedCustomFontsBase64CSS } from '@/lib/pdf-html-generator';
+import { renderQuotationToHTML } from '@/lib/pdf-html-generator';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -12,6 +12,86 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 });
+
+// Bounded in-memory image Base64 cache + in-flight request deduplication (per Node worker)
+const gPdf = globalThis as any;
+const IMAGE_DATA_URI_CACHE: Map<string, string> =
+  gPdf.__scPdfImageCache || (gPdf.__scPdfImageCache = new Map<string, string>());
+const IMAGE_INFLIGHT_MAP: Map<string, Promise<string>> =
+  gPdf.__scPdfImageInflight || (gPdf.__scPdfImageInflight = new Map<string, Promise<string>>());
+
+function cacheImageDataUri(key: string, dataUri: string) {
+  if (!dataUri.startsWith('data:')) return;
+  if (IMAGE_DATA_URI_CACHE.size >= 80) {
+    const firstKey = IMAGE_DATA_URI_CACHE.keys().next().value;
+    if (firstKey) IMAGE_DATA_URI_CACHE.delete(firstKey);
+  }
+  IMAGE_DATA_URI_CACHE.set(key, dataUri);
+}
+
+async function getWarmPdfBrowser(): Promise<any> {
+  if (gPdf.__scPdfBrowser && gPdf.__scPdfBrowser.connected) {
+    return gPdf.__scPdfBrowser;
+  }
+  if (gPdf.__scPdfBrowserPromise) {
+    return gPdf.__scPdfBrowserPromise;
+  }
+
+  gPdf.__scPdfBrowserPromise = (async () => {
+    const puppeteer = (await import('puppeteer-core')).default;
+    const defaultLaunchArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-web-security',
+      '--font-render-hinting=none',
+      ...(process.platform !== 'win32' ? ['--single-process'] : [])
+    ];
+
+    let executablePath = await getChromiumExecutablePath();
+    let chromiumArgs = defaultLaunchArgs;
+
+    if (!executablePath && process.platform !== 'win32') {
+      try {
+        const chromium = (await import('@sparticuz/chromium')).default;
+        const sparticuzPath = await chromium.executablePath();
+        if (sparticuzPath) {
+          executablePath = sparticuzPath;
+          chromiumArgs = [...chromium.args, '--font-render-hinting=none'];
+        }
+      } catch (e) {
+        console.warn('[PDF Server Pipeline] @sparticuz/chromium fallback notice:', e);
+      }
+    }
+
+    const launched = await puppeteer.launch({
+      args: chromiumArgs,
+      defaultViewport: {
+        width: 794,
+        height: 1123,
+        deviceScaleFactor: 2
+      },
+      executablePath: executablePath || undefined,
+      headless: true
+    });
+
+    launched.on?.('disconnected', () => {
+      if (gPdf.__scPdfBrowser === launched) {
+        gPdf.__scPdfBrowser = null;
+      }
+    });
+
+    gPdf.__scPdfBrowser = launched;
+    return launched;
+  })();
+
+  try {
+    return await gPdf.__scPdfBrowserPromise;
+  } finally {
+    gPdf.__scPdfBrowserPromise = null;
+  }
+}
 
 async function getChromiumExecutablePath(): Promise<string | undefined> {
   const fs = await import('fs');
@@ -52,37 +132,85 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
 async function fetchAndInlineImageServer(url: string): Promise<string> {
   if (!url || typeof url !== 'string' || url.startsWith('data:')) return url;
 
-  let fetchUrl = url;
-  if (fetchUrl.startsWith('//')) {
-    fetchUrl = 'https:' + fetchUrl;
-  } else if (fetchUrl.startsWith('/')) {
-    fetchUrl = 'https://test.studiocore.in' + fetchUrl;
-  }
+  const cached = IMAGE_DATA_URI_CACHE.get(url);
+  if (cached) return cached;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const inflight = IMAGE_INFLIGHT_MAP.get(url);
+  if (inflight) return inflight;
 
-  try {
-    const res = await fetch(fetchUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const contentType = res.headers.get('content-type') || 'image/jpeg';
-      const arrayBuffer = await res.arrayBuffer();
-      const base64 = Buffer.from(arrayBuffer).toString('base64');
-      return `data:${contentType};base64,${base64}`;
+  const work = (async (): Promise<string> => {
+    // 1. Local public/ disk fast-path (<2ms vs 3500ms external HTTP call)
+    if (url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/_next/')) {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const relClean = decodeURIComponent(url.split('?')[0]).replace(/^\/+/, '');
+        const publicRoot = path.resolve(process.cwd(), 'public');
+        const diskPath = path.resolve(publicRoot, relClean);
+        if (diskPath.startsWith(publicRoot) && fs.existsSync(diskPath) && fs.statSync(diskPath).isFile()) {
+          const ext = path.extname(diskPath).toLowerCase();
+          const mimeMap: Record<string, string> = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.webp': 'image/webp',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml'
+          };
+          const mime = mimeMap[ext] || 'image/jpeg';
+          const buf = fs.readFileSync(diskPath);
+          if (buf.length <= 4 * 1024 * 1024) {
+            const dataUri = `data:${mime};base64,${buf.toString('base64')}`;
+            cacheImageDataUri(url, dataUri);
+            return dataUri;
+          }
+        }
+      } catch (_) {}
     }
-  } catch (err) {
-    clearTimeout(timeoutId);
-    console.warn('[PDF Pipeline Inliner] Skipping slow image:', fetchUrl);
-  }
 
-  return url;
+    let fetchUrl = url;
+    if (fetchUrl.startsWith('//')) {
+      fetchUrl = 'https:' + fetchUrl;
+    } else if (fetchUrl.startsWith('/')) {
+      fetchUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://test.studiocore.in') + fetchUrl;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    try {
+      const res = await fetch(fetchUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') || 'image/jpeg';
+        const arrayBuffer = await res.arrayBuffer();
+        const buf = Buffer.from(arrayBuffer);
+        if (buf.length <= 4 * 1024 * 1024) {
+          const dataUri = `data:${contentType};base64,${buf.toString('base64')}`;
+          cacheImageDataUri(url, dataUri);
+          return dataUri;
+        }
+      }
+    } catch (_) {
+      clearTimeout(timeoutId);
+      console.warn('[PDF Pipeline Inliner] Skipping slow image:', fetchUrl);
+    }
+
+    return url;
+  })();
+
+  IMAGE_INFLIGHT_MAP.set(url, work);
+  try {
+    return await work;
+  } finally {
+    IMAGE_INFLIGHT_MAP.delete(url);
+  }
 }
 
 async function deepInlineAllImagesServer(obj: any): Promise<any> {
@@ -163,7 +291,7 @@ export async function POST(req: NextRequest) {
   console.log('[PDF Server Pipeline] Origin:', origin);
   console.log('[PDF Server Pipeline] User-Agent:', userAgent);
 
-  let browser: any = null;
+  let page: any = null;
   try {
     // STAGE 2: Payload Parsing & Payload Size Diagnostics
     console.log('[PDF Server Pipeline] STAGE 2: Request Payload Parsing');
@@ -291,74 +419,30 @@ export async function POST(req: NextRequest) {
 
     console.log('[PDF Server Pipeline] Generated Standalone HTML Payload (Length:', fullHTML.length, 'bytes)');
 
-    // STAGE 4: Puppeteer Launch
-    console.log('[PDF Server Pipeline] STAGE 4: Puppeteer Launch');
-    const puppeteer = (await import('puppeteer-core')).default;
-
-    const defaultLaunchArgs = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--single-process',
-      '--disable-gpu',
-      '--disable-web-security',
-      '--font-render-hinting=none'
-    ];
-
-    let executablePath = await getChromiumExecutablePath();
-    let chromiumArgs = defaultLaunchArgs;
-
-    if (!executablePath && process.platform !== 'win32') {
-      try {
-        const chromium = (await import('@sparticuz/chromium')).default;
-        const sparticuzPath = await chromium.executablePath();
-        if (sparticuzPath) {
-          executablePath = sparticuzPath;
-          chromiumArgs = [...chromium.args, '--font-render-hinting=none'];
-        }
-      } catch (e) {
-        console.warn('[PDF Server Pipeline] @sparticuz/chromium fallback notice:', e);
-      }
-    }
-
-    console.log('[PDF Server Pipeline] Chromium Executable Path:', executablePath || 'Default Search');
-
-    browser = await puppeteer.launch({
-      args: chromiumArgs,
-      defaultViewport: {
-        width: 794,
-        height: 1123,
-        deviceScaleFactor: 2
-      },
-      executablePath: executablePath || undefined,
-      headless: true
-    });
+    // STAGE 4: Warm Persistent Chromium Acquisition
+    console.log('[PDF Server Pipeline] STAGE 4: Acquiring Warm Chromium Instance');
+    const browser = await getWarmPdfBrowser();
 
     // STAGE 5: Page Render & Fonts Lock
     console.log('[PDF Server Pipeline] STAGE 5: Page Render & Fonts Lock');
-    const page = await browser.newPage();
+    page = await browser.newPage();
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
 
-    // Track pending network requests to diagnose slow or hanging mobile resources
-    const pendingRequests = new Set<string>();
-    page.on('request', (req: any) => pendingRequests.add(req.url()));
-    page.on('requestfinished', (req: any) => pendingRequests.delete(req.url()));
-    page.on('requestfailed', (req: any) => pendingRequests.delete(req.url()));
-
-    // Set DOM content with domcontentloaded (instant < 50ms) to prevent mobile networkidle0 timeout
+    // Set DOM content with domcontentloaded (< 50ms) and bounded font/image readiness
     try {
-      await page.setContent(fullHTML, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.setContent(fullHTML, { waitUntil: 'domcontentloaded', timeout: 15000 });
     } catch (e: any) {
-      console.warn('[PDF Server Pipeline] setContent Warning (Pending Requests:', Array.from(pendingRequests), '):', e.message);
-    }
-
-    if (pendingRequests.size > 0) {
-      console.log('[PDF Server Pipeline] Pending Network Requests Before Render:', Array.from(pendingRequests));
+      console.warn('[PDF Server Pipeline] setContent Warning:', e.message);
     }
 
     await page.evaluate(async () => {
       if (document.fonts && document.fonts.ready) {
-        try { await document.fonts.ready; } catch (e) {}
+        try {
+          await Promise.race([
+            document.fonts.ready,
+            new Promise((resolve) => setTimeout(resolve, 1500))
+          ]);
+        } catch (e) {}
       }
 
       const images = Array.from(document.querySelectorAll('img'));
@@ -385,8 +469,6 @@ export async function POST(req: NextRequest) {
     });
 
     const pdfBuffer = new Uint8Array(rawBuffer);
-    await browser.close();
-    browser = null;
 
     const durationMs = Date.now() - startTime;
     console.log('[PDF Server Pipeline] STAGE 7: PDF Response Delivered');
@@ -411,8 +493,8 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     const durationMs = Date.now() - startTime;
     console.error('[PDF Server Pipeline ERROR] Duration:', durationMs, 'ms Exception:', err);
-    if (browser) {
-      try { await browser.close(); } catch {}
+    if (gPdf.__scPdfBrowser && !gPdf.__scPdfBrowser.connected) {
+      gPdf.__scPdfBrowser = null;
     }
     return NextResponse.json({
       error: 'Server PDF Pipeline Failure',
@@ -420,6 +502,10 @@ export async function POST(req: NextRequest) {
       detail: err.message || 'Internal Server Error',
       durationMs: durationMs
     }, { status: 500 });
+  } finally {
+    if (page) {
+      try { await page.close(); } catch {}
+    }
   }
 }
 

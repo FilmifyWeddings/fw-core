@@ -23,11 +23,22 @@ export async function GET(
     const url = new URL(req.url);
     const isPrint = url.searchParams.get('print') === 'true';
 
-    const { data: doc } = await supabaseAdmin
-      .from('quotation_documents')
-      .select('content_json')
-      .eq('template_id', id)
-      .maybeSingle();
+    const isIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const { data: doc } = isIdUuid
+      ? await supabaseAdmin
+          .from('quotation_documents')
+          .select('content_json')
+          .or(`template_id.eq.${id},id.eq.${id}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : await supabaseAdmin
+          .from('quotation_documents')
+          .select('content_json')
+          .eq('template_id', id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
     const documentData = doc?.content_json || { templateId: id };
     let html = renderQuotationToHTML(documentData);
