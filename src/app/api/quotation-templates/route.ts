@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 
     const isAdmin = isSuperAdmin || (userEmail?.toLowerCase() === 'sushantnawale700@gmail.com');
     const shouldBypassCache = searchParams.get('refresh') === 'true' || req.headers.get('cache-control') === 'no-cache';
-    const cacheKey = `${effectiveUserId || 'anon'}_${isAdmin ? 'admin' : 'user'}`;
+    const cacheKey = `${effectiveUserId || 'anon'}_${workspaceIdParam || 'none'}_${isAdmin ? 'admin' : 'user'}`;
 
     if (!shouldBypassCache && serverTemplatesCache.has(cacheKey)) {
       const entry = serverTemplatesCache.get(cacheKey)!;
@@ -38,20 +38,55 @@ export async function GET(req: NextRequest) {
     }
 
     let activeDefaultId: string | null = null;
-    if (effectiveUserId) {
-      try {
-        const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(effectiveUserId);
-        if (userRec?.user?.user_metadata?.default_template_id) {
-          activeDefaultId = userRec.user.user_metadata.default_template_id;
-        }
-      } catch (err) {}
+    const candidateIdSet = new Set<string>();
+    const cleanId = (val: unknown) => {
+      const s = String(val || '').trim();
+      return /^[a-zA-Z0-9_-]{4,64}$/.test(s) && s !== 'demo_user' ? s : '';
+    };
+    const safeEffectiveId = cleanId(effectiveUserId);
+    const safeWsParam = cleanId(workspaceIdParam);
+    if (safeEffectiveId) candidateIdSet.add(safeEffectiveId);
+
+    // Run auth metadata, studio tenant lookup, and active system template query concurrently
+    const [userRecRes, profileRes, memberRes, sysTmplRes] = await Promise.all([
+      safeEffectiveId
+        ? supabaseAdmin.auth.admin.getUserById(safeEffectiveId).catch(() => ({ data: null }))
+        : Promise.resolve({ data: null }),
+      safeEffectiveId
+        ? supabaseAdmin.from('profiles').select('workspace_id').eq('id', safeEffectiveId).maybeSingle()
+        : Promise.resolve({ data: null }),
+      safeEffectiveId
+        ? supabaseAdmin.from('workspace_members').select('workspace_id').eq('user_id', safeEffectiveId)
+        : Promise.resolve({ data: null }),
+      supabaseAdmin
+        .from('quotation_templates')
+        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+        .eq('id', 'FW-USER-SJ05RN')
+        .limit(1),
+    ]);
+
+    if (userRecRes?.data?.user?.user_metadata?.default_template_id) {
+      activeDefaultId = userRecRes.data.user.user_metadata.default_template_id;
+    }
+    const profileWs = cleanId((profileRes as any)?.data?.workspace_id);
+    if (profileWs) candidateIdSet.add(profileWs);
+    const memberRows = Array.isArray((memberRes as any)?.data) ? (memberRes as any).data : [];
+    for (const m of memberRows) {
+      const mWs = cleanId(m?.workspace_id);
+      if (mWs) candidateIdSet.add(mWs);
+    }
+    // Allow workspace_id query param if caller is unauthenticated fallback or authorized owner/member/admin
+    if (safeWsParam && (!userId || isAdmin || candidateIdSet.has(safeWsParam))) {
+      candidateIdSet.add(safeWsParam);
     }
 
+    const candidateIds = Array.from(candidateIdSet);
     let validTemplates: any[] = [];
 
-    // 1. Fetch Studio's Own Created Quotation Templates
+    // 1. Fetch Studio's Own Created Quotation Templates across authorized studio/owner IDs
     let userTemplates: any[] = [];
-    if (effectiveUserId) {
+    if (candidateIds.length > 0) {
+      const idList = candidateIds.join(',');
       const { data: uTmpls, error: uErr } = await supabaseAdmin
         .from('quotation_templates')
         .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
@@ -59,7 +94,7 @@ export async function GET(req: NextRequest) {
         .not('id', 'ilike', 'FW-Q-%')
         .not('id', 'ilike', 'FW-L-%')
         .eq('is_system_template', false)
-        .or(`workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}`)
+        .or(`workspace_id.in.(${idList}),user_id.in.(${idList})`)
         .order('is_default', { ascending: false })
         .order('updated_at', { ascending: false });
 
@@ -67,13 +102,8 @@ export async function GET(req: NextRequest) {
       userTemplates = uTmpls || [];
     }
 
-    // 2. Fetch The Single Authoritative System Template (FW-USER-SJ05RN / "Premium")
-    const { data: activeSysTmpls, error: sysErr } = await supabaseAdmin
-      .from('quotation_templates')
-      .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
-      .eq('id', 'FW-USER-SJ05RN')
-      .limit(1);
-
+    // 2. Active System Template (FW-USER-SJ05RN / "Premium") already fetched in parallel above
+    const { data: activeSysTmpls, error: sysErr } = sysTmplRes;
     if (sysErr) console.warn('[Quotation Templates] system template fetch warning:', sysErr.message);
 
     const seen = new Set<string>();

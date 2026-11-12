@@ -2368,7 +2368,14 @@ function StudioCoreAiryBuilderContent() {
   const latestDataRef = useRef<any>(data);
   const isDirtyRef = useRef<boolean>(false);
   const isSaveInFlightRef = useRef<boolean>(false);
+  const lastSaveOkRef = useRef<boolean>(true);
   const pendingSaveTimeoutRef = useRef<any>(null);
+  const saveFeedbackTimerRef = useRef<any>(null);
+  const [saveFeedback, setSaveFeedback] = useState<{
+    type: 'saving' | 'saved' | 'error';
+    title: string;
+    subtitle?: string;
+  } | null>(null);
   const flushSaveRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   // Synchronously sync latestDataRef on every React state update
@@ -3894,10 +3901,12 @@ function StudioCoreAiryBuilderContent() {
       if (!saveRes.ok) {
         const errJson = await saveRes.json().catch(() => ({}));
         console.warn(`[Autosave] Save status ${saveRes.status}:`, errJson?.error);
+        lastSaveOkRef.current = false;
         setAutoSaveStatus('Offline / Retrying');
         return;
       }
 
+      lastSaveOkRef.current = true;
       const resJson = await saveRes.json();
       if (resJson.version) {
         currentVersionRef.current = resJson.version;
@@ -4072,6 +4081,7 @@ function StudioCoreAiryBuilderContent() {
       }
     } catch (err) {
       console.warn('[Autosave Notice]:', err);
+      lastSaveOkRef.current = false;
       setAutoSaveStatus('Offline / Retrying');
     } finally {
       isSaveInFlightRef.current = false;
@@ -4083,6 +4093,12 @@ function StudioCoreAiryBuilderContent() {
     if (pendingSaveTimeoutRef.current) {
       clearTimeout(pendingSaveTimeoutRef.current);
       pendingSaveTimeoutRef.current = null;
+    }
+    if (isSaveInFlightRef.current) {
+      for (let i = 0; i < 40; i++) {
+        if (!isSaveInFlightRef.current) break;
+        await new Promise((r) => setTimeout(r, 125));
+      }
     }
     await triggerRevisionSave(force);
   };
@@ -4156,14 +4172,57 @@ function StudioCoreAiryBuilderContent() {
   const grandTotal = calc.netTotal;
   const subtotal = calc.gross;
 
+  const showCenteredFeedback = (feedback: { type: 'saving' | 'saved' | 'error'; title: string; subtitle?: string }, durationMs?: number) => {
+    if (saveFeedbackTimerRef.current) {
+      clearTimeout(saveFeedbackTimerRef.current);
+      saveFeedbackTimerRef.current = null;
+    }
+    setSaveFeedback(feedback);
+    if (durationMs && durationMs > 0) {
+      saveFeedbackTimerRef.current = setTimeout(() => {
+        setSaveFeedback(null);
+      }, durationMs);
+    }
+  };
+
   const handleManualSave = async () => {
+    showCenteredFeedback({
+      type: 'saving',
+      title: 'Saving Quotation...',
+      subtitle: 'Syncing your changes to studio cloud',
+    });
     try {
-      await flushSaveImmediately();
-      alert('Quotation proposal saved to your workspace!');
+      await flushSaveImmediately(true);
+      if (lastSaveOkRef.current) {
+        showCenteredFeedback(
+          {
+            type: 'saved',
+            title: 'Quotation Saved',
+            subtitle: 'All updates are safely synced to your workspace',
+          },
+          1600
+        );
+      } else {
+        showCenteredFeedback(
+          {
+            type: 'error',
+            title: 'Could Not Sync to Cloud',
+            subtitle: 'Draft saved locally. Please check your connection and try again.',
+          },
+          2800
+        );
+      }
     } catch (err: any) {
       console.error('Manual save failed:', err);
-      alert(err?.message || 'Save failed. Please check your internet connection.');
       setAutoSaveStatus('Offline / Retrying');
+      showCenteredFeedback(
+        {
+          type: 'error',
+          title: 'Save Failed',
+          subtitle: err?.message || 'Please check your internet connection.',
+        },
+        2800
+      );
     }
   };
 
@@ -6005,7 +6064,7 @@ function StudioCoreAiryBuilderContent() {
 
   if (!isCanonicalLoaded && !isPreseededForRoute && !isDataReady) {
     return (
-      <div className="h-screen w-screen bg-[#FDFBF7] flex flex-col items-center justify-center space-y-4 select-none">
+      <div className="h-screen w-full max-w-full bg-[#FDFBF7] flex flex-col items-center justify-center space-y-4 select-none overflow-hidden">
         <div className="relative">
           <div className="w-12 h-12 border-3 border-amber-500/20 border-t-amber-600 rounded-full animate-spin" />
           <div className="absolute inset-0 flex items-center justify-center">
@@ -6028,8 +6087,52 @@ function StudioCoreAiryBuilderContent() {
   );
 
   return (
-    <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 font-sans flex flex-col overflow-hidden selection:bg-black selection:text-white relative">
+    <div className="h-screen w-full max-w-full bg-[#EBECEF] text-zinc-900 font-sans flex flex-col overflow-hidden selection:bg-black selection:text-white relative">
       
+      {/* ── CENTERED ANIMATED SAVE & SHARE FEEDBACK MODAL ── */}
+      <AnimatePresence>
+        {saveFeedback && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => saveFeedback.type !== 'saving' && setSaveFeedback(null)}
+            className="fixed inset-0 z-[100050] flex items-center justify-center p-4 bg-black/35 backdrop-blur-[2px]"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 8 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 340 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-xs rounded-2xl bg-zinc-950/95 text-white border border-zinc-800 shadow-2xl px-6 py-5 flex flex-col items-center text-center gap-2.5"
+            >
+              <div className={`w-11 h-11 rounded-full flex items-center justify-center ${
+                saveFeedback.type === 'saved'
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                  : saveFeedback.type === 'error'
+                  ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                  : 'bg-zinc-800 text-zinc-200 border border-zinc-700'
+              }`}>
+                {saveFeedback.type === 'saving' ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : saveFeedback.type === 'saved' ? (
+                  <CheckCircle2 className="w-5 h-5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5" />
+                )}
+              </div>
+              <div className="text-sm font-extrabold tracking-tight">{saveFeedback.title}</div>
+              {saveFeedback.subtitle && (
+                <p className="text-[11px] font-medium text-zinc-400 leading-relaxed">
+                  {saveFeedback.subtitle}
+                </p>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── SLEEK PDF TOAST NOTIFICATION ── */}
       <AnimatePresence>
         {pdfToastMessage && (
@@ -6230,15 +6333,15 @@ function StudioCoreAiryBuilderContent() {
 
       {/* ── TOP HEADER BAR ── */}
       {!isPublicPreview && (
-        <header className="min-h-11 bg-white border-b border-zinc-200 px-2 sm:px-3 flex items-center justify-between gap-1.5 shrink-0 z-50 shadow-xs no-print">
-          <div className="flex items-center gap-1.5 shrink min-w-0">
+        <header className="min-h-11 w-full max-w-full min-w-0 bg-white border-b border-zinc-200 px-3 sm:px-4 flex items-center justify-between gap-2 shrink-0 z-50 shadow-xs no-print">
+          <div className="flex items-center gap-2 shrink min-w-0 flex-1">
             <input
               type="text"
               value={data.designName}
               onChange={(e) => { setData({ ...data, designName: e.target.value }); }}
-              className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[90px] sm:max-w-[130px] lg:max-w-[180px] truncate"
+              className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 w-full max-w-[140px] sm:max-w-[200px] lg:max-w-[260px] truncate min-w-0"
             />
-            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border hidden md:inline-block shrink-0 ${
+            <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border hidden md:inline-block shrink-0 ${
               isAiRefining
                 ? 'text-purple-700 bg-purple-50 border-purple-200 animate-pulse'
                 : hasUnsavedChanges
@@ -6278,28 +6381,19 @@ function StudioCoreAiryBuilderContent() {
             </button>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
+          {/* Action Buttons — Sleek Icon-Only Cohesive Theme */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
             <button
               type="button"
-              onClick={() => setAiModalOpen(true)}
-              className="px-2 sm:px-2.5 py-1 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-sm hover:shadow active:scale-95 shrink-0"
-              title="Create & Refine Quotation with AI"
-            >
-              <Sparkles className="w-3 h-3 text-amber-300 animate-pulse" />
-              <span className="hidden xl:inline">Create with AI</span>
-              <span className="xl:hidden">AI</span>
-            </button>
-
-            <button
               onClick={() => {
                 const previewUrl = `/workspace/quotations/builder/templet/${templateId || 'templet'}?preview=public`;
                 window.open(previewUrl, '_blank');
               }}
-              className="px-2 sm:px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-sm hover:shadow active:scale-95 hidden lg:flex shrink-0"
-              title="Preview Template"
+              className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-black text-white border border-zinc-700/70 transition-all flex items-center justify-center cursor-pointer shadow-sm hover:shadow active:scale-95 shrink-0"
+              title="Preview Quotation"
+              aria-label="Preview Quotation"
             >
-              <Eye className="w-3 h-3 stroke-[2.5]" /> <span className="hidden xl:inline">Preview</span>
+              <Eye className="w-3.5 h-3.5 stroke-[2.2]" />
             </button>
 
             <button
@@ -6310,7 +6404,14 @@ function StudioCoreAiryBuilderContent() {
                 try {
                   if (navigator.clipboard && navigator.clipboard.writeText) {
                     await navigator.clipboard.writeText(shareUrl);
-                    alert(`Public quotation link copied to clipboard!\n\n${shareUrl}\n\nAnyone with this link can view the proposal without logging in.`);
+                    showCenteredFeedback(
+                      {
+                        type: 'saved',
+                        title: 'Public Link Copied',
+                        subtitle: 'Share this link directly with your client',
+                      },
+                      1800
+                    );
                   } else {
                     prompt('Copy public quotation link:', shareUrl);
                   }
@@ -6318,35 +6419,41 @@ function StudioCoreAiryBuilderContent() {
                   prompt('Copy public quotation link:', shareUrl);
                 }
               }}
-              className="px-2 sm:px-2.5 py-1 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-sm hover:shadow active:scale-95 shrink-0"
+              className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-black text-white border border-zinc-700/70 transition-all flex items-center justify-center cursor-pointer shadow-sm hover:shadow active:scale-95 shrink-0"
               title="Share Public Proposal Link"
+              aria-label="Share Public Proposal Link"
             >
-              <Share2 className="w-3 h-3 stroke-[2.5]" /> <span className="hidden xl:inline">Share</span>
+              <Share2 className="w-3.5 h-3.5 stroke-[2.2]" />
             </button>
 
             <button
               type="button"
               onClick={handleClientDownloadPdf}
               disabled={downloadingPdf}
-              className="px-2 sm:px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-sm hover:shadow active:scale-95 disabled:opacity-50 shrink-0"
-              title="Download High-Res PDF"
+              className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-black text-white border border-zinc-700/70 transition-all flex items-center justify-center cursor-pointer shadow-sm hover:shadow active:scale-95 disabled:opacity-50 shrink-0"
+              title={downloadingPdf ? 'Exporting PDF...' : 'Download High-Res PDF'}
+              aria-label="Download High-Res PDF"
             >
               {downloadingPdf ? (
-                <RefreshCw className="w-3 h-3 animate-spin text-white" />
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <Download className="w-3 h-3 stroke-[2.5]" />
+                <Download className="w-3.5 h-3.5 stroke-[2.2]" />
               )}
-              <span className="hidden sm:inline">{downloadingPdf ? 'Exporting...' : 'PDF'}</span>
-              <span className="sm:hidden">{downloadingPdf ? '...' : 'PDF'}</span>
             </button>
 
             <button
+              type="button"
               onClick={handleManualSave}
               disabled={saving}
-              className="px-2.5 sm:px-3 py-1 rounded-full bg-zinc-900 hover:bg-black text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50 shrink-0"
-              title="Save Quotation"
+              className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-black text-white border border-zinc-700/70 transition-all flex items-center justify-center cursor-pointer shadow-sm hover:shadow active:scale-95 disabled:opacity-50 shrink-0"
+              title={saving ? 'Saving...' : 'Save Quotation'}
+              aria-label="Save Quotation"
             >
-              <Save className="w-3.5 h-3.5 text-amber-400 shrink-0" /> <span>{saving ? '...' : 'Save'}</span>
+              {saving ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5 stroke-[2.2]" />
+              )}
             </button>
 
             <button
@@ -6366,8 +6473,9 @@ function StudioCoreAiryBuilderContent() {
                 } catch (_) {}
                 router.push('/workspace/quotations');
               }}
-              className="p-1 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-0.5 cursor-pointer shrink-0"
+              className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-0.5 cursor-pointer shrink-0"
               title="Close Builder"
+              aria-label="Close Builder"
             >
               <X className="w-4 h-4" />
             </button>
@@ -6376,7 +6484,7 @@ function StudioCoreAiryBuilderContent() {
       )}
 
       {/* ── MAIN WORKSPACE VIEWPORT ── */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex min-w-0 overflow-hidden relative">
         
         {/* DESKTOP SIDEBAR PANEL (>= 768px) */}
         {!isPublicPreview && (
@@ -6388,13 +6496,13 @@ function StudioCoreAiryBuilderContent() {
         {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS */}
         <main 
           ref={mainContainerRef}
-          className="flex-1 bg-[#EBECEF] p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start pb-28 md:pb-12"
+          className="flex-1 min-w-0 bg-[#EBECEF] p-2 sm:p-8 overflow-y-auto overflow-x-auto block pb-28 md:pb-12"
         >
           
           {/* Scaled Continuous Canvas Container Wrapper */}
           <div 
             id="quotation-canvas-container"
-            className="proposal-canvas-container flex flex-col items-center gap-0 transition-transform duration-200 origin-top"
+            className="proposal-canvas-container flex flex-col items-center gap-0 transition-transform duration-200 origin-top mx-auto"
             style={{ 
               transform: `scale(${zoomScale})`, 
               transformOrigin: 'top center',

@@ -380,6 +380,7 @@ export function LeadDrawerQuotationsTab({
           quotationId: q.template_id,
           leadId: lead.id,
           unmark,
+          reSyncCards: !unmark,
           version: q.version,
           actor_name: session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Studio Admin'
         })

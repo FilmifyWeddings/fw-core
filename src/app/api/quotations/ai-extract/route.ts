@@ -27,17 +27,26 @@ export const maxDuration = 60; // 60 seconds timeout for AI generation
  */
 export async function POST(req: NextRequest) {
   try {
-    const { userId, userEmail } = await resolveRequestUser(req);
+    const { userId, isSuperAdmin } = await resolveRequestUser(req);
     const body = await req.json().catch(() => ({}));
     const { leadId, quotationId, explicitTemplateId, selectedTemplateId, currentDocument, additionalNotes } = body;
 
+    const isAuthenticatedUser = Boolean(userId && userId !== 'demo_user');
     let workspaceId = body.workspaceId || userId;
-    const [{ data: profile }, { data: matchedLead }] = await Promise.all([
-      supabaseAdmin
-        .from('profiles')
-        .select('id, workspace_id, workspace_name')
-        .eq('id', userId)
-        .maybeSingle(),
+    const [{ data: profile }, { data: memberships }, { data: matchedLead }] = await Promise.all([
+      isAuthenticatedUser
+        ? supabaseAdmin
+            .from('profiles')
+            .select('id, workspace_id, workspace_name')
+            .eq('id', userId)
+            .maybeSingle()
+        : Promise.resolve({ data: null } as any),
+      isAuthenticatedUser
+        ? supabaseAdmin
+            .from('workspace_members')
+            .select('workspace_id')
+            .eq('user_id', userId)
+        : Promise.resolve({ data: null } as any),
       leadId && leadId !== 'draft'
         ? supabaseAdmin
             .from('leads')
@@ -47,15 +56,31 @@ export async function POST(req: NextRequest) {
         : Promise.resolve({ data: null } as any),
     ]);
 
-    if (!body.workspaceId) {
-      workspaceId = profile?.workspace_id || profile?.id || userId;
-    }
+    const authorizedWsSet = new Set<string>(
+      [
+        userId,
+        profile?.id,
+        profile?.workspace_id,
+        ...(Array.isArray(memberships) ? memberships.map((m: any) => m?.workspace_id) : []),
+      ].filter((id): id is string => Boolean(id && id !== 'demo_user'))
+    );
 
-    // 1. Fetch Lead or Synthesize from Document
+    const canAccessWorkspace = (ws?: string | null): boolean => {
+      if (!ws) return false;
+      if (!isAuthenticatedUser || isSuperAdmin) return true;
+      return authorizedWsSet.has(ws);
+    };
+
+    const requestedWsId = canAccessWorkspace(body.workspaceId) ? body.workspaceId : null;
+    workspaceId = requestedWsId || profile?.workspace_id || profile?.id || userId;
+
+    // 1. Fetch Lead or Synthesize from Document (only trust lead.workspace_id if authorized)
     let lead: any = null;
     if (matchedLead) {
       lead = matchedLead;
-      if (matchedLead.workspace_id) workspaceId = matchedLead.workspace_id;
+      if (matchedLead.workspace_id && canAccessWorkspace(matchedLead.workspace_id)) {
+        workspaceId = matchedLead.workspace_id;
+      }
     }
 
     if (!lead) {
@@ -70,15 +95,16 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // 2 & 3. Resolve existing/template doc + Studio Settings, Event Types, Crew Roles in PARALLEL
+    // 2 & 3. Resolve existing/template doc + ALWAYS fetch authoritative DB Studio Settings for authenticated users
+    // (never skip DB lookup due to stale client body.studioSettings, and enforce strict multi-tenant isolation!)
     const candidateWsIds = Array.from(new Set([
       workspaceId,
       profile?.workspace_id,
       profile?.id,
       userId,
-      body.workspaceId,
-      lead?.workspace_id
-    ].filter(Boolean)));
+      canAccessWorkspace(matchedLead?.workspace_id) ? matchedLead?.workspace_id : null,
+      requestedWsId,
+    ].filter((id): id is string => Boolean(id && id !== 'demo_user'))));
 
     const hasValidClientDoc = Boolean(
       currentDocument &&
@@ -88,6 +114,10 @@ export async function POST(req: NextRequest) {
     const hasClientSettings = Boolean(body.studioSettings && body.studioSettings.aiRules);
     const hasClientEvents = Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0;
     const hasClientRoles = Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0;
+
+    const shouldQuerySettingsFromDb = candidateWsIds.length > 0 && (isAuthenticatedUser || !hasClientSettings);
+    const shouldQueryEventsFromDb = candidateWsIds.length > 0 && (isAuthenticatedUser || !hasClientEvents);
+    const shouldQueryRolesFromDb = candidateWsIds.length > 0 && (isAuthenticatedUser || !hasClientRoles);
 
     const resolveDocPromise = async () => {
       if (quotationId) {
@@ -124,13 +154,14 @@ export async function POST(req: NextRequest) {
 
     const [resolvedDoc, settingsRes, eventsRes, rolesRes] = await Promise.all([
       resolveDocPromise().catch(() => currentDocument || DEFAULT_AIRY_PROPOSAL),
-      !hasClientSettings && candidateWsIds.length > 0
+      shouldQuerySettingsFromDb
         ? supabaseAdmin
             .from('workspace_quotation_settings')
-            .select('workspace_id, settings')
+            .select('workspace_id, settings, updated_at')
             .in('workspace_id', candidateWsIds)
+            .order('updated_at', { ascending: false })
         : Promise.resolve({ data: null } as any),
-      !hasClientEvents && candidateWsIds.length > 0
+      shouldQueryEventsFromDb
         ? supabaseAdmin
             .from('workspace_event_types')
             .select('workspace_id, id, name, category, display_order')
@@ -138,7 +169,7 @@ export async function POST(req: NextRequest) {
             .order('display_order', { ascending: true })
             .order('name', { ascending: true })
         : Promise.resolve({ data: null } as any),
-      !hasClientRoles && candidateWsIds.length > 0
+      shouldQueryRolesFromDb
         ? supabaseAdmin
             .from('master_crew_roles')
             .select('workspace_id, id, name, short_code, category, display_order')
@@ -154,8 +185,8 @@ export async function POST(req: NextRequest) {
     const metaPayload = lead.raw_meta_payload || {};
     const commentsText = Array.isArray(lead.comments) ? lead.comments.map((c: any) => c.text || '').join('\n') : '';
 
-    let studioSettings: any = body.studioSettings || null;
-    if (!hasClientSettings && Array.isArray(settingsRes?.data)) {
+    let studioSettings: any = null;
+    if (Array.isArray(settingsRes?.data)) {
       for (const cWsId of candidateWsIds) {
         const hit = settingsRes.data.find((r: any) => r.workspace_id === cWsId && r.settings && typeof r.settings === 'object');
         if (hit) {
@@ -164,11 +195,12 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+    if (!studioSettings && (!isAuthenticatedUser || hasClientSettings)) {
+      studioSettings = body.studioSettings || null;
+    }
 
     let studioEventTypes: any[] = [];
-    if (hasClientEvents) {
-      studioEventTypes = body.studioEventTypes.filter((e: any) => typeof e === 'string' || String(e?.category || '').toLowerCase() !== 'ritual');
-    } else if (Array.isArray(eventsRes?.data)) {
+    if (Array.isArray(eventsRes?.data)) {
       for (const cWsId of candidateWsIds) {
         const matched = eventsRes.data.filter((e: any) => e.workspace_id === cWsId && String(e?.category || '').toLowerCase() !== 'ritual');
         if (matched.length > 0) {
@@ -177,12 +209,13 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+    if (studioEventTypes.length === 0 && hasClientEvents) {
+      studioEventTypes = body.studioEventTypes.filter((e: any) => typeof e === 'string' || String(e?.category || '').toLowerCase() !== 'ritual');
+    }
     if (studioEventTypes.length === 0) studioEventTypes = DEFAULT_EVENT_TYPES;
 
     let studioCrewRoles: any[] = [];
-    if (hasClientRoles) {
-      studioCrewRoles = body.studioCrewRoles;
-    } else if (Array.isArray(rolesRes?.data)) {
+    if (Array.isArray(rolesRes?.data)) {
       for (const cWsId of candidateWsIds) {
         const matched = rolesRes.data.filter((r: any) => r.workspace_id === cWsId);
         if (matched.length > 0) {
@@ -190,6 +223,9 @@ export async function POST(req: NextRequest) {
           break;
         }
       }
+    }
+    if (studioCrewRoles.length === 0 && hasClientRoles) {
+      studioCrewRoles = body.studioCrewRoles;
     }
     if (studioCrewRoles.length === 0) studioCrewRoles = DEFAULT_CREW_ROLES;
 
@@ -399,13 +435,14 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
   "requirements": [ { "name": string, "qty": number } ]
 - Map all spoken Indian/English crew roles strictly to the Studio's Official Crew Roles Dictionary above (e.g. "Traditional Photographer", "Traditional Videographer", "Candid Photographer", "Cinematographer", "Drone Pilot", "Semi Cinematic", "Semi Standard", "Reel Creator").
 - CRITICAL PER-EVENT CREW LOCK: If one event mentions a shortcut/preset like "Standard Crew" (e.g. "Wedding mein Standard Crew") AND another event specifies its own crew or restrictive phrase ("Haldi mein bas 1 Traditional Photographer aur alag crew" / "Haldi needs only 1 Traditional Photographer"), NEVER copy or leak Standard Crew onto Haldi! Obey every [SCOPED STUDIO SHORTCUT] & [EXPLICIT PER-EVENT CREW LOCK] annotation verbatim!
+- NOTES FIELD MANDATE (CRITICAL): Keep "notes": "" (empty string) on EVERY event card unless the user explicitly spoke a specific shoot instruction or timing remark (e.g. "2 Hours Duration Coverage", "Bride entry 6 PM"). NEVER copy shortcut trigger names ("Standard Crew", "Premium Crew", "Gold Package", etc.) or generic crew names into "notes"!
 
 4. DELIVERABLES (deliverablesPage):
 - selectedItems: Array of genuine photography/video deliverable strings ONLY:
-  a) Matching Studio Official Deliverables Catalog items (or ALL catalog items when user says "all deliverables add" / "ऑल डिलीवरेबल्स").
+  a) Matching Studio Official Deliverables Catalog items (or ALL catalog items when user says "all deliverables add" / "all deliverables add करना" / "ऑल डिलीवरेबल्स").
   b) Deliverables mapped by any [STUDIO TRIGGER ... -> Deliverables: ...] annotation.
   c) Genuine custom or counted deliverables explicitly spoken in speech/notes — preserve exact counts! E.g. "500 edited photos" / "500 एडिटेड फोटो", "5 Instagram Reels" / "5 रील", "1 Pendrive" / "1 पेनड्राइव", "2 Photo Albums" / "2 एल्बम", "1 Cinematic Teaser Video" / "टीज़र", "Save The Date Video", "Same Day Edit".
-- STRICT SANITIZATION: NEVER put conversational Hindi/Hinglish prose or pricing fragments into selectedItems (e.g. NEVER output "Jo Quotation Mujhe Unko Share Karna Hai Wo 3" or "000 Ka Hai Usme" or spoken budget sentences!).
+- STRICT SANITIZATION: NEVER put voice command triggers ("All Deliverables Add", "All Deliverables Add करना", "Add Karna") or conversational Hindi/Hinglish prose or pricing fragments into selectedItems (e.g. NEVER output "Jo Quotation Mujhe Unko Share Karna Hai Wo 3" or "000 Ka Hai Usme" or "all deliverables add करना"!).
 - If a [STUDIO TRIGGER] specifies Deliverables OR user explicitly mentions specific deliverables, include ONLY those items (do NOT pad with unrequested template sample items!).
 - If NO deliverables are mentioned and NO [STUDIO TRIGGER] specifies Deliverables, return an empty array [].
 - NEVER drop spoken counted deliverables! Note: "5 Reels" / "5 Instagram reels" is a deliverable in deliverablesPage.selectedItems, NOT a Reel Creator crew member unless user asked for Reel Creator crew.

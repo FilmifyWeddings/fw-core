@@ -277,21 +277,23 @@ export async function POST(req: NextRequest) {
 
     // 4. Synchronize workspace cards if the lead is ALREADY in the booked stage OR if reSyncCards is explicitly requested
     const isAlreadyBooked = Boolean(
-      currentLead?.stage === 'booked' ||
+      (currentLead as any)?.stage === 'booked' ||
       currentLead?.status === 'booked' ||
       (currentLead?.status && String(currentLead.status).toLowerCase().includes('book')) ||
       (bookedStageId && currentLead?.stage_id === bookedStageId)
     );
 
-    const shouldReSyncCards = body.reSyncCards === true || isAlreadyBooked;
+    const shouldReSyncCards = body.reSyncCards !== false || isAlreadyBooked;
+    let syncResult: any = null;
 
     if (shouldReSyncCards) {
       try {
-        await syncBookedLeadOrFinalQuotation({
+        syncResult = await syncBookedLeadOrFinalQuotation({
           leadId,
           quotationId,
           workspaceId: currentLead?.workspace_id || userId,
           forceBookedStatus: false,
+          allowCreateCards: true,
           supabaseClient: supabaseAdmin
         });
         clearLeadSummaryCache();
@@ -302,9 +304,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: shouldReSyncCards 
-        ? 'Final Quotation set and synchronized with workspace cards (team assignments preserved)!' 
-        : 'Final Quotation locked! Workspace cards will be created when client is confirmed & booked in CRM.',
+      syncedModules: Boolean(syncResult?.success),
+      workspaceClientId: syncResult?.workspaceClientId || null,
+      message: shouldReSyncCards
+        ? 'Final Quotation confirmed and synced across Clients, Finance, Bookings, Post-Production & Storage!'
+        : 'Final Quotation locked!',
       quotationId,
       coupleName: clientName,
       stage_id: isAlreadyBooked ? bookedStageId : undefined

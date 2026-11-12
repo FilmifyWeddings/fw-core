@@ -1443,52 +1443,102 @@ export async function deleteQuotationCrewRole(
 // QUOTATION SETTINGS (DELIVERABLES, SPECIAL ADDONS, PAID ADDONS, DEFAULT FUNCTIONS)
 // ==============================================================================
 
+function normalizeWorkspaceQuotationSettingsPayload(s: any): WorkspaceQuotationSettings {
+  const src = s && typeof s === 'object' ? s : {};
+  return {
+    deliverables: Array.isArray(src.deliverables) && src.deliverables.length > 0 ? src.deliverables : DEFAULT_QUOTATION_DELIVERABLES,
+    specialAddons: Array.isArray(src.specialAddons) && src.specialAddons.length > 0 ? src.specialAddons : DEFAULT_QUOTATION_SPECIAL_ADDONS,
+    paidAddons: Array.isArray(src.paidAddons) && src.paidAddons.length > 0 ? src.paidAddons : DEFAULT_QUOTATION_PAID_ADDONS,
+    defaultFunctions: Array.isArray(src.defaultFunctions) && src.defaultFunctions.length > 0 ? src.defaultFunctions : DEFAULT_QUOTATION_FUNCTIONS,
+    requirements: Array.isArray(src.requirements) && src.requirements.length > 0 ? src.requirements : DEFAULT_PRE_WEDDING_REQUIREMENTS,
+    preWeddingDeliverables: Array.isArray(src.preWeddingDeliverables) && src.preWeddingDeliverables.length > 0 ? src.preWeddingDeliverables : DEFAULT_PRE_WEDDING_DELIVERABLES,
+    durationSlots: Array.isArray(src.durationSlots) && src.durationSlots.length > 0 ? src.durationSlots : DEFAULT_DURATION_SLOTS,
+    paymentSteps: Array.isArray(src.paymentSteps) && src.paymentSteps.length > 0 ? src.paymentSteps : DEFAULT_QUOTATION_PAYMENT_STEPS,
+    pdfTheme: src.pdfTheme || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.pdfTheme,
+    quoteTerms: src.quoteTerms || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.quoteTerms,
+    contractClauses: src.contractClauses || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.contractClauses,
+    quoteExpiryDays: src.quoteExpiryDays ?? DEFAULT_WORKSPACE_QUOTATION_SETTINGS.quoteExpiryDays,
+    currency: src.currency || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.currency,
+    aiRules: src.aiRules && typeof src.aiRules === 'object'
+      ? {
+          customInstructions: typeof src.aiRules.customInstructions === 'string' ? src.aiRules.customInstructions : '',
+          shortcuts: Array.isArray(src.aiRules.shortcuts) ? src.aiRules.shortcuts : [],
+        }
+      : { customInstructions: '', shortcuts: [] },
+  };
+}
+
 /**
- * Fetch full workspace quotation settings from Supabase with localStorage & defaults fallback
+ * Fetch full workspace quotation settings from authoritative API / Supabase
+ * with strict per-studio tenant isolation.
  */
 export async function fetchWorkspaceQuotationSettings(workspaceId?: string): Promise<WorkspaceQuotationSettings> {
   const wsId = await resolveWorkspaceId(workspaceId);
   let sessionUserId = '';
+  let accessToken = '';
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user?.id) sessionUserId = session.user.id;
+    if (session?.access_token) accessToken = session.access_token;
   } catch (_) {}
 
-  const candidateIds = Array.from(new Set([wsId, sessionUserId, workspaceId].filter((id): id is string => Boolean(id && isUuid(id)))));
+  const effectiveId = isUuid(wsId) ? wsId : (isUuid(sessionUserId) ? sessionUserId : '');
   let result: WorkspaceQuotationSettings = { ...DEFAULT_WORKSPACE_QUOTATION_SETTINGS };
 
-  try {
-    for (const candId of candidateIds) {
-      const { data, error } = await supabase
-        .from('workspace_quotation_settings')
-        .select('settings')
-        .eq('workspace_id', candId)
-        .maybeSingle();
+  if (typeof window !== 'undefined' && effectiveId) {
+    try {
+      // Remove legacy shared non-tenant key if present so studios never bleed across accounts
+      if (localStorage.getItem('wg_quote_settings_default')) {
+        localStorage.removeItem('wg_quote_settings_default');
+      }
+    } catch (_) {}
+  }
 
-      if (!error && data?.settings && typeof data.settings === 'object') {
-        const s = data.settings;
-        result = {
-          deliverables: Array.isArray(s.deliverables) && s.deliverables.length > 0 ? s.deliverables : DEFAULT_QUOTATION_DELIVERABLES,
-          specialAddons: Array.isArray(s.specialAddons) && s.specialAddons.length > 0 ? s.specialAddons : DEFAULT_QUOTATION_SPECIAL_ADDONS,
-          paidAddons: Array.isArray(s.paidAddons) && s.paidAddons.length > 0 ? s.paidAddons : DEFAULT_QUOTATION_PAID_ADDONS,
-          defaultFunctions: Array.isArray(s.defaultFunctions) && s.defaultFunctions.length > 0 ? s.defaultFunctions : DEFAULT_QUOTATION_FUNCTIONS,
-          requirements: Array.isArray(s.requirements) && s.requirements.length > 0 ? s.requirements : DEFAULT_PRE_WEDDING_REQUIREMENTS,
-          preWeddingDeliverables: Array.isArray(s.preWeddingDeliverables) && s.preWeddingDeliverables.length > 0 ? s.preWeddingDeliverables : DEFAULT_PRE_WEDDING_DELIVERABLES,
-          durationSlots: Array.isArray(s.durationSlots) && s.durationSlots.length > 0 ? s.durationSlots : DEFAULT_DURATION_SLOTS,
-          paymentSteps: Array.isArray(s.paymentSteps) && s.paymentSteps.length > 0 ? s.paymentSteps : DEFAULT_QUOTATION_PAYMENT_STEPS,
-          pdfTheme: s.pdfTheme || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.pdfTheme,
-          quoteTerms: s.quoteTerms || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.quoteTerms,
-          contractClauses: s.contractClauses || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.contractClauses,
-          quoteExpiryDays: s.quoteExpiryDays ?? DEFAULT_WORKSPACE_QUOTATION_SETTINGS.quoteExpiryDays,
-          currency: s.currency || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.currency,
-          aiRules: s.aiRules || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.aiRules,
-        };
-        // Cache to localStorage
+  // 1. Primary: Authoritative server API route (bypasses RLS/missing-unique issues & checks ownership)
+  if (typeof window !== 'undefined' && effectiveId) {
+    try {
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch(`/api/workspace/quotation-settings?workspace_id=${encodeURIComponent(effectiveId)}`, {
+        headers,
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const json = await res.json().catch(() => null);
+        if (json?.success && json?.settings) {
+          const normalized = normalizeWorkspaceQuotationSettingsPayload(json.settings);
+          const resolvedOwnerId = isUuid(json.workspaceId) ? json.workspaceId : effectiveId;
+          try {
+            localStorage.setItem(`wg_quote_settings_${resolvedOwnerId}`, JSON.stringify(normalized));
+            if (effectiveId !== resolvedOwnerId) {
+              localStorage.setItem(`wg_quote_settings_${effectiveId}`, JSON.stringify(normalized));
+            }
+          } catch (_) {}
+          return normalized;
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[WorkspaceSettings] API quotation-settings fetch notice:', apiErr);
+    }
+  }
+
+  // 2. Fallback: Direct Supabase query ordered by latest updated_at (strictly scoped to effectiveId)
+  try {
+    if (effectiveId) {
+      const { data: rows, error } = await supabase
+        .from('workspace_quotation_settings')
+        .select('settings, updated_at')
+        .eq('workspace_id', effectiveId)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      const latest = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+      if (!error && latest?.settings && typeof latest.settings === 'object') {
+        result = normalizeWorkspaceQuotationSettingsPayload(latest.settings);
         if (typeof window !== 'undefined') {
-          localStorage.setItem(`wg_quote_settings_${candId}`, JSON.stringify(result));
-          if (wsId && wsId !== candId) {
-            localStorage.setItem(`wg_quote_settings_${wsId}`, JSON.stringify(result));
-          }
+          try {
+            localStorage.setItem(`wg_quote_settings_${effectiveId}`, JSON.stringify(result));
+          } catch (_) {}
         }
         return result;
       }
@@ -1497,17 +1547,14 @@ export async function fetchWorkspaceQuotationSettings(workspaceId?: string): Pro
     console.warn('[WorkspaceSettings] Error fetching workspace_quotation_settings:', err);
   }
 
-  // Fallback to localStorage
-  if (typeof window !== 'undefined') {
+  // 3. Offline fallback ONLY for this exact studio ID (never fall back to shared default across accounts)
+  if (typeof window !== 'undefined' && effectiveId) {
     try {
-      const local = localStorage.getItem(`wg_quote_settings_${wsId || 'default'}`);
+      const local = localStorage.getItem(`wg_quote_settings_${effectiveId}`);
       if (local) {
         const parsed = JSON.parse(local);
         if (parsed && typeof parsed === 'object') {
-          return {
-            ...DEFAULT_WORKSPACE_QUOTATION_SETTINGS,
-            ...parsed
-          };
+          return normalizeWorkspaceQuotationSettingsPayload(parsed);
         }
       }
     } catch (_) {}
@@ -1517,40 +1564,95 @@ export async function fetchWorkspaceQuotationSettings(workspaceId?: string): Pro
 }
 
 /**
- * Save complete workspace quotation settings
+ * Save complete workspace quotation settings to authoritative backend + per-studio cache.
+ * Throws explicitly if persistence fails so UI never shows false success.
  */
 export async function saveAllWorkspaceQuotationSettings(
   workspaceId?: string,
   settings?: Partial<WorkspaceQuotationSettings>
 ): Promise<WorkspaceQuotationSettings> {
   const wsId = await resolveWorkspaceId(workspaceId);
-  const existing = await fetchWorkspaceQuotationSettings(wsId);
-  const updated: WorkspaceQuotationSettings = {
-    ...existing,
-    ...settings
-  };
+  let accessToken = '';
+  let sessionUserId = '';
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) accessToken = session.access_token;
+    if (session?.user?.id) sessionUserId = session.user.id;
+  } catch (_) {}
 
-  // 1. Cache to localStorage immediately
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(`wg_quote_settings_${wsId || 'default'}`, JSON.stringify(updated));
-      window.dispatchEvent(new CustomEvent('workspace_quotation_settings_updated', { detail: updated }));
-    } catch (_) {}
+  const effectiveId = isUuid(wsId) ? wsId : (isUuid(sessionUserId) ? sessionUserId : '');
+  const existing = await fetchWorkspaceQuotationSettings(effectiveId);
+  const updated: WorkspaceQuotationSettings = normalizeWorkspaceQuotationSettingsPayload({
+    ...existing,
+    ...settings,
+  });
+
+  let persisted = false;
+  let resolvedOwnerId = effectiveId;
+
+  // 1. Primary: Authoritative server API route (handles missing UNIQUE index & strict tenant ownership)
+  if (typeof window !== 'undefined' && effectiveId) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
+    const res = await fetch('/api/workspace/quotation-settings', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        workspace_id: effectiveId,
+        settings: updated,
+      }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json?.success) {
+      throw new Error(json?.error || `Failed to save quotation settings (HTTP ${res.status})`);
+    }
+    if (json?.settings) {
+      Object.assign(updated, normalizeWorkspaceQuotationSettingsPayload(json.settings));
+    }
+    if (isUuid(json?.workspaceId)) {
+      resolvedOwnerId = json.workspaceId;
+    }
+    persisted = true;
   }
 
-  // 2. Persist to Supabase
-  try {
-    if (wsId) {
-      await supabase
-        .from('workspace_quotation_settings')
-        .upsert([{
-          workspace_id: wsId,
-          settings: updated,
-          updated_at: new Date().toISOString()
-        }], { onConflict: 'workspace_id' });
+  // 2. Non-browser or fallback direct DB write (safe update-or-insert)
+  if (!persisted && effectiveId) {
+    const now = new Date().toISOString();
+    const { data: existingRows, error: selErr } = await supabase
+      .from('workspace_quotation_settings')
+      .select('workspace_id')
+      .eq('workspace_id', effectiveId)
+      .limit(1);
+
+    if (selErr) {
+      throw new Error(selErr.message || 'Failed to read existing quotation settings');
     }
-  } catch (err) {
-    console.warn('[WorkspaceSettings] Error saving workspace_quotation_settings:', err);
+
+    if (existingRows && existingRows.length > 0) {
+      const { error: updErr } = await supabase
+        .from('workspace_quotation_settings')
+        .update({ settings: updated, updated_at: now })
+        .eq('workspace_id', effectiveId);
+      if (updErr) throw new Error(updErr.message || 'Failed to update quotation settings');
+    } else {
+      const { error: insErr } = await supabase
+        .from('workspace_quotation_settings')
+        .insert([{ workspace_id: effectiveId, settings: updated, updated_at: now }]);
+      if (insErr) throw new Error(insErr.message || 'Failed to insert quotation settings');
+    }
+  }
+
+  // 3. Cache ONLY under exact studio owner ID and broadcast instant sync event
+  if (typeof window !== 'undefined' && resolvedOwnerId) {
+    try {
+      localStorage.setItem(`wg_quote_settings_${resolvedOwnerId}`, JSON.stringify(updated));
+      if (effectiveId && effectiveId !== resolvedOwnerId) {
+        localStorage.setItem(`wg_quote_settings_${effectiveId}`, JSON.stringify(updated));
+      }
+      window.dispatchEvent(new CustomEvent('workspace_quotation_settings_updated', { detail: updated }));
+    } catch (_) {}
   }
 
   return updated;

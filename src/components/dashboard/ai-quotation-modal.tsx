@@ -138,7 +138,8 @@ export function AiQuotationModal({
     if (typeof window !== 'undefined') {
       try {
         const wsId = lead?.workspace_id || (lead as any)?.raw_payload?.workspace_id;
-        const local = localStorage.getItem(`wg_quote_settings_${wsId || 'default'}`) || localStorage.getItem('wg_quote_settings_default');
+        if (!wsId) return null;
+        const local = localStorage.getItem(`wg_quote_settings_${wsId}`);
         if (local) {
           const parsed = JSON.parse(local);
           if (parsed && typeof parsed === 'object') return parsed;
@@ -280,7 +281,10 @@ export function AiQuotationModal({
       }
       const res = await fetch('/api/ai/polish-speech', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(cachedSess?.token ? { 'Authorization': `Bearer ${cachedSess.token}` } : {})
+        },
         body: JSON.stringify({
           rawText: raw,
           leadName: effectiveLead?.name,
@@ -1680,52 +1684,11 @@ LEAD & CLIENT CONTEXT:
       const instantRes = mapAiOutputToQuotationDocument(instantRaw, baseTemplateDoc || currentDocumentData, instantContext);
       const instantDoc = instantRes.document || instantRes;
 
-      // Resolve Google Gemini extraction before opening Builder so client/couple name
-      // renders accurately from Frame 0 with zero post-navigation flicker.
-      let finalDocToApply = instantDoc;
-      let geminiSucceeded = false;
-      try {
-        let sess = authSessionRef.current;
-        if (!sess?.token) {
-          const { data: { session } } = await supabase.auth.getSession();
-          sess = { token: session?.access_token || '', userId: session?.user?.id || '' };
-          authSessionRef.current = sess;
-        }
-        const aiRes = await fetch('/api/quotations/ai-extract', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${sess.token}`
-          },
-          body: JSON.stringify({
-            leadId: effectiveLead.id,
-            workspaceId: effectiveLead.workspace_id || sess.userId || null,
-            userId: sess.userId || null,
-            quotationId: quotationId || null,
-            explicitTemplateId: activeTemplateId || selectedTemplateId || activeTemplateObj?.id || null,
-            currentDocument: baseTemplateDoc || currentDocumentData || null,
-            additionalNotes: notes,
-            studioSettings,
-            studioEventTypes,
-            studioCrewRoles
-          }),
-          signal: AbortSignal.timeout(12000)
-        });
-        if (aiRes.ok) {
-          const aiJson = await aiRes.json();
-          const extracted = aiJson?.extractedDocument?.document || aiJson?.extractedDocument;
-          if (aiJson?.success && extracted) {
-            finalDocToApply = extracted;
-            geminiSucceeded = true;
-          }
-        }
-      } catch (quickGeminiErr) {
-        console.warn('[AI Modal Quick Create Gemini fallback]:', quickGeminiErr);
-      }
-
-      setExtractedDoc(finalDocToApply);
-      await applyDocAndNavigate(finalDocToApply, {
-        pendingAiNotes: geminiSucceeded ? null : notes,
+      // Open Builder immediately (<50ms) with synchronous client extraction (including spoken couple name,
+      // events, pricing, deliverables & shortcuts), while /api/quotations/ai-extract refines in background!
+      setExtractedDoc(instantDoc);
+      await applyDocAndNavigate(instantDoc, {
+        pendingAiNotes: notes,
         isDirectJson: false
       });
     } catch (err: any) {

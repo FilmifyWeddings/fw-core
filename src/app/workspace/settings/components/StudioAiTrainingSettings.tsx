@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Sparkles,
   Bot,
   Plus,
   Trash2,
@@ -63,15 +62,12 @@ export default function StudioAiTrainingSettings({
     shortcuts: [],
   };
 
-  const [instructions, setInstructions] = useState<string>(aiRules.customInstructions || '');
   const [shortcuts, setShortcuts] = useState<WorkspaceAiShortcut[]>(aiRules.shortcuts || []);
   const [workspaceCrewRoles, setWorkspaceCrewRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
-  const [savingInstructions, setSavingInstructions] = useState(false);
   const [savingShortcuts, setSavingShortcuts] = useState(false);
 
   // Sync local editor state whenever settings load or change externally
   useEffect(() => {
-    setInstructions(settings?.aiRules?.customInstructions || '');
     setShortcuts(Array.isArray(settings?.aiRules?.shortcuts) ? settings.aiRules!.shortcuts! : []);
   }, [settings?.aiRules]);
 
@@ -179,28 +175,6 @@ export default function StudioAiTrainingSettings({
     return combined;
   }, [specialAddonOptions, selectedSpecialAddons]);
 
-  // 1. Save Custom System Prompt Instructions
-  const handleSaveInstructions = async () => {
-    setSavingInstructions(true);
-    try {
-      const updatedAiRules: WorkspaceAiRules = {
-        ...aiRules,
-        customInstructions: instructions.trim(),
-        shortcuts,
-      };
-      const updatedSettings = await saveAllWorkspaceQuotationSettings(workspaceId, {
-        aiRules: updatedAiRules,
-      });
-      onSettingsChange(updatedSettings);
-      onShowToast('✅ Studio AI Rules saved successfully!');
-    } catch (err: any) {
-      console.error('[AI Training] Failed to save instructions:', err);
-      onShowToast('❌ Failed to save Studio AI rules');
-    } finally {
-      setSavingInstructions(false);
-    }
-  };
-
   // 2. Open Add / Edit Shortcut Modal
   const openAddModal = () => {
     setEditingId(null);
@@ -294,6 +268,7 @@ export default function StudioAiTrainingSettings({
     }
 
     setSavingShortcuts(true);
+    const previousShortcuts = [...shortcuts];
     try {
       const newShortcut: WorkspaceAiShortcut = {
         id: editingId || `sc_${Date.now()}`,
@@ -309,23 +284,26 @@ export default function StudioAiTrainingSettings({
         ? shortcuts.map((s) => (s.id === editingId ? newShortcut : s))
         : [...shortcuts, newShortcut];
 
-      setShortcuts(updatedList);
-      setIsModalOpen(false);
-
       const updatedAiRules: WorkspaceAiRules = {
         ...aiRules,
-        customInstructions: instructions.trim(),
+        customInstructions: aiRules.customInstructions || '',
         shortcuts: updatedList,
       };
 
       const updatedSettings = await saveAllWorkspaceQuotationSettings(workspaceId, {
         aiRules: updatedAiRules,
       });
+      const persistedShortcuts = Array.isArray(updatedSettings?.aiRules?.shortcuts)
+        ? updatedSettings.aiRules.shortcuts
+        : updatedList;
+      setShortcuts(persistedShortcuts);
+      setIsModalOpen(false);
       onSettingsChange(updatedSettings);
-      onShowToast(`✅ Shortcut "${cleanTrigger}" saved!`);
+      onShowToast(`✅ Shortcut "${cleanTrigger}" saved & synced!`);
     } catch (err: any) {
+      setShortcuts(previousShortcuts);
       console.error('[AI Training] Failed to save shortcut:', err);
-      onShowToast('❌ Failed to save shortcut');
+      onShowToast(`❌ Failed to save shortcut: ${err?.message || 'Please try again'}`);
     } finally {
       setSavingShortcuts(false);
     }
@@ -334,22 +312,27 @@ export default function StudioAiTrainingSettings({
   // 4. Delete Shortcut
   const handleDeleteShortcut = async (id: string, triggerName: string) => {
     if (!confirm(`Delete trigger shortcut "${triggerName}"?`)) return;
+    const previousShortcuts = [...shortcuts];
     try {
       const updatedList = shortcuts.filter((s) => s.id !== id);
-      setShortcuts(updatedList);
       const updatedAiRules: WorkspaceAiRules = {
         ...aiRules,
-        customInstructions: instructions.trim(),
+        customInstructions: aiRules.customInstructions || '',
         shortcuts: updatedList,
       };
       const updatedSettings = await saveAllWorkspaceQuotationSettings(workspaceId, {
         aiRules: updatedAiRules,
       });
+      const persistedShortcuts = Array.isArray(updatedSettings?.aiRules?.shortcuts)
+        ? updatedSettings.aiRules.shortcuts
+        : updatedList;
+      setShortcuts(persistedShortcuts);
       onSettingsChange(updatedSettings);
       onShowToast(`🗑️ Shortcut "${triggerName}" deleted`);
     } catch (err: any) {
+      setShortcuts(previousShortcuts);
       console.error('[AI Training] Failed to delete shortcut:', err);
-      onShowToast('❌ Failed to delete shortcut');
+      onShowToast(`❌ Failed to delete shortcut: ${err?.message || 'Please try again'}`);
     }
   };
 
@@ -403,105 +386,42 @@ export default function StudioAiTrainingSettings({
   ].filter(Boolean).length;
 
   return (
-    <div className="space-y-8">
-      {/* 1. Header Banner */}
+    <div className="space-y-6">
+      {/* 1. Header Banner (No model provider branding shown) */}
       <div className="rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-6 text-white shadow-md relative overflow-hidden">
         <div className="relative z-10 max-w-3xl space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-bold uppercase tracking-wider">
             <Bot className="w-4 h-4" />
-            <span>Studio AI Quotation Assistant · Google Gemini</span>
+            <span>Studio AI Quotation Assistant</span>
           </div>
-          <h2 className="text-2xl font-black tracking-tight">Train Your Studio AI Model</h2>
+          <h2 className="text-2xl font-black tracking-tight">Voice &amp; Text Shorthand Automation</h2>
           <p className="text-sm font-medium text-amber-50 leading-relaxed">
-            Set global studio instructions and Apple Shortcuts-style voice/text automation triggers.
-            Whenever you speak in the mic or type notes in Create with AI, Google Gemini applies these rules automatically.
+            Set voice and text automation triggers for your studio. Whenever you speak in the mic or type notes in Create with AI, your studio&apos;s triggers apply automatically.
           </p>
         </div>
         <div className="absolute -right-8 -bottom-8 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none" />
       </div>
 
-      {/* 1B. Hinglish Quick Guide: Custom Instructions vs Apple Shortcuts Triggers */}
-      <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3">
+      {/* 1B. Hinglish Quick Guide: Voice & Text Shorthand Triggers */}
+      <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-2.5">
         <div className="flex items-center gap-2 text-amber-950">
           <HelpCircle className="w-4 h-4 text-amber-600 shrink-0" />
           <h3 className="text-sm font-extrabold">
-            AI Training Kaise Kaam Karta Hai? (Simple Hinglish Guide)
+            Voice &amp; Text Triggers Kaise Kaam Karte Hain? (Quick Guide)
           </h3>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div className="bg-white border border-amber-200/80 rounded-xl p-3.5 space-y-1.5">
-            <div className="flex items-center gap-1.5 font-bold text-amber-950">
-              <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>1. Custom Instructions (Hamesha Lagu Hone Wale Rules)</span>
-            </div>
-            <p className="text-zinc-600 leading-relaxed">
-              Ye aapke studio ki <strong>permanent policy</strong> hai jo <strong>har quotation</strong> par automatically apply hoti hai — chahe aap kuch alag bolein ya nahi (jaise: <em>&ldquo;Haldi hamesha subah 10 se 2 hoti hai&rdquo;</em> ya <em>&ldquo;Minimum wedding package ₹85,000 hai&rdquo;</em>).
-            </p>
+        <div className="bg-white border border-orange-200/80 rounded-xl p-3.5 space-y-1.5 text-xs">
+          <div className="flex items-center gap-1.5 font-bold text-amber-950">
+            <Zap className="w-3.5 h-3.5 text-orange-600 shrink-0" />
+            <span>On-Demand Shortcuts (When I Say X → Do Y)</span>
           </div>
-          <div className="bg-white border border-orange-200/80 rounded-xl p-3.5 space-y-1.5">
-            <div className="flex items-center gap-1.5 font-bold text-amber-950">
-              <Zap className="w-3.5 h-3.5 text-orange-600 shrink-0" />
-              <span>2. Voice & Text Shorthand Triggers (When I Say X → Do Y)</span>
-            </div>
-            <p className="text-zinc-600 leading-relaxed">
-              Ye <strong>on-demand shortcuts</strong> hain (Apple Shortcuts ki tarah). Jab aap mic mein koi codeword bolein (jaise <em>&ldquo;standard crew&rdquo;</em> ya <em>&ldquo;gold combo&rdquo;</em>), tabhi uske andar ke <strong>1 ya ek saath multiple / sabhi 4 actions</strong> (Crew + Deliverables + Price + Special Value Add-ons) ek saath apply ho jaate hain!
-            </p>
-          </div>
+          <p className="text-zinc-600 leading-relaxed">
+            Jab aap mic mein apna codeword bolein (jaise <em>&ldquo;standard crew&rdquo;</em> ya <em>&ldquo;premium package&rdquo;</em>), tab uske andar ke <strong>1 ya ek saath multiple actions</strong> (Crew + Deliverables + Price + Special Value Add-ons) us event ya quotation par automatically apply ho jaate hain. Har studio account ke triggers sirf usi studio par kaam karte hain.
+          </p>
         </div>
       </div>
 
-      {/* 2. Custom Studio AI Prompt Rules */}
-      <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between border-b border-amber-100 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-amber-950">
-                Studio AI Custom Instructions (Custom Rules)
-              </h3>
-              <p className="text-xs text-zinc-500">
-                Global guidelines, standard ceremony timings, and studio policies applied to every quotation
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleSaveInstructions}
-            disabled={savingInstructions}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {savingInstructions ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Check className="w-3.5 h-3.5" />
-            )}
-            <span>Save Rules</span>
-          </button>
-        </div>
-
-        <p className="text-xs text-zinc-600">
-          Write instructions in plain English, Hindi, or Hinglish. These instructions are injected directly into Google Gemini whenever you generate a quotation.
-        </p>
-
-        <textarea
-          rows={4}
-          value={instructions}
-          onChange={(e) => setInstructions(e.target.value)}
-          placeholder={`उदा.: \n1. हमारी हल्दी हमेशा सुबह 10:00 AM से 02:00 PM होती है।\n2. जब भी क्लाइंट डेस्टिनेशन वेडिंग बोले, ट्रैवल चार्ज ₹15,000 जोड़ो।\n3. हम अन-एडिटेड रॉ वीडियो क्लाइंट हार्ड ड्राइव में ही देते हैं।\n4. हमारा मिनिमम वेडिंग पैकेज ₹85,000 है।`}
-          className="w-full p-3.5 text-xs font-mono text-zinc-800 bg-amber-50/40 border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition-all leading-relaxed"
-        />
-
-        <div className="flex items-center gap-2 p-3 bg-amber-50/80 rounded-xl text-[11px] text-amber-900 border border-amber-200/50">
-          <HelpCircle className="w-4 h-4 text-amber-600 shrink-0" />
-          <span>
-            <strong>Pro Tip:</strong> When you speak into the mic, Google Gemini prioritizes these instructions above template defaults.
-          </span>
-        </div>
-      </div>
-
-      {/* 3. Apple Shortcuts-Style Voice & Text Trigger Shortcuts */}
+      {/* 2. Voice & Text Trigger Shortcuts */}
       <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-100 pb-3">
           <div className="flex items-center gap-2.5">

@@ -1258,7 +1258,7 @@ export default function SettingsPage() {
     loadWorkspaceSettings();
   }, [loadWorkspaceSettings]);
 
-  // Live 2-way sync: Refresh event types on any cross-module update
+  // Live 2-way sync: Refresh event types & quotation settings on any cross-module update
   useEffect(() => {
     const handleEventsUpdated = async () => {
       const targetWs = effectiveWsId || workspaceId;
@@ -1270,8 +1270,25 @@ export default function SettingsPage() {
         }
       }
     };
+    const handleQuotationSettingsUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail === 'object') {
+        setQuotationSettings(customEvent.detail as WorkspaceQuotationSettings);
+      } else {
+        const targetWs = effectiveWsId || workspaceId;
+        if (targetWs) {
+          fetchWorkspaceQuotationSettings(targetWs)
+            .then((qSettings) => setQuotationSettings(qSettings))
+            .catch(() => {});
+        }
+      }
+    };
     window.addEventListener('workspace_event_types_updated', handleEventsUpdated);
-    return () => window.removeEventListener('workspace_event_types_updated', handleEventsUpdated);
+    window.addEventListener('workspace_quotation_settings_updated', handleQuotationSettingsUpdated);
+    return () => {
+      window.removeEventListener('workspace_event_types_updated', handleEventsUpdated);
+      window.removeEventListener('workspace_quotation_settings_updated', handleQuotationSettingsUpdated);
+    };
   }, [effectiveWsId, workspaceId]);
 
   // Realtime multi-device synchronization via Supabase Realtime Channel

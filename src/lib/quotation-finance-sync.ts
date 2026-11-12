@@ -1275,12 +1275,14 @@ export async function syncBookedLeadOrFinalQuotation({
   quotationId,
   workspaceId: explicitWorkspaceId,
   forceBookedStatus = false,
+  allowCreateCards = false,
   supabaseClient = supabaseAdmin
 }: {
   leadId: string;
   quotationId?: string | null;
   workspaceId?: string | null;
   forceBookedStatus?: boolean;
+  allowCreateCards?: boolean;
   supabaseClient?: any;
 }): Promise<{
   success: boolean;
@@ -1334,6 +1336,7 @@ export async function syncBookedLeadOrFinalQuotation({
         } catch (_) {}
       }
 
+      const canCreateCards = isBookedStage || Boolean(allowCreateCards);
       const workspaceId = lead.workspace_id || explicitWorkspaceId || lead.tenant_id || lead.created_by_user_id || SUPER_ADMIN_ID;
 
       // 2. Fetch Target Quotation (either specified quotationId, or final_quotation_id, or latest quotation)
@@ -1515,7 +1518,7 @@ export async function syncBookedLeadOrFinalQuotation({
           .from('workspace_clients')
           .update(wsClientPayload)
           .eq('id', workspaceClientId);
-      } else if (isBookedStage) {
+      } else if (canCreateCards) {
         // Disambiguate name so multiple clients with the same name are segregated
         const disambiguatedClientName = await getDisambiguatedClientName(supabaseClient, workspaceId, coupleName.trim());
         const { data: newWsClient } = await supabaseClient
@@ -1620,7 +1623,7 @@ export async function syncBookedLeadOrFinalQuotation({
               .delete()
               .in('id', extraIds);
           }
-        } else if (isBookedStage) {
+        } else if (canCreateCards) {
           await supabaseClient
             .from('client_finance_records')
             .insert({
@@ -1668,7 +1671,7 @@ export async function syncBookedLeadOrFinalQuotation({
                 .from('finance_records')
                 .update(legacyFinPayload)
                 .eq('id', existingLegacyFin.id);
-            } else if (isBookedStage) {
+            } else if (canCreateCards) {
               await supabaseClient
                 .from('finance_records')
                 .insert({ ...legacyFinPayload, created_at: now });
@@ -1690,11 +1693,11 @@ export async function syncBookedLeadOrFinalQuotation({
             eventDate,
             mainVenue,
             workspaceClientId,
-            isBookedStage
+            canCreateCards
           );
         }
 
-        if (!targetProjectId && workspaceId && isBookedStage) {
+        if (!targetProjectId && workspaceId && canCreateCards) {
           // Create master project if doesn't exist (strictly match by client_id, never hijack another project)
           let existingProjs: any[] = [];
           if (workspaceClientId) {
@@ -1776,7 +1779,7 @@ export async function syncBookedLeadOrFinalQuotation({
                 .delete()
                 .in('id', dupIds);
             }
-          } else if (isBookedStage) {
+          } else if (canCreateCards) {
             const { data: createdPPP } = await supabaseClient
               .from('post_production_projects')
               .insert({
@@ -1905,7 +1908,7 @@ export async function syncBookedLeadOrFinalQuotation({
           const effectiveWs = isValidUUID(lead.workspace_id) ? lead.workspace_id : (isValidUUID(workspaceId) ? workspaceId : '00000000-0000-0000-0000-000000000000');
           const { data: existingAsset } = await supabaseClient
             .from('storage_project_assets')
-            .select('id, sub_events, assigned_disks, google_drive_backup')
+            .select('id, sub_events, assigned_disks, google_drive_backup, overall_storage_status')
             .eq('workspace_id', effectiveWs)
             .eq('lead_id', leadId)
             .maybeSingle();
@@ -1926,12 +1929,27 @@ export async function syncBookedLeadOrFinalQuotation({
               copied_at: cr.copied_at || null,
               copied_by: cr.copied_by || null,
             }))
+          })) : (quoteSubEvents.length > 0 ? quoteSubEvents.map((se, idx) => ({
+            id: `ev_${idx + 1}_${leadId}`,
+            name: se.event_title || eventType || `Event ${idx + 1}`,
+            date: se.event_date || eventDate || now.split('T')[0],
+            venue: se.venue_name || ((mainVenue && mainVenue !== 'TBD Venue') ? mainVenue : '') || lead.location || '',
+            crew: (se.roles && se.roles.length > 0 ? se.roles : ['Traditional Photographer', 'Cinematographer']).map((roleName: string, cIdx: number) => ({
+              id: `cr_${idx + 1}_${cIdx + 1}_${leadId}`,
+              name: roleName,
+              role: roleName,
+              assigned_card_ids: [],
+              assigned_card_names: [],
+              is_copied: false,
+              copied_at: null,
+              copied_by: null,
+            }))
           })) : [
             {
               id: `ev_main_${leadId}`,
               name: lead.event_type || 'Main Event Photography',
-              date: lead.event_date || now.split('T')[0],
-              venue: lead.location || '',
+              date: eventDate || lead.event_date || now.split('T')[0],
+              venue: ((mainVenue && mainVenue !== 'TBD Venue') ? mainVenue : '') || lead.location || '',
               crew: [
                 {
                   id: `cr_1_${leadId}`,
@@ -1955,26 +1973,46 @@ export async function syncBookedLeadOrFinalQuotation({
                 }
               ]
             }
-          ];
+          ]);
+
+          const hasSavedStorageProgress = Boolean(
+            Array.isArray(existingAsset?.sub_events) &&
+            existingAsset.sub_events.some((ev: any) =>
+              Array.isArray(ev?.crew) &&
+              ev.crew.some((c: any) => c?.is_copied || (Array.isArray(c?.assigned_card_ids) && c.assigned_card_ids.length > 0))
+            )
+          );
 
           const storagePayload: any = {
             workspace_id: effectiveWs,
             lead_id: leadId,
             client_id: workspaceClientId,
             client_name: coupleName.trim(),
-            event_date: lead.event_date || now.split('T')[0],
+            event_date: eventDate || lead.event_date || now.split('T')[0],
             package_amount: financials.final_total_amount || Number(lead.budget || lead.package_amount || 0),
             booking_status: 'booked',
-            sub_events: existingAsset?.sub_events?.length > 0 ? existingAsset.sub_events : normalizedSubEvents,
+            sub_events: hasSavedStorageProgress
+              ? existingAsset.sub_events
+              : (quoteSubEvents.length > 0 ? normalizedSubEvents : (existingAsset?.sub_events?.length > 0 ? existingAsset.sub_events : normalizedSubEvents)),
             assigned_disks: existingAsset?.assigned_disks || [],
             google_drive_backup: existingAsset?.google_drive_backup || {},
             overall_storage_status: existingAsset?.overall_storage_status || 'INGESTING',
             updated_at: now
           };
 
-          await supabaseClient
-            .from('storage_project_assets')
-            .upsert(storagePayload, { onConflict: 'workspace_id,lead_id' });
+          if (existingAsset?.id) {
+            await supabaseClient
+              .from('storage_project_assets')
+              .update(storagePayload)
+              .eq('id', existingAsset.id);
+          } else if (canCreateCards) {
+            await supabaseClient
+              .from('storage_project_assets')
+              .insert({
+                ...storagePayload,
+                created_at: now
+              });
+          }
         } catch (stErr) {
           console.warn('[syncBookedLeadOrFinalQuotation] storage_project_assets sync notice:', stErr);
         }

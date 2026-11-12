@@ -21,6 +21,13 @@ import { getThemeFromKey } from '@/lib/quotation-theme';
 import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { QuotaLimitAlertModal } from '@/components/workspace/QuotaLimitAlertModal';
+import StudioAiTrainingSettings from '@/app/workspace/settings/components/StudioAiTrainingSettings';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
+import {
+  fetchWorkspaceQuotationSettings,
+  WorkspaceQuotationSettings,
+  DEFAULT_WORKSPACE_QUOTATION_SETTINGS,
+} from '@/lib/workspace-settings';
 
 interface SavedQuotation {
   id: string;
@@ -255,6 +262,7 @@ function getSynchronousCachedQuotations(): { items: SavedQuotation[]; hasCache: 
 
 export default function WorkspaceQuotationsGalleryPage() {
   const router = useRouter();
+  const { workspaceId: contextWsId } = useWorkspace();
 
   // Quotation Designs State (0ms Instant Hydration from Memory / LocalStorage)
   const cachedInit = useMemo(() => getSynchronousCachedQuotations(), []);
@@ -265,6 +273,10 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [userEmail, setUserEmail] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(() => !cachedInit.hasCache);
   const [mounted, setMounted] = useState<boolean>(false);
+  const [quotationSettings, setQuotationSettings] = useState<WorkspaceQuotationSettings>(
+    DEFAULT_WORKSPACE_QUOTATION_SETTINGS
+  );
+  const effectiveWsId = contextWsId || (userId && userId !== 'demo_user' ? userId : '');
 
   // Dynamic Data States
   const [activeQuotationId, setActiveQuotationId] = useState<string>('1');
@@ -997,14 +1009,15 @@ export default function WorkspaceQuotationsGalleryPage() {
           } catch {}
         }
 
-        // 1. Fetch user & system quotation templates & user images concurrently in parallel (300ms!)
+        // 1. Fetch user & system quotation templates, gallery images, and Studio AI settings concurrently
         const token = session?.access_token;
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
         if (session?.user?.email) headers['x-user-email'] = session.user.email;
+        const targetWsId = contextWsId || (currentUserId !== 'demo_user' ? currentUserId : '');
 
-        const [res, imgRes] = await Promise.all([
-          fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { 
+        const [res, imgRes, qSettingsRes] = await Promise.all([
+          fetch(`/api/quotation-templates?workspace_id=${encodeURIComponent(targetWsId || currentUserId)}`, { 
             headers,
             signal: AbortSignal.timeout(12000) 
           }).catch(err => {
@@ -1014,9 +1027,16 @@ export default function WorkspaceQuotationsGalleryPage() {
           supabase
             .from('user_gallery_images')
             .select('*')
-            .eq('workspace_id', currentUserId)
-            .order('created_at', { ascending: false })
+            .eq('workspace_id', targetWsId || currentUserId)
+            .order('created_at', { ascending: false }),
+          targetWsId
+            ? fetchWorkspaceQuotationSettings(targetWsId).catch(() => null)
+            : Promise.resolve(null),
         ]);
+
+        if (qSettingsRes) {
+          setQuotationSettings(qSettingsRes);
+        }
 
         if (imgRes?.data) {
           setUserImages(imgRes.data as UserGalleryImage[]);
@@ -1062,13 +1082,6 @@ export default function WorkspaceQuotationsGalleryPage() {
             docsMap[t.id] = docJson;
           }
         });
-
-        // 3. Fetch user quotations from quotations table
-        const { data: qData } = await supabase
-          .from('quotations')
-          .select('id, title, client_name, quotation_number, financials, status, updated_at')
-          .eq('workspace_id', currentUserId)
-          .order('updated_at', { ascending: false });
 
         const filteredTmplData = (tmplData || []).filter((t: any) => {
           if (!t.id) return false;
@@ -1210,7 +1223,24 @@ export default function WorkspaceQuotationsGalleryPage() {
     return () => {
       supabase.removeChannel(realtimeChannel);
     };
-  }, []);
+  }, [contextWsId]);
+
+  useEffect(() => {
+    const handleQuotationSettingsUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail === 'object') {
+        setQuotationSettings(customEvent.detail as WorkspaceQuotationSettings);
+      } else if (effectiveWsId) {
+        fetchWorkspaceQuotationSettings(effectiveWsId)
+          .then((s) => setQuotationSettings(s))
+          .catch(() => {});
+      }
+    };
+    window.addEventListener('workspace_quotation_settings_updated', handleQuotationSettingsUpdate);
+    return () => {
+      window.removeEventListener('workspace_quotation_settings_updated', handleQuotationSettingsUpdate);
+    };
+  }, [effectiveWsId]);
 
   useEffect(() => {
     const handleGalleryUpdate = (e: Event) => {
@@ -1646,6 +1676,21 @@ export default function WorkspaceQuotationsGalleryPage() {
         )}
 
       </div>
+
+      {/* Studio AI Voice & Text Training (Synced directly with Settings -> Quotations -> Studio AI Training) */}
+      {effectiveWsId && effectiveWsId !== 'demo_user' && (
+        <div className="pt-4">
+          <StudioAiTrainingSettings
+            workspaceId={effectiveWsId}
+            settings={quotationSettings}
+            onSettingsChange={(newSettings) => setQuotationSettings(newSettings)}
+            onShowToast={(msg) => {
+              setToastMessage(msg);
+              setTimeout(() => setToastMessage(null), 3500);
+            }}
+          />
+        </div>
+      )}
 
       {/* Saved Quotations List Drawer Modal */}
       <AnimatePresence>

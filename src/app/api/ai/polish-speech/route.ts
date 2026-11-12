@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanVoiceTranscript, enforceLosslessSpeechRetention } from '@/lib/speech-text-cleaner';
 import { supabaseAdmin } from '@/lib/supabase';
+import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { DEFAULT_EVENT_TYPES, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
 export const maxDuration = 30; // 30 seconds server execution timeout
@@ -18,39 +19,65 @@ export const maxDuration = 30; // 30 seconds server execution timeout
  */
 export async function POST(req: NextRequest) {
   try {
+    const { userId: authUserId, isSuperAdmin } = await resolveRequestUser(req);
     const body = await req.json().catch(() => ({}));
     const rawText = String(body.rawText || body.text || '').trim();
     const leadName = String(body.leadName || '').trim();
-    const workspaceId = String(body.workspaceId || '').trim();
+    const requestedWorkspaceId = String(body.workspaceId || '').trim();
+    const isAuthenticatedUser = Boolean(authUserId && authUserId !== 'demo_user');
+    const effectiveUserId = isAuthenticatedUser ? authUserId : String(body.userId || '').trim();
     let studioSettings = body.studioSettings || null;
 
     if (!rawText) {
       return NextResponse.json({ success: false, error: 'No text provided to polish' }, { status: 400 });
     }
 
-    // 1. Fetch Studio Quotation Settings, Event Types & Crew Roles in parallel when missing
-    const candidateWsIds = Array.from(new Set([
-      body.userId,
-      body.ownerId,
-      workspaceId
-    ].filter(Boolean)));
-
-    if (body.userId) {
+    // 1. Verify workspace authorization & ALWAYS fetch fresh DB Studio Quotation Settings for authenticated studios
+    const candidateWsIds: string[] = [];
+    if (effectiveUserId) {
       try {
-        const { data: prof } = await supabaseAdmin
-          .from('profiles')
-          .select('id, workspace_id')
-          .eq('id', String(body.userId))
-          .maybeSingle();
+        const [{ data: prof }, { data: memberships }] = await Promise.all([
+          supabaseAdmin
+            .from('profiles')
+            .select('id, workspace_id')
+            .eq('id', effectiveUserId)
+            .maybeSingle(),
+          supabaseAdmin
+            .from('workspace_members')
+            .select('workspace_id')
+            .eq('user_id', effectiveUserId),
+        ]);
+
+        const authorizedWsSet = new Set<string>(
+          [
+            effectiveUserId,
+            prof?.workspace_id,
+            ...(Array.isArray(memberships) ? memberships.map((m: any) => m?.workspace_id) : []),
+          ].filter((id): id is string => Boolean(id && id !== 'demo_user'))
+        );
+
+        const canAccessRequested =
+          Boolean(requestedWorkspaceId) &&
+          (!isAuthenticatedUser || isSuperAdmin || authorizedWsSet.has(requestedWorkspaceId));
+
+        if (canAccessRequested) candidateWsIds.push(requestedWorkspaceId);
         if (prof?.workspace_id && !candidateWsIds.includes(prof.workspace_id)) {
           candidateWsIds.push(prof.workspace_id);
         }
+        if (effectiveUserId && effectiveUserId !== 'demo_user' && !candidateWsIds.includes(effectiveUserId)) {
+          candidateWsIds.push(effectiveUserId);
+        }
+        if (isSuperAdmin && requestedWorkspaceId && !candidateWsIds.includes(requestedWorkspaceId)) {
+          candidateWsIds.push(requestedWorkspaceId);
+        }
       } catch (_) {}
+    } else if (!isAuthenticatedUser && requestedWorkspaceId) {
+      candidateWsIds.push(requestedWorkspaceId);
     }
 
-    const needSettings = (!studioSettings || !studioSettings.aiRules) && candidateWsIds.length > 0;
-    const needEvents = !(Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0) && candidateWsIds.length > 0;
-    const needRoles = !(Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0) && candidateWsIds.length > 0;
+    const needSettings = candidateWsIds.length > 0 && (isAuthenticatedUser || !studioSettings || !studioSettings.aiRules);
+    const needEvents = candidateWsIds.length > 0 && (isAuthenticatedUser || !(Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0));
+    const needRoles = candidateWsIds.length > 0 && (isAuthenticatedUser || !(Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0));
 
     let studioEventTypes: any[] = Array.isArray(body.studioEventTypes) && body.studioEventTypes.length > 0 ? body.studioEventTypes : [];
     let studioCrewRoles: any[] = Array.isArray(body.studioCrewRoles) && body.studioCrewRoles.length > 0 ? body.studioCrewRoles : [];
@@ -61,8 +88,9 @@ export async function POST(req: NextRequest) {
           needSettings
             ? supabaseAdmin
                 .from('workspace_quotation_settings')
-                .select('workspace_id, settings')
+                .select('workspace_id, settings, updated_at')
                 .in('workspace_id', candidateWsIds)
+                .order('updated_at', { ascending: false })
             : Promise.resolve({ data: null } as any),
           needEvents
             ? supabaseAdmin

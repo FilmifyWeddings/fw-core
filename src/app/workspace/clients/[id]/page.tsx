@@ -1820,7 +1820,8 @@ export default function ClientWorkspaceDetailPage() {
         },
         body: JSON.stringify({
           quotationId: q.template_id,
-          leadId: targetLeadId
+          leadId: targetLeadId,
+          reSyncCards: true
         })
       });
 

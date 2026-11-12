@@ -1049,9 +1049,98 @@ function normalizeDeliverableCountToken(tok: string): number {
 
 const DELIVERABLE_NUM_PREFIX = '(?:(\\d+|पांच\\s*सौ|पाँच\\s*सौ|तीन\\s*सौ|दो\\s*सौ|सौ|एक|दो|तीन|चार|पांच|पाँच|छह|छः|दस|पचास|one|two|three|four|five|six|ten|ek|do|teen|char|paanch|panch)\\s*)';
 
+const DEFAULT_EXTRACTED_DELIVERABLES = [
+  'All Raw Photos & Footage in Hard Drive',
+  'Cinematic Wedding Highlight Film (15-20 Min)',
+  'Cinematic Wedding Teaser (1-2 Min)',
+  '3 Instagram Reels',
+  'Traditional Long Video (2-3 Hours)',
+  'Custom Printed Coffee Table Album'
+];
+
+const BUILTIN_TRIGGER_NOTE_PHRASES = [
+  'standard crew',
+  'premium crew',
+  'basic crew',
+  'classic crew',
+  'luxury crew',
+  'gold crew',
+  'silver crew',
+  'alag crew',
+  'same crew',
+  'separate crew',
+  'different crew',
+  'standard team',
+  'premium team',
+  'स्टैंडर्ड क्रू',
+  'स्टैंडर्ड टीम',
+  'प्रीमियम क्रू',
+  'प्रीमियम टीम',
+  'बेसिक क्रू',
+  'क्लासिक क्रू',
+  'अलग क्रू'
+];
+
+/**
+ * Strips shortcut/crew trigger labels ("Standard Crew", "Premium Crew", custom studio trigger names)
+ * from function card notes so only genuine event instructions/remarks remain.
+ */
+export function sanitizeEventFunctionNotes(rawNotes?: string | null, studioShortcuts: any[] = []): string {
+  let clean = String(rawNotes || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+
+  const triggerPhrases = new Set<string>(BUILTIN_TRIGGER_NOTE_PHRASES);
+  if (Array.isArray(studioShortcuts)) {
+    for (const sc of studioShortcuts) {
+      const trig = String(sc?.trigger || '').trim().toLowerCase();
+      if (trig.length >= 3) triggerPhrases.add(trig);
+    }
+  }
+
+  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const sortedTriggers = Array.from(triggerPhrases).sort((a, b) => b.length - a.length);
+
+  for (const trig of sortedTriggers) {
+    const trigCore = trig.trim().replace(/[.:;,\-–—()]+/g, '');
+    const noteCore = clean.toLowerCase().replace(/[.:;,\-–—()\[\]]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!noteCore || noteCore === trigCore) return '';
+
+    const suffixGroup = '(?:\\s+(?:preset|package|crew|team|setup|tier|option|included|applied|selected|configured))*';
+    const boundaryBefore = '(?:^|(?<![a-zA-Z0-9\\u0900-\\u097F]))';
+    const boundaryAfter = '(?=$|(?![a-zA-Z0-9\\u0900-\\u097F]))';
+
+    const prefixedOrStandaloneRe = new RegExp(
+      `(?:^|[|;,•\\n])\\s*(?:(?:crew|team|preset|package|trigger)\\s*[:\\-–]?\\s*)?${escapeRe(trig)}${suffixGroup}(?=\\s*(?:$|[|;,•\\n()\\-–]))`,
+      'gi'
+    );
+    clean = clean.replace(prefixedOrStandaloneRe, ' ');
+
+    // Also strip standalone or parenthesized trigger mentions like "(Standard Crew)", "Wedding - Standard Crew", or "Standard Crew setup"
+    const parenOrBoundaryRe = new RegExp(
+      `\\(\\s*${escapeRe(trig)}${suffixGroup}\\s*\\)|[-–:]\\s*${escapeRe(trig)}${suffixGroup}${boundaryAfter}|${boundaryBefore}(?:(?:crew|team|preset|package|trigger)\\s*[:\\-–]?\\s*)?${escapeRe(trig)}${suffixGroup}${boundaryAfter}`,
+      'gi'
+    );
+    clean = clean.replace(parenOrBoundaryRe, ' ');
+  }
+
+  clean = clean
+    .replace(/^[\s|;,.\-–—:()]+|[\s|;,.\-–—:()]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!clean) return '';
+  const finalCore = clean.toLowerCase().replace(/[.:;,\-–—()\[\]]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (sortedTriggers.some((t) => finalCore === t || finalCore === `crew ${t}` || finalCore === `${t} preset`)) {
+    return '';
+  }
+
+  return clean;
+}
+
 /**
  * Validates that a deliverable string is a genuine photography/video deliverable item
- * and NOT a conversational Hindi/Hinglish sentence fragment or split currency number ("3", "000 Ka Hai Usme").
+ * and NOT a conversational Hindi/Hinglish sentence fragment, command phrase ("all deliverables add करना"),
+ * or split currency number ("3", "000 Ka Hai Usme").
  */
 export function isValidDeliverableItem(rawItem?: string | null, studioDeliverables: string[] = []): boolean {
   const clean = String(rawItem || '')
@@ -1059,7 +1148,12 @@ export function isValidDeliverableItem(rawItem?: string | null, studioDeliverabl
     .trim();
   if (!clean || clean.length < 3 || clean.length > 95) return false;
 
-  // Always trust exact matches configured in Studio Settings
+  // Reject voice-command meta phrases even before catalog checks
+  if (/(?:all\s*deliverables?(?:\s*add)?|deliverables?\s*add|add\s*deliverables?|all\s*droppers|ऑल\s*डिलीवरेबल्स|सभी\s*डिलीवरेबल्स|सारे\s*डिलीवरेबल्स|saare\s*deliverables)/i.test(clean)) {
+    return false;
+  }
+
+  // Always trust exact matches configured in Studio Settings (excluding command phrases checked above)
   if (studioDeliverables.some((sd) => String(sd || '').trim().toLowerCase() === clean.toLowerCase())) {
     return true;
   }
@@ -1073,8 +1167,13 @@ export function isValidDeliverableItem(rawItem?: string | null, studioDeliverabl
     return false;
   }
 
-  // Reject conversational Hindi / Hinglish / English dictation prose
-  if (/\b(?:quotation|quotion|qution|qoutation|proposal|share|mujhe|mujhko|unko|inko|humein|humko|apne|unke|inke|karna|karo|kardo|karne|karni|bhejna|bhejo|banani|banana|banane|rahega|rahegi|chahiye|lena|dena|dene|bolna|bola|bataya|ka\s+hai|ki\s+hai|ke\s+liye|ke\s+liya|ka\s+package|wo|woh|ye|yeh|jo|usme|usmein|isme|ismein|jisme|jismein|iske|uske|total\s+\d+\s+events?)\b|(?:कोटेशन|प्रपोजल|मुझे|उनको|इनको|हमें|करना|करो|करने|करनी|भेजना|बनानी|बनाना|रहेगा|रहेगी|चाहिए|लेना|देना|बोलना|बोला|बताया|वो|यह|ये|जो|उसमें|उसमे|इसमें|इसमे|जिसमें|जिसमे)/i.test(clean)) {
+  // Reject conversational Hindi / Hinglish / English dictation prose & trailing command verbs
+  if (/\b(?:quotation|quotion|qution|qoutation|proposal|share|mujhe|mujhko|unko|inko|humein|humko|apne|unke|inke|karna|karo|kardo|karne|karni|bhejna|bhejo|banani|banana|banane|rahega|rahegi|chahiye|lena|dena|dene|bolna|bola|bataya|ka\s+hai|ki\s+hai|ke\s+liye|ke\s+liya|ka\s+package|wo|woh|ye|yeh|jo|usme|usmein|isme|ismein|jisme|jismein|iske|uske|total\s+\d+\s+events?|add\s*kar(?:na|o|do|ne)?)\b|(?:कोटेशन|प्रपोजल|मुझे|उनको|इनको|हमें|करना|करो|करने|करनी|भेजना|बनानी|बनाना|रहेगा|रहेगी|चाहिए|लेना|देना|बोलना|बोला|बताया|वो|यह|ये|जो|उसमें|उसमे|इसमें|इसमे|जिसमें|जिसमे|ऐड\s*करना|ऐड\s*करो)/i.test(clean)) {
+    return false;
+  }
+
+  // Reject standalone "Add ..." commands without a clear deliverable count/noun
+  if (/^(?:add|ऐड|include|put|rakhna|keep)\b/i.test(clean)) {
     return false;
   }
 
@@ -1104,6 +1203,12 @@ export function extractDeliverablesFromText(
 
   // Normalize Devanagari digits
   let sanitized = rawText.replace(/[०-९]/g, (d) => String('०१२३४५६७८९'.indexOf(d)));
+
+  // Strip "all deliverables add करना / ऑल् डिलीवरेबल्स" command phrases BEFORE parsing custom clauses
+  sanitized = sanitized.replace(
+    /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverables?\s*(?:add|ऐड)?\s*(?:karna|karo|kardo|karne(?:\s*hain?)?|करना|करो|करने(?:\s*हैं?)?)?|ऑल\s*डिलीवरेबल्स\s*(?:ऐड)?\s*(?:करना|करो)?|सभी\s*डिलीवरेबल्स\s*(?:ऐड)?\s*(?:करना|करो)?|सारे\s*डिलीवरेबल्स\s*(?:ऐड)?\s*(?:करना|करो)?)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi,
+    ' '
+  );
 
   // Strip crew role titles so "Traditional Videographer" / "Reels Creator" NEVER trigger deliverable matches
   sanitized = sanitized.replace(/(?:सोशल\s*मीडिया\s*)?(?:रील्स?\s*क्रिएटर|reels?\s*creator)/gi, ' __CREW_ROLE__ ');
@@ -1275,9 +1380,9 @@ export function extractDeliverablesFromText(
     const protectedClause = delivClauseMatch[1].replace(/(\d),(?=\d)/g, '$1__NCOMMA__');
     const rawTail = protectedClause
       .replace(/^[\s,:\-]+/, '')
-      .replace(/^(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं)?)?|करने\s*(?:हैं|है)?)\s*(?:,|$|\s+)/i, '')
+      .replace(/^(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain?)?|करना|करो|करने(?:\s*हैं?)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं?)?)?|करना|करो|करने\s*(?:हैं|है)?)\s*(?:,|$|\s+)/i, '')
       .replace(/^[\s,:\-]+/, '')
-      .replace(/(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं)?)?|करने\s*(?:हैं|है)?|rakhna|chahiye|dena|रखना|चाहिए|देना)\s*$/i, '')
+      .replace(/(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain?)?|करना|करो|करने(?:\s*हैं?)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं?)?)?|करना|करो|करने\s*(?:हैं|है)?|rakhna|chahiye|dena|रखना|चाहिए|देना)\s*$/i, '')
       .replace(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:budget|बजट|price|प्राइस|package|पैकेज|amount|अमाउंट|cost|discount|ऑफर|offer|advance|एडवांस|gst|total|टोटल|रुपये|lakh|लाख|हजार|₹|quotation|quotion|qution|qoutation|mujhe|mujhko|unko|inko|share\s+karna|मुझे|उनको|इनको).*$/i, '')
       .trim();
 
@@ -1824,6 +1929,9 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
   // strip leaked shortcut/hallucinated roles and restore strictly that event's explicit spoken crew!
   if (functions.length > 0) {
     functions.forEach((fn: any) => {
+      // Never allow shortcut trigger names ("Standard Crew", "Premium Crew", custom triggers) to leak into card notes!
+      fn.notes = sanitizeEventFunctionNotes(fn.notes, studioShortcuts);
+
       const fnKey = resolveStudioFunctionName(fn.name || '', studioEventNames, studioDefaultFunctions).toLowerCase();
       const ov = analysis.eventOverrides.get(fnKey);
       if (!ov) return;
@@ -1847,8 +1955,10 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
   const explicitSpokenDelivs = extractDeliverablesFromText(userNotes, studioDeliverables);
 
   if (!doc.deliverablesPage) doc.deliverablesPage = { selectedItems: [], availableOptions: [] };
-  if (hasAllDelivReq && studioDeliverables.length > 0) {
-    doc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...studioDeliverables], explicitSpokenDelivs, true);
+  if (hasAllDelivReq) {
+    const fullCatalog = studioDeliverables.length > 0 ? studioDeliverables : DEFAULT_EXTRACTED_DELIVERABLES;
+    doc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...fullCatalog], explicitSpokenDelivs, true)
+      .filter((item: string) => isValidDeliverableItem(item, fullCatalog));
   } else {
     let baseSelected = Array.isArray(doc.deliverablesPage.selectedItems)
       ? doc.deliverablesPage.selectedItems.filter((item: string) => isValidDeliverableItem(item, studioDeliverables))
@@ -3083,7 +3193,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
         }
         if (!fn.startTime && matchedDef.startTime) fn.startTime = matchedDef.startTime;
         if (!fn.endTime && matchedDef.endTime) fn.endTime = matchedDef.endTime;
-        if (!fn.notes && matchedDef.notes) fn.notes = matchedDef.notes;
+        if (!fn.notes && matchedDef.notes) fn.notes = sanitizeEventFunctionNotes(matchedDef.notes, studioShortcuts);
       }
     }
 
@@ -3094,6 +3204,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
       ];
     }
 
+    fn.notes = sanitizeEventFunctionNotes(fn.notes, studioShortcuts);
     fn.requirements = finalReqs;
   }
 
@@ -3174,8 +3285,10 @@ export function fallbackHeuristicExtractor(contextData: any) {
   const hasAllDeliverablesRequested = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:all\s*deliverable\s*add|all\s*deliverables\s*add|all\s*deliverables|all\s*deliverable|all\s*droppers|ऑल\s*डिलीवरेबल्स(?:\s*ऐड)?|सभी\s*डिलीवरेबल्स(?:\s*ऐड)?|saare\s*deliverables|सारे\s*डिलीवरेबल्स)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(fullText);
   const spokenDeliverables = extractDeliverablesFromText(notes, studioDeliverables);
 
-  if (hasAllDeliverablesRequested && studioDeliverables.length > 0) {
-    deliverables = mergeDeliverablesSmart([...studioDeliverables], spokenDeliverables, true);
+  if (hasAllDeliverablesRequested) {
+    const fullCatalog = studioDeliverables.length > 0 ? studioDeliverables : DEFAULT_EXTRACTED_DELIVERABLES;
+    deliverables = mergeDeliverablesSmart([...fullCatalog], spokenDeliverables, true)
+      .filter((item) => isValidDeliverableItem(item, fullCatalog));
   } else if (shortcutDeliverables.length > 0 || spokenDeliverables.length > 0) {
     deliverables = mergeDeliverablesSmart(shortcutDeliverables, spokenDeliverables, true)
       .filter((item) => isValidDeliverableItem(item, studioDeliverables));
@@ -3185,14 +3298,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     if (studioDeliverables.length > 0) {
       deliverables = studioDeliverables.slice(0, 6);
     } else {
-      deliverables = [
-        'All Raw Photos & Footage in Hard Drive',
-        'Cinematic Wedding Highlight Film (15-20 Min)',
-        'Cinematic Wedding Teaser (1-2 Min)',
-        '3 Instagram Reels',
-        'Traditional Long Video (2-3 Hours)',
-        'Custom Printed Coffee Table Album'
-      ];
+      deliverables = [...DEFAULT_EXTRACTED_DELIVERABLES];
     }
   }
 
@@ -3441,8 +3547,10 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     const normDoc = normalizeQuotationData(rootObj, baseSchema);
     if (!isDirectJson) {
       if (!normDoc.deliverablesPage) normDoc.deliverablesPage = { selectedItems: [], availableOptions: [] };
-      if (hasAllDelivReq1 && studioDelivs1.length > 0) {
-        normDoc.deliverablesPage.selectedItems = [...studioDelivs1];
+      if (hasAllDelivReq1) {
+        const fullCatalog1 = studioDelivs1.length > 0 ? studioDelivs1 : DEFAULT_EXTRACTED_DELIVERABLES;
+        normDoc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...fullCatalog1], spokenDelivs1, true)
+          .filter((item: string) => isValidDeliverableItem(item, fullCatalog1));
       } else if (shortcutDelivs1.length > 0 || spokenDelivs1.length > 0 || rawRootDelivs.length > 0) {
         // Prevent baseSchema demo deliverables from leaking alongside triggered shortcut or spoken deliverables
         normDoc.deliverablesPage.selectedItems = [...rawRootDelivs];
@@ -3479,7 +3587,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
         startTime: fn.startTime || '',
         endTime: fn.endTime || '',
         location: fn.location || '',
-        notes: fn.notes || '',
+        notes: sanitizeEventFunctionNotes(fn.notes, studioShortcuts1),
         requirements: Array.isArray(fn.requirements) && fn.requirements.length > 0
           ? fn.requirements.map((r: any) => ({
               name: resolveStudioCrewRole(typeof r === 'string' ? r : r.name || '', studioCrewRoles),
@@ -3512,9 +3620,11 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     }
 
     // ⚡ FULL DELIVERABLES SYNC: If user requested "all deliverables", inject ALL deliverables from Studio Settings!
-    if (hasAllDelivReq1 && studioDelivs1.length > 0) {
+    if (hasAllDelivReq1) {
       if (!normDoc.deliverablesPage) normDoc.deliverablesPage = { selectedItems: [] };
-      normDoc.deliverablesPage.selectedItems = [...studioDelivs1];
+      const fullCatalog1 = studioDelivs1.length > 0 ? studioDelivs1 : DEFAULT_EXTRACTED_DELIVERABLES;
+      normDoc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...fullCatalog1], spokenDelivs1, true)
+        .filter((item: string) => isValidDeliverableItem(item, fullCatalog1));
     }
     if (studioDelivs1.length > 0) {
       if (!normDoc.deliverablesPage) normDoc.deliverablesPage = { selectedItems: [], availableOptions: [] };
@@ -3768,7 +3878,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
         endTime: fn.endTime || '',
         location: fn.location || fn.venue || '',
         requirements: requirementsList,
-        notes: fn.notes || ''
+        notes: sanitizeEventFunctionNotes(fn.notes, Array.isArray(studioSettings?.aiRules?.shortcuts) ? studioSettings.aiRules.shortcuts : [])
       };
     });
   }
@@ -3843,12 +3953,13 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   }
   const spokenDelivsBranch2 = !isDirectJson ? extractDeliverablesFromText(rawNotesForBranch2, studioDeliverables) : [];
 
-  if (hasAllDelivReq && studioDeliverables.length > 0) {
+  if (hasAllDelivReq) {
+    const fullCatalog2 = studioDeliverables.length > 0 ? studioDeliverables : DEFAULT_EXTRACTED_DELIVERABLES;
     doc.deliverablesPage.selectedItems = mergeDeliverablesSmart(
-      [...studioDeliverables],
-      Array.isArray(doc.deliverablesPage.selectedItems) ? doc.deliverablesPage.selectedItems : [],
-      false
-    );
+      [...fullCatalog2],
+      [...spokenDelivsBranch2, ...(Array.isArray(doc.deliverablesPage.selectedItems) ? doc.deliverablesPage.selectedItems : [])],
+      true
+    ).filter((item: string) => isValidDeliverableItem(item, fullCatalog2));
   } else if (matchedShortcutDelivs.length > 0 || spokenDelivsBranch2.length > 0) {
     doc.deliverablesPage.selectedItems = mergeDeliverablesSmart(
       validAiWeddingDelivs,
