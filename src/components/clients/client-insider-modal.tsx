@@ -277,6 +277,10 @@ export function ClientInsiderModal({
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [isEditingPin, setIsEditingPin] = useState(false);
+  const [isEditingSharePin, setIsEditingSharePin] = useState(false);
+  const [draftPortalPin, setDraftPortalPin] = useState('');
+  const [savingPin, setSavingPin] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -388,6 +392,38 @@ export function ClientInsiderModal({
   };
 
   if (!isOpen || !client) return null;
+
+  const persistModalPinSettings = async (opts: { portalEnabled?: boolean; portalPin?: string }) => {
+    const nextEnabled = opts.portalEnabled !== undefined ? opts.portalEnabled : extended.portal_enabled !== false;
+    const nextPin = (opts.portalPin !== undefined ? opts.portalPin : extended.portal_pin || '').replace(/\D/g, '').slice(0, 6);
+    if (nextEnabled && !/^\d{6}$/.test(nextPin)) {
+      alert('Please enter a valid 6-digit numeric Security PIN.');
+      return false;
+    }
+    const finalPin = nextPin || extended.portal_pin || deriveSixDigitPin({ id: client.id, phone });
+    const updatedExtended: ClientExtendedData = {
+      ...extended,
+      portal_enabled: nextEnabled,
+      portal_pin: finalPin,
+    };
+    const serializedNotes = serializeClientExtended(updatedExtended);
+    setExtended(updatedExtended);
+    setSavingPin(true);
+    try {
+      await supabase
+        .from('workspace_clients')
+        .update({ notes: serializedNotes, updated_at: new Date().toISOString() })
+        .eq('id', client.id);
+      onClientUpdate({ ...client, notes: serializedNotes });
+      return true;
+    } catch (e) {
+      console.error('Error saving portal PIN settings:', e);
+      alert('Failed to update portal PIN settings.');
+      return false;
+    } finally {
+      setSavingPin(false);
+    }
+  };
 
   // Save changes to Supabase
   const handleSaveClientDetails = async () => {
@@ -652,11 +688,16 @@ export function ClientInsiderModal({
           <div className="flex items-center gap-2.5 ml-auto">
             {/* Share Portal Link Button */}
             <button
-              onClick={() => setShowShareModal(true)}
-              className="px-3.5 py-2 text-xs font-bold text-amber-900 bg-amber-100/80 hover:bg-amber-200/90 border border-amber-300 rounded-xl transition flex items-center gap-2 shadow-2xs cursor-pointer"
+              onClick={() => {
+                setIsEditingSharePin(false);
+                setDraftPortalPin(extended.portal_pin || '');
+                setShowShareModal(true);
+              }}
+              title="Share Client Portal & PIN"
+              aria-label="Share Client Portal & PIN"
+              className="p-2.5 text-xs font-bold text-amber-900 bg-amber-100/80 hover:bg-amber-200/90 border border-amber-300 rounded-xl transition flex items-center justify-center shadow-2xs cursor-pointer"
             >
               <Share2 className="w-4 h-4 text-amber-700" />
-              Share Client Portal & PIN
             </button>
 
             {/* Close Button */}
@@ -850,32 +891,97 @@ export function ClientInsiderModal({
                         </div>
 
                         <div>
-                          <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center justify-between mb-1.5">
                             <label className="font-bold text-slate-600">6-Digit Security PIN</label>
-                            <button
-                              type="button"
-                              onClick={() => setExtended(prev => ({ ...prev, portal_enabled: prev.portal_enabled === false }))}
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-black border transition cursor-pointer ${
-                                extended.portal_enabled !== false
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : 'bg-slate-100 text-slate-500 border-slate-200'
-                              }`}
-                            >
-                              {extended.portal_enabled !== false ? 'PIN ON' : 'PIN OFF'}
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <span className={`text-[10px] font-black ${
+                                extended.portal_enabled !== false ? 'text-emerald-700' : 'text-slate-400'
+                              }`}>
+                                {extended.portal_enabled !== false ? 'ON' : 'OFF'}
+                              </span>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={extended.portal_enabled !== false}
+                                aria-label="Toggle 6-Digit Security PIN"
+                                disabled={savingPin}
+                                onClick={async () => {
+                                  const nextState = extended.portal_enabled === false;
+                                  if (!nextState) setIsEditingPin(false);
+                                  await persistModalPinSettings({ portalEnabled: nextState });
+                                }}
+                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none cursor-pointer disabled:opacity-50 ${
+                                  extended.portal_enabled !== false ? 'bg-emerald-500' : 'bg-slate-300'
+                                }`}
+                              >
+                                <span
+                                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ${
+                                    extended.portal_enabled !== false ? 'translate-x-4' : 'translate-x-0'
+                                  }`}
+                                />
+                              </button>
+                            </div>
                           </div>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={6}
-                            placeholder="6-digit PIN"
-                            disabled={extended.portal_enabled === false}
-                            value={extended.portal_pin}
-                            onChange={(e) => setExtended(prev => ({ ...prev, portal_pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
-                            className={`w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono font-black tracking-widest focus:outline-none ${
-                              extended.portal_enabled === false ? 'text-slate-400 opacity-60 cursor-not-allowed' : 'text-amber-800'
-                            }`}
-                          />
+
+                          {isEditingPin ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                autoFocus
+                                maxLength={6}
+                                placeholder="6-digit PIN"
+                                value={draftPortalPin}
+                                onChange={(e) => setDraftPortalPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                className="w-full px-3 py-2 bg-white border border-amber-400 rounded-xl font-mono font-black tracking-widest text-amber-800 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                disabled={savingPin}
+                                onClick={async () => {
+                                  const ok = await persistModalPinSettings({ portalPin: draftPortalPin });
+                                  if (ok) setIsEditingPin(false);
+                                }}
+                                className="p-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition cursor-pointer shrink-0"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsEditingPin(false);
+                                  setDraftPortalPin(extended.portal_pin || '');
+                                }}
+                                className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition cursor-pointer shrink-0"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <div className={`flex-1 px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono font-black tracking-widest ${
+                                extended.portal_enabled === false ? 'text-slate-400' : 'text-amber-800'
+                              }`}>
+                                {extended.portal_enabled === false ? 'PIN OFF' : (extended.portal_pin || '------')}
+                              </div>
+                              <button
+                                type="button"
+                                disabled={extended.portal_enabled === false}
+                                onClick={() => {
+                                  setDraftPortalPin(extended.portal_pin || '');
+                                  setIsEditingPin(true);
+                                }}
+                                title="Edit 6-Digit PIN"
+                                className={`p-2 rounded-xl border border-[#EAE5DA] transition shrink-0 ${
+                                  extended.portal_enabled === false
+                                    ? 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                                    : 'bg-white hover:bg-amber-50 text-slate-700 cursor-pointer'
+                                }`}
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1252,7 +1358,7 @@ export function ClientInsiderModal({
                     className="px-4 py-1.5 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    + Record Payment
+                    <span>Record Payment</span>
                   </button>
                 </div>
               </div>
@@ -1406,22 +1512,105 @@ export function ClientInsiderModal({
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">6-Digit Security Access PIN</label>
-                  <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center justify-between">
-                    <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="font-bold text-slate-700">6-Digit Security Access PIN</label>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[10px] font-black ${
+                        extended.portal_enabled !== false ? 'text-emerald-700' : 'text-slate-400'
+                      }`}>
+                        {extended.portal_enabled !== false ? 'ON' : 'OFF'}
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={extended.portal_enabled !== false}
+                        aria-label="Toggle Security Access PIN"
+                        disabled={savingPin}
+                        onClick={async () => {
+                          const nextState = extended.portal_enabled === false;
+                          if (!nextState) setIsEditingSharePin(false);
+                          await persistModalPinSettings({ portalEnabled: nextState });
+                        }}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none cursor-pointer disabled:opacity-50 ${
+                          extended.portal_enabled !== false ? 'bg-emerald-500' : 'bg-slate-300'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ${
+                            extended.portal_enabled !== false ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
                       {extended.portal_enabled !== false ? (
-                        <>
-                          <span className="text-xl font-black font-mono text-amber-900 tracking-widest">{extended.portal_pin}</span>
-                          <p className="text-[10px] text-amber-700 mt-0.5">Client must enter this 6-digit PIN to unlock the portal</p>
-                        </>
+                        isEditingSharePin ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoFocus
+                              maxLength={6}
+                              placeholder="6-digit PIN"
+                              value={draftPortalPin}
+                              onChange={(e) => setDraftPortalPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                              className="w-32 px-2.5 py-1 bg-white border border-amber-400 rounded-lg text-base font-black font-mono text-amber-900 tracking-widest focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              disabled={savingPin}
+                              onClick={async () => {
+                                const ok = await persistModalPinSettings({ portalPin: draftPortalPin });
+                                if (ok) setIsEditingSharePin(false);
+                              }}
+                              className="p-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditingSharePin(false);
+                                setDraftPortalPin(extended.portal_pin || '');
+                              }}
+                              className="p-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-xl font-black font-mono text-amber-900 tracking-widest">{extended.portal_pin}</span>
+                            <p className="text-[10px] text-amber-700 mt-0.5">Client must enter this 6-digit PIN to unlock the portal</p>
+                          </>
+                        )
                       ) : (
                         <>
                           <span className="text-sm font-black text-slate-700">PIN Protection OFF</span>
-                          <p className="text-[10px] text-slate-500 mt-0.5">Client can open the portal directly using the link</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">Turn the green switch ON anytime to enable PIN protection</p>
                         </>
                       )}
                     </div>
-                    <Key className="w-5 h-5 text-amber-600" />
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {extended.portal_enabled !== false && !isEditingSharePin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftPortalPin(extended.portal_pin || '');
+                            setIsEditingSharePin(true);
+                          }}
+                          title="Edit 6-Digit PIN"
+                          className="p-1.5 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 rounded-lg transition cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {(!isEditingSharePin || extended.portal_enabled === false) && (
+                        <Key className="w-5 h-5 text-amber-600" />
+                      )}
+                    </div>
                   </div>
                 </div>
 

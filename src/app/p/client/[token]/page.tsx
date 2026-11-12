@@ -155,6 +155,40 @@ export default function PublicClientPortalPage() {
     });
   };
 
+  // Safe storage helpers for private tabs / restricted mobile WebViews
+  const safeGetSession = (key: string): string | null => {
+    try {
+      return typeof window !== 'undefined' ? window.sessionStorage.getItem(key) : null;
+    } catch {
+      return null;
+    }
+  };
+  const safeSetSession = (key: string, val: string) => {
+    try {
+      if (typeof window !== 'undefined') window.sessionStorage.setItem(key, val);
+    } catch {}
+  };
+  const safeRemoveSession = (key: string) => {
+    try {
+      if (typeof window !== 'undefined') window.sessionStorage.removeItem(key);
+    } catch {}
+  };
+
+  const getStudioInitials = (name?: string): string => {
+    const clean = String(name || '').replace(/&/g, ' ').trim();
+    if (!clean) return 'ST';
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  };
+
+  const [reloadSeq, setReloadSeq] = useState(0);
+  const [slowLoading, setSlowLoading] = useState(false);
+
+  useEffect(() => {
+    setLogoError(false);
+  }, [studioInfo.logo]);
+
   const hydrateFullPortalPayload = (data: any) => {
     if (data.client) setClient(data.client);
     if (data.studioInfo) setStudioInfo(data.studioInfo);
@@ -166,8 +200,31 @@ export default function PublicClientPortalPage() {
   };
 
   useEffect(() => {
+    let cancelled = false;
+    const activeControllers = new Set<AbortController>();
+    const slowTimer = setTimeout(() => {
+      if (!cancelled) setSlowLoading(true);
+    }, 6500);
+
+    const fetchWithTimeout = async (url: string, init?: RequestInit, timeoutMs = 12000) => {
+      const controller = new AbortController();
+      activeControllers.add(controller);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, {
+          ...init,
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+        activeControllers.delete(controller);
+      }
+    };
+
     async function loadPortalData() {
       setLoading(true);
+      setSlowLoading(false);
       setErrorMsg(null);
 
       if (!token) {
@@ -177,65 +234,85 @@ export default function PublicClientPortalPage() {
       }
 
       try {
-        // 1. Ultra-fast Gate Check (<100ms): fetches only client summary & PIN setting
-        const gateRes = await fetch(`/api/public/client-portal/${token}?mode=gate`);
+        // 1. Ultra-fast Gate Check: fetches only client summary & PIN setting
+        const gateRes = await fetchWithTimeout(`/api/public/client-portal/${token}?mode=gate`);
+        if (cancelled) return;
         if (!gateRes.ok) {
           const errData = await gateRes.json().catch(() => ({}));
           setErrorMsg(errData.error || 'Client wedding portal not found or link has expired.');
-          setLoading(false);
           return;
         }
 
         const gateData = await gateRes.json();
+        if (cancelled) return;
         if (gateData.clientSummary) setClientSummary(gateData.clientSummary);
         if (gateData.studioInfo) setStudioInfo(gateData.studioInfo);
 
         // 2. If PIN Protection is OFF, auto-unlock & load full portal directly
         if (gateData.pinRequired === false) {
-          const fullRes = await fetch(`/api/public/client-portal/${token}`, {
+          const fullRes = await fetchWithTimeout(`/api/public/client-portal/${token}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
           });
+          if (cancelled) return;
           if (fullRes.ok) {
             const fullData = await fullRes.json();
+            if (cancelled) return;
             hydrateFullPortalPayload(fullData);
             setIsUnlocked(true);
           } else {
-            setErrorMsg('Unable to open wedding portal. Please try again later.');
+            setErrorMsg('Unable to open wedding portal. Please try again.');
           }
-          setLoading(false);
           return;
         }
 
         // 3. If PIN previously unlocked in this browser session, silently verify & hydrate
-        const cachedPin = sessionStorage.getItem(`portal_unlocked_${token}`);
+        const cachedPin = safeGetSession(`portal_unlocked_${token}`);
         if (cachedPin) {
-          const verifyRes = await fetch(`/api/public/client-portal/${token}`, {
+          const verifyRes = await fetchWithTimeout(`/api/public/client-portal/${token}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pin: cachedPin }),
           });
+          if (cancelled) return;
           if (verifyRes.ok) {
             const fullData = await verifyRes.json();
+            if (cancelled) return;
             hydrateFullPortalPayload(fullData);
             setIsUnlocked(true);
-            setLoading(false);
             return;
           } else {
-            sessionStorage.removeItem(`portal_unlocked_${token}`);
+            safeRemoveSession(`portal_unlocked_${token}`);
           }
         }
-      } catch (e) {
+      } catch (e: any) {
+        if (cancelled) return;
         console.error('Error loading client portal:', e);
-        setErrorMsg('Unable to load wedding portal. Please try again later.');
+        if (e?.name === 'AbortError') {
+          setErrorMsg('Connection timed out while loading your portal. Please tap Retry.');
+        } else {
+          setErrorMsg('Unable to load wedding portal. Please try again.');
+        }
       } finally {
-        setLoading(false);
+        clearTimeout(slowTimer);
+        if (!cancelled) {
+          setLoading(false);
+          setSlowLoading(false);
+        }
       }
     }
 
     loadPortalData();
-  }, [token]);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(slowTimer);
+      activeControllers.forEach((c) => {
+        try { c.abort(); } catch {}
+      });
+    };
+  }, [token, reloadSeq]);
 
   // Handle Server-Verified 6-Digit PIN Unlock
   const handleVerifyPin = async (e: React.FormEvent) => {
@@ -246,10 +323,14 @@ export default function PublicClientPortalPage() {
     setVerifyingPin(true);
     setPinError(false);
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
     try {
       const res = await fetch(`/api/public/client-portal/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        signal: controller.signal,
         body: JSON.stringify({ pin: submitted }),
       });
 
@@ -262,11 +343,12 @@ export default function PublicClientPortalPage() {
       hydrateFullPortalPayload(data);
       setIsUnlocked(true);
       setPinError(false);
-      sessionStorage.setItem(`portal_unlocked_${token}`, submitted);
+      safeSetSession(`portal_unlocked_${token}`, submitted);
     } catch (err) {
       console.error('Error verifying portal PIN:', err);
       setPinError(true);
     } finally {
+      clearTimeout(timer);
       setVerifyingPin(false);
     }
   };
@@ -621,6 +703,16 @@ export default function PublicClientPortalPage() {
         </div>
         <h2 className="text-lg font-black text-slate-900 tracking-tight">Opening Your Wedding Portal...</h2>
         <p className="text-xs text-slate-500 font-medium mt-1">Preparing your itinerary, quotation, and deliverables</p>
+        {slowLoading && (
+          <button
+            type="button"
+            onClick={() => setReloadSeq((n) => n + 1)}
+            className="mt-5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry Loading Portal</span>
+          </button>
+        )}
       </div>
     );
   }
@@ -634,6 +726,14 @@ export default function PublicClientPortalPage() {
         </div>
         <h2 className="text-xl font-black text-slate-900 tracking-tight">Portal Unavailable</h2>
         <p className="text-xs text-slate-600 max-w-sm mt-1 mb-5">{errorMsg || 'Please verify your access link with the studio.'}</p>
+        <button
+          type="button"
+          onClick={() => setReloadSeq((n) => n + 1)}
+          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+        >
+          <RefreshCw className="w-4 h-4" />
+          <span>Try Again</span>
+        </button>
       </div>
     );
   }
@@ -755,13 +855,13 @@ export default function PublicClientPortalPage() {
                     {studioInfo.logo && !logoError ? (
                       <img
                         src={studioInfo.logo}
-                        alt={studioInfo.name || 'Filmify Weddings'}
+                        alt={studioInfo.name || 'Studio Owner'}
                         onError={() => setLogoError(true)}
-                        className="w-9 h-9 rounded-xl object-contain bg-white border border-slate-200 p-0.5 shrink-0 shadow-2xs"
+                        className="w-10 h-10 rounded-full object-cover bg-white border-2 border-amber-200 shrink-0 shadow-xs"
                       />
                     ) : (
-                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-950 via-stone-900 to-black text-amber-300 font-serif font-black text-xs flex items-center justify-center shrink-0 shadow-sm border border-amber-500/40 ring-1 ring-amber-400/20">
-                        <span className="tracking-wider">FW</span>
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-950 via-stone-900 to-black text-amber-300 font-serif font-black text-xs flex items-center justify-center shrink-0 shadow-sm border border-amber-500/40 ring-1 ring-amber-400/20">
+                        <span className="tracking-wider">{getStudioInitials(studioInfo.name)}</span>
                       </div>
                     )}
                     <div className="min-w-0">
@@ -930,13 +1030,13 @@ export default function PublicClientPortalPage() {
               {studioInfo.logo && !logoError ? (
                 <img
                   src={studioInfo.logo}
-                  alt={studioInfo.name || 'Filmify Weddings'}
+                  alt={studioInfo.name || 'Studio Owner'}
                   onError={() => setLogoError(true)}
-                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-contain bg-slate-50 border border-slate-200 p-0.5 shrink-0 shadow-2xs"
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover bg-slate-50 border-2 border-amber-200 shrink-0 shadow-xs"
                 />
               ) : (
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-br from-amber-950 via-stone-900 to-black text-amber-300 font-serif font-black text-xs sm:text-sm flex items-center justify-center shrink-0 shadow-md border border-amber-500/40 ring-1 ring-amber-400/20">
-                  <span className="tracking-wider">FW</span>
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-br from-amber-950 via-stone-900 to-black text-amber-300 font-serif font-black text-xs sm:text-sm flex items-center justify-center shrink-0 shadow-md border border-amber-500/40 ring-1 ring-amber-400/20">
+                  <span className="tracking-wider">{getStudioInitials(studioInfo.name)}</span>
                 </div>
               )}
 
@@ -1398,7 +1498,11 @@ export default function PublicClientPortalPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            const clientUrl = `/p/quotation/${q.public_token || q.template_id || q.id}`;
+                            const rawTid = q.template_id ? String(q.template_id) : '';
+                            const clientUrl =
+                              rawTid && !rawTid.startsWith('q_client_')
+                                ? `/workspace/quotations/builder/templet/${encodeURIComponent(rawTid)}?preview=public&token=${encodeURIComponent(rawTid)}`
+                                : `/p/quotation/${q.public_token || rawTid || q.id}`;
                             window.open(clientUrl, '_blank');
                           }}
                           className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-[#EAE5DA] transition text-xs font-black flex items-center gap-2 shadow-2xs cursor-pointer hover:border-amber-400"
@@ -2170,15 +2274,20 @@ export default function PublicClientPortalPage() {
         )}
 
         {/* ── STUDIO BRANDING LUXURY FOOTER ── */}
-        <div className="pt-8 pb-4 text-center border-t border-[#EAE5DA] space-y-2">
-          <div className="flex items-center justify-center gap-2">
-            {studioInfo.logo ? (
+        <div className="pt-8 pb-4 text-center border-t border-[#EAE5DA] space-y-2.5">
+          <div className="flex items-center justify-center gap-2.5">
+            {studioInfo.logo && !logoError ? (
               <img
                 src={studioInfo.logo}
-                alt={studioInfo.name || 'Studio'}
-                className="w-6 h-6 rounded-lg object-contain bg-white border border-slate-200 p-0.5 shadow-2xs"
+                alt={studioInfo.name || 'Studio Owner'}
+                onError={() => setLogoError(true)}
+                className="w-8 h-8 rounded-full object-cover bg-white border-2 border-amber-200 shadow-xs shrink-0"
               />
-            ) : null}
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-950 via-stone-900 to-black text-amber-300 font-serif font-black text-[11px] flex items-center justify-center shrink-0 shadow-xs border border-amber-500/40">
+                <span className="tracking-wider">{getStudioInitials(studioInfo.name)}</span>
+              </div>
+            )}
             <span className="text-xs font-black text-slate-800 tracking-tight">
               {studioInfo.name || 'Studio Photography & Films'}
             </span>
