@@ -1,13 +1,130 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cleanVoiceTranscript } from '@/lib/speech-text-cleaner';
+import { cleanVoiceTranscript, normalizeComparisonTokens } from '@/lib/speech-text-cleaner';
 
 export const maxDuration = 60; // 60s timeout for audio transcription
 
 /**
- * Server-side 1-Step AI Audio Transcription & Lossless Dictation Polisher
+ * Checks uncompressed 16-bit PCM WAV buffers for pure silence / near-zero floor noise (< -50dBFS).
+ */
+function analyzeWavSilence(audioBuffer: ArrayBuffer): { isWav: boolean; isSilent: boolean; peak: number; rms: number } {
+  const buf = Buffer.from(audioBuffer);
+  if (buf.length < 44) return { isWav: false, isSilent: false, peak: 1, rms: 1 };
+  const riff = buf.subarray(0, 4).toString('ascii');
+  const wave = buf.subarray(8, 12).toString('ascii');
+  if (riff !== 'RIFF' || wave !== 'WAVE') {
+    return { isWav: false, isSilent: false, peak: 1, rms: 1 };
+  }
+
+  let offset = 12;
+  let audioFormat = 1;
+  let bitsPerSample = 16;
+  let dataStart = -1;
+  let dataLen = 0;
+
+  while (offset + 8 <= buf.length) {
+    const id = buf.subarray(offset, offset + 4).toString('ascii');
+    const size = buf.readUInt32LE(offset + 4);
+    if (id === 'fmt ' && offset + 24 <= buf.length) {
+      audioFormat = buf.readUInt16LE(offset + 8);
+      bitsPerSample = buf.readUInt16LE(offset + 22);
+    } else if (id === 'data') {
+      dataStart = offset + 8;
+      dataLen = Math.min(size, buf.length - dataStart);
+      break;
+    }
+    offset += 8 + size + (size % 2);
+  }
+
+  if (dataStart < 0 || dataLen < 2 || audioFormat !== 1 || bitsPerSample !== 16) {
+    return { isWav: true, isSilent: false, peak: 1, rms: 1 };
+  }
+
+  let maxAbs = 0;
+  let sumSq = 0;
+  let count = 0;
+  for (let i = dataStart; i + 1 < dataStart + dataLen; i += 2) {
+    const s = buf.readInt16LE(i) / 32768;
+    const a = Math.abs(s);
+    if (a > maxAbs) maxAbs = a;
+    sumSq += s * s;
+    count++;
+  }
+  const rms = count > 0 ? Math.sqrt(sumSq / count) : 0;
+  const isSilent = peakIsSilent(maxAbs, rms);
+  return { isWav: true, isSilent, peak: maxAbs, rms };
+}
+
+function peakIsSilent(peak: number, rms: number): boolean {
+  return peak < 0.003 && rms < 0.0005;
+}
+
+/**
+ * Detects explicit [NO_SPEECH] sentinel, common STT silence hallucinations, or severe divergence vs liveDraft.
+ */
+function isPhantomOrHallucinatedTranscript(rawText: string, liveDraft: string): boolean {
+  const txt = String(rawText || '').trim();
+  if (!txt) return true;
+
+  const stripped = txt.replace(/[\s.,!?;:'"()[\]\-–—।|♪*~`]+/g, '');
+  if (stripped.length < 2) return true;
+
+  const lower = txt.toLowerCase();
+  if (
+    /\[?\s*(?:no[_\s-]*speech|silent|silence|inaudible|unintelligible|music|applause|noise|blank[_\s-]*audio|empty)\s*\]?/i.test(lower) ||
+    /^(?:no\s+speech(?:\s+detected)?|nothing\s+spoken|silence)$/i.test(lower)
+  ) {
+    return true;
+  }
+
+  // Known Whisper / STT silence phantom outputs across languages
+  const phantomPhrases = [
+    'tervetuloa',
+    'thank you for watching',
+    'thanks for watching',
+    'please subscribe',
+    'subtitles by',
+    'amara.org',
+    'mbc news',
+    'altyazı',
+    'translated by',
+    'you.',
+    'you',
+  ];
+  const lowerClean = lower.replace(/[.!?,\s]+$/g, '').trim();
+  if (phantomPhrases.includes(lowerClean)) return true;
+  if (/amara\.org|subtitles\s+by|thank(?:s|\s+you)\s+for\s+watching/i.test(lower)) return true;
+
+  // Guard against wild hallucinated quotation generation when WebSpeech captured clear contrasting words
+  const draftTrim = String(liveDraft || '').trim();
+  if (draftTrim) {
+    const liveTokens = normalizeComparisonTokens(draftTrim);
+    const candTokens = normalizeComparisonTokens(txt);
+    const wordCount = txt.split(/\s+/).filter(Boolean).length;
+    if (liveTokens.length >= 2 && wordCount >= 25 && candTokens.length >= 16) {
+      const candSet = new Set(candTokens);
+      let shared = 0;
+      let sharedNums = 0;
+      for (const tok of liveTokens) {
+        if (candSet.has(tok)) {
+          shared++;
+          if (/^\d+$/.test(tok)) sharedNums++;
+        }
+      }
+      const overlapRatio = shared / Math.min(liveTokens.length, candTokens.length);
+      if (overlapRatio < 0.10 && sharedNums === 0) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Server-side Strict Verbatim Audio Transcription & Lossless Cleaner
  * Primary: Google Gemini Multimodal Audio AI (gemini-3-flash-preview -> gemini-3.1-flash-lite -> gemini-flash-latest)
  * Fallback: OpenAI Audio API (gpt-4o-mini-transcribe -> whisper-1), then Groq Whisper if configured.
- * Supports Hindi, Marathi, English, and Hinglish with studio-specific wedding photography context.
+ * Supports Hindi, Marathi, English, and Hinglish without hallucinating unspoken names, events, or budgets.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -20,10 +137,8 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData();
     const audioFile = formData.get('audio') as Blob | File | null;
-    const leadName = String(formData.get('leadName') || '').trim();
     const studioEventNames = String(formData.get('studioEventNames') || '').trim();
     const studioCrewRoles = String(formData.get('studioCrewRoles') || '').trim();
-    const shortcutTriggers = String(formData.get('shortcutTriggers') || '').trim();
     const liveDraft = String(formData.get('liveDraft') || '').trim();
 
     if (!audioFile) {
@@ -62,36 +177,51 @@ export async function POST(req: NextRequest) {
       mimeType = 'audio/webm';
     }
 
+    // Immediate deterministic WAV silence rejection (zero API calls, zero hallucination risk)
+    if (isRiffWav) {
+      const wavStats = analyzeWavSilence(audioBuffer);
+      if (wavStats.isWav && wavStats.isSilent) {
+        return NextResponse.json(
+          {
+            success: false,
+            noSpeech: true,
+            error: 'No clear speech detected in recording. Please speak clearly into your microphone and try again.',
+          },
+          { status: 422 }
+        );
+      }
+    }
+
     let transcript = '';
     let activeEngine = '';
     let oneStepPolished = false;
+    let noSpeechConfirmedByPrimary = false;
     let lastErrorDetail = '';
 
-    // 1. PRIMARY ENGINE: Google Gemini Multimodal Audio AI (1-Step Audio -> Clean Lossless Studio Text)
+    const vocabEvents = (studioEventNames || 'Haldi, Mehendi, Sangeet, Wedding, Engagement, Reception').slice(0, 220);
+    const vocabRoles = (studioCrewRoles || 'Candid Photographer, Traditional Photographer, Cinematographer, Traditional Videographer, Drone Pilot, Semi Cinematic, Semi Standard, Reels Creator').slice(0, 260);
+
+    // 1. PRIMARY ENGINE: Google Gemini Multimodal Audio AI (Strict Verbatim with [NO_SPEECH] sentinel)
     if (geminiKeys.length > 0) {
       const base64Audio = Buffer.from(audioBuffer).toString('base64');
-      const audioPrompt = `You are a 100% LOSSLESS bilingual audio transcriber & speech cleaner for an Indian wedding photography studio (StudioCore).
-Listen carefully to the ENTIRE audio recording from the very first second to the very last millisecond.
+      const audioPrompt = `You are a strictly VERBATIM audio speech transcriber.
+Transcribe ONLY the exact words clearly spoken aloud by the human speaker in the attached audio recording.
 
-CRITICAL RULES — ZERO OMISSION / ZERO SUMMARIZATION:
-1. Transcribe EVERY spoken detail completely in clean Hinglish/English/Hindi so NOTHING is lost — especially trailing budget amounts, discounts, advance terms, dates, relative date words ("agla din", "same day", "ek din pehle"), venue locations, per-event crew constraints, and counted deliverables!
-2. Output plain natural punctuated text (NO markdown headings, NO bullet lists, NO JSON, NO commentary or preface like "Here is...").
-3. Preserve per-event crew locks & shortcuts EXACTLY (e.g., preserve "Standard Crew", "alag crew", "bas 1 Traditional Photographer", "only", "sabhi events me"): NEVER merge separate event crews into one.
-4. Convert spoken numbers & counts to clean Arabic digits ("ek" -> "1", "do" -> "2", "paanch" -> "5", "paanch sau" -> "500") and clean currency ("do lakh" -> "₹2,00,000", "50 hajar" -> "₹50,000").
-5. Capitalize proper Couple Names, Venue Cities, and Official Events in clean Title Case English.
-6. STUDIO DICTIONARY (use exact spellings when heard):
-   - Official Events: ${studioEventNames || 'Wedding, Haldi, Sangeet, Mehendi, Ring Ceremony, Reception'}
-   - Official Crew Roles: ${studioCrewRoles || 'Candid Photographer, Traditional Photographer, Cinematographer, Traditional Videographer, Drone Pilot, Semi Cinematic, Semi Standard, Reels Creator'}
-   ${shortcutTriggers ? `- Studio Shortcuts / Triggers: ${shortcutTriggers}` : ''}
-   ${leadName ? `- Active Lead / Client Name: ${leadName}` : ''}
-   ${liveDraft ? `- Live Mic Reference (may contain browser speech typos or clipped ending — ALWAYS trust the audio recording above this reference): ${liveDraft.slice(0, 600)}` : ''}
+STRICT ANTI-HALLUCINATION MANDATE:
+1. NEVER invent, guess, autocomplete, or generate sentences, client names, events, dates, crew roles, shortcuts, deliverables, locations, or amounts that are NOT clearly audible in the attached audio.
+2. If the audio is silent, contains only background noise/static, is too faint/unintelligible, or has no clear spoken words, output ONLY the exact token: [NO_SPEECH]
+3. Passive vocabulary spelling reference ONLY (NEVER insert or mention ANY word below unless the speaker clearly said it aloud):
+   - Events: ${vocabEvents}
+   - Roles: ${vocabRoles}
+4. Keep the transcription faithful to what the speaker actually said (Devanagari Hindi, Hinglish, or English), using clean digits for spoken numbers (e.g. 500, 2,50,000) and plain text (NO markdown, NO bullet points, NO JSON, NO commentary).
 
-Output ONLY the clean, complete dictated text ready to drop into the requirement box.`;
+Output ONLY the verbatim heard words, or [NO_SPEECH].`;
 
       const candidateModels = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
       for (const geminiKey of geminiKeys) {
-        if (transcript) break;
+        if (transcript || noSpeechConfirmedByPrimary) break;
         for (const model of candidateModels) {
+          if (transcript || noSpeechConfirmedByPrimary) break;
           try {
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
               method: 'POST',
@@ -112,7 +242,7 @@ Output ONLY the clean, complete dictated text ready to drop into the requirement
                   ]
                 }],
                 generationConfig: {
-                  temperature: 0.05,
+                  temperature: 0,
                   maxOutputTokens: 2500,
                   thinkingConfig: { thinkingBudget: 0 }
                 }
@@ -127,11 +257,23 @@ Output ONLY the clean, complete dictated text ready to drop into the requirement
                 .map((p: any) => p.text)
                 .join('')
                 .trim();
-              if (rawModelText && rawModelText.length > 2) {
-                transcript = cleanVoiceTranscript(rawModelText, leadName) || rawModelText;
+
+              if (isPhantomOrHallucinatedTranscript(rawModelText, liveDraft)) {
+                console.log(`[Gemini Audio ${model}] Confirmed no clear speech / rejected phantom output:`, rawModelText.slice(0, 80));
+                if (model === 'gemini-3-flash-preview' || model === 'gemini-3.1-flash-lite') {
+                  // Authoritative primary model returned OK with [NO_SPEECH] — do NOT cascade to noisier fallbacks!
+                  noSpeechConfirmedByPrimary = true;
+                  break;
+                }
+                continue;
+              }
+
+              const cleaned = cleanVoiceTranscript(rawModelText) || rawModelText;
+              if (cleaned && !isPhantomOrHallucinatedTranscript(cleaned, liveDraft)) {
+                transcript = cleaned;
                 activeEngine = model;
                 oneStepPolished = true;
-                console.log(`[Gemini Audio 1-Step Success via ${model}]:`, transcript);
+                console.log(`[Gemini Audio Verbatim Success via ${model}]:`, transcript);
                 break;
               }
             } else {
@@ -147,17 +289,29 @@ Output ONLY the clean, complete dictated text ready to drop into the requirement
       }
     }
 
+    if (noSpeechConfirmedByPrimary && !transcript) {
+      return NextResponse.json(
+        {
+          success: false,
+          noSpeech: true,
+          error: 'No clear speech detected in recording. Please speak clearly or type your notes directly.',
+        },
+        { status: 422 }
+      );
+    }
+
     // 2. SECONDARY FALLBACK: OpenAI Speech-to-Text (gpt-4o-mini-transcribe -> whisper-1)
-    if (!transcript && openAiKey) {
+    // Neutral vocabulary-only hint (NEVER inject Couple/Lead Name or sample amounts/shortcuts so Whisper never hallucinates them!)
+    if (!transcript && !noSpeechConfirmedByPrimary && openAiKey) {
       const openAiModels = ['gpt-4o-mini-transcribe', 'whisper-1'];
-      const hintPrompt = `Indian wedding photography quotation notes. Couple: ${leadName || 'Client'}. Events: ${studioEventNames || 'Haldi, Sangeet, Wedding, Mehendi, Reception'}. Roles: ${studioCrewRoles || 'Candid Photographer, Traditional Photographer, Cinematographer, Drone Pilot'}. Triggers: ${shortcutTriggers || 'Standard Crew, All Deliverables Add'}. Deliverables: edited photos, Instagram reels, pendrive, album, teaser.`;
+      const hintPrompt = `Spelling vocabulary only: ${vocabEvents}, ${vocabRoles}. Do not invent speech if silent.`;
       for (const oaModel of openAiModels) {
         try {
           const oaForm = new FormData();
           const fileObj = new File([audioBuffer], `recording.${fileExt}`, { type: mimeType });
           oaForm.append('file', fileObj);
           oaForm.append('model', oaModel);
-          oaForm.append('prompt', hintPrompt.slice(0, 800));
+          oaForm.append('prompt', hintPrompt.slice(0, 500));
           oaForm.append('temperature', '0');
 
           const oaRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -172,8 +326,8 @@ Output ONLY the clean, complete dictated text ready to drop into the requirement
           if (oaRes.ok) {
             const oaJson = await oaRes.json();
             const rawText = (oaJson.text || '').trim();
-            if (rawText) {
-              transcript = rawText;
+            if (!isPhantomOrHallucinatedTranscript(rawText, liveDraft)) {
+              transcript = cleanVoiceTranscript(rawText) || rawText;
               activeEngine = `openai-${oaModel}`;
               oneStepPolished = false;
               console.log(`[OpenAI ${oaModel} Audio Fallback Success]:`, transcript);
@@ -192,7 +346,7 @@ Output ONLY the clean, complete dictated text ready to drop into the requirement
     }
 
     // 3. TERTIARY FALLBACK: Groq Whisper Large-v3-turbo (only if GROQ_API_KEY configured)
-    if (!transcript && groqKey) {
+    if (!transcript && !noSpeechConfirmedByPrimary && groqKey) {
       try {
         const groqFormData = new FormData();
         const fileObj = new File([audioBuffer], `recording.${fileExt}`, {
@@ -203,7 +357,7 @@ Output ONLY the clean, complete dictated text ready to drop into the requirement
         groqFormData.append('temperature', '0');
         groqFormData.append(
           'prompt',
-          'Indian wedding photography quotation details: Haldi, Mehendi, Sangeet, Wedding, Reception, Standard Crew, Candid Photography, Cinematography, Drone, Album, All Deliverables Add.'
+          'Haldi, Mehendi, Sangeet, Wedding, Reception, Candid Photographer, Cinematographer, Drone.'
         );
 
         const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -218,8 +372,8 @@ Output ONLY the clean, complete dictated text ready to drop into the requirement
         if (groqRes.ok) {
           const groqJson = await groqRes.json();
           const rawText = (groqJson.text || '').trim();
-          if (rawText) {
-            transcript = rawText;
+          if (!isPhantomOrHallucinatedTranscript(rawText, liveDraft)) {
+            transcript = cleanVoiceTranscript(rawText) || rawText;
             activeEngine = 'groq-whisper-large-v3-turbo';
             oneStepPolished = false;
             console.log('[Groq Whisper Fallback Success]:', transcript);
@@ -232,7 +386,8 @@ Output ONLY the clean, complete dictated text ready to drop into the requirement
 
     if (!transcript) {
       return NextResponse.json({
-        error: lastErrorDetail || 'Could not transcribe audio. Please speak again or type your notes directly.',
+        error: lastErrorDetail || 'No clear speech detected in audio. Please speak clearly or type your notes directly.',
+        noSpeech: !lastErrorDetail,
         success: false
       }, { status: 422 });
     }

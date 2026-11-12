@@ -49,7 +49,7 @@ export function pruneDocumentForListCache(item: any): any {
     version_label: item.version_label || (item.version ? `V${item.version}` : undefined),
     title: item.title || content?.designName || content?.title || 'Quotation Template',
     designName: content?.designName || item.title || 'Quotation Template',
-    client_name: item.client_name || item.couple_name || cover.coupleName || (cover.groomName ? `${cover.groomName} & ${cover.brideName}` : 'Couple'),
+    client_name: item.client_name || item.couple_name || cover.coupleName || (cover.groomName ? (cover.brideName ? `${cover.groomName} & ${cover.brideName}` : cover.groomName) : 'Client'),
     couple_name: item.couple_name || cover.coupleName || item.client_name || '',
     couple_names: item.couple_names || cover.coupleName || item.couple_name || item.client_name,
     category: item.category || content?.eventGroup || 'Wedding',

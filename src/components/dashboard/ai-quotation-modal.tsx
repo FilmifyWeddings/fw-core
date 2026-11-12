@@ -14,7 +14,7 @@ import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 import { QuotationTemplateSelector, StudioTemplateItem, getSynchronousCachedTemplates } from './quotation-template-selector';
 import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument, syncShootPageInSequence } from '@/lib/ai-quotation-extractor';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
-import { cleanVoiceTranscript } from '@/lib/speech-text-cleaner';
+import { cleanVoiceTranscript, normalizeComparisonTokens } from '@/lib/speech-text-cleaner';
 import { safeLocalStorageSet, safeSessionStorageSet, pruneDocumentForListCache } from '@/lib/storage-safety';
 import {
   fetchWorkspaceQuotationSettings,
@@ -75,15 +75,27 @@ function tryParsePastedAiJson(rawText: string, baseTemplate?: any, leadContext?:
 
 function getSupportedMimeType(): string {
   if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') return '';
-  const candidates = [
-    'audio/mp4',
-    'audio/mp4;codecs=mp4a.40.2',
-    'audio/aac',
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/wav'
-  ];
+  const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
+  const isSafariWebKit = /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|Android/i.test(ua);
+  const candidates = isSafariWebKit
+    ? [
+        'audio/mp4',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/aac',
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/wav'
+      ]
+    : [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/aac',
+        'audio/wav'
+      ];
   for (const mime of candidates) {
     try {
       if (MediaRecorder.isTypeSupported(mime)) return mime;
@@ -111,9 +123,10 @@ export function AiQuotationModal({
   const [promptCopied, setPromptCopied] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(selectedTemplateId || '');
 
+  const rawCurrCouple = String(currentDocumentData?.cover?.coupleName || '').trim();
   const effectiveLead: any = lead || {
     id: quotationId || 'draft',
-    name: currentDocumentData?.cover?.coupleName || 'Client',
+    name: rawCurrCouple && !isPlaceholderCoupleName(rawCurrCouple) ? rawCurrCouple : 'Client',
     phone: '',
     email: '',
     raw_payload: {},
@@ -221,6 +234,21 @@ export function AiQuotationModal({
   additionalNotesRef.current = additionalNotes;
   const isPolishingInProgressRef = useRef<boolean>(false);
   const authSessionRef = useRef<{ token: string; userId: string } | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const maxMicRmsRef = useRef<number>(0);
+  const hadAnalyserSamplesRef = useRef<boolean>(false);
+  const rmsRafRef = useRef<number | null>(null);
+
+  const stopAudioMeter = () => {
+    if (rmsRafRef.current !== null && typeof cancelAnimationFrame === 'function') {
+      try { cancelAnimationFrame(rmsRafRef.current); } catch (_) {}
+      rmsRafRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch (_) {}
+      audioCtxRef.current = null;
+    }
+  };
 
   const joinPrefixAndDictation = (prefix: string, body: string): string => {
     const cleanPrefix = (prefix || '').trim();
@@ -293,6 +321,7 @@ export function AiQuotationModal({
     return () => {
       isRecordingRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
+      stopAudioMeter();
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (_) {}
         recognitionRef.current = null;
@@ -373,8 +402,40 @@ export function AiQuotationModal({
         throw new Error('Audio AI service was momentarily busy.');
       }
 
+      if (res.status === 422 && data?.noSpeech) {
+        if (liveFallbackRaw && liveFallbackRaw.trim().length >= 2) {
+          const wordCount = liveFallbackRaw.trim().split(/\s+/).filter(Boolean).length;
+          finalizeLiveTextFallback(liveFallbackRaw, wordCount >= 4);
+        } else {
+          setErrorMsg('आवाज़ साफ़ सुनाई नहीं दी। कृपया थोड़ा नज़दीक से दोबारा बोलें या सीधे लिखें।');
+        }
+        return;
+      }
+
       if (res.ok && data.text) {
         const finalAudioText = String(data.text || '').trim();
+        // Guard against severe divergence only when WebSpeech clearly captured >= 4 meaningful tokens
+        if (liveFallbackRaw && liveFallbackRaw.trim().length >= 4) {
+          const liveTokens = normalizeComparisonTokens(liveFallbackRaw);
+          const candTokens = normalizeComparisonTokens(finalAudioText);
+          const candWordCount = finalAudioText.split(/\s+/).filter(Boolean).length;
+          if (liveTokens.length >= 4 && candWordCount >= 25 && candTokens.length >= 16) {
+            const candSet = new Set(candTokens);
+            let shared = 0;
+            let sharedNums = 0;
+            for (const tok of liveTokens) {
+              if (candSet.has(tok)) {
+                shared++;
+                if (/^\d+$/.test(tok)) sharedNums++;
+              }
+            }
+            const overlapRatio = shared / Math.min(liveTokens.length, candTokens.length);
+            if (overlapRatio < 0.08 && sharedNums === 0) {
+              finalizeLiveTextFallback(liveFallbackRaw, true);
+              return;
+            }
+          }
+        }
         setAdditionalNotes(joinPrefixAndDictation(initialAppendTextRef.current, finalAudioText));
         setTranscribeSuccess(true);
         setTimeout(() => setTranscribeSuccess(false), 4500);
@@ -495,6 +556,40 @@ export function AiQuotationModal({
       });
       audioStreamRef.current = stream;
       audioChunksRef.current = [];
+      maxMicRmsRef.current = 0;
+      hadAnalyserSamplesRef.current = false;
+      try {
+        const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx: AudioContext = new AudioCtx();
+          audioCtxRef.current = ctx;
+          if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+          }
+          const source = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 1024;
+          source.connect(analyser);
+          const timeDomain = new Uint8Array(analyser.fftSize);
+          const sampleRms = () => {
+            if (!isRecordingRef.current || audioCtxRef.current !== ctx) return;
+            try {
+              analyser.getByteTimeDomainData(timeDomain);
+              let sumSq = 0;
+              for (let i = 0; i < timeDomain.length; i++) {
+                const v = (timeDomain[i] - 128) / 128;
+                sumSq += v * v;
+              }
+              const rms = Math.sqrt(sumSq / timeDomain.length);
+              if (rms > maxMicRmsRef.current) maxMicRmsRef.current = rms;
+              hadAnalyserSamplesRef.current = true;
+            } catch (_) {}
+            rmsRafRef.current = requestAnimationFrame(sampleRms);
+          };
+          rmsRafRef.current = requestAnimationFrame(sampleRms);
+        }
+      } catch (_) {}
+
       const mimeType = getSupportedMimeType();
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
 
@@ -505,6 +600,7 @@ export function AiQuotationModal({
       };
 
       recorder.onstop = async () => {
+        stopAudioMeter();
         try {
           stream.getTracks().forEach((track) => track.stop());
         } catch (_) {}
@@ -532,6 +628,12 @@ export function AiQuotationModal({
         audioChunksRef.current = [];
         const actualMime = recorder.mimeType || mimeType || 'audio/mp4';
         const audioBlob = chunks.length > 0 ? new Blob(chunks, { type: actualMime }) : null;
+
+        // If mic sampled pure silence and WebSpeech captured zero words, abort cleanly without risking STT hallucinations
+        if (!capturedRaw && hadAnalyserSamplesRef.current && maxMicRmsRef.current < 0.003) {
+          setErrorMsg('माइक में कोई आवाज़ सुनाई नहीं दी। कृपया थोड़ा तेज़ और पास से बोलें या सीधे लिखें।');
+          return;
+        }
 
         if (capturedRaw.length > 0) {
           const previewClean = cleanVoiceTranscript(capturedRaw, effectiveLead?.name);
@@ -570,6 +672,7 @@ export function AiQuotationModal({
     isCancelledRef.current = true;
     isRecordingRef.current = false;
     dictationFinalizedRef.current = true;
+    stopAudioMeter();
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (_) {}
       recognitionRef.current = null;
@@ -1146,15 +1249,21 @@ LEAD & CLIENT CONTEXT:
         coupleName = rawDocCouple;
       } else if (rawGroom && rawBride && !isPlaceholderCoupleName(`${rawGroom} & ${rawBride}`)) {
         coupleName = `${rawGroom} & ${rawBride}`;
-      } else if (candidateLead && !['client', 'valued client', 'lead', 'quotation', 'demo'].includes(candidateLead.toLowerCase())) {
+      } else if (candidateLead && !isPlaceholderCoupleName(candidateLead)) {
         coupleName = candidateLead;
       } else {
-        coupleName = rawDocCouple || 'Groom & Bride';
+        coupleName = 'Client';
       }
       if (!mergedDoc.cover) mergedDoc.cover = {};
       mergedDoc.cover.coupleName = coupleName;
-      if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = stripTrailingKeywords(docToApply.cover.groomName);
-      if (docToApply?.cover?.brideName) mergedDoc.cover.brideName = stripTrailingKeywords(docToApply.cover.brideName);
+      if (coupleName.includes('&')) {
+        const cParts = coupleName.split('&').map((s: string) => s.trim()).filter(Boolean);
+        mergedDoc.cover.groomName = cParts[0] || coupleName;
+        mergedDoc.cover.brideName = cParts[1] || '';
+      } else {
+        mergedDoc.cover.groomName = coupleName;
+        mergedDoc.cover.brideName = '';
+      }
       if (effectiveLead.location && !mergedDoc.cover.locationName) {
         mergedDoc.cover.locationName = effectiveLead.location;
       }
@@ -1299,15 +1408,21 @@ LEAD & CLIENT CONTEXT:
       coupleName = rawDocCouple;
     } else if (rawGroom && rawBride && !isPlaceholderCoupleName(`${rawGroom} & ${rawBride}`)) {
       coupleName = `${rawGroom} & ${rawBride}`;
-    } else if (candidateLead && !['client', 'valued client', 'lead', 'quotation', 'demo'].includes(candidateLead.toLowerCase())) {
+    } else if (candidateLead && !isPlaceholderCoupleName(candidateLead)) {
       coupleName = candidateLead;
     } else {
-      coupleName = rawDocCouple || 'Groom & Bride';
+      coupleName = 'Client';
     }
     if (!mergedDoc.cover) mergedDoc.cover = {};
     mergedDoc.cover.coupleName = coupleName;
-    if (docToApply?.cover?.groomName) mergedDoc.cover.groomName = stripTrailingKeywords(docToApply.cover.groomName);
-    if (docToApply?.cover?.brideName) mergedDoc.cover.brideName = stripTrailingKeywords(docToApply.cover.brideName);
+    if (coupleName.includes('&')) {
+      const cParts = coupleName.split('&').map((s: string) => s.trim()).filter(Boolean);
+      mergedDoc.cover.groomName = cParts[0] || coupleName;
+      mergedDoc.cover.brideName = cParts[1] || '';
+    } else {
+      mergedDoc.cover.groomName = coupleName;
+      mergedDoc.cover.brideName = '';
+    }
     if (effectiveLead.location && !mergedDoc.cover.locationName) {
       mergedDoc.cover.locationName = effectiveLead.location;
     }
@@ -1867,7 +1982,7 @@ LEAD & CLIENT CONTEXT:
                     <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700/50">
                       <span className="text-[10px] font-bold text-zinc-400 uppercase block">Couple Name</span>
                       <span className="font-extrabold text-zinc-900 dark:text-white truncate block">
-                        {summary?.coupleName || 'Rahul & Neha'}
+                        {summary?.coupleName && !isPlaceholderCoupleName(summary.coupleName) ? summary.coupleName : 'Client'}
                       </span>
                     </div>
 

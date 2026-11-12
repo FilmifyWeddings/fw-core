@@ -7,6 +7,7 @@ import {
   STANDARD_PAGE_DEFINITIONS
 } from '@/lib/quotation-defaults';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
+import { transliterateDevanagariName } from '@/lib/speech-text-cleaner';
 
 const QUOTATION_MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const QUOTATION_MONTH_IDX: Record<string, number> = {
@@ -531,30 +532,196 @@ const COUPLE_INVALID_WORDS = new Set([
   'शूट', 'कोटेशन', 'प्रपोजल', 'बजट', 'पैकेज', 'वेडिंग', 'प्री', 'अगले', 'दूसरे', 'उसी', 'नेक्स्ट', 'पहले',
   'बाद', 'दिन', 'दोनों', 'सभी', 'एक', 'उसके', 'उसमें', 'नहीं',
   'उनकी', 'इनकी', 'उनका', 'उनके', 'उनको', 'मेरी', 'हमारी', 'तुम्हारी', 'आपकी', 'इसका', 'उसका', 'क्लाइंट',
-  'wedding', 'marriage', 'proposal', 'quotation', 'haldi', 'sangeet', 'mehendi', 'mehndi', 'reception',
-  'engagement', 'roka', 'cocktail', 'mayra', 'puja', 'pre', 'shoot', 'candid', 'cine', 'cinematographer',
-  'traditional', 'drone', 'photographer', 'videographer', 'budget', 'price', 'rate', 'cost', 'date',
-  'day', 'days', 'hours', 'next', 'same', 'both', 'all', 'each', 'every', 'after', 'before', 'client', 'lead'
+  'स्टैंडर्ड', 'प्रीमियम', 'लक्ज़री', 'क्रू', 'टीम', 'पार्टनर', 'वीडियो', 'विडियो', 'फोटो', 'फोटोज', 'फोटोज़',
+  'एडिटेड', 'रॉ', 'एल्बम', 'एलबम', 'रील', 'रील्स', 'इंस्टाग्राम', 'पेनड्राइव', 'हार्ड', 'ड्राइव', 'टीज़र', 'टीजर',
+  'हाइलाइट', 'फिल्म', 'डिलीवरेबल', 'डिलीवरेबल्स', 'लोकेशन', 'वेन्यू', 'जगह', 'शहर', 'कुल', 'टोटल', 'अमाउंट',
+  'एडवांस', 'एडवान्स', 'टोकन', 'बुकिंग', 'फिक्स', 'डिस्काउंट', 'ऑफर', 'ट्रैवल', 'स्टे', 'अतिरिक्त', 'फ्री',
+  'बस', 'सिर्फ', 'केवल', 'सुबह', 'शाम', 'रात', 'दोपहर', 'पूरा', 'फुल', 'हाफ', 'दो', 'तीन', 'चार', 'पांच', 'पाँच',
+  'घंटे', 'घंटा', 'इवेंट', 'इवेंट्स', 'फंक्शन', 'फंक्शंस', 'सारे', 'हर', 'अलग', 'सेम', 'साइड', 'दुल्हन', 'दूल्हा',
+  'बनानी', 'बनाना', 'बनाने', 'है', 'हैं', 'देने', 'होंगे', 'इसमें', 'सबसे', 'लिए', 'लिये', 'की', 'का', 'के', 'को', 'में', 'से', 'पर',
+  'हाँ', 'हां', 'सर', 'ओके', 'ठीक', 'तो', 'भी', 'ही', 'ये', 'वो', 'और', 'तथा', 'या', 'एवं',
+  'wedding', 'marriage', 'shaadi', 'shadi', 'proposal', 'quotation', 'quote', 'haldi', 'sangeet', 'mehendi', 'mehndi',
+  'reception', 'engagement', 'roka', 'cocktail', 'mayra', 'puja', 'pre', 'prewedding', 'shoot', 'candid', 'cine', 'cinematographer',
+  'cinematography', 'cinematic', 'traditional', 'trad', 'drone', 'pilot', 'photographer', 'photography', 'videographer', 'videography',
+  'budget', 'price', 'rate', 'cost', 'package', 'amount', 'total', 'advance', 'token', 'booking', 'fix', 'fixed', 'discount', 'offer',
+  'regular', 'best', 'gst', 'tax', 'travel', 'stay', 'accommodation', 'extra', 'complimentary', 'free', 'option',
+  'date', 'day', 'days', 'hour', 'hours', 'min', 'minute', 'minutes', 'next', 'same', 'both', 'all', 'each', 'every', 'after', 'before',
+  'client', 'lead', 'partner', 'crew', 'team', 'standard', 'premium', 'luxury', 'basic', 'classic', 'semi', 'creator',
+  'video', 'videos', 'photo', 'photos', 'edited', 'edit', 'raw', 'footage', 'album', 'albums', 'photobook', 'reel', 'reels', 'instagram',
+  'pendrive', 'hard', 'drive', 'teaser', 'trailer', 'highlight', 'highlights', 'film', 'films', 'deliverable', 'deliverables',
+  'location', 'venue', 'city', 'destination', 'place', 'different', 'separate', 'alag', 'only', 'bas', 'sirf', 'keval',
+  'morning', 'evening', 'afternoon', 'night', 'full', 'half', 'one', 'two', 'three', 'four', 'five', 'event', 'events',
+  'function', 'functions', 'ceremony', 'ceremonies', 'ritual', 'rituals', 'sabhi', 'saare', 'sare', 'har', 'music', 'decor', 'makeup',
+  'family', 'friends', 'side', 'sides', 'bride', 'groom', 'couple', 'coverage', 'ring',
+  'delhi', 'mumbai', 'pune', 'jaipur', 'udaipur', 'goa', 'lucknow', 'bangalore', 'bengaluru', 'hyderabad', 'chennai', 'kolkata',
+  'ahmedabad', 'surat', 'chandigarh', 'indore', 'nagpur', 'lonavala',
+  'liye', 'liya', 'banani', 'banana', 'banane', 'banao', 'isme', 'ismein', 'uske', 'sabse', 'pehle', 'phir', 'fir', 'baad',
+  'rahega', 'rahegi', 'rahna', 'rakhna', 'dena', 'dene', 'chahiye', 'hui', 'hua', 'hai', 'hain', 'ki', 'ka', 'ke', 'ko',
+  'mein', 'me', 'se', 'par', 'aur', 'and', 'with', 'for', 'the', 'this', 'that', 'is', 'are', 'will', 'be', 'hum', 'humein',
+  'humko', 'humare', 'hamare', 'mera', 'meri', 'mere', 'hamara', 'hamari', 'aap', 'aapka', 'aapki', 'aapke', 'unke', 'inke',
+  'aaj', 'kal', 'parso', 'bhi', 'toh', 'haan', 'han', 'ok', 'okay', 'sir', 'ji', 'customer', 'demo', 'sample', 'new', 'naya', 'nayi'
+]);
+
+const SPOKEN_NAME_MONTHS = new Set([
+  'january', 'jan', 'february', 'feb', 'march', 'mar', 'april', 'apr', 'may', 'june', 'jun',
+  'july', 'jul', 'august', 'aug', 'september', 'sep', 'sept', 'october', 'oct', 'november', 'nov', 'december', 'dec'
 ]);
 
 /**
- * Returns true if a couple name candidate is empty, punctuation/pronoun artifact ("। उनकी"), or a placeholder.
+ * Returns true if a couple name candidate is empty, punctuation/pronoun artifact ("। उनकी"), non-name phrase, or placeholder.
  */
-export function isInvalidCoupleName(rawCandidate?: string | null): boolean {
+export function isInvalidCoupleName(rawCandidate?: string | null, extraInvalidWords?: Set<string>): boolean {
   const cleaned = String(rawCandidate || '')
     .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!cleaned || cleaned.length < 2) return true;
+  if (/\d|₹/.test(cleaned)) return true;
   if (isPlaceholderCoupleName(cleaned)) return true;
   const stripped = cleaned.replace(/[\s।|.,:;!?'"\-–—&+]/g, '');
   if (stripped.length < 2) return true;
+  const allWords = cleaned.toLowerCase().split(/[\s&+/]+/).filter(Boolean);
+  if (allWords.length === 0 || allWords.length > 6) return true;
   const parts = cleaned.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i).map(p => p.trim()).filter(Boolean);
   if (parts.length === 0) return true;
-  return parts.every(p => {
+  const isStop = (w: string) =>
+    COUPLE_INVALID_WORDS.has(w) || SPOKEN_NAME_MONTHS.has(w) || (extraInvalidWords ? extraInvalidWords.has(w) : false);
+  // Every `&`-separated side MUST have at least one valid non-stopword word
+  if (parts.some(p => {
     const words = p.split(/\s+/).filter(Boolean);
-    return words.length === 0 || words.every(w => COUPLE_INVALID_WORDS.has(w));
-  });
+    return words.length === 0 || words.every(isStop);
+  })) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Translates common Devanagari/Hindi name words or phonetically transliterates arbitrary Devanagari names -> Title Case English.
+ */
+function normalizeSpokenNameToEnglish(rawName: string): string {
+  if (!rawName) return '';
+  let s = rawName
+    .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+    .replace(/\s*(?:और|तथा|एवं|व|एंड|aur|and|weds|\+)\s*/gi, ' & ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (/[\u0900-\u097F]/.test(s)) {
+    const parts = s.split(' & ').map((side) => {
+      const cleanedSide = transliterateDevanagariName(side.trim());
+      return cleanedSide;
+    });
+    s = parts.join(' & ');
+  }
+
+  // Title-case Latin words neatly while preserving short initials like "O"
+  return s
+    .split(/\s+/)
+    .map((tok) => {
+      if (tok === '&') return '&';
+      if (!/[A-Za-z]/.test(tok)) return tok;
+      return tok.charAt(0).toUpperCase() + tok.slice(1).toLowerCase();
+    })
+    .join(' ')
+    .replace(/\s*&\s*/g, ' & ')
+    .trim();
+}
+
+/**
+ * Strips conversational filler edges from a candidate client/couple name before validation.
+ */
+function cleanCandidateNameEdges(raw: string, extraInvalidWords?: Set<string>): string {
+  let parts = String(raw || '')
+    .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const isEdgeNoise = (w: string) => {
+    const lw = w.toLowerCase();
+    return COUPLE_INVALID_WORDS.has(lw) || SPOKEN_NAME_MONTHS.has(lw) || (extraInvalidWords ? extraInvalidWords.has(lw) : false);
+  };
+
+  while (parts.length > 0 && isEdgeNoise(parts[0])) parts.shift();
+  while (parts.length > 0 && isEdgeNoise(parts[parts.length - 1])) parts.pop();
+  return parts.join(' ').trim();
+}
+
+/**
+ * Extracts client or couple name directly from spoken/written user notes (Hindi, Hinglish, Marathi, English).
+ * Returns clean English Title Case name ("O Piya", "Rohit", "Sagar & Riddhi") or "" if none was mentioned.
+ */
+export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEventNames: string[] = []): string {
+  const userNotes = String(rawUserNotes || '').trim();
+  if (!userNotes) return '';
+
+  const extraInvalid = new Set(studioEventNames.map((e) => String(e || '').toLowerCase()).filter(Boolean));
+  const isStrictValidCandidate = (rawCand: string): string => {
+    const edgeCleaned = cleanCandidateNameEdges(rawCand, extraInvalid);
+    if (!edgeCleaned) return '';
+    // For multi-word pairs or multi-word phrases, ensure NO interior word is an invalid event/crew/pricing word
+    const tokens = edgeCleaned.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i).filter(Boolean);
+    if (tokens.length === 0) return '';
+    for (const side of tokens) {
+      const ws = side.trim().split(/\s+/).filter(Boolean);
+      if (ws.length === 0 || ws.length > 3) return '';
+      if (ws.some((w) => COUPLE_INVALID_WORDS.has(w) || SPOKEN_NAME_MONTHS.has(w) || extraInvalid.has(w))) {
+        return '';
+      }
+      // Single-word side must be >= 2 chars unless paired in a 2+ word name like "O Piya"
+      if (ws.length === 1 && ws[0].replace(/[^A-Za-z\u0900-\u097F]/g, '').length < 2) {
+        return '';
+      }
+    }
+    if (isInvalidCoupleName(edgeCleaned, extraInvalid)) return '';
+    const english = normalizeSpokenNameToEnglish(edgeCleaned);
+    if (!english || isInvalidCoupleName(english, extraInvalid)) return '';
+    return english;
+  };
+
+  // 1. Explicit English labels: "Couple: X & Y", "Client name: X", "Name: X"
+  const explicitMatch = userNotes.match(/(?:^|[\s.;,\n])(?:couple(?:\s*name)?|client(?:\s*name)?|bride\s*(?:&|and)\s*groom|groom\s*(?:&|and)\s*bride)\s*[:=\-]+\s*([A-Za-z\u0900-\u097F\s&'+.-]{2,45}?)(?=\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|ke\s+liye|ki|ka|\d|₹|rs|all|deliverable)|[,\n\r.;।]|$)/i);
+  if (explicitMatch?.[1]) {
+    const valid = isStrictValidCandidate(explicitMatch[1]);
+    if (valid) return valid;
+  }
+
+  // 2. Explicit Hindi/Hinglish labels: "कपल का नाम रहेगा रौनक और प्रेक्षा", "क्लाइंट का नाम रोहित", "कपल नेम X Y"
+  const hindiLabelMatch = userNotes.match(/(?:कपल(?:\s*का)?\s*नाम(?:\s*रहेगा|\s*है)?|कपल\s*नेम|क्लाइंट\s*(?:का\s*)?नाम(?:\s*रहेगा|\s*है)?|नाम(?:\s*रहेगा|\s*है)?)\s*[:=\-]?\s*([\u0900-\u097FA-Za-z\s&'+.-]{2,45}?)(?=\s+(?:वेडिंग|शादी|लग्न|कोटेशन|हल्दी|संगीत|रिसेप्शन|मेहंदी|तारीख|बजट|\d|ऑल|all|का|की|के|है)|[,\n\r.;।]|$)/i);
+  if (hindiLabelMatch?.[1]) {
+    const valid = isStrictValidCandidate(hindiLabelMatch[1]);
+    if (valid) return valid;
+  }
+
+  // 3. Direct Hinglish/Hindi single or couple intro:
+  //    "O Piya ke liye quotation...", "Rohit ke liye ek quotation banani hai...", "Priya ki wedding...", "राहुल की शादी..."
+  const introRe = /(?:^|[।.,;\n]\s*|\s+)([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)\s+(?:ke\s+liye|ke\s+liya|k\s+liye|के\s+लिए|के\s+लिये|ka|ki|ke|का|की|के)\s+(?:(?:ek|a|one|new|naya|nayi|final|एक|नया|नयी)\s+)?(?:quotation|quote|proposal|wedding|marriage|shaadi|shadi|engagement|haldi|sangeet|mehendi|reception|event|shoot|package|banan[ai]|banao|कोटेशन|प्रपोजल|वेडिंग|शादी|लग्न|सगाई|इवेंट|शूट|पैकेज|बनान[ाी])/gi;
+  for (const m of userNotes.matchAll(introRe)) {
+    if (m[1]) {
+      const valid = isStrictValidCandidate(m[1]);
+      if (valid) return valid;
+    }
+  }
+
+  // 4. Explicit English prefix: "quotation for X", "quote for X", "proposal for X", "wedding for X"
+  const forRe = /(?:quotation|quote|proposal|wedding)\s+for\s+([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)(?=\s+(?:wedding|marriage|shaadi|reception|event|pre-wedding|haldi|sangeet|mehendi|on|date|in|budget|total|\d|₹)|[,\n\r.;।]|$)/gi;
+  for (const m of userNotes.matchAll(forRe)) {
+    if (m[1]) {
+      const valid = isStrictValidCandidate(m[1]);
+      if (valid) return valid;
+    }
+  }
+
+  // 5. Scan ALL standalone couple pairs ("Sagar & Vruddhi", "Rohan aur Pooja") skipping non-name pairs like "Standard Crew aur Premium"
+  const pairRe = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])([A-Za-z\u0900-\u097F]{2,20}\s*(?:&|weds|and|\+|तथा|और)\s*[A-Za-z\u0900-\u097F]{2,20})(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi;
+  for (const m of userNotes.matchAll(pairRe)) {
+    if (m[1]) {
+      const valid = isStrictValidCandidate(m[1]);
+      if (valid) return valid;
+    }
+  }
+
+  return '';
 }
 
 /**
@@ -1962,95 +2129,25 @@ export function fallbackHeuristicExtractor(contextData: any) {
   );
   const studioCrewRoles: any[] = Array.isArray(contextData.studioCrewRoles) ? contextData.studioCrewRoles : [];
 
-  // 1. Couple & Names
-  let leadName = '';
+  // 1. Couple & Names (strictly prioritizes spoken/written user notes over CRM lead record & template placeholders)
+  let cleanNameStr = extractSpokenCoupleName(userNotes, allConfiguredEventNames);
 
-  const INVALID_NAME_WORDS = new Set([
-    ...COUPLE_INVALID_WORDS,
-    ...allConfiguredEventNames.map(s => s.toLowerCase())
-  ]);
-  const isValidCoupleCandidate = (cand: string): boolean => {
-    if (!cand) return false;
-    const stripped = cand.replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '').trim();
-    if (!stripped || stripped.length < 2) return false;
-    const parts = stripped.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i).map(p => p.trim()).filter(Boolean);
-    if (parts.length === 0) return false;
-    return !parts.some(p => {
-      if (INVALID_NAME_WORDS.has(p)) return true;
-      const words = p.split(/\s+/);
-      return words.every(w => INVALID_NAME_WORDS.has(w));
-    });
-  };
-
-  // Check explicit "Couple: X & Y" or "Couple name: X and Y" or "Client: X & Y"
-  const explicitMatch = userNotes.match(/(?:couple(?:\s*name)?|client(?:\s*name)?|bride\s*(?:&|and)\s*groom|groom\s*(?:&|and)\s*bride)[:\s]+([A-Za-z\u0900-\u097F\s&'+.-]+?)(?=\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|\d|₹|rs|all|deliverable)|[,\n\r.]|$)/i);
-  if (explicitMatch && explicitMatch[1].trim() && isValidCoupleCandidate(explicitMatch[1].trim())) {
-    leadName = explicitMatch[1].trim();
-  }
-
-  // Hindi Couple Name matching e.g. "कपल का नाम रहेगा रौनक और प्रेक्षा" or "कपल नेम राहुल नेहा"
-  if (!leadName) {
-    const hindiCoupleMatch = userNotes.match(/(?:कपल(?:\s*का)?\s*नाम(?:\s*रहेगा)?|कपल\s*नेम|कपल|जो\s*की\s*रहेगा|जो\s*रहेगा|कोटेशन\s*रहेगा|कोटेशन\s*बनाना\s*है)[:\s]*([\u0900-\u097Fa-zA-Z\s&'+.-]+?)(?=\s+(?:वेडिंग|शादी|लग्न|कोटेशन|हल्दी|संगीत|रिसेप्शन|मेहंदी|तारीख|बजट|\d|ऑल|all|का|की|के|है)|[,\n\r.]|$)/i);
-    if (hindiCoupleMatch && hindiCoupleMatch[1].trim() && isValidCoupleCandidate(hindiCoupleMatch[1].trim())) {
-      leadName = hindiCoupleMatch[1].trim();
-    }
-  }
-
-  // Check for standalone couple name pattern e.g. "Sagar & Vruddhi" or "Rahul and Pooja"
-  if (!leadName) {
-    const couplePatternMatch = userNotes.match(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])([A-Za-z\u0900-\u097F]{2,20}\s*(?:&|weds|and|\+|तथा|और)\s*[A-Za-z\u0900-\u097F]{2,20})(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i);
-    if (couplePatternMatch && couplePatternMatch[1]?.trim() && isValidCoupleCandidate(couplePatternMatch[1].trim())) {
-      leadName = couplePatternMatch[1].trim();
-    }
-  }
-
-  // Check for "X और Y का कोटेशन / शादी" pattern
-  if (!leadName) {
-    const hindiKaMatch = userNotes.match(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])([A-Za-z\u0900-\u097F]{2,20}\s*(?:&|weds|and|\+|तथा|और)\s*[A-Za-z\u0900-\u097F]{2,20})\s*(?:का|की|के)\s*(?:कोटेशन|वेडिंग|शादी|इवेंट)/i);
-    if (hindiKaMatch && hindiKaMatch[1]?.trim() && isValidCoupleCandidate(hindiKaMatch[1].trim())) {
-      leadName = hindiKaMatch[1].trim();
-    }
-  }
-
-  // Check for "Quotation for X & Y" or "quote for X & Y"
-  if (!leadName) {
-    const forMatch = userNotes.match(/(?:quotation\s+for|quote\s+for|proposal\s+for|for)\s+([A-Za-z\u0900-\u097F\s&]+?)(?=\s+(?:wedding|reception|event|pre-wedding|haldi|sangeet|on|date|budget|\d)|[,\n\r.]|$)/i);
-    if (forMatch && forMatch[1].trim() && isValidCoupleCandidate(forMatch[1].trim())) {
-      leadName = forMatch[1].trim();
-    }
-  }
-
-  // Common Hindi name transliterations
-  const HINDI_NAME_TRANSLATE: Record<string, string> = {
-    'संस्कृति': 'Sanskriti', 'रूपेश': 'Rupesh', 'संस्कृती': 'Sanskriti',
-    'रौनक': 'Raunak', 'प्रेक्षा': 'Preksha', 'सागर': 'Sagar', 'रिद्धि': 'Riddhi',
-    'रोहन': 'Rohan', 'पूजा': 'Pooja', 'राहुल': 'Rahul', 'नेहा': 'Neha',
-    'मोनालिसा': 'Monalisha', 'अथर्व': 'Atharva', 'साक्षी': 'Sakshi', 'संदीप': 'Sandeep',
-    'प्रिया': 'Priya', 'अनुजा': 'Anuja', 'हर्षल': 'Harshal', 'अमन': 'Aman',
-    'श्रद्धा': 'Shraddha', 'ध्रुव': 'Dhruv', 'विशाल': 'Vishal', 'सुमती': 'Sumati',
-    'यश': 'Yash', 'हर्षिता': 'Harshita', 'मंथन': 'Manthan',
-    'और': '&', 'तथा': '&', 'व': '&', 'एंड': '&'
-  };
-
-  let cleanNameStr = leadName;
-  for (const [k, v] of Object.entries(HINDI_NAME_TRANSLATE)) {
-    cleanNameStr = cleanNameStr.replace(new RegExp(`(^|[^\\u0900-\\u097Fa-zA-Z0-9])${k}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`, 'gi'), `$1${v}`);
-  }
-  cleanNameStr = cleanNameStr.replace(/\s+/g, ' ').trim();
-
-  // If no name extracted from notes or placeholder name, fallback to Lead record from CRM
-  if (!cleanNameStr || isPlaceholderCoupleName(cleanNameStr)) {
-    const candidateLeadName = 
-      raw.couple_name || 
-      raw.client_name || 
-      raw.bride_and_groom || 
-      raw.groom_and_bride || 
-      leadInfo.name || 
-      raw.name || 
-      raw.full_name || 
+  // If no valid name was extracted from notes, fallback cleanly to Lead record from CRM
+  if (!cleanNameStr || isInvalidCoupleName(cleanNameStr)) {
+    const candidateLeadName =
+      raw.couple_name ||
+      raw.client_name ||
+      raw.bride_and_groom ||
+      raw.groom_and_bride ||
+      leadInfo.name ||
+      raw.name ||
+      raw.full_name ||
       '';
-    if (candidateLeadName && !isPlaceholderCoupleName(candidateLeadName)) {
-      cleanNameStr = String(candidateLeadName).trim();
+    const leadClean = String(candidateLeadName || '').trim();
+    if (leadClean && !isInvalidCoupleName(leadClean)) {
+      cleanNameStr = leadClean;
+    } else {
+      cleanNameStr = '';
     }
   }
 
@@ -2063,7 +2160,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     return s.replace(/\s+(?:wedding|marriage|shaadi|quotation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|\d|all|deliverable|days|day).*$/i, '').trim();
   };
 
-  if (splitRegex.test(cleanNameStr)) {
+  if (cleanNameStr && splitRegex.test(cleanNameStr)) {
     const parts = cleanNameStr.split(splitRegex);
     groomName = stripKeywords((parts[0] || '').trim());
     brideName = stripKeywords((parts[1] || '').trim());
@@ -2077,8 +2174,8 @@ export function fallbackHeuristicExtractor(contextData: any) {
     coupleName = groomName;
   } else {
     groomName = 'Client';
-    brideName = 'Partner';
-    coupleName = 'Client & Partner';
+    brideName = '';
+    coupleName = 'Client';
   }
 
   // 2. Pre-Wedding Intent & Main Event Type Detection (strictly scoped to user voice/text message when present)
@@ -2825,13 +2922,17 @@ export function fallbackHeuristicExtractor(contextData: any) {
     ];
   }
 
-  const sanitizedFallbackCouple = sanitizeExtractedCoupleName(coupleName, contextData?.lead_info?.name || '');
+  const sanitizedFallbackCouple = cleanNameStr
+    ? sanitizeExtractedCoupleName(coupleName, contextData?.lead_info?.name || '')
+    : (contextData?.lead_info?.name && !isInvalidCoupleName(contextData.lead_info.name)
+        ? sanitizeExtractedCoupleName(contextData.lead_info.name, '')
+        : 'Client');
 
   const heuristicDoc = {
     cover: {
       coupleName: sanitizedFallbackCouple,
-      groomName,
-      brideName,
+      groomName: sanitizedFallbackCouple.includes('&') ? sanitizedFallbackCouple.split('&')[0].trim() : sanitizedFallbackCouple,
+      brideName: sanitizedFallbackCouple.includes('&') ? (sanitizedFallbackCouple.split('&')[1] || '').trim() : '',
       eventType,
       locationName: location
     },
@@ -3067,12 +3168,63 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       applyAiTrainingAndVoiceDirectives(normDoc, contextData);
     }
 
-    // Sanitize coupleName (prevent invalid pronouns/punctuation like "। उनकी")
-    const leadFallbackName = contextData?.lead_info?.name || '';
-    const candidateCouple = normDoc.cover?.coupleName || (normDoc.cover?.groomName ? `${normDoc.cover.groomName} & ${normDoc.cover.brideName}` : '');
-    const cName = sanitizeExtractedCoupleName(candidateCouple, leadFallbackName);
+    // Sanitize coupleName (prevent invalid pronouns/punctuation & enforce explicit spoken prompt name priority)
+    const rawLeadFallback = String(contextData?.lead_info?.name || '').trim();
+    const leadFallbackName = rawLeadFallback && !isInvalidCoupleName(rawLeadFallback) ? rawLeadFallback : '';
+    const spokenPromptCouple = !isDirectJson ? extractSpokenCoupleName(rawPromptNotes, studioEventNames) : '';
+
+    const coverCoupleRaw = String(normDoc.cover?.coupleName || '').trim();
+    const coverGroomRaw = String(normDoc.cover?.groomName || '').trim();
+    const coverBrideRaw = String(normDoc.cover?.brideName || '').trim();
+    let candidateCouple = coverCoupleRaw && !isInvalidCoupleName(coverCoupleRaw) ? coverCoupleRaw : '';
+    if (!candidateCouple) {
+      if (coverGroomRaw && coverBrideRaw && !isInvalidCoupleName(`${coverGroomRaw} & ${coverBrideRaw}`)) {
+        candidateCouple = `${coverGroomRaw} & ${coverBrideRaw}`;
+      } else if (coverGroomRaw && !isInvalidCoupleName(coverGroomRaw)) {
+        candidateCouple = coverGroomRaw;
+      }
+    }
+    const baseCoupleRaw = String(baseSchema?.cover?.coupleName || '').trim().toLowerCase();
+    const notesLowerForCouple = rawPromptNotes.toLowerCase();
+    const spokenLowerC = spokenPromptCouple.toLowerCase();
+    const candLowerC = candidateCouple.toLowerCase();
+    const candidateTokensPresentInPrompt = Boolean(
+      candidateCouple &&
+      candLowerC
+        .split(/[\s&+/]+/)
+        .filter((t) => t.length >= 2)
+        .some((t) => notesLowerForCouple.includes(t))
+    );
+    const spokenIsSupersetOfCandidate = Boolean(
+      spokenLowerC &&
+      candLowerC &&
+      spokenLowerC !== candLowerC &&
+      (spokenLowerC.includes(candLowerC) ||
+        candLowerC.split(/[\s&+/]+/).filter(Boolean).every((t) => spokenLowerC.includes(t)) &&
+        spokenLowerC.length > candLowerC.length)
+    );
+    if (
+      spokenPromptCouple &&
+      (!candidateCouple ||
+        spokenIsSupersetOfCandidate ||
+        (leadFallbackName && candLowerC === leadFallbackName.toLowerCase() && spokenLowerC !== leadFallbackName.toLowerCase()) ||
+        (baseCoupleRaw && candLowerC === baseCoupleRaw && spokenLowerC !== baseCoupleRaw) ||
+        (!candidateTokensPresentInPrompt && !/[\u0900-\u097F]/.test(rawPromptNotes)))
+    ) {
+      candidateCouple = spokenPromptCouple;
+    }
+
+    const cName = candidateCouple || leadFallbackName || 'Client';
     if (!normDoc.cover) normDoc.cover = {};
     normDoc.cover.coupleName = cName;
+    if (cName.includes('&')) {
+      const parts = cName.split('&').map((s: string) => s.trim()).filter(Boolean);
+      normDoc.cover.groomName = parts[0] || cName;
+      normDoc.cover.brideName = parts[1] || '';
+    } else {
+      normDoc.cover.groomName = cName;
+      normDoc.cover.brideName = '';
+    }
 
     const baseP = normDoc.pricingPage?.basePrice || 0;
     const discP = normDoc.pricingPage?.discountAmount || 0;
@@ -3124,11 +3276,66 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   const pricingPage = aiData.pricingPage || aiData.pricing || {};
   const paymentTermsPage = aiData.paymentTermsPage || aiData.payment_schedule || {};
 
-  // 1. Cover Page
+  // 1. Cover Page (explicitly override baseSchema demo cover identity fields so template demo names NEVER bleed through)
   if (!doc.cover) doc.cover = {};
-  if (cover.coupleName) doc.cover.coupleName = cover.coupleName;
-  if (cover.groomName) doc.cover.groomName = cover.groomName;
-  if (cover.brideName) doc.cover.brideName = cover.brideName;
+  const spokenPromptCoupleMain = !isDirectJson ? extractSpokenCoupleName(rawPromptNotes, studioEventNames) : '';
+  const aiCoverCoupleRaw = String(cover.coupleName || '').trim();
+  const aiCoverGroomRaw = String(cover.groomName || '').trim();
+  const aiCoverBrideRaw = String(cover.brideName || '').trim();
+  const baseLeadRaw = String(contextData?.lead_info?.name || '').trim();
+  const validLeadFallback = baseLeadRaw && !isInvalidCoupleName(baseLeadRaw) ? baseLeadRaw : '';
+
+  let resolvedInitialCouple = '';
+  if (aiCoverCoupleRaw && !isInvalidCoupleName(aiCoverCoupleRaw)) {
+    resolvedInitialCouple = aiCoverCoupleRaw;
+  } else if (aiCoverGroomRaw && aiCoverBrideRaw && !isInvalidCoupleName(`${aiCoverGroomRaw} & ${aiCoverBrideRaw}`)) {
+    resolvedInitialCouple = `${aiCoverGroomRaw} & ${aiCoverBrideRaw}`;
+  } else if (aiCoverGroomRaw && !isInvalidCoupleName(aiCoverGroomRaw)) {
+    resolvedInitialCouple = aiCoverGroomRaw;
+  } else if (aiCoverBrideRaw && !isInvalidCoupleName(aiCoverBrideRaw)) {
+    resolvedInitialCouple = aiCoverBrideRaw;
+  }
+
+  const baseCoupleMainRaw = String(baseSchema?.cover?.coupleName || '').trim().toLowerCase();
+  const notesLowerForCoupleMain = rawPromptNotes.toLowerCase();
+  const spokenLowerM = spokenPromptCoupleMain.toLowerCase();
+  const resolvedLowerM = resolvedInitialCouple.toLowerCase();
+  const resolvedTokensPresentInPrompt = Boolean(
+    resolvedInitialCouple &&
+    resolvedLowerM
+      .split(/[\s&+/]+/)
+      .filter((t) => t.length >= 2)
+      .some((t) => notesLowerForCoupleMain.includes(t))
+  );
+  const spokenMainIsSuperset = Boolean(
+    spokenLowerM &&
+    resolvedLowerM &&
+    spokenLowerM !== resolvedLowerM &&
+    (spokenLowerM.includes(resolvedLowerM) ||
+      resolvedLowerM.split(/[\s&+/]+/).filter(Boolean).every((t) => spokenLowerM.includes(t)) &&
+      spokenLowerM.length > resolvedLowerM.length)
+  );
+  if (
+    spokenPromptCoupleMain &&
+    (!resolvedInitialCouple ||
+      spokenMainIsSuperset ||
+      (validLeadFallback && resolvedLowerM === validLeadFallback.toLowerCase() && spokenLowerM !== validLeadFallback.toLowerCase()) ||
+      (baseCoupleMainRaw && resolvedLowerM === baseCoupleMainRaw && spokenLowerM !== baseCoupleMainRaw) ||
+      (!resolvedTokensPresentInPrompt && !/[\u0900-\u097F]/.test(rawPromptNotes)))
+  ) {
+    resolvedInitialCouple = spokenPromptCoupleMain;
+  }
+
+  const finalCoverCouple = resolvedInitialCouple || validLeadFallback || 'Client';
+  doc.cover.coupleName = finalCoverCouple;
+  if (finalCoverCouple.includes('&')) {
+    const cParts = finalCoverCouple.split('&').map((s: string) => s.trim()).filter(Boolean);
+    doc.cover.groomName = cParts[0] || finalCoverCouple;
+    doc.cover.brideName = cParts[1] || '';
+  } else {
+    doc.cover.groomName = finalCoverCouple;
+    doc.cover.brideName = '';
+  }
   if (cover.eventType) doc.cover.eventType = cover.eventType;
   doc.cover.locationName = cover.locationName || '';
 
@@ -3324,11 +3531,22 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     applyAiTrainingAndVoiceDirectives(doc, contextData);
   }
 
-  // Calculate Summary (sanitized coupleName so "। उनकी" can never appear)
-  const leadFallbackName = contextData?.lead_info?.name || '';
-  const rawCandidateCouple = doc.cover.coupleName || (doc.cover.groomName ? `${doc.cover.groomName} & ${doc.cover.brideName}` : '');
-  const coupleName = sanitizeExtractedCoupleName(rawCandidateCouple, leadFallbackName);
+  // Calculate Summary (sanitized coupleName so placeholders & random phrases can never leak)
+  const rawLeadFallbackMain = String(contextData?.lead_info?.name || '').trim();
+  const leadFallbackName = rawLeadFallbackMain && !isInvalidCoupleName(rawLeadFallbackMain) ? rawLeadFallbackMain : '';
+  const candidatePostDirective = String(doc.cover?.coupleName || '').trim();
+  const coupleName = (candidatePostDirective && !isInvalidCoupleName(candidatePostDirective))
+    ? candidatePostDirective
+    : (spokenPromptCoupleMain || leadFallbackName || 'Client');
   doc.cover.coupleName = coupleName;
+  if (coupleName.includes('&')) {
+    const finalParts = coupleName.split('&').map((s: string) => s.trim()).filter(Boolean);
+    doc.cover.groomName = finalParts[0] || coupleName;
+    doc.cover.brideName = finalParts[1] || '';
+  } else {
+    doc.cover.groomName = coupleName;
+    doc.cover.brideName = '';
+  }
   const baseAmt = doc.pricingPage.basePrice || 150000;
   const discAmtVal = doc.pricingPage.discountAmount || 0;
   const travAmt = doc.pricingPage.travelCharges || 0;

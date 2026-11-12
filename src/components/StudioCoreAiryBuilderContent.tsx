@@ -363,7 +363,7 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
           body: JSON.stringify({
             workspace_id: userId || 'demo_user',
             title: snapshotData.designName || 'Premium',
-            client_name: `${snapshotData.cover?.coupleName || (snapshotData.cover?.groomName ? `${snapshotData.cover.groomName} & ${snapshotData.cover.brideName}` : 'Rahul & Neha')}`,
+            client_name: `${snapshotData.cover?.coupleName || (snapshotData.cover?.groomName ? (snapshotData.cover?.brideName ? `${snapshotData.cover.groomName} & ${snapshotData.cover.brideName}` : snapshotData.cover.groomName) : 'Client')}`,
             content_json: snapshotData,
             financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
             status: 'draft'

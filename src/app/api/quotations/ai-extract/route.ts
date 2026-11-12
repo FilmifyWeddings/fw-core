@@ -353,12 +353,11 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 🌟 CRITICAL TOP PRIORITY OVERRIDE MANDATES (MUST FOLLOW):
 
 1. COUPLE NAME, EVENT TYPE & ROLES (HIGHEST PRIORITY):
-- If user notes, prompt, or speech mentions ANY couple name (e.g. "सागर और रिद्धि" / "Sagar & Riddhi", "रोहन और सिमरन", "Atharva & Sakshi"):
+- If user notes, prompt, or speech mentions ANY couple or client name (e.g. "सागर और रिद्धि" / "Sagar & Riddhi", "O Piya ke liye quotation...", "Rohit ke liye quotation..."):
   THIS STRICTLY AND ABSOLUTELY OVERRIDES any existing lead name or default template name!
-- ALWAYS transliterate/translate names into clean Latin/English Title Case:
-  * coupleName: "Sagar & Riddhi"
-  * groomName: "Sagar"
-  * brideName: "Riddhi"
+- ALWAYS preserve the FULL spoken client/couple name verbatim (including short prefixes like "O" in "O Piya") and transliterate/translate names into clean Latin/English Title Case:
+  * Couple example -> coupleName: "Sagar & Riddhi", groomName: "Sagar", brideName: "Riddhi"
+  * Single client/brand example ("O Piya ke liye quotation") -> coupleName: "O Piya", groomName: "O Piya", brideName: "" (keep brideName empty; NEVER invent a partner or strip "O")
 - EVENT TYPE (cover.eventType):
   * Concise standard event type: e.g. "Wedding", "Pre-Wedding & Wedding", "Engagement", or "Reception".
   * NEVER append the word "Quotation" to eventType (e.g. "Wedding", NOT "Wedding Quotation").

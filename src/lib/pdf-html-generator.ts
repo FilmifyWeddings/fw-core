@@ -619,7 +619,7 @@ export function renderQuotationToHTML(documentData: any): string {
     : DEFAULT_PAGE_SEQUENCE;
 
   const cover = documentData?.cover || {};
-  const coupleName = cover.coupleName !== undefined ? cover.coupleName : (cover.groomName ? `${cover.groomName} & ${cover.brideName}` : 'YASH & TWINKLE');
+  const coupleName = cover.coupleName !== undefined ? cover.coupleName : (cover.groomName ? (cover.brideName ? `${cover.groomName} & ${cover.brideName}` : cover.groomName) : 'Client');
   const eventType = (cover.eventType || 'WEDDING').toUpperCase();
   const sideOption = (cover.sideOption || 'BOTH SIDES').trim().toUpperCase();
   const locationName = (cover.locationName || cover.location || 'MUMBAI').trim().toUpperCase();

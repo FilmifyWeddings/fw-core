@@ -242,17 +242,21 @@ export async function POST(req: NextRequest) {
     );
     const leadName = effectiveCoupleName;
 
-    const groomName = (initialDoc?.cover?.groomName && !isInvalidCoupleName(initialDoc.cover.groomName))
+    const groomName = !effectiveCoupleName.includes('&')
+      ? effectiveCoupleName
+      : (initialDoc?.cover?.groomName && !isInvalidCoupleName(initialDoc.cover.groomName))
       ? sanitizeExtractedCoupleName(initialDoc.cover.groomName, effectiveCoupleName)
       : (body.initialDocument?.cover?.groomName && !isInvalidCoupleName(body.initialDocument.cover.groomName))
       ? sanitizeExtractedCoupleName(body.initialDocument.cover.groomName, effectiveCoupleName)
-      : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[0].trim() : effectiveCoupleName);
+      : effectiveCoupleName.split('&')[0].trim();
 
-    const brideName = (initialDoc?.cover?.brideName && !isInvalidCoupleName(initialDoc.cover.brideName))
-      ? sanitizeExtractedCoupleName(initialDoc.cover.brideName, 'Partner')
+    const brideName = !effectiveCoupleName.includes('&')
+      ? ''
+      : (initialDoc?.cover?.brideName && !isInvalidCoupleName(initialDoc.cover.brideName))
+      ? sanitizeExtractedCoupleName(initialDoc.cover.brideName, '')
       : (body.initialDocument?.cover?.brideName && !isInvalidCoupleName(body.initialDocument.cover.brideName))
-      ? sanitizeExtractedCoupleName(body.initialDocument.cover.brideName, 'Partner')
-      : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[1].trim() : 'Partner');
+      ? sanitizeExtractedCoupleName(body.initialDocument.cover.brideName, '')
+      : (effectiveCoupleName.split('&')[1]?.trim() || '');
 
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const rawRequestedQId = typeof body.quotationId === 'string' && body.quotationId.trim() ? body.quotationId.trim() : '';

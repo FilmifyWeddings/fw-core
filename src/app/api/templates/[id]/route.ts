@@ -543,7 +543,7 @@ async function handleUpdate(
 
       // 3. Upsert quotations record
       try {
-        const coupleName = document?.cover?.coupleName || (document?.cover?.groomName ? `${document.cover.groomName} & ${document.cover.brideName}` : null) || extractCoupleNameFromQuotation(document) || document?.meta?.client_name || 'Rahul & Neha';
+        const coupleName = document?.cover?.coupleName || (document?.cover?.groomName ? (document?.cover?.brideName ? `${document.cover.groomName} & ${document.cover.brideName}` : document.cover.groomName) : null) || extractCoupleNameFromQuotation(document) || document?.meta?.client_name || 'Client';
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
         const quotePayload: any = {
           quotation_number: id,

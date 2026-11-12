@@ -71,6 +71,15 @@ const HINDI_NAME_TRANSLATE: Record<string, string> = {
   'अथर्व': 'Atharva',
   'साक्षी': 'Sakshi',
   'रोहन': 'Rohan',
+  'रोहित': 'Rohit',
+  'साहिल': 'Sahil',
+  'पिया': 'Piya',
+  'ओ': 'O',
+  'ओम': 'Om',
+  'ओंकार': 'Omkar',
+  'अभिषेक': 'Abhishek',
+  'कविता': 'Kavita',
+  'आकाश': 'Aakash',
   'सिमरन': 'Simran',
   'रौनक': 'Raunak',
   'प्रेक्षा': 'Preksha',
@@ -78,22 +87,127 @@ const HINDI_NAME_TRANSLATE: Record<string, string> = {
   'रूपेश': 'Rupesh',
   'अमित': 'Amit',
   'प्रिया': 'Priya',
+  'प्रीति': 'Preeti',
   'ध्रुव': 'Dhruv',
   'विशाल': 'Vishal',
   'सुमती': 'Sumati',
   'यश': 'Yash',
   'हर्षिता': 'Harshita',
+  'हर्ष': 'Harsh',
   'मंथन': 'Manthan',
   'गौरव': 'Gaurav',
   'श्रेया': 'Shreya',
   'कुणाल': 'Kunal',
   'अंकिता': 'Ankita',
   'आदित्य': 'Aditya',
+  'अर्जुन': 'Arjun',
+  'करण': 'Karan',
+  'देव': 'Dev',
+  'रिया': 'Ria',
+  'कबीर': 'Kabir',
+  'मीरा': 'Meera',
+  'तारा': 'Tara',
+  'निखिल': 'Nikhil',
+  'मयूर': 'Mayur',
+  'स्नेहा': 'Sneha',
+  'श्रुति': 'Shruti',
+  'ईशा': 'Isha',
+  'तन्वी': 'Tanvi',
+  'ऋषभ': 'Rishabh',
+  'प्रणव': 'Pranav',
+  'अंजलि': 'Anjali',
+  'विकास': 'Vikas',
+  'मोहित': 'Mohit',
+  'शुभम': 'Shubham',
+  'नितिन': 'Nitin',
+  'सोनम': 'Sonam',
+  'काजल': 'Kajal',
+  'अनिकेत': 'Aniket',
+  'विवेक': 'Vivek',
+  'प्रतीक': 'Pratik',
   'और': '&',
   'तथा': '&',
   'व': '&',
   'एंड': '&'
 };
+
+const DEVANAGARI_CONSONANTS: Record<string, string> = {
+  'क': 'k', 'ख': 'kh', 'ग': 'g', 'घ': 'gh', 'ङ': 'ng',
+  'च': 'ch', 'छ': 'chh', 'ज': 'j', 'झ': 'jh', 'ञ': 'ny',
+  'ट': 't', 'ठ': 'th', 'ड': 'd', 'ढ': 'dh', 'ण': 'n',
+  'त': 't', 'थ': 'th', 'द': 'd', 'ध': 'dh', 'न': 'n',
+  'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm',
+  'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v', 'श': 'sh',
+  'ष': 'sh', 'स': 's', 'ह': 'h', 'ळ': 'l',
+  'क़': 'q', 'ख़': 'kh', 'ग़': 'g', 'ज़': 'z', 'ड़': 'd', 'ढ़': 'dh', 'फ़': 'f'
+};
+
+const DEVANAGARI_INDEPENDENT_VOWELS: Record<string, string> = {
+  'अ': 'a', 'आ': 'aa', 'इ': 'i', 'ई': 'ee', 'उ': 'u', 'ऊ': 'oo',
+  'ऋ': 'ri', 'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au', 'ऑ': 'o'
+};
+
+const DEVANAGARI_MATRAS: Record<string, string> = {
+  'ा': 'a', 'ि': 'i', 'ी': 'i', 'ु': 'u', 'ू': 'oo',
+  'ृ': 'ri', 'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au', 'ॉ': 'o'
+};
+
+/**
+ * Deterministic phonetic transliterator for Devanagari Indian names (Hindi/Marathi) -> Title Case English.
+ */
+export function transliterateDevanagariName(input: string): string {
+  if (!input || !/[\u0900-\u097F]/.test(input)) return input;
+  const words = input.trim().split(/\s+/);
+  return words.map((word) => {
+    if (!/[\u0900-\u097F]/.test(word)) return word;
+    const dictHit = HINDI_NAME_TRANSLATE[word];
+    if (dictHit) return dictHit;
+
+    const chars = Array.from(word);
+    let out = '';
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      const next = chars[i + 1] || '';
+
+      if (DEVANAGARI_INDEPENDENT_VOWELS[ch]) {
+        out += DEVANAGARI_INDEPENDENT_VOWELS[ch];
+        continue;
+      }
+
+      if (DEVANAGARI_CONSONANTS[ch]) {
+        out += DEVANAGARI_CONSONANTS[ch];
+        if (next === '्') {
+          i += 1; // Halant suppresses inherent 'a'
+        } else if (DEVANAGARI_MATRAS[next]) {
+          out += DEVANAGARI_MATRAS[next];
+          i += 1;
+        } else if (i === chars.length - 1 || next === 'ं' || next === 'ँ') {
+          // Word-final consonant or followed directly by anusvara -> keep crisp schwa only if before anusvara
+          if (next === 'ं' || next === 'ँ') out += 'a';
+        } else {
+          out += 'a';
+        }
+        continue;
+      }
+
+      if (ch === 'ं' || ch === 'ँ') {
+        const nextCons = chars[i + 1] || '';
+        out += /[पफबभम]/.test(nextCons) ? 'm' : 'n';
+        continue;
+      }
+      if (ch === 'ः') {
+        out += 'h';
+        continue;
+      }
+      if (ch !== '्' && ch !== '़') {
+        out += ch;
+      }
+    }
+
+    const cleaned = out.trim();
+    return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : word;
+  }).join(' ');
+}
 
 function safeUnicodeReplace(text: string, searchWord: string, replaceWord: string): string {
   const re = new RegExp(`(^|[^\\u0900-\\u097Fa-zA-Z0-9])${searchWord}(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`, 'gi');
@@ -203,6 +317,8 @@ const BILINGUAL_CANONICAL_MAP: Record<string, string> = {
   'extra': 'extra', 'अतिरिक्त': 'extra', 'अलग': 'separate', 'सेपरेट': 'separate', 'combine': 'combined', 'combined': 'combined',
   'रूल': 'rule', 'ट्रेनिंग': 'training', 'नोट': 'note', 'album': 'album', 'एल्बम': 'album', 'फोटोबुक': 'album', 'photobook': 'album'
 };
+
+export { normalizeComparisonTokens };
 
 function normalizeComparisonTokens(input: string): string[] {
   const expanded = cleanVoiceTranscript(input)

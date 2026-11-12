@@ -3300,7 +3300,7 @@ function StudioCoreAiryBuilderContent() {
                 <label className="block text-[10px] uppercase font-bold text-amber-700">Couple Names (Multi-line supported)</label>
                 <textarea
                   rows={2}
-                  value={data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'YASH & TWINKLE')}
+                  value={data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? (data.cover.brideName ? `${data.cover.groomName} & ${data.cover.brideName}` : data.cover.groomName) : 'Client')}
                   placeholder="e.g. YASH & TWINKLE or YASH&#10;&amp;&#10;TWINKLE"
                   onChange={(e) => setData({ ...data, cover: { ...data.cover, coupleName: e.target.value } })}
                   className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase resize-y min-h-[50px]"
@@ -5224,7 +5224,7 @@ function StudioCoreAiryBuilderContent() {
                 <div className={`w-full space-y-6 flex flex-col items-center justify-center my-auto ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-0' : ''}`}>
                   <div className={`space-y-3 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                     <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-pre-line text-center" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'YASH & TWINKLE')}
+                      {data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? (data.cover.brideName ? `${data.cover.groomName} & ${data.cover.brideName}` : data.cover.groomName) : 'Client')}
                     </h1>
                     <h3 className="text-base tracking-[0.2em] uppercase font-bold whitespace-nowrap pt-1" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}

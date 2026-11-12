@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabase';
 import { AiQuotationModal } from './ai-quotation-modal';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
-import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
+import { DEFAULT_AIRY_PROPOSAL, isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { pruneDocumentForListCache, safeLocalStorageSet, safeSessionStorageSet } from '@/lib/storage-safety';
 
 const QuotationDocumentCanvas = dynamic(
@@ -663,7 +663,16 @@ export function LeadQuotationModal({
     const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
     const qId = `FW-Q-${shortLeadId}-V${nextVersion}-${randSuffix}`;
 
-    const openingCouple = lead.raw_payload?.couple_name || lead.client_name || lead.name || 'Quotation';
+    const candidateOpening = [
+      lead.raw_payload?.couple_name,
+      lead.raw_payload?.couple_names,
+      lead.client_name,
+      lead.name,
+    ].find((c) => {
+      const s = String(c || '').trim();
+      return Boolean(s && !isPlaceholderCoupleName(s));
+    });
+    const openingCouple = candidateOpening ? String(candidateOpening).trim() : 'Client';
     const baseDoc = chosenTemplate?.content_json || (typeof window !== 'undefined' ? getSynchronousCachedTemplates(lead.workspace_id)[0]?.content_json : null) || DEFAULT_AIRY_PROPOSAL;
     const clonedDoc = JSON.parse(JSON.stringify(baseDoc));
     clonedDoc.id = qId;
@@ -671,6 +680,14 @@ export function LeadQuotationModal({
     clonedDoc.lead_version = nextVersion;
     if (!clonedDoc.cover) clonedDoc.cover = {};
     clonedDoc.cover.coupleName = openingCouple;
+    if (openingCouple.includes('&')) {
+      const cParts = openingCouple.split('&').map((s: string) => s.trim()).filter(Boolean);
+      clonedDoc.cover.groomName = cParts[0] || openingCouple;
+      clonedDoc.cover.brideName = cParts[1] || '';
+    } else {
+      clonedDoc.cover.groomName = openingCouple;
+      clonedDoc.cover.brideName = '';
+    }
     if (lead.location || lead.raw_payload?.location) {
       clonedDoc.cover.locationName = lead.location || lead.raw_payload?.location;
     }
@@ -1189,11 +1206,7 @@ export function LeadQuotationModal({
                               const coupleFromCover = cover.coupleName 
                                 || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
 
-                              const isPlaceholder = !coupleFromCover || [
-                                'yash & twinkle', 'yash and twinkle', 'twinkle & yash',
-                                'rahul & neha', 'rahul and neha', 'neha & rahul',
-                                'valued client', 'wedding client', 'couple', 'demo', 'sample'
-                              ].includes(coupleFromCover.toLowerCase().trim());
+                              const isPlaceholder = isPlaceholderCoupleName(coupleFromCover);
 
                               const leadCouple = 
                                 (q as any).couple_name ||
@@ -1202,8 +1215,8 @@ export function LeadQuotationModal({
                                 lead?.raw_payload?.couple_name ||
                                 lead?.raw_payload?.couple_names ||
                                 (lead as any)?.couple_names ||
-                                (lead?.name && !['client', 'valued client', 'lead'].includes(lead.name.toLowerCase().trim()) ? lead.name : '') ||
-                                (lead?.client_name && !['client', 'valued client', 'lead'].includes(lead.client_name.toLowerCase().trim()) ? lead.client_name : '');
+                                (lead?.name && !isPlaceholderCoupleName(lead.name) ? lead.name : '') ||
+                                (lead?.client_name && !isPlaceholderCoupleName(lead.client_name) ? lead.client_name : '');
 
                               const coupleName = (!isPlaceholder && coupleFromCover)
                                 ? coupleFromCover
@@ -1438,7 +1451,14 @@ export function LeadQuotationModal({
           currentDocumentData={currentSelectedTemplate?.content_json}
           onApplied={(updatedDoc, targetQId) => {
             setAiModalOpen(false);
-            const openingCouple = updatedDoc?.cover?.coupleName || lead?.raw_payload?.couple_name || lead?.client_name || lead?.name || 'Quotation';
+            const rawDocCouple = String(updatedDoc?.cover?.coupleName || '').trim();
+            const candidateOverlayCouple =
+              (rawDocCouple && !isPlaceholderCoupleName(rawDocCouple) ? rawDocCouple : '') ||
+              [lead?.raw_payload?.couple_name, lead?.client_name, lead?.name]
+                .map((c) => String(c || '').trim())
+                .find((c) => Boolean(c && !isPlaceholderCoupleName(c))) ||
+              'Client';
+            const openingCouple = candidateOverlayCouple;
             const eventType = (updatedDoc?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
             const quotationTitle = `${openingCouple} - ${eventType}`;
             const maxLocalVer = quotations.length > 0 ? Math.max(...quotations.map(q => Number(q.version) || 0)) : 0;

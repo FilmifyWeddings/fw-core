@@ -884,20 +884,40 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
 
   // 3. Normalize Cover Page (with single primary location resolver)
   const coverSrc = loaded.cover || pagesObj.cover || {};
-  const rawCoupleCandidate = (coverSrc.coupleName || loaded.client?.client_name || '').trim();
-  let derivedGroom = '';
-  let derivedBride = '';
-  if (rawCoupleCandidate && rawCoupleCandidate.includes('&')) {
-    const parts = rawCoupleCandidate.split('&').map((s: string) => s.trim());
-    derivedGroom = parts[0] || '';
-    derivedBride = parts[1] || '';
-  } else if (rawCoupleCandidate) {
-    derivedGroom = rawCoupleCandidate.split(' ')[0] || rawCoupleCandidate;
-    derivedBride = 'Partner';
+  const explicitCoupleRaw = String(coverSrc.coupleName || loaded.client?.client_name || '').trim();
+  const explicitCoupleValid = explicitCoupleRaw && !isPlaceholderCoupleName(explicitCoupleRaw) ? explicitCoupleRaw : '';
+  const explicitGroomRaw = String(coverSrc.groomName || '').trim();
+  const explicitBrideRaw = String(coverSrc.brideName || '').trim();
+  const explicitGroomValid = explicitGroomRaw && !isPlaceholderCoupleName(explicitGroomRaw) ? explicitGroomRaw : '';
+  const explicitBrideValid = explicitBrideRaw && !isPlaceholderCoupleName(explicitBrideRaw) ? explicitBrideRaw : '';
+
+  let coupleName = '';
+  let groomName = '';
+  let brideName = '';
+
+  if (explicitCoupleValid) {
+    coupleName = explicitCoupleValid;
+    if (coupleName.includes('&') || /\band\b/i.test(coupleName)) {
+      const parts = coupleName.split(/\s*(?:&|\band\b)\s*/i).map((s: string) => s.trim()).filter(Boolean);
+      groomName = parts[0] || explicitGroomValid || coupleName;
+      brideName = parts[1] || '';
+    } else {
+      groomName = coupleName;
+      brideName = '';
+    }
+  } else if (explicitGroomValid && explicitBrideValid) {
+    groomName = explicitGroomValid;
+    brideName = explicitBrideValid;
+    coupleName = `${groomName} & ${brideName}`;
+  } else if (explicitGroomValid) {
+    groomName = explicitGroomValid;
+    brideName = '';
+    coupleName = explicitGroomValid;
+  } else {
+    groomName = d.cover?.groomName || 'Groom';
+    brideName = d.cover?.brideName || '';
+    coupleName = explicitCoupleRaw || d.cover?.coupleName || (groomName && brideName ? `${groomName} & ${brideName}` : groomName) || 'Client';
   }
-  const groomName = coverSrc.groomName || derivedGroom || d.cover?.groomName || 'Groom';
-  const brideName = coverSrc.brideName || derivedBride || d.cover?.brideName || 'Bride';
-  const coupleName = coverSrc.coupleName || (groomName && brideName ? `${groomName} & ${brideName}` : (d.cover?.coupleName || 'Couple Name'));
   const eventType = coverSrc.eventType ?? coverSrc.title ?? coverSrc.event_type ?? d.cover?.eventType ?? 'Wedding Photography & Films';
   
   const rawLoc = coverSrc.locationName !== undefined ? coverSrc.locationName : (coverSrc.wedding_location || coverSrc.city || d.cover?.locationName || '');
@@ -1224,10 +1244,33 @@ export const TEMPLATE_PLACEHOLDER_NAMES = new Set([
   'sample',
   'bride & groom',
   'groom & bride',
+  'bride and groom',
+  'groom and bride',
   'groom\n& \nbride',
+  'groom & partner',
+  'client & partner',
+  'client and partner',
+  'partner',
+  'groom',
+  'bride',
+  'rahul & neha',
+  'rahul and neha',
+  'neha & rahul',
+  'yash & twinkle',
+  'yash and twinkle',
+  'twinkle & yash',
   'client',
   'default client',
   'client name',
+  'client & client',
+  'a & b',
+  'test',
+  'test & test',
+  'name',
+  'n/a',
+  'na',
+  'none',
+  'tbd',
   'lead',
   'lead name',
   'tbd & tbd',
@@ -1243,7 +1286,9 @@ export const TEMPLATE_PLACEHOLDER_NAMES = new Set([
  */
 export function isPlaceholderCoupleName(name?: string | null): boolean {
   if (!name) return true;
-  const clean = String(name).toLowerCase().trim();
+  const clean = String(name).toLowerCase().replace(/\s+/g, ' ').trim();
   if (!clean || clean === 'undefined' || clean === 'null') return true;
-  return TEMPLATE_PLACEHOLDER_NAMES.has(clean);
+  if (TEMPLATE_PLACEHOLDER_NAMES.has(clean)) return true;
+  const collapsed = clean.replace(/\s*&\s*/g, ' & ');
+  return TEMPLATE_PLACEHOLDER_NAMES.has(collapsed);
 }
