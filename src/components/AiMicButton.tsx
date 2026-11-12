@@ -12,6 +12,7 @@ interface AiMicButtonProps {
   buttonText?: string;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
+  showTrailingIcon?: boolean;
 }
 
 interface LanguageOption {
@@ -42,6 +43,7 @@ export default function AiMicButton({
   buttonText = 'AI Voice',
   className = '',
   size = 'md',
+  showTrailingIcon = true,
 }: AiMicButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'processing' | 'review'>('idle');
@@ -355,7 +357,9 @@ export default function AiMicButton({
           <Mic className="w-3.5 h-3.5 text-stone-950 stroke-[2.5]" />
         </span>
         <span className="font-black tracking-tight text-[11px] sm:text-[12px] whitespace-nowrap">{buttonText}</span>
-        <Sparkles className="w-3 h-3 text-amber-950/70 group-hover:rotate-12 transition-transform shrink-0 hidden sm:inline-block" />
+        {showTrailingIcon && (
+          <Sparkles className="w-3 h-3 text-amber-950/70 group-hover:rotate-12 transition-transform shrink-0 hidden sm:inline-block" />
+        )}
       </motion.button>
 
       {/* ─────────────────────────────────────────────────────────────

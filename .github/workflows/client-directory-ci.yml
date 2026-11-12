@@ -11,10 +11,16 @@ on:
     paths:
       - 'src/app/workspace/clients/**'
       - 'src/app/api/workspace/clients/**'
+      - 'src/app/p/client/**'
+      - 'src/app/api/public/client-portal/**'
       - 'src/app/api/moodboard/**'
       - 'src/app/api/upload/moodboard/**'
       - 'src/app/api/media/moodboard/**'
+      - 'src/components/clients/**'
       - 'src/components/moodboard/**'
+      - 'src/components/AiMicButton.tsx'
+      - 'src/components/sidebar-layout.tsx'
+      - 'src/lib/quotation-finance-sync.ts'
       - 'src/lib/storage/moodboardB2Client.ts'
       - 'src/lib/r2-storage.ts'
       - 'src/lib/compressor.ts'
@@ -73,10 +79,16 @@ jobs:
           ALLOWED_PATTERNS=(
             '^src/app/workspace/clients/'
             '^src/app/api/workspace/clients/'
+            '^src/app/p/client/'
+            '^src/app/api/public/client-portal/'
             '^src/app/api/moodboard/'
             '^src/app/api/upload/moodboard/'
             '^src/app/api/media/moodboard/'
+            '^src/components/clients/'
             '^src/components/moodboard/'
+            '^src/components/AiMicButton\.tsx$'
+            '^src/components/sidebar-layout\.tsx$'
+            '^src/lib/quotation-finance-sync\.ts$'
             '^src/lib/storage/moodboardB2Client\.ts$'
             '^src/lib/r2-storage\.ts$'
             '^src/lib/compressor\.ts$'
@@ -139,7 +151,7 @@ jobs:
           set -euo pipefail
           npx next typegen 2>/dev/null || true
           TSC_OUT=$(npx tsc --noEmit --pretty false 2>&1 || true)
-          echo "$TSC_OUT" | grep -E "src/app/workspace/clients|src/app/api/workspace/clients|src/app/api/moodboard|src/app/api/upload/moodboard|src/app/api/media/moodboard|src/components/moodboard|src/components/modals/ProjectManagerAssignModal|src/lib/storage/moodboardB2Client|src/lib/r2-storage|src/lib/compressor" && exit 1 || true
+          echo "$TSC_OUT" | grep -E "src/app/workspace/clients|src/app/api/workspace/clients|src/app/p/client|src/app/api/public/client-portal|src/app/api/moodboard|src/app/api/upload/moodboard|src/app/api/media/moodboard|src/components/clients|src/components/moodboard|src/components/AiMicButton|src/components/sidebar-layout|src/lib/quotation-finance-sync|src/components/modals/ProjectManagerAssignModal|src/lib/storage/moodboardB2Client|src/lib/r2-storage|src/lib/compressor" && exit 1 || true
           echo "Zero TypeScript errors in Client Directory & Moodboard modules."
 
       - name: Production Next.js Build

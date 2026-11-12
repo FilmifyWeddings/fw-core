@@ -450,9 +450,16 @@ export default function ClientsPage() {
             handled_by: validLeadPm,
             notes: serializeClientExtended({
               client_code: `CL-${Math.floor(1000 + Math.random() * 9000)}`,
-              whatsapp_group_link: bookedLead.whatsapp_group_id ? `https://chat.whatsapp.com/${bookedLead.whatsapp_group_id}` : '',
+              whatsapp_group_link: /^https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]{15,}/i.test(String((bookedLead as any).whatsapp_group_link || ''))
+                ? String((bookedLead as any).whatsapp_group_link).trim()
+                : '',
+              whatsapp_group_id: String(bookedLead.whatsapp_group_id || '').trim().endsWith('@g.us')
+                ? String(bookedLead.whatsapp_group_id).trim()
+                : '',
               portal_token: `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`,
-              portal_pin: '123456',
+              portal_pin: (bookedLead.phone || '').replace(/\D/g, '').length >= 6
+                ? (bookedLead.phone || '').replace(/\D/g, '').slice(-6)
+                : String(Math.floor(100000 + Math.random() * 900000)),
               project_manager_id: leadPmId || '',
               project_manager_name: validLeadPm || '',
               plain_notes: `Auto-synced from Booked CRM Lead (${clientName})`,
@@ -697,7 +704,13 @@ export default function ClientsPage() {
 
       const clientCode = `CL-${Math.floor(1000 + Math.random() * 9000)}`;
       const portalToken = `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`;
-      const portalPin = '123456';
+      const phoneDigits = (dataToUse.phone || '').replace(/[^0-9]/g, '');
+      const portalPin = phoneDigits.length >= 6 && phoneDigits.slice(-6) !== '123456'
+        ? phoneDigits.slice(-6)
+        : String(Math.floor(100000 + Math.random() * 900000));
+      const cleanWaLink = /^https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]{15,}/i.test((dataToUse.whatsapp_group_link || '').trim())
+        ? (dataToUse.whatsapp_group_link || '').trim()
+        : '';
 
       // Find assigned PM from team members
       const assignedPm = teamMembers.find(m => m.id === dataToUse.project_manager_id);
@@ -738,7 +751,7 @@ export default function ClientsPage() {
 
       const serializedNotes = serializeClientExtended({
         client_code: clientCode,
-        whatsapp_group_link: dataToUse.whatsapp_group_link,
+        whatsapp_group_link: cleanWaLink,
         portal_token: portalToken,
         portal_pin: portalPin,
         plain_notes: dataToUse.notes,

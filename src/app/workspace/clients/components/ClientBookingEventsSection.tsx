@@ -33,6 +33,7 @@ import {
 } from '@/lib/workspace-settings';
 import { handleUpdateBookingPM } from '@/app/workspace/bookings/components/ProjectBookingCard';
 import { logProjectActivity, logCrewAssignmentChange } from '@/lib/services/projectAuditService';
+import { logClientAudit } from '@/lib/client-audit';
 import { unassignCrewSlot } from '@/lib/team-finance-sync';
 import AddProjectModal from '@/app/team-manager/components/AddProjectModal';
 import AddTeamMemberModal from '@/app/team-manager/components/AddTeamMemberModal';
@@ -301,7 +302,20 @@ export default function ClientBookingEventsSection({
     };
   }, [localProject, client, fallbackEvents, effectiveWsId]);
 
-  const subEvents = displayProject.fw_sub_events || [];
+  const subEvents = useMemo(() => {
+    const raw = [...(displayProject.fw_sub_events || [])];
+    return raw.sort((a: any, b: any) => {
+      const aTbd = Boolean(a.is_date_tbd) || !isValidDateVal(a.event_date);
+      const bTbd = Boolean(b.is_date_tbd) || !isValidDateVal(b.event_date);
+      if (aTbd && !bTbd) return -1;
+      if (!aTbd && bTbd) return 1;
+      if (!aTbd && !bTbd) {
+        const diff = new Date(a.event_date).getTime() - new Date(b.event_date).getTime();
+        if (diff !== 0) return diff;
+      }
+      return (Number(a.display_order) || 0) - (Number(b.display_order) || 0);
+    });
+  }, [displayProject.fw_sub_events]);
   const projectGradient = getGradientByProjectId(displayProject.id || displayProject.client_name);
 
   const emitWorkspaceSyncEvents = useCallback(() => {
@@ -510,6 +524,24 @@ export default function ClientBookingEventsSection({
         metadata: { pmId: memberId, pmName: memberName },
       }).catch(() => {});
 
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: effectiveWsId || undefined,
+        actorId: userId || undefined,
+        actorName,
+        actorEmail: userEmail || undefined,
+        actorRole,
+        module: 'overview',
+        actionType: 'STATUS_CHANGE',
+        title: memberName ? `Assigned Project Manager: ${memberName}` : 'Cleared Project Manager',
+        description: memberName
+          ? `Assigned "${memberName}" as Project Manager from Events & Bookings.`
+          : 'Cleared Project Manager assignment.',
+        oldValue: prevPmName,
+        newValue: memberName || 'Unassigned',
+        metadata: { crew_name: memberName, crew_role: 'Project Manager' },
+      }).catch(() => {});
+
       emitWorkspaceSyncEvents();
     } catch (err) {
       console.error('[ClientBookingEvents] Error updating PM:', err);
@@ -705,6 +737,9 @@ export default function ClientBookingEventsSection({
         const prevName = prevMem?.name || (activeAssign as any).assigned_member_name || 'Crew Member';
 
         if (!displayProject.id.startsWith('virtual_')) {
+          const actorName = currentMember?.name || workspaceName || activeWorkspace?.studioName || 'Admin';
+          const actorRole = isOwner ? 'Studio Owner' : currentMember?.is_sales_person ? 'Sales Person' : 'Project Manager';
+
           logCrewAssignmentChange({
             projectId: displayProject.id,
             subEventId: activeAssign.sub_event_id || undefined,
@@ -716,6 +751,29 @@ export default function ClientBookingEventsSection({
             targetMemberAvatar: prevMem?.avatar_url || undefined,
             roleName: activeAssign.required_role || 'Crew',
             isRemoval: true,
+          }).catch(() => {});
+
+          logClientAudit({
+            clientId: client.id,
+            workspaceId: effectiveWsId || undefined,
+            actorId: userId || undefined,
+            actorName,
+            actorEmail: userEmail || undefined,
+            actorRole,
+            module: 'events',
+            actionType: 'UPDATE',
+            title: `Unassigned ${prevName} (${activeAssign.required_role || 'Crew'})`,
+            description: `Removed ${prevName} from ${activeAssign.required_role || 'Crew'} on ${subEventObj?.event_title || 'event'}.`,
+            oldValue: prevName,
+            newValue: 'Unassigned',
+            metadata: {
+              event_title: subEventObj?.event_title || null,
+              event_date: subEventObj?.event_date || null,
+              is_date_tbd: Boolean((subEventObj as any)?.is_date_tbd),
+              crew_name: prevName,
+              crew_avatar: prevMem?.avatar_url || null,
+              crew_role: activeAssign.required_role || 'Crew',
+            },
           }).catch(() => {});
 
           try {
@@ -839,6 +897,9 @@ export default function ClientBookingEventsSection({
         : blocks[0]?.subEventDate || new Date().toISOString().split('T')[0];
       const firstSubEventVenue = blocks[0]?.venueLocation || 'TBD Venue';
 
+      const actorName = currentMember?.name || workspaceName || activeWorkspace?.studioName || 'Admin';
+      const actorRole = isOwner ? 'Studio Owner' : currentMember?.is_sales_person ? 'Sales Person' : 'Project Manager';
+
       if (!isVirtualOrNew && projectId) {
         const { error: projErr } = await supabase
           .from('fw_projects')
@@ -867,9 +928,6 @@ export default function ClientBookingEventsSection({
           ...se,
           fw_assignments: (allExistingAssignments || []).filter((a) => a.sub_event_id === se.id),
         }));
-
-        const actorName = currentMember?.name || workspaceName || activeWorkspace?.studioName || 'Admin';
-        const actorRole = isOwner ? 'Studio Owner' : currentMember?.is_sales_person ? 'Sales Person' : 'Project Manager';
 
         if (displayProject.client_name && displayProject.client_name !== couplingName) {
           logProjectActivity({
@@ -914,6 +972,25 @@ export default function ClientBookingEventsSection({
               eventTitle: oldSe.event_title,
               description: `Deleted sub-event "${oldSe.event_title}"`,
             }).catch(() => {});
+
+            logClientAudit({
+              clientId: client.id,
+              workspaceId: effectiveWsId || undefined,
+              actorId: userId || undefined,
+              actorName,
+              actorEmail: userEmail || undefined,
+              actorRole,
+              module: 'events',
+              actionType: 'DELETE',
+              title: `Deleted Event: ${oldSe.event_title}`,
+              description: `Removed sub-event "${oldSe.event_title}" from Events & Bookings.`,
+              oldValue: oldSe.event_title,
+              metadata: {
+                event_title: oldSe.event_title,
+                event_date: oldSe.event_date || null,
+                is_date_tbd: Boolean(oldSe.is_date_tbd),
+              },
+            }).catch(() => {});
           }
         }
 
@@ -946,6 +1023,30 @@ export default function ClientBookingEventsSection({
 
           if (existing) {
             await supabase.from('fw_sub_events').update(subEventPayload).eq('id', existing.id);
+
+            const oldDateLabel = existing.is_date_tbd ? 'Date Not Fixed' : (existing.event_date || 'Date Not Fixed');
+            const newDateLabel = block.isDateTbd ? 'Date Not Fixed' : (block.subEventDate || 'Date Not Fixed');
+            if (existing.event_title !== title || oldDateLabel !== newDateLabel) {
+              logClientAudit({
+                clientId: client.id,
+                workspaceId: effectiveWsId || undefined,
+                actorId: userId || undefined,
+                actorName,
+                actorEmail: userEmail || undefined,
+                actorRole,
+                module: 'events',
+                actionType: 'UPDATE',
+                title: existing.event_title !== title ? `Renamed Event: ${title}` : `Updated Event Date: ${title}`,
+                description: `Updated "${title}" (${newDateLabel}).`,
+                oldValue: existing.event_title !== title ? existing.event_title : oldDateLabel,
+                newValue: existing.event_title !== title ? title : newDateLabel,
+                metadata: {
+                  event_title: title,
+                  event_date: block.isDateTbd ? null : (block.subEventDate || null),
+                  is_date_tbd: Boolean(block.isDateTbd),
+                },
+              }).catch(() => {});
+            }
 
             const currentAssignments = existing.fw_assignments || [];
             if (currentAssignments.length > 0) {
@@ -1028,6 +1129,25 @@ export default function ClientBookingEventsSection({
               .single();
             if (seErr) throw seErr;
 
+            logClientAudit({
+              clientId: client.id,
+              workspaceId: effectiveWsId || undefined,
+              actorId: userId || undefined,
+              actorName,
+              actorEmail: userEmail || undefined,
+              actorRole,
+              module: 'events',
+              actionType: 'CREATE',
+              title: `Added Event: ${title}`,
+              description: `Added sub-event "${title}" (${block.isDateTbd ? 'Date Not Fixed' : block.subEventDate || 'TBD'}).`,
+              newValue: title,
+              metadata: {
+                event_title: title,
+                event_date: block.isDateTbd ? null : (block.subEventDate || null),
+                is_date_tbd: Boolean(block.isDateTbd),
+              },
+            }).catch(() => {});
+
             if (insertedSubEvent && rolesToSave.length > 0) {
               const newAssignmentsPayload = rolesToSave.map((role) => ({
                 project_id: projectId,
@@ -1097,6 +1217,25 @@ export default function ClientBookingEventsSection({
             .select()
             .single();
           if (seErr) throw seErr;
+
+          logClientAudit({
+            clientId: client.id,
+            workspaceId: effectiveWsId || undefined,
+            actorId: userId || undefined,
+            actorName,
+            actorEmail: userEmail || undefined,
+            actorRole,
+            module: 'events',
+            actionType: 'CREATE',
+            title: `Added Event: ${title}`,
+            description: `Added sub-event "${title}" (${block.isDateTbd ? 'Date Not Fixed' : block.subEventDate || 'TBD'}).`,
+            newValue: title,
+            metadata: {
+              event_title: title,
+              event_date: block.isDateTbd ? null : (block.subEventDate || null),
+              is_date_tbd: Boolean(block.isDateTbd),
+            },
+          }).catch(() => {});
 
           if (insertedSubEvent && rolesToSave.length > 0) {
             const assignmentsPayload = rolesToSave.map((role) => ({
@@ -1439,11 +1578,15 @@ export default function ClientBookingEventsSection({
                 return (
                   <div
                     key={subEvent.id}
-                    className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-row items-stretch overflow-hidden"
+                    className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all flex flex-row items-stretch overflow-hidden ${
+                      isTbd ? 'border-rose-300/90 hover:border-red-400' : 'border-slate-200/90'
+                    }`}
                   >
                     {/* LEFT VERTICAL GRADIENT DATE BLOCK */}
                     <div
-                      className={`${projectGradient} w-24 sm:w-28 shrink-0 flex flex-col items-center justify-between p-3 sm:p-3.5 text-center text-white select-none`}
+                      className={`${
+                        isTbd ? 'bg-gradient-to-b from-rose-600 via-red-600 to-rose-800' : projectGradient
+                      } w-24 sm:w-28 shrink-0 flex flex-col items-center justify-between p-3 sm:p-3.5 text-center text-white select-none`}
                     >
                       <div>
                         <span className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wider block">
@@ -1567,17 +1710,26 @@ export default function ClientBookingEventsSection({
                         ) : (
                           <div className="flex items-start gap-4 flex-wrap">
                             {assignments.map((assignment: any) => {
+                              const rawLookupName = String(
+                                (assignment as any).assigned_member_name || (assignment as any).member_name || ''
+                              )
+                                .replace(/\.\.\./g, '')
+                                .trim()
+                                .toLowerCase();
+                              const isLookupPlaceholder =
+                                !rawLookupName ||
+                                ['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(rawLookupName) ||
+                                rawLookupName.startsWith('not fixed');
                               const memberObj =
                                 assignment.fw_team_members ||
-                                (assignment.assigned_member_id
-                                  ? teamMembers.find(
-                                      (m) =>
-                                        m.id === assignment.assigned_member_id ||
-                                        (Boolean((assignment as any).assigned_member_name) &&
-                                          m.name.toLowerCase() ===
-                                            String((assignment as any).assigned_member_name).toLowerCase())
-                                    )
-                                  : null);
+                                teamMembers.find(
+                                  (m) =>
+                                    (assignment.assigned_member_id &&
+                                      (m.id === assignment.assigned_member_id ||
+                                        (m as any).auth_user_id === assignment.assigned_member_id)) ||
+                                    (!isLookupPlaceholder && String(m.name || '').trim().toLowerCase() === rawLookupName)
+                                ) ||
+                                null;
                               const cleanName = (
                                 memberObj?.name ||
                                 (assignment as any).assigned_member_name ||
@@ -1954,17 +2106,23 @@ export default function ClientBookingEventsSection({
                 return (
                   <div
                     key={subEvent.id}
-                    className="bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-xs transition flex flex-col overflow-hidden"
+                    className={`bg-white rounded-xl border shadow-2xs hover:shadow-xs transition flex flex-col overflow-hidden ${
+                      isDateNotFixed ? 'border-rose-300/90' : 'border-slate-200/90'
+                    }`}
                   >
                     {/* TOP HORIZONTAL GRADIENT DATE BANNER */}
-                    <div className={`${projectGradient} w-full px-3 py-1.5 sm:px-3.5 sm:py-2 text-white flex items-center justify-between`}>
+                    <div
+                      className={`${
+                        isDateNotFixed ? 'bg-gradient-to-r from-rose-600 via-red-600 to-rose-800' : projectGradient
+                      } w-full px-3 py-1.5 sm:px-3.5 sm:py-2 text-white flex items-center justify-between`}
+                    >
                       <div className="flex items-center gap-1.5 sm:gap-2">
                         <span className="text-[11px] sm:text-xs font-black tracking-wider uppercase">
                           {dayName} {dayNumber} {monthAbbr} {yearStr}
                         </span>
                         {isDateNotFixed && (
-                          <span className="text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-slate-950">
-                            TBD
+                          <span className="text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded bg-white text-red-700 uppercase tracking-wider shadow-2xs">
+                            DATE NOT FIXED
                           </span>
                         )}
                         {isOvernightShoot && (
@@ -2038,17 +2196,26 @@ export default function ClientBookingEventsSection({
                         </span>
                         <div className="flex items-start gap-2.5 flex-wrap">
                           {assignments.map((assignment: any) => {
+                            const rawLookupName = String(
+                              (assignment as any).assigned_member_name || (assignment as any).member_name || ''
+                            )
+                              .replace(/\.\.\./g, '')
+                              .trim()
+                              .toLowerCase();
+                            const isLookupPlaceholder =
+                              !rawLookupName ||
+                              ['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(rawLookupName) ||
+                              rawLookupName.startsWith('not fixed');
                             const memberObj =
                               assignment.fw_team_members ||
-                              (assignment.assigned_member_id
-                                ? teamMembers.find(
-                                    (m) =>
-                                      m.id === assignment.assigned_member_id ||
-                                      (Boolean((assignment as any).assigned_member_name) &&
-                                        m.name.toLowerCase() ===
-                                          String((assignment as any).assigned_member_name).toLowerCase())
-                                  )
-                                : null);
+                              teamMembers.find(
+                                (m) =>
+                                  (assignment.assigned_member_id &&
+                                    (m.id === assignment.assigned_member_id ||
+                                      (m as any).auth_user_id === assignment.assigned_member_id)) ||
+                                  (!isLookupPlaceholder && String(m.name || '').trim().toLowerCase() === rawLookupName)
+                              ) ||
+                              null;
                             const rawName =
                               memberObj?.name ||
                               (assignment as any).assigned_member_name ||
@@ -2491,6 +2658,33 @@ export default function ClientBookingEventsSection({
         previousRate={whatsappModalData.previousRate}
         onCommercialsSaved={(savedData) => {
           if (savedData) {
+            const actorName = currentMember?.name || workspaceName || activeWorkspace?.studioName || 'Admin';
+            const actorRole = isOwner ? 'Studio Owner' : currentMember?.is_sales_person ? 'Sales Person' : 'Project Manager';
+            const assignedMemName = whatsappModalData.member?.name || savedData.savedAssignment?.assigned_member_name || 'Crew Member';
+            logClientAudit({
+              clientId: client.id,
+              workspaceId: effectiveWsId || undefined,
+              actorId: userId || undefined,
+              actorName,
+              actorEmail: userEmail || undefined,
+              actorRole,
+              module: 'events',
+              actionType: 'ASSIGN',
+              title: `Assigned ${assignedMemName} (${whatsappModalData.role || savedData.role || 'Crew'})`,
+              description: `Assigned ${assignedMemName} as ${whatsappModalData.role || savedData.role || 'Crew'} for ${whatsappModalData.subEvent?.event_title || 'event'}${savedData.agreedAmount ? ` (Fee: ₹${Number(savedData.agreedAmount).toLocaleString('en-IN')})` : ''}.`,
+              oldValue: whatsappModalData.previousMemberName || 'Unassigned',
+              newValue: assignedMemName,
+              metadata: {
+                event_title: whatsappModalData.subEvent?.event_title || null,
+                event_date: whatsappModalData.subEvent?.event_date || null,
+                is_date_tbd: Boolean((whatsappModalData.subEvent as any)?.is_date_tbd),
+                crew_name: assignedMemName,
+                crew_avatar: whatsappModalData.member?.avatar_url || null,
+                crew_role: whatsappModalData.role || savedData.role || 'Crew',
+                amount: savedData.agreedAmount || 0,
+              },
+            }).catch(() => {});
+
             setLocalProject((prev) => {
               const base = prev || whatsappModalData.project || displayProject;
               const targetSubEventId = whatsappModalData.subEvent?.id || savedData.subEventId;

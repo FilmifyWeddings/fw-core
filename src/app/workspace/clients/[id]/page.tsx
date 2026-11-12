@@ -26,7 +26,8 @@ import type { PostProductionProjectData } from '@/app/workspace/post-production/
 import type { PostProductionDeliverable } from '@/app/workspace/post-production/components/DeliverableCategorySection';
 import { logClientAudit } from '@/lib/client-audit';
 import { 
-  parseClientExtended, serializeClientExtended, type ClientExtendedData, type StudioCommentItem 
+  parseClientExtended, serializeClientExtended, sanitizeWhatsappLink, deriveSixDigitPin,
+  type ClientExtendedData, type StudioCommentItem 
 } from '@/components/clients/client-insider-modal';
 import { fetchWorkspaceTeamMembers, isInHouseMember, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
@@ -143,6 +144,54 @@ function syncClientBrowserCache(updated: WorkspaceClient, preferredWsId?: string
       if (changed) {
         localStorage.setItem(key, JSON.stringify(next));
       }
+    } catch (_) {}
+  }
+}
+
+interface ClientSubModuleBundle {
+  clientId?: string;
+  quotationDocs?: any[];
+  moodboards?: any[];
+  fwProject?: any;
+  crewRoles?: any[];
+  postProductionProject?: any;
+  financeRecord?: any;
+  tasks?: any[];
+  updatedAt?: number;
+}
+
+function hydrateClientBundleFromBrowserCache(idOrCode: string): ClientSubModuleBundle | null {
+  if (typeof window === 'undefined' || !idOrCode) return null;
+  const target = idOrCode.trim();
+  try {
+    const raw = sessionStorage.getItem(`sc_client_bundle_${target}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function syncClientBundleBrowserCache(
+  keys: Array<string | null | undefined>,
+  patch: Partial<ClientSubModuleBundle>
+): void {
+  if (typeof window === 'undefined') return;
+  const uniqueKeys = Array.from(new Set(keys.map((k) => (k || '').trim()).filter(Boolean)));
+  if (uniqueKeys.length === 0) return;
+
+  for (const key of uniqueKeys) {
+    try {
+      const storageKey = `sc_client_bundle_${key}`;
+      const existingRaw = sessionStorage.getItem(storageKey);
+      const existing = existingRaw ? JSON.parse(existingRaw) : {};
+      const next: ClientSubModuleBundle = {
+        ...existing,
+        ...patch,
+        updatedAt: Date.now(),
+      };
+      sessionStorage.setItem(storageKey, JSON.stringify(next));
     } catch (_) {}
   }
 }
@@ -271,6 +320,7 @@ export default function ClientWorkspaceDetailPage() {
   // Tab 2: Quotations & Versions (Synced with Leads CRM)
   const [quotationDocs, setQuotationDocs] = useState<QuotationVersionItem[]>([]);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
+  const [quotesResolved, setQuotesResolved] = useState(false);
   const [settingFinalId, setSettingFinalId] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState<string | null>(null);
@@ -823,6 +873,19 @@ export default function ClientWorkspaceDetailPage() {
           updated_at: new Date().toISOString()
         })
         .eq('id', client.id);
+
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Team',
+        actorEmail: userEmail || undefined,
+        module: 'overview',
+        actionType: 'CREATE',
+        title: isAi ? 'Added AI Voice Note' : 'Added Studio Note',
+        description: commentBody.slice(0, 180),
+        newValue: commentBody.slice(0, 120),
+      });
     } catch (err) {
       console.error('Error adding studio comment:', err);
     } finally {
@@ -833,6 +896,7 @@ export default function ClientWorkspaceDetailPage() {
   const handleDeleteStudioComment = async (commentId: string) => {
     if (!client) return;
     const currentComments = extended.studio_comments || [];
+    const removedComment = currentComments.find(c => c.id === commentId);
     const updatedComments = currentComments.filter(c => c.id !== commentId);
 
     const updatedExtended: ClientExtendedData = {
@@ -849,6 +913,21 @@ export default function ClientWorkspaceDetailPage() {
           updated_at: new Date().toISOString()
         })
         .eq('id', client.id);
+
+      if (removedComment) {
+        logClientAudit({
+          clientId: client.id,
+          workspaceId: currentWsId || client.workspace_id,
+          actorId: userId || undefined,
+          actorName: userName || userEmail || 'Studio Team',
+          actorEmail: userEmail || undefined,
+          module: 'overview',
+          actionType: 'DELETE',
+          title: 'Deleted Studio Note',
+          description: removedComment.text?.slice(0, 140),
+          oldValue: removedComment.text?.slice(0, 120),
+        });
+      }
     } catch (err) {
       console.error('Error deleting studio comment:', err);
     }
@@ -1059,6 +1138,18 @@ export default function ClientWorkspaceDetailPage() {
         window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
         window.dispatchEvent(new CustomEvent('client_updated', { detail: { clientId: client.id } }));
       }
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'finance',
+        actionType: 'UPDATE',
+        title: `Updated Payment Milestone (${field})`,
+        description: `Updated "${updatedMilestones.find(m => m.id === milestoneId)?.step_name || 'Milestone'}" ${field} to "${String(value)}".`,
+        newValue: String(value),
+      });
     } catch (err) {
       console.error('Error updating milestone:', err);
     }
@@ -1066,6 +1157,7 @@ export default function ClientWorkspaceDetailPage() {
 
   const handleDeleteMilestone = async (recordId: string, milestoneId: string) => {
     if (!financeRecord || !client) return;
+    const removedMs = (financeRecord.milestones || []).find(m => m.id === milestoneId);
     const updatedMilestones = (financeRecord.milestones || []).filter(m => m.id !== milestoneId);
     const totalReceived = updatedMilestones
       .filter(m => m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed')
@@ -1127,6 +1219,17 @@ export default function ClientWorkspaceDetailPage() {
         window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
         window.dispatchEvent(new CustomEvent('client_updated', { detail: { clientId: client.id } }));
       }
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'finance',
+        actionType: 'DELETE',
+        title: `Deleted Payment Milestone: ${removedMs?.step_name || 'Milestone'}`,
+        oldValue: removedMs?.amount ? `₹${Number(removedMs.amount).toLocaleString('en-IN')}` : removedMs?.step_name,
+      });
     } catch (err) {
       console.error('Error deleting milestone:', err);
     }
@@ -1178,6 +1281,17 @@ export default function ClientWorkspaceDetailPage() {
         localStorage.setItem('sc_booking_sync_event', Date.now().toString());
         window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
       }
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'finance',
+        actionType: 'CREATE',
+        title: `Added Milestone: ${newMs.step_name}`,
+        description: `Added new payment milestone step (${newMs.step_name}).`,
+      });
     } catch (err) {
       console.error('Error adding milestone step:', err);
     }
@@ -1301,6 +1415,19 @@ export default function ClientWorkspaceDetailPage() {
             window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client?.id } }));
             window.dispatchEvent(new CustomEvent('client_updated', { detail: { clientId: client?.id } }));
           }
+          logClientAudit({
+            clientId: client.id,
+            workspaceId: currentWsId || client.workspace_id,
+            actorId: userId || undefined,
+            actorName: userName || userEmail || 'Studio Member',
+            actorEmail: userEmail || undefined,
+            module: 'finance',
+            actionType: 'UPDATE',
+            title: `${isComp ? 'Completed' : 'Updated'} Milestone: ${milestone.step_name || 'Payment'} (₹${numAmt.toLocaleString('en-IN')})`,
+            description: `Mode: ${completePaymentFormData.payment_mode} • Status: ${completePaymentFormData.status}`,
+            newValue: `₹${numAmt.toLocaleString('en-IN')} (${completePaymentFormData.status})`,
+            metadata: { amount: numAmt },
+          });
         } catch (err) {
           console.error('Error updating payment completion in DB:', err);
         }
@@ -1377,6 +1504,18 @@ export default function ClientWorkspaceDetailPage() {
         localStorage.setItem('finance_updated', Date.now().toString());
         window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId } }));
       }
+      logClientAudit({
+        clientId,
+        workspaceId: currentWsId || client?.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'finance',
+        actionType: 'ASSIGN',
+        title: `Finance Handled By: ${cleanMemberName}`,
+        description: `Updated finance point-of-contact to "${cleanMemberName}".`,
+        newValue: cleanMemberName,
+      });
     } catch (err) {
       console.warn('Error saving team member assignment in client directory:', err);
     }
@@ -1469,6 +1608,20 @@ export default function ClientWorkspaceDetailPage() {
         localStorage.setItem('finance_updated', Date.now().toString());
         window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
       }
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'finance',
+        actionType: 'UPDATE',
+        title: `Updated Package Pricing (₹${finalTotal.toLocaleString('en-IN')})`,
+        description: `Base: ₹${base.toLocaleString('en-IN')} • Discount: ₹${discount.toLocaleString('en-IN')} • GST: ${gstRate}% • Final: ₹${finalTotal.toLocaleString('en-IN')}`,
+        oldValue: financeRecord?.final_total_amount ? `₹${Number(financeRecord.final_total_amount).toLocaleString('en-IN')}` : undefined,
+        newValue: `₹${finalTotal.toLocaleString('en-IN')}`,
+        metadata: { amount: finalTotal },
+      });
     } catch (err) {
       console.error('Error saving pricing edit in client directory:', err);
     }
@@ -1529,6 +1682,18 @@ export default function ClientWorkspaceDetailPage() {
         localStorage.setItem('post_production_updated', Date.now().toString());
         window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { clientId: client.id } }));
       }
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'post_production',
+        actionType: 'UPDATE',
+        title: updated.overall_status ? `Post-Production Status: ${updated.overall_status}` : 'Updated Post-Production Deliverables',
+        description: `Updated post-production project details${updated.enabled_segments ? ` (Segments: ${updated.enabled_segments.join(', ')})` : ''}.`,
+        newValue: updated.overall_status || `${(updated.deliverables || []).length} deliverables`,
+      });
     } catch (err) {
       console.error('Error saving post production project:', err);
     }
@@ -1564,15 +1729,41 @@ export default function ClientWorkspaceDetailPage() {
     };
   }, [clientIdOrCode]);
 
-  // Load client data by ID or Code with instant synchronous snapshot/workspace cache hydration
+  // Load client data by ID or Code with instant synchronous snapshot/workspace bundle hydration
   useEffect(() => {
     setIsMounted(true);
     quotesCheckedClientIdRef.current = null;
+    setQuotesResolved(false);
 
     const cachedMatch = hydrateClientFromBrowserCache(
       clientIdOrCode,
       activeWorkspace?.workspaceId || currentWsId
     );
+    const cachedBundle =
+      hydrateClientBundleFromBrowserCache(clientIdOrCode) ||
+      (cachedMatch?.id ? hydrateClientBundleFromBrowserCache(cachedMatch.id) : null);
+
+    if (cachedBundle) {
+      if (Array.isArray(cachedBundle.quotationDocs)) {
+        setQuotationDocs(cachedBundle.quotationDocs);
+        setQuotesResolved(true);
+        if (cachedMatch?.id) quotesCheckedClientIdRef.current = cachedMatch.id;
+      }
+      if (Array.isArray(cachedBundle.moodboards)) {
+        setMoodboards(cachedBundle.moodboards);
+        if (cachedBundle.moodboards.length > 0) {
+          setSelectedMoodboardId(prev =>
+            prev && cachedBundle.moodboards!.some((m: any) => m.id === prev) ? prev : cachedBundle.moodboards![0].id
+          );
+        }
+      }
+      if ('fwProject' in cachedBundle && cachedBundle.fwProject) setFwProject(cachedBundle.fwProject);
+      if (Array.isArray(cachedBundle.crewRoles) && cachedBundle.crewRoles.length > 0) setCrewRoles(cachedBundle.crewRoles);
+      if (cachedBundle.postProductionProject) setPostProductionProject(cachedBundle.postProductionProject);
+      if (cachedBundle.financeRecord) setFinanceRecord(cachedBundle.financeRecord);
+      if (Array.isArray(cachedBundle.tasks)) setClientTasks(cachedBundle.tasks);
+    }
+
     if (cachedMatch) {
       setClient(cachedMatch);
       const ext = parseClientExtended(cachedMatch);
@@ -1640,6 +1831,7 @@ export default function ClientWorkspaceDetailPage() {
             if (Array.isArray(apiData.quotationDocs)) {
               setQuotationDocs(apiData.quotationDocs);
               apiProvidedQuotes = true;
+              setQuotesResolved(true);
               quotesCheckedClientIdRef.current = apiData.client.id;
             }
             if ('fwProject' in apiData) {
@@ -1663,6 +1855,20 @@ export default function ClientWorkspaceDetailPage() {
               setTeamMembers(apiData.teamMembers);
               apiProvidedTeamMembers = true;
             }
+
+            try {
+              const apiExt = parseClientExtended(apiData.client);
+              syncClientBundleBrowserCache([clientIdOrCode, apiData.client.id, apiExt.client_code], {
+                clientId: apiData.client.id,
+                quotationDocs: Array.isArray(apiData.quotationDocs) ? apiData.quotationDocs : undefined,
+                moodboards: Array.isArray(apiData.moodboards) ? apiData.moodboards : undefined,
+                fwProject: apiData.fwProject || null,
+                crewRoles: Array.isArray(apiData.crewRoles) ? apiData.crewRoles : undefined,
+                postProductionProject: apiData.postProductionProject || null,
+                financeRecord: apiData.financeRecord || null,
+                tasks: Array.isArray(apiData.tasks) ? apiData.tasks : undefined,
+              });
+            } catch (_) {}
           }
         }
       } catch (apiErr) {
@@ -1782,7 +1988,7 @@ export default function ClientWorkspaceDetailPage() {
 
       // Fetch quotation versions only if API didn't already resolve them
       if (!apiProvidedQuotes) {
-        fetchLeadQuotationVersions(foundClient);
+        fetchLeadQuotationVersions(foundClient, { skipClientApi: apiSucceeded });
       }
 
       // If API did not hydrate all sub-modules, fallback to granular fetchers
@@ -1806,30 +2012,36 @@ export default function ClientWorkspaceDetailPage() {
   // ─────────────────────────────────────────────────────────────
   // 1. FETCH QUOTATION VERSIONS (SYNCED WITH LEADS CRM)
   // ─────────────────────────────────────────────────────────────
-  const fetchLeadQuotationVersions = async (c: WorkspaceClient) => {
-    setLoadingQuotes(true);
+  const fetchLeadQuotationVersions = async (c: WorkspaceClient, options?: { skipClientApi?: boolean }) => {
+    const hasExistingQuotes = quotationDocs.length > 0;
+    if (!hasExistingQuotes) setLoadingQuotes(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
       const effectiveWsId = activeWorkspace?.workspaceId || currentWsId || c.workspace_id || '';
 
-      // 1. First try unified server client API (checks client_id, linked lead phone/name, raw_payload, quotation_documents & quotations)
-      try {
-        const clientApiRes = await fetch(
-          `/api/workspace/clients/${encodeURIComponent(c.id)}?workspace_id=${encodeURIComponent(effectiveWsId)}`,
-          { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined }
-        );
-        if (clientApiRes.ok) {
-          const clientApiJson = await clientApiRes.json();
-          if (clientApiJson.success && Array.isArray(clientApiJson.quotationDocs) && clientApiJson.quotationDocs.length > 0) {
-            setQuotationDocs(clientApiJson.quotationDocs);
-            if ('fwProject' in clientApiJson && clientApiJson.fwProject) {
-              setFwProject(clientApiJson.fwProject);
+      // 1. Unified server client API (skip when already queried inside fetchClientFullData)
+      if (!options?.skipClientApi) {
+        try {
+          const clientApiRes = await fetch(
+            `/api/workspace/clients/${encodeURIComponent(c.id)}?workspace_id=${encodeURIComponent(effectiveWsId)}`,
+            { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined }
+          );
+          if (clientApiRes.ok) {
+            const clientApiJson = await clientApiRes.json();
+            if (clientApiJson.success && Array.isArray(clientApiJson.quotationDocs)) {
+              setQuotationDocs(clientApiJson.quotationDocs);
+              syncClientBundleBrowserCache([clientIdOrCode, c.id, parseClientExtended(c).client_code], {
+                quotationDocs: clientApiJson.quotationDocs,
+              });
+              if ('fwProject' in clientApiJson && clientApiJson.fwProject) {
+                setFwProject(clientApiJson.fwProject);
+              }
+              return;
             }
-            return;
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
       const targetLeadId = (c as any).linkedLeadId || c.lead_id;
 
@@ -1843,6 +2055,9 @@ export default function ClientWorkspaceDetailPage() {
 
         if (json.success && Array.isArray(json.quotations) && json.quotations.length > 0) {
           setQuotationDocs(json.quotations);
+          syncClientBundleBrowserCache([clientIdOrCode, c.id, parseClientExtended(c).client_code], {
+            quotationDocs: json.quotations,
+          });
           return;
         }
       }
@@ -1873,6 +2088,7 @@ export default function ClientWorkspaceDetailPage() {
           content_json: d.content_json
         }));
         setQuotationDocs(formatted);
+        syncClientBundleBrowserCache([clientIdOrCode, c.id, parseClientExtended(c).client_code], { quotationDocs: formatted });
       } else {
         // Check quotations table by both client_id and resolved lead_id
         const { data: qRows } = targetLeadId
@@ -1892,14 +2108,17 @@ export default function ClientWorkspaceDetailPage() {
             content_json: q.canvas_data || q.content_json || undefined,
           }));
           setQuotationDocs(formatted);
+          syncClientBundleBrowserCache([clientIdOrCode, c.id, parseClientExtended(c).client_code], { quotationDocs: formatted });
         } else {
           setQuotationDocs([]);
+          syncClientBundleBrowserCache([clientIdOrCode, c.id, parseClientExtended(c).client_code], { quotationDocs: [] });
         }
       }
     } catch (e) {
       console.error('Error fetching quotation versions:', e);
     } finally {
       quotesCheckedClientIdRef.current = c.id;
+      setQuotesResolved(true);
       setLoadingQuotes(false);
     }
   };
@@ -1962,10 +2181,28 @@ export default function ClientWorkspaceDetailPage() {
       }
 
       // Update local state
-      setQuotationDocs(prev => prev.map(item => ({
+      const updatedQuotesList = quotationDocs.map(item => ({
         ...item,
         is_final: item.template_id === q.template_id
-      })));
+      }));
+      setQuotationDocs(updatedQuotesList);
+      syncClientBundleBrowserCache([clientIdOrCode, client.id, extended.client_code], {
+        quotationDocs: updatedQuotesList,
+      });
+
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'quotations',
+        actionType: 'STATUS_CHANGE',
+        title: `Marked Quotation V${q.version || 1} as Final`,
+        description: `Finalized "${q.title || q.template_id}" (Package: ₹${Number(q.total_amount || client.total_package_amount || 0).toLocaleString('en-IN')}).`,
+        newValue: q.title || q.template_id,
+        metadata: { amount: q.total_amount || client.total_package_amount || 0 },
+      });
 
       // Sync finance and post production
       fetchFinanceAndSyncMilestones(client);
@@ -2292,6 +2529,21 @@ export default function ClientWorkspaceDetailPage() {
           updated_at: new Date().toISOString()
         })
         .eq('id', client.id);
+
+      const toggledMs = updatedMilestones.find(m => m.id === milestoneId);
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'finance',
+        actionType: 'STATUS_CHANGE',
+        title: `Milestone ${newStatus === 'completed' ? 'Marked Paid' : 'Marked Pending'}: ${toggledMs?.step_name || 'Installment'}`,
+        oldValue: currentStatus,
+        newValue: newStatus,
+        metadata: { amount: toggledMs?.amount },
+      });
     } catch (e) {
       console.error('Error updating milestone status:', e);
     }
@@ -2346,10 +2598,24 @@ export default function ClientWorkspaceDetailPage() {
       });
       const data = await res.json();
       if (res.ok && data.success && data.moodboard) {
-        setMoodboards(prev => [...prev, data.moodboard]);
+        const nextMbs = [...moodboards, data.moodboard];
+        setMoodboards(nextMbs);
         setSelectedMoodboardId(data.moodboard.id);
         setShowAddMoodboardModal(false);
         setNewMbTitle('');
+        syncClientBundleBrowserCache([clientIdOrCode, client.id, extended.client_code], { moodboards: nextMbs });
+        logClientAudit({
+          clientId: client.id,
+          workspaceId: currentWsId || client.workspace_id,
+          actorId: userId || undefined,
+          actorName: userName || userEmail || 'Studio Member',
+          actorEmail: userEmail || undefined,
+          module: 'moodboard',
+          actionType: 'CREATE',
+          title: `Created Moodboard: ${data.moodboard.title || newMbEventType}`,
+          description: `Created ${newMbEventType} moodboard for client vision prep.`,
+          newValue: data.moodboard.title || newMbEventType,
+        });
       }
     } catch (e) {
       console.error('Error creating moodboard:', e);
@@ -2376,11 +2642,24 @@ export default function ClientWorkspaceDetailPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        const removed = moodboards.find(m => m.id === mbId);
         const remaining = moodboards.filter(m => m.id !== mbId);
         setMoodboards(remaining);
         if (remaining.length > 0) {
           setSelectedMoodboardId(remaining[0].id);
         }
+        syncClientBundleBrowserCache([clientIdOrCode, client.id, extended.client_code], { moodboards: remaining });
+        logClientAudit({
+          clientId: client.id,
+          workspaceId: currentWsId || client.workspace_id,
+          actorId: userId || undefined,
+          actorName: userName || userEmail || 'Studio Member',
+          actorEmail: userEmail || undefined,
+          module: 'moodboard',
+          actionType: 'DELETE',
+          title: `Deleted Moodboard: ${removed?.title || 'Moodboard'}`,
+          oldValue: removed?.title || mbId,
+        });
       }
     } catch (e) {
       console.error('Error deleting moodboard:', e);
@@ -2408,7 +2687,25 @@ export default function ClientWorkspaceDetailPage() {
       });
       const data = await res.json();
       if (res.ok && data.success && data.moodboard) {
-        setMoodboards(prev => prev.map(m => m.id === data.moodboard.id ? data.moodboard : m));
+        const prevStatus = currentMoodboard.status || 'DRAFT';
+        const nextMbs = moodboards.map(m => m.id === data.moodboard.id ? data.moodboard : m);
+        setMoodboards(nextMbs);
+        syncClientBundleBrowserCache([clientIdOrCode, client.id, extended.client_code], { moodboards: nextMbs });
+        if (newStatus && newStatus !== prevStatus) {
+          logClientAudit({
+            clientId: client.id,
+            workspaceId: currentWsId || client.workspace_id,
+            actorId: userId || undefined,
+            actorName: userName || userEmail || 'Studio Member',
+            actorEmail: userEmail || undefined,
+            module: 'moodboard',
+            actionType: 'STATUS_CHANGE',
+            title: `Moodboard Status: ${newStatus}`,
+            description: `Updated "${currentMoodboard.title || currentMoodboard.event_type || 'Moodboard'}" review status from ${prevStatus} to ${newStatus}.`,
+            oldValue: prevStatus,
+            newValue: newStatus,
+          });
+        }
       }
     } catch (e) {
       console.error('Error updating moodboard status:', e);
@@ -2473,11 +2770,37 @@ export default function ClientWorkspaceDetailPage() {
       if (type === 'couple') {
         const nextPhotos = [...(currentMoodboard.couple_photos || []), { url: uploadedUrl, caption: '' }];
         await handleSaveMoodboardFields({ couple_photos: nextPhotos });
+        if (client) {
+          logClientAudit({
+            clientId: client.id,
+            workspaceId: currentWsId || client.workspace_id,
+            actorId: userId || undefined,
+            actorName: userName || userEmail || 'Studio Member',
+            actorEmail: userEmail || undefined,
+            module: 'moodboard',
+            actionType: 'CREATE',
+            title: `Uploaded Couple Portrait to ${currentMoodboard.title || 'Moodboard'}`,
+            description: `Uploaded new reference photo (${file.name}).`,
+          });
+        }
       } else if (type === 'place' && placeId && photoField) {
         const nextPlaces = (currentMoodboard.shoot_places || []).map((p: any) =>
           p.id === placeId ? { ...p, [photoField]: uploadedUrl } : p
         );
         await handleSaveMoodboardFields({ shoot_places: nextPlaces });
+        if (client) {
+          logClientAudit({
+            clientId: client.id,
+            workspaceId: currentWsId || client.workspace_id,
+            actorId: userId || undefined,
+            actorName: userName || userEmail || 'Studio Member',
+            actorEmail: userEmail || undefined,
+            module: 'moodboard',
+            actionType: 'UPDATE',
+            title: `Updated Shoot Place Reference Photo`,
+            description: `Uploaded reference photo (${file.name}) for moodboard location.`,
+          });
+        }
       }
     } catch (err: any) {
       console.error('Upload error:', err);
@@ -2506,7 +2829,26 @@ export default function ClientWorkspaceDetailPage() {
       });
       const data = await res.json();
       if (res.ok && data.success && data.moodboard) {
-        setMoodboards(prev => prev.map(m => m.id === data.moodboard.id ? data.moodboard : m));
+        const prevStatus = currentMoodboard.status || 'DRAFT';
+        const nextStatus = typeof fields.status === 'string' ? fields.status : null;
+        const nextMbs = moodboards.map(m => m.id === data.moodboard.id ? data.moodboard : m);
+        setMoodboards(nextMbs);
+        syncClientBundleBrowserCache([clientIdOrCode, client.id, extended.client_code], { moodboards: nextMbs });
+        if (nextStatus && nextStatus !== prevStatus) {
+          logClientAudit({
+            clientId: client.id,
+            workspaceId: currentWsId || client.workspace_id,
+            actorId: userId || undefined,
+            actorName: userName || userEmail || 'Studio Member',
+            actorEmail: userEmail || undefined,
+            module: 'moodboard',
+            actionType: 'STATUS_CHANGE',
+            title: `Moodboard Status: ${nextStatus}`,
+            description: `Updated "${currentMoodboard.title || currentMoodboard.event_type || 'Moodboard'}" review status from ${prevStatus} to ${nextStatus}.`,
+            oldValue: prevStatus,
+            newValue: nextStatus,
+          });
+        }
       }
     } catch (e) {
       console.error('Error updating moodboard:', e);
@@ -2516,6 +2858,12 @@ export default function ClientWorkspaceDetailPage() {
   // Save Client Details & PM Assignment with 4-Way Cross-Module Sync
   const handleSaveClientDetails = async () => {
     if (!client) return;
+    const cleanPin = (extended.portal_pin || '').trim();
+    if (extended.portal_enabled !== false && !/^\d{6}$/.test(cleanPin)) {
+      alert('Please enter a valid 6-digit numeric Security PIN (or turn PIN protection OFF).');
+      return;
+    }
+
     setIsSaving(true);
     try {
       const assignedPm = teamMembers.find(m => m.id === projectManagerId);
@@ -2525,6 +2873,9 @@ export default function ClientWorkspaceDetailPage() {
 
       const updatedExtended = {
         ...extended,
+        portal_pin: cleanPin || deriveSixDigitPin({ id: client.id, phone }),
+        whatsapp_group_link: sanitizeWhatsappLink(extended.whatsapp_group_link),
+        whatsapp_group_id: (extended.whatsapp_group_id || '').trim(),
         project_manager_id: projectManagerId || undefined,
         project_manager_name: updatedPmName || undefined,
         project_manager_email: updatedPmEmail || undefined,
@@ -2655,6 +3006,33 @@ export default function ClientWorkspaceDetailPage() {
       setProjectManagerName(updatedPmName);
       setProjectManagerEmail(updatedPmEmail);
       setProjectManagerPhone(updatedPmPhone);
+
+      const changedFields: string[] = [];
+      if (client.name !== newCoupleName) changedFields.push(`Name (${newCoupleName})`);
+      if (client.phone !== phone) changedFields.push('Phone');
+      if ((client.email || '') !== email.trim()) changedFields.push('Email');
+      if ((client.event_type || '') !== eventType) changedFields.push(`Event Type (${eventType})`);
+      if ((client.event_date || '') !== eventDate) changedFields.push(`Date (${eventDate || 'TBD'})`);
+      if (extended.portal_enabled !== parseClientExtended(client).portal_enabled || extended.portal_pin !== parseClientExtended(client).portal_pin) {
+        changedFields.push(extended.portal_enabled !== false ? 'Portal 6-Digit PIN' : 'Portal PIN OFF');
+      }
+      if ((extended.whatsapp_group_link || '') !== parseClientExtended(client).whatsapp_group_link) {
+        changedFields.push('WhatsApp Group Link');
+      }
+
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'overview',
+        actionType: 'UPDATE',
+        title: 'Saved Client Overview & Portal Settings',
+        description: changedFields.length > 0 ? `Updated: ${changedFields.join(', ')}` : 'Updated client profile & portal details.',
+        newValue: changedFields.length > 0 ? changedFields.join(', ') : newCoupleName,
+      });
+
       alert('Client details & Project Manager assignment saved successfully!');
     } catch (e: any) {
       console.error('Error saving client details:', e);
@@ -2718,6 +3096,22 @@ export default function ClientWorkspaceDetailPage() {
       .update({ deliverables: updatedDeliverables, updated_at: new Date().toISOString() })
       .eq('id', postProductionProject.id)
       .then();
+
+    const changedDeliv = postProductionProject.deliverables.find(d => d.id === deliverableId);
+    logClientAudit({
+      clientId: client.id,
+      workspaceId: currentWsId || client.workspace_id,
+      actorId: userId || undefined,
+      actorName: userName || userEmail || 'Studio Member',
+      actorEmail: userEmail || undefined,
+      module: 'post_production',
+      actionType: 'UPDATE',
+      title: `Updated Deliverable: ${changedDeliv?.title || 'Deliverable'}`,
+      description: `Changed ${String(field)} on "${changedDeliv?.title || 'Deliverable'}" to "${String(value)}".`,
+      oldValue: changedDeliv ? (changedDeliv as any)[field] : undefined,
+      newValue: String(value),
+      metadata: { deliverable_title: changedDeliv?.title },
+    });
   };
 
   // Record Payment
@@ -2768,6 +3162,21 @@ export default function ClientWorkspaceDetailPage() {
       setPayAmount('');
       setPayRef('');
       fetchFinanceAndSyncMilestones(client);
+
+      logClientAudit({
+        clientId: client.id,
+        workspaceId: currentWsId || client.workspace_id,
+        actorId: userId || undefined,
+        actorName: userName || userEmail || 'Studio Member',
+        actorEmail: userEmail || undefined,
+        module: 'finance',
+        actionType: 'CREATE',
+        title: `Recorded Payment: ₹${numAmt.toLocaleString('en-IN')}`,
+        description: `Recorded ${payMode} installment of ₹${numAmt.toLocaleString('en-IN')} on ${payDate}${payRef ? ` (Ref: ${payRef})` : ''}.`,
+        oldValue: `₹${(client.paid_amount || 0).toLocaleString('en-IN')}`,
+        newValue: `₹${newPaid.toLocaleString('en-IN')}`,
+        metadata: { amount: numAmt },
+      });
     } catch (e) {
       console.error('Error recording payment:', e);
       alert('Error recording payment.');
@@ -2816,6 +3225,17 @@ export default function ClientWorkspaceDetailPage() {
       const data = await res.json();
       if (data.success) {
         await fetchClientTasks();
+        logClientAudit({
+          clientId: client.id,
+          workspaceId: currentWsId || client.workspace_id,
+          actorId: userId || undefined,
+          actorName: userName || userEmail || 'Studio Member',
+          actorEmail: userEmail || undefined,
+          module: 'tasks',
+          actionType: 'CREATE',
+          title: 'Auto-Generated Post-Production Task Pipeline',
+          description: 'Synchronized 7-stage wedding post-production task pipeline for this client.',
+        });
       }
     } catch (err) {
       console.error('Error generating pipeline:', err);
@@ -2830,6 +3250,7 @@ export default function ClientWorkspaceDetailPage() {
     const userId = session?.user?.id || '';
     
     // Optimistic update
+    const toggledTask = clientTasks.find(t => t.id === taskId);
     setClientTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: isCompleted ? 'completed' : 'todo' } : t));
     try {
       await fetch('/api/workspace/tasks', {
@@ -2842,6 +3263,20 @@ export default function ClientWorkspaceDetailPage() {
           userId,
         }),
       });
+      if (client && toggledTask) {
+        logClientAudit({
+          clientId: client.id,
+          workspaceId: currentWsId || client.workspace_id,
+          actorId: userId || undefined,
+          actorName: userName || userEmail || 'Studio Member',
+          actorEmail: userEmail || undefined,
+          module: 'tasks',
+          actionType: 'STATUS_CHANGE',
+          title: `${isCompleted ? 'Completed' : 'Reopened'} Task: ${toggledTask.title}`,
+          oldValue: currentStatus,
+          newValue: isCompleted ? 'completed' : 'todo',
+        });
+      }
     } catch (err) {
       console.error('Error toggling task:', err);
       fetchClientTasks();
@@ -2898,11 +3333,24 @@ export default function ClientWorkspaceDetailPage() {
       });
       const data = await res.json();
       if (data.success) {
+        const createdTitle = newClientTaskTitle.trim();
         setShowClientTaskModal(false);
         setNewClientTaskTitle('');
         setNewClientTaskDesc('');
         setNewClientTaskDueDate('');
         fetchClientTasks();
+        logClientAudit({
+          clientId: client.id,
+          workspaceId: currentWsId || client.workspace_id,
+          actorId: userId || undefined,
+          actorName: userName || userEmail || 'Studio Member',
+          actorEmail: userEmail || undefined,
+          module: 'tasks',
+          actionType: 'CREATE',
+          title: `Created Task: ${createdTitle}`,
+          description: `Category: ${newClientTaskCategory} • Priority: ${newClientTaskPriority}${newClientTaskDueDate ? ` • Due: ${newClientTaskDueDate}` : ''}`,
+          newValue: createdTitle,
+        });
       }
     } catch (err) {
       console.error('Error creating task:', err);
@@ -2911,9 +3359,23 @@ export default function ClientWorkspaceDetailPage() {
 
   const handleDeleteClientTask = async (taskId: string) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
+    const removedTask = clientTasks.find(t => t.id === taskId);
     setClientTasks(prev => prev.filter(t => t.id !== taskId));
     try {
       await fetch(`/api/workspace/tasks?type=task&id=${taskId}`, { method: 'DELETE' });
+      if (client && removedTask) {
+        logClientAudit({
+          clientId: client.id,
+          workspaceId: currentWsId || client.workspace_id,
+          actorId: userId || undefined,
+          actorName: userName || userEmail || 'Studio Member',
+          actorEmail: userEmail || undefined,
+          module: 'tasks',
+          actionType: 'DELETE',
+          title: `Deleted Task: ${removedTask.title}`,
+          oldValue: removedTask.title,
+        });
+      }
     } catch (err) {
       console.error('Error deleting task:', err);
       fetchClientTasks();
@@ -2923,8 +3385,7 @@ export default function ClientWorkspaceDetailPage() {
   const portalUrl = typeof window !== 'undefined' ? `${window.location.origin}/p/client/${extended.portal_token}` : `/p/client/${extended.portal_token}`;
 
   const copyPortalLink = () => {
-    const textToCopy = `StudioCore Wedding Portal\n🔗 Link: ${portalUrl}\n🔐 Access PIN: ${extended.portal_pin}`;
-    navigator.clipboard.writeText(textToCopy);
+    navigator.clipboard.writeText(portalUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
   };
@@ -2938,7 +3399,10 @@ export default function ClientWorkspaceDetailPage() {
   };
 
   const shareOnWhatsApp = () => {
-    const msg = `Namaste ${name} Ji! 🙏\nHere is your personal StudioCore Wedding Portal to access your Event Schedule, Quotations, Post-Production status & Google Drive delivery links:\n\n🔗 *Portal Link:* ${portalUrl}\n🔐 *Access PIN:* ${extended.portal_pin}\n\nPlease enter your 4-digit PIN to access your wedding space anytime!`;
+    const pinSection = extended.portal_enabled !== false
+      ? `🔐 *Access PIN:* ${extended.portal_pin}\n\nPlease enter your 6-digit PIN to access your wedding space anytime!`
+      : `✨ PIN protection is currently turned off — tap the link to open your wedding space directly!`;
+    const msg = `Namaste ${name} Ji! 🙏\nHere is your personal StudioCore Wedding Portal to access your Event Schedule, Quotations, Post-Production status & Google Drive delivery links:\n\n🔗 *Portal Link:* ${portalUrl}\n${pinSection}`;
     const cleanPhone = phone.replace(/[^0-9]/g, '');
     const waUrl = cleanPhone 
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}` 
@@ -3043,44 +3507,6 @@ export default function ClientWorkspaceDetailPage() {
             <div className="space-y-1.5">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">{name}</h1>
-                <ClientStatusDropdown
-                  status={status}
-                  clientId={client?.id}
-                  size="md"
-                  disabled={isReadOnly}
-                  onStatusChange={async (newStatus) => {
-                    const prevStatus = status;
-                    setStatus(newStatus);
-                    if (client) {
-                      const updatedSnap = { ...client, status: newStatus };
-                      setClient(prev => prev ? { ...prev, status: newStatus } : null);
-                      syncClientBrowserCache(updatedSnap as WorkspaceClient, activeWorkspace?.workspaceId || currentWsId);
-                      try {
-                        await supabase
-                          .from('workspace_clients')
-                          .update({ status: newStatus, updated_at: new Date().toISOString() })
-                          .eq('id', client.id);
-                        if (typeof window !== 'undefined') {
-                          window.dispatchEvent(new CustomEvent('workspace_client_updated', { detail: { clientId: client.id, status: newStatus } }));
-                        }
-                        logClientAudit({
-                          clientId: client.id,
-                          workspaceId: currentWsId,
-                          actorName: userName || userEmail || 'Studio Member',
-                          actorEmail: userEmail,
-                          module: 'overview',
-                          actionType: 'STATUS_CHANGE',
-                          title: `Client status changed to ${newStatus.toUpperCase()}`,
-                          description: `Updated client lifecycle status from ${prevStatus} to ${newStatus}.`,
-                          oldValue: prevStatus,
-                          newValue: newStatus,
-                        });
-                      } catch (err) {
-                        console.error('Error updating status:', err);
-                      }
-                    }
-                  }}
-                />
               </div>
 
               <div className="flex flex-wrap items-center gap-y-1 gap-x-4 text-xs text-slate-600 font-medium">
@@ -3101,8 +3527,8 @@ export default function ClientWorkspaceDetailPage() {
             </div>
           </div>
 
-          {/* Right Action: In-House PM Selector & Share Client Portal */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+          {/* Right Action: In-House PM Selector, History Icon, Status Dropdown, Share Client Portal */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 shrink-0">
             {/* In-House Project Manager 3D Cream Dropdown */}
             <div className="min-w-[210px] max-w-[260px]">
               <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
@@ -3119,15 +3545,55 @@ export default function ClientWorkspaceDetailPage() {
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setShowHistoryDrawer(true)}
-                className="px-4 py-3 text-xs font-black text-slate-700 bg-white hover:bg-slate-50 border border-[#EAE5DA] rounded-2xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer h-[42px] whitespace-nowrap"
+                title="Audit History"
+                aria-label="Audit History"
+                className="w-[42px] h-[42px] text-slate-700 bg-white hover:bg-slate-50 border border-[#EAE5DA] rounded-2xl shadow-xs transition flex items-center justify-center cursor-pointer shrink-0"
               >
                 <History className="w-4 h-4 text-amber-600" />
-                <span>Audit History</span>
               </button>
+
+              <ClientStatusDropdown
+                status={status}
+                clientId={client?.id}
+                size="md"
+                disabled={isReadOnly}
+                onStatusChange={async (newStatus) => {
+                  const prevStatus = status;
+                  setStatus(newStatus);
+                  if (client) {
+                    const updatedSnap = { ...client, status: newStatus };
+                    setClient(prev => prev ? { ...prev, status: newStatus } : null);
+                    syncClientBrowserCache(updatedSnap as WorkspaceClient, activeWorkspace?.workspaceId || currentWsId);
+                    try {
+                      await supabase
+                        .from('workspace_clients')
+                        .update({ status: newStatus, updated_at: new Date().toISOString() })
+                        .eq('id', client.id);
+                      if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new CustomEvent('workspace_client_updated', { detail: { clientId: client.id, status: newStatus } }));
+                      }
+                      logClientAudit({
+                        clientId: client.id,
+                        workspaceId: currentWsId,
+                        actorName: userName || userEmail || 'Studio Member',
+                        actorEmail: userEmail,
+                        module: 'overview',
+                        actionType: 'STATUS_CHANGE',
+                        title: `Client status changed to ${newStatus.toUpperCase()}`,
+                        description: `Updated client lifecycle status from ${prevStatus} to ${newStatus}.`,
+                        oldValue: prevStatus,
+                        newValue: newStatus,
+                      });
+                    } catch (err) {
+                      console.error('Error updating status:', err);
+                    }
+                  }
+                }}
+              />
 
               <button
                 type="button"
@@ -3296,7 +3762,7 @@ export default function ClientWorkspaceDetailPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       <div>
                         <label className="font-bold text-slate-700 block mb-1">WhatsApp Group ID (JID)</label>
                         <input
@@ -3310,14 +3776,42 @@ export default function ClientWorkspaceDetailPage() {
                       </div>
 
                       <div>
-                        <label className="font-bold text-slate-700 block mb-1">4-Digit Security PIN</label>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <label className="font-bold text-slate-700">6-Digit Security PIN</label>
+                          <button
+                            type="button"
+                            disabled={isReadOnly}
+                            onClick={() => setExtended(prev => ({ ...prev, portal_enabled: prev.portal_enabled === false }))}
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border transition flex items-center gap-1 ${
+                              isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                            } ${
+                              extended.portal_enabled !== false
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}
+                          >
+                            <Lock className="w-2.5 h-2.5" />
+                            <span>{extended.portal_enabled !== false ? 'PIN ON' : 'PIN OFF'}</span>
+                          </button>
+                        </div>
                         <input
                           type="text"
-                          disabled={isReadOnly}
+                          inputMode="numeric"
+                          disabled={isReadOnly || extended.portal_enabled === false}
                           maxLength={6}
+                          placeholder="6-digit PIN"
                           value={extended.portal_pin}
-                          onChange={(e) => setExtended(prev => ({ ...prev, portal_pin: e.target.value }))}
-                          className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono font-black text-amber-900 text-sm disabled:bg-slate-50 disabled:text-slate-600"
+                          onChange={(e) =>
+                            setExtended(prev => ({
+                              ...prev,
+                              portal_pin: e.target.value.replace(/\D/g, '').slice(0, 6),
+                            }))
+                          }
+                          className={`w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono font-black tracking-widest text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 ${
+                            extended.portal_enabled === false
+                              ? 'bg-slate-50 text-slate-400 opacity-60 cursor-not-allowed'
+                              : 'text-amber-900 disabled:bg-slate-50 disabled:text-slate-600'
+                          }`}
                         />
                       </div>
                     </div>
@@ -3375,6 +3869,7 @@ export default function ClientWorkspaceDetailPage() {
                   <AiMicButton
                     size="sm"
                     buttonText="AI Voice"
+                    showTrailingIcon={false}
                     onInsertComment={(transcribedText) => {
                       if (transcribedText) {
                         handleAddStudioComment(transcribedText, true);
@@ -3552,10 +4047,26 @@ export default function ClientWorkspaceDetailPage() {
               </button>
             </div>
 
-            {loadingQuotes ? (
-              <div className="py-12 text-center text-slate-400 space-y-2">
-                <RefreshCw className="w-6 h-6 mx-auto animate-spin text-amber-600" />
-                <p className="text-xs font-bold">Loading proposal versions from CRM...</p>
+            {(loadingQuotes || (!quotesResolved && quotationDocs.length === 0)) ? (
+              <div className="space-y-4">
+                {[1, 2].map((skeletonIdx) => (
+                  <div
+                    key={skeletonIdx}
+                    className="p-5 rounded-3xl border border-[#EAE5DA] bg-[#FFFDF9] flex flex-col md:flex-row md:items-center justify-between gap-5 animate-pulse"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-100/80 shrink-0" />
+                      <div className="space-y-2">
+                        <div className="h-4 w-48 bg-slate-200/80 rounded-lg" />
+                        <div className="h-3 w-64 bg-slate-100 rounded-lg" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-auto">
+                      <div className="h-9 w-28 bg-slate-100 rounded-xl" />
+                      <div className="h-9 w-28 bg-amber-100/80 rounded-xl" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : quotationDocs.length === 0 ? (
               <div className="p-10 text-center bg-[#FFFDF9] rounded-3xl border border-dashed border-[#EAE5DA] space-y-3 shadow-xs">
@@ -4197,7 +4708,7 @@ export default function ClientWorkspaceDetailPage() {
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'moodboard' && allowedModules.includes('moodboard') && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-            {loadingMoodboard ? (
+            {loadingMoodboard && moodboards.length === 0 ? (
               <div className="p-16 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] flex flex-col items-center justify-center text-center">
                 <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mb-3" />
                 <p className="text-sm font-bold text-slate-700">Loading Client Mood Boards & Vision...</p>
@@ -5292,7 +5803,11 @@ export default function ClientWorkspaceDetailPage() {
                   </div>
                   <div>
                     <h3 className="text-base font-black text-slate-900">Share Client Portal</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">Direct public link with 4-digit PIN security</p>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {extended.portal_enabled !== false
+                        ? 'Direct public link with 6-digit PIN security'
+                        : 'Direct public open link (PIN protection is OFF)'}
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => setShowShareModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
@@ -5320,11 +5835,20 @@ export default function ClientWorkspaceDetailPage() {
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">4-Digit Security Access PIN</label>
+                  <label className="font-bold text-slate-700 block mb-1">6-Digit Security Access PIN</label>
                   <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center justify-between">
                     <div>
-                      <span className="text-2xl font-black font-mono text-amber-900 tracking-widest">{extended.portal_pin}</span>
-                      <p className="text-[10px] text-amber-700 mt-0.5 font-medium">Client enters this PIN to unlock the portal</p>
+                      {extended.portal_enabled !== false ? (
+                        <>
+                          <span className="text-2xl font-black font-mono text-amber-900 tracking-widest">{extended.portal_pin}</span>
+                          <p className="text-[10px] text-amber-700 mt-0.5 font-medium">Client enters this 6-digit PIN to unlock the portal</p>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-sm font-black text-slate-700">PIN Protection OFF — Direct Access</span>
+                          <p className="text-[10px] text-slate-500 mt-0.5 font-medium">Turn PIN ON in Overview if you want PIN protection</p>
+                        </>
+                      )}
                     </div>
                     <Key className="w-6 h-6 text-amber-600" />
                   </div>
