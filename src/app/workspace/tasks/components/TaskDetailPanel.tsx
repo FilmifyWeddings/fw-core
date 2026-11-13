@@ -38,6 +38,7 @@ import {
   PRESET_LABELS,
 } from '@/lib/services/taskService';
 import { WorkspaceMemberOption } from '@/lib/team-helpers';
+import UnifiedTeamAssignDropdown from '@/components/team/UnifiedTeamAssignDropdown';
 
 interface TaskDetailPanelProps {
   task: TaskItem | null;
@@ -455,21 +456,20 @@ export function TaskDetailPanel({
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 Assignee
               </label>
-              <select
-                value={assignedTo}
-                onChange={(e) => {
-                  setAssignedTo(e.target.value);
-                  triggerAutoSave({ assigned_to: e.target.value || null });
+              <UnifiedTeamAssignDropdown
+                selectedId={assignedTo}
+                teamMembers={teamMembers}
+                onSelect={(m) => {
+                  const nextId = m.id || '';
+                  setAssignedTo(nextId);
+                  triggerAutoSave({ assigned_to: nextId || null });
                 }}
-                className="w-full bg-white dark:bg-stone-800 border border-slate-200 dark:border-stone-700 rounded-lg px-2 py-1 text-xs font-semibold outline-none"
-              >
-                <option value="">Unassigned</option>
-                {teamMembers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.role || 'Member'})
-                  </option>
-                ))}
-              </select>
+                variant="select-input"
+                placeholder="Unassigned"
+                searchPlaceholder="Search team member..."
+                size="sm"
+                allowClear
+              />
             </div>
           </div>
 

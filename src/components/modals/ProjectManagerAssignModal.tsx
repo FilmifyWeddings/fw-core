@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
-import { isInHouseMember, getDedupedInHouseMembers, getGroupedTeamMembers, getMemberDisplayRole } from '@/lib/team-helpers';
+import { isInHouseMember, getDedupedInHouseMembers, getGroupedTeamMembers, getMemberDisplayRole, isOwnerMember } from '@/lib/team-helpers';
 
 export interface ProjectManagerAssignClient {
   id: string;
@@ -456,6 +456,54 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
                   );
                 })()}
 
+                {/* CURRENTLY ASSIGNED SECTION (Immediately below Unassigned / Clear) */}
+                {(() => {
+                  const isAssigned = Boolean(selectedMemberId || selectedMemberName);
+                  if (!isAssigned) return null;
+                  const activeMem = teamMembers.find(m => 
+                    (selectedMemberId && m.id === selectedMemberId) ||
+                    (selectedMemberName && m.name?.toLowerCase().trim() === selectedMemberName.toLowerCase().trim())
+                  );
+                  const activeName = activeMem?.name || selectedMemberName || 'Assigned Member';
+                  const initials = activeName.split(/\s+/).filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase();
+                  const displayRole = activeMem ? getMemberDisplayRole(activeMem) : 'Project Manager';
+
+                  return (
+                    <div className="space-y-1 pt-0.5">
+                      <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-900 bg-emerald-100/90 rounded-xl flex items-center justify-between border border-emerald-200">
+                        <span className="flex items-center gap-1.5">
+                          <Check className="w-3 h-3 text-emerald-700 stroke-[3]" />
+                          <span>Currently Assigned</span>
+                        </span>
+                        <span className="text-[9px] font-extrabold bg-emerald-200 text-emerald-950 px-1.5 py-0.2 rounded-full">
+                          Active
+                        </span>
+                      </div>
+
+                      <div className="w-full p-2.5 rounded-2xl border border-emerald-300 bg-emerald-50 text-emerald-950 font-black shadow-2xs flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {activeMem?.avatar_url ? (
+                            <img
+                              src={activeMem.avatar_url}
+                              alt={activeName}
+                              className="w-8 h-8 rounded-full object-cover shrink-0 border border-emerald-400/40 shadow-xs"
+                            />
+                          ) : (
+                            <span className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-600 text-white font-black text-xs flex items-center justify-center shrink-0 border border-emerald-400 shadow-xs">
+                              {initials}
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-xs font-black truncate">{activeName}</p>
+                            <p className="text-[10px] text-emerald-700 font-semibold truncate">{displayRole}</p>
+                          </div>
+                        </div>
+                        <Check className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* SECTION 1: IN-HOUSE TEAM (TAGGED) */}
                 {filteredInHouse.length > 0 && (
                   <div className="pt-1.5 space-y-1">
@@ -474,6 +522,8 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
                         (selectedMemberId && member.id === selectedMemberId) ||
                         (selectedMemberName && member.name?.toLowerCase().trim() === selectedMemberName.toLowerCase().trim())
                       );
+                      const isOwner = isOwnerMember(member);
+                      const displayRole = getMemberDisplayRole(member);
                       const initials = member.name.split(/\s+/).filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
                       return (
@@ -503,8 +553,17 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
                               </span>
                             )}
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-900 truncate">{member.name}</p>
-                              <p className="text-[10px] text-slate-500 font-medium truncate">{getMemberDisplayRole(member)}</p>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <p className="text-xs font-bold text-slate-900 truncate">{member.name}</p>
+                                {isOwner && (
+                                  <span className="text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1 py-0.2 rounded shrink-0">
+                                    👑 Owner
+                                  </span>
+                                )}
+                              </div>
+                              <p className={`text-[10px] truncate ${isOwner ? 'text-amber-800 font-bold' : 'text-slate-500 font-medium'}`}>
+                                {displayRole}
+                              </p>
                             </div>
                           </div>
                           {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}

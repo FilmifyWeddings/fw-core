@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Search, Check, ShieldCheck, Users, X } from 'lucide-react';
-import { getGroupedTeamMembers, getMemberDisplayRole } from '@/lib/team-helpers';
+import { getGroupedTeamMembers, getMemberDisplayRole, isOwnerMember } from '@/lib/team-helpers';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
 
@@ -331,9 +331,43 @@ export default function UnifiedTeamAssignDropdown({
               </button>
             )}
 
+            {/* ── CURRENTLY ASSIGNED SECTION (Positioned immediately below Unassigned/Clear) ── */}
+            {isAssigned && (
+              <div className="space-y-1 pt-0.5">
+                <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-900 bg-emerald-100/90 rounded-md flex items-center justify-between border border-emerald-200/90">
+                  <span className="flex items-center gap-1">
+                    <Check className="w-2.5 h-2.5 text-emerald-700 stroke-[3]" />
+                    <span>Currently Assigned</span>
+                  </span>
+                  <span className="text-[8px] bg-emerald-200 text-emerald-950 px-1 rounded-full font-black">
+                    Active
+                  </span>
+                </div>
+
+                <div className="w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left bg-emerald-50 text-emerald-950 font-bold border border-emerald-300 shadow-2xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                      {selectedMember?.avatar_url ? (
+                        <img src={selectedMember.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        getInitials(activeName)
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-black truncate">{activeName}</p>
+                      <p className="text-[10px] text-emerald-700 font-semibold truncate">
+                        {selectedMember ? getMemberDisplayRole(selectedMember) : 'Assigned Member'}
+                      </p>
+                    </div>
+                  </div>
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />
+                </div>
+              </div>
+            )}
+
             {/* SECTION 1: IN-HOUSE TEAM (TAGGED) */}
             {inHouseFiltered.length > 0 && (
-              <div className="space-y-1">
+              <div className="space-y-1 pt-1">
                 <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-100/80 rounded-md flex items-center justify-between border border-amber-200/80">
                   <span className="flex items-center gap-1">
                     <ShieldCheck className="w-2.5 h-2.5 text-amber-700" />
@@ -349,6 +383,7 @@ export default function UnifiedTeamAssignDropdown({
                     (selectedId && m.id === selectedId) ||
                     (activeName && m.name && m.name.toLowerCase().trim() === activeName.toLowerCase().trim())
                   );
+                  const isOwner = isOwnerMember(m);
                   const displayRole = getMemberDisplayRole(m);
 
                   return (
@@ -383,8 +418,15 @@ export default function UnifiedTeamAssignDropdown({
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-black truncate">{m.name}</p>
-                          <p className="text-[10px] text-slate-400 font-semibold truncate">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className="text-xs font-black truncate">{m.name}</p>
+                            {isOwner && (
+                              <span className="text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1 py-0.2 rounded shrink-0">
+                                👑 Owner
+                              </span>
+                            )}
+                          </div>
+                          <p className={`text-[10px] truncate ${isOwner ? 'text-amber-800 font-bold' : 'text-slate-400 font-semibold'}`}>
                             {displayRole}
                           </p>
                         </div>

@@ -18,7 +18,12 @@ import {
   TaskFolder,
   TaskCategory,
 } from '@/lib/services/taskService';
-import { WorkspaceMemberOption } from '@/lib/team-helpers';
+import {
+  WorkspaceMemberOption,
+  getGroupedTeamMembers,
+  getMemberDisplayRole,
+  isOwnerMember
+} from '@/lib/team-helpers';
 
 interface CreateEditTaskModalProps {
   isOpen: boolean;
@@ -90,40 +95,20 @@ export function CreateEditTaskModal({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Separate team members: In-House on top, followed by other crew
+  // Separate team members: In-House on top (with Studio Owner at index 0), followed by other crew
   const { inHouseMembers, otherMembers } = useMemo(() => {
-    const inHouse: WorkspaceMemberOption[] = [];
-    const other: WorkspaceMemberOption[] = [];
-
+    const { inHouse, freelancers } = getGroupedTeamMembers(teamMembers);
     const query = memberSearch.trim().toLowerCase();
-    const filtered = teamMembers.filter(
-      (m) =>
-        m.name.toLowerCase().includes(query) ||
-        (m.role && m.role.toLowerCase().includes(query)) ||
-        (m.email && m.email.toLowerCase().includes(query))
-    );
+    const filterFn = (m: any) =>
+      !query ||
+      m.name.toLowerCase().includes(query) ||
+      getMemberDisplayRole(m).toLowerCase().includes(query) ||
+      (m.email && m.email.toLowerCase().includes(query));
 
-    filtered.forEach((m) => {
-      const typeStr = (m.primary_type || '').toUpperCase();
-      const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
-      const roleStr = (m.role || '').toLowerCase();
-
-      const isInHouse =
-        typeStr === 'IN_HOUSE' ||
-        typesArr.includes('IN_HOUSE') ||
-        roleStr.includes('in-house') ||
-        roleStr.includes('manager') ||
-        roleStr.includes('lead') ||
-        (!typeStr && typesArr.length === 0);
-
-      if (isInHouse) {
-        inHouse.push(m);
-      } else {
-        other.push(m);
-      }
-    });
-
-    return { inHouseMembers: inHouse, otherMembers: other };
+    return {
+      inHouseMembers: inHouse.filter(filterFn),
+      otherMembers: freelancers.filter(filterFn)
+    };
   }, [teamMembers, memberSearch]);
 
   const toggleMemberSelection = (memberId: string) => {
@@ -331,15 +316,57 @@ export function CreateEditTaskModal({
                   />
                 </div>
 
+                {/* Currently Assigned Summary Block */}
+                {selectedMemberIds.length > 0 && (
+                  <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 space-y-1">
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-emerald-900 dark:text-emerald-300">
+                      <span className="flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[3]" />
+                        <span>Currently Assigned</span>
+                      </span>
+                      <span className="text-[8px] bg-emerald-200 text-emerald-950 px-1 rounded-full font-black">
+                        {selectedMemberIds.length} Active
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedMemberIds.map((id) => {
+                        const mem = teamMembers.find((m) => m.id === id);
+                        return (
+                          <span
+                            key={id}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-xs font-bold bg-white dark:bg-stone-800 text-emerald-950 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 shadow-2xs"
+                          >
+                            <span>{mem?.name || id}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => removeMember(id, e)}
+                              className="text-slate-400 hover:text-rose-600 cursor-pointer text-[10px]"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Section 1: In-House Team */}
                 {inHouseMembers.length > 0 && (
                   <div className="space-y-1">
-                    <div className="text-[10px] font-black uppercase tracking-wider text-amber-800 px-2 py-0.5 flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 rounded-lg">
-                      <Crown className="w-3 h-3 text-amber-600" />
-                      <span>In-House Team</span>
+                    <div className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-100/80 px-2 py-0.5 flex items-center justify-between rounded-lg border border-amber-200">
+                      <span className="flex items-center gap-1">
+                        <Crown className="w-3 h-3 text-amber-700" />
+                        <span>In-House Team</span>
+                      </span>
+                      <span className="text-[8px] bg-amber-200 text-amber-950 px-1 rounded-full font-black">
+                        {inHouseMembers.length}
+                      </span>
                     </div>
                     {inHouseMembers.map((m) => {
                       const isSelected = selectedMemberIds.includes(m.id);
+                      const isOwner = isOwnerMember(m);
+                      const displayRole = getMemberDisplayRole(m);
                       return (
                         <div
                           key={m.id}
@@ -350,17 +377,22 @@ export function CreateEditTaskModal({
                               : 'hover:bg-slate-50 dark:hover:bg-stone-800 text-slate-800 dark:text-slate-200'
                           }`}
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-amber-300 text-slate-900 flex items-center justify-center text-[10px] font-black">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-6 h-6 rounded-full bg-amber-300 text-slate-900 flex items-center justify-center text-[10px] font-black shrink-0">
                               {m.name.slice(0, 2).toUpperCase()}
                             </span>
-                            <div>
-                              <div>{m.name}</div>
-                              {m.role && (
-                                <div className="text-[10px] text-slate-400 font-normal">
-                                  {m.role}
-                                </div>
-                              )}
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate">{m.name}</span>
+                                {isOwner && (
+                                  <span className="text-[8.5px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1 py-0.2 rounded shrink-0">
+                                    👑 Owner
+                                  </span>
+                                )}
+                              </div>
+                              <div className={`text-[10px] truncate ${isOwner ? 'text-amber-800 font-bold' : 'text-slate-400 font-normal'}`}>
+                                {displayRole}
+                              </div>
                             </div>
                           </div>
                           {isSelected && <Check className="w-4 h-4 text-amber-700" />}
@@ -369,7 +401,6 @@ export function CreateEditTaskModal({
                     })}
                   </div>
                 )}
-
                 {/* Section 2: Other Crew Members */}
                 {otherMembers.length > 0 && (
                   <div className="space-y-1 pt-1 border-t border-slate-100 dark:border-stone-800">

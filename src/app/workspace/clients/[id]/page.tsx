@@ -6855,31 +6855,16 @@ export default function ClientWorkspaceDetailPage() {
 
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Assign Task To</label>
-                  <select
-                    value={newClientTaskAssignee}
-                    onChange={(e) => setNewClientTaskAssignee(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-800 outline-none"
-                  >
-                    <option value="">Unassigned (No Member)</option>
-                    {inHouseMembers.length > 0 && (
-                      <optgroup label="── IN-HOUSE TEAM ──">
-                        {inHouseMembers.map(m => (
-                          <option key={m.id} value={m.name}>
-                            {m.name} ({m.role || 'In-House'})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {freelancerMembers.length > 0 && (
-                      <optgroup label="── FREELANCERS & EXTERNAL VENDORS ──">
-                        {freelancerMembers.map(m => (
-                          <option key={m.id} value={m.name}>
-                            {m.name} ({m.role || 'Freelancer'})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
+                  <UnifiedTeamAssignDropdown
+                    selectedName={newClientTaskAssignee}
+                    teamMembers={teamMembers}
+                    onSelect={(m) => setNewClientTaskAssignee(m.name || '')}
+                    variant="select-input"
+                    placeholder="Unassigned (No Member)"
+                    searchPlaceholder="Search team member..."
+                    size="md"
+                    allowClear
+                  />
                 </div>
 
                 <div>

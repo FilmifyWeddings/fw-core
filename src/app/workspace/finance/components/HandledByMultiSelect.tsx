@@ -67,7 +67,7 @@ export function extractFinanceMembers(
     name: cleanOwnerName,
     email: currentUserEmail || undefined,
     role: 'owner',
-    primary_role: 'Studio Owner',
+    primary_role: 'Owner',
     finance_access: 'MANAGE',
     isOwner: true,
     member_type: 'IN_HOUSE',
@@ -409,6 +409,41 @@ export function HandledByMultiSelect({
                 </div>
               </div>
 
+              {/* ── CURRENTLY ASSIGNED SECTION (Multi-handler summary right below Unassigned) ── */}
+              {selectedMembers.length > 0 && (
+                <div className="p-2 bg-emerald-50/70 border-b border-emerald-100/80 space-y-1">
+                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-emerald-900">
+                    <span className="flex items-center gap-1">
+                      <Check className="w-2.5 h-2.5 text-emerald-700 stroke-[3]" />
+                      <span>Currently Assigned Handlers</span>
+                    </span>
+                    <span className="text-[8px] bg-emerald-200 text-emerald-950 px-1 rounded-full font-black">
+                      {selectedMembers.length} Active
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedMembers.map((name) => (
+                      <span
+                        key={name}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-black bg-white text-emerald-950 border border-emerald-300 shadow-2xs"
+                      >
+                        <span>{name}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleMember(name);
+                          }}
+                          className="hover:text-rose-600 cursor-pointer text-slate-400 font-black text-[10px]"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* TAG 1: IN-HOUSE TEAM */}
               {inHouseFinance.length > 0 && (
                 <div>
@@ -457,7 +492,7 @@ export function HandledByMultiSelect({
                               )}
                             </div>
                             <span className="text-[10px] font-semibold text-slate-400 block truncate">
-                              {m.primary_role || (m.isOwner ? 'Studio Owner' : 'In-House Team')}
+                              {m.isOwner ? 'Owner' : (m.primary_role || 'In-House Team')}
                             </span>
                           </div>
                         </div>

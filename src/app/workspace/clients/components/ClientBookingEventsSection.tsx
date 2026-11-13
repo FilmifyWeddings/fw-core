@@ -23,7 +23,8 @@ import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import type { FWProject, FWSubEvent, FWTeamMember, FWAssignment, WorkspaceClient } from '@/types';
-import { resolveSubEventAssignments, getGroupedTeamMembers, getMemberDisplayRole } from '@/lib/team-helpers';
+import { resolveSubEventAssignments, getGroupedTeamMembers, getMemberDisplayRole, isOwnerMember } from '@/lib/team-helpers';
+import UnifiedTeamAssignDropdown from '@/components/team/UnifiedTeamAssignDropdown';
 import { isSlotAssigned } from '@/app/team-manager/hooks/useTeamManagerFilter';
 import {
   WorkspaceCrewRole,
@@ -1391,226 +1392,16 @@ export default function ClientBookingEventsSection({
 
             <div className="flex items-center gap-3">
               {/* PROJECT MANAGER (PM) DROPDOWN WITH AVATARS */}
-              {isReadOnly ? (
-                <div className="px-3 py-1.5 rounded-2xl border bg-amber-50/70 border-amber-200/70 text-amber-950 text-xs font-bold flex items-center gap-2 select-none shadow-2xs transition-all">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
-                  {displayProject.project_manager_name ? (
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-5 h-5 rounded-full bg-amber-600 text-white font-black text-[9px] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                        {(() => {
-                          const assignedMem = teamMembers.find(
-                            (m) =>
-                              m.id === displayProject.project_manager_id ||
-                              m.name === displayProject.project_manager_name
-                          );
-                          if (assignedMem?.avatar_url) {
-                            return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
-                          }
-                          return getInitials(displayProject.project_manager_name);
-                        })()}
-                      </div>
-                      <span className="font-extrabold text-amber-950 max-w-[130px] truncate">
-                        {displayProject.project_manager_name}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-amber-700/60 font-medium">Unassigned</span>
-                  )}
-                </div>
-              ) : (
-                <div className="relative" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setActivePmDropdownId(activePmDropdownId === displayProject.id ? null : displayProject.id)
-                    }
-                    className="px-3 py-1.5 rounded-2xl border bg-amber-50 hover:bg-amber-100/80 border-amber-200 text-amber-950 text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer group"
-                  >
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
-                    {displayProject.project_manager_name ? (
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-5 h-5 rounded-full bg-amber-600 text-white font-black text-[9px] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                          {(() => {
-                            const assignedMem = teamMembers.find(
-                              (m) =>
-                                m.id === displayProject.project_manager_id ||
-                                m.name === displayProject.project_manager_name
-                            );
-                            if (assignedMem?.avatar_url) {
-                              return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
-                            }
-                            return getInitials(displayProject.project_manager_name);
-                          })()}
-                        </div>
-                        <span className="font-extrabold text-amber-950 max-w-[130px] truncate">
-                          {displayProject.project_manager_name}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-amber-700/80 italic font-semibold">Assign PM</span>
-                    )}
-                    <ChevronDown className="w-3 h-3 text-amber-700 group-hover:translate-y-0.5 transition-transform" />
-                  </button>
-
-                  {activePmDropdownId === displayProject.id && (
-                    <div className="absolute right-0 mt-2 z-[9999] w-64 max-h-80 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800">
-                      <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
-                        <span>Assign Project Manager</span>
-                        {displayProject.project_manager_name && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleProjectPMChange(null, null);
-                              setActivePmDropdownId(null);
-                              setPmSearchQuery('');
-                            }}
-                            className="text-rose-500 hover:underline cursor-pointer font-bold"
-                          >
-                            Clear PM
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="relative px-1 pt-1 pb-0.5">
-                        <input
-                          type="text"
-                          placeholder="Search team member..."
-                          value={pmSearchQuery}
-                          onChange={(e) => setPmSearchQuery(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full pl-7 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white"
-                          autoFocus
-                        />
-                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-                      </div>
-
-                      {teamMembers.length === 0 ? (
-                        <div className="p-3 text-center text-xs text-slate-400 font-medium">
-                          No team members found in Directory.
-                        </div>
-                      ) : (() => {
-                        const q = pmSearchQuery.trim().toLowerCase();
-                        const filterMem = (m: any) =>
-                          !q ||
-                          m.name.toLowerCase().includes(q) ||
-                          getMemberDisplayRole(m).toLowerCase().includes(q) ||
-                          (m.primary_role || m.role || '').toLowerCase().includes(q);
-
-                        const inHouseFiltered = groupedInHouse.filter(filterMem);
-                        const freelancersFiltered = groupedFreelancers.filter(filterMem);
-
-                        if (inHouseFiltered.length === 0 && freelancersFiltered.length === 0) {
-                          return (
-                            <div className="p-3 text-center text-xs text-slate-400 font-medium">
-                              No matching team members found.
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div className="space-y-2">
-                            {/* In-House Team Tagged Section */}
-                            {inHouseFiltered.length > 0 && (
-                              <div className="space-y-1">
-                                <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-100/80 rounded-md flex items-center justify-between border border-amber-200">
-                                  <span>In-House Team</span>
-                                  <span className="text-[8px] bg-amber-200 text-amber-950 px-1 rounded-full">{inHouseFiltered.length}</span>
-                                </div>
-                                {inHouseFiltered.map((m) => {
-                                  const isSelected =
-                                    displayProject.project_manager_id === m.id ||
-                                    displayProject.project_manager_name === m.name;
-                                  return (
-                                    <button
-                                      key={m.id}
-                                      type="button"
-                                      onClick={() => {
-                                        handleProjectPMChange(m.id, m.name);
-                                        setActivePmDropdownId(null);
-                                        setPmSearchQuery('');
-                                      }}
-                                      className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
-                                        isSelected
-                                          ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
-                                          : 'hover:bg-slate-50 text-slate-700'
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
-                                          {m.avatar_url ? (
-                                            <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                          ) : (
-                                            getInitials(m.name)
-                                          )}
-                                        </div>
-                                        <div className="min-w-0">
-                                          <p className="text-xs font-black truncate">{m.name}</p>
-                                          <p className="text-[10px] text-slate-400 font-semibold truncate">
-                                            {getMemberDisplayRole(m)}
-                                          </p>
-                                        </div>
-                                      </div>
-                                      {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            {/* Freelancers & Vendors Tagged Section */}
-                            {freelancersFiltered.length > 0 && (
-                              <div className="space-y-1 pt-1">
-                                <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-stone-700 bg-stone-100 rounded-md flex items-center justify-between border border-stone-200">
-                                  <span>Freelancers & Vendors</span>
-                                  <span className="text-[8px] bg-stone-200 text-stone-800 px-1 rounded-full">{freelancersFiltered.length}</span>
-                                </div>
-                                {freelancersFiltered.map((m) => {
-                                  const isSelected =
-                                    displayProject.project_manager_id === m.id ||
-                                    displayProject.project_manager_name === m.name;
-                                  return (
-                                    <button
-                                      key={m.id}
-                                      type="button"
-                                      onClick={() => {
-                                        handleProjectPMChange(m.id, m.name);
-                                        setActivePmDropdownId(null);
-                                        setPmSearchQuery('');
-                                      }}
-                                      className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
-                                        isSelected
-                                          ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
-                                          : 'hover:bg-slate-50 text-slate-700'
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
-                                          {m.avatar_url ? (
-                                            <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                          ) : (
-                                            getInitials(m.name)
-                                          )}
-                                        </div>
-                                        <div className="min-w-0">
-                                          <p className="text-xs font-black truncate">{m.name}</p>
-                                          <p className="text-[10px] text-slate-400 font-semibold truncate">
-                                            {getMemberDisplayRole(m)}
-                                          </p>
-                                        </div>
-                                      </div>
-                                      {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-              )}
+              <UnifiedTeamAssignDropdown
+                selectedId={displayProject.project_manager_id}
+                selectedName={displayProject.project_manager_name}
+                teamMembers={teamMembers}
+                onSelect={(m) => handleProjectPMChange(m.id, m.name)}
+                labelPrefix="PM:"
+                placeholder="Assign PM"
+                disabled={isReadOnly}
+                align="right"
+              />
 
               {/* History Button */}
               {canManage && !displayProject.id.startsWith('virtual_') && (
@@ -2034,219 +1825,17 @@ export default function ClientBookingEventsSection({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-1.5">
-                <span className="text-[9px] font-black uppercase tracking-wider text-amber-300">PM:</span>
-                {isReadOnly ? (
-                  <div className="px-2 py-0.5 rounded-lg text-white text-[10px] font-bold flex items-center gap-1 border bg-white/10 border-white/15 select-none">
-                    {displayProject.project_manager_name ? (
-                      <>
-                        <div className="w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[7px] flex items-center justify-center overflow-hidden shrink-0">
-                          {(() => {
-                            const assignedMem = teamMembers.find(
-                              (m) =>
-                                m.id === displayProject.project_manager_id ||
-                                m.name === displayProject.project_manager_name
-                            );
-                            if (assignedMem?.avatar_url) {
-                              return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
-                            }
-                            return getInitials(displayProject.project_manager_name);
-                          })()}
-                        </div>
-                        <span className="truncate max-w-[120px]">{displayProject.project_manager_name}</span>
-                      </>
-                    ) : (
-                      <span className="text-amber-200/60 font-medium text-[9px]">Unassigned</span>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActivePmDropdownId(
-                          activePmDropdownId === `m_${displayProject.id}` ? null : `m_${displayProject.id}`
-                        )
-                      }
-                      className="px-2 py-0.5 rounded-lg text-white text-[10px] font-bold flex items-center gap-1 transition cursor-pointer border bg-white/10 hover:bg-white/20 border-white/15"
-                    >
-                      {displayProject.project_manager_name ? (
-                        <>
-                          <div className="w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[7px] flex items-center justify-center overflow-hidden shrink-0">
-                            {(() => {
-                              const assignedMem = teamMembers.find(
-                                (m) =>
-                                  m.id === displayProject.project_manager_id ||
-                                  m.name === displayProject.project_manager_name
-                              );
-                              if (assignedMem?.avatar_url) {
-                                return (
-                                  <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />
-                                );
-                              }
-                              return getInitials(displayProject.project_manager_name);
-                            })()}
-                          </div>
-                          <span className="truncate max-w-[120px]">{displayProject.project_manager_name}</span>
-                        </>
-                      ) : (
-                        <span className="text-amber-200/80 italic text-[9px]">Assign PM</span>
-                      )}
-                      <ChevronDown className="w-2.5 h-2.5 text-amber-300" />
-                    </button>
-
-                    {activePmDropdownId === `m_${displayProject.id}` && (
-                      <div className="absolute left-0 right-0 top-full mt-2 z-[9999] max-h-64 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800">
-                        <div className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
-                          <span>Select Project Manager</span>
-                          {displayProject.project_manager_name && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleProjectPMChange(null, null);
-                                setActivePmDropdownId(null);
-                                setPmSearchQuery('');
-                              }}
-                              className="text-rose-500 hover:underline text-[9px] font-bold cursor-pointer"
-                            >
-                              Clear PM
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="relative px-1 pt-0.5">
-                          <input
-                            type="text"
-                            placeholder="Search team member..."
-                            value={pmSearchQuery}
-                            onChange={(e) => setPmSearchQuery(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full pl-7 pr-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500"
-                            autoFocus
-                          />
-                          <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2" />
-                        </div>
-
-                        {(() => {
-                          const q = pmSearchQuery.trim().toLowerCase();
-                          const filterMem = (m: any) =>
-                            !q ||
-                            m.name.toLowerCase().includes(q) ||
-                            getMemberDisplayRole(m).toLowerCase().includes(q) ||
-                            (m.primary_role || m.role || '').toLowerCase().includes(q);
-
-                          const inHouseFiltered = groupedInHouse.filter(filterMem);
-                          const freelancersFiltered = groupedFreelancers.filter(filterMem);
-
-                          if (inHouseFiltered.length === 0 && freelancersFiltered.length === 0) {
-                            return (
-                              <div className="p-2 text-center text-[10px] text-slate-400 font-medium">
-                                No matching members.
-                              </div>
-                            );
-                          }
-
-                          return (
-                            <div className="space-y-1.5">
-                              {inHouseFiltered.length > 0 && (
-                                <div className="space-y-1">
-                                  <div className="px-1.5 py-0.5 text-[8px] font-black uppercase text-amber-900 bg-amber-100/80 rounded flex justify-between">
-                                    <span>In-House Team</span>
-                                    <span>{inHouseFiltered.length}</span>
-                                  </div>
-                                  {inHouseFiltered.map((m) => {
-                                    const isSelected =
-                                      displayProject.project_manager_id === m.id ||
-                                      displayProject.project_manager_name === m.name;
-                                    return (
-                                      <button
-                                        key={m.id}
-                                        type="button"
-                                        onClick={() => {
-                                          handleProjectPMChange(m.id, m.name);
-                                          setActivePmDropdownId(null);
-                                          setPmSearchQuery('');
-                                        }}
-                                        className={`w-full flex items-center justify-between gap-2 p-1.5 rounded-lg text-left transition ${
-                                          isSelected
-                                            ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
-                                            : 'hover:bg-slate-50 text-slate-700'
-                                        }`}
-                                      >
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          <div className="w-5 h-5 rounded-full bg-amber-500 text-white font-black text-[8px] flex items-center justify-center shrink-0 overflow-hidden">
-                                            {m.avatar_url ? (
-                                              <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                            ) : (
-                                              getInitials(m.name)
-                                            )}
-                                          </div>
-                                          <div className="min-w-0">
-                                            <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
-                                            <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">
-                                              {getMemberDisplayRole(m)}
-                                            </p>
-                                          </div>
-                                        </div>
-                                        {isSelected && <Check className="w-3 h-3 text-amber-600 shrink-0" />}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-
-                              {freelancersFiltered.length > 0 && (
-                                <div className="space-y-1 pt-0.5">
-                                  <div className="px-1.5 py-0.5 text-[8px] font-black uppercase text-stone-700 bg-stone-100 rounded flex justify-between">
-                                    <span>Freelancers & Vendors</span>
-                                    <span>{freelancersFiltered.length}</span>
-                                  </div>
-                                  {freelancersFiltered.map((m) => {
-                                    const isSelected =
-                                      displayProject.project_manager_id === m.id ||
-                                      displayProject.project_manager_name === m.name;
-                                    return (
-                                      <button
-                                        key={m.id}
-                                        type="button"
-                                        onClick={() => {
-                                          handleProjectPMChange(m.id, m.name);
-                                          setActivePmDropdownId(null);
-                                          setPmSearchQuery('');
-                                        }}
-                                        className={`w-full flex items-center justify-between gap-2 p-1.5 rounded-lg text-left transition ${
-                                          isSelected
-                                            ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
-                                            : 'hover:bg-slate-50 text-slate-700'
-                                        }`}
-                                      >
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-black text-[8px] flex items-center justify-center shrink-0 overflow-hidden">
-                                            {m.avatar_url ? (
-                                              <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                            ) : (
-                                              getInitials(m.name)
-                                            )}
-                                          </div>
-                                          <div className="min-w-0">
-                                            <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
-                                            <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">
-                                              {getMemberDisplayRole(m)}
-                                            </p>
-                                          </div>
-                                        </div>
-                                        {isSelected && <Check className="w-3 h-3 text-amber-600 shrink-0" />}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </>
-                )}
+                <UnifiedTeamAssignDropdown
+                  selectedId={displayProject.project_manager_id}
+                  selectedName={displayProject.project_manager_name}
+                  teamMembers={teamMembers}
+                  onSelect={(m) => handleProjectPMChange(m.id, m.name)}
+                  labelPrefix="PM:"
+                  placeholder="Assign PM"
+                  disabled={isReadOnly}
+                  align="left"
+                  size="sm"
+                />
               </div>
             </div>
           </div>
@@ -2623,7 +2212,8 @@ export default function ClientBookingEventsSection({
 
                   <div className="h-px bg-zinc-100 my-1" />
 
-                  <div className="max-h-56 overflow-y-auto space-y-0.5 pr-1 flex-1 min-h-0">
+                  <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 flex-1 min-h-0">
+                    {/* 1. Option: Unassign / Clear */}
                     <button
                       type="button"
                       onClick={() => {
@@ -2639,37 +2229,74 @@ export default function ClientBookingEventsSection({
                     >
                       <span className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                        <span>• Unassign / Pending</span>
+                        <span>• Unassign / Clear</span>
                       </span>
                       {!isAssigned && <Check className="w-3.5 h-3.5 text-rose-600" />}
                     </button>
 
-                    {teamMembers
-                      .filter((m) => {
+                    {/* 2. Dedicated CURRENTLY ASSIGNED block */}
+                    {isAssigned && (
+                      <div className="space-y-1 pt-0.5">
+                        <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-900 bg-emerald-100/90 rounded-md flex items-center justify-between border border-emerald-200/90">
+                          <span className="flex items-center gap-1">
+                            <Check className="w-2.5 h-2.5 text-emerald-700 stroke-[3]" />
+                            <span>Currently Assigned</span>
+                          </span>
+                          <span className="text-[8px] bg-emerald-200 text-emerald-950 px-1 rounded-full font-black">
+                            Active
+                          </span>
+                        </div>
+
+                        <div className="w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left bg-emerald-50 text-emerald-950 font-bold border border-emerald-300 shadow-2xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {memberObj?.avatar_url ? (
+                              <img
+                                src={memberObj.avatar_url}
+                                alt={cleanName}
+                                className="w-6 h-6 rounded-full object-cover shrink-0 border border-emerald-400/40 shadow-xs"
+                              />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-600 text-white font-black text-[9px] flex items-center justify-center shrink-0 shadow-xs">
+                                {getInitials(cleanName)}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-xs font-black truncate">{cleanName}</p>
+                              <p className="text-[10px] text-emerald-700 font-semibold truncate">
+                                {memberObj ? getMemberDisplayRole(memberObj) : (activeAssignment.required_role || 'Crew')}
+                              </p>
+                            </div>
+                          </div>
+                          <Check className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. Filtered In-House & Freelancers with Studio Owner at top of In-House */}
+                    {(() => {
+                      const q = memberSearchQuery.trim().toLowerCase();
+                      const filterMem = (m: any) => {
                         const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
-                        if (!memberSearchQuery.trim()) return true;
-                        const q = memberSearchQuery.toLowerCase();
+                        if (!q) return true;
                         return (
                           cleanMName.toLowerCase().includes(q) ||
                           getMemberDisplayRole(m).toLowerCase().includes(q) ||
                           (m.primary_role && m.primary_role.toLowerCase().includes(q))
                         );
-                      })
-                      .sort((a, b) => {
-                        const isAAssigned = activeAssignment.assigned_member_id === a.id;
-                        const isBAssigned = activeAssignment.assigned_member_id === b.id;
-                        if (isAAssigned && !isBAssigned) return -1;
-                        if (!isAAssigned && isBAssigned) return 1;
+                      };
 
-                        const targetRole = (activeAssignment.required_role || '').toLowerCase();
-                        const isARole = (a.primary_role || '').toLowerCase() === targetRole;
-                        const isBRole = (b.primary_role || '').toLowerCase() === targetRole;
-                        if (isARole && !isBRole) return -1;
-                        if (!isARole && isBRole) return 1;
+                      const inHouseFiltered = groupedInHouse.filter(filterMem);
+                      const freelancersFiltered = groupedFreelancers.filter(filterMem);
 
-                        return (a.name || '').localeCompare(b.name || '');
-                      })
-                      .map((m) => {
+                      if (inHouseFiltered.length === 0 && freelancersFiltered.length === 0) {
+                        return (
+                          <div className="p-3 text-center text-xs text-slate-400 font-medium">
+                            No matching team members found.
+                          </div>
+                        );
+                      }
+
+                      const renderMemberRow = (m: any) => {
                         const isSelected = activeAssignment.assigned_member_id === m.id;
                         const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
                         const isRoleMatch =
@@ -2677,6 +2304,8 @@ export default function ClientBookingEventsSection({
                           (activeAssignment.required_role || '').toLowerCase();
                         const alreadyAssignedRole = otherSlotAssignedMemberMap.get(m.id);
                         const isAlreadyAssignedElsewhere = Boolean(alreadyAssignedRole && !isSelected);
+                        const isOwner = isOwnerMember(m);
+                        const displayRole = getMemberDisplayRole(m);
 
                         return (
                           <button
@@ -2734,9 +2363,9 @@ export default function ClientBookingEventsSection({
                                   >
                                     {cleanMName}
                                   </span>
-                                  {isSelected && (
-                                    <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                      ✓ Currently Assigned
+                                  {isOwner && (
+                                    <span className="text-[8.5px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1 py-0.2 rounded shrink-0">
+                                      👑 Owner
                                     </span>
                                   )}
                                   {isAlreadyAssignedElsewhere && (
@@ -2749,19 +2378,52 @@ export default function ClientBookingEventsSection({
                                   className={`text-[9.5px] font-semibold ${
                                     isSelected
                                       ? 'text-emerald-700'
+                                      : isOwner
+                                      ? 'text-amber-800 font-bold'
                                       : isRoleMatch
                                       ? 'text-indigo-600 font-bold'
                                       : 'text-slate-400'
                                   }`}
                                 >
-                                  {getMemberDisplayRole(m)}
+                                  {displayRole}
                                 </span>
                               </div>
                             </div>
                             {isSelected && <Check className="w-4 h-4 text-emerald-700 shrink-0 stroke-[3]" />}
                           </button>
                         );
-                      })}
+                      };
+
+                      return (
+                        <div className="space-y-2">
+                          {/* IN-HOUSE TEAM SECTION */}
+                          {inHouseFiltered.length > 0 && (
+                            <div className="space-y-1">
+                              <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-100/80 rounded-md flex items-center justify-between border border-amber-200/80">
+                                <span>In-House Team</span>
+                                <span className="text-[8px] bg-amber-200 text-amber-950 px-1 rounded-full font-black">
+                                  {inHouseFiltered.length}
+                                </span>
+                              </div>
+                              {inHouseFiltered.map(renderMemberRow)}
+                            </div>
+                          )}
+
+                          {/* FREELANCERS & EXTERNAL VENDORS SECTION */}
+                          {freelancersFiltered.length > 0 && (
+                            <div className="space-y-1 pt-1">
+                              <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-stone-700 bg-stone-100/90 rounded-md flex items-center justify-between border border-stone-200">
+                                <span>Freelancers & External Vendors</span>
+                                <span className="text-[8px] bg-stone-200 text-stone-900 px-1 rounded-full font-black">
+                                  {freelancersFiltered.length}
+                                </span>
+                              </div>
+                              {freelancersFiltered.map(renderMemberRow)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </motion.div>
 

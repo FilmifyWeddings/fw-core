@@ -35,14 +35,39 @@ export function normalizeTeamMemberKey(name?: string | null): string {
 }
 
 /**
+ * Strict check if a member is the Studio Owner / Account Owner.
+ * Works whether account was registered as a studio owner or freelancer.
+ */
+export function isOwnerMember(m: any): boolean {
+  if (!m) return false;
+  const roleStr = String(m.role || '').toLowerCase().trim();
+  const primaryRoleStr = String(m.primary_role || '').toLowerCase().trim();
+  const primaryTypeStr = String(m.primary_type || m.type || '').toLowerCase().trim();
+  return (
+    roleStr === 'owner' ||
+    roleStr === 'studio owner' ||
+    primaryRoleStr === 'owner' ||
+    primaryRoleStr === 'studio owner' ||
+    primaryTypeStr === 'owner' ||
+    m.isOwner === true ||
+    m.is_owner === true
+  );
+}
+
+/**
  * Strict check if a team member is an In-House staff member.
  * Explicitly rejects Freelancers, External Vendors, and Partners.
+ * Studio Owner is ALWAYS classified as In-House.
  */
 export function isInHouseMember(m: any): boolean {
   if (!m) return false;
   const cleanName = String(m.name || '').trim().toLowerCase();
   if (!cleanName || ['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed', 'none'].includes(cleanName) || cleanName.startsWith('not fixed')) {
     return false;
+  }
+  // Studio Owner is strictly prioritized as In-House
+  if (isOwnerMember(m)) {
+    return true;
   }
   const primaryType = String(m.primary_type || m.type || '').toUpperCase().trim();
   const typesArr = (Array.isArray(m.member_types) ? m.member_types : []).map((t: any) => String(t).toUpperCase().trim());
@@ -82,14 +107,14 @@ function mergeMemberRecords<T = any>(existing: any, incoming: any): T {
     merged.phone = incoming.phone || incoming.phone_number;
     merged.phone_number = incoming.phone || incoming.phone_number;
   }
-  if ((incoming.role === 'owner' || incoming.primary_role === 'Studio Owner') && merged.role !== 'owner') {
-    merged.role = incoming.role || 'owner';
-    merged.primary_role = incoming.primary_role || 'Studio Owner';
+  if (isOwnerMember(incoming) && !isOwnerMember(merged)) {
+    merged.role = 'owner';
+    merged.primary_role = 'Owner';
     merged.name = incoming.name || merged.name;
   }
   if (!merged.primary_role && (incoming.primary_role || incoming.role)) {
-    merged.primary_role = incoming.primary_role || incoming.role;
-    merged.role = incoming.primary_role || incoming.role;
+    merged.primary_role = isOwnerMember(incoming) ? 'Owner' : (incoming.primary_role || incoming.role);
+    merged.role = isOwnerMember(incoming) ? 'owner' : (incoming.primary_role || incoming.role);
   }
 
   // Robust multi-role merging so Studio Owner designated roles are never lost
@@ -117,16 +142,12 @@ function mergeMemberRecords<T = any>(existing: any, incoming: any): T {
 
 /**
  * Returns clean, human-readable display string of ALL assigned roles designated by Studio Owner.
- * e.g.:
- * - "Social Media Content Creator, Traditional Videographer"
- * - "Traditional Videographer, Sales Person"
- * - "Studio Owner"
+ * Studio Owner is strictly labeled "Owner".
  */
 export function getMemberDisplayRole(m: any): string {
   if (!m) return '';
-  const isOwner = m.role === 'owner' || m.primary_role === 'Studio Owner' || m.isOwner;
-  if (isOwner) {
-    return 'Studio Owner';
+  if (isOwnerMember(m)) {
+    return 'Owner';
   }
 
   let rolesList: string[] = [];
@@ -152,15 +173,25 @@ export function getMemberDisplayRole(m: any): string {
     }
   }
 
+  // Clean out any generic or legacy owner tags
+  rolesList = rolesList.filter(r => {
+    const low = r.toLowerCase();
+    return low !== 'member' && low !== 'studio owner' && low !== 'owner';
+  });
+
   if (rolesList.length > 0) {
     const unique = Array.from(new Set(rolesList));
     return unique.join(', ');
   }
 
   if (m.primary_role && m.primary_role.toLowerCase() !== 'member') {
+    const prLow = m.primary_role.toLowerCase();
+    if (prLow === 'studio owner' || prLow === 'owner') return 'Owner';
     return m.primary_role;
   }
   if (m.role && m.role.toLowerCase() !== 'member') {
+    const rLow = m.role.toLowerCase();
+    if (rLow === 'studio owner' || rLow === 'owner') return 'Owner';
     return m.role;
   }
 
@@ -189,12 +220,18 @@ export function getDedupedInHouseMembers<T = any>(members: T[]): T[] {
       map.set(lookupKey, mergeMemberRecords(existing, m));
     }
   });
-  return Array.from(map.values()).sort((a: any, b: any) => String(a.name || '').localeCompare(String(b.name || '')));
+  return Array.from(map.values()).sort((a: any, b: any) => {
+    const aOwner = isOwnerMember(a);
+    const bOwner = isOwnerMember(b);
+    if (aOwner && !bOwner) return -1;
+    if (!aOwner && bOwner) return 1;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
 }
 
 /**
  * Groups and deduplicates all workspace members into:
- * 1. inHouse (In-House Staff & Studio Owners)
+ * 1. inHouse (In-House Staff & Studio Owners) - Studio Owner ALWAYS at index 0 (top)
  * 2. freelancers (External Vendors, Freelancers, Contractors)
  * Both cleanly deduplicated with zero ghost records.
  */
@@ -237,9 +274,13 @@ export function getGroupedTeamMembers<T = any>(members: T[]): {
     }
   }
 
-  const inHouse = Array.from(inHouseMap.values()).sort((a: any, b: any) =>
-    String(a.name || '').localeCompare(String(b.name || ''))
-  );
+  const inHouse = Array.from(inHouseMap.values()).sort((a: any, b: any) => {
+    const aOwner = isOwnerMember(a);
+    const bOwner = isOwnerMember(b);
+    if (aOwner && !bOwner) return -1;
+    if (!aOwner && bOwner) return 1;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
   const freelancers = Array.from(freelancerMap.values()).sort((a: any, b: any) =>
     String(a.name || '').localeCompare(String(b.name || ''))
   );

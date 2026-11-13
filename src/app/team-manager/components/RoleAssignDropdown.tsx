@@ -9,7 +9,7 @@ import { getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import { checkRoleSlotMatch, isCardFilterActive } from '../hooks/useTeamManagerFilter';
 import { UnifiedFilterState } from './ShootFilterModal';
-import { getMemberDisplayRole } from '@/lib/team-helpers';
+import { getMemberDisplayRole, getGroupedTeamMembers, isOwnerMember } from '@/lib/team-helpers';
 
 interface RoleAssignDropdownProps {
   assignment: FWAssignment;
@@ -175,6 +175,10 @@ export default function RoleAssignDropdown({
       return (a.name || '').localeCompare(b.name || '');
     });
   }, [teamMembers, searchQuery, assignment.assigned_member_id, memberObj?.id, cleanName, role]);
+
+  const { inHouse: groupedInHouse, freelancers: groupedFreelancers } = useMemo(() => {
+    return getGroupedTeamMembers(teamMembers);
+  }, [teamMembers]);
 
   const otherSlotAssignedMemberMap = useMemo(() => {
     const map = new Map<string, string>(); // memberId -> roleName
@@ -385,8 +389,8 @@ export default function RoleAssignDropdown({
               <div className="h-px bg-zinc-100 my-1" />
 
               {/* MEMBER SELECTION LIST */}
-              <div className="max-h-56 overflow-y-auto space-y-0.5 pr-1 flex-1 min-h-0">
-                {/* UNASSIGN OPTION */}
+              <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 flex-1 min-h-0">
+                {/* 1. UNASSIGN OPTION */}
                 <button
                   type="button"
                   onClick={() => {
@@ -401,92 +405,197 @@ export default function RoleAssignDropdown({
                 >
                   <span className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                    <span>• Unassign / Pending</span>
+                    <span>• Unassign / Clear</span>
                   </span>
                   {!isAssigned && <Check className="w-3.5 h-3.5 text-rose-600" />}
                 </button>
 
-                {sortedMembers.map((m) => {
-                  const isSelected = Boolean(
-                    (assignment.assigned_member_id && m.id === assignment.assigned_member_id) ||
-                    (memberObj?.id && m.id === memberObj.id) ||
-                    (cleanName && m.name && cleanName.toLowerCase() === m.name.toLowerCase().trim())
-                  );
-                  const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
-                  const isRoleMatch = (m.primary_role || '').toLowerCase() === (role || '').toLowerCase();
-                  const alreadyAssignedRole = otherSlotAssignedMemberMap.get(m.id);
-                  const isAlreadyAssignedElsewhere = Boolean(alreadyAssignedRole && !isSelected);
+                {/* 2. CURRENTLY ASSIGNED BLOCK */}
+                {isAssigned && (
+                  <div className="space-y-1 pt-0.5">
+                    <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-900 bg-emerald-100/90 rounded-md flex items-center justify-between border border-emerald-200/90">
+                      <span className="flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5 text-emerald-700 stroke-[3]" />
+                        <span>Currently Assigned</span>
+                      </span>
+                      <span className="text-[8px] bg-emerald-200 text-emerald-950 px-1 rounded-full font-black">
+                        Active
+                      </span>
+                    </div>
 
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => {
-                        if (isAlreadyAssignedElsewhere) {
-                          setConfirmModalData({
-                            memberId: m.id,
-                            memberName: cleanMName,
-                            existingRole: alreadyAssignedRole || 'Crew',
-                            newRole: role || 'Crew',
-                          });
-                          return;
-                        }
-                        handleClose();
-                        onAssignMember(assignment.id, m.id);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                        isAlreadyAssignedElsewhere
-                          ? 'bg-amber-50/50 hover:bg-amber-100/70 text-slate-800 border border-amber-200/50'
-                          : isSelected
-                          ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs'
-                          : 'text-[#0B111E] hover:bg-zinc-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {m.avatar_url ? (
-                          // eslint-disable-next-next/no-img-element
+                    <div className="w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left bg-emerald-50 text-emerald-950 font-bold border border-emerald-300 shadow-2xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {memberObj?.avatar_url ? (
                           <img
-                            src={m.avatar_url}
-                            alt={cleanMName}
-                            className={`w-6 h-6 rounded-full object-cover shrink-0 border border-white ${
-                              isSelected ? 'ring-2 ring-emerald-500' : 'ring-1 ring-slate-200'
-                            }`}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanMName)}`;
-                            }}
+                            src={memberObj.avatar_url}
+                            alt={cleanName}
+                            className="w-6 h-6 rounded-full object-cover shrink-0 border border-emerald-400/40 shadow-xs"
                           />
                         ) : (
-                          <div className={`w-6 h-6 rounded-full text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white ${
-                            isSelected ? 'bg-emerald-600 ring-2 ring-emerald-500' : 'bg-gradient-to-br from-indigo-500 to-purple-600'
-                          }`}>
-                            {cleanMName.slice(0, 2).toUpperCase() || 'TM'}
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-600 text-white font-black text-[9px] flex items-center justify-center shrink-0 shadow-xs">
+                            {cleanName ? cleanName.slice(0, 2).toUpperCase() : 'TM'}
                           </div>
                         )}
-                        <div className="text-left leading-tight min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : isAlreadyAssignedElsewhere ? 'text-slate-800' : 'text-slate-900'}`}>
-                              {cleanMName}
-                            </span>
-                            {isSelected && (
-                              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                ✓ Currently Assigned
-                              </span>
-                            )}
-                            {isAlreadyAssignedElsewhere && (
-                              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
-                                ⚠️ Assigned ({getRoleAbbr(alreadyAssignedRole, crewRoles)})
-                              </span>
-                            )}
-                          </div>
-                          <span className={`text-[9.5px] font-semibold ${isSelected ? 'text-emerald-700' : isRoleMatch ? 'text-indigo-600 font-bold' : 'text-slate-400'}`}>
-                            {getMemberDisplayRole(m)}
-                          </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black truncate">{cleanName}</p>
+                          <p className="text-[10px] text-emerald-700 font-semibold truncate">
+                            {memberObj ? getMemberDisplayRole(memberObj) : (assignment.required_role || 'Crew')}
+                          </p>
                         </div>
                       </div>
-                      {isSelected && <Check className="w-4 h-4 text-emerald-700 shrink-0 stroke-[3]" />}
-                    </button>
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. GROUPED MEMBERS (IN-HOUSE & FREELANCERS) */}
+                {(() => {
+                  const q = searchQuery.trim().toLowerCase();
+                  const filterMem = (m: any) => {
+                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
+                    if (!q) return true;
+                    return (
+                      cleanMName.toLowerCase().includes(q) ||
+                      getMemberDisplayRole(m).toLowerCase().includes(q) ||
+                      (m.primary_role && m.primary_role.toLowerCase().includes(q))
+                    );
+                  };
+
+                  const inHouseFiltered = groupedInHouse.filter(filterMem);
+                  const freelancersFiltered = groupedFreelancers.filter(filterMem);
+
+                  if (inHouseFiltered.length === 0 && freelancersFiltered.length === 0) {
+                    return (
+                      <div className="p-3 text-center text-xs text-slate-400 font-medium">
+                        No matching team members found.
+                      </div>
+                    );
+                  }
+
+                  const renderMemberRow = (m: any) => {
+                    const isSelected = Boolean(
+                      (assignment.assigned_member_id && m.id === assignment.assigned_member_id) ||
+                      (memberObj?.id && m.id === memberObj.id) ||
+                      (cleanName && m.name && cleanName.toLowerCase() === m.name.toLowerCase().trim())
+                    );
+                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
+                    const isRoleMatch = (m.primary_role || '').toLowerCase() === (role || '').toLowerCase();
+                    const alreadyAssignedRole = otherSlotAssignedMemberMap.get(m.id);
+                    const isAlreadyAssignedElsewhere = Boolean(alreadyAssignedRole && !isSelected);
+                    const isOwner = isOwnerMember(m);
+                    const displayRole = getMemberDisplayRole(m);
+
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          if (isAlreadyAssignedElsewhere) {
+                            setConfirmModalData({
+                              memberId: m.id,
+                              memberName: cleanMName,
+                              existingRole: alreadyAssignedRole || 'Crew',
+                              newRole: role || 'Crew',
+                            });
+                            return;
+                          }
+                          handleClose();
+                          onAssignMember(assignment.id, m.id);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                          isAlreadyAssignedElsewhere
+                            ? 'bg-amber-50/50 hover:bg-amber-100/70 text-slate-800 border border-amber-200/50'
+                            : isSelected
+                            ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs'
+                            : 'text-[#0B111E] hover:bg-zinc-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {m.avatar_url ? (
+                            <img
+                              src={m.avatar_url}
+                              alt={cleanMName}
+                              className={`w-6 h-6 rounded-full object-cover shrink-0 border border-white ${
+                                isSelected ? 'ring-2 ring-emerald-500' : 'ring-1 ring-slate-200'
+                              }`}
+                            />
+                          ) : (
+                            <div className={`w-6 h-6 rounded-full text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white ${
+                              isSelected ? 'bg-emerald-600 ring-2 ring-emerald-500' : 'bg-gradient-to-br from-indigo-500 to-purple-600'
+                            }`}>
+                              {cleanMName ? cleanMName.slice(0, 2).toUpperCase() : 'TM'}
+                            </div>
+                          )}
+                          <div className="text-left leading-tight min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={`block font-black text-xs truncate ${
+                                  isSelected ? 'text-emerald-900' : 'text-slate-900'
+                                }`}
+                              >
+                                {cleanMName}
+                              </span>
+                              {isOwner && (
+                                <span className="text-[8.5px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1 py-0.2 rounded shrink-0">
+                                  👑 Owner
+                                </span>
+                              )}
+                              {isAlreadyAssignedElsewhere && (
+                                <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                                  ⚠️ Assigned ({getRoleAbbr(alreadyAssignedRole, crewRoles)})
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className={`text-[9.5px] font-semibold ${
+                                isSelected
+                                  ? 'text-emerald-700'
+                                  : isOwner
+                                  ? 'text-amber-800 font-bold'
+                                  : isRoleMatch
+                                  ? 'text-indigo-600 font-bold'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              {displayRole}
+                            </span>
+                          </div>
+                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-emerald-700 shrink-0 stroke-[3]" />}
+                      </button>
+                    );
+                  };
+
+                  return (
+                    <div className="space-y-2">
+                      {/* IN-HOUSE TEAM SECTION */}
+                      {inHouseFiltered.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-100/80 rounded-md flex items-center justify-between border border-amber-200/80">
+                            <span>In-House Team</span>
+                            <span className="text-[8px] bg-amber-200 text-amber-950 px-1 rounded-full font-black">
+                              {inHouseFiltered.length}
+                            </span>
+                          </div>
+                          {inHouseFiltered.map(renderMemberRow)}
+                        </div>
+                      )}
+
+                      {/* FREELANCERS & EXTERNAL VENDORS SECTION */}
+                      {freelancersFiltered.length > 0 && (
+                        <div className="space-y-1 pt-1">
+                          <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-stone-700 bg-stone-100/90 rounded-md flex items-center justify-between border border-stone-200">
+                            <span>Freelancers & External Vendors</span>
+                            <span className="text-[8px] bg-stone-200 text-stone-900 px-1 rounded-full font-black">
+                              {freelancersFiltered.length}
+                            </span>
+                          </div>
+                          {freelancersFiltered.map(renderMemberRow)}
+                        </div>
+                      )}
+                    </div>
                   );
-                })}
+                })()}
               </div>
             </motion.div>
           </AnimatePresence>

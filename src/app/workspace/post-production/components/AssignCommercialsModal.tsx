@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import { getMemberDisplayRole } from '@/lib/team-helpers';
+import UnifiedTeamAssignDropdown from '@/components/team/UnifiedTeamAssignDropdown';
 
 interface AssignCommercialsModalProps {
   isOpen: boolean;
@@ -181,20 +182,18 @@ export default function AssignCommercialsModal({
                 <span>Assign Editor / Specialist *</span>
               </label>
 
-              <select
-                value={selectedMemberId}
-                onChange={(e) => {
-                  setSelectedMemberId(e.target.value);
+              <UnifiedTeamAssignDropdown
+                selectedId={selectedMemberId}
+                teamMembers={teamMembers}
+                onSelect={(m) => {
+                  setSelectedMemberId(m.id || '');
                 }}
-                className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
-              >
-                <option value="">-- Choose Team Member / Freelancer --</option>
-                {teamMembers.map(m => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} {getMemberDisplayRole(m) ? `(${getMemberDisplayRole(m)})` : ''} {m.daily_rate ? `• ₹${m.daily_rate}/day` : ''}
-                  </option>
-                ))}
-              </select>
+                variant="select-input"
+                placeholder="-- Choose Team Member / Freelancer --"
+                searchPlaceholder="Search team member..."
+                size="md"
+                allowClear
+              />
             </div>
 
             {/* 2. Commercials & Balance Card */}
