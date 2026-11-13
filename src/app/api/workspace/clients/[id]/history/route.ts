@@ -26,25 +26,32 @@ export async function GET(
     // 0. Resolve linked entities (lead_id, client_name, fw_projects, fw_sub_events, post_production_projects)
     const { data: clientRow } = await supabaseAdmin
       .from('workspace_clients')
-      .select('id, lead_id, name, workspace_id')
-      .eq('id', clientId)
+      .select('id, lead_id, name, workspace_id, notes')
+      .or(`id.eq.${clientId},lead_id.eq.${clientId},notes.ilike.%${clientId}%`)
       .maybeSingle();
 
+    const realClientId = clientRow?.id || clientId;
     const resolvedLeadId = clientRow?.lead_id || null;
     const clientName = (clientRow?.name || '').trim();
 
-    const fwOrParts = [`client_id.eq.${clientId}`];
-    if (resolvedLeadId && resolvedLeadId !== clientId) {
+    const fwOrParts = [`client_id.eq.${realClientId}`];
+    if (resolvedLeadId && resolvedLeadId !== realClientId) {
       fwOrParts.push(`lead_id.eq.${resolvedLeadId}`);
+    }
+    if (clientId !== realClientId) {
+      fwOrParts.push(`client_id.eq.${clientId}`);
     }
     if (clientName) {
       const escapedName = clientName.replace(/[,%()]/g, ' ').trim();
       if (escapedName) fwOrParts.push(`client_name.ilike.%${escapedName}%`);
     }
 
-    const ppOrParts = [`client_id.eq.${clientId}`];
-    if (resolvedLeadId && resolvedLeadId !== clientId) {
+    const ppOrParts = [`client_id.eq.${realClientId}`];
+    if (resolvedLeadId && resolvedLeadId !== realClientId) {
       ppOrParts.push(`lead_id.eq.${resolvedLeadId}`);
+    }
+    if (clientId !== realClientId) {
+      ppOrParts.push(`client_id.eq.${clientId}`);
     }
 
     const [fwProjectsRes, ppProjectsRes] = await Promise.all([
@@ -134,13 +141,17 @@ export async function GET(
     }
 
     const [clientAuditRes, fwActivityRes, ppAuditRes, financeAuditRes, liveLogsRes] = await Promise.all([
-      // 1. Dedicated client_audit_logs
+      // 1. Dedicated client_audit_logs (matching canonical UUID, lead_id & client_code)
       (async () => {
         try {
+          const clientAuditOrParts = [`client_id.eq.${realClientId}`];
+          if (resolvedLeadId && resolvedLeadId !== realClientId) clientAuditOrParts.push(`client_id.eq.${resolvedLeadId}`);
+          if (clientId !== realClientId) clientAuditOrParts.push(`client_id.eq.${clientId}`);
+
           let q = supabaseAdmin
             .from('client_audit_logs')
             .select('*')
-            .eq('client_id', clientId)
+            .or(clientAuditOrParts.join(','))
             .order('created_at', { ascending: false })
             .limit(limit);
           if (moduleFilter && moduleFilter !== 'all') q = q.eq('module', moduleFilter);
@@ -152,12 +163,15 @@ export async function GET(
 
       // 2. Booking Events & Crew Assignments (fw_project_activity_logs)
       (async () => {
-        if (fwProjectIds.length === 0) return { data: [] };
+        const allTargetProjectIds = Array.from(
+          new Set([...fwProjectIds, realClientId, resolvedLeadId, clientId].filter(Boolean))
+        );
+        if (allTargetProjectIds.length === 0) return { data: [] };
         try {
           return await supabaseAdmin
             .from('fw_project_activity_logs')
             .select('*')
-            .in('project_id', fwProjectIds)
+            .in('project_id', allTargetProjectIds)
             .order('created_at', { ascending: false })
             .limit(limit);
         } catch {
@@ -403,13 +417,22 @@ export async function POST(
       metadata = {}
     } = body;
 
+    const { data: clientRow } = await supabaseAdmin
+      .from('workspace_clients')
+      .select('id, workspace_id')
+      .or(`id.eq.${clientId},lead_id.eq.${clientId},notes.ilike.%${clientId}%`)
+      .maybeSingle();
+
+    const canonicalClientId = clientRow?.id || String(clientId);
+    const canonicalWsId = clientRow?.workspace_id || String(workspace_id || '');
+
     const resolvedModule = module || 'overview';
     const resolvedTitle = title || `${actor_name || 'Team Member'} updated ${resolvedModule}`;
     const nowIso = new Date().toISOString();
 
     const auditEntry = {
-      client_id: String(clientId),
-      workspace_id: String(workspace_id || ''),
+      client_id: canonicalClientId,
+      workspace_id: canonicalWsId,
       actor_id: actor_id || null,
       actor_name: actor_name || 'Team Member',
       actor_email: actor_email || null,

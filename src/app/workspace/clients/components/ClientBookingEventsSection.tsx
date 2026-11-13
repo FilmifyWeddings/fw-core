@@ -23,7 +23,7 @@ import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import type { FWProject, FWSubEvent, FWTeamMember, FWAssignment, WorkspaceClient } from '@/types';
-import { resolveSubEventAssignments } from '@/lib/team-helpers';
+import { resolveSubEventAssignments, getGroupedTeamMembers } from '@/lib/team-helpers';
 import { isSlotAssigned } from '@/app/team-manager/hooks/useTeamManagerFilter';
 import {
   WorkspaceCrewRole,
@@ -243,6 +243,11 @@ export default function ClientBookingEventsSection({
         (userId && m.user_id === userId)
     );
   }, [teamMembers, activeWorkspace, userEmail, userId]);
+
+  // Cleanly split and deduplicate team members into In-House and Freelancer groups
+  const { inHouse: groupedInHouse, freelancers: groupedFreelancers } = useMemo(() => {
+    return getGroupedTeamMembers(teamMembers);
+  }, [teamMembers]);
 
   // Build displayProject: uses real `fw_projects` row when present, or synthesizes virtual project from fallbackEvents
   const displayProject: FWProject = useMemo(() => {
@@ -1483,53 +1488,124 @@ export default function ClientBookingEventsSection({
                         <div className="p-3 text-center text-xs text-slate-400 font-medium">
                           No team members found in Directory.
                         </div>
-                      ) : (
-                        teamMembers
-                          .filter(
-                            (m) =>
-                              !pmSearchQuery.trim() ||
-                              m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) ||
-                              (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
-                          )
-                          .map((m) => {
-                            const isSelected =
-                              displayProject.project_manager_id === m.id ||
-                              displayProject.project_manager_name === m.name;
-                            return (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => {
-                                  handleProjectPMChange(m.id, m.name);
-                                  setActivePmDropdownId(null);
-                                  setPmSearchQuery('');
-                                }}
-                                className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
-                                  isSelected
-                                    ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
-                                    : 'hover:bg-slate-50 text-slate-700'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
-                                    {m.avatar_url ? (
-                                      <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                    ) : (
-                                      getInitials(m.name)
-                                    )}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-black truncate">{m.name}</p>
-                                    <p className="text-[10px] text-slate-400 font-semibold truncate">
-                                      {m.primary_role || 'Team Member'}
-                                    </p>
-                                  </div>
+                      ) : (() => {
+                        const q = pmSearchQuery.trim().toLowerCase();
+                        const filterMem = (m: any) =>
+                          !q ||
+                          m.name.toLowerCase().includes(q) ||
+                          (m.primary_role || m.role || '').toLowerCase().includes(q);
+
+                        const inHouseFiltered = groupedInHouse.filter(filterMem);
+                        const freelancersFiltered = groupedFreelancers.filter(filterMem);
+
+                        if (inHouseFiltered.length === 0 && freelancersFiltered.length === 0) {
+                          return (
+                            <div className="p-3 text-center text-xs text-slate-400 font-medium">
+                              No matching team members found.
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-2">
+                            {/* In-House Team Tagged Section */}
+                            {inHouseFiltered.length > 0 && (
+                              <div className="space-y-1">
+                                <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-100/80 rounded-md flex items-center justify-between border border-amber-200">
+                                  <span>In-House Team</span>
+                                  <span className="text-[8px] bg-amber-200 text-amber-950 px-1 rounded-full">{inHouseFiltered.length}</span>
                                 </div>
-                                {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
-                              </button>
-                            );
-                          })
-                      )}
+                                {inHouseFiltered.map((m) => {
+                                  const isSelected =
+                                    displayProject.project_manager_id === m.id ||
+                                    displayProject.project_manager_name === m.name;
+                                  return (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => {
+                                        handleProjectPMChange(m.id, m.name);
+                                        setActivePmDropdownId(null);
+                                        setPmSearchQuery('');
+                                      }}
+                                      className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
+                                          : 'hover:bg-slate-50 text-slate-700'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                                          {m.avatar_url ? (
+                                            <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                          ) : (
+                                            getInitials(m.name)
+                                          )}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="text-xs font-black truncate">{m.name}</p>
+                                          <p className="text-[10px] text-slate-400 font-semibold truncate">
+                                            {m.primary_role || (m as any).role || (m.roles && m.roles[0]) || 'In-House'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Freelancers & Vendors Tagged Section */}
+                            {freelancersFiltered.length > 0 && (
+                              <div className="space-y-1 pt-1">
+                                <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-stone-700 bg-stone-100 rounded-md flex items-center justify-between border border-stone-200">
+                                  <span>Freelancers & Vendors</span>
+                                  <span className="text-[8px] bg-stone-200 text-stone-800 px-1 rounded-full">{freelancersFiltered.length}</span>
+                                </div>
+                                {freelancersFiltered.map((m) => {
+                                  const isSelected =
+                                    displayProject.project_manager_id === m.id ||
+                                    displayProject.project_manager_name === m.name;
+                                  return (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => {
+                                        handleProjectPMChange(m.id, m.name);
+                                        setActivePmDropdownId(null);
+                                        setPmSearchQuery('');
+                                      }}
+                                      className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
+                                          : 'hover:bg-slate-50 text-slate-700'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                                          {m.avatar_url ? (
+                                            <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                          ) : (
+                                            getInitials(m.name)
+                                          )}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="text-xs font-black truncate">{m.name}</p>
+                                          <p className="text-[10px] text-slate-400 font-semibold truncate">
+                                            {m.primary_role || (m as any).role || (m.roles && m.roles[0]) || 'Freelancer'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -2049,51 +2125,122 @@ export default function ClientBookingEventsSection({
                           <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2" />
                         </div>
 
-                        {teamMembers
-                          .filter(
-                            (m) =>
-                              !pmSearchQuery.trim() ||
-                              m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) ||
-                              (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
-                          )
-                          .map((m) => {
-                            const isSelected =
-                              displayProject.project_manager_id === m.id ||
-                              displayProject.project_manager_name === m.name;
+                        {(() => {
+                          const q = pmSearchQuery.trim().toLowerCase();
+                          const filterMem = (m: any) =>
+                            !q ||
+                            m.name.toLowerCase().includes(q) ||
+                            (m.primary_role || m.role || '').toLowerCase().includes(q);
+
+                          const inHouseFiltered = groupedInHouse.filter(filterMem);
+                          const freelancersFiltered = groupedFreelancers.filter(filterMem);
+
+                          if (inHouseFiltered.length === 0 && freelancersFiltered.length === 0) {
                             return (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => {
-                                  handleProjectPMChange(m.id, m.name);
-                                  setActivePmDropdownId(null);
-                                  setPmSearchQuery('');
-                                }}
-                                className={`w-full flex items-center justify-between gap-2 p-1.5 rounded-lg text-left transition ${
-                                  isSelected
-                                    ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
-                                    : 'hover:bg-slate-50 text-slate-700'
-                                }`}
-                              >
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <div className="w-5 h-5 rounded-full bg-amber-500 text-white font-black text-[8px] flex items-center justify-center shrink-0 overflow-hidden">
-                                    {m.avatar_url ? (
-                                      <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                    ) : (
-                                      getInitials(m.name)
-                                    )}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
-                                    <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">
-                                      {m.primary_role || 'Crew'}
-                                    </p>
-                                  </div>
-                                </div>
-                                {isSelected && <Check className="w-3 h-3 text-amber-600 shrink-0" />}
-                              </button>
+                              <div className="p-2 text-center text-[10px] text-slate-400 font-medium">
+                                No matching members.
+                              </div>
                             );
-                          })}
+                          }
+
+                          return (
+                            <div className="space-y-1.5">
+                              {inHouseFiltered.length > 0 && (
+                                <div className="space-y-1">
+                                  <div className="px-1.5 py-0.5 text-[8px] font-black uppercase text-amber-900 bg-amber-100/80 rounded flex justify-between">
+                                    <span>In-House Team</span>
+                                    <span>{inHouseFiltered.length}</span>
+                                  </div>
+                                  {inHouseFiltered.map((m) => {
+                                    const isSelected =
+                                      displayProject.project_manager_id === m.id ||
+                                      displayProject.project_manager_name === m.name;
+                                    return (
+                                      <button
+                                        key={m.id}
+                                        type="button"
+                                        onClick={() => {
+                                          handleProjectPMChange(m.id, m.name);
+                                          setActivePmDropdownId(null);
+                                          setPmSearchQuery('');
+                                        }}
+                                        className={`w-full flex items-center justify-between gap-2 p-1.5 rounded-lg text-left transition ${
+                                          isSelected
+                                            ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
+                                            : 'hover:bg-slate-50 text-slate-700'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <div className="w-5 h-5 rounded-full bg-amber-500 text-white font-black text-[8px] flex items-center justify-center shrink-0 overflow-hidden">
+                                            {m.avatar_url ? (
+                                              <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                              getInitials(m.name)
+                                            )}
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
+                                            <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">
+                                              {m.primary_role || (m as any).role || (m.roles && m.roles[0]) || 'In-House'}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        {isSelected && <Check className="w-3 h-3 text-amber-600 shrink-0" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {freelancersFiltered.length > 0 && (
+                                <div className="space-y-1 pt-0.5">
+                                  <div className="px-1.5 py-0.5 text-[8px] font-black uppercase text-stone-700 bg-stone-100 rounded flex justify-between">
+                                    <span>Freelancers & Vendors</span>
+                                    <span>{freelancersFiltered.length}</span>
+                                  </div>
+                                  {freelancersFiltered.map((m) => {
+                                    const isSelected =
+                                      displayProject.project_manager_id === m.id ||
+                                      displayProject.project_manager_name === m.name;
+                                    return (
+                                      <button
+                                        key={m.id}
+                                        type="button"
+                                        onClick={() => {
+                                          handleProjectPMChange(m.id, m.name);
+                                          setActivePmDropdownId(null);
+                                          setPmSearchQuery('');
+                                        }}
+                                        className={`w-full flex items-center justify-between gap-2 p-1.5 rounded-lg text-left transition ${
+                                          isSelected
+                                            ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
+                                            : 'hover:bg-slate-50 text-slate-700'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-black text-[8px] flex items-center justify-center shrink-0 overflow-hidden">
+                                            {m.avatar_url ? (
+                                              <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                              getInitials(m.name)
+                                            )}
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
+                                            <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">
+                                              {m.primary_role || (m as any).role || (m.roles && m.roles[0]) || 'Freelancer'}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        {isSelected && <Check className="w-3 h-3 text-amber-600 shrink-0" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </>

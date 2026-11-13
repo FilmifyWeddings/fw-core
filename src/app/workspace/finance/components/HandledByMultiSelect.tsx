@@ -15,6 +15,8 @@ export interface FinanceTeamMember {
   primary_role?: string;
   finance_access?: string;
   isOwner?: boolean;
+  avatar_url?: string;
+  member_type?: 'IN_HOUSE' | 'FREELANCER';
 }
 
 interface HandledByMultiSelectProps {
@@ -68,6 +70,7 @@ export function extractFinanceMembers(
     primary_role: 'Studio Owner',
     finance_access: 'MANAGE',
     isOwner: true,
+    member_type: 'IN_HOUSE',
   });
   seen.add(cleanOwnerName.toLowerCase());
 
@@ -127,6 +130,16 @@ export function extractFinanceMembers(
     const cleanPrimaryRole = (!isPlaceholderName(m.primary_role) ? m.primary_role : null) ||
       (role === 'admin' ? 'Studio Admin' : fAccessStr.includes('MANAGE') ? 'Finance Manager' : 'Finance Access');
 
+    const isFreelancer =
+      m.primary_type === 'FREELANCER' ||
+      m.member_type === 'FREELANCER' ||
+      m.type === 'freelancer' ||
+      role === 'freelancer' ||
+      role === 'vendor' ||
+      role === 'external';
+
+    const avatarUrl = m.avatar_url || m.photo_url || m.profile_picture || undefined;
+
     result.push({
       id: m.id || cleanName,
       name: cleanName,
@@ -135,6 +148,8 @@ export function extractFinanceMembers(
       primary_role: cleanPrimaryRole,
       finance_access: fAccessStr || (role === 'admin' ? 'MANAGE' : 'VIEW'),
       isOwner: false,
+      avatar_url: avatarUrl,
+      member_type: isFreelancer ? 'FREELANCER' : 'IN_HOUSE',
     });
   });
 
@@ -210,6 +225,20 @@ export function HandledByMultiSelect({
       (m.primary_role && m.primary_role.toLowerCase().includes(q))
     );
   }, [combinedMembers, searchQuery]);
+
+  // Tagged separation: IN-HOUSE TEAM vs FREELANCERS & EXTERNAL VENDORS
+  const { inHouseFinance, freelancerFinance } = useMemo(() => {
+    const inHouse: FinanceTeamMember[] = [];
+    const freelancers: FinanceTeamMember[] = [];
+    filteredMembers.forEach(m => {
+      if (m.isOwner || m.member_type === 'IN_HOUSE' || !m.member_type) {
+        inHouse.push(m);
+      } else {
+        freelancers.push(m);
+      }
+    });
+    return { inHouseFinance: inHouse, freelancerFinance: freelancers };
+  }, [filteredMembers]);
 
   const toggleMember = (name: string) => {
     if (isPlaceholderName(name)) return;
@@ -380,51 +409,134 @@ export function HandledByMultiSelect({
                 </div>
               </div>
 
-              {/* Members with Finance Access */}
-              {filteredMembers.map((m) => {
-                const isSelected = selectedMembers.includes(m.name);
-                return (
-                  <div
-                    key={m.id || m.name}
-                    onClick={() => toggleMember(m.name)}
-                    className={`px-3 py-2 flex items-center justify-between gap-2 cursor-pointer transition-colors ${
-                      isSelected
-                        ? 'bg-amber-100/50 hover:bg-amber-100/70'
-                        : 'hover:bg-amber-50/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white font-black text-[11px] flex items-center justify-center shrink-0 shadow-2xs">
-                        {m.name.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-black text-slate-900 truncate">
-                            {m.name}
-                          </span>
-                          {m.isOwner && (
-                            <span className="text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1 py-0.2 rounded shrink-0">
-                              👑 Owner
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[10px] font-semibold text-slate-400 block truncate">
-                          {m.primary_role || (m.isOwner ? 'Studio Owner' : 'Finance Team')}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* 3D Checkbox */}
-                    <div className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all shrink-0 ${
-                      isSelected
-                        ? 'bg-amber-600 border-amber-600 text-white shadow-2xs'
-                        : 'border-slate-300 bg-white hover:border-amber-400'
-                    }`}>
-                      {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                    </div>
+              {/* TAG 1: IN-HOUSE TEAM */}
+              {inHouseFinance.length > 0 && (
+                <div>
+                  <div className="px-3 py-1 bg-emerald-50/80 border-y border-emerald-100/80 flex items-center justify-between text-[10px] font-black tracking-wider uppercase text-emerald-800">
+                    <span className="flex items-center gap-1.5">
+                      <Users className="w-3 h-3 text-emerald-600" />
+                      IN-HOUSE TEAM
+                    </span>
+                    <span className="text-[9px] font-bold bg-white text-emerald-700 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                      {inHouseFinance.length}
+                    </span>
                   </div>
-                );
-              })}
+                  {inHouseFinance.map((m) => {
+                    const isSelected = selectedMembers.includes(m.name);
+                    return (
+                      <div
+                        key={m.id || m.name}
+                        onClick={() => toggleMember(m.name)}
+                        className={`px-3 py-2 flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                          isSelected
+                            ? 'bg-amber-100/50 hover:bg-amber-100/70'
+                            : 'hover:bg-amber-50/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {m.avatar_url ? (
+                            <img
+                              src={m.avatar_url}
+                              alt={m.name}
+                              className="w-7 h-7 rounded-full object-cover shrink-0 border border-emerald-200 shadow-2xs"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 text-white font-black text-[11px] flex items-center justify-center shrink-0 shadow-2xs">
+                              {m.name.slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-black text-slate-900 truncate">
+                                {m.name}
+                              </span>
+                              {m.isOwner && (
+                                <span className="text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1 py-0.2 rounded shrink-0">
+                                  👑 Owner
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] font-semibold text-slate-400 block truncate">
+                              {m.primary_role || (m.isOwner ? 'Studio Owner' : 'In-House Team')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 3D Checkbox */}
+                        <div className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all shrink-0 ${
+                          isSelected
+                            ? 'bg-amber-600 border-amber-600 text-white shadow-2xs'
+                            : 'border-slate-300 bg-white hover:border-amber-400'
+                        }`}>
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* TAG 2: FREELANCERS & EXTERNAL VENDORS */}
+              {freelancerFinance.length > 0 && (
+                <div>
+                  <div className="px-3 py-1 bg-amber-50/80 border-y border-amber-100/80 flex items-center justify-between text-[10px] font-black tracking-wider uppercase text-amber-900">
+                    <span className="flex items-center gap-1.5">
+                      <Users className="w-3 h-3 text-amber-600" />
+                      FREELANCERS & EXTERNAL VENDORS
+                    </span>
+                    <span className="text-[9px] font-bold bg-white text-amber-700 border border-amber-200 px-1.5 py-0.2 rounded-full">
+                      {freelancerFinance.length}
+                    </span>
+                  </div>
+                  {freelancerFinance.map((m) => {
+                    const isSelected = selectedMembers.includes(m.name);
+                    return (
+                      <div
+                        key={m.id || m.name}
+                        onClick={() => toggleMember(m.name)}
+                        className={`px-3 py-2 flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                          isSelected
+                            ? 'bg-amber-100/50 hover:bg-amber-100/70'
+                            : 'hover:bg-amber-50/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {m.avatar_url ? (
+                            <img
+                              src={m.avatar_url}
+                              alt={m.name}
+                              className="w-7 h-7 rounded-full object-cover shrink-0 border border-amber-300 shadow-2xs"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white font-black text-[11px] flex items-center justify-center shrink-0 shadow-2xs">
+                              {m.name.slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-black text-slate-900 truncate">
+                                {m.name}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-semibold text-slate-400 block truncate">
+                              {m.primary_role || 'Freelancer / External'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 3D Checkbox */}
+                        <div className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all shrink-0 ${
+                          isSelected
+                            ? 'bg-amber-600 border-amber-600 text-white shadow-2xs'
+                            : 'border-slate-300 bg-white hover:border-amber-400'
+                        }`}>
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {filteredMembers.length === 0 && (
                 <div className="py-6 px-3 text-center text-slate-400">

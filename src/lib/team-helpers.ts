@@ -14,6 +14,21 @@ export interface WorkspaceMemberOption {
 
 
 /**
+ * Normalizes member name by stripping studio parentheses, e.g.:
+ * "Sushant (Filmify Weddings)" -> "sushant"
+ * "Navnath Salekar" -> "navnath salekar"
+ */
+export function normalizeTeamMemberKey(name?: string | null): string {
+  if (!name) return '';
+  return String(name)
+    .replace(/\s*\([^)]*\)/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Strict check if a team member is an In-House staff member.
  * Explicitly rejects Freelancers, External Vendors, and Partners.
  */
@@ -51,25 +66,109 @@ export function isInHouseMember(m: any): boolean {
 }
 
 /**
- * Deduplicates in-house team members strictly by normalized name.
- * If multiple records exist for the same person (e.g. Navnath Salekar with multiple entries/roles),
- * picks the most complete record and returns a single clean alphabetical list.
+ * Merges two member records for the same person into the most complete record.
+ */
+function mergeMemberRecords<T = any>(existing: any, incoming: any): T {
+  const merged = { ...existing };
+  if (!merged.avatar_url && incoming.avatar_url) merged.avatar_url = incoming.avatar_url;
+  if (!merged.email && incoming.email) merged.email = incoming.email;
+  if (!merged.phone && (incoming.phone || incoming.phone_number)) {
+    merged.phone = incoming.phone || incoming.phone_number;
+    merged.phone_number = incoming.phone || incoming.phone_number;
+  }
+  if ((incoming.role === 'owner' || incoming.primary_role === 'Studio Owner') && merged.role !== 'owner') {
+    merged.role = incoming.role || 'owner';
+    merged.primary_role = incoming.primary_role || 'Studio Owner';
+    merged.name = incoming.name || merged.name;
+  }
+  if (!merged.primary_role && (incoming.primary_role || incoming.role)) {
+    merged.primary_role = incoming.primary_role || incoming.role;
+    merged.role = incoming.primary_role || incoming.role;
+  }
+  return merged as T;
+}
+
+/**
+ * Deduplicates in-house team members strictly by normalized name & email.
+ * If multiple records exist for the same person (e.g. Sushant & Sushant (Filmify Weddings)),
+ * merges them into a single clean record with avatar, email, and role.
  */
 export function getDedupedInHouseMembers<T = any>(members: T[]): T[] {
   const map = new Map<string, T>();
   (members || []).forEach((m: any) => {
     if (!isInHouseMember(m)) return;
-    const norm = String(m.name || '').trim().toLowerCase();
-    if (!norm) return;
-    if (!map.has(norm)) {
-      map.set(norm, m);
+    const norm = normalizeTeamMemberKey(m.name);
+    const emailNorm = m.email ? String(m.email).trim().toLowerCase() : '';
+    const lookupKey = norm || emailNorm;
+    if (!lookupKey) return;
+
+    if (!map.has(lookupKey)) {
+      map.set(lookupKey, m);
     } else {
-      const existing: any = map.get(norm);
-      if (!existing.email && m.email) map.set(norm, m);
-      else if (!existing.phone && (m.phone || m.phone_number)) map.set(norm, m);
+      const existing = map.get(lookupKey);
+      map.set(lookupKey, mergeMemberRecords(existing, m));
     }
   });
   return Array.from(map.values()).sort((a: any, b: any) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+/**
+ * Groups and deduplicates all workspace members into:
+ * 1. inHouse (In-House Staff & Studio Owners)
+ * 2. freelancers (External Vendors, Freelancers, Contractors)
+ * Both cleanly deduplicated with zero ghost records.
+ */
+export function getGroupedTeamMembers<T = any>(members: T[]): {
+  inHouse: T[];
+  freelancers: T[];
+  allDeduped: T[];
+} {
+  const inHouseMap = new Map<string, T>();
+  const freelancerMap = new Map<string, T>();
+
+  (members || []).forEach((m: any) => {
+    const rawName = String(m.name || '').trim();
+    if (!rawName || ['not fixed', 'tbd', 'unassigned', 'pending', 'none'].includes(rawName.toLowerCase())) return;
+
+    const norm = normalizeTeamMemberKey(rawName);
+    const emailNorm = m.email ? String(m.email).trim().toLowerCase() : '';
+    const lookupKey = norm || emailNorm;
+    if (!lookupKey) return;
+
+    if (isInHouseMember(m)) {
+      if (!inHouseMap.has(lookupKey)) {
+        inHouseMap.set(lookupKey, m);
+      } else {
+        inHouseMap.set(lookupKey, mergeMemberRecords(inHouseMap.get(lookupKey), m));
+      }
+    } else {
+      if (!freelancerMap.has(lookupKey)) {
+        freelancerMap.set(lookupKey, m);
+      } else {
+        freelancerMap.set(lookupKey, mergeMemberRecords(freelancerMap.get(lookupKey), m));
+      }
+    }
+  });
+
+  // If a member exists in both (e.g. owner listed as freelancer in old stub), prioritize inHouse
+  for (const key of inHouseMap.keys()) {
+    if (freelancerMap.has(key)) {
+      freelancerMap.delete(key);
+    }
+  }
+
+  const inHouse = Array.from(inHouseMap.values()).sort((a: any, b: any) =>
+    String(a.name || '').localeCompare(String(b.name || ''))
+  );
+  const freelancers = Array.from(freelancerMap.values()).sort((a: any, b: any) =>
+    String(a.name || '').localeCompare(String(b.name || ''))
+  );
+
+  return {
+    inHouse,
+    freelancers,
+    allDeduped: [...inHouse, ...freelancers],
+  };
 }
 
 export async function fetchWorkspaceTeamMembers(workspaceId?: string): Promise<WorkspaceMemberOption[]> {
@@ -322,7 +421,7 @@ export function resolveSubEventAssignments(
     const hasAssignedMember = Boolean(
       memberObj || 
       (extra.assigned_member_id && extra.assigned_member_id !== 'null' && extra.assigned_member_id !== 'undefined') ||
-      (extra.assigned_member_name && !['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(String(extra.assigned_member_name).trim().toLowerCase()))
+      ((extra as any).assigned_member_name && !['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(String((extra as any).assigned_member_name).trim().toLowerCase()))
     );
     if (hasAssignedMember) {
       resolvedAssignments.push({

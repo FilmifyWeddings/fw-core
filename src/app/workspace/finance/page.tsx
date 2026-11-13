@@ -1439,13 +1439,12 @@ export default function FinancePage() {
             .insert([{ ...payload, created_at: new Date().toISOString() }]);
         }
 
-        // Also update client totals
+        // Also update client totals (preserving manual status)
         await supabase
           .from('workspace_clients')
           .update({
             total_package_amount: record.final_total_amount,
             paid_amount: record.received_amount,
-            status: record.pending_amount === 0 && record.final_total_amount > 0 ? 'completed' : 'active',
             updated_at: new Date().toISOString()
           })
           .eq('id', record.client_id);
@@ -2370,7 +2369,7 @@ export default function FinancePage() {
 
       // ── TWO-WAY SYNC ON DELETE: REVERT MATCHING ORIGIN TO UNPAID / DUE ──
       const targetAssignmentId = (target as any)?.assignment_id;
-      const targetMemberId = target.team_member_id || (target as any)?.member_id;
+      const targetMemberId = (target as any)?.team_member_id || (target as any)?.member_id;
       const catLower = (target.category || '').toLowerCase();
 
       if (workspaceId !== 'ws_demo') {
@@ -2926,7 +2925,7 @@ export default function FinancePage() {
       let matchesTeamMember = true;
       if (teamMemberFilter && teamMemberFilter !== 'all') {
         const tmLower = teamMemberFilter.toLowerCase();
-        const expMemberId = exp.team_member_id || (exp as any).member_id;
+        const expMemberId = (exp as any)?.team_member_id || (exp as any)?.member_id;
         const expPaidTo = (exp.paid_to || '').toLowerCase();
         matchesTeamMember = expMemberId === teamMemberFilter || expPaidTo === tmLower || expPaidTo.includes(tmLower);
       }

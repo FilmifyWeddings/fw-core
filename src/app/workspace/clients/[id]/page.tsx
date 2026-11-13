@@ -29,7 +29,7 @@ import {
   parseClientExtended, serializeClientExtended, sanitizeWhatsappLink, deriveSixDigitPin,
   type ClientExtendedData, type StudioCommentItem 
 } from '@/components/clients/client-insider-modal';
-import { fetchWorkspaceTeamMembers, isInHouseMember, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import { fetchWorkspaceTeamMembers, isInHouseMember, getGroupedTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
 import { extractFinancialsFromQuotation, normalizeSubEventTitle } from '@/lib/quotation-finance-sync';
 import type { 
@@ -57,6 +57,56 @@ function getClientInitials(name: string): string {
   const parts = clean.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// Helper to format due date and time cleanly: 14 Mar '26, 04:30 PM
+function formatTaskDueDateTime(dueDate?: string, dueTime?: string): string {
+  if (!dueDate) return '';
+  try {
+    let dateObj: Date;
+    if (dueDate.includes('T')) {
+      dateObj = new Date(dueDate);
+    } else {
+      dateObj = new Date(`${dueDate}T00:00:00`);
+    }
+    if (isNaN(dateObj.getTime())) return dueDate;
+
+    const day = dateObj.toLocaleDateString('en-GB', { day: '2-digit' });
+    const month = dateObj.toLocaleDateString('en-GB', { month: 'short' });
+    const year = dateObj.toLocaleDateString('en-GB', { year: '2-digit' });
+    const formattedDate = `${day} ${month} '${year}`;
+
+    if (dueTime) {
+      if (dueTime.includes('AM') || dueTime.includes('PM')) {
+        return `${formattedDate}, ${dueTime}`;
+      }
+      const [hStr, mStr] = dueTime.split(':');
+      let hours = parseInt(hStr, 10);
+      const minutes = parseInt(mStr || '0', 10);
+      if (!isNaN(hours)) {
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        const strH = hours < 10 ? `0${hours}` : `${hours}`;
+        const strM = minutes < 10 ? `0${minutes}` : `${minutes}`;
+        return `${formattedDate}, ${strH}:${strM} ${ampm}`;
+      }
+    } else if (dueDate.includes('T')) {
+      const hours = dateObj.getHours();
+      const minutes = dateObj.getMinutes();
+      if (hours !== 0 || minutes !== 0) {
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const h12 = hours % 12 || 12;
+        const strH = h12 < 10 ? `0${h12}` : `${h12}`;
+        const strM = minutes < 10 ? `0${minutes}` : `${minutes}`;
+        return `${formattedDate}, ${strH}:${strM} ${ampm}`;
+      }
+    }
+
+    return formattedDate;
+  } catch {
+    return dueDate;
+  }
 }
 
 function hydrateClientFromBrowserCache(idOrCode: string, preferredWsId?: string | null): WorkspaceClient | null {
@@ -285,7 +335,10 @@ export default function ClientWorkspaceDetailPage() {
   const [newClientTaskCategory, setNewClientTaskCategory] = useState('POST_PRODUCTION');
   const [newClientTaskPriority, setNewClientTaskPriority] = useState('medium');
   const [newClientTaskDueDate, setNewClientTaskDueDate] = useState('');
+  const [newClientTaskDueTime, setNewClientTaskDueTime] = useState('');
+  const [newClientTaskAssignee, setNewClientTaskAssignee] = useState('');
   const [newClientTaskDesc, setNewClientTaskDesc] = useState('');
+  const [isSubmittingTask, setIsSubmittingTask] = useState(false);
 
   // Extended fields state
   const [extended, setExtended] = useState<ClientExtendedData>({
@@ -389,10 +442,12 @@ export default function ClientWorkspaceDetailPage() {
   // ── Tab 5: Finance Accordion State ──
   const [isFinanceExpanded, setIsFinanceExpanded] = useState<boolean>(true);
 
-  // ── In-House Team Members for Project Manager Selection ──
-  const inHouseTeamMembers = useMemo(() => {
-    return teamMembers.filter(isInHouseMember);
+  // ── Team Members Grouped for Project Manager Selection (In-House & Freelancers) ──
+  const { inHouse: inHouseMembers, freelancers: freelancerMembers, allDeduped: allDedupedMembers } = useMemo(() => {
+    return getGroupedTeamMembers(teamMembers);
   }, [teamMembers]);
+
+  const inHouseTeamMembers = inHouseMembers;
 
   const pmOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     const opts: Searchable3DCreamSelectOption[] = [
@@ -404,16 +459,32 @@ export default function ClientWorkspaceDetailPage() {
       }
     ];
 
-    inHouseTeamMembers.forEach(m => {
+    inHouseMembers.forEach(m => {
       opts.push({
         value: m.id,
         label: m.name,
-        initials: m.name.slice(0, 2).toUpperCase()
+        roleTag: m.role || 'In-House Team',
+        badge: 'IN-HOUSE',
+        badgeClassName: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+        initials: (m.name || 'TM').slice(0, 2).toUpperCase(),
+        subLabel: m.role || 'In-House Team'
+      });
+    });
+
+    freelancerMembers.forEach(m => {
+      opts.push({
+        value: m.id,
+        label: m.name,
+        roleTag: m.role || 'Freelancer',
+        badge: 'FREELANCER',
+        badgeClassName: 'bg-amber-50 text-amber-700 border border-amber-200',
+        initials: (m.name || 'FL').slice(0, 2).toUpperCase(),
+        subLabel: m.role || 'Freelancer / External'
       });
     });
 
     return opts;
-  }, [inHouseTeamMembers]);
+  }, [inHouseMembers, freelancerMembers]);
 
   // ── Robust PM Option Resolver to ensure dropdown highlights the correct person ──
   const resolvedPmValue = useMemo(() => {
@@ -738,7 +809,7 @@ export default function ClientWorkspaceDetailPage() {
       overall_status: (postProductionProject?.overall_status as any) || 'active',
       deliverables: normalizedDelivs,
       quotation_id: finalQuotationDoc?.template_id || null,
-      quotation_title: finalQuotationDoc?.title || null,
+      quotation_title: null,
       enabled_segments: Array.from(segmentsSet),
       disabled_categories: (postProductionProject as any)?.disabled_categories
     };
@@ -3337,7 +3408,8 @@ export default function ClientWorkspaceDetailPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id || '';
-      const res = await fetch(`/api/workspace/tasks?workspaceId=${c.workspace_id}&clientId=${c.id}&userId=${userId}`);
+      const wsId = c.workspace_id || currentWsId || activeWorkspace?.workspaceId || '';
+      const res = await fetch(`/api/workspace/tasks?workspaceId=${encodeURIComponent(wsId)}&clientId=${encodeURIComponent(c.id)}&userId=${encodeURIComponent(userId)}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.tasks)) {
         setClientTasks(data.tasks);
@@ -3453,35 +3525,44 @@ export default function ClientWorkspaceDetailPage() {
 
   const handleCreateClientTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!client || !newClientTaskTitle.trim()) return;
+    if (isSubmittingTask || !client || !newClientTaskTitle.trim()) return;
+    setIsSubmittingTask(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id || '';
+      const wsId = client.workspace_id || currentWsId || activeWorkspace?.workspaceId || '';
+      const createdTitle = newClientTaskTitle.trim();
       const res = await fetch('/api/workspace/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create_task',
           taskData: {
-            workspace_id: client.workspace_id,
+            workspace_id: wsId,
             client_id: client.id,
             created_by: userId,
-            title: newClientTaskTitle.trim(),
+            title: createdTitle,
             description: newClientTaskDesc.trim() || undefined,
             category: newClientTaskCategory,
             priority: newClientTaskPriority,
             due_date: newClientTaskDueDate || undefined,
+            due_time: newClientTaskDueTime || undefined,
+            assigned_to: newClientTaskAssignee || undefined,
             is_personal: false,
           },
         }),
       });
       const data = await res.json();
       if (data.success) {
-        const createdTitle = newClientTaskTitle.trim();
+        if (data.task) {
+          setClientTasks(prev => [data.task, ...prev.filter(t => t.id !== data.task.id)]);
+        }
         setShowClientTaskModal(false);
         setNewClientTaskTitle('');
         setNewClientTaskDesc('');
         setNewClientTaskDueDate('');
+        setNewClientTaskDueTime('');
+        setNewClientTaskAssignee('');
         fetchClientTasks();
         logClientAudit({
           clientId: client.id,
@@ -3498,6 +3579,8 @@ export default function ClientWorkspaceDetailPage() {
       }
     } catch (err) {
       console.error('Error creating task:', err);
+    } finally {
+      setIsSubmittingTask(false);
     }
   };
 
@@ -3671,35 +3754,10 @@ export default function ClientWorkspaceDetailPage() {
             </div>
           </div>
 
-          {/* Right Action: In-House PM Selector, History Icon, Status Dropdown, Share Client Portal */}
+          {/* Right Action: [Status] -> [Project Manager] -> [History] -> [Share] */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 shrink-0">
-            {/* In-House Project Manager 3D Cream Dropdown */}
-            <div className="min-w-[210px] max-w-[260px]">
-              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
-                <Users className="w-3 h-3 text-amber-600" />
-                <span>Project Manager (In-House)</span>
-              </div>
-              <Searchable3DCreamSelect
-                options={pmOptions}
-                value={resolvedPmValue}
-                onChange={(val) => !isReadOnly && handleQuickAssignPM(val)}
-                placeholder={isReadOnly ? (resolvedPmValue || 'No PM Assigned') : 'Assign Project Manager...'}
-                searchPlaceholder="Search in-house team..."
-                disabled={isReadOnly}
-              />
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setShowHistoryDrawer(true)}
-                title="Audit History"
-                aria-label="Audit History"
-                className="w-[42px] h-[42px] text-slate-700 bg-white hover:bg-slate-50 border border-[#EAE5DA] rounded-2xl shadow-xs transition flex items-center justify-center cursor-pointer shrink-0"
-              >
-                <History className="w-4 h-4 text-amber-600" />
-              </button>
-
+            {/* 1. Status Dropdown */}
+            <div className="flex items-center">
               <ClientStatusDropdown
                 status={status}
                 clientId={client?.id}
@@ -3738,6 +3796,35 @@ export default function ClientWorkspaceDetailPage() {
                   }
                 }}
               />
+            </div>
+
+            {/* 2. Project Manager 3D Cream Dropdown */}
+            <div className="min-w-[210px] max-w-[260px]">
+              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+                <Users className="w-3 h-3 text-amber-600" />
+                <span>Project Manager</span>
+              </div>
+              <Searchable3DCreamSelect
+                options={pmOptions}
+                value={resolvedPmValue}
+                onChange={(val) => !isReadOnly && handleQuickAssignPM(val)}
+                placeholder={isReadOnly ? (resolvedPmValue || 'No PM Assigned') : 'Assign Project Manager...'}
+                searchPlaceholder="Search team members..."
+                disabled={isReadOnly}
+              />
+            </div>
+
+            {/* 3. History Button & 4. Share Client Portal Button */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowHistoryDrawer(true)}
+                title="Audit History"
+                aria-label="Audit History"
+                className="w-[42px] h-[42px] text-slate-700 bg-white hover:bg-slate-50 border border-[#EAE5DA] rounded-2xl shadow-xs transition flex items-center justify-center cursor-pointer shrink-0"
+              >
+                <History className="w-4 h-4 text-amber-600" />
+              </button>
 
               <button
                 type="button"
@@ -4094,20 +4181,6 @@ export default function ClientWorkspaceDetailPage() {
                     </p>
                   </div>
                 </div>
-
-                {/* Voice AI Note Button */}
-                {!isReadOnly && (
-                  <AiMicButton
-                    size="sm"
-                    buttonText="AI Voice"
-                    showTrailingIcon={false}
-                    onInsertComment={(transcribedText) => {
-                      if (transcribedText) {
-                        handleAddStudioComment(transcribedText, true);
-                      }
-                    }}
-                  />
-                )}
               </div>
 
               {/* Add New Comment Box */}
@@ -4134,15 +4207,30 @@ export default function ClientWorkspaceDetailPage() {
                       <span className="text-slate-400 text-[10px] hidden sm:inline">(Ctrl + Enter to send)</span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleAddStudioComment()}
-                      disabled={isAddingComment || !newCommentText.trim()}
-                      className="px-4 py-2 bg-amber-400 hover:bg-amber-500 disabled:opacity-50 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {isAddingComment ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                      <span>Post Note</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <AiMicButton
+                        size="sm"
+                        buttonText="AI Voice"
+                        showTrailingIcon={false}
+                        onInsertComment={(transcribedText) => {
+                          if (transcribedText) {
+                            handleAddStudioComment(transcribedText, true);
+                          }
+                        }}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddStudioComment()}
+                        disabled={isAddingComment || !newCommentText.trim()}
+                        title="Post Studio Note (Ctrl + Enter)"
+                        aria-label="Post Note"
+                        className="h-8 px-3.5 bg-amber-400 hover:bg-amber-500 disabled:opacity-40 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                      >
+                        {isAddingComment ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        <span>Post Note</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -4375,7 +4463,7 @@ export default function ClientWorkspaceDetailPage() {
                           </span>
                         )}
 
-                        {/* Client Preview */}
+                        {/* Client Preview (Icon only with tooltip) */}
                         <button
                           type="button"
                           onClick={() => {
@@ -4385,22 +4473,12 @@ export default function ClientWorkspaceDetailPage() {
                               : `/p/quotation/${doc.public_token || doc.id}?internal=true`;
                             window.open(clientUrl, '_blank');
                           }}
-                          className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA] transition text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                          title="Client Preview"
+                          aria-label="Client Preview"
+                          className="w-9 h-9 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA] transition flex items-center justify-center shadow-2xs cursor-pointer"
                         >
-                          <Eye className="w-3.5 h-3.5 text-amber-600" />
-                          Client Preview
+                          <Eye className="w-4 h-4 text-amber-600" />
                         </button>
-
-                        {/* Edit in Builder */}
-                        {!isReadOnly && (
-                          <Link
-                            href={`/workspace/quotations/builder/templet/${doc.template_id}`}
-                            className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-900 transition text-xs font-black flex items-center gap-1.5 shadow-2xs"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            Edit Builder
-                          </Link>
-                        )}
                       </div>
                     </div>
                   );
@@ -4485,7 +4563,7 @@ export default function ClientWorkspaceDetailPage() {
                     <span>Tasks & Post-Production Workflow</span>
                   </h3>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    Apple Notes & Google Keep luxury cream task manager with interactive checklists, overdue tracking, and automated post-production pipeline sync.
+                    Track production milestones, checklists, and team deliverables for this client.
                   </p>
                 </div>
 
@@ -4493,25 +4571,11 @@ export default function ClientWorkspaceDetailPage() {
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <button
                       type="button"
-                      onClick={handleGeneratePipeline}
-                      disabled={isSyncingPipeline}
-                      className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      {isSyncingPipeline ? (
-                        <RefreshCw className="w-4 h-4 animate-spin text-slate-900" />
-                      ) : (
-                        <Sparkles className="w-4 h-4 text-slate-900" />
-                      )}
-                      <span>⚡ Auto-Generate Post-Production Pipeline</span>
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => setShowClientTaskModal(true)}
-                      className="px-4 py-2 text-xs font-black text-slate-900 bg-white hover:bg-amber-50 border border-[#EAE5DA] rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                      className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 border border-amber-300 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Plus className="w-4 h-4 text-amber-600" />
-                      <span>+ New Task / Note</span>
+                      <Plus className="w-4 h-4 text-slate-900" />
+                      <span>New Task / Note</span>
                     </button>
                   </div>
                 )}
@@ -4587,27 +4651,18 @@ export default function ClientWorkspaceDetailPage() {
                   <div>
                     <h4 className="text-sm font-black text-slate-900">No Tasks in this View</h4>
                     <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                      Auto-generate the standard 7-stage wedding post-production pipeline or add custom tasks for this client.
+                      No tasks recorded for this client yet. Create production tasks or milestones to keep team deliverables on schedule.
                     </p>
                   </div>
                   {!isReadOnly && (
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
-                      <button
-                        type="button"
-                        onClick={handleGeneratePipeline}
-                        disabled={isSyncingPipeline}
-                        className="w-full sm:w-auto px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <Sparkles className="w-4 h-4" />
-                        <span>⚡ Auto-Generate Pipeline</span>
-                      </button>
+                    <div className="flex items-center justify-center gap-2.5 pt-2">
                       <button
                         type="button"
                         onClick={() => setShowClientTaskModal(true)}
-                        className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-slate-50 border border-[#EAE5DA] text-slate-700 font-bold text-xs rounded-xl shadow-2xs transition flex items-center justify-center gap-2 cursor-pointer"
+                        className="px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        <Plus className="w-4 h-4" />
-                        <span>+ Custom Task</span>
+                        <Plus className="w-4 h-4 text-slate-900" />
+                        <span>Add New Task</span>
                       </button>
                     </div>
                   )}
@@ -4747,17 +4802,44 @@ export default function ClientWorkspaceDetailPage() {
                         </div>
 
                         {/* Footer Details */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
-                          {task.due_date ? (
-                            <span className="flex items-center gap-1 font-mono">
-                              <Calendar className="w-3 h-3 text-amber-600" />
-                              <span>Due: {task.due_date}</span>
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">No deadline</span>
-                          )}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500 gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                            {task.due_date ? (
+                              <span className="flex items-center gap-1 font-mono text-[11px] font-semibold text-slate-700">
+                                <Calendar className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>{formatTaskDueDateTime(task.due_date, task.due_time)}</span>
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[11px]">No deadline</span>
+                            )}
 
-                          <span className={`font-bold ${isDone ? 'text-emerald-600' : 'text-amber-800'}`}>
+                            {/* Assigned Member Avatar Pill */}
+                            {(() => {
+                              const assigneeId = task.assigned_to;
+                              const assignee = assigneeId
+                                ? teamMembers.find(m => m.id === assigneeId || m.name.toLowerCase() === assigneeId.toLowerCase())
+                                : null;
+                              if (!assignee && !task.assigned_to) return null;
+                              const displayName = assignee?.name || task.assigned_to || 'Assigned';
+                              const avatar = assignee?.avatar_url;
+                              return (
+                                <div className="flex items-center gap-1 bg-amber-50/70 border border-amber-200/80 px-1.5 py-0.5 rounded-full" title={`Assigned to: ${displayName}`}>
+                                  {avatar ? (
+                                    <img src={avatar} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0" />
+                                  ) : (
+                                    <div className="w-3.5 h-3.5 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center shrink-0">
+                                      {displayName.slice(0, 1).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <span className="text-[10px] font-bold text-slate-700 truncate max-w-[80px]">
+                                    {displayName}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          <span className={`font-bold text-[11px] shrink-0 ${isDone ? 'text-emerald-600' : 'text-amber-800'}`}>
                             {isDone ? 'Completed' : 'In Progress'}
                           </span>
                         </div>
@@ -6721,9 +6803,14 @@ export default function ClientWorkspaceDetailPage() {
                       onChange={(e) => setNewClientTaskCategory(e.target.value)}
                       className="w-full px-3 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-800 outline-none"
                     >
+                      <option value="QUOTATION">Quotation</option>
+                      <option value="SHOOT_EVENTS">Shoot & Events</option>
                       <option value="POST_PRODUCTION">Post-Production</option>
-                      <option value="CLIENT_WORKFLOW">Client Workflow</option>
-                      <option value="DELIVERABLE">Deliverable</option>
+                      <option value="VIDEO_REVIEW">Video Review</option>
+                      <option value="STUDIO_STORAGE">Studio Storage</option>
+                      <option value="FINANCE">Finance</option>
+                      <option value="CLIENT_SERVICING">Client Servicing</option>
+                      <option value="DELIVERABLES">Deliverables</option>
                       <option value="GENERAL">General Task</option>
                     </select>
                   </div>
@@ -6743,14 +6830,54 @@ export default function ClientWorkspaceDetailPage() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Due Date</label>
+                    <input
+                      type="date"
+                      value={newClientTaskDueDate}
+                      onChange={(e) => setNewClientTaskDueDate(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Due Time</label>
+                    <input
+                      type="time"
+                      value={newClientTaskDueTime}
+                      onChange={(e) => setNewClientTaskDueTime(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Due Date</label>
-                  <input
-                    type="date"
-                    value={newClientTaskDueDate}
-                    onChange={(e) => setNewClientTaskDueDate(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none"
-                  />
+                  <label className="font-bold text-slate-700 block mb-1">Assign Task To</label>
+                  <select
+                    value={newClientTaskAssignee}
+                    onChange={(e) => setNewClientTaskAssignee(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-800 outline-none"
+                  >
+                    <option value="">Unassigned (No Member)</option>
+                    {inHouseMembers.length > 0 && (
+                      <optgroup label="── IN-HOUSE TEAM ──">
+                        {inHouseMembers.map(m => (
+                          <option key={m.id} value={m.name}>
+                            {m.name} ({m.role || 'In-House'})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {freelancerMembers.length > 0 && (
+                      <optgroup label="── FREELANCERS & EXTERNAL VENDORS ──">
+                        {freelancerMembers.map(m => (
+                          <option key={m.id} value={m.name}>
+                            {m.name} ({m.role || 'Freelancer'})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
                 </div>
 
                 <div>
@@ -6774,9 +6901,11 @@ export default function ClientWorkspaceDetailPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 font-black text-slate-900 rounded-xl shadow-xs transition"
+                    disabled={isSubmittingTask || !newClientTaskTitle.trim()}
+                    className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 disabled:opacity-50 font-black text-slate-900 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                   >
-                    Create Task
+                    {isSubmittingTask && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{isSubmittingTask ? 'Creating...' : 'Create Task'}</span>
                   </button>
                 </div>
               </form>

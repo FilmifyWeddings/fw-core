@@ -288,12 +288,13 @@ export async function GET(
         .eq('client_id', foundClient.id)
         .order('created_at', { ascending: true }),
 
-      // G. Tasks
+      // G. Tasks (Live fw_tasks scoped to client or linked lead)
       supabaseAdmin
-        .from('workspace_tasks')
+        .from('fw_tasks')
         .select('*')
-        .eq('client_id', foundClient.id)
-        .order('created_at', { ascending: true }),
+        .or(`client_id.eq.${foundClient.id}${resolvedLeadId ? `,client_id.eq.${resolvedLeadId}` : ''}`)
+        .eq('is_trashed', false)
+        .order('created_at', { ascending: false }),
 
       // H. Full Team Members (with avatars & rates matching Booking Events)
       supabaseAdmin
@@ -643,12 +644,44 @@ export async function GET(
       if (r?.team_member_id) ratesMap.set(r.team_member_id, Number(r.daily_rate) || 0);
     });
 
+    const cleanNormName = (str?: string | null) =>
+      String(str || '')
+        .replace(/\s*\([^)]*\)/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9 ]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
     const combinedMembersMap = new Map<string, any>();
     (wsMembersRes.data || []).forEach((m: any) => {
       if (m.status === 'REVOKED' || m.status === 'INACTIVE') return;
       const calcRate = ratesMap.has(m.id)
         ? ratesMap.get(m.id)!
         : Number(m.default_daily_rate) || Number(m.daily_rate) || 0;
+
+      const normMName = cleanNormName(m.name);
+      const mEmailNorm = m.email ? String(m.email).trim().toLowerCase() : '';
+      const existingEntry = Array.from(combinedMembersMap.values()).find((cm: any) => {
+        const normCmName = cleanNormName(cm.name);
+        return (
+          (mEmailNorm && cm.email && String(cm.email).trim().toLowerCase() === mEmailNorm) ||
+          (normMName && normCmName && normMName === normCmName)
+        );
+      });
+
+      if (existingEntry) {
+        if (!existingEntry.avatar_url && m.avatar_url) existingEntry.avatar_url = m.avatar_url;
+        if (!existingEntry.phone && m.phone) {
+          existingEntry.phone = m.phone;
+          existingEntry.phone_number = m.phone;
+        }
+        if (m.role === 'owner' && existingEntry.role !== 'owner') {
+          existingEntry.role = 'owner';
+          existingEntry.primary_role = 'Studio Owner';
+        }
+        return;
+      }
+
       const mapped = {
         id: m.id,
         user_id: m.workspace_id || clientWsId,
@@ -676,12 +709,19 @@ export async function GET(
 
     (fwTeamMembersRes.data || []).forEach((f: any) => {
       const calcRate = ratesMap.has(f.id) ? ratesMap.get(f.id)! : Number(f.default_daily_rate) || 0;
+      const normFName = cleanNormName(f.name);
+      const fEmailNorm = f.email ? String(f.email).trim().toLowerCase() : '';
+
       const existingEntry =
         combinedMembersMap.get(String(f.id)) ||
         Array.from(combinedMembersMap.values()).find(
-          (cm) =>
-            (f.email && cm.email && cm.email.toLowerCase() === f.email.toLowerCase()) ||
-            (f.name && cm.name && cm.name.toLowerCase().trim() === f.name.toLowerCase().trim())
+          (cm) => {
+            const normCmName = cleanNormName(cm.name);
+            return (
+              (fEmailNorm && cm.email && String(cm.email).trim().toLowerCase() === fEmailNorm) ||
+              (normFName && normCmName && normFName === normCmName)
+            );
+          }
         );
 
       if (existingEntry) {

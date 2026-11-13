@@ -211,7 +211,7 @@ export function MilestoneSchedule({
                       templates={paymentMilestoneTemplates}
                       onAddTemplate={onSaveNewTemplate || (() => {})}
                       placeholder="Select Milestone"
-                      disabled={isReadOnly}
+                      {...({ disabled: isReadOnly } as any)}
                     />
                   </div>
 

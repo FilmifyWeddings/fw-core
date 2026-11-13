@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
-import { isInHouseMember, getDedupedInHouseMembers } from '@/lib/team-helpers';
+import { isInHouseMember, getDedupedInHouseMembers, getGroupedTeamMembers } from '@/lib/team-helpers';
 
 export interface ProjectManagerAssignClient {
   id: string;
@@ -136,21 +136,30 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
     });
   };
 
-  // Strict In-House Filter for Project Manager Assignment
-  const inHouseTeamMembers = useMemo(() => {
-    return teamMembers.filter(isInHouseMember);
+  // Group and deduplicate team members into In-House and Freelancers/Vendors
+  const { inHouse: inHouseList, freelancers: freelancerList } = useMemo(() => {
+    return getGroupedTeamMembers(teamMembers);
   }, [teamMembers]);
 
-  // Filter members list strictly from in-house members
-  const filteredMembers = useMemo(() => {
+  const filteredInHouse = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return inHouseTeamMembers;
-    return inHouseTeamMembers.filter(m => 
+    if (!q) return inHouseList;
+    return inHouseList.filter(m => 
       m.name.toLowerCase().includes(q) || 
       (m.role && m.role.toLowerCase().includes(q)) ||
       (m.email && m.email.toLowerCase().includes(q))
     );
-  }, [inHouseTeamMembers, searchQuery]);
+  }, [inHouseList, searchQuery]);
+
+  const filteredFreelancers = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return freelancerList;
+    return freelancerList.filter(m => 
+      m.name.toLowerCase().includes(q) || 
+      (m.role && m.role.toLowerCase().includes(q)) ||
+      (m.email && m.email.toLowerCase().includes(q))
+    );
+  }, [freelancerList, searchQuery]);
 
   // Execute assignment save via robust server-side endpoint
   const handleSaveAssignment = async () => {
@@ -441,47 +450,130 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
                   );
                 })()}
 
-                {filteredMembers.length === 0 ? (
+                {/* SECTION 1: IN-HOUSE TEAM (TAGGED) */}
+                {filteredInHouse.length > 0 && (
+                  <div className="pt-1.5 space-y-1">
+                    <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-100/80 rounded-xl flex items-center justify-between border border-amber-200">
+                      <span className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-3 h-3 text-amber-700" />
+                        <span>In-House Team</span>
+                      </span>
+                      <span className="text-[9px] font-extrabold bg-amber-200/80 text-amber-950 px-1.5 py-0.2 rounded-full">
+                        {filteredInHouse.length}
+                      </span>
+                    </div>
+
+                    {filteredInHouse.map((member) => {
+                      const isSelected = Boolean(
+                        (selectedMemberId && member.id === selectedMemberId) ||
+                        (selectedMemberName && member.name?.toLowerCase().trim() === selectedMemberName.toLowerCase().trim())
+                      );
+                      const initials = member.name.split(/\s+/).filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedMemberId(member.id);
+                            setSelectedMemberName(member.name);
+                          }}
+                          className={`w-full p-2.5 rounded-2xl border text-left flex items-center justify-between transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-50 border-amber-400 text-amber-950 font-black shadow-2xs'
+                              : 'bg-white hover:bg-amber-50/40 border-slate-200 text-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {member.avatar_url ? (
+                              <img
+                                src={member.avatar_url}
+                                alt={member.name}
+                                className="w-8 h-8 rounded-full object-cover shrink-0 border border-amber-400/40 shadow-xs"
+                              />
+                            ) : (
+                              <span className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-xs flex items-center justify-center shrink-0 border border-amber-400 shadow-xs">
+                                {initials}
+                              </span>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">{member.name}</p>
+                              {member.role && (
+                                <p className="text-[10px] text-slate-500 font-medium truncate">{member.role}</p>
+                              )}
+                            </div>
+                          </div>
+                          {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* SECTION 2: FREELANCERS & VENDORS (TAGGED) */}
+                {filteredFreelancers.length > 0 && (
+                  <div className="pt-2 space-y-1">
+                    <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-stone-700 bg-stone-100/90 rounded-xl flex items-center justify-between border border-stone-200">
+                      <span className="flex items-center gap-1.5">
+                        <Users className="w-3 h-3 text-stone-600" />
+                        <span>Freelancers & External Vendors</span>
+                      </span>
+                      <span className="text-[9px] font-extrabold bg-stone-200 text-stone-800 px-1.5 py-0.2 rounded-full">
+                        {filteredFreelancers.length}
+                      </span>
+                    </div>
+
+                    {filteredFreelancers.map((member) => {
+                      const isSelected = Boolean(
+                        (selectedMemberId && member.id === selectedMemberId) ||
+                        (selectedMemberName && member.name?.toLowerCase().trim() === selectedMemberName.toLowerCase().trim())
+                      );
+                      const initials = member.name.split(/\s+/).filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedMemberId(member.id);
+                            setSelectedMemberName(member.name);
+                          }}
+                          className={`w-full p-2.5 rounded-2xl border text-left flex items-center justify-between transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-50 border-amber-400 text-amber-950 font-black shadow-2xs'
+                              : 'bg-white hover:bg-stone-50 border-slate-200 text-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {member.avatar_url ? (
+                              <img
+                                src={member.avatar_url}
+                                alt={member.name}
+                                className="w-8 h-8 rounded-full object-cover shrink-0 border border-stone-300 shadow-xs"
+                              />
+                            ) : (
+                              <span className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 font-black text-xs flex items-center justify-center shrink-0 border border-slate-300 shadow-xs">
+                                {initials}
+                              </span>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">{member.name}</p>
+                              {member.role && (
+                                <p className="text-[10px] text-slate-500 font-medium truncate">{member.role}</p>
+                              )}
+                            </div>
+                          </div>
+                          {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {filteredInHouse.length === 0 && filteredFreelancers.length === 0 && (
                   <div className="p-4 text-center text-slate-400 text-xs">
                     No matching team members found
                   </div>
-                ) : (
-                  filteredMembers.map((member) => {
-                    const isSelected = Boolean(
-                      (selectedMemberId && member.id === selectedMemberId) ||
-                      (selectedMemberName && member.name?.toLowerCase().trim() === selectedMemberName.toLowerCase().trim())
-                    );
-                    const initials = member.name.split(/\s+/).filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase();
-
-                    return (
-                      <button
-                        key={member.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedMemberId(member.id);
-                          setSelectedMemberName(member.name);
-                        }}
-                        className={`w-full p-2.5 rounded-2xl border text-left flex items-center justify-between transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-amber-50 border-amber-400 text-amber-950 font-black shadow-2xs'
-                            : 'bg-white hover:bg-amber-50/40 border-slate-200 text-slate-800'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500/20 to-amber-600/30 text-amber-900 font-black text-xs flex items-center justify-center shrink-0 border border-amber-500/30">
-                            {initials}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-900 truncate">{member.name}</p>
-                            {member.role && (
-                              <p className="text-[10px] text-slate-500 font-medium truncate">{member.role}</p>
-                            )}
-                          </div>
-                        </div>
-                        {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
-                      </button>
-                    );
-                  })
                 )}
               </div>
             </div>

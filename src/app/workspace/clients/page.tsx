@@ -444,7 +444,7 @@ export default function ClientsPage() {
             event_date: bookedLead.event_date || null,
             total_package_amount: packageAmt,
             paid_amount: paidAmt,
-            status: paidAmt >= packageAmt && packageAmt > 0 ? 'completed' : 'active',
+            status: 'active', // Strictly manual toggle: never automatically complete on payment
             project_manager_id: leadPmId,
             project_manager_name: validLeadPm,
             handled_by: validLeadPm,
@@ -784,7 +784,7 @@ export default function ClientsPage() {
         event_date: dataToUse.event_date || null,
         total_package_amount: totalPackage,
         paid_amount: finalPaidAmount,
-        status: finalPaidAmount >= totalPackage && totalPackage > 0 ? 'completed' : 'active',
+        status: 'active', // Strictly manual toggle: never automatically complete on payment
         project_manager_id: assignedPm ? assignedPm.id : null,
         project_manager_name: assignedPm ? assignedPm.name : null,
         project_manager_email: assignedPm ? (assignedPm.email || null) : null,
@@ -1428,11 +1428,11 @@ export default function ClientsPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsExcelMigrationModalOpen(true)}
-                className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-black flex items-center gap-2 shadow-2xs transition cursor-pointer"
-                title="Import Legacy Excel / CSV Spreadsheet"
+                className="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl flex items-center justify-center shadow-2xs transition cursor-pointer"
+                title="Import Excel / CSV Spreadsheet"
+                aria-label="Import Excel / CSV Spreadsheet"
               >
                 <Upload className="w-4 h-4 text-emerald-700" />
-                <span>Import Excel / CSV</span>
               </button>
 
               <button
@@ -1440,7 +1440,7 @@ export default function ClientsPage() {
                 className="px-4 py-2.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-sm hover:brightness-105 transition active:scale-95 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>+ Add New Client</span>
+                <span>Add New Client</span>
               </button>
             </div>
           )}
@@ -2163,7 +2163,7 @@ export default function ClientsPage() {
         isOpen={Boolean(quickAssignClient)}
         onClose={() => setQuickAssignClient(null)}
         client={quickAssignClient}
-        teamMembers={inHouseTeamMembers}
+        teamMembers={teamMembers}
         onAssigned={({ memberId, memberName }) => {
           if (quickAssignClient) {
             setClients(prev => {
