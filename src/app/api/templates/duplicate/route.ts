@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
+import { invalidateServerTemplatesCache } from '@/app/api/quotation-templates/route';
 
 function isValidUUID(str?: string | null): boolean {
   if (!str) return false;
@@ -223,6 +224,10 @@ export async function POST(req: NextRequest) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }, { onConflict: 'workspace_id,quotation_number' });
+    } catch (_) {}
+
+    try {
+      invalidateServerTemplatesCache();
     } catch (_) {}
 
     return NextResponse.json({

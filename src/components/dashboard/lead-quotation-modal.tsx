@@ -320,6 +320,9 @@ export function LeadQuotationModal({
       if (json.success && Array.isArray(json.templates) && json.templates.length > 0) {
         setAvailableTemplates(json.templates);
         persistTemplatesToCache(json.templates, currentUserId);
+        if (lead?.workspace_id && lead.workspace_id !== currentUserId) {
+          persistTemplatesToCache(json.templates, lead.workspace_id);
+        }
 
         setSelectedTemplateId(prev => {
           if (prev && json.templates.some((t: StudioTemplateItem) => t.id === prev)) {
