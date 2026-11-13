@@ -47,6 +47,34 @@ const memCachedFinanceByWorkspace = new Map<string, Map<string, ClientFinanceRec
 const memCachedQuoteFinanceByWorkspace = new Map<string, Map<string, { total: number; paid: number; due: number }>>();
 const memCachedTeamByWorkspace = new Map<string, WorkspaceMemberOption[]>();
 
+function deduplicateAndSortClients(list: WorkspaceClient[]): WorkspaceClient[] {
+  const sorted = [...list].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  const seenClientKeys = new Set<string>();
+  const dedupedClients: WorkspaceClient[] = [];
+  for (const cl of sorted) {
+    const cPhone = cl.phone ? cl.phone.replace(/\D/g, '').slice(-10) : '';
+    const idKey = cl.id ? `id:${cl.id}` : null;
+    const leadKey = cl.lead_id ? `lead:${cl.lead_id}` : null;
+    const phoneKey = cPhone && cPhone.length >= 7 ? `phone:${cPhone}` : null;
+    const nameKey = cl.name ? `name:${cl.name.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim()}` : null;
+
+    if (
+      (idKey && seenClientKeys.has(idKey)) ||
+      (leadKey && seenClientKeys.has(leadKey)) ||
+      (phoneKey && seenClientKeys.has(phoneKey)) ||
+      (nameKey && seenClientKeys.has(nameKey))
+    ) {
+      continue;
+    }
+    if (idKey) seenClientKeys.add(idKey);
+    if (leadKey) seenClientKeys.add(leadKey);
+    if (phoneKey) seenClientKeys.add(phoneKey);
+    if (nameKey) seenClientKeys.add(nameKey);
+    dedupedClients.push(cl);
+  }
+  return dedupedClients;
+}
+
 export default function ClientsPage() {
   const router = useRouter();
   const { isOwner, permissions, activeWorkspace, userEmail, userId, userName, loading: wsLoading, workspaceId: contextWsId } = useWorkspace();
@@ -144,6 +172,9 @@ export default function ClientsPage() {
   };
 
   const openClientCard = (client: WorkspaceClient) => {
+    if (typeof window !== 'undefined' && window.__startRouteProgress) {
+      window.__startRouteProgress();
+    }
     if (typeof window !== 'undefined') {
       try {
         const snapshot = JSON.stringify(client);
@@ -379,7 +410,16 @@ export default function ClientsPage() {
       setFinanceRecordsMap(fMap);
       setQuoteFinanceMap(qFinMap);
 
+      // Instant Fast-Path: Show existing clients immediately without waiting for auto-sync network roundtrips!
+      const initialClean = deduplicateAndSortClients(existingClientList);
+      setClients(initialClean);
+      setLoading(false);
+      memCachedClientsByWorkspace.set(wsIdToFetch, initialClean);
+      memCachedFinanceByWorkspace.set(wsIdToFetch, fMap);
+      memCachedQuoteFinanceByWorkspace.set(wsIdToFetch, qFinMap);
+
       // 3. Auto-Sync: For every lead with status 'booked' / 'Booked' that is NOT yet in workspace_clients, create a client record!
+      let hasNewlySyncedClients = false;
       const bookedLeads = leadList.filter(l => {
         const stage = (l.status || (l as any).stage || '').toLowerCase();
         return stage === 'booked' || stage === 'closed' || stage === 'converted';
@@ -491,6 +531,7 @@ export default function ClientsPage() {
               existingClientIds.add(createdClient.id);
               if (leadPhoneDigits) existingClientPhones.add(leadPhoneDigits);
               if (nameClean) existingClientNames.add(nameClean);
+              hasNewlySyncedClients = true;
             }
           } catch (autoSyncErr) {
             console.warn('Auto-sync client insert notice:', autoSyncErr);
@@ -498,36 +539,17 @@ export default function ClientsPage() {
         }
       }
 
-      // Sort strictly by created_at DESC so newly created clients always appear at the very top!
-      existingClientList.sort((a, b) => {
-        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-      });
-
-      // Deduplicate clients list before saving state
-      const seenClientKeys = new Set<string>();
-      const dedupedClients: WorkspaceClient[] = [];
-      for (const cl of existingClientList) {
-        const cPhone = cl.phone ? cl.phone.replace(/\D/g, '').slice(-10) : '';
-        const idKey = cl.id ? `id:${cl.id}` : null;
-        const leadKey = cl.lead_id ? `lead:${cl.lead_id}` : null;
-        const phoneKey = cPhone && cPhone.length >= 7 ? `phone:${cPhone}` : null;
-        const nameKey = cl.name ? `name:${cl.name.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim()}` : null;
-
-        if (
-          (idKey && seenClientKeys.has(idKey)) ||
-          (leadKey && seenClientKeys.has(leadKey)) ||
-          (phoneKey && seenClientKeys.has(phoneKey)) ||
-          (nameKey && seenClientKeys.has(nameKey))
-        ) {
-          continue;
+      // If any new client was synced in the background, update state and cache cleanly
+      if (hasNewlySyncedClients) {
+        const finalClients = deduplicateAndSortClients(existingClientList);
+        setClients(finalClients);
+        memCachedClientsByWorkspace.set(wsIdToFetch, finalClients);
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(`sc_cached_clients_${wsIdToFetch}`, JSON.stringify(finalClients));
+          } catch (_) {}
         }
-        if (idKey) seenClientKeys.add(idKey);
-        if (leadKey) seenClientKeys.add(leadKey);
-        if (phoneKey) seenClientKeys.add(phoneKey);
-        if (nameKey) seenClientKeys.add(nameKey);
-        dedupedClients.push(cl);
       }
-      existingClientList = dedupedClients;
 
       // Fetch team members fallback if not populated by API
       if (teamMembers.length === 0) {
@@ -541,8 +563,6 @@ export default function ClientsPage() {
           console.warn('Could not load team members:', memErr);
         }
       }
-
-      setClients(existingClientList);
       memCachedClientsByWorkspace.set(wsIdToFetch, existingClientList);
       memCachedFinanceByWorkspace.set(wsIdToFetch, fMap);
       memCachedQuoteFinanceByWorkspace.set(wsIdToFetch, qFinMap);
@@ -1934,13 +1954,19 @@ export default function ClientsPage() {
               return (
                 <div
                   key={client.id}
-                  onMouseEnter={() => prefetchClientRoute(client.id)}
-                  onTouchStart={() => prefetchClientRoute(client.id)}
                   onClick={() => openClientCard(client)}
-                  className={`rounded-2xl border p-4 sm:p-5 shadow-2xs transition-colors duration-150 cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-4 items-center group ${
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openClientCard(client);
+                    }
+                  }}
+                  className={`rounded-2xl border p-4 sm:p-5 shadow-2xs transition-all duration-150 cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-4 items-center group select-none active:scale-[0.99] active:brightness-95 ${
                     isClientTrashed
                       ? 'bg-rose-50/20 hover:bg-rose-50/40 border-rose-200 hover:border-rose-300'
-                      : 'bg-[#FFFDF9] hover:bg-[#FFFBF2] border-[#EAE5DA] hover:border-amber-400/80'
+                      : 'bg-[#FFFDF9] hover:bg-[#FFFBF2] border-[#EAE5DA] hover:border-amber-400/80 active:border-amber-500'
                   }`}
                 >
                   {/* Left (Col 1-5): Client Initials Avatar + Name + Contacts + Overdue Badge */}

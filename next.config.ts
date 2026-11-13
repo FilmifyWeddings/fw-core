@@ -43,7 +43,7 @@ const nextConfig: NextConfig = {
   experimental: {
     // Prevent memory exhaustion on VPS
     ...(process.env.LOW_MEM ? { cpus: 1 } : {}),
-    optimizePackageImports: ['lucide-react', 'framer-motion', '@xyflow/react'],
+    optimizePackageImports: ['lucide-react', 'framer-motion', '@xyflow/react', 'recharts'],
     serverActions: {
       bodySizeLimit: '100mb',
     },

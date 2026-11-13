@@ -804,9 +804,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             <>
               <Link
                 href={isOwner ? "/workspace" : formatPathWithStudio("/assigned-shoots")}
-                prefetch={true}
-                onMouseEnter={() => router.prefetch(isOwner ? '/workspace' : formatPathWithStudio('/assigned-shoots'))}
-                className="flex items-center gap-3 overflow-hidden group"
+                prefetch={false}
+                className="flex items-center gap-3 overflow-hidden group active:scale-[0.98] transition-transform select-none"
               >
                 <StudioCoreBrandIcon className="w-9 h-9" isCollapsed={false} />
                 <div className="overflow-hidden">
@@ -944,10 +943,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               <div key={item.id} className="relative group">
                 <Link
                   href={formatPathWithStudio(item.path)}
-                  prefetch={true}
+                  prefetch={false}
                   suppressHydrationWarning
-                  onMouseEnter={() => router.prefetch(formatPathWithStudio(item.path))}
-                  onPointerDown={() => router.prefetch(formatPathWithStudio(item.path))}
                   onClick={(e) => {
                     if ((item as any).isLocked) {
                       e.preventDefault();
@@ -960,7 +957,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                       });
                     }
                   }}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-150 active:scale-[0.98] select-none ${
                     isActive
                       ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs'
                       : 'text-zinc-600 hover:text-zinc-900 hover:bg-[#F9F8F5]'
@@ -1005,11 +1002,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                         <Link
                           key={sub.name}
                           href={formatPathWithStudio(sub.path)}
-                          prefetch={true}
+                          prefetch={false}
                           suppressHydrationWarning
-                          onMouseEnter={() => router.prefetch(formatPathWithStudio(sub.path))}
-                          onPointerDown={() => router.prefetch(formatPathWithStudio(sub.path))}
-                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all active:scale-[0.98] select-none ${
                             isSubActive
                               ? 'bg-amber-100/70 text-amber-900 font-bold'
                               : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
@@ -1300,12 +1295,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                     <div key={item.id}>
                       <Link
                         href={formatPathWithStudio(item.path)}
-                        prefetch={true}
+                        prefetch={false}
                         suppressHydrationWarning
-                        onMouseEnter={() => router.prefetch(formatPathWithStudio(item.path))}
-                        onPointerDown={() => router.prefetch(formatPathWithStudio(item.path))}
                         onClick={() => setMobileDrawerOpen(false)}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition ${
+                        className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98] select-none ${
                           isActive
                             ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC]'
                             : 'text-zinc-600 hover:bg-zinc-50'
@@ -1325,9 +1318,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                               <Link
                                 key={sub.name}
                                 href={formatPathWithStudio(sub.path)}
-                                prefetch={true}
+                                prefetch={false}
                                 onClick={() => setMobileDrawerOpen(false)}
-                                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all active:scale-[0.98] select-none ${
                                   isSubActive
                                     ? 'bg-amber-100/70 text-amber-900 font-bold'
                                     : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60'

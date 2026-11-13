@@ -6,6 +6,7 @@ import { VersionGuard } from "@/components/VersionGuard";
 import { AuthRedirectGuard } from "@/components/AuthRedirectGuard";
 import { WorkspaceProvider } from "@/lib/context/BhamstraContext";
 import { WorkspaceDataProvider } from "@/context/WorkspaceDataContext";
+import { RouteProgressBar } from "@/components/ui/RouteProgressBar";
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -51,9 +52,30 @@ export default function RootLayout({
         <meta name="fast2sms" content="Hy9cjH1qDSJsW6QZlSv4d2ketD4hGR0Y" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Preload Hero LCP Character Image for Instant Mobile & Desktop Paint */}
+        <link 
+          rel="preload" 
+          as="image" 
+          href="/assets/characters/main-photographer/photographer-hero.webp" 
+          type="image/webp"
+        />
+        {/* Core UI & Landing Serif Fonts - High Priority Render */}
         <link 
           rel="stylesheet" 
-          href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Baskervville:ital@0;1&family=Bellefair&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Castoro+Titling&family=Caveat:wght@400;500;600;700&family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;600;700;800;900&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&family=Cormorant+Upright:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=Ephesis&family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Great+Vibes&family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=Italiana&family=Josefin+Sans:ital,wght@0,300;0,400;0,600;1,400&family=Marcellus&family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Prata&family=Syne:wght@400;500;600;700;800&family=Tenor+Sans&family=Urbanist:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" 
+          href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" 
+        />
+        {/* Decorative Quotation Fonts - Non-blocking Asynchronous Loading */}
+        <link 
+          rel="preload"
+          as="style"
+          href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Baskervville:ital@0;1&family=Bellefair&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Castoro+Titling&family=Caveat:wght@400;500;600;700&family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;600;700;800;900&family=Cormorant+Upright:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=Ephesis&family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Great+Vibes&family=Italiana&family=Josefin+Sans:ital,wght@0,300;0,400;0,600;1,400&family=Marcellus&family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Prata&family=Syne:wght@400;500;600;700;800&family=Tenor+Sans&family=Urbanist:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap"
+        />
+        <link 
+          rel="stylesheet" 
+          href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Baskervville:ital@0;1&family=Bellefair&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Castoro+Titling&family=Caveat:wght@400;500;600;700&family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;600;700;800;900&family=Cormorant+Upright:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=Ephesis&family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Great+Vibes&family=Italiana&family=Josefin+Sans:ital,wght@0,300;0,400;0,600;1,400&family=Marcellus&family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Prata&family=Syne:wght@400;500;600;700;800&family=Tenor+Sans&family=Urbanist:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" 
+          media="print"
+          // @ts-expect-error non-blocking font swap
+          onLoad="this.media='all'"
         />
         <script
           dangerouslySetInnerHTML={{
@@ -70,28 +92,9 @@ export default function RootLayout({
                   // 0. Clean up extension-injected attributes (bis_skin_checked) before React hydration to eliminate hydration mismatch errors
                   try {
                     if (typeof document !== 'undefined') {
-                      var cleanBis = function() {
-                        var els = document.querySelectorAll('[bis_skin_checked]');
-                        for (var i = 0; i < els.length; i++) {
-                          els[i].removeAttribute('bis_skin_checked');
-                        }
-                      };
-                      cleanBis();
-                      if (typeof MutationObserver !== 'undefined') {
-                        var bisObserver = new MutationObserver(function(mutations) {
-                          for (var i = 0; i < mutations.length; i++) {
-                            var m = mutations[i];
-                            if (m.type === 'attributes' && m.attributeName === 'bis_skin_checked') {
-                              m.target.removeAttribute('bis_skin_checked');
-                            }
-                          }
-                        });
-                        bisObserver.observe(document.documentElement, {
-                          attributes: true,
-                          subtree: true,
-                          attributeFilter: ['bis_skin_checked']
-                        });
-                        setTimeout(function() { bisObserver.disconnect(); }, 5000);
+                      var els = document.querySelectorAll('[bis_skin_checked]');
+                      for (var i = 0; i < els.length; i++) {
+                        els[i].removeAttribute('bis_skin_checked');
                       }
                     }
                   } catch (_) {}
@@ -213,6 +216,9 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-zinc-50 dark:bg-[#070708] text-zinc-900 dark:text-white transition-colors duration-200" suppressHydrationWarning>
+        <Suspense fallback={null}>
+          <RouteProgressBar />
+        </Suspense>
         <AuthRedirectGuard />
         <WorkspaceProvider>
           <WorkspaceDataProvider>

@@ -120,6 +120,11 @@ export const HeroMobileStage = forwardRef<HTMLDivElement, HeroMobileStageProps>(
                 alt="StudioCore Photographer"
                 className="w-auto h-[225px] sm:h-[265px] max-w-none object-contain drop-shadow-[0_12px_24px_rgba(33,27,23,0.18)]"
                 loading="eager"
+                decoding="async"
+                // @ts-expect-error high fetch priority for LCP
+                fetchPriority="high"
+                width={200}
+                height={265}
               />
             </picture>
           </div>

@@ -44,6 +44,11 @@ export const Hero: React.FC = () => {
 
   // Trigger entrance animations
   useEffect(() => {
+    // Only run GSAP entrance animation on desktop (> 768px).
+    // On mobile, keep elements visible immediately so FCP & LCP paint in < 1.2s without waiting for JS animation!
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return;
+    }
     const ctx = animateHeroEntrance({
       navbarRef: navbarRef.current,
       headlineRef: headlineRef.current,
