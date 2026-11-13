@@ -91,7 +91,7 @@ fi
 # Drop cached memory to maximize available physical RAM
 sync && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
-NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2048" npm run build
+LOW_MEM=1 NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2048" npm run build
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
@@ -132,7 +132,7 @@ mkdir -p /var/www/fw-core/public
   echo "=== PYTHON / WORKER PROCESSES ==="
   ps aux | grep -i -E "python|uvicorn|fastapi|8005" || true
   echo "=== PORTS ==="
-  ss -tulpn | grep 8005 || netstat -tulpn | grep 8005 || true
+  ss -tulpn 2>/dev/null | grep 8005 || true
   echo "=== LOCAL WORKER PING ==="
   curl -s http://127.0.0.1:8005/api/ai/extract-faces || curl -s http://127.0.0.1:8005/ || true
   echo ""

@@ -42,7 +42,7 @@ const nextConfig: NextConfig = {
   // 3. Static Page Generation Fast karne ke liye (Static bailout / skip heavy prerender)
   experimental: {
     // Prevent memory exhaustion on VPS
-    ...(process.env.LOW_MEM ? { cpus: 1 } : {}),
+    ...(process.env.LOW_MEM || process.env.NEXT_CPU_COUNT === '1' || process.env.CI || process.env.NODE_ENV === 'production' ? { cpus: 1 } : {}),
     optimizePackageImports: ['lucide-react', 'framer-motion', '@xyflow/react', 'recharts'],
     serverActions: {
       bodySizeLimit: '100mb',
