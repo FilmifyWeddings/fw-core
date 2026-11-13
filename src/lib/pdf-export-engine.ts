@@ -403,36 +403,51 @@ export async function downloadServerChromiumPdf(options: ServerPdfExportOptions)
   const finalFilename = cleanFilename.toLowerCase().endsWith('.pdf') ? cleanFilename : `${cleanFilename}.pdf`;
 
   try {
-    // 1. Post to primary dedicated endpoint: POST /api/quotations/pdf
-    let res = await fetch('/api/quotations/pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(userAccessToken ? { Authorization: `Bearer ${userAccessToken}` } : {})
-      },
-      body: JSON.stringify({
-        quotationId: targetId,
-        templateId: targetId,
-        filename: finalFilename,
-        content_json
-      })
-    });
-
-    // 2. Retry secondary route /api/pdf/render if primary route fails
-    if (!res.ok) {
-      console.warn('[PDF Export Engine] Primary route status', res.status, '- Retrying secondary endpoint...');
-      res = await fetch('/api/pdf/render', {
+    // 1. Post to primary dedicated endpoint: POST /api/quotations/pdf with bounded 12s timeout
+    const controller1 = new AbortController();
+    const timeoutId1 = setTimeout(() => controller1.abort(), 12000);
+    let res: Response;
+    try {
+      res = await fetch('/api/quotations/pdf', {
         method: 'POST',
+        signal: controller1.signal,
         headers: {
           'Content-Type': 'application/json',
           ...(userAccessToken ? { Authorization: `Bearer ${userAccessToken}` } : {})
         },
         body: JSON.stringify({
+          quotationId: targetId,
           templateId: targetId,
           filename: finalFilename,
           content_json
         })
       });
+    } finally {
+      clearTimeout(timeoutId1);
+    }
+
+    // 2. Retry secondary route /api/pdf/render if primary route fails
+    if (!res.ok) {
+      console.warn('[PDF Export Engine] Primary route status', res.status, '- Retrying secondary endpoint...');
+      const controller2 = new AbortController();
+      const timeoutId2 = setTimeout(() => controller2.abort(), 12000);
+      try {
+        res = await fetch('/api/pdf/render', {
+          method: 'POST',
+          signal: controller2.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(userAccessToken ? { Authorization: `Bearer ${userAccessToken}` } : {})
+          },
+          body: JSON.stringify({
+            templateId: targetId,
+            filename: finalFilename,
+            content_json
+          })
+        });
+      } finally {
+        clearTimeout(timeoutId2);
+      }
     }
 
     if (!res.ok) {
