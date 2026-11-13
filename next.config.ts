@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import path from "path";
+import fs from "fs";
 
 const nextConfig: NextConfig = {
   webpack: (config) => {
@@ -7,6 +8,27 @@ const nextConfig: NextConfig = {
       ...config.resolve.alias,
       '@': path.resolve(__dirname, 'src'),
     };
+
+    config.plugins.push({
+      apply: (compiler: any) => {
+        compiler.hooks.afterEmit.tap('EnsureProxyNftJson', () => {
+          try {
+            const serverDir = path.resolve(__dirname, '.next', 'server');
+            if (fs.existsSync(serverDir)) {
+              const nftPath = path.join(serverDir, 'proxy.js.nft.json');
+              const jsPath = path.join(serverDir, 'proxy.js');
+              if (!fs.existsSync(nftPath)) {
+                fs.writeFileSync(nftPath, JSON.stringify({ version: 1, files: [] }));
+              }
+              if (!fs.existsSync(jsPath)) {
+                fs.writeFileSync(jsPath, 'module.exports = {};');
+              }
+            }
+          } catch (_) {}
+        });
+      }
+    });
+
     return config;
   },
   // 1. Build ke waqt Type-checking skip (Time 70% bachega)
