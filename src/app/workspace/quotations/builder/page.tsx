@@ -2599,128 +2599,16 @@ function StudioCoreAiryBuilderContent() {
     setExportStatusText('Preparing Full-Bleed A4 Vector Document...');
     const routeId = params?.id ? String(params.id) : '';
 
-    const progressTimer = setInterval(() => {
-      setExportProgress(prev => (prev < 95 ? prev + 15 : prev));
-    }, 100);
-
     try {
-      setExportStatusText('Optimizing image payload...');
-      
-      const compressDataUrlForPDF = async (dataUrl: string, maxDim = 1200, quality = 0.82): Promise<string> => {
-        if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image') || dataUrl.length < 200000) {
-          return dataUrl;
-        }
-        return new Promise((resolve) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            let { width, height } = img;
-            if (width > maxDim || height > maxDim) {
-              if (width > height) {
-                height = Math.round((height * maxDim) / width);
-                width = maxDim;
-              } else {
-                width = Math.round((width * maxDim) / height);
-                height = maxDim;
-              }
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return resolve(dataUrl);
-
-            const isPng = dataUrl.startsWith('data:image/png');
-            if (isPng) {
-              ctx.clearRect(0, 0, width, height);
-            } else {
-              ctx.fillStyle = '#FFFFFF';
-              ctx.fillRect(0, 0, width, height);
-            }
-
-            ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', isPng ? undefined : quality));
-          };
-          img.onerror = () => resolve(dataUrl);
-          img.src = dataUrl;
-        });
-      };
-
-      const optimizeObjectForPDF = async (obj: any): Promise<any> => {
-        if (!obj) return obj;
-        if (typeof obj === 'string') {
-          if (obj.startsWith('data:image') && obj.length > 200000) {
-            return await compressDataUrlForPDF(obj);
-          }
-          return obj;
-        }
-        if (Array.isArray(obj)) {
-          return await Promise.all(obj.map(item => optimizeObjectForPDF(item)));
-        }
-        if (typeof obj === 'object') {
-          const keys = Object.keys(obj);
-          const vals = await Promise.all(keys.map(k => optimizeObjectForPDF(obj[k])));
-          const result: any = {};
-          for (let i = 0; i < keys.length; i++) {
-            result[keys[i]] = vals[i];
-          }
-          return result;
-        }
-        return obj;
-      };
-
-      const sanitizedData = await optimizeObjectForPDF(data);
-
-      const payload = {
-        quotationId: routeId,
-        templateId: routeId,
-        content_json: sanitizedData,
-        filename: `Quotation-${routeId || 'document'}.pdf`
-      };
-
-      const payloadString = JSON.stringify(payload);
-      setExportProgress(40);
-      setExportStatusText('Generating Server-Side Vector PDF...');
-
-      const res = await fetch('/api/quotations/pdf', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(userId ? { 'Authorization': `Bearer ${userId}` } : {})
-        },
-        body: payloadString
+      await downloadServerChromiumPdf({
+        templateId: (templateId || routeId) as string,
+        quotationId: (templateId || routeId) as string,
+        filename: `${data.designName || data.title || 'Quotation'}.pdf`,
+        content_json: data
       });
-
-      clearInterval(progressTimer);
-
-      if (!res.ok) {
-        let errDetail = 'PDF Server Pipeline Failed';
-        try {
-          const errJson = await res.json();
-          errDetail = errJson.detail || errJson.error || errJson.message || errDetail;
-        } catch (e) {}
-        throw new Error(`HTTP ${res.status}: ${errDetail}`);
-      }
-
-      const blob = await res.blob();
       setExportProgress(100);
       setExportStatusText('100% Complete! Downloading PDF...');
-
-      const url = window.URL.createObjectURL(blob);
-      const fileName = `Quotation-${routeId || 'document'}.pdf`;
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-      }, 15000);
     } catch (err: any) {
-      clearInterval(progressTimer);
       console.error('[PDF Export Error]:', err);
       alert(`PDF Generation Notice: ${err.message || 'Server rendering unavailable'}`);
     } finally {
