@@ -989,38 +989,14 @@ export function LeadQuotationModal({
         } catch (_) {}
       }
 
-      setExportStatusText('Registering typography and custom fonts...');
-      try {
-        loadCustomFontsFromAPI();
-        if (fullContentJson?.primaryFont) preloadActiveFont(fullContentJson.primaryFont);
-        if (fullContentJson?.secondaryFont) preloadActiveFont(fullContentJson.secondaryFont);
-      } catch (_) {}
-
-      // Mount the real QuotationDocumentCanvas off-screen (100% pixel-identical to Public View canvas)
-      setExportCanvasDoc(fullContentJson);
-
-      // Allow React to mount the canvas element and ensure fonts and images are ready
-      await new Promise(resolve => setTimeout(resolve, 350));
-      if (typeof document !== 'undefined' && document.fonts) {
-        try {
-          await document.fonts.ready;
-        } catch (_) {}
-      }
-
-      setExportProgress(60);
-      setExportStatusText('Rendering 100% Identical Vector A4 Pages...');
+      setExportProgress(50);
+      setExportStatusText('Generating high-speed Vector A4 PDF...');
 
       const cleanTitle = (q.title || `${q.couple_name || lead?.name || 'Quotation'} - Wedding`).replace(/\.pdf$/i, '').trim();
       const filename = `${cleanTitle}.pdf`;
 
       try {
-        // Primary: Exact same client canvas exporter as the public view
-        await exportClientCanvasToPDF('quotation-full-canvas', filename, (statusMsg: string) => {
-          setExportStatusText(statusMsg);
-          setExportProgress(prev => Math.min(prev + 5, 95));
-        });
-      } catch (canvasErr) {
-        console.warn('[LeadModal Canvas PDF warning, falling back to server exporter]:', canvasErr);
+        // Primary: Fast server-side Vector Chromium PDF engine (1-4s vs 30s+ client rasterizer)
         await downloadServerChromiumPdf({
           templateId,
           quotationId: templateId,
@@ -1029,7 +1005,31 @@ export function LeadQuotationModal({
           userAccessToken: token,
           onProgress: (statusMsg: string) => {
             setExportStatusText(statusMsg);
+            setExportProgress(prev => Math.min(prev + 10, 95));
           }
+        });
+      } catch (serverErr) {
+        console.warn('[LeadModal Server PDF warning, falling back to client canvas exporter]:', serverErr);
+        try {
+          loadCustomFontsFromAPI();
+          if (fullContentJson?.primaryFont) preloadActiveFont(fullContentJson.primaryFont);
+          if (fullContentJson?.secondaryFont) preloadActiveFont(fullContentJson.secondaryFont);
+        } catch (_) {}
+
+        setExportCanvasDoc(fullContentJson);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        if (typeof document !== 'undefined' && document.fonts) {
+          try {
+            await Promise.race([
+              document.fonts.ready,
+              new Promise(resolve => setTimeout(resolve, 1200))
+            ]);
+          } catch (_) {}
+        }
+
+        await exportClientCanvasToPDF('quotation-full-canvas', filename, (statusMsg: string) => {
+          setExportStatusText(statusMsg);
+          setExportProgress(prev => Math.min(prev + 5, 95));
         });
       }
 

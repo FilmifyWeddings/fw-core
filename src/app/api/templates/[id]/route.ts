@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
@@ -187,31 +187,57 @@ async function handleUpdate(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await context.params;
-    const { userId: authUserId, isSuperAdmin } = await resolveRequestUser(req);
+    // Batch 1: Parallel param resolution, user auth, and JSON body parse
+    const [{ id }, authRes, body] = await Promise.all([
+      context.params,
+      resolveRequestUser(req),
+      req.json().catch(() => ({}))
+    ]);
+    const { userId: authUserId, isSuperAdmin } = authRes;
 
-    const body = await req.json().catch(() => ({}));
     let userId = authUserId || body.user_id || '';
     let workspaceId = body.workspace_id || userId;
-    if (userId) {
-      const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('id, workspace_id')
-        .eq('id', userId)
-        .maybeSingle();
-      if (profile?.workspace_id) workspaceId = profile.workspace_id;
-      else if (profile?.id && !body.workspace_id) workspaceId = profile.id;
-    }
-
     const document = body.content_json || body.document;
     const title = body.title;
     const category = body.category;
+    const hintLeadId = body.lead_id || document?.lead_id || document?.content_json?.lead_id || null;
 
-    const { data: targetTmpl } = await supabaseAdmin
-      .from('quotation_templates')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+    // Batch 2: Parallel DB metadata reads (profiles + quotation_templates + quotation_documents + optional leads)
+    const [profileRes, targetTmplRes, currentDocRes, leadPreRes] = await Promise.all([
+      userId
+        ? supabaseAdmin
+            .from('profiles')
+            .select('id, workspace_id')
+            .eq('id', userId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      supabaseAdmin
+        .from('quotation_templates')
+        .select('id, user_id, workspace_id, title, category, is_system_template, is_default, status')
+        .eq('id', id)
+        .maybeSingle(),
+      !isSuperAdmin && document
+        ? supabaseAdmin
+            .from('quotation_documents')
+            .select('id, lead_id, lead_version, version, workspace_id, created_at')
+            .eq('template_id', id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      !isSuperAdmin && hintLeadId
+        ? supabaseAdmin
+            .from('leads')
+            .select('id, quotation_id, raw_payload, workspace_id, final_quotation_id')
+            .eq('id', hintLeadId)
+            .maybeSingle()
+        : Promise.resolve({ data: null })
+    ]);
+
+    const profile = profileRes?.data;
+    if (profile?.workspace_id) workspaceId = profile.workspace_id;
+    else if (profile?.id && !body.workspace_id) workspaceId = profile.id;
+
+    const targetTmpl = targetTmplRes?.data;
+    const currentDoc = currentDocRes?.data;
 
     const SYSTEM_PRESET_IDS = ['FW-USER-SJ05RN', 'FW-2WT85Y0', GLOBAL_SYSTEM_TEMPLATE_ID];
     const isSystemTemplate = SYSTEM_PRESET_IDS.includes(id) || targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id.startsWith('SYS-');
@@ -230,37 +256,45 @@ async function handleUpdate(
         ? body.status
         : (targetTmpl?.status || (nextIsSystem ? 'published' : 'draft'));
 
-      await supabaseAdmin
-        .from('quotation_templates')
-        .upsert({
-          id,
-          user_id: 'SYSTEM',
-          workspace_id: null,
-          title: newTitle,
-          category: category || targetTmpl?.category || 'Wedding',
-          is_system_template: nextIsSystem,
-          status: nextStatus,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' });
-
-      if (document) {
-        await supabaseAdmin
-          .from('quotation_documents')
+      const nowIso = new Date().toISOString();
+      await Promise.all([
+        supabaseAdmin
+          .from('quotation_templates')
           .upsert({
-            template_id: id,
+            id,
             user_id: 'SYSTEM',
             workspace_id: null,
-            content_json: document,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'template_id' });
-
-        await supabaseAdmin
-          .from('quotations')
-          .update({
             title: newTitle,
-            updated_at: new Date().toISOString()
-          })
-          .or(`id.eq.${id},quotation_number.eq.${id}`);
+            category: category || targetTmpl?.category || 'Wedding',
+            is_system_template: nextIsSystem,
+            status: nextStatus,
+            updated_at: nowIso
+          }, { onConflict: 'id' }),
+        document
+          ? supabaseAdmin
+              .from('quotation_documents')
+              .upsert({
+                template_id: id,
+                user_id: 'SYSTEM',
+                workspace_id: null,
+                content_json: document,
+                updated_at: nowIso
+              }, { onConflict: 'template_id' })
+          : Promise.resolve()
+      ]);
+
+      if (document) {
+        after(async () => {
+          try {
+            await supabaseAdmin
+              .from('quotations')
+              .update({
+                title: newTitle,
+                updated_at: nowIso
+              })
+              .or(`id.eq.${id},quotation_number.eq.${id}`);
+          } catch (_) {}
+        });
       }
 
       return NextResponse.json({
@@ -280,6 +314,7 @@ async function handleUpdate(
 
       const clonedDoc = document ? JSON.parse(JSON.stringify(document)) : {};
       clonedDoc.designName = newTitle;
+      const nowIso = new Date().toISOString();
 
       // 1. Insert new duplicate template into quotation_templates for this studio owner
       const { data: newTmpl, error: tmplErr } = await supabaseAdmin
@@ -293,8 +328,8 @@ async function handleUpdate(
           is_system_template: false,
           is_default: false,
           status: 'draft',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          created_at: nowIso,
+          updated_at: nowIso
         })
         .select()
         .single();
@@ -314,8 +349,8 @@ async function handleUpdate(
           version: body.version || 1,
           lead_id: body.lead_id || clonedDoc?.lead_id || null,
           lead_version: body.lead_version || clonedDoc?.lead_version || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          created_at: nowIso,
+          updated_at: nowIso
         });
 
       return NextResponse.json({
@@ -341,6 +376,7 @@ async function handleUpdate(
       const newTitle = title || document?.designName || `${targetTmpl?.title || 'Quotation Template'} (Copy)`;
       const clonedDoc = document ? JSON.parse(JSON.stringify(document)) : {};
       clonedDoc.designName = newTitle;
+      const nowIso = new Date().toISOString();
 
       await supabaseAdmin.from('quotation_templates').insert({
         id: newTemplateId,
@@ -351,8 +387,8 @@ async function handleUpdate(
         is_system_template: false,
         is_default: false,
         status: 'draft',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: nowIso,
+        updated_at: nowIso
       });
 
       await supabaseAdmin.from('quotation_documents').insert({
@@ -363,8 +399,8 @@ async function handleUpdate(
         version: body.version || 1,
         lead_id: body.lead_id || clonedDoc?.lead_id || null,
         lead_version: body.lead_version || clonedDoc?.lead_version || null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: nowIso,
+        updated_at: nowIso
       });
 
       return NextResponse.json({
@@ -394,31 +430,25 @@ async function handleUpdate(
       targetTmpl?.status === 'archived'
     );
 
-    if (!isLeadQuotation) {
-      await supabaseAdmin
-        .from('quotation_templates')
-        .upsert({
-          id,
-          workspace_id: workspaceId || userId,
-          user_id: userId || workspaceId,
-          title: newTitle,
-          category: category || targetTmpl?.category || 'Wedding',
-          is_system_template: Boolean(targetTmpl?.is_system_template),
-          is_default: Boolean(targetTmpl?.is_default),
-          status: targetTmpl?.status || 'draft',
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' });
-    }
+    const nowIso = new Date().toISOString();
+    const tmplUpsertPromise = !isLeadQuotation
+      ? supabaseAdmin
+          .from('quotation_templates')
+          .upsert({
+            id,
+            workspace_id: workspaceId || userId,
+            user_id: userId || workspaceId,
+            title: newTitle,
+            category: category || targetTmpl?.category || 'Wedding',
+            is_system_template: Boolean(targetTmpl?.is_system_template),
+            is_default: Boolean(targetTmpl?.is_default),
+            status: targetTmpl?.status || 'draft',
+            updated_at: nowIso
+          }, { onConflict: 'id' })
+      : null;
 
-    // 2. Upsert quotation_documents in-place with strict lead_id & lead_version preservation
+    // 2. Batch 3: Parallel primary writes (quotation_templates + quotation_documents + authoritative leads version entry)
     if (document) {
-      // First, fetch existing document scalar metadata (never select non-existent columns client_id/is_final or heavy content_json)
-      const { data: currentDoc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('id, lead_id, lead_version, version, workspace_id, created_at')
-        .eq('template_id', id)
-        .maybeSingle();
-
       const effectiveLeadId = body.lead_id || document?.lead_id || document?.content_json?.lead_id || currentDoc?.lead_id || null;
       const effectiveLeadVersion = body.lead_version || document?.lead_version || document?.content_json?.lead_version || currentDoc?.lead_version || null;
 
@@ -434,172 +464,183 @@ async function handleUpdate(
         workspace_id: workspaceId || currentDoc?.workspace_id,
         user_id: userId,
         content_json: document,
-        updated_at: new Date().toISOString()
+        updated_at: nowIso
       };
       if (effectiveLeadId) docUpsertPayload.lead_id = effectiveLeadId;
       if (effectiveLeadVersion) docUpsertPayload.lead_version = effectiveLeadVersion;
       if (body.version || currentDoc?.version) docUpsertPayload.version = body.version || currentDoc?.version || 1;
 
-      await supabaseAdmin
-        .from('quotation_documents')
-        .upsert(docUpsertPayload, { onConflict: 'template_id' });
+      const resolvedLeadRow = effectiveLeadId
+        ? (leadPreRes?.data || (await supabaseAdmin
+            .from('leads')
+            .select('id, quotation_id, raw_payload, workspace_id, final_quotation_id')
+            .eq('id', effectiveLeadId)
+            .maybeSingle()).data)
+        : null;
+
+      let leadUpdatePromise: any = null;
+      if (effectiveLeadId && resolvedLeadRow) {
+        const rawPayload = resolvedLeadRow.raw_payload || {};
+        const existingVersions = Array.isArray(rawPayload.quotation_versions) ? [...rawPayload.quotation_versions] : [];
+        const existingIdx = existingVersions.findIndex((v: any) => v.template_id === id || v.id === id);
+        const rawExtractedCouple = document?.cover?.coupleName
+          || (document?.cover?.groomName && document?.cover?.brideName ? `${document.cover.groomName} & ${document.cover.brideName}` : null)
+          || extractCoupleNameFromQuotation(document);
+        const cleanCouple = rawExtractedCouple && !isInvalidCoupleName(rawExtractedCouple) ? rawExtractedCouple : undefined;
+        const vEntry: any = {
+          template_id: id,
+          id: id,
+          version: effectiveLeadVersion || (existingIdx >= 0 ? existingVersions[existingIdx].version : existingVersions.length + 1),
+          title: newTitle,
+          updated_at: nowIso
+        };
+        if (cleanCouple) vEntry.couple_name = cleanCouple;
+        if (existingIdx >= 0) {
+          existingVersions[existingIdx] = { ...existingVersions[existingIdx], ...vEntry };
+        } else {
+          existingVersions.push(vEntry);
+        }
+        rawPayload.quotation_versions = existingVersions;
+        if (!resolvedLeadRow.quotation_id || resolvedLeadRow.quotation_id === id) {
+          rawPayload.quotation_id = id;
+        }
+
+        leadUpdatePromise = supabaseAdmin.from('leads').update({
+          raw_payload: rawPayload,
+          quotation_id: resolvedLeadRow.quotation_id || id
+        }).eq('id', effectiveLeadId);
+      }
+
+      await Promise.all([
+        tmplUpsertPromise || Promise.resolve(),
+        supabaseAdmin
+          .from('quotation_documents')
+          .upsert(docUpsertPayload, { onConflict: 'template_id' }),
+        leadUpdatePromise || Promise.resolve()
+      ]);
 
       clearLeadSummaryCache();
 
-      // Save audit snapshot to quotation_versions table for complete multi-device rollback & history
-      try {
-        await supabaseAdmin.from('quotation_versions').insert({
-          document_id: currentDoc?.id || id,
-          template_id: id,
-          user_id: userId || workspaceId,
-          version: effectiveLeadVersion || body.version || 1,
-          content_json: document,
-          created_at: new Date().toISOString()
-        });
-      } catch (_) {}
+      // Background non-blocking tasks via Next.js after(): audit version snapshot, live_logs, mirror quotations table, and finance sync
+      after(async () => {
+        const bgTasks: Promise<any>[] = [];
 
-      // Non-destructively register version in lead record so all devices see all versions immediately
-      if (effectiveLeadId) {
-        try {
-          const { data: leadRow } = await supabaseAdmin
-            .from('leads')
-            .select('id, quotation_id, raw_payload')
-            .eq('id', effectiveLeadId)
-            .maybeSingle();
-
-          if (leadRow) {
-            const rawPayload = leadRow.raw_payload || {};
-            const existingVersions = Array.isArray(rawPayload.quotation_versions) ? [...rawPayload.quotation_versions] : [];
-            const existingIdx = existingVersions.findIndex((v: any) => v.template_id === id || v.id === id);
-            const rawExtractedCouple = document?.cover?.coupleName
-              || (document?.cover?.groomName && document?.cover?.brideName ? `${document.cover.groomName} & ${document.cover.brideName}` : null)
-              || extractCoupleNameFromQuotation(document);
-            const cleanCouple = rawExtractedCouple && !isInvalidCoupleName(rawExtractedCouple) ? rawExtractedCouple : undefined;
-            const vEntry: any = {
+        bgTasks.push(
+          Promise.resolve(
+            supabaseAdmin.from('quotation_versions').insert({
+              document_id: currentDoc?.id || id,
               template_id: id,
-              id: id,
-              version: effectiveLeadVersion || (existingIdx >= 0 ? existingVersions[existingIdx].version : existingVersions.length + 1),
-              title: newTitle,
-              updated_at: new Date().toISOString()
-            };
-            if (cleanCouple) vEntry.couple_name = cleanCouple;
-            if (existingIdx >= 0) {
-              existingVersions[existingIdx] = { ...existingVersions[existingIdx], ...vEntry };
-            } else {
-              existingVersions.push(vEntry);
-            }
-            rawPayload.quotation_versions = existingVersions;
-            if (!leadRow.quotation_id || leadRow.quotation_id === id) {
-              rawPayload.quotation_id = id;
-            }
-
-            await supabaseAdmin.from('leads').update({
-              raw_payload: rawPayload,
-              quotation_id: leadRow.quotation_id || id
-            }).eq('id', effectiveLeadId);
-          }
-
-          // Structured audit logging into live_logs
-          try {
-            const actor = body.actor_name || (userId ? 'Studio Admin' : 'User');
-            const versionLabel = effectiveLeadVersion ? `v${effectiveLeadVersion}` : (body.version ? `v${body.version}` : 'v1');
-
-            // Skip logging an immediate "updated" audit event if this quotation was just created (< 45s ago)
-            const isFreshlyCreated = !currentDoc || (currentDoc.created_at && (Date.now() - new Date(currentDoc.created_at).getTime() < 45000));
-
-            let logWsId = workspaceId;
-            if (!isValidUUID(logWsId)) {
-              const { data: leadForWs } = await supabaseAdmin.from('leads').select('workspace_id').eq('id', effectiveLeadId).maybeSingle();
-              logWsId = leadForWs?.workspace_id;
-            }
-            if (!isValidUUID(logWsId)) {
-              const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
-              logWsId = prof?.id;
-            }
-
-            if (!isFreshlyCreated && isValidUUID(logWsId)) {
-              await supabaseAdmin.from('live_logs').insert({
-                workspace_id: logWsId,
-                lead_id: effectiveLeadId,
-                event_type: 'lead_activity',
-                message: `${actor} updated quotation "${newTitle}" (${versionLabel})`,
-                metadata: {
-                  action_type: 'quotation_updated',
-                  actor_name: actor,
-                  template_id: id,
-                  version: versionLabel,
-                  title: newTitle,
-                  logged_at: new Date().toISOString()
-                }
-              });
-            }
-          } catch (logErr) {
-            console.warn('[templates/[id]] live_logs insertion note:', logErr);
-          }
-        } catch (leadSyncErr) {
-          console.warn('[API templates/[id]] Lead version sync note:', leadSyncErr);
-        }
-      }
-
-      // 3. Upsert quotations record
-      try {
-        const coupleName = document?.cover?.coupleName || (document?.cover?.groomName ? (document?.cover?.brideName ? `${document.cover.groomName} & ${document.cover.brideName}` : document.cover.groomName) : null) || extractCoupleNameFromQuotation(document) || document?.meta?.client_name || 'Client';
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
-        const quotePayload: any = {
-          quotation_number: id,
-          workspace_id: workspaceId,
-          user_id: userId,
-          title: newTitle,
-          client_name: coupleName,
-          couple_names: coupleName,
-          canvas_data: document,
-          updated_at: new Date().toISOString()
-        };
-        if (isUUID) {
-          quotePayload.id = id;
-        }
-
-        await supabaseAdmin
-          .from('quotations')
-          .upsert(quotePayload, { onConflict: 'workspace_id,quotation_number' });
-      } catch (quoteUpsertErr) {
-        console.warn('[API templates/[id]] Secondary quotations upsert note:', quoteUpsertErr);
-      }
-
-      // 4. Auto-sync with Finance, Booking Events, Post-Production if this quotation is final
-      try {
-        const isFinal = Boolean(
-          document?.is_final === true ||
-          document?.content_json?.is_final === true
+              user_id: userId || workspaceId,
+              version: effectiveLeadVersion || body.version || 1,
+              content_json: document,
+              created_at: nowIso
+            })
+          ).catch(() => {})
         );
 
-        const targetLeadOrClientId = effectiveLeadId || currentDoc?.lead_id || (document?.meta?.lead_id) || (document?.lead_id);
+        if (effectiveLeadId) {
+          bgTasks.push(
+            (async () => {
+              try {
+                const actor = body.actor_name || (userId ? 'Studio Admin' : 'User');
+                const versionLabel = effectiveLeadVersion ? `v${effectiveLeadVersion}` : (body.version ? `v${body.version}` : 'v1');
+                const isFreshlyCreated = !currentDoc || (currentDoc.created_at && (Date.now() - new Date(currentDoc.created_at).getTime() < 45000));
 
-        let isLeadFinal = isFinal;
-        if (!isLeadFinal && targetLeadOrClientId) {
-          const { data: leadCheck } = await supabaseAdmin
-            .from('leads')
-            .select('id, final_quotation_id')
-            .eq('id', targetLeadOrClientId)
-            .maybeSingle();
-          if (leadCheck?.final_quotation_id === id) {
-            isLeadFinal = true;
-          }
+                let logWsId = workspaceId;
+                if (!isValidUUID(logWsId)) {
+                  logWsId = resolvedLeadRow?.workspace_id;
+                }
+                if (!isValidUUID(logWsId)) {
+                  const { data: prof } = await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle();
+                  logWsId = prof?.id;
+                }
+
+                if (!isFreshlyCreated && isValidUUID(logWsId)) {
+                  await supabaseAdmin.from('live_logs').insert({
+                    workspace_id: logWsId,
+                    lead_id: effectiveLeadId,
+                    event_type: 'lead_activity',
+                    message: `${actor} updated quotation "${newTitle}" (${versionLabel})`,
+                    metadata: {
+                      action_type: 'quotation_updated',
+                      actor_name: actor,
+                      template_id: id,
+                      version: versionLabel,
+                      title: newTitle,
+                      logged_at: nowIso
+                    }
+                  });
+                }
+              } catch (logErr) {
+                console.warn('[templates/[id]] live_logs insertion note:', logErr);
+              }
+            })()
+          );
         }
 
-        if (isLeadFinal && targetLeadOrClientId) {
-          await syncBookedLeadOrFinalQuotation({
-            leadId: targetLeadOrClientId,
-            quotationId: id,
-            workspaceId: workspaceId || userId,
-            forceBookedStatus: false,
-            supabaseClient: supabaseAdmin
-          });
-          clearLeadSummaryCache();
-        }
-      } catch (syncErr) {
-        console.error('[API templates/[id]] Error syncing to finance/team manager:', syncErr);
-      }
+        bgTasks.push(
+          (async () => {
+            try {
+              const coupleName = document?.cover?.coupleName || (document?.cover?.groomName ? (document?.cover?.brideName ? `${document.cover.groomName} & ${document.cover.brideName}` : document.cover.groomName) : null) || extractCoupleNameFromQuotation(document) || document?.meta?.client_name || 'Client';
+              const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+              const quotePayload: any = {
+                quotation_number: id,
+                workspace_id: workspaceId,
+                user_id: userId,
+                title: newTitle,
+                client_name: coupleName,
+                couple_names: coupleName,
+                canvas_data: document,
+                updated_at: nowIso
+              };
+              if (isUUID) quotePayload.id = id;
+
+              await supabaseAdmin
+                .from('quotations')
+                .upsert(quotePayload, { onConflict: 'workspace_id,quotation_number' });
+            } catch (quoteUpsertErr) {
+              console.warn('[API templates/[id]] Secondary quotations upsert note:', quoteUpsertErr);
+            }
+          })()
+        );
+
+        bgTasks.push(
+          (async () => {
+            try {
+              const isFinal = Boolean(
+                document?.is_final === true ||
+                document?.content_json?.is_final === true
+              );
+              const targetLeadOrClientId = effectiveLeadId || currentDoc?.lead_id || (document?.meta?.lead_id) || (document?.lead_id);
+              let isLeadFinal = isFinal || resolvedLeadRow?.final_quotation_id === id;
+              if (!isLeadFinal && targetLeadOrClientId && !resolvedLeadRow) {
+                const { data: leadCheck } = await supabaseAdmin
+                  .from('leads')
+                  .select('id, final_quotation_id')
+                  .eq('id', targetLeadOrClientId)
+                  .maybeSingle();
+                if (leadCheck?.final_quotation_id === id) isLeadFinal = true;
+              }
+              if (isLeadFinal && targetLeadOrClientId) {
+                await syncBookedLeadOrFinalQuotation({
+                  leadId: targetLeadOrClientId,
+                  quotationId: id,
+                  workspaceId: workspaceId || userId,
+                  forceBookedStatus: false,
+                  supabaseClient: supabaseAdmin
+                });
+                clearLeadSummaryCache();
+              }
+            } catch (syncErr) {
+              console.error('[API templates/[id]] Error syncing to finance/team manager:', syncErr);
+            }
+          })()
+        );
+
+        await Promise.allSettled(bgTasks);
+      });
+    } else if (tmplUpsertPromise) {
+      await tmplUpsertPromise;
     }
 
     return NextResponse.json({

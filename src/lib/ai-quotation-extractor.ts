@@ -697,9 +697,11 @@ const COUPLE_INVALID_WORDS = new Set([
   'mein', 'me', 'se', 'par', 'aur', 'and', 'with', 'for', 'the', 'this', 'that', 'is', 'are', 'will', 'be', 'hum', 'humein',
   'humko', 'humare', 'hamare', 'mera', 'meri', 'mere', 'hamara', 'hamari', 'aap', 'aapka', 'aapki', 'aapke', 'unke', 'inke',
   'aaj', 'kal', 'parso', 'bhi', 'toh', 'haan', 'han', 'ok', 'okay', 'sir', 'ji', 'customer', 'demo', 'sample', 'new', 'naya', 'nayi',
-  'jo', 'wo', 'woh', 'ye', 'yeh', 'mujhe', 'mujhko', 'unko', 'inko', 'share', 'karna', 'karo', 'kardo', 'karne', 'karni',
+  'jo', 'wo', 'woh', 'ye', 'yeh', 'mujhe', 'muje', 'mujhko', 'unko', 'inko', 'share', 'karna', 'karo', 'kardo', 'karne', 'karni',
   'bhejna', 'bhejo', 'usme', 'usmein', 'jisme', 'jismein', 'quotion', 'qution', 'qoutation', 'kotation', 'koteshan', 'kotesan',
-  'venue', 'venues', 'add', 'kar', 'karke'
+  'venue', 'venues', 'add', 'kar', 'karke', 'humne', 'maine', 'mene', 'apne', 'apna', 'apni', 'ek', 'bhai', 'bro', 'friend',
+  'hey', 'hi', 'hello', 'please', 'plz', 'kindly', 'create', 'make', 'generate', 'prepare', 'draft', 'send', 'bana', 'banado',
+  'मुझे', 'हमें', 'मेरे', 'अपना', 'भाई', 'कृपया', 'करना', 'बनाना'
 ]);
 
 const SPOKEN_NAME_MONTHS = new Set([
@@ -788,6 +790,41 @@ function cleanCandidateNameEdges(raw: string, extraInvalidWords?: Set<string>): 
 }
 
 /**
+ * Strips leading/trailing stopword prefixes from each side of a couple/client candidate and normalizes to clean Title Case with " & ".
+ */
+function cleanCoupleCandidateEdges(rawCandidate?: string | null, extraInvalidWords?: Set<string>): string {
+  const cleaned = String(rawCandidate || '')
+    .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+
+  const isStop = (w: string) =>
+    COUPLE_INVALID_WORDS.has(w.toLowerCase()) ||
+    SPOKEN_NAME_MONTHS.has(w.toLowerCase()) ||
+    (extraInvalidWords ? extraInvalidWords.has(w.toLowerCase()) : false);
+
+  const rawSides = cleaned
+    .split(/(?:\s*[&+]\s*|\s+(?:weds|and|aur|तथा|और)\s+)/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (rawSides.length === 0 || rawSides.length > 2) return '';
+
+  const cleanedSides: string[] = [];
+  for (const side of rawSides) {
+    const words = side.split(/\s+/).filter(Boolean);
+    while (words.length > 0 && isStop(words[0])) words.shift();
+    while (words.length > 0 && isStop(words[words.length - 1])) words.pop();
+    if (words.length === 0) return '';
+    if (words.some((w) => isStop(w))) return '';
+    cleanedSides.push(words.join(' '));
+  }
+
+  const joined = cleanedSides.join(' & ');
+  return normalizeSpokenNameToEnglish(joined);
+}
+
+/**
  * Extracts client or couple name directly from spoken/written user notes (Hindi, Hinglish, Marathi, English).
  * Returns clean English Title Case name ("O Piya", "Rohit", "Sagar & Riddhi") or "" if none was mentioned.
  */
@@ -797,27 +834,40 @@ export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEven
 
   const extraInvalid = new Set(studioEventNames.map((e) => String(e || '').toLowerCase()).filter(Boolean));
   const isStrictValidCandidate = (rawCand: string): string => {
-    const edgeCleaned = cleanCandidateNameEdges(rawCand, extraInvalid);
-    if (!edgeCleaned) return '';
-    // For multi-word pairs or multi-word phrases, ensure NO interior word is an invalid event/crew/pricing word
-    const tokens = edgeCleaned.toLowerCase().split(/\s*(?:&|weds|and|\+|तथा|और)\s*/i).filter(Boolean);
-    if (tokens.length === 0) return '';
-    for (const side of tokens) {
-      const ws = side.trim().split(/\s+/).filter(Boolean);
+    const rawSides = String(rawCand || '')
+      .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+      .split(/(?:\s*[&+]\s*|\s+(?:weds|and|aur|तथा|और)\s+)/i)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (rawSides.length === 0 || rawSides.length > 2) return '';
+
+    const normalizedSides: string[] = [];
+    for (const side of rawSides) {
+      const sideCleaned = cleanCandidateNameEdges(side, extraInvalid);
+      if (!sideCleaned) return '';
+      const ws = sideCleaned.split(/\s+/).filter(Boolean);
       if (ws.length === 0 || ws.length > 3) return '';
-      if (ws.some((w) => COUPLE_INVALID_WORDS.has(w) || SPOKEN_NAME_MONTHS.has(w) || extraInvalid.has(w))) {
+      if (ws.some((w) => {
+        const lw = w.toLowerCase();
+        return COUPLE_INVALID_WORDS.has(lw) || SPOKEN_NAME_MONTHS.has(lw) || extraInvalid.has(lw);
+      })) {
         return '';
       }
-      // Single-word side must be >= 2 chars unless paired in a 2+ word name like "O Piya"
       if (ws.length === 1 && ws[0].replace(/[^A-Za-z\u0900-\u097F]/g, '').length < 2) {
         return '';
       }
+      normalizedSides.push(sideCleaned);
     }
-    if (isInvalidCoupleName(edgeCleaned, extraInvalid)) return '';
-    const english = normalizeSpokenNameToEnglish(edgeCleaned);
+
+    const joinedClean = normalizedSides.join(' & ');
+    if (isInvalidCoupleName(joinedClean, extraInvalid)) return '';
+    const english = normalizeSpokenNameToEnglish(joinedClean);
     if (!english || isInvalidCoupleName(english, extraInvalid)) return '';
     return english;
   };
+
+  // Optional polite/pronoun prefix skipped before capturing actual client/couple name (bounded to avoid backtracking)
+  const leadingFillerPrefix = '(?:(?:hey|hi|hello|please|plz|kindly|sir|bhai|mujhe|muje|humein|hume|humko|humne|maine|mene|apne|apna|mera|ek|create|make|generate|bana|banado|मुझे|हमें|कृपया|सर)\\s+){0,4}';
 
   // 1. Explicit English labels: "Couple: X & Y", "Client name: X", "Name: X"
   const explicitMatch = userNotes.match(/(?:^|[\s.;,\n])(?:couple(?:\s*name)?|client(?:\s*name)?|bride\s*(?:&|and)\s*groom|groom\s*(?:&|and)\s*bride)\s*[:=\-]+\s*([A-Za-z\u0900-\u097F\s&'+.-]{2,45}?)(?=\s+(?:wedding|marriage|shaadi|quotation|quotion|qution|qoutation|proposal|haldi|sangeet|reception|mehendi|event|shoot|budget|price|rate|cost|date|on|ke\s+liye|ki|ka|\d|₹|rs|all|deliverable)|[,\n\r.;।]|$)/i);
@@ -834,8 +884,11 @@ export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEven
   }
 
   // 3. Direct Hinglish/Hindi single or couple intro:
-  //    "O Piya ke liye quotation...", "O Piya ke liye quotion...", "Rohit ke liye ek quotation banani hai...", "Priya ki wedding..."
-  const introRe = /(?:^|[।.,;\n]\s*|\s+)([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)\s+(?:ke\s+liye|ke\s+liya|k\s+liye|के\s+लिए|के\s+लिये|ka|ki|ke|का|की|के)\s+(?:(?:ek|a|one|new|naya|nayi|final|total|\d+|एक|नया|नयी)\s+)?(?:events?\s*(?:ka|ki|ke)?\s*)?(?:quotation|quotion|qution|qoutation|quote|koteshan|proposal|wedding|marriage|shaadi|shadi|engagement|haldi|sangeet|mehendi|reception|event|shoot|package|banan[ai]|banao|कोटेशन|प्रपोजल|वेडिंग|शादी|लग्न|सगाई|इवेंट|शूट|पैकेज|बनान[ाी])/gi;
+  //    "O Piya ke liye quotation...", "Mujhe Akshay and Manali ka quotation banana hai", "Rohit ke liye ek quotation banani hai..."
+  const introRe = new RegExp(
+    `(?:^|[।.,;\\n]\\s*)${leadingFillerPrefix}([A-Za-z\\u0900-\\u097F]{1,20}(?:\\s+[A-Za-z\\u0900-\\u097F]{2,20})?(?:(?:\\s*[&+]\\s*|\\s+(?:weds|and|aur|तथा|और)\\s+)[A-Za-z\\u0900-\\u097F]{1,20}(?:\\s+[A-Za-z\\u0900-\\u097F]{2,20})?)?)\\s+(?:ke\\s+liye|ke\\s+liya|k\\s+liye|के\\s+लिए|के\\s+लिये|ka|ki|ke|का|की|के)\\s+(?:(?:ek|a|one|new|naya|nayi|final|total|\\d+|एक|नया|नयी)\\s+)?(?:events?\\s*(?:ka|ki|ke)?\\s*)?(?:quotation|quotion|qution|qoutation|quote|koteshan|proposal|wedding|marriage|shaadi|shadi|engagement|haldi|sangeet|mehendi|reception|event|shoot|package|banan[ai]|banao|कोटेशन|प्रपोजल|वेडिंग|शादी|लग्न|सगाई|इवेंट|शूट|पैकेज|बनान[ाी])`,
+    'gi'
+  );
   for (const m of userNotes.matchAll(introRe)) {
     if (m[1]) {
       const valid = isStrictValidCandidate(m[1]);
@@ -844,7 +897,10 @@ export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEven
   }
 
   // 4. Explicit English prefix: "quotation for X", "quote for X", "proposal for X", "wedding for X"
-  const forRe = /(?:quotation|quotion|qution|qoutation|quote|proposal|wedding)\s+for\s+([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)(?=\s+(?:wedding|marriage|shaadi|reception|event|events|pre-wedding|haldi|sangeet|mehendi|on|date|in|budget|total|\d|₹)|[,\n\r.;।]|$)/gi;
+  const forRe = new RegExp(
+    `(?:quotation|quotion|qution|qoutation|quote|proposal|wedding)\\s+for\\s+${leadingFillerPrefix}([A-Za-z\\u0900-\\u097F]{1,20}(?:\\s+[A-Za-z\\u0900-\\u097F]{2,20})?(?:(?:\\s*[&+]\\s*|\\s+(?:weds|and|aur|तथा|और)\\s+)[A-Za-z\\u0900-\\u097F]{1,20}(?:\\s+[A-Za-z\\u0900-\\u097F]{2,20})?)?)(?=\\s+(?:wedding|marriage|shaadi|reception|event|events|pre-wedding|haldi|sangeet|mehendi|on|date|in|budget|total|\\d|₹)|[,\\n\\r.;।]|$)`,
+    'gi'
+  );
   for (const m of userNotes.matchAll(forRe)) {
     if (m[1]) {
       const valid = isStrictValidCandidate(m[1]);
@@ -853,7 +909,10 @@ export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEven
   }
 
   // 4B. Leading name before comma + event/quotation summary ("O Piya, total 3 events hain...")
-  const commaIntroRe = /^(?:client\s+|couple\s+)?([A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?(?:\s*(?:&|weds|and|\+|aur|तथा|और)\s*[A-Za-z\u0900-\u097F]{1,20}(?:\s+[A-Za-z\u0900-\u097F]{2,20})?)?)\s*,\s*(?:total\s+\d+\s+events?|wedding|haldi|sangeet|engagement|mehendi|reception|quotation|quotion)/i;
+  const commaIntroRe = new RegExp(
+    `^(?:client\\s+|couple\\s+)?${leadingFillerPrefix}([A-Za-z\\u0900-\\u097F]{1,20}(?:\\s+[A-Za-z\\u0900-\\u097F]{2,20})?(?:(?:\\s*[&+]\\s*|\\s+(?:weds|and|aur|तथा|और)\\s+)[A-Za-z\\u0900-\\u097F]{1,20}(?:\\s+[A-Za-z\\u0900-\\u097F]{2,20})?)?)\\s*,\\s*(?:total\\s+\\d+\\s+events?|wedding|haldi|sangeet|engagement|mehendi|reception|quotation|quotion)`,
+    'i'
+  );
   const commaMatch = userNotes.match(commaIntroRe);
   if (commaMatch?.[1]) {
     const valid = isStrictValidCandidate(commaMatch[1]);
@@ -861,7 +920,10 @@ export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEven
   }
 
   // 5. Scan ALL standalone couple pairs ("Sagar & Vruddhi", "Rohan aur Pooja") skipping non-name pairs like "Standard Crew aur Premium"
-  const pairRe = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])([A-Za-z\u0900-\u097F]{2,20}\s*(?:&|weds|and|\+|तथा|और)\s*[A-Za-z\u0900-\u097F]{2,20})(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/gi;
+  const pairRe = new RegExp(
+    `(?:^|[^\\u0900-\\u097Fa-zA-Z0-9])([A-Za-z\\u0900-\\u097F]{2,20}(?:\\s*[&+]\\s*|\\s+(?:weds|and|तथा|और)\\s+)[A-Za-z\\u0900-\\u097F]{2,20})(?=[^\\u0900-\\u097Fa-zA-Z0-9]|$)`,
+    'gi'
+  );
   for (const m of userNotes.matchAll(pairRe)) {
     if (m[1]) {
       const valid = isStrictValidCandidate(m[1]);
@@ -873,23 +935,22 @@ export function extractSpokenCoupleName(rawUserNotes?: string | null, studioEven
 }
 
 /**
- * Strips punctuation artifacts ("। उनकी") and rejects pronoun/stopword pseudo-names.
+ * Strips punctuation artifacts ("। उनकी") and leading filler words ("Mujhe Akshay and Manali" -> "Akshay & Manali").
  */
 export function sanitizeExtractedCoupleName(rawCandidate?: string | null, leadFallback?: string | null): string {
-  const cleanStr = (v?: string | null) =>
-    String(v || '')
-      .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const primary = cleanStr(rawCandidate);
-  if (primary && !isInvalidCoupleName(primary)) {
-    return primary;
+  const raw = String(rawCandidate || '')
+    .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (raw && !isInvalidCoupleName(raw)) {
+    const edgeCleaned = cleanCoupleCandidateEdges(raw);
+    return edgeCleaned && !isInvalidCoupleName(edgeCleaned) ? edgeCleaned : raw;
   }
-  const fallback = cleanStr(leadFallback);
-  if (fallback && !isInvalidCoupleName(fallback)) {
-    return fallback;
-  }
+  const fb = String(leadFallback || '')
+    .replace(/^[\s।|.,:;!?'"\-–—]+|[\s।|.,:;!?'"\-–—]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (fb && !isInvalidCoupleName(fb)) return fb;
   return 'Groom & Bride';
 }
 
@@ -1083,6 +1144,32 @@ const BUILTIN_TRIGGER_NOTE_PHRASES = [
   'अलग क्रू'
 ];
 
+const TRIGGER_NOTE_REGEX_CACHE = new Map<string, [RegExp, RegExp]>();
+
+function getTriggerNoteRegexes(trig: string): [RegExp, RegExp] {
+  const cached = TRIGGER_NOTE_REGEX_CACHE.get(trig);
+  if (cached) return cached;
+
+  const esc = trig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const suffixGroup = '(?:\\s+(?:preset|package|crew|team|setup|tier|option|included|applied|selected|configured))*';
+  const boundaryBefore = '(?:^|(?<![a-zA-Z0-9\\u0900-\\u097F]))';
+  const boundaryAfter = '(?=$|(?![a-zA-Z0-9\\u0900-\\u097F]))';
+
+  const prefixedOrStandaloneRe = new RegExp(
+    `(?:^|[|;,•\\n])\\s*(?:(?:crew|team|preset|package|trigger)\\s*[:\\-–]?\\s*)?${esc}${suffixGroup}(?=\\s*(?:$|[|;,•\\n()\\-–]))`,
+    'gi'
+  );
+  const parenOrBoundaryRe = new RegExp(
+    `\\(\\s*${esc}${suffixGroup}\\s*\\)|[-–:]\\s*${esc}${suffixGroup}${boundaryAfter}|${boundaryBefore}(?:(?:crew|team|preset|package|trigger)\\s*[:\\-–]?\\s*)?${esc}${suffixGroup}${boundaryAfter}`,
+    'gi'
+  );
+  const pair: [RegExp, RegExp] = [prefixedOrStandaloneRe, parenOrBoundaryRe];
+  if (TRIGGER_NOTE_REGEX_CACHE.size < 200) {
+    TRIGGER_NOTE_REGEX_CACHE.set(trig, pair);
+  }
+  return pair;
+}
+
 /**
  * Strips shortcut/crew trigger labels ("Standard Crew", "Premium Crew", custom studio trigger names)
  * from function card notes so only genuine event instructions/remarks remain.
@@ -1099,30 +1186,25 @@ export function sanitizeEventFunctionNotes(rawNotes?: string | null, studioShort
     }
   }
 
-  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let cleanLower = clean.toLowerCase();
   const sortedTriggers = Array.from(triggerPhrases).sort((a, b) => b.length - a.length);
-
+  const matchedTriggers: string[] = [];
   for (const trig of sortedTriggers) {
-    const trigCore = trig.trim().replace(/[.:;,\-–—()]+/g, '');
-    const noteCore = clean.toLowerCase().replace(/[.:;,\-–—()\[\]]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!noteCore || noteCore === trigCore) return '';
+    if (cleanLower.includes(trig)) matchedTriggers.push(trig);
+  }
 
-    const suffixGroup = '(?:\\s+(?:preset|package|crew|team|setup|tier|option|included|applied|selected|configured))*';
-    const boundaryBefore = '(?:^|(?<![a-zA-Z0-9\\u0900-\\u097F]))';
-    const boundaryAfter = '(?=$|(?![a-zA-Z0-9\\u0900-\\u097F]))';
+  if (matchedTriggers.length > 0) {
+    const noteCore = cleanLower.replace(/[.:;,\-–—()\[\]]+/g, ' ').replace(/\s+/g, ' ').trim();
+    for (const trig of matchedTriggers) {
+      const trigCore = trig.trim().replace(/[.:;,\-–—()]+/g, '');
+      if (!noteCore || noteCore === trigCore) return '';
 
-    const prefixedOrStandaloneRe = new RegExp(
-      `(?:^|[|;,•\\n])\\s*(?:(?:crew|team|preset|package|trigger)\\s*[:\\-–]?\\s*)?${escapeRe(trig)}${suffixGroup}(?=\\s*(?:$|[|;,•\\n()\\-–]))`,
-      'gi'
-    );
-    clean = clean.replace(prefixedOrStandaloneRe, ' ');
-
-    // Also strip standalone or parenthesized trigger mentions like "(Standard Crew)", "Wedding - Standard Crew", or "Standard Crew setup"
-    const parenOrBoundaryRe = new RegExp(
-      `\\(\\s*${escapeRe(trig)}${suffixGroup}\\s*\\)|[-–:]\\s*${escapeRe(trig)}${suffixGroup}${boundaryAfter}|${boundaryBefore}(?:(?:crew|team|preset|package|trigger)\\s*[:\\-–]?\\s*)?${escapeRe(trig)}${suffixGroup}${boundaryAfter}`,
-      'gi'
-    );
-    clean = clean.replace(parenOrBoundaryRe, ' ');
+      const [prefixedOrStandaloneRe, parenOrBoundaryRe] = getTriggerNoteRegexes(trig);
+      prefixedOrStandaloneRe.lastIndex = 0;
+      clean = clean.replace(prefixedOrStandaloneRe, ' ');
+      parenOrBoundaryRe.lastIndex = 0;
+      clean = clean.replace(parenOrBoundaryRe, ' ');
+    }
   }
 
   clean = clean
@@ -1132,7 +1214,7 @@ export function sanitizeEventFunctionNotes(rawNotes?: string | null, studioShort
 
   if (!clean) return '';
   const finalCore = clean.toLowerCase().replace(/[.:;,\-–—()\[\]]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (sortedTriggers.some((t) => finalCore === t || finalCore === `crew ${t}` || finalCore === `${t} preset`)) {
+  if (matchedTriggers.some((t) => finalCore === t || finalCore === `crew ${t}` || finalCore === `${t} preset`)) {
     return '';
   }
 
@@ -1271,9 +1353,10 @@ export function extractDeliverablesFromText(
   const reelsM = scanText.match(reelsRe);
   if (reelsM) {
     const cnt = normalizeDeliverableCountToken(reelsM[1] || '');
+    const hasInstaPrefix = /(?:instagram|insta|इंस्टाग्राम)/i.test(reelsM[0]);
     if (cnt > 0) {
       addUnique(`${cnt} Instagram ${cnt === 1 ? 'Reel' : 'Reels'}`);
-    } else {
+    } else if (hasInstaPrefix) {
       addUnique(findStudioMatch(/reel/i) || '3 Instagram Reels');
     }
   }
@@ -1330,14 +1413,46 @@ export function extractDeliverablesFromText(
     }
   }
 
-  // 7. Highlight Film / Cinematic Wedding Film
-  if (/(?:highlight(?:\s*film|\s*video)?|cinematic\s*(?:wedding\s*)?film|wedding\s*film|हाईलाइट|हाइलाइट|वेडिंग\s*फिल्म)/i.test(scanText)) {
-    addUnique(findStudioMatch(/highlight|wedding\s*film/i) || 'Cinematic Wedding Highlight Film (15-20 Min)');
+  // 7. Highlight Film / Cinematic Video / Wedding Film
+  const cineRe = new RegExp(
+    `(?:${DELIVERABLE_NUM_PREFIX})?(?:highlight(?:\\s*film|\\s*video)?|cinematic\\s*(?:wedding\\s*)?(?:film|video)|wedding\\s*(?:film|video)|हाईलाइट|हाइलाइट|वेडिंग\\s*फिल्म)`,
+    'i'
+  );
+  const cineM = scanText.match(cineRe);
+  if (cineM) {
+    const cnt = normalizeDeliverableCountToken(cineM[1] || '');
+    const spokeHighlight = /highlight|हाईलाइट|हाइलाइट/i.test(cineM[0]);
+    const catMatch = spokeHighlight
+      ? findStudioMatch(/highlight|wedding\s*film/i)
+      : findStudioMatch(/cinematic\s*(?:wedding\s*)?(?:film|video)|wedding\s*film/i);
+    if (catMatch) {
+      addUnique(catMatch);
+    } else if (/cinematic\s*(?:wedding\s*)?video/i.test(cineM[0])) {
+      addUnique(cnt > 1 ? `${cnt} Cinematic Videos` : (cnt === 1 ? '1 Cinematic Video' : 'Cinematic Video'));
+    } else if (cnt > 0 || /wedding\s*film|वेडिंग\s*फिल्म/i.test(cineM[0])) {
+      addUnique('Cinematic Wedding Highlight Film (15-20 Min)');
+    }
   }
 
   // 8. Traditional Long Video (safe since crew roles were stripped above!)
-  if (/(?:traditional\s*(?:long\s*)?(?:video|movie|film)|long\s*video|full\s*(?:length\s*)?(?:wedding\s*)?video|लॉन्ग\s*वीडियो|फुल\s*वीडियो|ट्रेडिशनल\s*(?:वीडियो|मूवी))/i.test(scanText)) {
-    addUnique(findStudioMatch(/traditional|long\s*video/i) || 'Traditional Long Video (2-3 Hours)');
+  const tradVidRe = new RegExp(
+    `(?:${DELIVERABLE_NUM_PREFIX})?(?:traditional\\s*(?:long\\s*)?(?:video|movie|film)|long\\s*video|full\\s*(?:length\\s*)?(?:wedding\\s*)?video|लॉन्ग\\s*वीडियो|फुल\\s*वीडियो|ट्रेडिशनल\\s*(?:वीडियो|मूवी))`,
+    'i'
+  );
+  const tradVidM = scanText.match(tradVidRe);
+  if (tradVidM) {
+    const cnt = normalizeDeliverableCountToken(tradVidM[1] || '');
+    const spokeLong = /long\s*video|full\s*(?:length\s*)?(?:wedding\s*)?video|लॉन्ग|फुल/i.test(tradVidM[0]);
+    const catMatch = spokeLong
+      ? findStudioMatch(/traditional\s*long\s*video|long\s*video/i)
+      : findStudioMatch(/traditional\s*(?:wedding\s*)?(?:video|movie|film)/i);
+    if (catMatch) {
+      addUnique(catMatch);
+    } else if (/traditional\s*video/i.test(tradVidM[0])) {
+      addUnique(cnt > 1 ? `${cnt} Traditional Videos` : (cnt === 1 ? '1 Traditional Video' : 'Traditional Video'));
+    } else {
+      addUnique('Traditional Long Video (2-3 Hours)');
+    }
   }
 
   // 9. Special Deliverables (Save The Date, Same Day Edit, E-Invite, Frame, Calendar)
@@ -1357,15 +1472,17 @@ export function extractDeliverablesFromText(
     addUnique(cnt > 1 ? `${cnt} Framed Photo Prints` : (cnt === 1 ? '1 Framed Photo Print' : 'Custom Framed Photo Print'));
   }
 
-  // 10. Direct Studio Catalog Substring Matches for custom Studio Deliverables (e.g. "Mini Book", "Cloud Gallery")
+  // 10. Direct Studio Catalog Substring Matches for custom Studio Deliverables (e.g. "Mini Book", "Cloud Gallery", or exact single-word title)
+  const scanLower = scanText.replace(/__CREW_ROLE__/g, ' ').toLowerCase();
   for (const stTitle of studioDeliverables) {
     const lowerTitle = String(stTitle || '').toLowerCase().trim();
     if (!lowerTitle || lowerTitle.length < 4) continue;
-    const coreWords = lowerTitle
-      .replace(/\([^)]*\)/g, '')
+    const strippedTitle = lowerTitle.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+    const coreWords = strippedTitle
       .split(/\s+/)
       .filter((w) => w.length >= 4 && !['with', 'from', 'photos', 'video', 'high', 'full', 'custom', 'resolution'].includes(w));
-    if (coreWords.length >= 2 && coreWords.every((w) => scanText.toLowerCase().includes(w))) {
+    const exactPhraseHit = strippedTitle.length >= 4 && scanLower.includes(strippedTitle);
+    if (exactPhraseHit || (coreWords.length >= 2 && coreWords.every((w) => scanLower.includes(w)))) {
       // Skip downgrading an already-extracted specific counted item (e.g. keep "5 Instagram Reels" instead of "3 Instagram Reels")
       const isReelsCatalog = lowerTitle.includes('reel') && matched.some((m) => /\breel/i.test(m));
       const isPhotosCatalog = (lowerTitle.includes('edited') || lowerTitle.includes('photo')) && matched.some((m) => /edited photos/i.test(m));
@@ -1376,16 +1493,17 @@ export function extractDeliverablesFromText(
     }
   }
 
-  // 11. Explicit "Deliverables mein X, Y aur Z" clause tail parser for any arbitrary custom deliverable
-  const delivClauseMatch = scanText.match(/(?:deliverables?|डिलीवरेबल्स?|डिलीवरी)\s*(?:में|मे|mein|in|:|-|हैं|है|rakhna|करने\s*हैं?)?\s*([^.!?\n।]+)/i);
-  if (delivClauseMatch && delivClauseMatch[1]) {
+  // 11. Explicit "Deliverables mein X, Y aur Z" clause tail parser (supports multiple clauses & stops before location/timing/pricing)
+  const delivClauseRe = /(?:deliverables?|डिलीवरेबल्स?|डिलीवरी)\s*(?:में|मे|mein|in|:|-|हैं|है|rakhna|करने\s*हैं?)?\s*([^.!?\n।]+)/gi;
+  for (const delivClauseMatch of scanText.matchAll(delivClauseRe)) {
+    if (!delivClauseMatch[1]) continue;
     const protectedClause = delivClauseMatch[1].replace(/(\d),(?=\d)/g, '$1__NCOMMA__');
     const rawTail = protectedClause
       .replace(/^[\s,:\-]+/, '')
       .replace(/^(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain?)?|करना|करो|करने(?:\s*हैं?)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं?)?)?|करना|करो|करने\s*(?:हैं|है)?)\s*(?:,|$|\s+)/i, '')
       .replace(/^[\s,:\-]+/, '')
-      .replace(/(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain?)?|करना|करो|करने(?:\s*हैं?)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं?)?)?|करना|करो|करने\s*(?:हैं|है)?|rakhna|chahiye|dena|रखना|चाहिए|देना)\s*$/i, '')
-      .replace(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:budget|बजट|price|प्राइस|package|पैकेज|amount|अमाउंट|cost|discount|ऑफर|offer|advance|एडवांस|gst|total|टोटल|रुपये|lakh|लाख|हजार|₹|quotation|quotion|qution|qoutation|mujhe|mujhko|unko|inko|share\s+karna|मुझे|उनको|इनको).*$/i, '')
+      .replace(/(?:add\s*(?:karna|karo|kardo|karne(?:\s*hain?)?|करना|करो|करने(?:\s*हैं?)?)?|ऐड\s*(?:करना|करो|करने(?:\s*हैं?)?)?|करना|करो|करने\s*(?:हैं|है)?|rakhna|chahiye|dena|रखना|चाहिए|देना|rahega|rahegi|milega|milengi)\s*$/i, '')
+      .replace(/(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:budget|बजट|price|प्राइस|package|पैकेज|amount|अमाउंट|cost|discount|ऑफर|offer|advance|एडवांस|gst|total|टोटल|रुपये|lakh|लाख|हजार|₹|quotation|quotion|qution|qoutation|mujhe|mujhko|unko|inko|share\s+karna|location|लोकेशन|venue|वेन्यू|timing|टाइमिंग|date|तारीख|tarikh|baje|बजे|sabhi\s+events|saare\s+events|same\s+venue|मुझे|उनको|इनको).*$/i, '')
       .trim();
 
     if (rawTail && !/^(?:all|add|ऑल|सभी|सारे|ऐड|करने|करना|है|हैं|jo|wo|woh|ye|yeh|mujhe|mujhko|unko|inko)\b/i.test(rawTail)) {
@@ -1395,38 +1513,73 @@ export function extractDeliverablesFromText(
           t
             .replace(/__NCOMMA__/g, ',')
             .replace(/^(?:में|मे|mein|और|aur|and|इसका|उसका|साथ\s*ही|add|ऐड|रखना|चाहिए|देना|करने|करना)\s+/gi, '')
-            .replace(/\s+(?:add|ऐड|करना|करो|करने|रखना|चाहिए|रहेगा|रहेंगी|है|हैं)$/gi, '')
+            .replace(/\s+(?:add|ऐड|करना|करो|करने|रखना|चाहिए|rahega|rahegi|milega|milengi|रहेगा|रहेंगी|है|हैं)$/gi, '')
             .trim()
         )
         .filter((t) => {
           if (!t || t.length < 3) return false;
           if (/^[\d,\s.+₹\-kKlL]+$/i.test(t)) return false;
-          if (/(?:₹|\bbudget\b|बजट|प्राइस|अमाउंट|एडवांस|लख|लाख|हजार|advance|price|amount|total|package|standard\s*crew|alag\s*crew)/i.test(t)) return false;
+          if (/(?:₹|\bbudget\b|बजट|प्राइस|अमाउंट|एडवांस|लख|लाख|हजार|advance|price|amount|total|package|standard\s*crew|alag\s*crew|discount|location|venue|timing|baje)/i.test(t)) return false;
           if (/^(?:__CREW_ROLE__|add|all|ok|karna|karo|karne|rakhna|chahiye|dena|hain?|iska|uska|aur\s+iska|करना|करो|करने|करें|रहेगा|रहेंगी|रखना|चाहिए|देना|इसका|उसका|और\s+इसका|साथ\s+ही)$/i.test(t)) return false;
           return isValidDeliverableItem(t, studioDeliverables);
         });
 
       for (const tok of tokens) {
         const lowerTok = tok.toLowerCase();
-        const alreadyRepresented = matched.some((m) => {
+        const formattedTok = tok.replace(/\b[a-z]/g, (ch) => ch.toUpperCase());
+
+        const exactDuplicate = matched.some((m) => m.toLowerCase() === lowerTok);
+        if (exactDuplicate) continue;
+
+        // Skip adding bare or raw bilingual variants if a standard normalized deliverable
+        // for this exact count & category already exists in matched (e.g. skip "5 Reels" / "5 रील्स" when "5 Instagram Reels" is present)
+        const bareNoun = lowerTok.replace(/^\d+\s*/, '').replace(/^(?:एक|दो|तीन|चार|पांच|पाँच|दस)\s*/, '').trim();
+        const isBareReel = /^(?:reels?|रील्स?|रील|instagram\s*reels?|insta\s*reels?|इंस्टाग्राम\s*रील्स?)$/i.test(bareNoun);
+        const isBarePhoto = /^(?:photos?|images?|pics?|edited\s*photos?|edited\s*images?|फोटो|फ़ोटो|एडिटेड\s*फोटो)$/i.test(bareNoun);
+        const isBareAlbum = /^(?:albums?|photobooks?|एल्बम|फोटोबुक)$/i.test(bareNoun);
+        const isBarePendrive = /^(?:pendrive|pen\s*drive|usb(?:\s*drive)?|पेनड्राइव|पेन\s*ड्राइव)$/i.test(bareNoun);
+
+        const hasAlreadyNormalized = matched.some((m) => {
           const mLow = m.toLowerCase();
-          if (lowerTok.includes('reel') && mLow.includes('reel')) return true;
-          if ((lowerTok.includes('edited') || lowerTok.includes('photo') || lowerTok.includes('फोटो')) && mLow.includes('edited photo')) return true;
-          if ((lowerTok.includes('pendrive') || lowerTok.includes('पेनड्राइव') || lowerTok.includes('usb')) && mLow.includes('pendrive')) return true;
-          if ((lowerTok.includes('raw') || lowerTok.includes('hard drive') || lowerTok.includes('रॉ')) && mLow.includes('raw')) return true;
-          if ((lowerTok.includes('album') || lowerTok.includes('photobook') || lowerTok.includes('एल्बम')) && (mLow.includes('album') || mLow.includes('photobook'))) return true;
-          if ((lowerTok.includes('teaser') || lowerTok.includes('टीज़र')) && mLow.includes('teaser')) return true;
-          if ((lowerTok.includes('highlight') || lowerTok.includes('हाईलाइट')) && mLow.includes('highlight')) return true;
-          if ((lowerTok.includes('long video') || lowerTok.includes('traditional') || lowerTok.includes('वीडियो')) && mLow.includes('long video')) return true;
-          if (lowerTok.includes('save') && mLow.includes('save the date')) return true;
-          if (lowerTok.includes('sde') || (lowerTok.includes('same day') && mLow.includes('same day'))) return true;
-          if ((lowerTok.includes('frame') || lowerTok.includes('फ्रेम')) && mLow.includes('frame')) return true;
-          return mLow === lowerTok;
+          if (isBareReel && mLow.includes('reel')) {
+            const mNum = mLow.match(/^\d+/)?.[0];
+            const tokNum = lowerTok.match(/^\d+/)?.[0];
+            return !tokNum || mNum === tokNum;
+          }
+          if (isBarePhoto && (mLow.includes('photo') || mLow.includes('edited'))) {
+            const mNum = mLow.match(/^\d+/)?.[0];
+            const tokNum = lowerTok.match(/^\d+/)?.[0];
+            return !tokNum || mNum === tokNum;
+          }
+          if (isBareAlbum && (mLow.includes('album') || mLow.includes('photobook'))) {
+            const mNum = mLow.match(/^\d+/)?.[0];
+            const tokNum = lowerTok.match(/^\d+/)?.[0];
+            return !tokNum || mNum === tokNum;
+          }
+          if (isBarePendrive && (mLow.includes('pendrive') || mLow.includes('usb'))) {
+            return true;
+          }
+          return false;
         });
 
-        if (!alreadyRepresented) {
-          addUnique(tok.replace(/\b[a-z]/g, (ch) => ch.toUpperCase()));
+        if (hasAlreadyNormalized) continue;
+
+        // If the user explicitly spoke a custom deliverable (e.g. "1 Same-Day Drone Highlight Reel" or "1 Embossed Linen Box"),
+        // remove any generic catalog defaults that were loosely triggered by words present in this compound
+        if (lowerTok.includes('reel')) {
+          const idx = matched.findIndex((m) => /^(?:3\s+Instagram\s+Reels|Instagram\s+Reels?)$/i.test(m));
+          if (idx !== -1) matched.splice(idx, 1);
         }
+        if (lowerTok.includes('highlight') || lowerTok.includes('cinematic')) {
+          const idx = matched.findIndex((m) => /^(?:Cinematic\s+Wedding\s+Highlight\s+Film\s*\(15-20\s*Min\)|Cinematic\s+Highlight\s+Film)$/i.test(m));
+          if (idx !== -1) matched.splice(idx, 1);
+        }
+        if (lowerTok.includes('album') || lowerTok.includes('photobook')) {
+          const idx = matched.findIndex((m) => /^(?:Custom\s+Printed\s+Coffee\s+Table\s+Album|Coffee\s+Table\s+Album)$/i.test(m));
+          if (idx !== -1) matched.splice(idx, 1);
+        }
+
+        addUnique(formattedTok);
       }
     }
   }
@@ -1462,6 +1615,63 @@ export function mergeDeliverablesSmart(
     }
   }
   return result;
+}
+
+const DELIVERABLE_NOISE_TOKENS = new Set([
+  '1', '2', '3', '4', '5', 'high', 'res', 'resolution', 'full', 'custom', 'printed', 'wedding', 'main',
+  'min', 'mins', 'hour', 'hours', 'hrs', 'all', 'with', 'for', 'and', 'the', 'plus', 'special', 'extra',
+  'footage', 'super', 'fine', 'ultra', 'hd', '4k', 'usb', 'long', 'table', 'coffee', 'best', 'quality', 'data'
+]);
+
+/**
+ * Verifies that a deliverable returned by Gemini is grounded in the user's prompt,
+ * spoken deliverables, or mapped studio shortcuts (so template/catalog items never hallucinate unrequested).
+ */
+function isGeminiDeliverableGrounded(
+  aiItem: string,
+  rawPromptText: string,
+  spokenDeliverables: string[],
+  shortcutDeliverables: string[]
+): boolean {
+  const clean = String(aiItem || '').trim();
+  if (!clean) return false;
+  const low = clean.toLowerCase();
+
+  if (shortcutDeliverables.some((s) => String(s || '').trim().toLowerCase() === low)) {
+    return true;
+  }
+
+  const getMeaningfulTokens = (text: string): string[] =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\u0900-\u097F\s]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length >= 3 && !DELIVERABLE_NOISE_TOKENS.has(t));
+
+  const itemTokens = getMeaningfulTokens(clean);
+  const stemMatch = (tok: string, target: string): boolean => {
+    const base = tok.endsWith('s') && tok.length > 4 ? tok.slice(0, -1) : tok;
+    return target.includes(tok) || target.includes(base);
+  };
+
+  for (const sp of spokenDeliverables) {
+    const spLow = String(sp || '').toLowerCase();
+    if (!spLow) continue;
+    if (spLow === low) return true;
+    const spTokens = getMeaningfulTokens(spLow);
+    if (
+      itemTokens.some((t) => spTokens.some((st) => st === t || st.includes(t) || t.includes(st)))
+    ) {
+      return true;
+    }
+  }
+
+  const promptLow = String(rawPromptText || '').toLowerCase();
+  if (promptLow && itemTokens.length > 0 && itemTokens.some((t) => stemMatch(t, promptLow))) {
+    return true;
+  }
+
+  return false;
 }
 
 interface ScopedShortcutMatch {
@@ -2336,32 +2546,34 @@ export function applyAiTrainingAndVoiceDirectives(doc: any, contextData: any): v
 /**
  * Normalizes Hindi / Marathi counting words and numerals to standard numeric equivalents.
  */
+const HINDI_NUMBER_WORD_MAP: Array<{ regex: RegExp; val: string }> = [
+  { regex: /डेढ़\s*लाख/g, val: '150000' },
+  { regex: /ढाई\s*लाख|अडीच\s*लाख/g, val: '250000' },
+  { regex: /सवा\s*लाख/g, val: '125000' },
+  { regex: /पौने\s*दो\s*लाख/g, val: '175000' },
+  { regex: /एक\s*लाख/g, val: '100000' },
+  { regex: /दो\s*लाख/g, val: '200000' },
+  { regex: /तीन\s*लाख/g, val: '300000' },
+  { regex: /चार\s*लाख/g, val: '400000' },
+  { regex: /पांच\s*लाख/g, val: '500000' },
+  { regex: /दस\s*हजार|दस\s*हज़ार/g, val: '10000' },
+  { regex: /पंद्रह\s*हजार|पंद्रह\s*हज़ार/g, val: '15000' },
+  { regex: /बीस\s*हजार|बीस\s*हज़ार/g, val: '20000' },
+  { regex: /पच्चीस\s*हजार|पच्चीस\s*हज़ार/g, val: '25000' },
+  { regex: /तीस\s*हजार|तीस\s*हज़ार/g, val: '30000' },
+  { regex: /पैंतीस\s*हजार|पैंतीस\s*हज़ार/g, val: '35000' },
+  { regex: /चालीस\s*हजार|चालीस\s*हज़ार/g, val: '40000' },
+  { regex: /पचास\s*हजार|पचास\s*हज़ार/g, val: '50000' },
+  { regex: /साठ\s*हजार|साठ\s*हज़ार/g, val: '60000' },
+  { regex: /सत्तर\s*हजार|सत्तर\s*हज़ार/g, val: '70000' },
+  { regex: /अस्सी\s*हजार|अस्सी\s*हज़ार/g, val: '80000' },
+  { regex: /नब्बे\s*हजार|नब्बे\s*हज़ार/g, val: '90000' }
+];
+
 export function normalizeHindiNumberWords(raw: string): string {
   let s = (raw || '').toLowerCase();
-  const wordMap: Array<{ regex: RegExp; val: string }> = [
-    { regex: /डेढ़\s*लाख/g, val: '150000' },
-    { regex: /ढाई\s*लाख|अडीच\s*लाख/g, val: '250000' },
-    { regex: /सवा\s*लाख/g, val: '125000' },
-    { regex: /पौने\s*दो\s*लाख/g, val: '175000' },
-    { regex: /एक\s*लाख/g, val: '100000' },
-    { regex: /दो\s*लाख/g, val: '200000' },
-    { regex: /तीन\s*लाख/g, val: '300000' },
-    { regex: /चार\s*लाख/g, val: '400000' },
-    { regex: /पांच\s*लाख/g, val: '500000' },
-    { regex: /दस\s*हजार|दस\s*हज़ार/g, val: '10000' },
-    { regex: /पंद्रह\s*हजार|पंद्रह\s*हज़ार/g, val: '15000' },
-    { regex: /बीस\s*हजार|बीस\s*हज़ार/g, val: '20000' },
-    { regex: /पच्चीस\s*हजार|पच्चीस\s*हज़ार/g, val: '25000' },
-    { regex: /तीस\s*हजार|तीस\s*हज़ार/g, val: '30000' },
-    { regex: /पैंतीस\s*हजार|पैंतीस\s*हज़ार/g, val: '35000' },
-    { regex: /चालीस\s*हजार|चालीस\s*हज़ार/g, val: '40000' },
-    { regex: /पचास\s*हजार|पचास\s*हज़ार/g, val: '50000' },
-    { regex: /साठ\s*हजार|साठ\s*हज़ार/g, val: '60000' },
-    { regex: /सत्तर\s*हजार|सत्तर\s*हज़ार/g, val: '70000' },
-    { regex: /अस्सी\s*हजार|अस्सी\s*हज़ार/g, val: '80000' },
-    { regex: /नब्बे\s*हजार|नब्बे\s*हज़ार/g, val: '90000' }
-  ];
-  for (const item of wordMap) {
+  if (!/[\u0900-\u097F]/.test(s)) return s;
+  for (const item of HINDI_NUMBER_WORD_MAP) {
     s = s.replace(item.regex, item.val);
   }
   return s;
@@ -2450,7 +2662,7 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
     accommodationCharges = parseCurrencyAmount(stayMatch[1]);
   }
 
-  // 3. Discount calculation (Check early to cleanly isolate discount amount from package price)
+  // 3. Discount calculation (Handles percentage, explicit flat discount, and "X ka diya hai aur discount karke Y mein" final-price phrasing)
   const discPctMatch = text.match(/([0-9.]+)\s*%\s*(?:discount|off|छूट)/i) || 
                        text.match(/(?:discount|off|छूट)[:\s]*([0-9.]+)\s*%/i);
   let discPct = 0;
@@ -2458,11 +2670,27 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
     discPct = parseFloat(discPctMatch[1]) || 0;
   }
 
-  const discFlatMatch = text.match(new RegExp(`${amtPattern}\\s*(?:discount|off|minus|डिस्काउंट|छूट)(?!\\s*[%])`, 'i')) ||
-                        text.match(new RegExp(`(?:discount|off|minus|concession|less|छूट|कम|डिस्काउंट)[:\\s]+${amtPattern}(?!\\s*[%])`, 'i'));
+  const discFlatMatch =
+    text.match(new RegExp(`${amtPattern}\\s*(?:ka|ke|ki|का|के|की)?\\s*(?:flat\\s*)?(?:discount|off|minus|concession|डिस्काउंट|छूट)(?!\\s*%)`, 'i')) ||
+    text.match(new RegExp(`(?:discount|off|minus|concession|less|छूट|कम|डिस्काउंट)(?:\\s*(?:of|hai|is|ka|diya|mila|:|\\-))+\\s*${amtPattern}(?!\\s*%)`, 'i'));
   if (discFlatMatch) {
     discountAmount = parseCurrencyAmount(discFlatMatch[1]);
   }
+
+  let afterDiscountPrice = 0;
+  const afterDiscMatch =
+    text.match(new RegExp(`(?:discount|less|छूट|कम|डिस्काउंट)\\s*(?:karke|kar\\s*ke|deke|de\\s*ke|dekar|करके|देकर|देके|के\\s*बाद|after)\\s*(?:final|offer|deal|net|कुल)?[:\\s]*(?:mein|me|में)?[:\\s]*${amtPattern}(?!\\s*%)`, 'i')) ||
+    text.match(new RegExp(`(?:after|with)\\s*(?:the\\s*)?(?:discount|छूट|डिस्काउंट)[:\\s]*(?:final\\s*)?${amtPattern}(?!\\s*%)`, 'i')) ||
+    text.match(new RegExp(`${amtPattern}\\s*(?:mein|me|में|at|for)\\s*(?:discount\\s*karke|final\\s*(?:kiya|hua|diya)|settle\\s*(?:kiya|hua)|done\\s*(?:kiya|hua)|usko\\s+discount\\s*karke\\s*diya)`, 'i'));
+  if (afterDiscMatch) {
+    afterDiscountPrice = parseCurrencyAmount(afterDiscMatch[1]);
+  }
+
+  // Track advance/token amount early so fallback basePrice search never accidentally picks the advance amount
+  const advanceSkipMatch =
+    text.match(new RegExp(`(?:advance|token|booking|टोकन|एडवांस)\\s*(?:amount|money|रुपये|है|रहेगा|is|:)?[:\\s]*${amtPattern}(?!\\s*%)`, 'i')) ||
+    text.match(new RegExp(`${amtPattern}\\s*(?:advance|token|booking|टोकन|एडवांस)`, 'i'));
+  const advanceCandidateAmt = advanceSkipMatch ? parseCurrencyAmount(advanceSkipMatch[1]) : 0;
 
   // 4. Additional charges (album, drone add-on)
   const albumMatch = text.match(new RegExp(`${amtPattern}\\s*(?:album|photobook|एल्बम)`, 'i')) ||
@@ -2511,26 +2739,46 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
     }
   }
 
-  // 7. Direct package / regular / budget price
+  // 7. Direct package / regular / budget / "ka diya hai" price
   if (!basePrice) {
-    const pkgMatch = text.match(new RegExp(`${amtPattern}\\s*(?:का\\s*पैकेज|का\\s*बजट|का\\s*कोटेशन|के\\s*लिए|ka\\s*package|ka\\s*budget|package|budget|बजट|पैकेज)`, 'i')) ||
+    const pkgMatch = text.match(new RegExp(`${amtPattern}\\s*(?:का\\s*(?:पैकेज|बजट|कोटेशन|दिया|है|था)|के\\s*लिए|ka\\s*(?:package|budget|quotation|diya|hai|tha|rate)|package|budget|बजट|पैकेज)`, 'i')) ||
                      text.match(new RegExp(`(?:package|budget|total|price|cost|investment|बजट|पैकेज|कोटेशन|अमाउंट|प्राइस)\\s*(?:है|is|ka|ke|का|के|:|\\s)*\\s*${amtPattern}(?!\\s*[%])`, 'i'));
     if (pkgMatch) {
-      basePrice = parseCurrencyAmount(pkgMatch[1]);
+      const candidatePkg = parseCurrencyAmount(pkgMatch[1]);
+      if (candidatePkg > 0 && candidatePkg !== afterDiscountPrice && candidatePkg !== discountAmount) {
+        basePrice = candidatePkg;
+      }
     }
   }
 
-  // 8. Fallback to any prominent amount in text (excluding discount amount)
+  // 8. Fallback to any prominent amount in text (excluding discount amount, travel, advance, after-discount final price)
+  const allProminentNumbers = [...text.matchAll(new RegExp(amtPattern, 'gi'))]
+    .map(m => parseCurrencyAmount(m[1]))
+    .filter(n => n >= 5000 && n !== discountAmount && n !== travelCharges && n !== advanceCandidateAmt);
+
   if (!basePrice) {
-    const numbers = [...text.matchAll(new RegExp(amtPattern, 'gi'))]
-      .map(m => parseCurrencyAmount(m[1]))
-      .filter(n => n >= 15000 && n !== discountAmount && n !== travelCharges);
-    if (numbers.length > 0) {
-      basePrice = numbers[0];
+    const baseCandidates = allProminentNumbers.filter(n => n !== afterDiscountPrice);
+    if (baseCandidates.length > 0) {
+      basePrice = baseCandidates[0];
+    } else if (afterDiscountPrice > 0) {
+      basePrice = afterDiscountPrice;
     }
   }
 
   if (!basePrice) basePrice = defaultPrice;
+
+  // Apply explicit "after discount Y" difference against larger basePrice X ("60,000 ka diya hai aur discount karke 54,000 mein")
+  if (afterDiscountPrice > 0) {
+    if (basePrice <= afterDiscountPrice) {
+      const largerOrig = allProminentNumbers.find(n => n > afterDiscountPrice && n <= afterDiscountPrice * 4);
+      if (largerOrig) {
+        basePrice = largerOrig;
+      }
+    }
+    if (basePrice > afterDiscountPrice && afterDiscountPrice >= basePrice * 0.25) {
+      discountAmount = basePrice - afterDiscountPrice;
+    }
+  }
 
   // Apply percentage discount if found
   if (discPct > 0 && !discountAmount) {
@@ -2548,6 +2796,17 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
         basePrice = reg;
         discountAmount = reg - off;
       }
+    }
+  }
+
+  // Safety guard: discountAmount must never exceed basePrice
+  if (discountAmount >= basePrice && basePrice > 0) {
+    const largerBase = allProminentNumbers.find(n => n > discountAmount);
+    if (largerBase) {
+      basePrice = largerBase;
+      discountAmount = Math.max(0, largerBase - (afterDiscountPrice || basePrice));
+    } else {
+      discountAmount = 0;
     }
   }
 
@@ -2635,6 +2894,282 @@ export function evaluatePricingMethod(rawText: string, defaultPrice: number = 15
     note: calculationNote,
     steps
   };
+}
+
+function formatClockTimeToken(rawHourMin: string, explicitMeridiem?: string, hintWord?: string): string {
+  const m = String(rawHourMin || '').trim().match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (!m) return '';
+  let hr = parseInt(m[1], 10);
+  const min = m[2] ? m[2] : '00';
+  if (isNaN(hr) || hr < 0 || hr > 23) return '';
+
+  let meridiem = (explicitMeridiem || '').toUpperCase().trim();
+  if (!meridiem) {
+    if (hr === 0) {
+      hr = 12;
+      meridiem = 'AM';
+    } else if (hr > 12) {
+      hr = hr - 12;
+      meridiem = 'PM';
+    } else if (hintWord) {
+      const h = hintWord.toLowerCase();
+      if (/^(?:subah|morning|सुबह)$/i.test(h)) {
+        meridiem = 'AM';
+      } else if (/^(?:dopahar|afternoon|shaam|sham|evening|raat|night|दोपहर|शाम|रात)$/i.test(h)) {
+        meridiem = 'PM';
+      }
+    }
+  } else if (hr > 12) {
+    hr = hr - 12;
+  }
+
+  return meridiem ? `${hr}:${min} ${meridiem}` : `${hr}:${min}`;
+}
+
+export function extractTimingFromSnippet(snippet: string): {
+  startTime: string;
+  endTime: string;
+  durationSlot?: string;
+} {
+  const clean = String(snippet || '').replace(/[०-९]/g, (d) => String('०१२३४५६७८९'.indexOf(d))).trim();
+  if (!clean) return { startTime: '', endTime: '' };
+
+  let startTime = '';
+  let endTime = '';
+
+  const periodRe = '(morning|subah|सुबह|afternoon|dopahar|दोपहर|evening|shaam|sham|शाम|night|raat|रात)';
+
+  // 1. Explicit ranges ("10 AM to 5 PM", "subah 9 se shaam 4", "10 se 5 baje", "10:30am - 4pm")
+  const rangeRegex = new RegExp(
+    `(?:(?:${periodRe})\\s*)?(\\d{1,2}(?::\\d{2})?)\\s*(am|pm|a\\.m\\.|p\\.m\\.|baje|बजे)?\\s*(?:-|–|to|till|se|से)\\s*(?:(?:${periodRe})\\s*)?(\\d{1,2}(?::\\d{2})?)\\s*(am|pm|a\\.m\\.|p\\.m\\.|baje|बजे)?`,
+    'gi'
+  );
+  for (const m of clean.matchAll(rangeRegex)) {
+    const [full, p1, n1, u1Raw, p2, n2, u2Raw] = m;
+    const afterText = clean.slice((m.index || 0) + full.length, (m.index || 0) + full.length + 18);
+    // Reject date ranges ("14 to 16 December", "14 - 16 Dec") or currency ranges
+    if (/^\s*(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|tarikh|तारीख|k\b|lakh|000)/i.test(afterText)) {
+      continue;
+    }
+    const u1 = (u1Raw || '').replace(/\./g, '').toLowerCase();
+    const u2 = (u2Raw || '').replace(/\./g, '').toLowerCase();
+    const hasTimeSignal = Boolean(p1 || p2 || /am|pm|baje|बजे/.test(u1) || /am|pm|baje|बजे/.test(u2) || n1.includes(':') || n2.includes(':'));
+    if (!hasTimeSignal) continue;
+
+    const hr1 = parseInt(n1.split(':')[0], 10);
+    const hr2 = parseInt(n2.split(':')[0], 10);
+    if (hr1 < 1 || hr1 > 23 || hr2 < 1 || hr2 > 23) continue;
+
+    let mer1 = u1 === 'am' || u1 === 'pm' ? u1.toUpperCase() : '';
+    let mer2 = u2 === 'am' || u2 === 'pm' ? u2.toUpperCase() : '';
+    if (!mer1 && !mer2 && !p1 && !p2 && /baje|बजे/.test(u1 + u2)) {
+      if (hr1 >= 6 && hr1 <= 11 && hr2 >= 1 && hr2 < hr1) {
+        mer1 = 'AM';
+        mer2 = 'PM';
+      } else if (hr1 >= 6 && hr1 <= 11 && hr2 <= 11 && hr2 > hr1) {
+        mer1 = 'AM';
+        mer2 = 'AM';
+      }
+    }
+    startTime = formatClockTimeToken(n1, mer1, p1);
+    endTime = formatClockTimeToken(n2, mer2, p2);
+    if (startTime && endTime) break;
+  }
+
+  // 2. Keyed startTime / endTime format
+  if (!startTime) {
+    const sM = clean.match(/(?:startTime|start_time|start|from|timing)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?)\s*(AM|PM|am|pm)?["']?/i);
+    const eM = clean.match(/(?:endTime|end_time|end|till)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?)\s*(AM|PM|am|pm)?["']?/i);
+    if (sM) startTime = formatClockTimeToken(sM[1], sM[2]);
+    if (eM) endTime = formatClockTimeToken(eM[1], eM[2]);
+  }
+
+  // 3. Single explicit start time ("evening 7 baje", "subah 9 baje", "7 pm onwards", "at 7:30 pm", "7 baje se")
+  if (!startTime) {
+    const singleRegex = new RegExp(
+      `(?:(${periodRe})\\s*(?:ko\\s*|mein\\s*|me\\s*|at\\s*)?|\\b(?:at|from|timing|time)\\s*[:\\-]?\\s*)?(\\d{1,2}(?::\\d{2})?)\\s*(?:(am|pm|a\\.m\\.|p\\.m\\.|baje|बजे)(?:\\s*(?:onwards|sharp|se|से))?|(onwards|sharp))`,
+      'gi'
+    );
+    for (const m of clean.matchAll(singleRegex)) {
+      const [full, pWord, , numStr, unitRaw, postCue] = m;
+      const beforeSlice = clean.slice(Math.max(0, (m.index || 0) - 10), m.index || 0);
+      const afterSlice = clean.slice((m.index || 0) + full.length, (m.index || 0) + full.length + 16);
+      if (/(?:₹|rs\.?|,)\s*$/i.test(beforeSlice)) continue;
+      if (/^\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|000|k\b|lakh|days?|hours?|hrs?|min)/i.test(afterSlice)) {
+        continue;
+      }
+      const unit = (unitRaw || '').replace(/\./g, '').toLowerCase();
+      const hasClockCue = Boolean(unit === 'am' || unit === 'pm' || unit === 'baje' || unit === 'बजे' || postCue || numStr.includes(':') || pWord);
+      if (!hasClockCue) continue;
+      const hr = parseInt(numStr.split(':')[0], 10);
+      if (hr < 1 || hr > 23) continue;
+      let mer = unit === 'am' || unit === 'pm' ? unit.toUpperCase() : '';
+      if (!mer && !pWord && /baje|बजे/.test(unit)) {
+        const ctxNear = (beforeSlice + ' ' + afterSlice).toLowerCase();
+        if (/(?:subah|morning|सुबह)/i.test(ctxNear)) mer = 'AM';
+        else if (/(?:shaam|sham|evening|raat|night|dopahar|afternoon|शाम|रात|दोपहर)/i.test(ctxNear)) mer = 'PM';
+      }
+      startTime = formatClockTimeToken(numStr, mer, pWord);
+      if (startTime) break;
+    }
+  }
+
+  // 4. Time-of-day durationSlot ("Morning", "Afternoon", "Evening", "Night", "Full Day")
+  // Mask out ceremony titles like "Sangeet Night" / "Cocktail Night" unless paired with timing context
+  // When an explicit start+end clock range spans two different periods (e.g. "subah 9 se shaam 4"), skip single-slot label
+  const slotScan = clean
+    .replace(/\b(?:sangeet|cocktail|reception|bachelor|hens)\s+night\b/gi, ' ')
+    .replace(/\bnight\s+(?:stay|stays)\b/gi, ' ');
+
+  const hasMorningSlot = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:morning|subah|सुबह)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(slotScan);
+  const hasAfternoonSlot = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:afternoon|dopahar|दोपहर)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(slotScan);
+  const hasEveningSlot = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:evening|shaam|sham|शाम)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(slotScan);
+  const hasNightSlot = /(?:^|[^\u0900-\u097Fa-zA-Z0-9])(?:night|raat|रात)(?=[^\u0900-\u097Fa-zA-Z0-9]|$)/i.test(slotScan);
+  const slotCount = [hasMorningSlot, hasAfternoonSlot, hasEveningSlot, hasNightSlot].filter(Boolean).length;
+
+  let durationSlot: string | undefined;
+  if (/(?:full\s*day|पूरा\s*दिन|पूरे\s*दिन|pura\s*din)/i.test(slotScan)) {
+    durationSlot = 'Full Day';
+  } else if (!(startTime && endTime && slotCount >= 2)) {
+    if (hasMorningSlot) durationSlot = 'Morning';
+    else if (hasAfternoonSlot) durationSlot = 'Afternoon';
+    else if (hasEveningSlot) durationSlot = 'Evening';
+    else if (hasNightSlot) durationSlot = 'Night';
+  }
+
+  return { startTime, endTime, ...(durationSlot ? { durationSlot } : {}) };
+}
+
+function syncEventTimingsFromPrompt(
+  items: any[],
+  rawPromptNotes: string,
+  studioEventNames: string[],
+  studioDefaultFunctions: any[]
+): any[] {
+  if (!Array.isArray(items) || items.length === 0) return items;
+
+  const eventConcepts: Array<{ re: RegExp; canonical: string }> = [
+    { re: /\b(?:haldi|pithi)\b|हल्दी|पीठी/i, canonical: 'haldi' },
+    { re: /\b(?:sangeet)\b|संगीत/i, canonical: 'sangeet' },
+    { re: /\b(?:mehendi|mehndi|mehandi)\b|मेहंदी|मेंहदी/i, canonical: 'mehendi' },
+    { re: /\b(?:wedding|marriage|pheras|varmala|baraat)\b|शादी|लग्न|विवाह|फेरे/i, canonical: 'wedding' },
+    { re: /\b(?:engagement|ring\s*ceremony|roka|sagai)\b|सगाई|रिंग\s*सेरेमनी|रोका/i, canonical: 'engagement' },
+    { re: /\b(?:reception)\b|रिसेप्शन/i, canonical: 'reception' },
+    { re: /\b(?:cocktail)\b|कॉकटेल/i, canonical: 'cocktail' },
+    { re: /\b(?:pool\s*party)\b|पूल\s*पार्टी/i, canonical: 'pool_party' },
+    { re: /\b(?:home\s*entry)\b|गृह\s*प्रवेश/i, canonical: 'home_entry' },
+    { re: /\b(?:mayra)\b|मायरा/i, canonical: 'mayra' },
+    { re: /\b(?:ganesh\s*puja|puja|pooja)\b|गणेश\s*पूजा/i, canonical: 'ganesh_puja' }
+  ];
+
+  const getConceptKeys = (name: string): string[] => {
+    const keys = new Set<string>();
+    const lower = String(name || '').toLowerCase();
+    for (const part of lower.split(/\s*(?:\+|&|\band\b|\/)\s*/i)) {
+      const p = part.trim();
+      if (!p) continue;
+      keys.add(p);
+      const resolved = resolveStudioFunctionName(p, studioEventNames, studioDefaultFunctions).toLowerCase();
+      if (resolved) keys.add(resolved);
+      for (const ec of eventConcepts) {
+        if (ec.re.test(p) || ec.re.test(resolved)) keys.add(ec.canonical);
+      }
+    }
+    return Array.from(keys);
+  };
+
+  const clauses = String(rawPromptNotes || '')
+    .split(/(?:\r?\n|[.;।|]|,|\s+(?:और|aur|and|&|फिर|then|after\s*that)\s+)/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const clauseTimings = clauses.map((cl) => ({
+    text: cl,
+    keys: new Set(
+      eventConcepts.filter((ec) => ec.re.test(cl)).map((ec) => ec.canonical)
+    ),
+    lower: cl.toLowerCase(),
+    timing: extractTimingFromSnippet(cl)
+  }));
+
+  return items.map((fn: any) => {
+    let startTime = String(fn.startTime || '').trim();
+    let endTime = String(fn.endTime || '').trim();
+    let durationSlot = fn.durationSlot && fn.durationSlot !== 'None' ? String(fn.durationSlot).trim() : '';
+
+    if (fn.time && (!startTime || !endTime)) {
+      const parsedTime = extractTimingFromSnippet(String(fn.time));
+      if (!startTime && parsedTime.startTime) startTime = parsedTime.startTime;
+      if (!endTime && parsedTime.endTime) endTime = parsedTime.endTime;
+      if (!durationSlot && parsedTime.durationSlot) durationSlot = parsedTime.durationSlot;
+    }
+
+    if (!startTime || !durationSlot) {
+      const fnKeys = getConceptKeys(fn.name || '');
+      const matchedClauses = clauseTimings.filter((ct) =>
+        fnKeys.some((k) => ct.keys.has(k) || (k.length >= 4 && ct.lower.includes(k)))
+      );
+      for (const mc of matchedClauses) {
+        if (!startTime && mc.timing.startTime) {
+          startTime = mc.timing.startTime;
+          if (!endTime && mc.timing.endTime) endTime = mc.timing.endTime;
+        }
+        if (!endTime && mc.timing.endTime && (!startTime || startTime === mc.timing.startTime)) {
+          endTime = mc.timing.endTime;
+        }
+        if (!durationSlot && mc.timing.durationSlot) {
+          durationSlot = mc.timing.durationSlot;
+        }
+      }
+
+      if (items.length === 1 && !startTime && !durationSlot && rawPromptNotes) {
+        const wholeTiming = extractTimingFromSnippet(rawPromptNotes);
+        if (!startTime && wholeTiming.startTime) startTime = wholeTiming.startTime;
+        if (!endTime && wholeTiming.endTime) endTime = wholeTiming.endTime;
+        if (!durationSlot && wholeTiming.durationSlot) durationSlot = wholeTiming.durationSlot;
+      }
+    }
+
+    return {
+      ...fn,
+      startTime,
+      endTime,
+      ...(durationSlot ? { durationSlot } : {})
+    };
+  });
+}
+
+function reconcileSpokenPricing(
+  pricingPage: any,
+  rawPromptNotes: string
+): void {
+  if (!pricingPage || !rawPromptNotes) return;
+  const evalRes = evaluatePricingMethod(rawPromptNotes, 0);
+  if (evalRes.basePrice <= 0) return;
+
+  const curBase = Number(pricingPage.basePrice || 0);
+  const curDisc = Number(pricingPage.discountAmount || 0);
+
+  if (evalRes.discountAmount > 0 && evalRes.basePrice > evalRes.discountAmount) {
+    const evalNet = evalRes.basePrice - evalRes.discountAmount;
+    const curNet = curBase - curDisc;
+    // Fix if AI confused net price for basePrice, forgot discount, or put final offer price into discountAmount
+    if (
+      curBase <= 0 ||
+      curDisc <= 0 ||
+      curDisc >= curBase ||
+      (curBase === evalNet && curDisc === 0) ||
+      Math.abs(curNet - evalNet) > 100
+    ) {
+      pricingPage.basePrice = evalRes.basePrice;
+      pricingPage.discountAmount = evalRes.discountAmount;
+      if (!pricingPage.note) {
+        pricingPage.note = evalRes.note;
+      }
+    }
+  } else if (curBase <= 0 && evalRes.basePrice > 0) {
+    pricingPage.basePrice = evalRes.basePrice;
+  }
 }
 
 /**
@@ -2825,21 +3360,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     return '';
   };
 
-  const extractTimesFromSnippet = (snippet: string): { startTime: string; endTime: string } => {
-    let startTime = '';
-    let endTime = '';
-    const rangeM = snippet.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(?:-|to|से)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))/i);
-    if (rangeM) {
-      startTime = rangeM[1].toUpperCase().trim();
-      endTime = rangeM[2].toUpperCase().trim();
-    } else {
-      const sM = snippet.match(/(?:startTime|start_time|start|from|timing)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
-      const eM = snippet.match(/(?:endTime|end_time|end|till)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
-      if (sM) startTime = sM[1].trim();
-      if (eM) endTime = eM[1].trim();
-    }
-    return { startTime, endTime };
-  };
+  const extractTimesFromSnippet = (snippet: string) => extractTimingFromSnippet(snippet);
 
   const extractCrewFromSnippet = (snippet: string): Array<{ name: string; qty: number }> => {
     return extractCrewRolesFromText(snippet, studioCrewRoles);
@@ -2874,10 +3395,11 @@ export function fallbackHeuristicExtractor(contextData: any) {
   let pricingNote = evaluatedPricing.note;
   let paymentSteps = evaluatedPricing.steps;
 
-  // Global custom times fallback
+  // Global custom times fallback (used strictly when <= 1 event so multi-event timings NEVER leak!)
   const globalTimes = extractTimesFromSnippet(userNotes);
   const customStartTime = globalTimes.startTime;
   const customEndTime = globalTimes.endTime;
+  const customDurationSlot = globalTimes.durationSlot || '';
 
   // Check studio shortcuts (scoped per ceremony vs global!) for crew, deliverables & pricing
   const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
@@ -3083,6 +3605,9 @@ export function fallbackHeuristicExtractor(contextData: any) {
   let lastMonthYear: { monthIdx: number; year: number } | null = null;
   let pendingDateForNextEvent: string | null = null;
   let pendingLocationForNextEvent: string | null = null;
+  let pendingTimingForNextEvent: { startTime: string; endTime: string; durationSlot?: string } | null = null;
+  const totalEventClausesInNotes = sequentialClauses.filter(c => findEventsInText(c.text).length > 0).length;
+  const allowGlobalTimeFallback = totalEventClausesInNotes <= 1;
   const globalModifierCrew: Array<{ name: string; qty: number }> = [];
   const globalModifierRoleSet = new Set<string>();
   const preWedClauses: string[] = [];
@@ -3186,11 +3711,14 @@ export function fallbackHeuristicExtractor(contextData: any) {
         }
       }
 
-      if (clauseTimes.startTime && functions.length > 0 && !functions[functions.length - 1].startTime) {
-        functions[functions.length - 1].startTime = clauseTimes.startTime;
-      }
-      if (clauseTimes.endTime && functions.length > 0 && !functions[functions.length - 1].endTime) {
-        functions[functions.length - 1].endTime = clauseTimes.endTime;
+      if (clauseTimes.startTime || clauseTimes.endTime || clauseTimes.durationSlot) {
+        if (functions.length > 0 && !functions[functions.length - 1].startTime && !functions[functions.length - 1].durationSlot && !clauseResolvedDate && !pendingDateForNextEvent) {
+          if (clauseTimes.startTime) functions[functions.length - 1].startTime = clauseTimes.startTime;
+          if (clauseTimes.endTime) functions[functions.length - 1].endTime = clauseTimes.endTime;
+          if (clauseTimes.durationSlot) functions[functions.length - 1].durationSlot = clauseTimes.durationSlot;
+        } else {
+          pendingTimingForNextEvent = clauseTimes;
+        }
       }
 
       if (clauseResolvedDate) {
@@ -3225,6 +3753,11 @@ export function fallbackHeuristicExtractor(contextData: any) {
     const effectiveCardLoc = clauseLoc || pendingLocationForNextEvent || location || '';
     pendingLocationForNextEvent = null;
 
+    const cardStartTime = clauseTimes.startTime || pendingTimingForNextEvent?.startTime || (allowGlobalTimeFallback ? customStartTime : '');
+    const cardEndTime = clauseTimes.endTime || pendingTimingForNextEvent?.endTime || (allowGlobalTimeFallback ? customEndTime : '');
+    const cardDurationSlot = clauseTimes.durationSlot || pendingTimingForNextEvent?.durationSlot || (allowGlobalTimeFallback ? customDurationSlot : '');
+    pendingTimingForNextEvent = null;
+
     const spanStart = eventsInClause[0].startIdx;
     const spanEnd = eventsInClause[eventsInClause.length - 1].endIdx;
     const betweenEventsText = clause.slice(spanStart, spanEnd);
@@ -3243,8 +3776,9 @@ export function fallbackHeuristicExtractor(contextData: any) {
           name: combinedTitle,
           date: effectiveCardDate || 'Date Not Fixed',
           dateNotFixed: !effectiveCardDate || effectiveCardDate === 'Date Not Fixed',
-          startTime: clauseTimes.startTime || customStartTime,
-          endTime: clauseTimes.endTime || customEndTime,
+          startTime: cardStartTime,
+          endTime: cardEndTime,
+          ...(cardDurationSlot ? { durationSlot: cardDurationSlot } : {}),
           location: effectiveCardLoc,
           _explicitCrew: clauseCrew.length > 0 ? [...clauseCrew] : undefined,
           requirements: clauseCrew.length > 0 ? [...clauseCrew] : [],
@@ -3276,8 +3810,9 @@ export function fallbackHeuristicExtractor(contextData: any) {
             existingDatedMatch.requirements = [...baseReqs];
           }
           if (!existingDatedMatch.location && effectiveCardLoc) existingDatedMatch.location = effectiveCardLoc;
-          if (!existingDatedMatch.startTime && clauseTimes.startTime) existingDatedMatch.startTime = clauseTimes.startTime;
-          if (!existingDatedMatch.endTime && clauseTimes.endTime) existingDatedMatch.endTime = clauseTimes.endTime;
+          if (!existingDatedMatch.startTime && cardStartTime) existingDatedMatch.startTime = cardStartTime;
+          if (!existingDatedMatch.endTime && cardEndTime) existingDatedMatch.endTime = cardEndTime;
+          if (!existingDatedMatch.durationSlot && cardDurationSlot) existingDatedMatch.durationSlot = cardDurationSlot;
         } else if (!resolvedIsNotFixed && existingUndatedMatch && !alreadySameNameAndDate) {
           existingUndatedMatch.date = resolvedDate;
           existingUndatedMatch.dateNotFixed = false;
@@ -3290,16 +3825,18 @@ export function fallbackHeuristicExtractor(contextData: any) {
             existingUndatedMatch.requirements = [...baseReqs];
           }
           if (!existingUndatedMatch.location && effectiveCardLoc) existingUndatedMatch.location = effectiveCardLoc;
-          if (!existingUndatedMatch.startTime && clauseTimes.startTime) existingUndatedMatch.startTime = clauseTimes.startTime;
-          if (!existingUndatedMatch.endTime && clauseTimes.endTime) existingUndatedMatch.endTime = clauseTimes.endTime;
+          if (!existingUndatedMatch.startTime && cardStartTime) existingUndatedMatch.startTime = cardStartTime;
+          if (!existingUndatedMatch.endTime && cardEndTime) existingUndatedMatch.endTime = cardEndTime;
+          if (!existingUndatedMatch.durationSlot && cardDurationSlot) existingUndatedMatch.durationSlot = cardDurationSlot;
         } else if (!alreadySameNameAndDate) {
           functions.push({
             id: `func-ai-${functions.length + 1}`,
             name: hit.resolvedName,
             date: resolvedDate,
             dateNotFixed: resolvedIsNotFixed,
-            startTime: clauseTimes.startTime || customStartTime,
-            endTime: clauseTimes.endTime || customEndTime,
+            startTime: cardStartTime,
+            endTime: cardEndTime,
+            ...(cardDurationSlot ? { durationSlot: cardDurationSlot } : {}),
             location: effectiveCardLoc,
             _explicitCrew: clauseCrew.length > 0 ? [...clauseCrew] : undefined,
             requirements: clauseCrew.length > 0 ? [...clauseCrew] : [],
@@ -3320,6 +3857,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
       dateNotFixed: isDateNotFixed,
       startTime: customStartTime,
       endTime: customEndTime,
+      ...(customDurationSlot ? { durationSlot: customDurationSlot } : {}),
       location: location || '',
       requirements: [],
       notes: ''
@@ -3499,14 +4037,6 @@ export function fallbackHeuristicExtractor(contextData: any) {
   } else if (shortcutDeliverables.length > 0 || spokenDeliverables.length > 0) {
     deliverables = mergeDeliverablesSmart(shortcutDeliverables, spokenDeliverables, true)
       .filter((item) => isValidDeliverableItem(item, studioDeliverables));
-  }
-
-  if (deliverables.length === 0) {
-    if (studioDeliverables.length > 0) {
-      deliverables = studioDeliverables.slice(0, 6);
-    } else {
-      deliverables = [...DEFAULT_EXTRACTED_DELIVERABLES];
-    }
   }
 
   const studioSpecialAddons: string[] = Array.isArray(studioSettings?.specialAddons)
@@ -3759,9 +4289,18 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
         const fullCatalog1 = studioDelivs1.length > 0 ? studioDelivs1 : DEFAULT_EXTRACTED_DELIVERABLES;
         normDoc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...fullCatalog1], spokenDelivs1, true)
           .filter((item: string) => isValidDeliverableItem(item, fullCatalog1));
-      } else if (shortcutDelivs1.length > 0 || spokenDelivs1.length > 0 || rawRootDelivs.length > 0) {
-        // Prevent baseSchema demo deliverables from leaking alongside triggered shortcut or spoken deliverables
-        normDoc.deliverablesPage.selectedItems = [...rawRootDelivs];
+      } else if (hasCustomAllDeliv1) {
+        normDoc.deliverablesPage.selectedItems = mergeDeliverablesSmart([...shortcutDelivs1], spokenDelivs1, true)
+          .filter((item: string) => isValidDeliverableItem(item, studioDelivs1));
+      } else {
+        const groundedRootDelivs = rawRootDelivs.filter((item: string) =>
+          isGeminiDeliverableGrounded(item, rawPromptOrAll1, spokenDelivs1, shortcutDelivs1)
+        );
+        normDoc.deliverablesPage.selectedItems = mergeDeliverablesSmart(
+          groundedRootDelivs,
+          [...shortcutDelivs1, ...spokenDelivs1],
+          true
+        ).filter((item: string) => isValidDeliverableItem(item, studioDelivs1));
       }
     }
     normDoc.pageSequence = syncShootPageInSequence(normDoc.pageSequence, Boolean(normDoc.shootDetails?.visible));
@@ -3806,6 +4345,14 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
               { name: resolveStudioCrewRole('Cinematographer', studioCrewRoles), qty: 1 }
             ]
       }));
+      if (!isDirectJson) {
+        normDoc.functionsPage.items = syncEventTimingsFromPrompt(
+          normDoc.functionsPage.items,
+          rawPromptOrAll1,
+          studioEventNames,
+          studioDefaultFunctions
+        );
+      }
     }
 
     // ⚡ MANDATE: Resolve single primary cover location (prefer spoken location, never let base template Mumbai leak)
@@ -3871,12 +4418,12 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
 
     // Sanitize coupleName (prevent invalid pronouns/punctuation & enforce explicit spoken prompt name priority)
     const rawLeadFallback = String(contextData?.lead_info?.name || '').trim();
-    const leadFallbackName = rawLeadFallback && !isInvalidCoupleName(rawLeadFallback) ? rawLeadFallback : '';
+    const leadFallbackName = rawLeadFallback && !isInvalidCoupleName(rawLeadFallback) ? cleanCoupleCandidateEdges(rawLeadFallback) : '';
     const spokenPromptCouple = !isDirectJson ? extractSpokenCoupleName(rawPromptNotes, studioEventNames) : '';
 
-    const coverCoupleRaw = String(normDoc.cover?.coupleName || '').trim();
-    const coverGroomRaw = String(normDoc.cover?.groomName || '').trim();
-    const coverBrideRaw = String(normDoc.cover?.brideName || '').trim();
+    const coverCoupleRaw = cleanCoupleCandidateEdges(String(normDoc.cover?.coupleName || '').trim());
+    const coverGroomRaw = cleanCoupleCandidateEdges(String(normDoc.cover?.groomName || '').trim());
+    const coverBrideRaw = cleanCoupleCandidateEdges(String(normDoc.cover?.brideName || '').trim());
     let candidateCouple = coverCoupleRaw && !isInvalidCoupleName(coverCoupleRaw) ? coverCoupleRaw : '';
     if (!candidateCouple) {
       if (coverGroomRaw && coverBrideRaw && !isInvalidCoupleName(`${coverGroomRaw} & ${coverBrideRaw}`)) {
@@ -3925,6 +4472,10 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     } else {
       normDoc.cover.groomName = cName;
       normDoc.cover.brideName = '';
+    }
+
+    if (!isDirectJson && normDoc.pricingPage) {
+      reconcileSpokenPricing(normDoc.pricingPage, rawPromptOrAll1);
     }
 
     const baseP = normDoc.pricingPage?.basePrice || 0;
@@ -3980,11 +4531,11 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   // 1. Cover Page (explicitly override baseSchema demo cover identity fields so template demo names NEVER bleed through)
   if (!doc.cover) doc.cover = {};
   const spokenPromptCoupleMain = !isDirectJson ? extractSpokenCoupleName(rawPromptNotes, studioEventNames) : '';
-  const aiCoverCoupleRaw = String(cover.coupleName || '').trim();
-  const aiCoverGroomRaw = String(cover.groomName || '').trim();
-  const aiCoverBrideRaw = String(cover.brideName || '').trim();
+  const aiCoverCoupleRaw = cleanCoupleCandidateEdges(String(cover.coupleName || '').trim());
+  const aiCoverGroomRaw = cleanCoupleCandidateEdges(String(cover.groomName || '').trim());
+  const aiCoverBrideRaw = cleanCoupleCandidateEdges(String(cover.brideName || '').trim());
   const baseLeadRaw = String(contextData?.lead_info?.name || '').trim();
-  const validLeadFallback = baseLeadRaw && !isInvalidCoupleName(baseLeadRaw) ? baseLeadRaw : '';
+  const validLeadFallback = baseLeadRaw && !isInvalidCoupleName(baseLeadRaw) ? cleanCoupleCandidateEdges(baseLeadRaw) : '';
 
   let resolvedInitialCouple = '';
   if (aiCoverCoupleRaw && !isInvalidCoupleName(aiCoverCoupleRaw)) {
@@ -4101,11 +4652,21 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
         dateNotFixed: isNotFixed,
         startTime: fn.startTime || '',
         endTime: fn.endTime || '',
+        ...(fn.durationSlot && fn.durationSlot !== 'None' ? { durationSlot: fn.durationSlot } : {}),
+        ...(fn.time ? { time: fn.time } : {}),
         location: fn.location || fn.venue || '',
         requirements: requirementsList,
         notes: sanitizeEventFunctionNotes(fn.notes, Array.isArray(studioSettings?.aiRules?.shortcuts) ? studioSettings.aiRules.shortcuts : [])
       };
     });
+    if (!isDirectJson) {
+      doc.functionsPage.items = syncEventTimingsFromPrompt(
+        doc.functionsPage.items,
+        rawPromptNotes || allUserNotesRaw,
+        studioEventNames,
+        studioDefaultFunctions
+      );
+    }
   }
 
   // ⚡ MANDATE: Resolve single primary cover location (prefer spoken location, never let stale/demo location overwrite it)
@@ -4135,6 +4696,10 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
 
   // 4. Deliverables Page (Main Wedding Deliverables Only - Pre-wedding moved to shootDetails ONLY if Pre-Wedding enabled)
   if (!doc.deliverablesPage) doc.deliverablesPage = {};
+  if (!isDirectJson) {
+    // Prevent baseSchema template demo deliverables from leaking when user did not request them
+    doc.deliverablesPage.selectedItems = [];
+  }
   const studioDeliverables: string[] = Array.isArray(studioSettings?.deliverables)
     ? studioSettings.deliverables
         .map((d: any) => typeof d === 'string' ? d : d?.title)
@@ -4143,36 +4708,6 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   const studioShortcuts: any[] = Array.isArray(studioSettings?.aiRules?.shortcuts)
     ? studioSettings.aiRules.shortcuts
     : [];
-
-  const rawDeliv = deliverablesPage.selectedItems || aiData.deliverables || [];
-  let validAiWeddingDelivs: string[] = [];
-  if (Array.isArray(rawDeliv) && rawDeliv.length > 0) {
-    const preWedDelivs: string[] = [];
-    const weddingDelivs: string[] = [];
-
-    rawDeliv.forEach((item: string) => {
-      const cleanItem = String(item || '').trim();
-      if (!cleanItem) return;
-      const itemLower = cleanItem.toLowerCase();
-      if (itemLower.includes('pre-wedding') || itemLower.includes('prewedding') || itemLower.includes('pre wedding') || itemLower.includes('previewing')) {
-        preWedDelivs.push(cleanItem);
-      } else if (isDirectJson || isValidDeliverableItem(cleanItem, studioDeliverables)) {
-        weddingDelivs.push(cleanItem);
-      }
-    });
-
-    validAiWeddingDelivs = weddingDelivs;
-    doc.deliverablesPage.selectedItems = weddingDelivs;
-
-    if (preWedDelivs.length > 0 && promptPreWedRequested) {
-      if (!doc.shootDetails) doc.shootDetails = { visible: true };
-      doc.shootDetails.visible = true;
-      const existingText = doc.shootDetails.deliverablesText || '';
-      const existingLines = existingText ? existingText.split('\n') : [];
-      const mergedShootDelivs = Array.from(new Set([...existingLines, ...preWedDelivs])).filter(Boolean).join('\n');
-      doc.shootDetails.deliverablesText = mergedShootDelivs;
-    }
-  }
 
   // ⚡ MANDATE: Enforce Studio Settings Deliverables & Shortcuts synchronization ("x डालेंगे तो y होगा")
   const rawNotesForBranch2 = rawPromptNotes || allUserNotesRaw;
@@ -4198,6 +4733,40 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     }
   }
   const spokenDelivsBranch2 = !isDirectJson ? extractDeliverablesFromText(rawNotesForBranch2, studioDeliverables) : [];
+
+  const rawDeliv = deliverablesPage.selectedItems || aiData.deliverables || [];
+  let validAiWeddingDelivs: string[] = [];
+  if (Array.isArray(rawDeliv) && rawDeliv.length > 0) {
+    const preWedDelivs: string[] = [];
+    const weddingDelivs: string[] = [];
+
+    rawDeliv.forEach((item: string) => {
+      const cleanItem = String(item || '').trim();
+      if (!cleanItem) return;
+      const itemLower = cleanItem.toLowerCase();
+      if (itemLower.includes('pre-wedding') || itemLower.includes('prewedding') || itemLower.includes('pre wedding') || itemLower.includes('previewing')) {
+        preWedDelivs.push(cleanItem);
+      } else if (
+        isDirectJson ||
+        (isValidDeliverableItem(cleanItem, studioDeliverables) &&
+          (hasAllDelivReq || isGeminiDeliverableGrounded(cleanItem, rawNotesForBranch2, spokenDelivsBranch2, matchedShortcutDelivs)))
+      ) {
+        weddingDelivs.push(cleanItem);
+      }
+    });
+
+    validAiWeddingDelivs = weddingDelivs;
+    doc.deliverablesPage.selectedItems = weddingDelivs;
+
+    if (preWedDelivs.length > 0 && promptPreWedRequested) {
+      if (!doc.shootDetails) doc.shootDetails = { visible: true };
+      doc.shootDetails.visible = true;
+      const existingText = doc.shootDetails.deliverablesText || '';
+      const existingLines = existingText ? existingText.split('\n') : [];
+      const mergedShootDelivs = Array.from(new Set([...existingLines, ...preWedDelivs])).filter(Boolean).join('\n');
+      doc.shootDetails.deliverablesText = mergedShootDelivs;
+    }
+  }
 
   if (hasAllDelivReq) {
     const fullCatalog2 = studioDeliverables.length > 0 ? studioDeliverables : DEFAULT_EXTRACTED_DELIVERABLES;
@@ -4282,6 +4851,9 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
   if (pricingPage.accommodationCharges !== undefined) doc.pricingPage.accommodationCharges = Number(pricingPage.accommodationCharges);
   if (pricingPage.additionalCharges !== undefined) doc.pricingPage.additionalCharges = Number(pricingPage.additionalCharges);
   doc.pricingPage.showExclusionsNote = true;
+  if (!isDirectJson) {
+    reconcileSpokenPricing(doc.pricingPage, rawNotesForBranch2);
+  }
 
   // Enforce Settings AI Training (Shortcuts + Custom Instructions) & Spoken Rules!
   if (!isDirectJson) {
@@ -4290,8 +4862,8 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
 
   // Calculate Summary (sanitized coupleName so placeholders & random phrases can never leak)
   const rawLeadFallbackMain = String(contextData?.lead_info?.name || '').trim();
-  const leadFallbackName = rawLeadFallbackMain && !isInvalidCoupleName(rawLeadFallbackMain) ? rawLeadFallbackMain : '';
-  const candidatePostDirective = String(doc.cover?.coupleName || '').trim();
+  const leadFallbackName = rawLeadFallbackMain && !isInvalidCoupleName(rawLeadFallbackMain) ? cleanCoupleCandidateEdges(rawLeadFallbackMain) : '';
+  const candidatePostDirective = cleanCoupleCandidateEdges(String(doc.cover?.coupleName || '').trim());
   const coupleName = (candidatePostDirective && !isInvalidCoupleName(candidatePostDirective))
     ? candidatePostDirective
     : (spokenPromptCoupleMain || leadFallbackName || 'Client');
