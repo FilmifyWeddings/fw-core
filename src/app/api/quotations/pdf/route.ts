@@ -29,68 +29,51 @@ function cacheImageDataUri(key: string, dataUri: string) {
   IMAGE_DATA_URI_CACHE.set(key, dataUri);
 }
 
-async function getWarmPdfBrowser(): Promise<any> {
-  if (gPdf.__scPdfBrowser && gPdf.__scPdfBrowser.connected) {
-    return gPdf.__scPdfBrowser;
-  }
-  if (gPdf.__scPdfBrowserPromise) {
-    return gPdf.__scPdfBrowserPromise;
-  }
+async function launchIsolatedPdfBrowser(): Promise<any> {
+  const puppeteer = (await import('puppeteer-core')).default;
+  const defaultLaunchArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--disable-web-security',
+    '--font-render-hinting=none',
+    '--disable-extensions',
+    '--disable-background-networking',
+    '--disable-default-apps',
+    '--disable-sync',
+    '--disable-translate',
+    '--hide-scrollbars',
+    '--mute-audio',
+    '--no-zygote'
+  ];
 
-  gPdf.__scPdfBrowserPromise = (async () => {
-    const puppeteer = (await import('puppeteer-core')).default;
-    const defaultLaunchArgs = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-web-security',
-      '--font-render-hinting=none',
-      ...(process.platform !== 'win32' ? ['--single-process'] : [])
-    ];
+  let executablePath = await getChromiumExecutablePath();
+  let chromiumArgs = defaultLaunchArgs;
 
-    let executablePath = await getChromiumExecutablePath();
-    let chromiumArgs = defaultLaunchArgs;
-
-    if (!executablePath && process.platform !== 'win32') {
-      try {
-        const chromium = (await import('@sparticuz/chromium')).default;
-        const sparticuzPath = await chromium.executablePath();
-        if (sparticuzPath) {
-          executablePath = sparticuzPath;
-          chromiumArgs = [...chromium.args, '--font-render-hinting=none'];
-        }
-      } catch (e) {
-        console.warn('[PDF Server Pipeline] @sparticuz/chromium fallback notice:', e);
+  if (!executablePath && process.platform !== 'win32') {
+    try {
+      const chromium = (await import('@sparticuz/chromium')).default;
+      const sparticuzPath = await chromium.executablePath();
+      if (sparticuzPath) {
+        executablePath = sparticuzPath;
+        chromiumArgs = [...chromium.args, '--font-render-hinting=none'];
       }
+    } catch (e) {
+      console.warn('[PDF Server Pipeline] @sparticuz/chromium fallback notice:', e);
     }
-
-    const launched = await puppeteer.launch({
-      args: chromiumArgs,
-      defaultViewport: {
-        width: 794,
-        height: 1123,
-        deviceScaleFactor: 2
-      },
-      executablePath: executablePath || undefined,
-      headless: true
-    });
-
-    launched.on?.('disconnected', () => {
-      if (gPdf.__scPdfBrowser === launched) {
-        gPdf.__scPdfBrowser = null;
-      }
-    });
-
-    gPdf.__scPdfBrowser = launched;
-    return launched;
-  })();
-
-  try {
-    return await gPdf.__scPdfBrowserPromise;
-  } finally {
-    gPdf.__scPdfBrowserPromise = null;
   }
+
+  return await puppeteer.launch({
+    args: chromiumArgs,
+    defaultViewport: {
+      width: 794,
+      height: 1123,
+      deviceScaleFactor: 2
+    },
+    executablePath: executablePath || undefined,
+    headless: true
+  });
 }
 
 async function getChromiumExecutablePath(): Promise<string | undefined> {
@@ -292,6 +275,7 @@ export async function POST(req: NextRequest) {
   console.log('[PDF Server Pipeline] User-Agent:', userAgent);
 
   let page: any = null;
+  let browser: any = null;
   try {
     // STAGE 2: Payload Parsing & Payload Size Diagnostics
     console.log('[PDF Server Pipeline] STAGE 2: Request Payload Parsing');
@@ -420,9 +404,9 @@ export async function POST(req: NextRequest) {
 
     console.log('[PDF Server Pipeline] Generated Standalone HTML Payload (Length:', fullHTML.length, 'bytes)');
 
-    // STAGE 4: Warm Persistent Chromium Acquisition
-    console.log('[PDF Server Pipeline] STAGE 4: Acquiring Warm Chromium Instance');
-    const browser = await getWarmPdfBrowser();
+    // STAGE 4: Isolated Headless Chromium Launch
+    console.log('[PDF Server Pipeline] STAGE 4: Launching isolated headless Chromium instance');
+    browser = await launchIsolatedPdfBrowser();
 
     // STAGE 5: Page Render & Fonts Lock
     console.log('[PDF Server Pipeline] STAGE 5: Page Render & Fonts Lock');
@@ -431,7 +415,7 @@ export async function POST(req: NextRequest) {
 
     // Set DOM content with domcontentloaded (< 50ms) and bounded font/image readiness
     try {
-      await page.setContent(fullHTML, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await page.setContent(fullHTML, { waitUntil: 'domcontentloaded', timeout: 10000 });
     } catch (e: any) {
       console.warn('[PDF Server Pipeline] setContent Warning:', e.message);
     }
@@ -494,9 +478,6 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     const durationMs = Date.now() - startTime;
     console.error('[PDF Server Pipeline ERROR] Duration:', durationMs, 'ms Exception:', err);
-    if (gPdf.__scPdfBrowser && !gPdf.__scPdfBrowser.connected) {
-      gPdf.__scPdfBrowser = null;
-    }
     return NextResponse.json({
       error: 'Server PDF Pipeline Failure',
       stage: 'Server HTML/Chromium Render',
@@ -506,6 +487,9 @@ export async function POST(req: NextRequest) {
   } finally {
     if (page) {
       try { await page.close(); } catch {}
+    }
+    if (browser) {
+      try { await browser.close(); } catch {}
     }
   }
 }
