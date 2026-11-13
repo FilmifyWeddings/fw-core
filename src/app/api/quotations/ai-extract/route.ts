@@ -403,9 +403,11 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 🌟 CRITICAL TOP PRIORITY OVERRIDE MANDATES (MUST FOLLOW):
 
 1. COUPLE NAME, EVENT TYPE & ROLES (HIGHEST PRIORITY):
-- If user notes, prompt, or speech mentions ANY couple or client name (e.g. "सागर और रिद्धि" / "Sagar & Riddhi", "O Piya ke liye quotation...", "O Piya ke liye quotion...", "O Piya, total 3 events...", "Rohit ke liye quotation..."):
+- If user notes, prompt, or speech mentions ANY couple or client name (e.g. "सागर और रिद्धि" / "Sagar & Riddhi", "Mujhe Akshay and Manali ka quotation banana hai", "O Piya ke liye quotation...", "O Piya, total 3 events...", "Rohit ke liye quotation..."):
   THIS STRICTLY AND ABSOLUTELY OVERRIDES any existing lead name or default template name!
-- ALWAYS preserve the FULL spoken client/couple name verbatim (including short prefixes like "O" in "O Piya") and transliterate/translate names into clean Latin/English Title Case:
+- CRITICAL PREFIX STRIPPING: NEVER include leading pronouns, greetings, or request verbs in coupleName/groomName/brideName! Strip words like "Mujhe", "Muje", "Humein", "Humko", "Apne", "Mera", "Mere", "Please", "Sir", "Create", "Make", "Quotation for" BEFORE extracting the name:
+  * "Mujhe Akshay and Manali ka quotation banana hai" -> coupleName: "Akshay & Manali", groomName: "Akshay", brideName: "Manali" (NEVER "Mujhe Akshay and Manali"!).
+- ALWAYS preserve short proper-noun prefixes like "O" in "O Piya" and transliterate/translate names into clean Latin/English Title Case joined with " & ":
   * Couple example -> coupleName: "Sagar & Riddhi", groomName: "Sagar", brideName: "Riddhi"
   * Single client/brand example ("O Piya ke liye quotation") -> coupleName: "O Piya", groomName: "O Piya", brideName: "" (keep brideName empty; NEVER invent a partner or strip "O")
 - EVENT TYPE (cover.eventType):
@@ -441,9 +443,12 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 - LOCATION EXTRACTION (cover.locationName & function location):
   * ALWAYS extract spoken location/venue cleanly into cover.locationName (strip Hindi fillers like "ki hai", "me hai", "par hai": "Location Delhi ki hai" -> "Delhi", "Dwarka hai" -> "Dwarka").
   * If user says "Saare events same venue par hain" / "same venue", put the extracted location on EVERY function card too. NEVER copy any example city like Mumbai unless actually mentioned!
-- TIMINGS & TIMES:
-  * Convert times to standard 12-hour format with AM/PM (e.g. startTime: "11:00 AM", endTime: "11:00 PM").
-  * If no explicit clock time was stated, keep startTime: "" and endTime: "".
+- TIMINGS, TIMES & DURATION SLOTS (CRITICAL — EXTRACT PER EVENT WITHOUT CROSS-EVENT LEAK):
+  * Capture startTime and endTime in 12-hour format with AM/PM for EVERY event that mentions a time:
+    - Range example: "10 AM to 5 PM" / "subah 9 se shaam 4" / "10 se 5 baje" -> startTime: "10:00 AM" (or "9:00 AM"), endTime: "5:00 PM" (or "4:00 PM").
+    - Single start time example: "evening 7 baje" / "7 pm onwards" -> startTime: "7:00 PM", endTime: "", durationSlot: "Evening".
+  * Extract time-of-day into optional "durationSlot" ("Morning" | "Afternoon" | "Evening" | "Night" | "Full Day") whenever spoken (e.g. "subah"/"morning" -> "Morning", "dopahar"/"afternoon" -> "Afternoon", "shaam"/"evening" -> "Evening", "raat"/"night" -> "Night", "full day" -> "Full Day"). Note: "Sangeet Night" alone is an event name, NOT a durationSlot unless night timing is stated.
+  * NEVER copy one ceremony's timing onto another ceremony unless the user explicitly states both share the same timing! If an event has NO stated time, keep startTime: "", endTime: "".
   * For duration-only shoots like "घर पे 2 आवर्स का शूट", put startTime: "", endTime: "", and notes: "2 Hours Duration Coverage".
 
 3. CREW REQUIREMENTS NORMALIZATION & PER-EVENT ISOLATION:
@@ -453,14 +458,15 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 - CRITICAL PER-EVENT CREW LOCK: If one event mentions a shortcut/preset like "Standard Crew" (e.g. "Wedding mein Standard Crew") AND another event specifies its own crew or restrictive phrase ("Haldi mein bas 1 Traditional Photographer aur alag crew" / "Haldi needs only 1 Traditional Photographer"), NEVER copy or leak Standard Crew onto Haldi! Obey every [SCOPED STUDIO SHORTCUT] & [EXPLICIT PER-EVENT CREW LOCK] annotation verbatim!
 - NOTES FIELD MANDATE (CRITICAL): Keep "notes": "" (empty string) on EVERY event card unless the user explicitly spoke a specific shoot instruction or timing remark (e.g. "2 Hours Duration Coverage", "Bride entry 6 PM"). NEVER copy shortcut trigger names ("Standard Crew", "Premium Crew", "Gold Package", etc.) or generic crew names into "notes"!
 
-4. DELIVERABLES (deliverablesPage):
-- selectedItems: Array of genuine photography/video deliverable strings ONLY:
-  a) Matching Studio Official Deliverables Catalog items (or ALL catalog items when user says "all deliverables add" / "all deliverables add करना" / "ऑल डिलीवरेबल्स").
-  b) Deliverables mapped by any [STUDIO TRIGGER ... -> Deliverables: ...] annotation.
-  c) Genuine custom or counted deliverables explicitly spoken in speech/notes — preserve exact counts! E.g. "500 edited photos" / "500 एडिटेड फोटो", "5 Instagram Reels" / "5 रील", "1 Pendrive" / "1 पेनड्राइव", "2 Photo Albums" / "2 एल्बम", "1 Cinematic Teaser Video" / "टीज़र", "Save The Date Video", "Same Day Edit".
-- STRICT SANITIZATION: NEVER put voice command triggers ("All Deliverables Add", "All Deliverables Add करना", "Add Karna") or conversational Hindi/Hinglish prose or pricing fragments into selectedItems (e.g. NEVER output "Jo Quotation Mujhe Unko Share Karna Hai Wo 3" or "000 Ka Hai Usme" or "all deliverables add करना"!).
-- If a [STUDIO TRIGGER] specifies Deliverables OR user explicitly mentions specific deliverables, include ONLY those items (do NOT pad with unrequested template sample items!).
-- If NO deliverables are mentioned and NO [STUDIO TRIGGER] specifies Deliverables, return an empty array [].
+4. DELIVERABLES (deliverablesPage) — ZERO UNREQUESTED DELIVERABLES:
+- selectedItems: Include STRICTLY AND ONLY deliverables explicitly spoken by the user OR mapped via an explicit [STUDIO TRIGGER]:
+  a) If a spoken deliverable clearly matches one in Studio Official Deliverables Catalog above, use the matching catalog item (unless user specified a custom count like "5 Instagram Reels").
+  b) If a spoken deliverable is NOT in Studio Official Deliverables Catalog (e.g. "1 Cinematic Video", "1 Polaroid Book", "1 LED Screen"), keep what the user actually spoke verbatim (polished Title Case) — NEVER drop or replace custom items!
+  c) Genuine custom or counted deliverables explicitly spoken in speech/notes — preserve exact counts! E.g. "500 edited photos" / "500 एडिटेड फोटो", "5 Instagram Reels" / "5 रील", "1 Pendrive", "2 Albums", "1 Cinematic Video", "1 Traditional Video".
+  d) Only include ALL catalog deliverables when user explicitly says "all deliverables add" / "ऑल डिलीवरेबल्स".
+- ZERO HALLUCINATION RULE: NEVER add unrequested items from Studio Official Deliverables Catalog or sample templates on your own!
+- STRICT SANITIZATION: NEVER put voice command triggers ("All Deliverables Add", "Add Karna") or conversational Hindi/Hinglish prose or pricing fragments into selectedItems.
+- If NO deliverables are mentioned and NO [STUDIO TRIGGER] specifies Deliverables, you MUST return an empty array: selectedItems: [].
 - NEVER drop spoken counted deliverables! Note: "5 Reels" / "5 Instagram reels" is a deliverable in deliverablesPage.selectedItems, NOT a Reel Creator crew member unless user asked for Reel Creator crew.
 - NEVER include pre-wedding deliverables here; those belong solely on shootDetails.
 
@@ -474,7 +480,11 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
   * PER-DAY / PER-EVENT MULTIPLICATION: e.g. "35,000 per day for 2 days" -> basePrice = 70000.
   * MULTI-EVENT SUMMATION: e.g. "Haldi 25k, Sangeet 35k, Wedding 70k" -> basePrice = 130000.
   * INDIAN DENOMINATIONS: "2.5 lakh"/"ढाई लाख" = 250000, "1.5 lakh"/"डेढ़ लाख" = 150000, "50k"/"पचास हजार" = 50000.
-  * DISCOUNTS: Flat ("25k off" -> discountAmount: 25000), Percentage ("10% discount on 2 lakh" -> discountAmount: 20000), Regular vs offer ("1.8L regular, 1.5L offer" -> basePrice: 180000, discountAmount: 30000). Default 0.
+  * DISCOUNTS & FINAL OFFER PRICE MATH (CRITICAL):
+    - Flat discount: "60,000 ka quotation aur 6,000 ka discount" / "25k off on 2 lakh" -> basePrice: 60000, discountAmount: 6000.
+    - Discounted final price ("X ka diya hai aur discount karke Y mein"): e.g. "60,000 ka diya hai aur discount karke 54,000 mein diya hai" -> basePrice: 60000, discountAmount: 6000 (Net = 54000)! NEVER set basePrice = 54000 or discountAmount = 54000!
+    - Percentage discount: "10% discount on 2 lakh" -> basePrice: 200000, discountAmount: 20000.
+    - Regular vs offer: "1.8L regular, 1.5L offer" -> basePrice: 180000, discountAmount: 30000. Default discountAmount: 0.
   * TRAVEL/ACCOMMODATION/ADD-ONS/GST: Compute accurately; Net Total = (basePrice - discountAmount + travelCharges + accommodationCharges + additionalCharges) * (1 + gstPct / 100).
   * showExclusionsNote: true.
 

@@ -2368,6 +2368,8 @@ function StudioCoreAiryBuilderContent() {
   const latestDataRef = useRef<any>(data);
   const isDirtyRef = useRef<boolean>(false);
   const isSaveInFlightRef = useRef<boolean>(false);
+  const activeSavePromiseRef = useRef<Promise<void> | null>(null);
+  const activeSaveTargetRevRef = useRef<number>(0);
   const lastSaveOkRef = useRef<boolean>(true);
   const pendingSaveTimeoutRef = useRef<any>(null);
   const saveFeedbackTimerRef = useRef<any>(null);
@@ -2376,7 +2378,7 @@ function StudioCoreAiryBuilderContent() {
     title: string;
     subtitle?: string;
   } | null>(null);
-  const flushSaveRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const flushSaveRef = useRef<(force?: boolean) => Promise<void>>(() => Promise.resolve());
 
   // Synchronously sync latestDataRef on every React state update
   useEffect(() => {
@@ -2497,15 +2499,9 @@ function StudioCoreAiryBuilderContent() {
     if (downloadingPdf) return;
     setDownloadingPdf(true);
     try {
-      // AUTO-SAVE BEFORE DOWNLOAD: Ensure latest quotation edits are 100% persisted to DB (for owner edits)!
-      if (!isPublicPreview) {
-        try {
-          if (flushSaveRef.current) {
-            await flushSaveRef.current();
-          }
-        } catch (saveErr) {
-          console.warn('[Client Download PDF Auto-Save Notice]:', saveErr);
-        }
+      // Non-blocking background sync so PDF generation starts immediately using live in-memory document state
+      if (!isPublicPreview && flushSaveRef.current) {
+        void flushSaveRef.current(false).catch(() => {});
       }
 
       await downloadServerChromiumPdf({
@@ -3155,13 +3151,9 @@ function StudioCoreAiryBuilderContent() {
 
   // DANKA KA SYSTEM: HIGH-SPEED VECTOR A4 PDF DOWNLOAD ENGINE (PC & MOBILE)
   const handleDownloadPDFCanvas = async () => {
-    // AUTO-SAVE BEFORE CANVAS DOWNLOAD: Ensure latest quotation edits are 100% persisted to DB!
-    try {
-      if (flushSaveRef.current) {
-        await flushSaveRef.current();
-      }
-    } catch (saveErr) {
-      console.warn('[Canvas PDF Export Auto-Save Notice]:', saveErr);
+    // Non-blocking background save so PDF export begins at 0ms using current canvas state
+    if (!isPublicPreview && flushSaveRef.current) {
+      void flushSaveRef.current(false).catch(() => {});
     }
 
     setIsExportingPDF(true);
@@ -3230,9 +3222,11 @@ function StudioCoreAiryBuilderContent() {
           return await Promise.all(obj.map(item => optimizeObjectForPDF(item)));
         }
         if (typeof obj === 'object') {
+          const keys = Object.keys(obj);
+          const vals = await Promise.all(keys.map(k => optimizeObjectForPDF(obj[k])));
           const result: any = {};
-          for (const key of Object.keys(obj)) {
-            result[key] = await optimizeObjectForPDF(obj[key]);
+          for (let i = 0; i < keys.length; i++) {
+            result[keys[i]] = vals[i];
           }
           return result;
         }
@@ -3856,12 +3850,12 @@ function StudioCoreAiryBuilderContent() {
   const triggerRevisionSave = async (force: boolean = false) => {
     if (isPublicPreview || !userId || userId === 'PUBLIC_USER' || !isInitialLoadedRef.current) return;
 
-    if (isSaveInFlightRef.current) {
+    if (isSaveInFlightRef.current && activeSavePromiseRef.current) {
       if (pendingSaveTimeoutRef.current) clearTimeout(pendingSaveTimeoutRef.current);
       pendingSaveTimeoutRef.current = setTimeout(() => {
         triggerRevisionSave(force);
-      }, 350);
-      return;
+      }, 200);
+      return activeSavePromiseRef.current;
     }
 
     const targetRevision = localRevisionRef.current;
@@ -3872,6 +3866,7 @@ function StudioCoreAiryBuilderContent() {
     }
 
     isSaveInFlightRef.current = true;
+    activeSaveTargetRevRef.current = targetRevision;
     setAutoSaveStatus('Saving...');
     setSaving(true);
 
@@ -3879,57 +3874,62 @@ function StudioCoreAiryBuilderContent() {
       ? structuredClone(latestDataRef.current)
       : JSON.parse(JSON.stringify(latestDataRef.current));
 
-    try {
-      const calc = calculatePricingTotals(snapshotData.pricingPage);
-      const grandTotal = calc.netTotal;
-      const subtotal = calc.gross;
+    const runSavePromise = (async () => {
+      try {
+        // Optimistic 0ms local cache sync so gallery, CRM modal & browser tabs reflect updates immediately
+        const preTargetId = currentTemplateIdRef.current || (params?.id ? String(params.id) : 'FW-2WT85Y0');
+        try {
+          cacheDocumentLocal(preTargetId, snapshotData, currentVersionRef.current);
+          sessionStorage.setItem(`current_quotation_doc_${preTargetId}`, JSON.stringify(snapshotData));
+          safeLocalStorageSet(`wg_proposal_draft_${preTargetId}`, JSON.stringify(snapshotData), preTargetId);
+        } catch (_) {}
 
-      const { data: { session } } = await supabase.auth.getSession();
-      const userAccessToken = session?.access_token;
-      const userEmail = session?.user?.email;
-      const targetTmplId = currentTemplateIdRef.current || (params?.id ? String(params.id) : 'FW-2WT85Y0');
+        const { data: { session } } = await supabase.auth.getSession();
+        const userAccessToken = session?.access_token;
+        const userEmail = session?.user?.email;
+        const targetTmplId = currentTemplateIdRef.current || (params?.id ? String(params.id) : 'FW-2WT85Y0');
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-      if (userAccessToken) headers['Authorization'] = `Bearer ${userAccessToken}`;
-      if (userEmail) headers['x-user-email'] = userEmail;
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        if (userAccessToken) headers['Authorization'] = `Bearer ${userAccessToken}`;
+        if (userEmail) headers['x-user-email'] = userEmail;
 
-      const saveRes = await fetch(`/api/templates/${targetTmplId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({
-          user_id: session?.user?.id || userId,
-          workspace_id: session?.user?.id || userId,
-          title: snapshotData.designName,
-          version: currentVersionRef.current,
-          revision: targetRevision,
-          content_json: snapshotData,
-          client_id: clientTabIdRef.current
-        })
-      });
+        const saveRes = await fetch(`/api/templates/${targetTmplId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({
+            user_id: session?.user?.id || userId,
+            workspace_id: session?.user?.id || userId,
+            title: snapshotData.designName,
+            version: currentVersionRef.current,
+            revision: targetRevision,
+            content_json: snapshotData,
+            client_id: clientTabIdRef.current
+          })
+        });
 
-      if (!saveRes.ok) {
-        const errJson = await saveRes.json().catch(() => ({}));
-        console.warn(`[Autosave] Save status ${saveRes.status}:`, errJson?.error);
-        lastSaveOkRef.current = false;
-        setAutoSaveStatus('Offline / Retrying');
-        return;
-      }
+        if (!saveRes.ok) {
+          const errJson = await saveRes.json().catch(() => ({}));
+          console.warn(`[Autosave] Save status ${saveRes.status}:`, errJson?.error);
+          lastSaveOkRef.current = false;
+          setAutoSaveStatus('Offline / Retrying');
+          return;
+        }
 
-      lastSaveOkRef.current = true;
-      const resJson = await saveRes.json();
-      if (resJson.version) {
-        currentVersionRef.current = resJson.version;
-      }
-      if (resJson.isAutoCloned && resJson.newTemplateId) {
-        currentTemplateIdRef.current = resJson.newTemplateId;
-        window.history.replaceState(null, '', `/workspace/quotations/builder/templet/${resJson.newTemplateId}`);
-      }
+        lastSaveOkRef.current = true;
+        const resJson = await saveRes.json();
+        if (resJson.version) {
+          currentVersionRef.current = resJson.version;
+        }
+        if (resJson.isAutoCloned && resJson.newTemplateId) {
+          currentTemplateIdRef.current = resJson.newTemplateId;
+          window.history.replaceState(null, '', `/workspace/quotations/builder/templet/${resJson.newTemplateId}`);
+        }
         const finalId = currentTemplateIdRef.current;
         cacheDocumentLocal(finalId, snapshotData, currentVersionRef.current);
 
-        // SYNC TO LOCAL STORAGES IMMEDIATELY SO GALLERY CARD IS NEVER STALE (PRUNED & SAFE):
+        // SYNC TO LOCAL STORAGES SO GALLERY CARD IS NEVER STALE (PRUNED & SAFE):
         try {
           sessionStorage.setItem(`current_quotation_doc_${finalId}`, JSON.stringify(snapshotData));
           safeLocalStorageSet(`wg_proposal_draft_${finalId}`, JSON.stringify(snapshotData), finalId);
@@ -4048,56 +4048,61 @@ function StudioCoreAiryBuilderContent() {
           }
         } catch (_) {}
 
-      if (realtimeChannelRef.current) {
-        realtimeChannelRef.current.send({
-          type: 'broadcast',
-          event: 'doc_update',
-          payload: {
-            data: snapshotData,
-            version: currentVersionRef.current,
-            revision: targetRevision,
-            senderId: clientTabIdRef.current,
-            clientId: clientTabIdRef.current
-          }
-        }).catch(() => {});
-      }
-
-      if (snapshotData.lead_id) {
-        try {
-          const leadCh = supabase.channel(`lead_quotes_${snapshotData.lead_id}`);
-          leadCh.send({
+        if (realtimeChannelRef.current) {
+          realtimeChannelRef.current.send({
             type: 'broadcast',
-            event: 'quotation_updated',
+            event: 'doc_update',
             payload: {
-              leadId: snapshotData.lead_id,
-              templateId: finalId,
+              data: snapshotData,
               version: currentVersionRef.current,
-              senderId: clientTabIdRef.current
+              revision: targetRevision,
+              senderId: clientTabIdRef.current,
+              clientId: clientTabIdRef.current
             }
           }).catch(() => {});
-        } catch (_) {}
-      }
+        }
 
-      lastSavedRevisionRef.current = Math.max(lastSavedRevisionRef.current, targetRevision);
+        if (snapshotData.lead_id) {
+          try {
+            const leadCh = supabase.channel(`lead_quotes_${snapshotData.lead_id}`);
+            leadCh.send({
+              type: 'broadcast',
+              event: 'quotation_updated',
+              payload: {
+                leadId: snapshotData.lead_id,
+                templateId: finalId,
+                version: currentVersionRef.current,
+                senderId: clientTabIdRef.current
+              }
+            }).catch(() => {});
+          } catch (_) {}
+        }
 
-      if (localRevisionRef.current === targetRevision) {
-        isDirtyRef.current = false;
-        setHasUnsavedChanges(false);
-        setAutoSaveStatus('Auto-saved to cloud');
-      } else {
-        if (pendingSaveTimeoutRef.current) clearTimeout(pendingSaveTimeoutRef.current);
-        pendingSaveTimeoutRef.current = setTimeout(() => {
-          triggerRevisionSave();
-        }, 200);
+        lastSavedRevisionRef.current = Math.max(lastSavedRevisionRef.current, targetRevision);
+
+        if (localRevisionRef.current === targetRevision) {
+          isDirtyRef.current = false;
+          setHasUnsavedChanges(false);
+          setAutoSaveStatus('Auto-saved to cloud');
+        } else {
+          if (pendingSaveTimeoutRef.current) clearTimeout(pendingSaveTimeoutRef.current);
+          pendingSaveTimeoutRef.current = setTimeout(() => {
+            triggerRevisionSave();
+          }, 200);
+        }
+      } catch (err) {
+        console.warn('[Autosave Notice]:', err);
+        lastSaveOkRef.current = false;
+        setAutoSaveStatus('Offline / Retrying');
+      } finally {
+        isSaveInFlightRef.current = false;
+        activeSavePromiseRef.current = null;
+        setSaving(false);
       }
-    } catch (err) {
-      console.warn('[Autosave Notice]:', err);
-      lastSaveOkRef.current = false;
-      setAutoSaveStatus('Offline / Retrying');
-    } finally {
-      isSaveInFlightRef.current = false;
-      setSaving(false);
-    }
+    })();
+
+    activeSavePromiseRef.current = runSavePromise;
+    await runSavePromise;
   };
 
   const flushSaveImmediately = async (force: boolean = true) => {
@@ -4105,10 +4110,11 @@ function StudioCoreAiryBuilderContent() {
       clearTimeout(pendingSaveTimeoutRef.current);
       pendingSaveTimeoutRef.current = null;
     }
-    if (isSaveInFlightRef.current) {
-      for (let i = 0; i < 40; i++) {
-        if (!isSaveInFlightRef.current) break;
-        await new Promise((r) => setTimeout(r, 125));
+    if (isSaveInFlightRef.current && activeSavePromiseRef.current) {
+      await activeSavePromiseRef.current;
+      // Avoid duplicate second PATCH when the awaited in-flight save already persisted latest revision
+      if (localRevisionRef.current <= lastSavedRevisionRef.current && !isDirtyRef.current && lastSaveOkRef.current) {
+        return;
       }
     }
     await triggerRevisionSave(force);
@@ -4211,7 +4217,7 @@ function StudioCoreAiryBuilderContent() {
             title: 'Quotation Saved',
             subtitle: 'All updates are safely synced to your workspace',
           },
-          1600
+          900
         );
       } else {
         showCenteredFeedback(

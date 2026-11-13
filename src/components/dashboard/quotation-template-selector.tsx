@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, Component, ErrorInfo, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Check, Sparkles, LayoutTemplate, Star } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -333,7 +334,28 @@ export function QuotationTemplateSelector({
   disabled = false
 }: QuotationTemplateSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const portalRef = useRef<HTMLDivElement>(null);
+  const [popoverRect, setPopoverRect] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxListHeight: number;
+    openDirection: 'top' | 'bottom';
+  }>({
+    top: 0,
+    left: 0,
+    width: 340,
+    maxListHeight: 320,
+    openDirection: placement
+  });
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Synchronous resolution of templates: guaranteed 0ms, no demo flickering
   const [internalTemplates, setInternalTemplates] = useState<StudioTemplateItem[]>(() => {
@@ -407,11 +429,62 @@ export function QuotationTemplateSelector({
     return def || templates[0];
   }, [templates, selectedId]);
 
-  // Click outside to close
+  const updatePopoverPosition = useCallback(() => {
+    if (!triggerRef.current || typeof window === 'undefined') return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const margin = 12;
+    const gap = 8;
+    const width = Math.min(vw >= 640 ? 350 : 320, Math.max(240, vw - margin * 2));
+
+    let left = align === 'left' ? rect.left : rect.right - width;
+    if (left + width > vw - margin) {
+      left = vw - margin - width;
+    }
+    if (left < margin) {
+      left = margin;
+    }
+
+    const spaceAbove = rect.top - margin - gap;
+    const spaceBelow = vh - rect.bottom - margin - gap;
+    const openTop = placement === 'top'
+      ? (spaceAbove >= 220 || spaceAbove >= spaceBelow)
+      : (spaceBelow < 220 && spaceAbove > spaceBelow);
+
+    if (openTop) {
+      const availableHeight = Math.max(180, Math.min(380, spaceAbove));
+      setPopoverRect({
+        bottom: Math.max(margin, vh - rect.top + gap),
+        left,
+        width,
+        maxListHeight: Math.max(130, availableHeight - 46),
+        openDirection: 'top'
+      });
+    } else {
+      const availableHeight = Math.max(180, Math.min(380, spaceBelow));
+      setPopoverRect({
+        top: Math.max(margin, rect.bottom + gap),
+        left,
+        width,
+        maxListHeight: Math.max(130, availableHeight - 46),
+        openDirection: 'bottom'
+      });
+    }
+  }, [align, placement]);
+
+  // Click outside to close + keep fixed portal synced on resize/scroll
   useEffect(() => {
     if (!isOpen) return;
+    updatePopoverPosition();
+
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        (!portalRef.current || !portalRef.current.contains(target))
+      ) {
         setIsOpen(false);
       }
     };
@@ -421,25 +494,124 @@ export function QuotationTemplateSelector({
 
     window.addEventListener('mousedown', handleClickOutside);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', updatePopoverPosition);
+    window.addEventListener('scroll', updatePopoverPosition, true);
     return () => {
       window.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', updatePopoverPosition);
+      window.removeEventListener('scroll', updatePopoverPosition, true);
     };
-  }, [isOpen]);
+  }, [isOpen, updatePopoverPosition]);
 
-  const popoverPositionClass = placement === 'top' 
-    ? 'bottom-full mb-1.5' 
-    : 'top-full mt-1.5';
+  const popoverNode = (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          ref={portalRef}
+          initial={{ opacity: 0, y: popoverRect.openDirection === 'top' ? 6 : -6, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: popoverRect.openDirection === 'top' ? 4 : -4, scale: 0.98 }}
+          transition={{ duration: 0.15, ease: 'easeOut' }}
+          style={{
+            position: 'fixed',
+            zIndex: 1000010,
+            left: `${popoverRect.left}px`,
+            width: `${popoverRect.width}px`,
+            ...(popoverRect.bottom !== undefined ? { bottom: `${popoverRect.bottom}px` } : { top: `${popoverRect.top ?? 0}px` })
+          }}
+          className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/90 rounded-2xl shadow-2xl p-1.5 backdrop-blur-xl"
+        >
+          {/* Popover Header */}
+          <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 mb-1">
+            <span className="text-[10px] uppercase font-black tracking-wider text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
+              <LayoutTemplate className="w-3 h-3 text-amber-500" />
+              Select Template Design
+            </span>
+            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full">
+              {templates.length} Designs
+            </span>
+          </div>
 
-  const popoverAlignClass = align === 'left' ? 'left-0' : 'right-0';
+          {/* List of Templates with 1:1 First Page Thumbnails & Smooth Custom Scrollbar */}
+          <div
+            style={{ maxHeight: `${popoverRect.maxListHeight}px` }}
+            className="overflow-y-auto space-y-2 p-1.5 pr-2 overscroll-contain quotation-dropdown-scroll"
+          >
+            {templates.map((tmpl) => {
+              const isSelected = tmpl.id === (currentSelected?.id || selectedId);
+              const themeName = tmpl.content_json?.theme || tmpl.content_json?.look || tmpl.category || 'Wedding';
+
+              return (
+                <button
+                  key={tmpl.id}
+                  type="button"
+                  onClick={() => {
+                    onSelect(tmpl.id);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full text-left p-2 rounded-xl flex items-center gap-3 transition-all cursor-pointer group ${
+                    isSelected
+                      ? 'bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/50 text-amber-950 dark:text-amber-100 font-bold shadow-xs'
+                      : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/80 border border-transparent text-zinc-800 dark:text-zinc-200'
+                  }`}
+                >
+                  {/* 1:1 Actual First Page Design Thumbnail Preview */}
+                  <div className="shrink-0 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-2xs group-hover:border-amber-500/50 transition-colors">
+                    <TemplateThumbnail
+                      contentJson={tmpl.content_json}
+                      title={tmpl.title}
+                      size="md"
+                    />
+                  </div>
+
+                  {/* Template Meta Information */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-xs truncate ${isSelected ? 'font-black text-amber-700 dark:text-amber-300' : 'font-bold'}`}>
+                        {tmpl.title}
+                      </span>
+                      {tmpl.is_default && (
+                        <span className="shrink-0 text-[8px] bg-amber-500/20 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded-full font-black uppercase tracking-wider flex items-center gap-0.5">
+                          <Star className="w-2 h-2 fill-amber-500 text-amber-500" /> Default
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5 flex items-center gap-1 font-medium">
+                      <span className="truncate">{themeName}</span>
+                      <span>•</span>
+                      <span className={tmpl.is_system_template ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-emerald-600 dark:text-emerald-400 font-semibold'}>
+                        {tmpl.is_system_template ? 'System Preset' : 'Studio Custom'}
+                      </span>
+                    </span>
+                  </div>
+
+                  {/* Active Selection Indicator */}
+                  {isSelected && (
+                    <div className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 
   return (
     <div ref={containerRef} className={`relative inline-block ${className}`}>
       {/* Trigger Button with 1:1 Thumbnail + Title */}
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled || templates.length === 0}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          if (!isOpen) updatePopoverPosition();
+          setIsOpen(!isOpen);
+        }}
         className={`px-2 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/80 hover:border-amber-500/60 dark:hover:border-amber-500/60 text-zinc-900 dark:text-white flex items-center gap-2 transition-all text-xs cursor-pointer shadow-xs hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 active:scale-[0.98] ${
           isOpen ? 'ring-2 ring-amber-500/30 border-amber-500/80' : ''
         }`}
@@ -479,90 +651,8 @@ export function QuotationTemplateSelector({
         />
       </button>
 
-      {/* Floating Popover Menu with 1:1 Thumbnails for all Templates */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: placement === 'top' ? 6 : -6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: placement === 'top' ? 4 : -4, scale: 0.98 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            className={`absolute ${popoverAlignClass} z-[150] w-[320px] sm:w-[350px] max-w-[calc(100vw-32px)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/90 rounded-2xl shadow-2xl p-1.5 ${popoverPositionClass} backdrop-blur-xl`}
-          >
-            {/* Popover Header */}
-            <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 mb-1">
-              <span className="text-[10px] uppercase font-black tracking-wider text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
-                <LayoutTemplate className="w-3 h-3 text-amber-500" />
-                Select Template Design
-              </span>
-              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full">
-                {templates.length} Designs
-              </span>
-            </div>
-
-            {/* List of Templates with 1:1 First Page Thumbnails & Smooth Custom Scrollbar */}
-            <div className="max-h-[320px] overflow-y-auto space-y-2 p-1.5 pr-2 overscroll-contain quotation-dropdown-scroll">
-              {templates.map((tmpl) => {
-                const isSelected = tmpl.id === (currentSelected?.id || selectedId);
-                const themeName = tmpl.content_json?.theme || tmpl.content_json?.look || tmpl.category || 'Wedding';
-
-                return (
-                  <button
-                    key={tmpl.id}
-                    type="button"
-                    onClick={() => {
-                      onSelect(tmpl.id);
-                      setIsOpen(false);
-                    }}
-                    className={`w-full text-left p-2 rounded-xl flex items-center gap-3 transition-all cursor-pointer group ${
-                      isSelected
-                        ? 'bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/50 text-amber-950 dark:text-amber-100 font-bold shadow-xs'
-                        : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/80 border border-transparent text-zinc-800 dark:text-zinc-200'
-                    }`}
-                  >
-                    {/* 1:1 Actual First Page Design Thumbnail Preview */}
-                    <div className="shrink-0 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-2xs group-hover:border-amber-500/50 transition-colors">
-                      <TemplateThumbnail
-                        contentJson={tmpl.content_json}
-                        title={tmpl.title}
-                        size="md"
-                      />
-                    </div>
-
-                    {/* Template Meta Information */}
-                    <div className="flex-1 min-w-0 flex flex-col justify-center">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`text-xs truncate ${isSelected ? 'font-black text-amber-700 dark:text-amber-300' : 'font-bold'}`}>
-                          {tmpl.title}
-                        </span>
-                        {tmpl.is_default && (
-                          <span className="shrink-0 text-[8px] bg-amber-500/20 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded-full font-black uppercase tracking-wider flex items-center gap-0.5">
-                            <Star className="w-2 h-2 fill-amber-500 text-amber-500" /> Default
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5 flex items-center gap-1 font-medium">
-                        <span className="truncate">{themeName}</span>
-                        <span>•</span>
-                        <span className={tmpl.is_system_template ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-emerald-600 dark:text-emerald-400 font-semibold'}>
-                          {tmpl.is_system_template ? 'System Preset' : 'Studio Custom'}
-                        </span>
-                      </span>
-                    </div>
-
-                    {/* Active Selection Indicator */}
-                    {isSelected && (
-                      <div className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-3 h-3 stroke-[3]" />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Portal Popover Menu rendered on document.body so parent modal overflow-hidden never clips it */}
+      {mounted && typeof document !== 'undefined' ? createPortal(popoverNode, document.body) : null}
     </div>
   );
 }

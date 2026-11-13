@@ -1927,7 +1927,7 @@ export default function QuotationDocumentCanvas({
                                             <span className="font-sans font-medium tracking-tight">
                                               {[
                                                 (func as FunctionItem).dateNotFixed ? 'DATE NOT FIXED' : func.date,
-                                                func.time || (func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null),
+                                                func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : (func.startTime || func.time || null),
                                                 (func.durationSlot && func.durationSlot !== 'None') ? `(${func.durationSlot})` : null
                                               ].filter(Boolean).join(' • ')}
                                             </span>

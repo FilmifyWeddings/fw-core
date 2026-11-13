@@ -1023,7 +1023,7 @@ export function renderQuotationToHTML(documentData: any): string {
           const title = func.name || func.title || `Function ${fIdx + 1}`;
           const timingParts = [
             (func.dateNotFixed ? 'DATE NOT FIXED' : func.date || func.dateTime),
-            func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null,
+            func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : (func.startTime || func.time || null),
             (func.durationSlot && func.durationSlot !== 'None') ? `(${func.durationSlot})` : null
           ].filter(Boolean).join(' • ');
 

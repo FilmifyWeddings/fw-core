@@ -129,7 +129,7 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
   return undefined;
 }
 
-async function fetchAndInlineImageServer(url: string): Promise<string> {
+async function fetchAndInlineImageServer(url: string, requestOrigin?: string): Promise<string> {
   if (!url || typeof url !== 'string' || url.startsWith('data:')) return url;
 
   const cached = IMAGE_DATA_URI_CACHE.get(url);
@@ -172,11 +172,11 @@ async function fetchAndInlineImageServer(url: string): Promise<string> {
     if (fetchUrl.startsWith('//')) {
       fetchUrl = 'https:' + fetchUrl;
     } else if (fetchUrl.startsWith('/')) {
-      fetchUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://test.studiocore.in') + fetchUrl;
+      fetchUrl = (requestOrigin || process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in') + fetchUrl;
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 1800);
 
     try {
       const res = await fetch(fetchUrl, {
@@ -213,7 +213,7 @@ async function fetchAndInlineImageServer(url: string): Promise<string> {
   }
 }
 
-async function deepInlineAllImagesServer(obj: any): Promise<any> {
+async function deepInlineAllImagesServer(obj: any, requestOrigin?: string): Promise<any> {
   if (!obj) return obj;
 
   if (typeof obj === 'string') {
@@ -226,18 +226,18 @@ async function deepInlineAllImagesServer(obj: any): Promise<any> {
       obj.startsWith('/_next/image') ||
       /\.(jpg|jpeg|png|webp|gif|svg)(\?.*)?$/i.test(obj)
     ) {
-      return await fetchAndInlineImageServer(obj);
+      return await fetchAndInlineImageServer(obj, requestOrigin);
     }
     return obj;
   }
 
   if (Array.isArray(obj)) {
-    return await Promise.all(obj.map(item => deepInlineAllImagesServer(item)));
+    return await Promise.all(obj.map(item => deepInlineAllImagesServer(item, requestOrigin)));
   }
 
   if (typeof obj === 'object') {
     const keys = Object.keys(obj);
-    const values = await Promise.all(keys.map(k => deepInlineAllImagesServer(obj[k])));
+    const values = await Promise.all(keys.map(k => deepInlineAllImagesServer(obj[k], requestOrigin)));
     const result: any = {};
     for (let i = 0; i < keys.length; i++) {
       result[keys[i]] = values[i];
@@ -248,7 +248,7 @@ async function deepInlineAllImagesServer(obj: any): Promise<any> {
   return obj;
 }
 
-async function inlineAllImgTagsInHTMLServer(html: string): Promise<string> {
+async function inlineAllImgTagsInHTMLServer(html: string, requestOrigin?: string): Promise<string> {
   if (!html) return html;
 
   const matches = Array.from(html.matchAll(/src=["']([^"']+)["']/g));
@@ -262,7 +262,7 @@ async function inlineAllImgTagsInHTMLServer(html: string): Promise<string> {
   }
 
   const inlinedResults = await Promise.all(
-    uniqueUrls.map(url => fetchAndInlineImageServer(url))
+    uniqueUrls.map(url => fetchAndInlineImageServer(url, requestOrigin))
   );
 
   let finalHTML = html;
@@ -413,9 +413,10 @@ export async function POST(req: NextRequest) {
     }
 
     // ── PREFERRED CANVA-GRADE PATH: Direct HTML Memory Vector PDF Generation ──
-    const inlinedData = await deepInlineAllImagesServer(documentData || {});
+    const requestOrigin = req.nextUrl?.origin || (origin !== 'Unknown Origin' ? origin : undefined);
+    const inlinedData = await deepInlineAllImagesServer(documentData || {}, requestOrigin);
     const rendered = renderQuotationToHTML(inlinedData);
-    const fullHTML = await inlineAllImgTagsInHTMLServer(rendered);
+    const fullHTML = await inlineAllImgTagsInHTMLServer(rendered, requestOrigin);
 
     console.log('[PDF Server Pipeline] Generated Standalone HTML Payload (Length:', fullHTML.length, 'bytes)');
 
@@ -440,7 +441,7 @@ export async function POST(req: NextRequest) {
         try {
           await Promise.race([
             document.fonts.ready,
-            new Promise((resolve) => setTimeout(resolve, 1500))
+            new Promise((resolve) => setTimeout(resolve, 900))
           ]);
         } catch (e) {}
       }
