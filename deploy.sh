@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+mkdir -p /var/www/fw-core/public 2>/dev/null || true
+exec > >(tee /var/www/fw-core/public/deploy-log.txt) 2>&1
 echo "=== Starting deployment at $(date) ==="
 cd /var/www/fw-core || exit 1
 

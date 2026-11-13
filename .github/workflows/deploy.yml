@@ -20,9 +20,9 @@ jobs:
           echo "=== DIAGNOSTICS ==="
           pwd
           git status
-          git log -n 3
           pm2 status
-          pm2 show fw-core || pm2 show all
-          echo "=== END DIAGNOSTICS ==="
+          echo "=== PULLING LATEST CODE FIRST ==="
+          git fetch origin main
+          git reset --hard origin/main
           chmod +x deploy.sh
           ./deploy.sh
