@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
+import { invalidateServerTemplatesCache } from '@/app/api/quotation-templates/route';
 
 /**
  * Authoritative Route to Set Any Quotation Template as Active User Default in Supabase
@@ -167,6 +168,10 @@ export async function POST(
       targetTemplateWorkspaceId: workspaceId,
       savedIsDefault: true
     });
+
+    try {
+      invalidateServerTemplatesCache();
+    } catch (_) {}
 
     return NextResponse.json({
       success: true,

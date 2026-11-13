@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifySuperAdminRequest } from '@/lib/auth/admin-guard';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
+import { invalidateServerTemplatesCache } from '@/app/api/quotation-templates/route';
 
 /**
  * Super Admin API: Toggle a template as System Template for all users
@@ -133,6 +134,10 @@ export async function POST(
     }
 
     console.log('[System Template Toggled]:', { id: tmpl.id, is_system_template: nextIsSystem, status: nextStatus });
+
+    try {
+      invalidateServerTemplatesCache();
+    } catch (_) {}
 
     return NextResponse.json({
       success: true,

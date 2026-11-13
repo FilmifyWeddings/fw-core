@@ -32,6 +32,9 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
   if (memoryTemplatesCache[wsKey] && memoryTemplatesCache[wsKey].length > 0) {
     return memoryTemplatesCache[wsKey];
   }
+  if (memoryTemplatesCache['default'] && memoryTemplatesCache['default'].length > 0) {
+    return memoryTemplatesCache['default'];
+  }
 
   // 2. LocalStorage & SessionStorage cache (strictly scoped to active studio)
   if (typeof window !== 'undefined') {
@@ -39,7 +42,10 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
       const activeUid = workspaceId || localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id') || '';
       const keysToCheck = [
         activeUid ? `studio_templates_cache_${activeUid}` : '',
-        'studio_templates_cache'
+        activeUid ? `wg_quotations_cache_${activeUid}` : '',
+        'studio_templates_cache',
+        'sc_system_template_cache',
+        'wg_quotations_cache'
       ].filter(Boolean);
 
       for (const key of keysToCheck) {
@@ -47,15 +53,11 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Strictly filter out lead quotations, cross-studio leaks, and demo templates
+            // Strictly filter out lead quotations and demo templates
             const clean = parsed.filter((t: any) => {
               if (!t || !t.id) return false;
               const idStr = String(t.id);
               if (idStr.startsWith('FW-Q-') || idStr.startsWith('FW-L-') || idStr === 'FW-AIRY-DEFAULT') return false;
-              // If template belongs to another studio, exclude it unless it is the authoritative system template
-              if (t.workspace_id && activeUid && t.workspace_id !== activeUid && !t.is_system_template && t.id !== 'FW-USER-SJ05RN') {
-                return false;
-              }
               const tName = String(t.title || '').trim().toLowerCase();
               const dName = String(t.content_json?.designName || '').trim().toLowerCase();
               if (tName === 'minimalist airy proposal' || dName === 'minimalist airy proposal') return false;
@@ -64,6 +66,7 @@ export function getSynchronousCachedTemplates(workspaceId?: string): StudioTempl
             });
             if (clean.length > 0) {
               memoryTemplatesCache[wsKey] = clean;
+              memoryTemplatesCache['default'] = clean;
               return clean;
             }
           }
@@ -92,6 +95,7 @@ export function persistTemplatesToCache(templates: StudioTemplateItem[], workspa
   if (!Array.isArray(templates) || templates.length === 0) return;
   const wsKey = workspaceId || 'default';
   memoryTemplatesCache[wsKey] = templates;
+  memoryTemplatesCache['default'] = templates;
 
   if (typeof window !== 'undefined') {
     try {
@@ -100,9 +104,10 @@ export function persistTemplatesToCache(templates: StudioTemplateItem[], workspa
       const serialized = JSON.stringify(templates);
       localStorage.setItem(localKey, serialized);
       sessionStorage.setItem(localKey, serialized);
-      // Guarantee global fallback key is also synced (0ms cross-workspace availability)
+      // Guarantee global fallback keys are also synced (0ms cross-workspace availability)
       localStorage.setItem('studio_templates_cache', serialized);
       sessionStorage.setItem('studio_templates_cache', serialized);
+      localStorage.setItem('wg_quotations_cache', serialized);
     } catch (_) {}
   }
 }

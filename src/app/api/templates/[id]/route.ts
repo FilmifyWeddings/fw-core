@@ -6,6 +6,7 @@ import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { extractCoupleNameFromQuotation, syncBookedLeadOrFinalQuotation } from '@/lib/quotation-finance-sync';
 import { clearLeadSummaryCache } from '@/lib/quotation-summary-cache';
 import { isInvalidCoupleName } from '@/lib/ai-quotation-extractor';
+import { invalidateServerTemplatesCache } from '@/app/api/quotation-templates/route';
 
 function isValidUUID(str?: string | null): boolean {
   if (!str) return false;
@@ -643,6 +644,10 @@ async function handleUpdate(
       await tmplUpsertPromise;
     }
 
+    try {
+      invalidateServerTemplatesCache();
+    } catch (_) {}
+
     return NextResponse.json({
       success: true,
       templateId: id,
@@ -714,6 +719,9 @@ async function handleDelete(
     }
 
     clearLeadSummaryCache();
+    try {
+      invalidateServerTemplatesCache();
+    } catch (_) {}
 
     return NextResponse.json({ success: true, deletedId: id });
   } catch (error: any) {

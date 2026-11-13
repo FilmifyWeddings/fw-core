@@ -226,8 +226,8 @@ function getSynchronousCachedQuotations(): { items: SavedQuotation[]; hasCache: 
       activeUid && activeUid !== 'demo_user' ? `wg_quotations_cache_${activeUid}` : '',
       activeUid && activeUid !== 'demo_user' ? `studio_templates_cache_${activeUid}` : '',
       'studio_templates_cache',
-      'sc_system_template_cache',
-      'wg_quotations_cache'
+      'wg_quotations_cache',
+      'sc_system_template_cache'
     ].filter(Boolean);
 
     for (const key of candidateKeys) {
@@ -858,11 +858,6 @@ export default function WorkspaceQuotationsGalleryPage() {
     // Register custom font definitions into document.head immediately
     loadCustomFontsFromAPI();
 
-    // Purge obsolete global quotations cache key to prevent stale mock/cross-user template flashing
-    try {
-      localStorage.removeItem('wg_quotations_cache');
-    } catch (_) {}
-
     // 0ms Instant Client Storage Load (uses exact active user/workspace ID only; never reads arbitrary keys)
     try {
       const activeUid = localStorage.getItem('wg_last_active_user_id') || localStorage.getItem('sc_active_workspace_id');
@@ -1201,8 +1196,17 @@ export default function WorkspaceQuotationsGalleryPage() {
             if (currentUserId && currentUserId !== 'demo_user') {
               localStorage.setItem(`wg_quotations_cache_${currentUserId}`, JSON.stringify(combined));
               localStorage.setItem(`studio_templates_cache_${currentUserId}`, JSON.stringify(combined));
+              localStorage.setItem('wg_last_active_user_id', currentUserId);
+            }
+            if (targetWsId && targetWsId !== currentUserId) {
+              localStorage.setItem(`wg_quotations_cache_${targetWsId}`, JSON.stringify(combined));
+              localStorage.setItem(`studio_templates_cache_${targetWsId}`, JSON.stringify(combined));
+            }
+            if (targetWsId) {
+              localStorage.setItem('sc_active_workspace_id', targetWsId);
             }
             localStorage.setItem('studio_templates_cache', JSON.stringify(combined));
+            localStorage.setItem('wg_quotations_cache', JSON.stringify(combined));
             localStorage.setItem('sc_system_template_cache', JSON.stringify(combined));
           } catch (_) {}
         }
