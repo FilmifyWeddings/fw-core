@@ -9,6 +9,7 @@ import { getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import { checkRoleSlotMatch, isCardFilterActive } from '../hooks/useTeamManagerFilter';
 import { UnifiedFilterState } from './ShootFilterModal';
+import { getMemberDisplayRole } from '@/lib/team-helpers';
 
 interface RoleAssignDropdownProps {
   assignment: FWAssignment;
@@ -144,6 +145,7 @@ export default function RoleAssignDropdown({
       const q = searchQuery.toLowerCase();
       return (
         cleanMName.toLowerCase().includes(q) ||
+        getMemberDisplayRole(m).toLowerCase().includes(q) ||
         (m.primary_role && m.primary_role.toLowerCase().includes(q))
       );
     });
@@ -477,7 +479,7 @@ export default function RoleAssignDropdown({
                             )}
                           </div>
                           <span className={`text-[9.5px] font-semibold ${isSelected ? 'text-emerald-700' : isRoleMatch ? 'text-indigo-600 font-bold' : 'text-slate-400'}`}>
-                            {m.primary_role || 'Crew'}
+                            {getMemberDisplayRole(m)}
                           </span>
                         </div>
                       </div>

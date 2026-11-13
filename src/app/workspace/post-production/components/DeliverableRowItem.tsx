@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
+import UnifiedTeamAssignDropdown from '@/components/team/UnifiedTeamAssignDropdown';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
 import { fetchPostProductionSettings, getCachedPostProductionSettings, DEFAULT_POST_PRODUCTION_STATUSES, PostProductionStatusSetting } from '@/lib/post-production-settings';
 import AssignCommercialsModal from './AssignCommercialsModal';
@@ -371,14 +372,21 @@ export default function DeliverableRowItem({
 
       {/* ── 2. EXACT HORIZONTAL LINE CONTROLS CLUSTER (ALIGNABLE COLUMNS) ── */}
       <div className="flex items-center gap-2.5 lg:gap-3 shrink-0 flex-nowrap overflow-x-auto pb-1 xl:pb-0">
-        {/* Column 1: Assignee Selector (Clean fixed width w-44 sm:w-52, atomic single-shot update) */}
+        {/* Column 1: Assignee Selector (Unified In-House & Freelancer Dropdown) */}
         <div className="w-44 sm:w-52 shrink-0">
-          <Searchable3DCreamSelect
-            value={currentAssignee}
+          <UnifiedTeamAssignDropdown
+            selectedId={item.assigned_member_id}
+            selectedName={item.assigned_to}
             disabled={!canManage}
-            onChange={(val) => {
+            teamMembers={teamMembers}
+            labelPrefix=""
+            placeholder="+ Assign Editor"
+            searchPlaceholder="Search team member..."
+            size="sm"
+            variant="select-input"
+            onSelect={(mem) => {
               if (!canManage) return;
-              if (val === 'unassigned') {
+              if (!mem.id && !mem.name) {
                 if (onUpdateItemFields) {
                   onUpdateItemFields(item.id, { 
                     assigned_member_id: null, 
@@ -392,9 +400,8 @@ export default function DeliverableRowItem({
                   onUpdateItem(item.id, 'assigned_to', null);
                 }
               } else {
-                const matched = teamMembers.find(m => m.id === val || m.name === val);
-                const assigned_member_id = matched?.id || val;
-                const assigned_to = matched?.name || val;
+                const assigned_member_id = mem.id || null;
+                const assigned_to = mem.name || null;
 
                 if (onUpdateItemFields) {
                   onUpdateItemFields(item.id, { assigned_member_id, assigned_to });
@@ -406,11 +413,6 @@ export default function DeliverableRowItem({
                 setIsAssignModalOpen(true);
               }
             }}
-            options={teamMemberOptions}
-            searchable={canManage}
-            usePortal={true}
-            searchPlaceholder="🔍 Search editor..."
-            placeholder="+ Assign Editor"
           />
         </div>
 

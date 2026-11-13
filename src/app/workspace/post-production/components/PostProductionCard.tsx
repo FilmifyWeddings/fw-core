@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import SegmentContainer from './SegmentContainer';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
+import UnifiedTeamAssignDropdown from '@/components/team/UnifiedTeamAssignDropdown';
 import { DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
 import { PostProductionTeamMember } from '../page';
@@ -636,14 +637,19 @@ export default function PostProductionCard({
                 </button>
               )}
             </div>
-            <Searchable3DCreamSelect
-              value={localPM || 'unassigned'}
+            <UnifiedTeamAssignDropdown
+              selectedId={project.project_manager_id}
+              selectedName={localPM}
               disabled={isReadOnly}
-              onChange={(val) => {
+              teamMembers={teamMembers}
+              labelPrefix="PM:"
+              placeholder={localPM && localPM !== "unassigned" ? localPM : "Assign PM"}
+              searchPlaceholder="Search team member..."
+              variant="select-input"
+              onSelect={(mem) => {
                 if (isReadOnly) return;
-                const matched = teamMembers.find(m => m.name === val || m.id === val);
-                const nextName = val === 'unassigned' ? null : (matched?.name || val);
-                const nextId = val === 'unassigned' ? null : (matched?.id || null);
+                const nextName = mem.name || null;
+                const nextId = mem.id || null;
                 if (localPM !== nextName) {
                   logAudit({
                     actionType: 'pm_assigned',
@@ -659,11 +665,6 @@ export default function PostProductionCard({
                   project_manager_name: nextName,
                 });
               }}
-              options={pmOptions}
-              searchable={!isReadOnly}
-              usePortal={true}
-              searchPlaceholder="🔍 Search PM..."
-              placeholder={localPM && localPM !== "unassigned" ? "Change PM" : "Assign PM"}
             />
           </div>
 

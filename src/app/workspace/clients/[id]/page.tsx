@@ -18,6 +18,7 @@ import { supabase } from '@/lib/supabase';
 import { getMediaUrl } from '@/lib/r2-storage';
 import AiMicButton from '@/components/AiMicButton';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
+import UnifiedTeamAssignDropdown from '@/components/team/UnifiedTeamAssignDropdown';
 import { fetchWorkspaceEventTypes, DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
 import { extractFinanceMembers, isPlaceholderName } from '@/app/workspace/finance/components/HandledByMultiSelect';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
@@ -3798,19 +3799,22 @@ export default function ClientWorkspaceDetailPage() {
               />
             </div>
 
-            {/* 2. Project Manager 3D Cream Dropdown */}
+            {/* 2. Project Manager Unified Dropdown */}
             <div className="min-w-[210px] max-w-[260px]">
               <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
                 <Users className="w-3 h-3 text-amber-600" />
                 <span>Project Manager</span>
               </div>
-              <Searchable3DCreamSelect
-                options={pmOptions}
-                value={resolvedPmValue}
-                onChange={(val) => !isReadOnly && handleQuickAssignPM(val)}
-                placeholder={isReadOnly ? (resolvedPmValue || 'No PM Assigned') : 'Assign Project Manager...'}
-                searchPlaceholder="Search team members..."
+              <UnifiedTeamAssignDropdown
+                selectedId={resolvedPmValue}
+                selectedName={projectManagerName || extended.project_manager_name}
+                teamMembers={teamMembers}
+                onSelect={(mem) => !isReadOnly && handleQuickAssignPM(mem.id || '')}
+                labelPrefix="PM:"
+                placeholder={isReadOnly ? (projectManagerName || 'No PM Assigned') : 'Assign Project Manager...'}
+                searchPlaceholder="Search team member..."
                 disabled={isReadOnly}
+                variant="select-input"
               />
             </div>
 
@@ -4883,10 +4887,8 @@ export default function ClientWorkspaceDetailPage() {
                 <PostProductionCard
                   project={postProdProjectData}
                   teamMembers={teamMembers.map(m => ({
-                    id: m.id,
-                    name: m.name,
-                    role: m.role,
-                    isInHouse: true,
+                    ...m,
+                    isInHouse: isInHouseMember(m),
                     hasPMAccess: true
                   }))}
                   quotations={quotationDocs}

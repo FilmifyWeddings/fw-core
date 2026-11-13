@@ -6,10 +6,16 @@ export interface WorkspaceMemberOption {
   name: string;
   email?: string;
   phone?: string;
+  phone_number?: string;
   role?: string;
+  primary_role?: string;
+  roles?: string[];
   avatar_url?: string;
   primary_type?: string;
   member_types?: string[];
+  is_active?: boolean;
+  daily_rate?: number;
+  default_daily_rate?: number;
 }
 
 
@@ -85,7 +91,81 @@ function mergeMemberRecords<T = any>(existing: any, incoming: any): T {
     merged.primary_role = incoming.primary_role || incoming.role;
     merged.role = incoming.primary_role || incoming.role;
   }
+
+  // Robust multi-role merging so Studio Owner designated roles are never lost
+  const parseRoles = (val: any): string[] => {
+    if (Array.isArray(val)) return val.map(r => String(r).trim()).filter(Boolean);
+    if (typeof val === 'string' && val.trim()) {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed.map(r => String(r).trim()).filter(Boolean);
+      } catch (_) {}
+      return val.split(',').map((r: string) => r.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  const existingRoles = parseRoles(merged.roles);
+  const incomingRoles = parseRoles(incoming.roles);
+  const combinedRoles = Array.from(new Set([...existingRoles, ...incomingRoles]));
+  if (combinedRoles.length > 0) {
+    merged.roles = combinedRoles;
+  }
+
   return merged as T;
+}
+
+/**
+ * Returns clean, human-readable display string of ALL assigned roles designated by Studio Owner.
+ * e.g.:
+ * - "Social Media Content Creator, Traditional Videographer"
+ * - "Traditional Videographer, Sales Person"
+ * - "Studio Owner"
+ */
+export function getMemberDisplayRole(m: any): string {
+  if (!m) return '';
+  const isOwner = m.role === 'owner' || m.primary_role === 'Studio Owner' || m.isOwner;
+  if (isOwner) {
+    return 'Studio Owner';
+  }
+
+  let rolesList: string[] = [];
+  if (Array.isArray(m.roles) && m.roles.length > 0) {
+    rolesList = m.roles.map((r: any) => String(r).trim()).filter(Boolean);
+  } else if (typeof m.roles === 'string' && m.roles.trim()) {
+    try {
+      const parsed = JSON.parse(m.roles);
+      if (Array.isArray(parsed)) {
+        rolesList = parsed.map((r: any) => String(r).trim()).filter(Boolean);
+      } else {
+        rolesList = [m.roles.trim()];
+      }
+    } catch (_) {
+      rolesList = m.roles.split(',').map((r: string) => r.trim()).filter(Boolean);
+    }
+  }
+
+  if (m.primary_role && typeof m.primary_role === 'string') {
+    const pr = m.primary_role.trim();
+    if (pr && pr.toLowerCase() !== 'member' && !rolesList.some(r => r.toLowerCase() === pr.toLowerCase())) {
+      rolesList.unshift(pr);
+    }
+  }
+
+  if (rolesList.length > 0) {
+    const unique = Array.from(new Set(rolesList));
+    return unique.join(', ');
+  }
+
+  if (m.primary_role && m.primary_role.toLowerCase() !== 'member') {
+    return m.primary_role;
+  }
+  if (m.role && m.role.toLowerCase() !== 'member') {
+    return m.role;
+  }
+
+  const primaryType = String(m.primary_type || m.type || '').toUpperCase();
+  return primaryType === 'FREELANCER' ? 'Freelancer' : 'In-House Team';
 }
 
 /**

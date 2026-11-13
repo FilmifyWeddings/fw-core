@@ -7,6 +7,7 @@ import {
   CreditCard, Sparkles, User, AlertCircle 
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
+import { getMemberDisplayRole } from '@/lib/team-helpers';
 
 interface AssignCommercialsModalProps {
   isOpen: boolean;
@@ -190,7 +191,7 @@ export default function AssignCommercialsModal({
                 <option value="">-- Choose Team Member / Freelancer --</option>
                 {teamMembers.map(m => (
                   <option key={m.id} value={m.id}>
-                    {m.name} {m.role ? `(${m.role})` : ''} {m.daily_rate ? `• ₹${m.daily_rate}/day` : ''}
+                    {m.name} {getMemberDisplayRole(m) ? `(${getMemberDisplayRole(m)})` : ''} {m.daily_rate ? `• ₹${m.daily_rate}/day` : ''}
                   </option>
                 ))}
               </select>

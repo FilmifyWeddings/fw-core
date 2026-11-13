@@ -26,6 +26,10 @@ on:
       - 'src/lib/compressor.ts'
       - 'src/lib/team-helpers.ts'
       - 'src/app/workspace/finance/**'
+      - 'src/app/workspace/post-production/**'
+      - 'src/app/workspace/bookings/**'
+      - 'src/app/team-manager/**'
+      - 'src/components/team/**'
       - 'src/components/modals/ProjectManagerAssignModal.tsx'
       - '.github/workflows/client-directory-ci.yml'
   workflow_dispatch:
@@ -67,12 +71,10 @@ jobs:
           echo "$CHANGED_FILES"
 
           PROTECTED_PATTERNS=(
-            '^src/app/team-manager/'
             '^src/app/api/leads/'
             '^src/app/api/upload/r2/'
             '^src/app/api/media/r2/'
             '^src/app/workspace/gallery/'
-            '^src/app/workspace/post-production/'
             '^baileys-worker/'
             '^\.github/workflows/deploy\.yml$'
           )
@@ -81,6 +83,9 @@ jobs:
             '^src/app/workspace/clients/'
             '^src/app/api/workspace/clients/'
             '^src/app/workspace/finance/'
+            '^src/app/workspace/post-production/'
+            '^src/app/workspace/bookings/'
+            '^src/app/team-manager/'
             '^src/app/p/client/'
             '^src/app/api/public/client-portal/'
             '^src/app/api/moodboard/'
@@ -88,6 +93,7 @@ jobs:
             '^src/app/api/media/moodboard/'
             '^src/components/clients/'
             '^src/components/moodboard/'
+            '^src/components/team/'
             '^src/components/AiMicButton\.tsx$'
             '^src/components/sidebar-layout\.tsx$'
             '^src/lib/quotation-finance-sync\.ts$'

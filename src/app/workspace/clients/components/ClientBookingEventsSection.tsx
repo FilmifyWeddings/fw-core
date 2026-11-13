@@ -23,7 +23,7 @@ import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import type { FWProject, FWSubEvent, FWTeamMember, FWAssignment, WorkspaceClient } from '@/types';
-import { resolveSubEventAssignments, getGroupedTeamMembers } from '@/lib/team-helpers';
+import { resolveSubEventAssignments, getGroupedTeamMembers, getMemberDisplayRole } from '@/lib/team-helpers';
 import { isSlotAssigned } from '@/app/team-manager/hooks/useTeamManagerFilter';
 import {
   WorkspaceCrewRole,
@@ -1493,6 +1493,7 @@ export default function ClientBookingEventsSection({
                         const filterMem = (m: any) =>
                           !q ||
                           m.name.toLowerCase().includes(q) ||
+                          getMemberDisplayRole(m).toLowerCase().includes(q) ||
                           (m.primary_role || m.role || '').toLowerCase().includes(q);
 
                         const inHouseFiltered = groupedInHouse.filter(filterMem);
@@ -1545,7 +1546,7 @@ export default function ClientBookingEventsSection({
                                         <div className="min-w-0">
                                           <p className="text-xs font-black truncate">{m.name}</p>
                                           <p className="text-[10px] text-slate-400 font-semibold truncate">
-                                            {m.primary_role || (m as any).role || (m.roles && m.roles[0]) || 'In-House'}
+                                            {getMemberDisplayRole(m)}
                                           </p>
                                         </div>
                                       </div>
@@ -1593,7 +1594,7 @@ export default function ClientBookingEventsSection({
                                         <div className="min-w-0">
                                           <p className="text-xs font-black truncate">{m.name}</p>
                                           <p className="text-[10px] text-slate-400 font-semibold truncate">
-                                            {m.primary_role || (m as any).role || (m.roles && m.roles[0]) || 'Freelancer'}
+                                            {getMemberDisplayRole(m)}
                                           </p>
                                         </div>
                                       </div>
@@ -2130,6 +2131,7 @@ export default function ClientBookingEventsSection({
                           const filterMem = (m: any) =>
                             !q ||
                             m.name.toLowerCase().includes(q) ||
+                            getMemberDisplayRole(m).toLowerCase().includes(q) ||
                             (m.primary_role || m.role || '').toLowerCase().includes(q);
 
                           const inHouseFiltered = groupedInHouse.filter(filterMem);
@@ -2181,7 +2183,7 @@ export default function ClientBookingEventsSection({
                                           <div className="min-w-0">
                                             <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
                                             <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">
-                                              {m.primary_role || (m as any).role || (m.roles && m.roles[0]) || 'In-House'}
+                                              {getMemberDisplayRole(m)}
                                             </p>
                                           </div>
                                         </div>
@@ -2228,7 +2230,7 @@ export default function ClientBookingEventsSection({
                                           <div className="min-w-0">
                                             <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
                                             <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">
-                                              {m.primary_role || (m as any).role || (m.roles && m.roles[0]) || 'Freelancer'}
+                                              {getMemberDisplayRole(m)}
                                             </p>
                                           </div>
                                         </div>
@@ -2649,6 +2651,7 @@ export default function ClientBookingEventsSection({
                         const q = memberSearchQuery.toLowerCase();
                         return (
                           cleanMName.toLowerCase().includes(q) ||
+                          getMemberDisplayRole(m).toLowerCase().includes(q) ||
                           (m.primary_role && m.primary_role.toLowerCase().includes(q))
                         );
                       })
@@ -2751,7 +2754,7 @@ export default function ClientBookingEventsSection({
                                       : 'text-slate-400'
                                   }`}
                                 >
-                                  {m.primary_role || 'Crew'}
+                                  {getMemberDisplayRole(m)}
                                 </span>
                               </div>
                             </div>

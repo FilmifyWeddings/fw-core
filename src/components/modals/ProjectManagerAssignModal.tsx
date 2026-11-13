@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
-import { isInHouseMember, getDedupedInHouseMembers, getGroupedTeamMembers } from '@/lib/team-helpers';
+import { isInHouseMember, getDedupedInHouseMembers, getGroupedTeamMembers, getMemberDisplayRole } from '@/lib/team-helpers';
 
 export interface ProjectManagerAssignClient {
   id: string;
@@ -37,6 +37,10 @@ export interface ProjectManagerAssignMember {
   id: string;
   name: string;
   role?: string | null;
+  primary_role?: string | null;
+  roles?: string[];
+  primary_type?: string | null;
+  member_types?: string[];
   email?: string | null;
   phone?: string | null;
   avatar_url?: string | null;
@@ -146,6 +150,7 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
     if (!q) return inHouseList;
     return inHouseList.filter(m => 
       m.name.toLowerCase().includes(q) || 
+      getMemberDisplayRole(m).toLowerCase().includes(q) ||
       (m.role && m.role.toLowerCase().includes(q)) ||
       (m.email && m.email.toLowerCase().includes(q))
     );
@@ -156,6 +161,7 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
     if (!q) return freelancerList;
     return freelancerList.filter(m => 
       m.name.toLowerCase().includes(q) || 
+      getMemberDisplayRole(m).toLowerCase().includes(q) ||
       (m.role && m.role.toLowerCase().includes(q)) ||
       (m.email && m.email.toLowerCase().includes(q))
     );
@@ -498,9 +504,7 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
                             )}
                             <div className="min-w-0">
                               <p className="text-xs font-bold text-slate-900 truncate">{member.name}</p>
-                              {member.role && (
-                                <p className="text-[10px] text-slate-500 font-medium truncate">{member.role}</p>
-                              )}
+                              <p className="text-[10px] text-slate-500 font-medium truncate">{getMemberDisplayRole(member)}</p>
                             </div>
                           </div>
                           {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
@@ -558,9 +562,7 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
                             )}
                             <div className="min-w-0">
                               <p className="text-xs font-bold text-slate-900 truncate">{member.name}</p>
-                              {member.role && (
-                                <p className="text-[10px] text-slate-500 font-medium truncate">{member.role}</p>
-                              )}
+                              <p className="text-[10px] text-slate-500 font-medium truncate">{getMemberDisplayRole(member)}</p>
                             </div>
                           </div>
                           {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}

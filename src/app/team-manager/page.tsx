@@ -18,6 +18,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
+import { getMemberDisplayRole } from '@/lib/team-helpers';
 import { handleUpdateBookingPM } from '../workspace/bookings/components/ProjectBookingCard';
 import { parseClientExtended } from '@/components/clients/client-insider-modal';
 import { logProjectActivity, logCrewAssignmentChange } from '@/lib/services/projectAuditService';
@@ -658,7 +659,7 @@ export default function TeamManagerPage() {
             const apiJson = await apiRes.json();
             if (apiJson.success && Array.isArray(apiJson.projects) && apiJson.projects.length > 0) {
               resolvedProjects = apiJson.projects;
-              console.log('[TeamManager] Resilient server API loaded projects:', resolvedProjects.length);
+              console.log('[TeamManager] Resilient server API loaded projects:', resolvedProjects?.length);
             }
           }
         } catch (apiErr) {
@@ -2536,7 +2537,7 @@ export default function TeamManagerPage() {
                                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                                   <div className="flex items-center gap-4 flex-wrap pt-1">
                                     {assignments.map((assignment) => {
-                                      const cleanAssigneeName = String(assignment.assigned_member_name || (assignment.fw_team_members as any)?.name || '').trim().toLowerCase();
+                                      const cleanAssigneeName = String((assignment as any).assigned_member_name || (assignment.fw_team_members as any)?.name || '').trim().toLowerCase();
                                       const isPlaceholder = !cleanAssigneeName || ['not fixed', 'tbd', 'unassigned', 'pending', 'date not fixed'].includes(cleanAssigneeName) || cleanAssigneeName.startsWith('not fixed');
                                       const memberObj = assignment.fw_team_members || (assignment.assigned_member_id 
                                         ? teamMembers.find(m => m.id === assignment.assigned_member_id || (!isPlaceholder && m.name.trim().toLowerCase() === cleanAssigneeName))
@@ -2724,6 +2725,7 @@ export default function TeamManagerPage() {
                                         .filter(m => 
                                           !pmSearchQuery.trim() || 
                                           m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) || 
+                                          getMemberDisplayRole(m).toLowerCase().includes(pmSearchQuery.toLowerCase()) ||
                                           (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
                                         )
                                         .map(m => {
@@ -2751,7 +2753,7 @@ export default function TeamManagerPage() {
                                                 </div>
                                                 <div className="min-w-0">
                                                   <p className="text-xs font-black truncate">{m.name}</p>
-                                                  <p className="text-[10px] text-slate-400 font-semibold truncate">{m.primary_role || 'Team Member'}</p>
+                                                  <p className="text-[10px] text-slate-400 font-semibold truncate">{getMemberDisplayRole(m)}</p>
                                                 </div>
                                               </div>
                                               {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
@@ -3281,6 +3283,7 @@ export default function TeamManagerPage() {
                                         .filter(m => 
                                           !pmSearchQuery.trim() || 
                                           m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) || 
+                                          getMemberDisplayRole(m).toLowerCase().includes(pmSearchQuery.toLowerCase()) ||
                                           (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
                                         )
                                         .map(m => {
@@ -3308,7 +3311,7 @@ export default function TeamManagerPage() {
                                                 </div>
                                                 <div className="min-w-0">
                                                   <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
-                                                  <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">{m.primary_role || 'Crew'}</p>
+                                                  <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">{getMemberDisplayRole(m)}</p>
                                                 </div>
                                               </div>
                                               {isSelected && <Check className="w-3 h-3 text-amber-600 shrink-0" />}
@@ -4223,8 +4226,8 @@ export default function TeamManagerPage() {
                           ...a,
                           id: savedData.assignmentId || a.id,
                           assigned_member_id: whatsappModalData.member?.id || (savedData.savedAssignment as any)?.assigned_member_id || a.assigned_member_id,
-                          assigned_member_name: whatsappModalData.member?.name || (savedData.savedAssignment as any)?.assigned_member_name || a.assigned_member_name,
-                          assigned_member_phone: whatsappModalData.member?.phone_number || (whatsappModalData.member as any)?.phone || a.assigned_member_phone,
+                          assigned_member_name: whatsappModalData.member?.name || (savedData.savedAssignment as any)?.assigned_member_name || (a as any).assigned_member_name,
+                          assigned_member_phone: whatsappModalData.member?.phone_number || (whatsappModalData.member as any)?.phone || (a as any).assigned_member_phone,
                           fw_team_members: whatsappModalData.member || a.fw_team_members,
                           status: 'assigned',
                           agreed_amount: savedData.agreedAmount,

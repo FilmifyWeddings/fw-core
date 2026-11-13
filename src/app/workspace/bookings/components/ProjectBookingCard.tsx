@@ -106,6 +106,10 @@ export const ProjectBookingCard: React.FC<ProjectBookingCardProps> = ({
     id: m.id,
     name: m.name,
     role: m.primary_role || 'Crew Member',
+    primary_role: m.primary_role || null,
+    roles: (m as any).roles || [],
+    primary_type: (m as any).primary_type || null,
+    member_types: (m as any).member_types || [],
     email: m.email,
     phone: m.phone,
     avatar_url: m.avatar_url
