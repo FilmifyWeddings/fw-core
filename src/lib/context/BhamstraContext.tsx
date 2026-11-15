@@ -148,6 +148,34 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
 
   const hasFetchedRef = useRef(false);
 
+  // 0ms Optimistic LocalStorage Hydration: Eliminates empty screen / blocking spinner on repeat visits
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const cachedWsJson = localStorage.getItem('sc_cached_workspaces');
+      const cachedActiveId = localStorage.getItem('sc_active_workspace_id');
+      const isPure = localStorage.getItem('sc_is_pure_freelancer') === 'true';
+      if (cachedWsJson) {
+        const parsed = JSON.parse(cachedWsJson);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setAvailableWorkspaces(parsed);
+          const urlParams = new URLSearchParams(window.location.search);
+          const targetId = urlParams.get('studio') || urlParams.get('ws') || cachedActiveId;
+          const found = parsed.find((w: any) => w.workspaceId === targetId || w.studioSlug === targetId) || parsed[0];
+          if (found) {
+            setActiveWorkspace(found);
+            setWorkspaceId(found.workspaceId);
+            setWorkspaceName(found.studioName);
+            setIsOwner(Boolean(found.isOwner));
+            setUserRole(found.userRole || 'FREELANCER');
+            if (found.permissions) setPermissions(found.permissions);
+            setLoading(false);
+          }
+        }
+      }
+    } catch (_) {}
+  }, []);
+
   const refreshContext = useCallback(async (force = false) => {
     if (!force && hasFetchedRef.current) return;
     hasFetchedRef.current = true;
@@ -222,6 +250,7 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
       const workspaceList: WorkspaceOption[] = [ownerOption];
 
       // 2. Fetch Multi-Tenant Workspaces (Owner Studio + Partner Workspaces)
+      let isPureFreelancer = false;
       try {
         if (session?.access_token) {
           const apiRes = await fetch('/api/workspace/my-workspaces', {
@@ -230,6 +259,11 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
           const apiJson = await apiRes.json();
           if (apiJson.success && Array.isArray(apiJson.workspaces) && apiJson.workspaces.length > 0) {
             workspaceList.splice(0, workspaceList.length, ...apiJson.workspaces);
+            isPureFreelancer = Boolean(apiJson.isPureFreelancer);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('sc_cached_workspaces', JSON.stringify(apiJson.workspaces));
+              localStorage.setItem('sc_is_pure_freelancer', String(isPureFreelancer));
+            }
           }
         }
       } catch (wsApiErr) {
@@ -256,9 +290,13 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
         } else {
           // If no specific workspace saved and user is an invited member with partner workspaces, prefer partner workspace
           const partnerWs = workspaceList.find(w => !w.isOwner);
-          const hasOwnStudio = Boolean(profile?.workspace_name && profile?.workspace_name !== 'My Studio');
-          active = (!hasOwnStudio && partnerWs) ? partnerWs : ownerOption;
+          const hasOwnStudio = Boolean(profile?.workspace_name && profile?.workspace_name !== 'My Studio' && !isPureFreelancer);
+          active = (!hasOwnStudio && partnerWs) ? partnerWs : (workspaceList[0] || ownerOption);
         }
+      }
+
+      if (typeof window !== 'undefined' && active.workspaceId) {
+        localStorage.setItem('sc_active_workspace_id', active.workspaceId);
       }
 
       setActiveWorkspace(active);

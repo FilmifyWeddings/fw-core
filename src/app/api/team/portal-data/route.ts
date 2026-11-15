@@ -188,29 +188,70 @@ export async function GET(req: NextRequest) {
       console.warn('[portal-data] Shoots query note:', shootErr);
     }
 
-    // 3. Fetch Post-Production Deliverables
+    // 3. Fetch Post-Production Deliverables (High-Speed Targeted Queries)
     let deliverables: any[] = [];
     try {
-      const [ppProjectsRes, fwProjectsRes, rawDelivsRes] = await Promise.allSettled([
+      // First fetch only the projects & deliverables relevant to this workspace/member
+      const [ppProjectsRes, rawDelivsRes] = await Promise.allSettled([
         (() => {
           let q = supabaseAdmin
             .from('post_production_projects')
             .select('id, workspace_id, client_id, deliverables, is_deleted');
           if (resolvedWsId) {
             q = q.eq('workspace_id', resolvedWsId);
+          } else {
+            // Scope to known member workspaces to avoid full table scan
+            const knownWsIds = Array.from(new Set([
+              ...wmList.map((m: any) => m.workspace_id),
+              ...ftmList.map((m: any) => m.workspace_id),
+            ].filter(Boolean)));
+            if (knownWsIds.length > 0) {
+              q = q.in('workspace_id', knownWsIds);
+            }
           }
-          return q.neq('is_deleted', true);
+          return q.neq('is_deleted', true).limit(100);
         })(),
-        supabaseAdmin.from('fw_projects').select('id, client_id, client_name'),
-        supabaseAdmin.from('post_production_deliverables').select('*').in('assigned_member_id', allMemberIds)
+        (() => {
+          let q = supabaseAdmin
+            .from('post_production_deliverables')
+            .select('*')
+            .in('assigned_member_id', allMemberIds);
+          if (resolvedWsId) {
+            q = q.eq('workspace_id', resolvedWsId);
+          }
+          return q.limit(100);
+        })()
       ]);
 
-      const clientMap = new Map<string, string>();
-      if (fwProjectsRes.status === 'fulfilled' && fwProjectsRes.value.data) {
-        fwProjectsRes.value.data.forEach((p: any) => {
-          if (p.id && p.client_name) clientMap.set(p.id, p.client_name);
-          if (p.client_id && p.client_name) clientMap.set(p.client_id, p.client_name);
+      // Collect only the project/client IDs that are actually referenced
+      const referencedProjIds = new Set<string>();
+      if (ppProjectsRes.status === 'fulfilled' && ppProjectsRes.value.data) {
+        ppProjectsRes.value.data.forEach((p: any) => {
+          if (p.id) referencedProjIds.add(p.id);
+          if (p.client_id) referencedProjIds.add(p.client_id);
         });
+      }
+      if (rawDelivsRes.status === 'fulfilled' && rawDelivsRes.value.data) {
+        rawDelivsRes.value.data.forEach((d: any) => {
+          if (d.project_id) referencedProjIds.add(d.project_id);
+        });
+      }
+
+      // ⚡ Only query fw_projects for the specific referenced IDs (Zero full-table scan!)
+      const clientMap = new Map<string, string>();
+      if (referencedProjIds.size > 0) {
+        const idList = Array.from(referencedProjIds);
+        const { data: matchedProjects } = await supabaseAdmin
+          .from('fw_projects')
+          .select('id, client_id, client_name')
+          .in('id', idList);
+
+        if (matchedProjects && matchedProjects.length > 0) {
+          matchedProjects.forEach((p: any) => {
+            if (p.id && p.client_name) clientMap.set(p.id, p.client_name);
+            if (p.client_id && p.client_name) clientMap.set(p.client_id, p.client_name);
+          });
+        }
       }
 
       const delivMap = new Map<string, any>();
@@ -351,6 +392,10 @@ export async function GET(req: NextRequest) {
       deliverables,
       salaries,
       memberProfile
+    }, {
+      headers: {
+        'Cache-Control': 'private, max-age=15, stale-while-revalidate=45',
+      }
     });
   } catch (err: any) {
     console.error('[API /team/portal-data] Error:', err);

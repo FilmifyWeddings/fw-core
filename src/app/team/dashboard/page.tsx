@@ -62,7 +62,8 @@ export default function TeamDashboardPage() {
   const [shoots, setShoots] = useState<AssignedShoot[]>([]);
   const [deliverables, setDeliverables] = useState<any[]>([]);
   const [salaries, setSalaries] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [dashboardTab, setDashboardTab] = useState<'shoots' | 'deliverables' | 'salaries'>('shoots');
   const [activeTab, setActiveTab] = useState<'upcoming' | 'completed' | 'all'>('upcoming');
   const [selectedStudio, setSelectedStudio] = useState<string>('all');
@@ -75,10 +76,42 @@ export default function TeamDashboardPage() {
   const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics' | 'deliverables'>('bookings');
   const [currentMemberProfile, setCurrentMemberProfile] = useState<any | null>(null);
 
+  // 0ms Optimistic SWR Hydration: Render cached assignments in 0 milliseconds
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const targetWs = urlParams.get('studio') || activeWorkspace?.workspaceId || activeWorkspace?.studioSlug || 'all';
+      const cacheKey = `sc_team_portal_cache_${targetWs}`;
+      const cached = localStorage.getItem(cacheKey) || localStorage.getItem('sc_team_portal_cache_all');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed) {
+          if (Array.isArray(parsed.shoots)) setShoots(parsed.shoots);
+          if (Array.isArray(parsed.deliverables)) setDeliverables(parsed.deliverables);
+          if (Array.isArray(parsed.salaries)) setSalaries(parsed.salaries);
+          if (parsed.profile) setCurrentMemberProfile(parsed.profile);
+        }
+      }
+    } catch (_) {}
+  }, [activeWorkspace?.workspaceId, activeWorkspace?.studioSlug]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
     async function loadCrewData() {
       try {
-        setLoading(true);
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetWs = urlParams.get('studio') || activeWorkspace?.workspaceId || activeWorkspace?.studioSlug;
+        const cacheKey = `sc_team_portal_cache_${targetWs || 'all'}`;
+
+        // Only set full loading if no shoots/data currently in memory
+        if (shoots.length === 0 && deliverables.length === 0) {
+          setLoading(true);
+        } else {
+          setIsSyncing(true);
+        }
+
         const { data: { session } } = await supabase.auth.getSession();
         const { data: { user } } = await supabase.auth.getUser();
         const activeUser = session?.user || user;
@@ -89,7 +122,6 @@ export default function TeamDashboardPage() {
         }
 
         const token = session?.access_token;
-        const targetWs = activeWorkspace?.workspaceId || activeWorkspace?.studioSlug;
         const url = targetWs && targetWs !== 'all'
           ? `/api/team/portal-data?workspace_id=${encodeURIComponent(targetWs)}`
           : '/api/team/portal-data';
@@ -98,6 +130,8 @@ export default function TeamDashboardPage() {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const json = await res.json();
+
+        if (isCancelled) return;
 
         let loadedShoots = [];
         let loadedDelivs = [];
@@ -119,7 +153,7 @@ export default function TeamDashboardPage() {
         const cleanRate = Number(profile?.default_daily_rate || 0);
         const cleanFreq = profile?.payout_frequency || 'daily';
 
-        setCurrentMemberProfile({
+        const memberObj = {
           id: profile?.id || activeUser.id,
           name: rawName,
           email: profile?.email || activeUser.email || '',
@@ -133,16 +167,37 @@ export default function TeamDashboardPage() {
           assignments: loadedShoots,
           salaries: loadedSalaries,
           deliverables: loadedDelivs,
-        });
+        };
+
+        setCurrentMemberProfile(memberObj);
+
+        // Cache response for 0ms next load
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              shoots: loadedShoots,
+              deliverables: loadedDelivs,
+              salaries: loadedSalaries,
+              profile: memberObj,
+            }));
+          } catch (_) {}
+        }
       } catch (err) {
         console.error('Error loading team portal data:', err);
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          setLoading(false);
+          setIsSyncing(false);
+        }
       }
     }
 
     loadCrewData();
-  }, [router, activeWorkspace?.workspaceId]);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [router, activeWorkspace?.workspaceId, activeWorkspace?.studioSlug]);
 
   const today = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
@@ -200,6 +255,11 @@ export default function TeamDashboardPage() {
               </span>
               <span className="text-xs text-zinc-400">•</span>
               <span className="text-xs font-bold text-zinc-500">{userRole || 'Crew Member'}</span>
+              {isSyncing && (
+                <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200/80 font-bold animate-pulse">
+                  Syncing live...
+                </span>
+              )}
             </div>
             <h1 className="text-2xl sm:text-3xl font-serif font-black text-zinc-900 tracking-tight">
               My Assigned Work &amp; Schedule
@@ -415,10 +475,22 @@ export default function TeamDashboardPage() {
               )}
             </div>
 
-            {loading ? (
-              <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF]">
-                <div className="animate-spin w-8 h-8 border-3 border-amber-600 border-t-transparent rounded-full mx-auto mb-3" />
-                <p className="text-xs font-bold text-zinc-500">Loading your assignments...</p>
+            {loading && shoots.length === 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="p-5 rounded-2xl bg-white border border-[#EBE7DF] animate-pulse space-y-3">
+                    <div className="flex justify-between items-center">
+                      <div className="h-4 bg-zinc-200 rounded w-1/3" />
+                      <div className="h-5 bg-amber-100 rounded-full w-16" />
+                    </div>
+                    <div className="h-6 bg-zinc-200 rounded w-3/4" />
+                    <div className="h-4 bg-zinc-100 rounded w-1/2" />
+                    <div className="pt-3 border-t border-zinc-100 flex justify-between">
+                      <div className="h-4 bg-zinc-100 rounded w-1/4" />
+                      <div className="h-4 bg-emerald-100 rounded w-1/4" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : filteredShoots.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3">
