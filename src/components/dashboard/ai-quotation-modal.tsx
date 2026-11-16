@@ -1863,10 +1863,11 @@ LEAD & CLIENT CONTEXT:
                     <div className="flex items-center justify-between p-3 border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-zinc-900/60 rounded-b-2xl">
                       {/* Left: Copy Prompt / Clear / Char count */}
                       <div className="flex items-center gap-2">
+                        {/* Hidden per user request: Copy Prompt button */}
                         <button
                           type="button"
                           onClick={handleCopySystemPrompt}
-                          className="px-2.5 py-1.5 rounded-xl bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+                          className="hidden px-2.5 py-1.5 rounded-xl bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-[11px] items-center gap-1.5 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
                           title="Copy Master JSON Prompt"
                         >
                           {promptCopied ? (
@@ -1951,24 +1952,6 @@ LEAD & CLIENT CONTEXT:
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
-                            {additionalNotes.trim().length > 0 && (
-                              <button
-                                type="button"
-                                onClick={handleQuickCreateAndOpen}
-                                disabled={generating}
-                                className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                                title="Create Quotation with AI"
-                              >
-                                {generating ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <>
-                                    <Sparkles className="w-3.5 h-3.5" />
-                                    <span>Create</span>
-                                  </>
-                                )}
-                              </button>
-                            )}
                             <button
                               type="button"
                               onClick={startVoiceRecording}

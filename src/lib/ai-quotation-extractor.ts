@@ -4081,6 +4081,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     deliverablesText: '',
     showExclusionsNote: true
   };
+  let finalPwDelivs = '';
 
   if (hasPreWed) {
     const pwText = preWedClauses.join(' ') || userNotes;
@@ -4111,7 +4112,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     if (/raw|रॉ/i.test(pwLower)) pwDelivMatches.push('Full Ultra HD Super-Fine Raw Photos');
     if (/highlight|film/i.test(pwLower)) pwDelivMatches.push('Pre-Wedding Highlight Film');
 
-    const finalPwDelivs = pwDelivMatches.length > 0
+    finalPwDelivs = pwDelivMatches.length > 0
       ? Array.from(new Set(pwDelivMatches)).join('\n')
       : (studioPwDelivs.length > 0
           ? studioPwDelivs.slice(0, 3).join('\n')
