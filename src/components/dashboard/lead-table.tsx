@@ -905,11 +905,31 @@ export function LeadTable({
         .subscribe();
     }
 
+    const handleTabRevisit = () => {
+      if (typeof window !== 'undefined') {
+        try {
+          const stored = localStorage.getItem('sc_quotation_summary_map');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed && typeof parsed === 'object') {
+              setQuotationSummaryMap(prev => ({ ...prev, ...parsed }));
+            }
+          }
+        } catch (_) {}
+      }
+      fetchQuotationSummaries(true);
+    };
+
     if (typeof window !== 'undefined') {
       window.addEventListener('quotation_finalized', handleQuotationFinalized);
       window.addEventListener('quotation_created', handleQuotationCreated);
       window.addEventListener('quotation_updated', handleQuotationCreated);
       window.addEventListener('wg_quotations_updated', handleQuotationCreated);
+      window.addEventListener('focus', handleTabRevisit);
+      window.addEventListener('pageshow', handleTabRevisit);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') handleTabRevisit();
+      });
     }
     return () => {
       isCancelled = true;
@@ -921,6 +941,8 @@ export function LeadTable({
         window.removeEventListener('quotation_created', handleQuotationCreated);
         window.removeEventListener('quotation_updated', handleQuotationCreated);
         window.removeEventListener('wg_quotations_updated', handleQuotationCreated);
+        window.removeEventListener('focus', handleTabRevisit);
+        window.removeEventListener('pageshow', handleTabRevisit);
       }
     };
   }, [searchParams]);
@@ -3881,7 +3903,9 @@ export function LeadTable({
                         lead.final_quotation_id ||
                         lead.raw_payload?.final_quotation_id
                       );
-                      const cachedLeadQuotes = typeof window !== 'undefined' ? sessionStorage.getItem(`lead_quotes_cache_${lead.id}`) : null;
+                      const cachedLeadQuotes = typeof window !== 'undefined'
+                        ? (sessionStorage.getItem(`lead_quotes_cache_${lead.id}`) || localStorage.getItem(`lead_quotes_cache_${lead.id}`))
+                        : null;
                       const hasCachedQuotes = Boolean(cachedLeadQuotes && cachedLeadQuotes !== '[]' && cachedLeadQuotes !== 'null');
                       const hasQuotes = (qSummary?.count || 0) > 0 || (qSummary?.versions?.length || 0) > 0 || isFinal || hasCachedQuotes || Boolean(lead.final_quotation_id || lead.raw_payload?.final_quotation_id || lead.raw_payload?.quotation_id || (lead as any).quotation_id);
 
@@ -4844,7 +4868,9 @@ export function LeadTable({
                                 lead.final_quotation_id ||
                                 lead.raw_payload?.final_quotation_id
                               );
-                              const cachedLeadQuotes = typeof window !== 'undefined' ? sessionStorage.getItem(`lead_quotes_cache_${lead.id}`) : null;
+                              const cachedLeadQuotes = typeof window !== 'undefined'
+                        ? (sessionStorage.getItem(`lead_quotes_cache_${lead.id}`) || localStorage.getItem(`lead_quotes_cache_${lead.id}`))
+                        : null;
                               const hasCachedQuotes = Boolean(cachedLeadQuotes && cachedLeadQuotes !== '[]' && cachedLeadQuotes !== 'null');
                               const hasQuotes = (qSummary?.count || 0) > 0 || (qSummary?.versions?.length || 0) > 0 || isFinal || hasCachedQuotes || Boolean(lead.final_quotation_id || lead.raw_payload?.final_quotation_id || lead.raw_payload?.quotation_id || (lead as any).quotation_id);
 
@@ -6009,7 +6035,21 @@ export function LeadTable({
         isOpen={!!quotationModalLead} 
         onClose={() => setQuotationModalLead(null)} 
         lead={quotationModalLead} 
-        initialQuotations={quotationModalLead ? (quotationSummaryMap[quotationModalLead.id]?.versions || []) : []}
+        initialQuotations={(() => {
+          if (!quotationModalLead) return [];
+          const fromMap = quotationSummaryMap[quotationModalLead.id]?.versions;
+          if (Array.isArray(fromMap) && fromMap.length > 0) return fromMap;
+          if (typeof window !== 'undefined') {
+            try {
+              const rawCache = sessionStorage.getItem(`lead_quotes_cache_${quotationModalLead.id}`) || localStorage.getItem(`lead_quotes_cache_${quotationModalLead.id}`);
+              if (rawCache) {
+                const parsed = JSON.parse(rawCache);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+              }
+            } catch (_) {}
+          }
+          return [];
+        })()}
         onQuotationChange={handleQuotationChange}
         isReadOnly={isReadOnly}
         onFinalSet={(q) => {

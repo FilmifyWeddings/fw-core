@@ -171,7 +171,10 @@ async function handleGet(
         is_default: false
       },
       document: {
+        id: doc?.id || id,
         template_id: id,
+        lead_id: doc?.lead_id || finalDoc?.lead_id || quoteRec?.client_id || null,
+        lead_version: doc?.lead_version || finalDoc?.lead_version || null,
         version: doc?.version || 1,
         content_json: finalDoc,
         document_json: finalDoc

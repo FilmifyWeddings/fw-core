@@ -376,10 +376,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!clonedDoc.cover.locationName && (effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location)) {
-      clonedDoc.cover.locationName = effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location;
-    }
-
     // STRICT GUARANTEE: Never overwrite template branding, photos, or custom headings with dummy placeholders
     if (templateDoc.cover?.brandName) clonedDoc.cover.brandName = templateDoc.cover.brandName;
     if (templateDoc.cover?.brandLogoUrl) clonedDoc.cover.brandLogoUrl = templateDoc.cover.brandLogoUrl;

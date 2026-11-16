@@ -517,7 +517,53 @@ export function consolidateSameDateFunctions(items: any[]): any[] {
  * 3. First available function location
  * 4. Cleaned single city/venue from rawCoverLocation (NEVER concats multiple venues)
  */
-export function resolvePrimaryCoverLocation(rawCoverLocation: string, functions: any[]): string {
+/**
+ * Splits pre-wedding deliverables into point-to-point individual bullet items.
+ * Handles newlines, bullets (•), semicolons, and comma-separated clauses cleanly.
+ */
+export function splitDeliverablesIntoList(raw: string | string[]): string[] {
+  if (Array.isArray(raw)) return raw.map(s => String(s || '').trim()).filter(Boolean);
+  if (!raw || typeof raw !== 'string') return [];
+  const lines = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const result: string[] = [];
+  for (const line of lines) {
+    if (line.includes('•')) {
+      const parts = line.split('•').map(p => p.trim()).filter(Boolean);
+      result.push(...parts);
+    } else if (line.includes(';') && line.length > 20) {
+      const parts = line.split(';').map(p => p.trim()).filter(Boolean);
+      result.push(...parts);
+    } else if (line.includes(',') && !/\b(?:approx|full|save)\b/i.test(line) && line.split(',').length >= 2) {
+      const parts = line.split(/,(?=\s*(?:\d+|Approx|Full|Save|Instagram|Highlight|Teaser|Cinematic|Drone|[A-Z\u0900-\u097F]))/gi)
+        .map(p => p.trim())
+        .filter(Boolean);
+      result.push(...parts);
+    } else {
+      result.push(line);
+    }
+  }
+  return result.map(s => s.replace(/^[\s•\-\*\d+.)\s]+/, '').trim()).filter(Boolean);
+}
+
+/**
+ * Resolves Single Primary Cover Location (Prioritizes explicit cover location first; never hallucinates or overrides explicit empty string)
+ */
+export function resolvePrimaryCoverLocation(rawCoverLocation: string | undefined | null, functions: any[]): string {
+  // If explicitly provided (including empty string ""), respect caller's explicit intention strictly!
+  if (rawCoverLocation !== undefined && rawCoverLocation !== null) {
+    const s = String(rawCoverLocation).trim();
+    if (!s) return ''; // Explicitly empty: user did NOT speak or want a location!
+    if (s.includes(',') || s.includes(';') || s.includes('\n')) {
+      const parts = s.split(/[,;\n]+/).map(p => p.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        const luxuryVenue = parts.find(p => /hotel|palace|resort|lawn|banquet|bhavan|mandap|gardens?/i.test(p));
+        return luxuryVenue || parts[0];
+      }
+    }
+    return s;
+  }
+
+  // Fallback ONLY when rawCoverLocation is completely undefined (legacy templates)
   if (Array.isArray(functions) && functions.length > 0) {
     const weddingFunc = functions.find(f => {
       const n = (f?.name || '').toLowerCase();
@@ -539,18 +585,6 @@ export function resolvePrimaryCoverLocation(rawCoverLocation: string, functions:
     if (firstWithLoc && (firstWithLoc.location || firstWithLoc.venue)) {
       return String(firstWithLoc.location || firstWithLoc.venue).trim();
     }
-  }
-
-  if (rawCoverLocation && typeof rawCoverLocation === 'string') {
-    const s = rawCoverLocation.trim();
-    if (s.includes(',') || s.includes(';') || s.includes('\n')) {
-      const parts = s.split(/[,;\n]+/).map(p => p.trim()).filter(Boolean);
-      if (parts.length > 1) {
-        const luxuryVenue = parts.find(p => /hotel|palace|resort|lawn|banquet|bhavan|mandap|gardens?/i.test(p));
-        return luxuryVenue || parts[0];
-      }
-    }
-    return s;
   }
 
   return '';

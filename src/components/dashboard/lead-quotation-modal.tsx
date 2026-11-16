@@ -691,9 +691,6 @@ export function LeadQuotationModal({
       clonedDoc.cover.groomName = openingCouple;
       clonedDoc.cover.brideName = '';
     }
-    if (lead.location || lead.raw_payload?.location) {
-      clonedDoc.cover.locationName = lead.location || lead.raw_payload?.location;
-    }
 
     const eventType = (clonedDoc.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
     const quotationTitle = `${openingCouple} - ${eventType}`;
@@ -1503,6 +1500,31 @@ export function LeadQuotationModal({
                 safeSessionSet(cacheKey, updatedCache);
                 safeLocalStorageSet(cacheKey, JSON.stringify(updatedCache));
                 if (onQuotationChange) onQuotationChange(lead.id, updatedCache);
+
+                // ⚡ FIX FOR PROBLEM 9: Synchronously persist to sc_quotation_summary_map AND broadcast across tabs!
+                const stored = localStorage.getItem('sc_quotation_summary_map');
+                const map = stored ? JSON.parse(stored) : {};
+                const prev = map[lead.id] || { count: 0, hasFinal: false, versions: [] };
+                const existingVersions = Array.isArray(prev.versions) ? prev.versions.map(pruneDocumentForListCache) : [];
+                const mergedVersions = [
+                  newVer,
+                  ...existingVersions.filter((v: any) => String(v.id || v.template_id).toUpperCase() !== String(targetQId).toUpperCase())
+                ];
+                map[lead.id] = {
+                  count: Math.max((prev.count || 0) + 1, mergedVersions.length),
+                  hasFinal: prev.hasFinal || false,
+                  finalVersion: prev.finalVersion,
+                  versions: mergedVersions
+                };
+                safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(map));
+                window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lead.id, quotationId: targetQId, version: resolvedVer } }));
+                broadcastQuotationSync(lead.workspace_id, {
+                  leadId: lead.id,
+                  quotationId: targetQId,
+                  action: 'create',
+                  version: resolvedVer,
+                  isFinal: false
+                });
               } catch (_) {}
             }
             router.push(`/workspace/quotations/builder/templet/${targetQId}`);

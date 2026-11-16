@@ -1,5 +1,6 @@
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from './deliverables-paginator';
 import { paginateFunctionsPageItems } from './functions-paginator';
+import { splitDeliverablesIntoList } from './quotation-defaults';
 
 // Exact Registered Color Palettes with Inverted Counterparts matching canvas builder
 const COLOR_THEMES: Record<string, any> = {
@@ -947,7 +948,7 @@ export function renderQuotationToHTML(documentData: any): string {
       const cameraIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
 
       const crewItems = (shootDetails.crewText || '').split('\n').filter(Boolean);
-      const deliverableItems = (shootDetails.deliverablesText || '').split('\n').filter(Boolean);
+      const deliverableItems = splitDeliverablesIntoList(shootDetails.deliverablesText);
 
       pagesHTML += `
         <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:36px 44px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">

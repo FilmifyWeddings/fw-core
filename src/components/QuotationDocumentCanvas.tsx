@@ -1,6 +1,7 @@
 'use client';
 
 import { COLOR_THEMES, getThemeFromKey } from '@/lib/quotation-theme';
+import { splitDeliverablesIntoList } from '@/lib/quotation-defaults';
 
 export interface PageSequenceItem {
   id: string;
@@ -1782,8 +1783,8 @@ export default function QuotationDocumentCanvas({
                         {data.shootDetails.deliverablesHeading || 'Deliverables'}
                       </h3>
                       <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
-                        {data.shootDetails.deliverablesText
-                          .split('\n').filter(Boolean).map((item: any, idx: number) => (
+                        {splitDeliverablesIntoList(data.shootDetails.deliverablesText)
+                          .map((item: any, idx: number) => (
                             <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
                               <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
                               <span>{item.trim()}</span>

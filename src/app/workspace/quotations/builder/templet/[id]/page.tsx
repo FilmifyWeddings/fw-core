@@ -42,7 +42,7 @@ const AiQuotationModal = dynamic(
   () => import('@/components/dashboard/ai-quotation-modal').then(m => m.AiQuotationModal),
   { ssr: false }
 );
-import { resolvePrimaryCoverLocation } from '@/lib/quotation-defaults';
+import { resolvePrimaryCoverLocation, splitDeliverablesIntoList } from '@/lib/quotation-defaults';
 import { syncShootPageInSequence, syncSpecialValuePageInSequence } from '@/lib/ai-quotation-extractor';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { isPlaceholderCoupleName } from '@/lib/quotation-defaults';
@@ -3743,6 +3743,9 @@ function StudioCoreAiryBuilderContent() {
         if (userAccessToken) headers['Authorization'] = `Bearer ${userAccessToken}`;
         if (userEmail) headers['x-user-email'] = userEmail;
 
+        const effectiveLeadId = snapshotData.lead_id || leadData?.id || null;
+        const effectiveLeadVer = snapshotData.lead_version || currentVersionRef.current || null;
+
         const saveRes = await fetch(`/api/templates/${targetTmplId}`, {
           method: 'PATCH',
           headers,
@@ -3752,6 +3755,8 @@ function StudioCoreAiryBuilderContent() {
             title: snapshotData.designName,
             version: currentVersionRef.current,
             revision: targetRevision,
+            lead_id: effectiveLeadId,
+            lead_version: effectiveLeadVer,
             content_json: snapshotData,
             client_id: clientTabIdRef.current
           })
@@ -3865,33 +3870,53 @@ function StudioCoreAiryBuilderContent() {
           window.dispatchEvent(new Event('wg_quotations_updated'));
           window.dispatchEvent(new Event('quotation_template_updated'));
 
-          if (snapshotData.lead_id) {
+          const activeLeadId = snapshotData.lead_id || leadData?.id;
+          if (activeLeadId) {
             try {
-              const leadCacheKey = `lead_quotes_cache_${snapshotData.lead_id}`;
+              const leadCacheKey = `lead_quotes_cache_${activeLeadId}`;
+              let list: any[] = [];
               const cachedRaw = sessionStorage.getItem(leadCacheKey) || localStorage.getItem(leadCacheKey);
               if (cachedRaw) {
-                const list = JSON.parse(cachedRaw);
-                if (Array.isArray(list)) {
-                  const targetIdx = list.findIndex((q: any) => String(q.template_id || q.id).toUpperCase() === String(routeId).toUpperCase());
-                  const updatedItem = pruneDocumentForListCache({
-                    ...(targetIdx >= 0 ? list[targetIdx] : {}),
-                    id: routeId,
-                    template_id: routeId,
-                    lead_id: snapshotData.lead_id,
-                    version: snapshotData.lead_version || (targetIdx >= 0 ? list[targetIdx].version : 1),
-                    title: snapshotData.designName || snapshotData.title || `Quotation ${routeId}`,
-                    updated_at: new Date().toISOString()
-                  });
-                  if (targetIdx >= 0) {
-                    list[targetIdx] = updatedItem;
-                  } else {
-                    list.unshift(updatedItem);
-                  }
-                  const prunedList = list.map(pruneDocumentForListCache);
-                  try { sessionStorage.setItem(leadCacheKey, JSON.stringify(prunedList)); } catch (_) {}
-                  safeLocalStorageSet(leadCacheKey, JSON.stringify(prunedList), routeId);
-                }
+                try { list = JSON.parse(cachedRaw); } catch (_) {}
               }
+              if (!Array.isArray(list)) list = [];
+              const targetIdx = list.findIndex((q: any) => String(q.template_id || q.id).toUpperCase() === String(routeId).toUpperCase());
+              const updatedItem = pruneDocumentForListCache({
+                ...(targetIdx >= 0 ? list[targetIdx] : {}),
+                id: routeId,
+                template_id: routeId,
+                lead_id: activeLeadId,
+                version: snapshotData.lead_version || (targetIdx >= 0 ? list[targetIdx].version : currentVersionRef.current || 1),
+                title: snapshotData.designName || snapshotData.title || `Quotation ${routeId}`,
+                couple_name: snapshotData.cover?.coupleName || 'Client',
+                is_final: Boolean(snapshotData.is_final),
+                updated_at: new Date().toISOString()
+              });
+              if (targetIdx >= 0) {
+                list[targetIdx] = updatedItem;
+              } else {
+                list.unshift(updatedItem);
+              }
+              const prunedList = list.map(pruneDocumentForListCache);
+              try { sessionStorage.setItem(leadCacheKey, JSON.stringify(prunedList)); } catch (_) {}
+              safeLocalStorageSet(leadCacheKey, JSON.stringify(prunedList), routeId);
+
+              // ⚡ CRITICAL FIX FOR POINT 9: Keep sc_quotation_summary_map fresh in localStorage
+              const storedSummary = localStorage.getItem('sc_quotation_summary_map');
+              const sumMap = storedSummary ? JSON.parse(storedSummary) : {};
+              const prevLeadSum = sumMap[activeLeadId] || { count: 0, hasFinal: false, versions: [] };
+              const prevVersions = Array.isArray(prevLeadSum.versions) ? prevLeadSum.versions : [];
+              const filteredPrevVers = prevVersions.filter((v: any) => String(v.id || v.template_id).toUpperCase() !== String(routeId).toUpperCase());
+              sumMap[activeLeadId] = {
+                count: Math.max(prevLeadSum.count || 0, filteredPrevVers.length + 1),
+                hasFinal: Boolean(prevLeadSum.hasFinal || snapshotData.is_final),
+                finalVersion: snapshotData.is_final ? updatedItem.version : prevLeadSum.finalVersion,
+                versions: [updatedItem, ...filteredPrevVers]
+              };
+              safeLocalStorageSet('sc_quotation_summary_map', JSON.stringify(sumMap), routeId);
+              window.dispatchEvent(new CustomEvent('quotation_updated', {
+                detail: { leadId: activeLeadId, quotationId: routeId, version: updatedItem.version }
+              }));
             } catch (_) {}
           }
         } catch (_) {}
@@ -6668,8 +6693,8 @@ function StudioCoreAiryBuilderContent() {
                         {data.shootDetails.deliverablesHeading || 'Deliverables'}
                       </h3>
                       <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
-                        {data.shootDetails.deliverablesText
-                          .split('\n').filter(Boolean).map((item: any, idx: number) => (
+                        {splitDeliverablesIntoList(data.shootDetails.deliverablesText)
+                          .map((item: any, idx: number) => (
                             <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
                               <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
                               <span>{item.trim()}</span>

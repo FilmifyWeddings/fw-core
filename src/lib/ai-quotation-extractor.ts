@@ -500,6 +500,97 @@ function resolveStudioSingleEvent(rawName: string, studioNames: string[], allowD
 /**
  * Resolves Crew Role Name respecting Studio Owner's master_crew_roles settings first.
  */
+/**
+ * Canonical Role Family Classifier: Maps any vernacular Hindi/Hinglish/English variant
+ * into an authoritative role family to match studio settings and prevent duplicates.
+ */
+export function getCrewRoleFamilyKey(role: string): string {
+  const s = (role || '').toLowerCase().trim();
+  if (
+    s.includes('semi-cinematic') || s.includes('semi cinematic') ||
+    s.includes('semi-kinematic') || s.includes('semi kinematic') ||
+    s.includes('semi-cine') || s.includes('semi cine') || s.includes('semi cinema') ||
+    s.includes('सेमी सिनेमैटिक') || s.includes('सेमी काइनेमैटिक') ||
+    s === 'sc' || s === 'scv'
+  ) {
+    return 'SEMI_CINEMATIC';
+  }
+  if (
+    s.includes('semi-standard') || s.includes('semi standard') ||
+    s.includes('semi-traditional') || s.includes('semi traditional') ||
+    s.includes('semi-trad') || s.includes('semi trad') ||
+    s.includes('सेमी ट्रेडिशनल') || s.includes('सेमी स्टैंडर्ड') ||
+    s === 'ss' || s === 'stv' || s === 'sst'
+  ) {
+    return 'SEMI_STANDARD';
+  }
+  if (
+    s.includes('cinematog') || s.includes('cinematrap') || s.includes('cinematraf') ||
+    s.includes('cinematic') || s.includes('cinema') || s.includes('cine video') ||
+    s.includes('cine') || s.includes('सिनेमैटोग्राफर') || s.includes('सिनेमैटोग्राफी') ||
+    s.includes('सिनेमैटिक') || s.includes('सिनेमा') || s === 'cv'
+  ) {
+    return 'CINEMATOGRAPHY';
+  }
+  if (
+    s.includes('candid photo') || s.includes('candid photog') || s.includes('candid') ||
+    s.includes('candit') || s.includes('kandid') ||
+    s.includes('कैंडिड') || s.includes('कैंडिड फोटो') || s.includes('कैंडिड फोटोग्राफी') || s.includes('कैंडिड फोटोग्राफर') ||
+    s === 'cp'
+  ) {
+    return 'CANDID_PHOTO';
+  }
+  if (
+    s.includes('family photo') || s.includes('family photog') || s.includes('फैमिली') || s === 'fp'
+  ) {
+    return 'FAMILY_PHOTO';
+  }
+  if (
+    s.includes('traditional photo') || s.includes('traditional camera') || s.includes('traditional still') ||
+    s.includes('trad photo') || s.includes('tred photo') || s.includes('trad photog') ||
+    s.includes('ट्रेडिशनल फोटो') || s.includes('ट्रेडिशनल फोटोग्राफी') || s.includes('ट्रेडिशनल फोटोग्राफर') ||
+    s.includes('स्टिल फोटोग्राफी') || s.includes('स्टिल') || s === 'tp'
+  ) {
+    return 'TRADITIONAL_PHOTO';
+  }
+  if (
+    s.includes('traditional video') || s.includes('trad video') || s.includes('tred video') ||
+    s.includes('tred videography') || s.includes('trad videop') ||
+    s.includes('ट्रेडिशनल वीडियो') || s.includes('ट्रेडिशनल वीडियोग्राफी') || s.includes('ट्रेडिशनल वीडियोग्राफर') ||
+    s === 'tv'
+  ) {
+    return 'TRADITIONAL_VIDEO';
+  }
+  if (
+    s.includes('drone') || s.includes('dron') || s.includes('aerial') ||
+    s.includes('ड्रोन') || s === 'dp'
+  ) {
+    return 'DRONE';
+  }
+  if (
+    s.includes('social media') || s.includes('story creator') || s.includes('reel') || s.includes('reels') ||
+    s.includes('रील्स') || s === 'rc'
+  ) {
+    return 'REELS';
+  }
+  if (
+    s.includes('assistant') || s.includes('asistant') || s.includes('helper') ||
+    s.includes('light boy') || s.includes('lightman') || s.includes('असिस्टेंट') || s === 'ass'
+  ) {
+    return 'ASSISTANT';
+  }
+  if (
+    s.includes('live') || s.includes('streaming') || s.includes('led') || s.includes('लाइव') || s === 'ls'
+  ) {
+    return 'LIVE_STREAM';
+  }
+  return s.replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Resolves Crew Role Name respecting Studio Owner's master_crew_roles settings first.
+ * Matches by exact name, short_code, and role family.
+ */
 export function resolveStudioCrewRole(
   rawRole: string,
   studioCrewRoles?: Array<string | { name?: string; short_code?: string }>
@@ -508,6 +599,7 @@ export function resolveStudioCrewRole(
   if (!raw) return 'Candid Photographer';
   const list = Array.isArray(studioCrewRoles) ? studioCrewRoles : [];
 
+  // 1. Exact string match or short_code match
   const exactByRoleOrCode = list.find((item) => {
     const name = typeof item === 'string' ? item : item?.name;
     const code = typeof item === 'string' ? '' : item?.short_code;
@@ -517,10 +609,25 @@ export function resolveStudioCrewRole(
     return typeof exactByRoleOrCode === 'string' ? exactByRoleOrCode : (exactByRoleOrCode.name || raw);
   }
 
+  // 2. Family matching against studioCrewRoles:
+  // If studio owner has configured ANY role belonging to this family (e.g. "Candid Photography", "Cinematography", "Drone"),
+  // always prioritize and return the studio owner's exact configured role string!
+  const targetFamily = getCrewRoleFamilyKey(raw);
+  if (targetFamily) {
+    const familyMatch = list.find((item) => {
+      const name = typeof item === 'string' ? item : item?.name;
+      return name && getCrewRoleFamilyKey(name) === targetFamily;
+    });
+    if (familyMatch) {
+      return typeof familyMatch === 'string' ? familyMatch : (familyMatch.name || raw);
+    }
+  }
+
+  // 3. Fallback to canonical normalized name
   const normalized = normalizeCrewRoleName(raw);
   const matchedNorm = list.find((item) => {
     const name = typeof item === 'string' ? item : item?.name;
-    return name && name.toLowerCase() === normalized.toLowerCase();
+    return name && (name.toLowerCase() === normalized.toLowerCase() || getCrewRoleFamilyKey(name) === getCrewRoleFamilyKey(normalized));
   });
   if (matchedNorm) {
     return typeof matchedNorm === 'string' ? matchedNorm : (matchedNorm.name || normalized);
@@ -1060,20 +1167,31 @@ function mergeCrewList(
   additions: Array<{ name: string; qty: number }>,
   studioCrewRoles: Array<string | { name?: string; short_code?: string }> = []
 ): Array<{ name: string; qty: number }> {
-  const result = Array.isArray(existing)
-    ? existing.map((r) => ({ name: resolveStudioCrewRole(r.name, studioCrewRoles), qty: Number(r.qty || 1) }))
-    : [];
+  const result: Array<{ name: string; qty: number }> = [];
 
-  for (const add of additions) {
-    const canonName = resolveStudioCrewRole(add.name, studioCrewRoles);
-    const qty = Math.max(1, Number(add.qty || 1));
-    const idx = result.findIndex((r) => r.name.toLowerCase() === canonName.toLowerCase());
-    if (idx !== -1) {
-      result[idx] = { ...result[idx], qty: Math.max(result[idx].qty, qty) };
+  const getRoleKey = (name: string) => {
+    const resolved = resolveStudioCrewRole(name, studioCrewRoles);
+    return getCrewRoleFamilyKey(resolved) || resolved.toLowerCase();
+  };
+
+  const processItem = (item: { name: string; qty: number }) => {
+    const canonName = resolveStudioCrewRole(item.name, studioCrewRoles);
+    const key = getRoleKey(canonName);
+    const qty = Math.max(1, Number(item.qty || 1));
+    const existingIdx = result.findIndex(r => getRoleKey(r.name) === key);
+    if (existingIdx !== -1) {
+      result[existingIdx] = {
+        name: canonName || result[existingIdx].name,
+        qty: Math.max(result[existingIdx].qty, qty)
+      };
     } else {
       result.push({ name: canonName, qty });
     }
-  }
+  };
+
+  (Array.isArray(existing) ? existing : []).forEach(processItem);
+  (Array.isArray(additions) ? additions : []).forEach(processItem);
+
   return result;
 }
 
@@ -3366,7 +3484,7 @@ export function fallbackHeuristicExtractor(contextData: any) {
     return extractCrewRolesFromText(snippet, studioCrewRoles);
   };
 
-  let location = extractLocationFromSnippet(userNotes) || raw.venue || raw.location || raw.city || raw.destination || '';
+  let location = extractLocationFromSnippet(userNotes) || '';
 
   // 4. Headline Dates
   let weddingDate = extractDateFromSnippet(userNotes);
@@ -4039,6 +4157,16 @@ export function fallbackHeuristicExtractor(contextData: any) {
       .filter((item) => isValidDeliverableItem(item, studioDeliverables));
   }
 
+  // ⚡ MANDATE (Point 8): When Pre-Wedding is requested, ensure its deliverables also reflect on the main Deliverables page!
+  if (hasPreWed && finalPwDelivs) {
+    const pwItems = finalPwDelivs.split('\n').map((s: string) => s.trim()).filter(Boolean);
+    pwItems.forEach((pwItem: string) => {
+      if (!deliverables.includes(pwItem)) {
+        deliverables.push(pwItem);
+      }
+    });
+  }
+
   const studioSpecialAddons: string[] = Array.isArray(studioSettings?.specialAddons)
     ? studioSettings.specialAddons
         .map((a: any) => (typeof a === 'string' ? a : a?.title))
@@ -4355,7 +4483,7 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       }
     }
 
-    // ⚡ MANDATE: Resolve single primary cover location (prefer spoken location, never let base template Mumbai leak)
+    // ⚡ MANDATE: Resolve single primary cover location (strictly prefer spoken location; never hallucinate or inject venue if not spoken)
     const spokenCoverLoc1 = !isDirectJson ? extractSpokenLocationFromNotes(rawPromptOrAll1) : '';
     const cleanedRootLoc1 = cleanExtractedLocationCandidate(rootObj.cover?.locationName || '');
     const promptMentionsMumbai1 = /\bmumbai\b|\bमुंबई\b/i.test(rawPromptOrAll1);
@@ -4370,23 +4498,14 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       });
     }
     if (normDoc.cover) {
-      const resolvedPrimary1 = resolvePrimaryCoverLocation(
-        spokenCoverLoc1 || cleanedRootLoc1 || normDoc.cover.locationName || '',
-        normDoc.functionsPage?.items || []
-      );
-      normDoc.cover.locationName =
-        spokenCoverLoc1 && (!resolvedPrimary1 || (!promptMentionsMumbai1 && /^mumbai$/i.test(resolvedPrimary1.trim())))
-          ? spokenCoverLoc1
-          : resolvedPrimary1;
+      normDoc.cover.locationName = isDirectJson
+        ? (cleanedRootLoc1 || normDoc.cover.locationName || '')
+        : (spokenCoverLoc1 || '');
     }
 
-    // Filter out any pre-wedding or invalid conversational deliverables from deliverablesPage
+    // Filter out invalid conversational text from deliverablesPage, while preserving valid studio and pre-wedding deliverables
     if (normDoc.deliverablesPage?.selectedItems && Array.isArray(normDoc.deliverablesPage.selectedItems)) {
       normDoc.deliverablesPage.selectedItems = normDoc.deliverablesPage.selectedItems.filter((item: string) => {
-        const itemLower = String(item || '').toLowerCase();
-        if (itemLower.includes('pre-wedding') || itemLower.includes('prewedding') || itemLower.includes('pre wedding') || itemLower.includes('previewing')) {
-          return false;
-        }
         return isDirectJson || isValidDeliverableItem(item, studioDelivs1);
       });
     }
@@ -4684,17 +4803,12 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
     });
   }
   if (doc.cover) {
-    const resolvedPrimary2 = resolvePrimaryCoverLocation(
-      spokenCoverLoc2 || cleanedAiLoc2 || cover.locationName || '',
-      doc.functionsPage?.items || []
-    );
-    doc.cover.locationName =
-      spokenCoverLoc2 && (!resolvedPrimary2 || (!promptMentionsMumbai2 && /^mumbai$/i.test(resolvedPrimary2.trim())))
-        ? spokenCoverLoc2
-        : resolvedPrimary2;
+    doc.cover.locationName = isDirectJson
+      ? (cleanedAiLoc2 || cover.locationName || '')
+      : (spokenCoverLoc2 || '');
   }
 
-  // 4. Deliverables Page (Main Wedding Deliverables Only - Pre-wedding moved to shootDetails ONLY if Pre-Wedding enabled)
+  // 4. Deliverables Page (Main Wedding Deliverables & Synchronized Pre-Wedding Deliverables)
   if (!doc.deliverablesPage) doc.deliverablesPage = {};
   if (!isDirectJson) {
     // Prevent baseSchema template demo deliverables from leaking when user did not request them
@@ -4746,6 +4860,8 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
       const itemLower = cleanItem.toLowerCase();
       if (itemLower.includes('pre-wedding') || itemLower.includes('prewedding') || itemLower.includes('pre wedding') || itemLower.includes('previewing')) {
         preWedDelivs.push(cleanItem);
+        // Also keep in main deliverables list so Pre-wedding deliverables reflect on main deliverables page!
+        weddingDelivs.push(cleanItem);
       } else if (
         isDirectJson ||
         (isValidDeliverableItem(cleanItem, studioDeliverables) &&

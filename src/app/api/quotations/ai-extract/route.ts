@@ -441,6 +441,7 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
     3. Different morning/evening/clock times ("सुबह Haldi और शाम को Wedding").
     4. Different venues or different per-event crews ("Haldi mein 1 Candid aur Sangeet mein Premium Crew").
 - LOCATION EXTRACTION (cover.locationName & function location):
+  * STRICT MANDATE: ONLY extract location if explicitly spoken/written in notes. If user did NOT state a location, keep cover.locationName: "" (EMPTY STRING). NEVER invent or hallucinate default cities like Udaipur, Jaipur, or Mumbai!
   * ALWAYS extract spoken location/venue cleanly into cover.locationName (strip Hindi fillers like "ki hai", "me hai", "par hai": "Location Delhi ki hai" -> "Delhi", "Dwarka hai" -> "Dwarka").
   * If user says "Saare events same venue par hain" / "same venue", put the extracted location on EVERY function card too. NEVER copy any example city like Mumbai unless actually mentioned!
 - TIMINGS, TIMES & DURATION SLOTS (CRITICAL — EXTRACT PER EVENT WITHOUT CROSS-EVENT LEAK):
@@ -468,7 +469,7 @@ ${studioDeliverables.map((d: any) => `- "${d.title}"`).join('\n')}
 - STRICT SANITIZATION: NEVER put voice command triggers ("All Deliverables Add", "Add Karna") or conversational Hindi/Hinglish prose or pricing fragments into selectedItems.
 - If NO deliverables are mentioned and NO [STUDIO TRIGGER] specifies Deliverables, you MUST return an empty array: selectedItems: [].
 - NEVER drop spoken counted deliverables! Note: "5 Reels" / "5 Instagram reels" is a deliverable in deliverablesPage.selectedItems, NOT a Reel Creator crew member unless user asked for Reel Creator crew.
-- NEVER include pre-wedding deliverables here; those belong solely on shootDetails.
+- When Pre-Wedding is requested, include pre-wedding deliverables on shootDetails AND ensure they also reflect on the main deliverablesPage.selectedItems!
 
 5. ZERO HALLUCINATION & STRICT DATA FIDELITY:
 - ONLY include functions and services explicitly mentioned in user notes or expanded via detected studio triggers.

@@ -486,6 +486,10 @@ export function AiQuotationModal({
     committedRawTranscriptRef.current = '';
     currentSegmentRawRef.current = '';
 
+    // ⚡ INSTANT 0ms VISUAL FEEDBACK: Activate recording state, red pulse, and live badge at 0ms!
+    setIsRecording(true);
+    setRecordSeconds(0);
+
     // 1. WebSpeech API for 0ms REAL-TIME LIVE STREAMING preview while MediaRecorder captures full fidelity audio
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -564,6 +568,13 @@ export function AiQuotationModal({
           autoGainControl: true
         }
       });
+      // If user cancelled or stopped while hardware mic permission was being resolved
+      if (!isRecordingRef.current) {
+        try {
+          stream.getTracks().forEach((track) => track.stop());
+        } catch (_) {}
+        return;
+      }
       audioStreamRef.current = stream;
       audioChunksRef.current = [];
       maxMicRmsRef.current = 0;
@@ -674,6 +685,7 @@ export function AiQuotationModal({
       }, 1000);
     } catch (err: any) {
       isRecordingRef.current = false;
+      setIsRecording(false);
       console.error('[Microphone Permission Error]:', err);
       alert('Microphone access was denied. Please allow microphone permissions in your browser.');
     }
@@ -1297,9 +1309,6 @@ LEAD & CLIENT CONTEXT:
         mergedDoc.cover.groomName = coupleName;
         mergedDoc.cover.brideName = '';
       }
-      if (effectiveLead.location && !mergedDoc.cover.locationName) {
-        mergedDoc.cover.locationName = effectiveLead.location;
-      }
       const eventType = (docToApply?.cover?.eventType || mergedDoc?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
       const quotationTitle = `${coupleName} - ${eventType}`;
       mergedDoc.designName = quotationTitle;
@@ -1455,9 +1464,6 @@ LEAD & CLIENT CONTEXT:
     } else {
       mergedDoc.cover.groomName = coupleName;
       mergedDoc.cover.brideName = '';
-    }
-    if (effectiveLead.location && !mergedDoc.cover.locationName) {
-      mergedDoc.cover.locationName = effectiveLead.location;
     }
 
     const eventType = (docToApply?.cover?.eventType || mergedDoc?.cover?.eventType || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
@@ -1640,10 +1646,21 @@ LEAD & CLIENT CONTEXT:
 
   const handleQuickCreateAndOpen = async () => {
     setErrorMsg(null);
+    // ⚡ INSTANT 0ms TACTILE FEEDBACK: Immediately engage generating UI & route progress on click!
+    setGenerating(true);
+    if (typeof window !== 'undefined') {
+      (window as any).__startRouteProgress?.();
+    }
+
     try {
-      // Wait briefly ONLY if audio transcription / polish is actively finishing (never blocks normal clicks!)
+      // If mic is currently active, stop recording immediately and grab whatever has been captured so far
+      if (isRecordingRef.current) {
+        try { stopVoiceRecording(); } catch (_) {}
+      }
+
+      // Wait briefly ONLY if audio transcription / polish is actively finishing
       if (isTranscribing || isPolishingInProgressRef.current) {
-        for (let i = 0; i < 30; i++) {
+        for (let i = 0; i < 20; i++) {
           if (!isTranscribing && !isPolishingInProgressRef.current) break;
           await new Promise((r) => setTimeout(r, 100));
         }
@@ -1652,11 +1669,11 @@ LEAD & CLIENT CONTEXT:
       const rawNotes = (additionalNotesRef.current || additionalNotes || '').trim();
 
       if (!rawNotes) {
+        setGenerating(false);
         setErrorMsg('कृपया पहले माइक से बोलें या कोटेशन की कुछ डिटेल्स लिखें (या Paste करें) ताकि AI कोटेशन बना सके!');
         return;
       }
 
-      setGenerating(true);
       const notes = cleanVoiceTranscript(rawNotes, effectiveLead?.name);
 
       // FAST PATH 1: Synchronously parse pasted AI JSON in <2ms & open Builder immediately!
