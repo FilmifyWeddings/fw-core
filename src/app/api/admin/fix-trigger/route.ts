@@ -51,7 +51,9 @@ BEGIN
 
   IF NEW.raw_payload IS NOT NULL AND (
     (NEW.raw_payload->>'skip_auto_trigger')::BOOLEAN = true OR
-    (NEW.raw_payload->>'duplicate_tag')::BOOLEAN = true
+    (NEW.raw_payload->>'duplicate_tag')::BOOLEAN = true OR
+    (NEW.raw_payload->>'stop_followup')::BOOLEAN = true OR
+    NEW.raw_payload->>'workflow_status' = 'stopped'
   ) THEN
     RETURN NEW;
   END IF;
@@ -85,6 +87,9 @@ BEGIN
     WHERE target_group_id = NEW.whatsapp_group_id
       AND tenant_id = v_workspace_id
       AND status = 'Active'
+    ORDER BY
+      CASE WHEN LOWER(COALESCE(workflow_name, '')) LIKE '%welcome%' THEN 0 ELSE 1 END,
+      created_at ASC
   LOOP
     IF EXISTS (
       SELECT 1 FROM public.whatsapp_workflow_logs
@@ -97,7 +102,11 @@ BEGIN
     SET execution_count = execution_count + 1
     WHERE id = r_workflow.id;
 
-    v_scheduled_at := NOW();
+    IF v_scheduled_at IS NULL THEN
+      v_scheduled_at := NOW();
+    ELSE
+      v_scheduled_at := GREATEST(v_scheduled_at, NOW() + INTERVAL '1 hour');
+    END IF;
 
     FOR r_step IN
       SELECT * FROM jsonb_to_recordset(r_workflow.workflow_steps)
@@ -162,7 +171,10 @@ BEGIN
             'variables',       v_variables,
             'template_name',   r_step.template_name,
             'templateId',      r_step.template_id,
-            'workflowLogId',   v_log_id
+            'workflowLogId',   v_log_id,
+            'workflowId',      r_workflow.id,
+            'leadId',          NEW.id,
+            'stepIndex',       r_step.sort_index
           ),
           'pending', v_scheduled_at, v_priority
         );
@@ -177,7 +189,10 @@ BEGIN
             'templateId', r_step.template_id,
             'template_name', r_step.template_name,
             'variables', v_variables,
-            'workflowLogId', v_log_id
+            'workflowLogId', v_log_id,
+            'workflowId', r_workflow.id,
+            'leadId', NEW.id,
+            'stepIndex', r_step.sort_index
           ),
           'pending', v_scheduled_at, v_priority
         );

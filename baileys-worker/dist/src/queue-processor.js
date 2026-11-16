@@ -164,7 +164,10 @@ export async function processQueueAction(action, handler) {
     // ── Step 2.5: Pre-Flight Integrity Check (Never dispatch to deleted/stopped/already-sent logs) ──
     const p = (action.payload || {});
     const wfLogId = p.workflowLogId || p.logId;
-    const leadId = p.leadId || p.lead_id;
+    const leadId = p.leadId || p.lead_id || p.variables?.id || p.variables?.lead_id;
+    const wfId = p.workflowId || p.workflow_id;
+    const rawStepIndex = p.stepIndex ?? p.step_index;
+    const stepIndex = rawStepIndex !== undefined ? Number(rawStepIndex) : undefined;
     if (wfLogId) {
         const { data: wfLog, error: wfLogErr } = await supabaseAdmin
             .from('whatsapp_workflow_logs')
@@ -205,6 +208,34 @@ export async function processQueueAction(action, handler) {
         if (leadRaw?.stop_followup === true || leadRaw?.workflow_status === 'stopped') {
             console.warn(`[QueueProcessor] Action ${id} lead ${leadId} follow-up stopped in CRM. Skipping.`);
             await cancelOrDeleteQueueAction(id, 'Lead follow-up stopped in CRM');
+            return 'skipped';
+        }
+    }
+    // ── Step 2.6: Enforce Strict Sequential Delivery (Never dispatch Step N before Step N-1 has sent) ──
+    if (stepIndex !== undefined && stepIndex > 0 && leadId && wfId) {
+        const { data: prevLog } = await supabaseAdmin
+            .from('whatsapp_workflow_logs')
+            .select('id, status')
+            .eq('lead_id', leadId)
+            .eq('workflow_id', wfId)
+            .eq('step_index', stepIndex - 1)
+            .maybeSingle();
+        if (prevLog && !['sent', 'delivered', 'read'].includes(prevLog.status)) {
+            if (['stopped', 'cancelled'].includes(prevLog.status)) {
+                console.warn(`[QueueProcessor] Action ${id} step ${stepIndex} preceded by stopped step ${stepIndex - 1}. Cancelling.`);
+                await cancelOrDeleteQueueAction(id, `Preceding step ${stepIndex - 1} was stopped`);
+                return 'skipped';
+            }
+            // Predecessor is still pending/retrying — defer this action by 20s so predecessor dispatches first
+            console.warn(`[QueueProcessor] Action ${id} step ${stepIndex} waiting for predecessor step ${stepIndex - 1} (status: ${prevLog.status}). Deferring by 20s...`);
+            const deferredIso = new Date(Date.now() + 20_000).toISOString();
+            await supabaseAdmin
+                .from('baileys_action_queue')
+                .update({
+                next_retry_at: deferredIso,
+                updated_at: new Date().toISOString()
+            })
+                .eq('id', id);
             return 'skipped';
         }
     }

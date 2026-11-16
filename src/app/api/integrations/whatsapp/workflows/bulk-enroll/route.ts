@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
-import { buildLeadVariables } from '@/lib/baileys-serverless';
+import { buildLeadVariables, forceWakeQueue } from '@/lib/baileys-serverless';
 
 export const runtime = 'nodejs';
 
@@ -44,6 +44,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Auto-discover active workflows for this group if workflowIds was not provided or empty
+    let effectiveWorkflowIds = Array.isArray(workflowIds) ? [...workflowIds] : [];
+    if (effectiveWorkflowIds.length === 0 && groupId) {
+      const { data: grpWfs } = await supabaseAdmin
+        .from('whatsapp_custom_workflows')
+        .select('id')
+        .eq('target_group_id', groupId)
+        .eq('tenant_id', workspaceId)
+        .eq('status', 'Active');
+      if (grpWfs && grpWfs.length > 0) {
+        effectiveWorkflowIds = grpWfs.map(w => w.id);
+      }
+    }
+
     // 2. Fetch full lead details
     const { data: leads, error: leadsErr } = await supabaseAdmin
       .from('leads')
@@ -82,9 +96,9 @@ export async function POST(req: NextRequest) {
       .in('phone_number', cleanPhonesList);
 
     const existingEnrolledPhones = new Set<string>();
-    if (existingLogsQuery.data && workflowIds.length > 0) {
+    if (existingLogsQuery.data && effectiveWorkflowIds.length > 0) {
       existingLogsQuery.data.forEach(log => {
-        if (workflowIds.includes(log.workflow_id)) {
+        if (effectiveWorkflowIds.includes(log.workflow_id)) {
           existingEnrolledPhones.add(log.phone_number);
         }
       });
@@ -155,7 +169,7 @@ export async function POST(req: NextRequest) {
                 ...existingRaw,
                 duplicate_tag: false,
                 skip_auto_trigger: true,
-                enrolled_workflow_ids: workflowIds,
+                enrolled_workflow_ids: effectiveWorkflowIds,
                 enrolled_at: new Date().toISOString()
               },
               updated_at: new Date().toISOString()
@@ -174,7 +188,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 8. Prune any stale pending workflow logs for unselected workflows of this group
-    const unselectedWorkflowIds = activeWorkflowIdsToPause.filter(id => !workflowIds.includes(id));
+    const unselectedWorkflowIds = activeWorkflowIdsToPause.filter(id => !effectiveWorkflowIds.includes(id));
     if (unselectedWorkflowIds.length > 0) {
       try {
         await supabaseAdmin
@@ -186,15 +200,22 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
-    // 6. If workflowIds are provided and there are unique leads, enroll them with pacing
-    if (workflowIds.length > 0 && uniqueLeads.length > 0) {
+    // 6. If effectiveWorkflowIds are provided and there are unique leads, enroll them with pacing
+    if (effectiveWorkflowIds.length > 0 && uniqueLeads.length > 0) {
       const { data: workflows } = await supabaseAdmin
         .from('whatsapp_custom_workflows')
         .select('*')
-        .in('id', workflowIds)
+        .in('id', effectiveWorkflowIds)
         .eq('tenant_id', workspaceId);
 
-      const activeWorkflows = workflows || [];
+      // Welcome workflows always sort first!
+      const activeWorkflows = (workflows || []).slice().sort((a, b) => {
+        const aIsWelcome = (a.workflow_name || '').toLowerCase().includes('welcome');
+        const bIsWelcome = (b.workflow_name || '').toLowerCase().includes('welcome');
+        if (aIsWelcome && !bIsWelcome) return -1;
+        if (!aIsWelcome && bIsWelcome) return 1;
+        return (new Date(a.created_at).getTime()) - (new Date(b.created_at).getTime());
+      });
 
       // Inter-lead pacing delay in ms
       const pVal = Math.max(0, Number(delayValue) || 0);
@@ -222,6 +243,8 @@ export async function POST(req: NextRequest) {
           ...buildLeadVariables(lead),
         };
 
+        let currentWfBaseMs = leadBaseMs;
+
         for (const wf of activeWorkflows) {
           // Increment execution count
           await supabaseAdmin
@@ -232,7 +255,8 @@ export async function POST(req: NextRequest) {
           let cumulativeStepMs = 0;
           const steps = (wf.workflow_steps || []).sort((a: any, b: any) => (a.sort_index || 0) - (b.sort_index || 0));
 
-          for (const step of steps) {
+          for (let stepIdx = 0; stepIdx < steps.length; stepIdx++) {
+            const step = steps[stepIdx];
             const stepVal = Math.max(0, Number(step.delay_value) || 0);
             const stepUnit = (step.delay_unit || 'minutes').toLowerCase();
 
@@ -243,17 +267,25 @@ export async function POST(req: NextRequest) {
             else if (stepUnit === 'days') stepMs = stepVal * 24 * 60 * 60 * 1000;
 
             cumulativeStepMs += stepMs;
-            const targetStepBase = new Date(leadStartTime.getTime() + cumulativeStepMs);
 
-            const stepSeed = `${lead.id}_${wf.id}_${step.sort_index}`;
-            const stepScheduledAt = calculateSmartAntiBanSchedule(
-              targetStepBase,
-              0,
-              stepUnit,
-              step.sort_index,
-              false,
-              stepSeed
-            );
+            // Immediate execution (0ms delay, priority 1) for Step 0 when single lead manual dispatch
+            let stepScheduledAt: Date;
+            const isManualSingleImmediate = uniqueLeads.length === 1 && pVal === 0 && stepIdx === 0;
+
+            if (isManualSingleImmediate) {
+              stepScheduledAt = new Date(now + 1000);
+            } else {
+              const targetStepBase = new Date(now + currentWfBaseMs + cumulativeStepMs);
+              const stepSeed = `${lead.id}_${wf.id}_${step.sort_index}`;
+              stepScheduledAt = calculateSmartAntiBanSchedule(
+                targetStepBase,
+                0,
+                stepUnit,
+                step.sort_index,
+                false,
+                stepSeed
+              );
+            }
 
             const logId = crypto.randomUUID();
 
@@ -276,7 +308,7 @@ export async function POST(req: NextRequest) {
             const isWelcomeOrShort =
               (wf.workflow_name || '').toLowerCase().includes('welcome') ||
               cumulativeStepMs <= 30 * 60 * 1000;
-            const stepPriority = isWelcomeOrShort || isGroup ? 2 : 5;
+            const stepPriority = isManualSingleImmediate ? 1 : (isWelcomeOrShort || isGroup ? 2 : 5);
 
             // 2. Insert into Baileys action queue
             if (isGroup) {
@@ -293,6 +325,9 @@ export async function POST(req: NextRequest) {
                   template_name: step.template_name,
                   templateId: step.template_id,
                   workflowLogId: logId,
+                  workflowId: wf.id,
+                  leadId: lead.id,
+                  stepIndex: step.sort_index,
                 },
                 status: 'pending',
                 next_retry_at: stepScheduledAt.toISOString(),
@@ -308,6 +343,9 @@ export async function POST(req: NextRequest) {
                   template_name: step.template_name,
                   variables: v_variables,
                   workflowLogId: logId,
+                  workflowId: wf.id,
+                  leadId: lead.id,
+                  stepIndex: step.sort_index,
                 },
                 status: 'pending',
                 next_retry_at: stepScheduledAt.toISOString(),
@@ -315,8 +353,16 @@ export async function POST(req: NextRequest) {
               });
             }
           }
+
+          // Follow-up workflows start strictly after welcome sequence finishes (+ 1 hr minimum buffer)
+          currentWfBaseMs += cumulativeStepMs + (60 * 60 * 1000);
         }
       }
+
+      // Wake queue worker so immediate steps fire right away
+      forceWakeQueue(supabaseAdmin, workspaceId).catch(err => {
+        console.error('[bulk-enroll] Failed to wake queue:', err?.message);
+      });
     }
 
     return NextResponse.json({

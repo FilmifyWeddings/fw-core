@@ -168,6 +168,24 @@ export async function POST(req: NextRequest) {
         .update({ status: newStatus, error_message: null, updated_at: new Date().toISOString() })
         .eq('lead_id', leadId)
         .eq('workflow_id', workflowId);
+
+      // Restore lead group assignment and clear stop_followup flag
+      if (lead) {
+        const existingRaw = lead.raw_payload || {};
+        const restoredGroup = existingRaw.previous_group_id || lead.whatsapp_group_id;
+        await supabaseAdmin
+          .from('leads')
+          .update({
+            whatsapp_group_id: restoredGroup,
+            raw_payload: {
+              ...existingRaw,
+              stop_followup: false,
+              workflow_status: 'active',
+            },
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', leadId);
+      }
     } catch (e) {}
 
     // Wake queue

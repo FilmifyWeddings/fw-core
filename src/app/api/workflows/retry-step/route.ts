@@ -87,8 +87,49 @@ export async function POST(req: NextRequest) {
     const { data: targetLogs, error: logErr } = await targetLogsQuery;
     if (logErr) throw logErr;
 
-    if (!targetLogs || targetLogs.length === 0) {
-      return NextResponse.json({ success: false, error: 'Step log(s) not found to retry.' }, { status: 404 });
+    let finalTargetLogs = targetLogs || [];
+
+    // If step was unsent or not found in logs, dynamically create the missing log on-demand!
+    if (finalTargetLogs.length === 0) {
+      const targetStepIdx = stepIndex !== undefined ? Number(stepIndex) : 0;
+      const currentStep = workflowSteps.find((s: any) => s.sort_index === targetStepIdx) || workflowSteps[0];
+      if (!currentStep) {
+        return NextResponse.json({ success: false, error: 'Step configuration not found in workflow.' }, { status: 404 });
+      }
+
+      const isGroupStep = currentStep?.target_type === 'group' || (currentStep?.target_group_jid && currentStep.target_group_jid.length > 5);
+      const targetRecipient = isGroupStep ? currentStep.target_group_jid : cleanPhone;
+      const newLogId = crypto.randomUUID();
+      const nowIso = new Date().toISOString();
+
+      const { data: insertedLog, error: insErr } = await supabaseAdmin
+        .from('whatsapp_workflow_logs')
+        .insert({
+          id: newLogId,
+          tenant_id: tenantId,
+          lead_id: leadId,
+          workflow_id: workflowId,
+          step_index: currentStep.sort_index ?? targetStepIdx,
+          phone_number: targetRecipient,
+          template_name: currentStep.template_name,
+          status: 'pending',
+          sent_at: nowIso,
+        })
+        .select('*')
+        .single();
+
+      if (insErr) throw insErr;
+      finalTargetLogs = [insertedLog];
+
+      // Remove skip_auto_trigger if present so lead is active
+      if (lead.raw_payload?.skip_auto_trigger) {
+        const cleanedPayload = { ...lead.raw_payload };
+        delete cleanedPayload.skip_auto_trigger;
+        await supabaseAdmin
+          .from('leads')
+          .update({ raw_payload: cleanedPayload, updated_at: nowIso })
+          .eq('id', leadId);
+      }
     }
 
     // 4. Retrieve queue items (paginated so workspaces >1k queue items never duplicate)
@@ -102,14 +143,14 @@ export async function POST(req: NextRequest) {
     let baseTime = new Date();
     const retriedStepIndices: number[] = [];
 
-    for (let i = 0; i < targetLogs.length; i++) {
-      const targetLog = targetLogs[i];
+    for (let i = 0; i < finalTargetLogs.length; i++) {
+      const targetLog = finalTargetLogs[i];
       retriedStepIndices.push(targetLog.step_index);
 
-      // Safe anti-ban delay: immediate for 1st step, staggered with calculateSmartAntiBanSchedule for subsequent steps
+      // Safe anti-ban delay: immediate (500ms) for 1st step, staggered with calculateSmartAntiBanSchedule for subsequent steps
       let scheduledTimeIso: string;
       if (i === 0) {
-        scheduledTimeIso = new Date(baseTime.getTime() + 1000).toISOString();
+        scheduledTimeIso = new Date(baseTime.getTime() + 500).toISOString();
       } else {
         baseTime = calculateSmartAntiBanSchedule(
           baseTime,
@@ -161,7 +202,7 @@ export async function POST(req: NextRequest) {
           .from('baileys_action_queue')
           .update({
             status: 'pending',
-            priority: 2,
+            priority: 1,
             attempt_count: 0,
             error_message: null,
             failure_reason: null,
@@ -172,6 +213,9 @@ export async function POST(req: NextRequest) {
               templateId: currentStep?.template_id || matchedQueueItem.payload?.templateId,
               template_name: currentStep?.template_name || matchedQueueItem.payload?.template_name,
               templateName: currentStep?.template_name || matchedQueueItem.payload?.template_name,
+              workflowId: workflowId,
+              leadId: leadId,
+              stepIndex: targetLog.step_index,
             }
           })
           .eq('id', matchedQueueItem.id);
@@ -192,11 +236,14 @@ export async function POST(req: NextRequest) {
               templateName: currentStep?.template_name,
               variables: v_variables,
               leadData: v_variables,
-              workflowLogId: targetLog.id
+              workflowLogId: targetLog.id,
+              workflowId: workflowId,
+              leadId: leadId,
+              stepIndex: targetLog.step_index,
             },
             status: 'pending',
             attempt_count: 0,
-            priority: 2,
+            priority: 1,
             next_retry_at: scheduledTimeIso
           });
 

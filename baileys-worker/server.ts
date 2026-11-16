@@ -1382,8 +1382,14 @@ async function executeAction(action: {
   // Pre-flight check: If workflow log, lead, or workflow execution was stopped/deleted/already-sent, abort dispatch immediately
   const actPayload = (action.payload || {}) as Record<string, any>;
   const checkLogId = actPayload.workflowLogId || actPayload.logId;
-  const checkLeadId = actPayload.leadId || actPayload.lead_id;
+  const checkLeadId =
+    actPayload.leadId ||
+    actPayload.lead_id ||
+    actPayload.variables?.id ||
+    actPayload.variables?.lead_id;
   const checkWfId = actPayload.workflowId || actPayload.workflow_id;
+  const rawStepIndex = actPayload.stepIndex ?? actPayload.step_index;
+  const checkStepIndex = rawStepIndex !== undefined ? Number(rawStepIndex) : undefined;
 
   if (checkLogId) {
     const { data: wfLog, error: wfLogErr } = await supabase
@@ -1453,6 +1459,36 @@ async function executeAction(action: {
         await cancelOrDeleteQueueRow(action.id, 'Skipped: lead execution stopped');
         return { success: true, skipped: true, waMessageId: null };
       }
+    }
+  }
+
+  // Predecessor step dependency check (never send Step N before Step N-1 has completed)
+  if (checkStepIndex !== undefined && checkStepIndex > 0 && checkLeadId && checkWfId) {
+    const { data: prevLog } = await supabase
+      .from('whatsapp_workflow_logs')
+      .select('id, status')
+      .eq('lead_id', checkLeadId)
+      .eq('workflow_id', checkWfId)
+      .eq('step_index', checkStepIndex - 1)
+      .maybeSingle();
+
+    if (prevLog && !['sent', 'delivered', 'read'].includes(prevLog.status)) {
+      if (['stopped', 'cancelled'].includes(prevLog.status)) {
+        logger.info({ actionId: action.id, checkStepIndex }, '🛑 Preceding step stopped/cancelled. Cancelling current step.');
+        await cancelOrDeleteQueueRow(action.id, `Preceding step ${checkStepIndex - 1} was stopped`);
+        return { success: true, skipped: true, waMessageId: null };
+      }
+
+      logger.warn({ actionId: action.id, checkStepIndex, prevStatus: prevLog.status }, '⏳ Waiting for predecessor step to dispatch first. Deferring by 20s.');
+      const deferredIso = new Date(Date.now() + 20_000).toISOString();
+      await supabase
+        .from('baileys_action_queue')
+        .update({
+          next_retry_at: deferredIso,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', action.id);
+      return { success: true, skipped: true, waMessageId: null };
     }
   }
 

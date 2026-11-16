@@ -15,23 +15,57 @@ export async function POST(req: NextRequest) {
     // 1. Fetch lead details to obtain phone and current raw_payload
     const { data: leadData } = await supabaseAdmin
       .from('leads')
-      .select('id, phone, mobile, raw_payload, workspace_id, user_id')
+      .select('id, phone, mobile, raw_payload, workspace_id, user_id, whatsapp_group_id')
       .eq('id', leadId)
       .maybeSingle();
 
+    const effectiveTenant = tenantId || leadData?.workspace_id || leadData?.user_id;
     const rawPhone = leadData?.phone || leadData?.mobile || leadData?.raw_payload?.phone || leadData?.raw_payload?.mobile || '';
-    const cleanPhone = String(rawPhone).replace(/\D/g, '').slice(-10);
+    const cleanDigits = String(rawPhone).replace(/\D/g, '');
+    const last10Phone = cleanDigits.slice(-10);
 
-    // 2. Persistently flag the lead record as STOPPED (prevents re-triggering via subsequent CRM edits)
+    // 1.5. Find or create default "⛔ Stopped / Opt-out" contact group for the workspace
+    let stoppedGroupId: string | null = null;
+    if (effectiveTenant) {
+      try {
+        const { data: existingStopGroup } = await supabaseAdmin
+          .from('whatsapp_contact_groups')
+          .select('id')
+          .eq('tenant_id', effectiveTenant)
+          .ilike('group_name', '%stop%')
+          .maybeSingle();
+
+        if (existingStopGroup) {
+          stoppedGroupId = existingStopGroup.id;
+        } else {
+          const { data: newStopGroup } = await supabaseAdmin
+            .from('whatsapp_contact_groups')
+            .insert({
+              tenant_id: effectiveTenant,
+              group_name: '⛔ Stopped / Opt-out'
+            })
+            .select('id')
+            .maybeSingle();
+          if (newStopGroup) stoppedGroupId = newStopGroup.id;
+        }
+      } catch (grpErr) {
+        console.warn('[stop API] Notice fetching/creating stopped group:', grpErr);
+      }
+    }
+
+    // 2. Persistently move lead to Stopped group & flag as STOPPED
     if (leadData) {
       const existingPayload = leadData.raw_payload || {};
       await supabaseAdmin
         .from('leads')
         .update({
+          whatsapp_group_id: stoppedGroupId,
           raw_payload: {
             ...existingPayload,
+            previous_group_id: leadData.whatsapp_group_id,
             stop_followup: true,
             workflow_status: 'stopped',
+            skip_auto_trigger: true,
             followup_stopped_at: now
           },
           updated_at: now
@@ -39,12 +73,12 @@ export async function POST(req: NextRequest) {
         .eq('id', leadId);
     }
 
-    // 3. Fetch pending workflow logs for this lead (if workflowId provided, scope to it; otherwise all)
+    // 3. Fetch all active/pending/scheduled workflow logs for this lead
     let logsQuery = supabaseAdmin
       .from('whatsapp_workflow_logs')
       .select('id, step_index, workflow_id')
       .eq('lead_id', leadId)
-      .eq('status', 'pending');
+      .in('status', ['pending', 'queued', 'scheduled', 'processing', 'retrying']);
 
     if (workflowId) {
       logsQuery = logsQuery.eq('workflow_id', workflowId);
@@ -62,7 +96,7 @@ export async function POST(req: NextRequest) {
         updated_at: now
       })
       .eq('lead_id', leadId)
-      .in('status', ['pending', 'queued', 'scheduled']);
+      .in('status', ['pending', 'queued', 'scheduled', 'processing', 'retrying']);
 
     if (workflowId) {
       logsUpdateQuery = logsUpdateQuery.eq('workflow_id', workflowId);
@@ -131,17 +165,21 @@ export async function POST(req: NextRequest) {
         const payload = item.payload || {};
         const matchesLog = payload.workflowLogId && stoppedLogIds.has(payload.workflowLogId);
         const matchesWorkflow = !workflowId || payload.workflowId === workflowId || payload.workflow_id === workflowId;
-        const matchesLead = payload.leadId === leadId || payload.lead_id === leadId;
+        const matchesLead =
+          payload.leadId === leadId ||
+          payload.lead_id === leadId ||
+          payload.variables?.id === leadId ||
+          payload.variables?.lead_id === leadId;
 
         let matchesPhone = false;
-        if (cleanPhone && cleanPhone.length >= 8) {
+        if (cleanDigits && cleanDigits.length >= 8) {
           const toStr = String(payload.to || payload.recipient || payload.phone || '');
-          if (toStr.includes(cleanPhone)) {
+          if (toStr.includes(cleanDigits) || (last10Phone.length >= 8 && toStr.includes(last10Phone))) {
             matchesPhone = true;
           }
         }
 
-        if (matchesLog || (matchesWorkflow && matchesLead) || (matchesWorkflow && matchesPhone) || (matchesLead && matchesPhone)) {
+        if (matchesLog || matchesLead || (matchesWorkflow && matchesPhone)) {
           queueIdsToCancel.push(item.id);
         }
       }

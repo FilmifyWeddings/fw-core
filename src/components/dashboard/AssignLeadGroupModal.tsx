@@ -124,10 +124,15 @@ export function AssignLeadGroupModal({
       setErrorMsg('Please select a WhatsApp Contact Group.');
       return;
     }
-    if (submitting) return;
+    if (submitting || loadingWorkflows) return;
 
     setSubmitting(true);
     setErrorMsg(null);
+
+    // If no workflows checked manually, automatically enroll in all active workflows for this group
+    const finalWorkflowIds = (checkedWorkflowIds && checkedWorkflowIds.length > 0)
+      ? checkedWorkflowIds
+      : activeWorkflows.map(w => w.id);
 
     try {
       const res = await fetch('/api/integrations/whatsapp/workflows/bulk-enroll', {
@@ -136,8 +141,8 @@ export function AssignLeadGroupModal({
         body: JSON.stringify({
           leadIds: [lead.id],
           groupId: selectedGroupId,
-          workflowIds: checkedWorkflowIds,
-          delayValue: 2,
+          workflowIds: finalWorkflowIds,
+          delayValue: 0,
           delayUnit: 'seconds',
           workspaceId: workspaceId || lead.workspace_id,
         }),
@@ -342,7 +347,7 @@ export function AssignLeadGroupModal({
             </button>
             <button
               onClick={handleAssign}
-              disabled={submitting || !selectedGroupId}
+              disabled={submitting || !selectedGroupId || loadingWorkflows}
               className="py-2.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs flex items-center gap-2 shadow-md disabled:opacity-50 transition-all cursor-pointer"
             >
               {submitting ? (
