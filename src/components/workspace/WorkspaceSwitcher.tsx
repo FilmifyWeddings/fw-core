@@ -21,6 +21,7 @@ export function WorkspaceSwitcher({ isCollapsed = false }: WorkspaceSwitcherProp
     workspaceId, 
     isOwner, 
     userRole, 
+    activeWorkspace,
     availableWorkspaces, 
     switchWorkspace 
   } = useWorkspace();
@@ -279,41 +280,43 @@ export function WorkspaceSwitcher({ isCollapsed = false }: WorkspaceSwitcherProp
     );
   }
 
+  const roleTitle = isOwner ? 'Studio Owner' : (userRole || activeWorkspace?.userRole || 'Partner Workspace');
+
   return (
     <div className="relative w-full" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-2 rounded-2xl bg-zinc-50 hover:bg-zinc-100/80 border border-zinc-200/80 transition-all cursor-pointer group shadow-2xs"
+        className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-white hover:bg-zinc-50 border border-zinc-200/90 transition-all cursor-pointer group shadow-2xs"
       >
-        <div className="flex items-center gap-2.5 overflow-hidden text-left">
-          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs text-white shrink-0 shadow-xs ${
+        <div className="flex items-center gap-2.5 overflow-hidden text-left flex-1 min-w-0">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs text-white shrink-0 shadow-xs ${
             isOwner 
               ? 'bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600' 
               : 'bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600'
           }`}>
             {isOwner ? <Crown className="w-4 h-4" /> : <Briefcase className="w-4 h-4" />}
           </div>
-          <div className="overflow-hidden">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-black text-zinc-900 tracking-tight truncate max-w-[110px]" suppressHydrationWarning>
-                {workspaceName || 'StudioCore'}
-              </span>
-              <span 
-                suppressHydrationWarning
-                className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md tracking-wider ${
-                isOwner 
-                  ? 'bg-amber-100 text-amber-800 border border-amber-200' 
-                  : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
-              }`}>
-                {isOwner ? 'Owner' : userRole}
-              </span>
-            </div>
-            <p className="text-[10px] text-zinc-400 font-medium truncate" suppressHydrationWarning>
-              {isOwner ? 'Full Studio Access' : 'Partner Workspace Portal'}
-            </p>
+          <div className="overflow-hidden flex-1 min-w-0">
+            {/* Real Assigned Role as clean title with distinct accent color */}
+            <span 
+              suppressHydrationWarning
+              className={`text-[10px] font-black uppercase tracking-wider block truncate ${
+                isOwner ? 'text-amber-700' : 'text-indigo-600'
+              }`}
+            >
+              {roleTitle}
+            </span>
+            {/* Full Studio Name without cramped truncation */}
+            <span 
+              className="text-xs font-black text-zinc-900 tracking-tight block truncate font-josefin" 
+              title={workspaceName || 'StudioCore'}
+              suppressHydrationWarning
+            >
+              {workspaceName || 'StudioCore'}
+            </span>
           </div>
         </div>
-        <ChevronDown className={`w-4 h-4 text-zinc-400 group-hover:text-zinc-700 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-zinc-400 group-hover:text-zinc-700 transition-transform duration-200 shrink-0 ml-1.5 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       <AnimatePresence>

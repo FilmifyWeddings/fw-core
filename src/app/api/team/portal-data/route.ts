@@ -103,6 +103,13 @@ export async function GET(req: NextRequest) {
     // 2. Fetch Assigned Shoots (using existing verified logic)
     let shoots: any[] = [];
     try {
+      const todayDateStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(new Date());
+
       const { data: asgList } = await supabaseAdmin
         .from('fw_assignments')
         .select(`
@@ -110,11 +117,14 @@ export async function GET(req: NextRequest) {
           sub_event_id,
           project_id,
           role_name,
+          required_role,
+          role,
           agreed_amount,
           advance_amount,
           paid_amount,
           balance_amount,
           payment_status,
+          status,
           notes,
           fw_sub_events (
             id,
@@ -123,12 +133,15 @@ export async function GET(req: NextRequest) {
             start_time_12h,
             end_time_12h,
             venue_name,
+            status,
             fw_projects (
               id,
               user_id,
+              workspace_id,
               client_name,
               main_venue,
-              main_date
+              main_date,
+              status
             )
           )
         `)
@@ -157,32 +170,45 @@ export async function GET(req: NextRequest) {
         const paid = Number(a.paid_amount ?? a.advance_amount) || 0;
         const bal = Number(a.balance_amount) != null ? Number(a.balance_amount) : Math.max(0, agreed - paid);
 
+        const shootDate = se?.event_date || p?.main_date || '';
+        const isPast = Boolean(shootDate && shootDate !== 'TBD' && shootDate < todayDateStr);
+        const isCompleted = (a.status || se?.status || p?.status || '').toLowerCase() === 'completed' || isPast;
+        const shootStatus = isCompleted ? 'COMPLETED' : (shootDate === todayDateStr ? 'TODAY' : 'UPCOMING');
+
+        // Real assigned role from studio owner (required_role, role_name, or role)
+        const realRole = a.required_role || a.role_name || a.role || (a as any).assigned_role || 'Crew Member';
+
         return {
           assignment_id: a.id,
           sub_event_id: se?.id || '',
           project_id: p?.id || a.project_id || '',
-          workspace_id: p?.user_id || '',
+          workspace_id: p?.workspace_id || p?.user_id || '',
+          project_owner_id: p?.user_id || '',
           studio_name: prof?.studio_name || prof?.meta?.company_name || 'Studio Partner',
           studio_logo: prof?.meta?.logo_url || null,
           client_name: p?.client_name || 'Wedding Client',
           couple_name: p?.client_name || 'Wedding Couple',
           event_name: se?.event_title || 'Main Shoot',
-          event_date: se?.event_date || p?.main_date || '',
+          event_date: shootDate,
           start_time: se?.start_time_12h || '',
           end_time: se?.end_time_12h || '',
           venue_location: se?.venue_name || p?.main_venue || '',
-          role_name: a.role_name || 'Crew Member',
+          role_name: realRole,
           agreed_amount: agreed,
           advance_amount: Number(a.advance_amount) || 0,
           paid_amount: paid,
           balance_amount: bal,
           payment_status: a.payment_status || (bal <= 0 && agreed > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING'),
+          shoot_status: shootStatus,
           notes: a.notes || '',
         };
       });
 
       if (resolvedWsId) {
-        shoots = shoots.filter((s: any) => String(s.workspace_id) === String(resolvedWsId));
+        shoots = shoots.filter((s: any) => 
+          String(s.workspace_id) === String(resolvedWsId) || 
+          String(s.project_owner_id) === String(resolvedWsId)
+        );
       }
     } catch (shootErr) {
       console.warn('[portal-data] Shoots query note:', shootErr);
@@ -196,9 +222,9 @@ export async function GET(req: NextRequest) {
         (() => {
           let q = supabaseAdmin
             .from('post_production_projects')
-            .select('id, workspace_id, client_id, client_name, couple_name, project_name, title, deliverables, is_deleted');
+            .select('id, workspace_id, user_id, client_id, client_name, couple_name, project_name, title, deliverables, editor_id, assigned_editor_id, assigned_to, is_deleted');
           if (resolvedWsId) {
-            q = q.eq('workspace_id', resolvedWsId);
+            q = q.or(`workspace_id.eq.${resolvedWsId},user_id.eq.${resolvedWsId}`);
           } else {
             // Scope to known member workspaces to avoid full table scan
             const knownWsIds = Array.from(new Set([
@@ -214,10 +240,12 @@ export async function GET(req: NextRequest) {
         (() => {
           let q = supabaseAdmin
             .from('post_production_deliverables')
-            .select('*')
-            .in('assigned_member_id', allMemberIds);
+            .select('*');
+          if (allMemberIds.length > 0) {
+            q = q.or(`assigned_member_id.in.(${allMemberIds.join(',')}),user_id.in.(${allMemberIds.join(',')})`);
+          }
           if (resolvedWsId) {
-            q = q.eq('workspace_id', resolvedWsId);
+            q = q.or(`workspace_id.eq.${resolvedWsId},user_id.eq.${resolvedWsId}`);
           }
           return q.limit(100);
         })()
@@ -282,7 +310,13 @@ export async function GET(req: NextRequest) {
 
           (proj.deliverables || []).forEach((d: any) => {
             const isAssigned = (d.assigned_member_id && memberIdSet.has(d.assigned_member_id)) ||
-              (d.assigned_to && memberNames.some(name => d.assigned_to.toLowerCase().includes(name)));
+              (d.member_id && memberIdSet.has(d.member_id)) ||
+              (d.partner_id && memberIdSet.has(d.partner_id)) ||
+              (d.assigned_to && memberNames.some(name => d.assigned_to.toLowerCase().includes(name))) ||
+              (d.assigned_member_name && memberNames.some(name => d.assigned_member_name.toLowerCase().includes(name))) ||
+              (proj.editor_id && memberIdSet.has(proj.editor_id)) ||
+              (proj.assigned_editor_id && memberIdSet.has(proj.assigned_editor_id)) ||
+              (proj.assigned_to && memberNames.some(name => proj.assigned_to.toLowerCase().includes(name)));
 
             if (isAssigned) {
               const rawAgreed = Number(d.agreed_amount) || 0;
@@ -294,7 +328,7 @@ export async function GET(req: NextRequest) {
                 id: dId,
                 deliverable_id: dId,
                 project_id: proj.id,
-                workspace_id: proj.workspace_id,
+                workspace_id: proj.workspace_id || proj.user_id,
                 client_name: clientName,
                 member_id: d.assigned_member_id || allMemberIds[0],
                 member_name: d.assigned_to || '',
@@ -473,14 +507,27 @@ export async function GET(req: NextRequest) {
     }
 
     // 6. Construct Profile
-    const primaryWsMember = wmList[0] || ftmList[0] || null;
+    const matchingWsMember = resolvedWsId
+      ? wmList.find((m: any) => String(m.workspace_id) === String(resolvedWsId)) ||
+        ftmList.find((m: any) => String(m.workspace_id) === String(resolvedWsId) || String(m.user_id) === String(resolvedWsId))
+      : null;
+    const primaryWsMember = matchingWsMember || wmList[0] || ftmList[0] || null;
+
+    const rawType = primaryWsMember?.primary_type || 
+      (Array.isArray(primaryWsMember?.member_types) && primaryWsMember.member_types[0]) || 
+      'FREELANCER';
+    const isInHouse = Boolean(rawType && ['in_house', 'in-house', 'inhouse'].includes(String(rawType).toLowerCase()));
+    const showAttendance = Boolean(isInHouse && (attendanceDirectUrl || todayAttendance));
+
     const memberProfile = {
       id: primaryWsMember?.id || allMemberIds[0] || userId,
       name: primaryWsMember?.name || activeUser.user_metadata?.full_name || 'Team Member',
       email: primaryWsMember?.email || cleanEmail,
       phone: primaryWsMember?.phone || primaryWsMember?.phone_number || activeUser.phone || '',
-      primary_role: primaryWsMember?.primary_role || primaryWsMember?.role || 'Crew',
-      primary_type: primaryWsMember?.primary_type || 'IN_HOUSE',
+      primary_role: primaryWsMember?.primary_role || primaryWsMember?.role || (primaryWsMember as any)?.role_name || 'Crew',
+      primary_type: rawType,
+      isInHouse,
+      showAttendance,
       default_daily_rate: Number(primaryWsMember?.default_daily_rate || 0),
       payout_frequency: primaryWsMember?.payout_frequency || 'daily',
     };

@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import React, { forwardRef } from 'react';
+import Image from 'next/image';
 import {
   LayoutDashboard,
   Users,
@@ -110,23 +111,15 @@ export const HeroMobileStage = forwardRef<HTMLDivElement, HeroMobileStageProps>(
               WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 82%, transparent 100%)',
             }}
           >
-            <picture>
-              <source
-                srcSet="/assets/characters/main-photographer/photographer-hero.webp"
-                type="image/webp"
-              />
-              <img
-                src="/assets/characters/main-photographer/photographer-hero.png"
-                alt="StudioCore Photographer"
-                className="w-auto h-[225px] sm:h-[265px] max-w-none object-contain drop-shadow-[0_12px_24px_rgba(33,27,23,0.18)]"
-                loading="eager"
-                decoding="async"
-                // @ts-expect-error high fetch priority for LCP
-                fetchPriority="high"
-                width={200}
-                height={265}
-              />
-            </picture>
+            <Image
+              src="/assets/characters/main-photographer/photographer-hero.webp"
+              alt="StudioCore Photographer"
+              width={265}
+              height={350}
+              priority={true}
+              sizes="(max-width: 768px) 100vw, 50vw"
+              className="w-auto h-[225px] sm:h-[265px] max-w-none object-contain drop-shadow-[0_12px_24px_rgba(33,27,23,0.18)]"
+            />
           </div>
         </div>
 

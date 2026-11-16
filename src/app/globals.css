@@ -22,6 +22,8 @@
   --font-serif: 'Instrument Serif', 'Cormorant Garamond', Georgia, serif;
   --font-sans: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
   --font-handwriting: 'Caveat', cursive, sans-serif;
+  --font-josefin: 'Josefin Sans', sans-serif;
+  --font-roboto: 'Roboto', sans-serif;
 
   --shadow-luxury: 0 20px 50px -12px rgba(33, 27, 23, 0.08), 0 4px 12px -2px rgba(33, 27, 23, 0.03);
   --shadow-luxury-lg: 0 30px 70px -15px rgba(33, 27, 23, 0.12), 0 10px 24px -5px rgba(33, 27, 23, 0.05);
@@ -61,6 +63,14 @@ body {
   transition-property: background-color, border-color, text-decoration-color, color, fill, stroke;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 200ms;
+}
+
+.font-josefin {
+  font-family: 'Josefin Sans', sans-serif !important;
+}
+
+.font-roboto {
+  font-family: 'Roboto', sans-serif !important;
 }
 
 /* Custom Scrollbars - Modern Visible Dark Grey (Dark by default, no hover required) */

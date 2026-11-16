@@ -10,7 +10,6 @@ import { HeroCharacter } from './HeroCharacter';
 import { HeroNotifications } from './HeroNotifications';
 import { HeroMobileStage } from './HeroMobileStage';
 import { HeroBottom } from './HeroBottom';
-import { animateHeroEntrance } from '../../../animations/heroAnimations';
 
 export const Hero: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -42,27 +41,36 @@ export const Hero: React.FC = () => {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [handleMouseMove]);
 
-  // Trigger entrance animations
+  // Trigger entrance animations - dynamically code-split on desktop only (> 768px)
   useEffect(() => {
-    // Only run GSAP entrance animation on desktop (> 768px).
-    // On mobile, keep elements visible immediately so FCP & LCP paint in < 1.2s without waiting for JS animation!
+    // On mobile, skip GSAP completely so FCP & LCP paint in < 1.2s without waiting for heavy JS animation libraries!
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       return;
     }
-    const ctx = animateHeroEntrance({
-      navbarRef: navbarRef.current,
-      headlineRef: headlineRef.current,
-      descriptionRef: descriptionRef.current,
-      buttonsRef: buttonsRef.current,
-      trustRef: trustRef.current,
-      dashboardRef: dashboardRef.current,
-      characterRef: characterRef.current,
-      notificationsRef: notificationsRef.current,
-      bottomRef: bottomRef.current,
+
+    let ctx: any = null;
+    let isCancelled = false;
+
+    import('../../../animations/heroAnimations').then(({ animateHeroEntrance }) => {
+      if (isCancelled) return;
+      ctx = animateHeroEntrance({
+        navbarRef: navbarRef.current,
+        headlineRef: headlineRef.current,
+        descriptionRef: descriptionRef.current,
+        buttonsRef: buttonsRef.current,
+        trustRef: trustRef.current,
+        dashboardRef: dashboardRef.current,
+        characterRef: characterRef.current,
+        notificationsRef: notificationsRef.current,
+        bottomRef: bottomRef.current,
+      });
     });
 
     return () => {
-      ctx.kill();
+      isCancelled = true;
+      if (ctx && typeof ctx.kill === 'function') {
+        ctx.kill();
+      }
     };
   }, []);
 

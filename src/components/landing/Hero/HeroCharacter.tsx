@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { forwardRef } from 'react';
+import Image from 'next/image';
 
 export interface HeroCharacterProps {
   parallaxOffset?: { x: number; y: number; rotateY: number };
@@ -33,20 +34,15 @@ export const HeroCharacter = forwardRef<HTMLDivElement, HeroCharacterProps>(
             WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 78%, transparent 100%)',
           }}
         >
-          <picture>
-            <source
-              srcSet="/assets/characters/main-photographer/photographer-hero.webp"
-              type="image/webp"
-            />
-            <img
-              src="/assets/characters/main-photographer/photographer-hero.png"
-              alt="StudioCore 3D Professional Photographer"
-              className="w-auto h-[440px] sm:h-[520px] md:h-[580px] lg:h-[640px] xl:h-[690px] max-w-none object-contain drop-shadow-[0_20px_35px_rgba(33,27,23,0.16)]"
-              loading="eager"
-              decoding="async"
-              fetchPriority="high"
-            />
-          </picture>
+          <Image
+            src="/assets/characters/main-photographer/photographer-hero.webp"
+            alt="StudioCore 3D Professional Photographer"
+            width={600}
+            height={795}
+            priority={true}
+            sizes="(max-width: 768px) 100vw, 50vw"
+            className="w-auto h-[440px] sm:h-[520px] md:h-[580px] lg:h-[640px] xl:h-[690px] max-w-none object-contain drop-shadow-[0_20px_35px_rgba(33,27,23,0.16)]"
+          />
         </div>
 
         {/* Soft bottom edge gradient merge */}

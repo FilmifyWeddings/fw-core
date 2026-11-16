@@ -33,10 +33,14 @@ import {
   Camera,
   LogIn,
   LogOut,
-  Maximize2
+  Maximize2,
+  RotateCcw,
+  X
 } from 'lucide-react';
 import ShootDetailsModal from '@/components/team/ShootDetailsModal';
 import TeamMemberFinanceDrawer from '@/app/workspace/team/components/TeamMemberFinanceDrawer';
+import TeamPortalLineGraph from '@/components/team/TeamPortalLineGraph';
+import DateFilterModal from '@/components/team/DateFilterModal';
 
 interface AssignedShoot {
   assignment_id: string;
@@ -58,6 +62,7 @@ interface AssignedShoot {
   paid_amount: number;
   balance_amount: number;
   payment_status: string;
+  shoot_status?: string;
   notes?: string;
 }
 
@@ -89,8 +94,15 @@ export default function TeamDashboardPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [dashboardTab, setDashboardTab] = useState<'shoots' | 'deliverables' | 'salaries'>('shoots');
   const [activeTab, setActiveTab] = useState<'all' | 'upcoming' | 'completed'>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'month'>('grid');
+  
+  // Requirement: Default view is LIST, then Card, then Month-wise
+  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'month'>('list');
   const [selectedStudio, setSelectedStudio] = useState<string>('all');
+
+  // Custom Date Filter Popover/Modal
+  const [filterStart, setFilterStart] = useState<string>('');
+  const [filterEnd, setFilterEnd] = useState<string>('');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 
   // Shoot Details Modal
   const [selectedShoot, setSelectedShoot] = useState<AssignedShoot | null>(null);
@@ -207,6 +219,8 @@ export default function TeamDashboardPage() {
           phone: profile?.phone || activeUser.phone || activeUser.user_metadata?.phone || '',
           primary_role: profile?.primary_role || userRole || 'Crew',
           primary_type: profile?.primary_type || 'IN_HOUSE',
+          isInHouse: Boolean(profile?.isInHouse),
+          showAttendance: Boolean(profile?.showAttendance),
           default_daily_rate: cleanRate,
           daily_rate: cleanRate,
           payout_frequency: cleanFreq,
@@ -258,18 +272,53 @@ export default function TeamDashboardPage() {
 
   const uniqueStudios = Array.from(new Set(shoots.map(s => s.studio_name).filter(Boolean)));
 
-  // Filtered & Sorted Shoots
+  // Date Range Filtered Shoots
+  const dateFilteredShoots = useMemo(() => {
+    return shoots.filter((s) => {
+      if (!filterStart && !filterEnd) return true;
+      if (s.event_date === 'TBD') return true;
+      if (filterStart && s.event_date < filterStart) return false;
+      if (filterEnd && s.event_date > filterEnd) return false;
+      return true;
+    });
+  }, [shoots, filterStart, filterEnd]);
+
+  // Date Range Filtered Deliverables
+  const dateFilteredDeliverables = useMemo(() => {
+    return deliverables.filter((d) => {
+      if (!filterStart && !filterEnd) return true;
+      const dt = d.due_date;
+      if (!dt || dt === 'TBD') return true;
+      if (filterStart && dt < filterStart) return false;
+      if (filterEnd && dt > filterEnd) return false;
+      return true;
+    });
+  }, [deliverables, filterStart, filterEnd]);
+
+  // Date Range Filtered Salaries
+  const dateFilteredSalaries = useMemo(() => {
+    return salaries.filter((s) => {
+      if (!filterStart && !filterEnd) return true;
+      const dt = s.month_year || s.paid_date;
+      if (!dt) return true;
+      if (filterStart && dt < filterStart) return false;
+      if (filterEnd && dt > filterEnd) return false;
+      return true;
+    });
+  }, [salaries, filterStart, filterEnd]);
+
+  // Tab & Studio Filtered Shoots
   const filteredShoots = useMemo(() => {
-    return shoots
+    return dateFilteredShoots
       .filter((s) => {
         const matchesStudio = selectedStudio === 'all' || s.studio_name === selectedStudio;
         if (!matchesStudio) return false;
 
         if (activeTab === 'upcoming') {
-          return s.event_date >= today || s.event_date === 'TBD';
+          return s.shoot_status !== 'COMPLETED' && (s.event_date >= today || s.event_date === 'TBD');
         }
         if (activeTab === 'completed') {
-          return s.event_date < today && s.event_date !== 'TBD';
+          return s.shoot_status === 'COMPLETED' || (s.event_date < today && s.event_date !== 'TBD');
         }
         return true;
       })
@@ -278,7 +327,7 @@ export default function TeamDashboardPage() {
         if (b.event_date === 'TBD') return -1;
         return a.event_date.localeCompare(b.event_date);
       });
-  }, [shoots, selectedStudio, activeTab, today]);
+  }, [dateFilteredShoots, selectedStudio, activeTab, today]);
 
   // Group Shoots by Month for Month-Wise View
   const shootsByMonth = useMemo(() => {
@@ -321,7 +370,7 @@ export default function TeamDashboardPage() {
       totalBalance: number;
     }>();
 
-    deliverables.forEach((d) => {
+    dateFilteredDeliverables.forEach((d) => {
       const rawClient = (d.client_name || '').trim();
       const clientName = rawClient && rawClient !== 'Client Project' && rawClient !== 'Wedding Project'
         ? rawClient
@@ -348,7 +397,7 @@ export default function TeamDashboardPage() {
     });
 
     return Array.from(map.values());
-  }, [deliverables]);
+  }, [dateFilteredDeliverables]);
 
   // Handle in-place deliverable status change
   async function handleStatusChange(deliverableId: string, projectId: string, newStatus: string) {
@@ -382,17 +431,153 @@ export default function TeamDashboardPage() {
     }
   }
 
-  // Combined Financial Metrics
+  // Monthly Shoots Graph Data
+  const shootsGraphData = useMemo(() => {
+    const monthMap = new Map<string, { assigned: number; completed: number; totalAmount: number }>();
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mKey = d.toLocaleDateString('en-US', { month: 'short' });
+      monthMap.set(mKey, { assigned: 0, completed: 0, totalAmount: 0 });
+    }
+
+    dateFilteredShoots.forEach((s) => {
+      if (s.event_date && s.event_date !== 'TBD') {
+        try {
+          const d = new Date(s.event_date);
+          if (!isNaN(d.getTime())) {
+            const mKey = d.toLocaleDateString('en-US', { month: 'short' });
+            if (!monthMap.has(mKey)) {
+              monthMap.set(mKey, { assigned: 0, completed: 0, totalAmount: 0 });
+            }
+            const rec = monthMap.get(mKey)!;
+            rec.assigned += 1;
+            if (s.shoot_status === 'COMPLETED' || s.event_date < today) {
+              rec.completed += 1;
+            }
+            rec.totalAmount += Number(s.agreed_amount) || 0;
+          }
+        } catch (_) {}
+      }
+    });
+
+    return Array.from(monthMap.entries()).map(([month, data]) => ({
+      month,
+      assigned: data.assigned,
+      completed: data.completed,
+      totalAmount: data.totalAmount,
+    }));
+  }, [dateFilteredShoots, today]);
+
+  // Monthly Deliverables Graph Data
+  const deliverablesGraphData = useMemo(() => {
+    const monthMap = new Map<string, { assigned: number; completed: number; totalAmount: number }>();
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mKey = d.toLocaleDateString('en-US', { month: 'short' });
+      monthMap.set(mKey, { assigned: 0, completed: 0, totalAmount: 0 });
+    }
+
+    dateFilteredDeliverables.forEach((deliv) => {
+      const dt = deliv.due_date;
+      if (dt && dt !== 'TBD') {
+        try {
+          const d = new Date(dt);
+          if (!isNaN(d.getTime())) {
+            const mKey = d.toLocaleDateString('en-US', { month: 'short' });
+            if (!monthMap.has(mKey)) {
+              monthMap.set(mKey, { assigned: 0, completed: 0, totalAmount: 0 });
+            }
+            const rec = monthMap.get(mKey)!;
+            rec.assigned += 1;
+            if (deliv.status === 'Completed') {
+              rec.completed += 1;
+            }
+            rec.totalAmount += Number(deliv.agreed_amount) || 0;
+          }
+        } catch (_) {}
+      }
+    });
+
+    return Array.from(monthMap.entries()).map(([month, data]) => ({
+      month,
+      assigned: data.assigned,
+      completed: data.completed,
+      totalAmount: data.totalAmount,
+    }));
+  }, [dateFilteredDeliverables]);
+
+  // Monthly Financial Trends Graph Data
+  const financeGraphData = useMemo(() => {
+    const monthMap = new Map<string, { totalAmount: number; receivedAmount: number; balanceAmount: number }>();
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mKey = d.toLocaleDateString('en-US', { month: 'short' });
+      monthMap.set(mKey, { totalAmount: 0, receivedAmount: 0, balanceAmount: 0 });
+    }
+
+    dateFilteredShoots.forEach((s) => {
+      if (s.event_date && s.event_date !== 'TBD') {
+        try {
+          const d = new Date(s.event_date);
+          if (!isNaN(d.getTime())) {
+            const mKey = d.toLocaleDateString('en-US', { month: 'short' });
+            if (!monthMap.has(mKey)) {
+              monthMap.set(mKey, { totalAmount: 0, receivedAmount: 0, balanceAmount: 0 });
+            }
+            const rec = monthMap.get(mKey)!;
+            const agreed = Number(s.agreed_amount) || 0;
+            const paid = Number(s.paid_amount ?? s.advance_amount) || 0;
+            rec.totalAmount += agreed;
+            rec.receivedAmount += paid;
+            rec.balanceAmount += Math.max(0, agreed - paid);
+          }
+        } catch (_) {}
+      }
+    });
+
+    dateFilteredDeliverables.forEach((deliv) => {
+      const dt = deliv.due_date;
+      if (dt && dt !== 'TBD') {
+        try {
+          const d = new Date(dt);
+          if (!isNaN(d.getTime())) {
+            const mKey = d.toLocaleDateString('en-US', { month: 'short' });
+            if (!monthMap.has(mKey)) {
+              monthMap.set(mKey, { totalAmount: 0, receivedAmount: 0, balanceAmount: 0 });
+            }
+            const rec = monthMap.get(mKey)!;
+            const agreed = Number(deliv.agreed_amount) || 0;
+            const paid = Number(deliv.paid_amount) || 0;
+            rec.totalAmount += agreed;
+            rec.receivedAmount += paid;
+            rec.balanceAmount += Math.max(0, agreed - paid);
+          }
+        } catch (_) {}
+      }
+    });
+
+    return Array.from(monthMap.entries()).map(([month, data]) => ({
+      month,
+      totalAmount: data.totalAmount,
+      receivedAmount: data.receivedAmount,
+      balanceAmount: data.balanceAmount,
+    }));
+  }, [dateFilteredShoots, dateFilteredDeliverables]);
+
+  // Combined Financial Metrics (Renamed according to instructions)
   const totalShootAgreed = filteredShoots.reduce((acc, s) => acc + (Number(s.agreed_amount) || 0), 0);
   const totalShootPaid = filteredShoots.reduce((acc, s) => acc + (Number(s.paid_amount) || 0), 0);
   const totalShootBalance = filteredShoots.reduce((acc, s) => acc + (Number(s.balance_amount) || 0), 0);
 
-  const totalDelivAgreed = deliverables.reduce((acc, d) => acc + (Number(d.agreed_amount) || 0), 0);
-  const totalDelivPaid = deliverables.reduce((acc, d) => acc + (Number(d.paid_amount) || 0), 0);
-  const totalDelivBalance = deliverables.reduce((acc, d) => acc + (Number(d.balance_amount) || 0), 0);
+  const totalDelivAgreed = dateFilteredDeliverables.reduce((acc, d) => acc + (Number(d.agreed_amount) || 0), 0);
+  const totalDelivPaid = dateFilteredDeliverables.reduce((acc, d) => acc + (Number(d.paid_amount) || 0), 0);
+  const totalDelivBalance = dateFilteredDeliverables.reduce((acc, d) => acc + (Number(d.balance_amount) || 0), 0);
 
-  const totalSalaryAgreed = salaries.reduce((acc, s) => acc + (Number(s.base_salary) || 0), 0);
-  const totalSalaryPaid = salaries.reduce((acc, s) => acc + (Number(s.net_paid ?? s.net_payable ?? s.base_salary) || 0), 0);
+  const totalSalaryAgreed = dateFilteredSalaries.reduce((acc, s) => acc + (Number(s.base_salary) || 0), 0);
+  const totalSalaryPaid = dateFilteredSalaries.reduce((acc, s) => acc + (Number(s.net_paid ?? s.net_payable ?? s.base_salary) || 0), 0);
 
   const grandAgreed = totalShootAgreed + totalDelivAgreed + totalSalaryAgreed;
   const grandPaid = totalShootPaid + totalDelivPaid + totalSalaryPaid;
@@ -401,7 +586,12 @@ export default function TeamDashboardPage() {
   const studioCode = activeWorkspace?.studioSlug || activeWorkspace?.workspaceId || '';
   const attendanceHubUrl = studioCode ? `/team/attendance?studio=${encodeURIComponent(studioCode)}` : '/team/attendance';
 
-  // Attendance live duration calculations
+  // Smart Attendance Visibility: Strictly ONLY for In-House members who are mapped for attendance!
+  const showAttendanceBanner = Boolean(
+    (currentMemberProfile?.isInHouse ?? activeWorkspace?.primary_type?.toLowerCase().includes('house')) &&
+    (todayAttendance || attendanceDirectUrl)
+  );
+
   const isPunchedIn = Boolean(todayAttendance?.punch_in_time);
   const isPunchedOut = Boolean(todayAttendance?.punch_out_time);
   const isCurrentlyWorking = isPunchedIn && !isPunchedOut;
@@ -433,212 +623,248 @@ export default function TeamDashboardPage() {
     }
   }
 
+  const isFilterActive = Boolean(filterStart || filterEnd);
+
   return (
     <div className="w-full">
       <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-6">
 
-        {/* ── TOP HEADER (CLEANED: No deliverables/finance/ledger buttons) ── */}
+        {/* ── TOP HEADER (CLEANED) ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#EBE7DF]">
           <div>
             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-[#92400e] border border-amber-200 font-black">
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-[#92400e] border border-amber-200 font-black font-josefin">
                 Crew &amp; Freelancer Portal
               </span>
               <span className="text-xs text-zinc-400">•</span>
-              <span className="text-xs font-bold text-zinc-600">{userRole || 'Crew Member'}</span>
+              <span className="text-xs font-bold text-zinc-600 font-josefin">
+                {currentMemberProfile?.primary_role || userRole || 'Crew Member'}
+              </span>
               {isSyncing && (
-                <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200/80 font-bold animate-pulse">
+                <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200/80 font-bold font-josefin animate-pulse">
                   Syncing live...
                 </span>
               )}
             </div>
-            <h1 className="text-2xl sm:text-3xl font-serif font-black text-zinc-900 tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight font-josefin">
               My Assigned Work &amp; Schedule
             </h1>
-            <p className="text-xs sm:text-sm text-zinc-500 mt-1 font-medium">
-              Real-time schedule, call times, post-production edits, and daily shift attendance.
+            <p className="text-xs sm:text-sm text-zinc-500 mt-1 font-medium font-josefin">
+              Real-time schedule, call times, post-production edits, and workload trends.
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Filter Button */}
+            <button
+              type="button"
+              onClick={() => setIsFilterModalOpen(true)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold font-josefin transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                isFilterActive
+                  ? 'bg-amber-500 text-white hover:bg-amber-600 border border-amber-600'
+                  : 'bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200'
+              }`}
+              title="Filter by custom date range"
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>{isFilterActive ? 'Filter Active' : 'Filter Date'}</span>
+            </button>
+
+            {isFilterActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterStart('');
+                  setFilterEnd('');
+                }}
+                className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs transition cursor-pointer"
+                title="Clear date filter"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             <WorkspaceSwitcher />
           </div>
         </div>
 
-        {/* ── DAILY ATTENDANCE & PUNCH-IN BANNER (PROMINENT AT TOP) ── */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            
-            <div className="flex items-start sm:items-center gap-3.5">
-              {/* Photo or Status Avatar */}
-              <div className="relative shrink-0">
-                {todayAttendance?.punch_in_photo ? (
-                  <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-xs bg-stone-100">
-                    <img
-                      src={todayAttendance.punch_in_photo}
-                      alt="Today Punch-in Selfie"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                ) : (
-                  <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shadow-xs ${
-                    isCurrentlyWorking
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                      : isPunchedOut
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'bg-amber-50 border-amber-200 text-amber-700'
-                  }`}>
-                    {isCurrentlyWorking ? (
-                      <Clock className="w-6 h-6 animate-spin-slow" />
-                    ) : isPunchedOut ? (
-                      <CheckCircle2 className="w-6 h-6" />
-                    ) : (
-                      <Camera className="w-6 h-6" />
-                    )}
-                  </div>
-                )}
-                {isCurrentlyWorking && (
-                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full animate-ping" />
-                )}
-              </div>
-
-              {/* Attendance Details */}
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-sm font-black text-zinc-900">
-                    {isCurrentlyWorking
-                      ? 'Shift Active (Working Live)'
-                      : isPunchedOut
-                      ? 'Shift Completed Today'
-                      : 'Daily Shift Attendance'}
-                  </h3>
-
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
-                    isCurrentlyWorking
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                      : isPunchedOut
-                      ? 'bg-blue-50 text-blue-800 border-blue-300'
-                      : 'bg-amber-50 text-amber-800 border-amber-200'
-                  }`}>
-                    {isCurrentlyWorking
-                      ? '● PUNCHE-IN'
-                      : isPunchedOut
-                      ? '✓ COMPLETED'
-                      : 'NOT PUNCHED IN'}
-                  </span>
+        {/* ── DAILY ATTENDANCE & PUNCH-IN BANNER (ONLY FOR IN-HOUSE MEMBERS) ── */}
+        {showAttendanceBanner && (
+          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              
+              <div className="flex items-start sm:items-center gap-3.5">
+                {/* Photo or Status Avatar */}
+                <div className="relative shrink-0">
+                  {todayAttendance?.punch_in_photo ? (
+                    <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-xs bg-stone-100">
+                      <img
+                        src={todayAttendance.punch_in_photo}
+                        alt="Today Punch-in Selfie"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shadow-xs ${
+                      isCurrentlyWorking
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                        : isPunchedOut
+                        ? 'bg-blue-50 border-blue-300 text-blue-700'
+                        : 'bg-amber-50 border-amber-200 text-amber-700'
+                    }`}>
+                      {isCurrentlyWorking ? (
+                        <Clock className="w-6 h-6 animate-spin-slow" />
+                      ) : isPunchedOut ? (
+                        <CheckCircle2 className="w-6 h-6" />
+                      ) : (
+                        <Camera className="w-6 h-6" />
+                      )}
+                    </div>
+                  )}
+                  {isCurrentlyWorking && (
+                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full animate-ping" />
+                  )}
                 </div>
 
-                {/* Punch Timings & Duration */}
-                {isPunchedIn ? (
-                  <div className="flex items-center gap-3 text-xs text-zinc-600 font-medium pt-0.5 flex-wrap">
-                    <span>
-                      In: <strong className="text-zinc-900 font-mono">{formatTime(todayAttendance?.punch_in_time)}</strong>
+                {/* Attendance Details */}
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm font-black text-zinc-900 font-josefin">
+                      {isCurrentlyWorking
+                        ? 'Shift Active (Working Live)'
+                        : isPunchedOut
+                        ? 'Shift Completed Today'
+                        : 'Daily Shift Attendance'}
+                    </h3>
+
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border font-josefin ${
+                      isCurrentlyWorking
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : isPunchedOut
+                        ? 'bg-blue-50 text-blue-800 border-blue-300'
+                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                    }`}>
+                      {isCurrentlyWorking
+                        ? '● PUNCHED-IN'
+                        : isPunchedOut
+                        ? '✓ COMPLETED'
+                        : 'NOT PUNCHED IN'}
                     </span>
-                    {isPunchedOut && (
-                      <>
-                        <span className="text-zinc-300">•</span>
-                        <span>
-                          Out: <strong className="text-zinc-900 font-mono">{formatTime(todayAttendance?.punch_out_time)}</strong>
-                        </span>
-                      </>
-                    )}
-                    <span className="text-zinc-300">•</span>
-                    <span className="text-emerald-700 font-bold">
-                      Duration: {formatMinutes(liveWorkDurationMinutes)}
-                    </span>
-                    {todayAttendance?.location_address && (
-                      <>
-                        <span className="text-zinc-300 hidden sm:inline">•</span>
-                        <span className="text-zinc-500 text-[11px] truncate max-w-[200px] hidden sm:inline">
-                          {todayAttendance.location_address}
-                        </span>
-                      </>
-                    )}
                   </div>
-                ) : (
-                  <p className="text-xs text-zinc-500 pt-0.5">
-                    Mark your daily selfie punch-in to record shift timings, location verification, and daily work hours.
-                  </p>
-                )}
+
+                  {/* Punch Timings & Duration */}
+                  {isPunchedIn ? (
+                    <div className="flex items-center gap-3 text-xs text-zinc-600 font-medium pt-0.5 flex-wrap font-roboto">
+                      <span>
+                        In: <strong className="text-zinc-900">{formatTime(todayAttendance?.punch_in_time)}</strong>
+                      </span>
+                      {isPunchedOut && (
+                        <>
+                          <span className="text-zinc-300">•</span>
+                          <span>
+                            Out: <strong className="text-zinc-900">{formatTime(todayAttendance?.punch_out_time)}</strong>
+                          </span>
+                        </>
+                      )}
+                      <span className="text-zinc-300">•</span>
+                      <span className="text-emerald-700 font-bold">
+                        Duration: {formatMinutes(liveWorkDurationMinutes)}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500 pt-0.5 font-josefin">
+                      Mark your daily selfie punch-in to record shift timings and verified work hours.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Attendance Action Buttons */}
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto font-josefin">
+                {!isPunchedIn ? (
+                  <Link
+                    href={attendanceDirectUrl || attendanceHubUrl}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Punch In Today</span>
+                  </Link>
+                ) : isCurrentlyWorking ? (
+                  <Link
+                    href={attendanceDirectUrl || attendanceHubUrl}
+                    className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Punch Out / Finish Shift</span>
+                  </Link>
+                ) : null}
+
+                <Link
+                  href={attendanceHubUrl}
+                  className="px-3.5 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition flex items-center gap-1"
+                >
+                  <span>Attendance Hub</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
               </div>
             </div>
-
-            {/* Attendance Action Buttons */}
-            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-              {!isPunchedIn ? (
-                <Link
-                  href={attendanceDirectUrl || attendanceHubUrl}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-                >
-                  <Camera className="w-3.5 h-3.5" />
-                  <span>Punch In Today</span>
-                </Link>
-              ) : isCurrentlyWorking ? (
-                <Link
-                  href={attendanceDirectUrl || attendanceHubUrl}
-                  className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-                >
-                  <LogOut className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Punch Out / Finish Shift</span>
-                </Link>
-              ) : null}
-
-              <Link
-                href={attendanceHubUrl}
-                className="px-3.5 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition flex items-center gap-1"
-                title="View monthly calendar attendance and shift logs"
-              >
-                <span>Attendance Hub</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
           </div>
-        </div>
+        )}
 
-        {/* ── 3 CLEAN METRIC CARDS ── */}
+        {/* ── 3 CLEAN METRIC CARDS (RENAMED PER INSTRUCTIONS) ── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
-            <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
+            <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2 font-josefin">
               <span>TOTAL ASSIGNED WORK</span>
               <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
                 <Calendar className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-3xl font-black text-zinc-900 font-serif">
-              {shoots.length + deliverables.length}
+            <p className="text-3xl font-black text-zinc-900 font-roboto">
+              {filteredShoots.length + dateFilteredDeliverables.length}
             </p>
-            <p className="text-xs text-zinc-500 mt-1 font-medium">
-              {shoots.length} Shoots • {deliverables.length} Deliverables • {salaries.length} Salary Slips
+            <p className="text-xs text-zinc-500 mt-1 font-medium font-josefin">
+              <span className="font-roboto font-bold">{filteredShoots.length}</span> Shoots • <span className="font-roboto font-bold">{dateFilteredDeliverables.length}</span> Deliverables • <span className="font-roboto font-bold">{dateFilteredSalaries.length}</span> Slips
             </p>
           </div>
 
           <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
-            <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
-              <span>TOTAL AGREED COMMERCIALS</span>
+            <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2 font-josefin">
+              <span>TOTAL AMOUNT</span>
               <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
                 <IndianRupee className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-3xl font-black text-emerald-600 font-serif">₹{grandAgreed.toLocaleString('en-IN')}</p>
-            <p className="text-xs text-emerald-600/80 mt-1 font-bold">₹{grandPaid.toLocaleString('en-IN')} Received</p>
+            <p className="text-3xl font-black text-emerald-600 font-roboto">₹{grandAgreed.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-emerald-700 mt-1 font-bold font-josefin">
+              <span className="font-roboto">₹{grandPaid.toLocaleString('en-IN')}</span> Received
+            </p>
           </div>
 
           <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
-            <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
-              <span>PENDING BALANCE (AANA BAKI)</span>
+            <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2 font-josefin">
+              <span>PENDING BALANCE</span>
               <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
                 <Clock className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-3xl font-black text-[#b45309] font-serif">₹{grandBalance.toLocaleString('en-IN')}</p>
-            <p className="text-xs text-zinc-400 mt-1 font-medium">
+            <p className="text-3xl font-black text-[#b45309] font-roboto">₹{grandBalance.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-zinc-400 mt-1 font-medium font-josefin">
               {grandBalance > 0 ? 'Pending disbursement from studio' : 'All payouts fully cleared'}
             </p>
           </div>
         </div>
 
+        {/* ── 3D LINE GRAPH UI (SYNCS WITH SELECTED TAB) ── */}
+        <TeamPortalLineGraph
+          type={dashboardTab === 'salaries' ? 'finance' : dashboardTab === 'deliverables' ? 'deliverables' : 'shoots'}
+          data={dashboardTab === 'salaries' ? financeGraphData : dashboardTab === 'deliverables' ? deliverablesGraphData : shootsGraphData}
+          title={dashboardTab === 'salaries' ? 'Monthly Financial Trends' : dashboardTab === 'deliverables' ? 'Monthly Post-Production Workload' : 'Monthly Assigned Shoots Timeline'}
+          subtitle={dashboardTab === 'salaries' ? '3D view of total agreed amounts, received disbursements, and pending balance' : 'Month-wise view of assigned shoots vs completed events'}
+        />
+
         {/* ── PRIMARY SECTION TABS ── */}
-        <div className="flex items-center gap-1.5 p-1 bg-white border border-[#EBE7DF] rounded-xl overflow-x-auto shadow-2xs">
+        <div className="flex items-center gap-1.5 p-1 bg-white border border-[#EBE7DF] rounded-xl overflow-x-auto shadow-2xs font-josefin">
           <button
             type="button"
             onClick={() => setDashboardTab('shoots')}
@@ -647,7 +873,7 @@ export default function TeamDashboardPage() {
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
-            <span>Assigned Shoots ({shoots.length})</span>
+            <span>Assigned Shoots ({filteredShoots.length})</span>
           </button>
 
           <button
@@ -658,7 +884,7 @@ export default function TeamDashboardPage() {
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Post-Production &amp; Edits ({deliverables.length})</span>
+            <span>Post-Production &amp; Edits ({dateFilteredDeliverables.length})</span>
           </button>
 
           <button
@@ -669,7 +895,7 @@ export default function TeamDashboardPage() {
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Salary Slips ({salaries.length})</span>
+            <span>Salary Slips ({dateFilteredSalaries.length})</span>
           </button>
         </div>
 
@@ -677,8 +903,8 @@ export default function TeamDashboardPage() {
         {dashboardTab === 'shoots' && (
           <div className="space-y-4">
             
-            {/* Filter & View Switcher Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Filter Bar & View Switcher (Default: LIST, then Card, then Month-Wise) */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-josefin">
               
               {/* Requirement: ALL first, then UPCOMING, then COMPLETED */}
               <div className="flex p-1 bg-white border border-[#EBE7DF] rounded-xl text-xs font-bold shadow-2xs">
@@ -691,7 +917,7 @@ export default function TeamDashboardPage() {
                       : 'text-zinc-500 hover:text-zinc-900'
                   }`}
                 >
-                  All ({shoots.length})
+                  All ({dateFilteredShoots.length})
                 </button>
 
                 <button
@@ -703,7 +929,7 @@ export default function TeamDashboardPage() {
                       : 'text-zinc-500 hover:text-zinc-900'
                   }`}
                 >
-                  Upcoming ({shoots.filter(s => s.event_date >= today || s.event_date === 'TBD').length})
+                  Upcoming ({dateFilteredShoots.filter(s => s.shoot_status !== 'COMPLETED' && (s.event_date >= today || s.event_date === 'TBD')).length})
                 </button>
 
                 <button
@@ -715,11 +941,11 @@ export default function TeamDashboardPage() {
                       : 'text-zinc-500 hover:text-zinc-900'
                   }`}
                 >
-                  Completed ({shoots.filter(s => s.event_date < today && s.event_date !== 'TBD').length})
+                  Completed ({dateFilteredShoots.filter(s => s.shoot_status === 'COMPLETED' || (s.event_date < today && s.event_date !== 'TBD')).length})
                 </button>
               </div>
 
-              {/* View Switcher: Card View | List View | Month-Wise View */}
+              {/* View Switcher: LIST FIRST (DEFAULT), THEN CARDS, THEN MONTH-WISE */}
               <div className="flex items-center gap-2 flex-wrap">
                 {uniqueStudios.length > 1 && (
                   <select
@@ -737,6 +963,18 @@ export default function TeamDashboardPage() {
                 <div className="flex items-center p-1 bg-white border border-[#EBE7DF] rounded-xl shadow-2xs">
                   <button
                     type="button"
+                    onClick={() => setViewMode('list')}
+                    className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'list' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-900'
+                    }`}
+                    title="Compact List View (Default)"
+                  >
+                    <List className="w-3.5 h-3.5" />
+                    <span>List</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setViewMode('grid')}
                     className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
                       viewMode === 'grid' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-900'
@@ -744,19 +982,7 @@ export default function TeamDashboardPage() {
                     title="Card Grid View"
                   >
                     <LayoutGrid className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Cards</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('list')}
-                    className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                      viewMode === 'list' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-900'
-                    }`}
-                    title="Compact List View"
-                  >
-                    <List className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">List</span>
+                    <span>Cards</span>
                   </button>
 
                   <button
@@ -768,28 +994,21 @@ export default function TeamDashboardPage() {
                     title="Chronological Month-Wise Sequence View"
                   >
                     <CalendarDays className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Month-Wise</span>
+                    <span>Month-Wise</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Content Display based on View Mode */}
+            {/* Display: List, Cards, or Month-Wise */}
             {loading && shoots.length === 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="p-5 rounded-2xl bg-white border border-[#EBE7DF] animate-pulse space-y-3">
-                    <div className="flex justify-between items-center">
-                      <div className="h-4 bg-zinc-200 rounded w-1/3" />
-                      <div className="h-5 bg-amber-100 rounded-full w-16" />
-                    </div>
-                    <div className="h-6 bg-zinc-200 rounded w-3/4" />
-                    <div className="h-4 bg-zinc-100 rounded w-1/2" />
-                  </div>
+                  <div key={i} className="p-4 rounded-2xl bg-white border border-[#EBE7DF] animate-pulse h-16" />
                 ))}
               </div>
             ) : filteredShoots.length === 0 ? (
-              <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3">
+              <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3 font-josefin">
                 <Briefcase className="w-10 h-10 text-zinc-300 mx-auto" />
                 <h3 className="text-base font-black text-zinc-700">No Shoots Found</h3>
                 <p className="text-xs text-zinc-500 max-w-sm mx-auto">
@@ -798,11 +1017,90 @@ export default function TeamDashboardPage() {
                     : 'No shoots found under the selected filter.'}
                 </p>
               </div>
+            ) : viewMode === 'list' ? (
+              /* ── 1. COMPACT LIST VIEW (DEFAULT) ── */
+              <div className="bg-white rounded-2xl border border-[#EBE7DF] overflow-hidden shadow-2xs font-josefin">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-zinc-50 text-zinc-500 font-black uppercase text-[10px] border-b border-zinc-200">
+                      <tr>
+                        <th className="p-3.5">Couple &amp; Event</th>
+                        <th className="p-3.5">Shoot Date</th>
+                        <th className="p-3.5">Call Timing</th>
+                        <th className="p-3.5">Venue Location</th>
+                        <th className="p-3.5">Assigned Role</th>
+                        <th className="p-3.5">Total Fee</th>
+                        <th className="p-3.5">Shoot Status</th>
+                        <th className="p-3.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {filteredShoots.map((shoot) => {
+                        const agreed = Number(shoot.agreed_amount) || 0;
+                        const isCompleted = shoot.shoot_status === 'COMPLETED' || (shoot.event_date < today && shoot.event_date !== 'TBD');
+                        const isPaid = (shoot.payment_status || '').toUpperCase() === 'PAID';
+
+                        return (
+                          <tr
+                            key={shoot.assignment_id}
+                            onClick={() => {
+                              setSelectedShoot(shoot);
+                              setIsShootModalOpen(true);
+                            }}
+                            className="hover:bg-zinc-50/70 transition cursor-pointer"
+                          >
+                            <td className="p-3.5">
+                              <span className="font-bold text-zinc-900 block">{shoot.couple_name}</span>
+                              <span className="text-[11px] text-amber-700 font-medium">{shoot.event_name}</span>
+                            </td>
+                            <td className="p-3.5 font-bold text-zinc-800 font-roboto">{shoot.event_date}</td>
+                            <td className="p-3.5 text-zinc-600 font-roboto">{shoot.start_time || 'TBD'}</td>
+                            <td className="p-3.5 text-zinc-600 max-w-[180px] truncate">{shoot.venue_location || 'Venue TBD'}</td>
+                            <td className="p-3.5">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200">
+                                {shoot.role_name}
+                              </span>
+                            </td>
+                            <td className="p-3.5 font-roboto font-bold text-zinc-900">₹{agreed.toLocaleString('en-IN')}</td>
+                            <td className="p-3.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                  isCompleted
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : shoot.event_date === today
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                                }`}>
+                                  {isCompleted ? '✓ COMPLETED' : shoot.event_date === today ? 'TODAY' : 'UPCOMING'}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                  isPaid ? 'text-emerald-700 bg-emerald-50' : 'text-amber-800 bg-amber-50'
+                                }`}>
+                                  {isPaid ? 'PAID' : 'BAL PENDING'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <button
+                                type="button"
+                                className="px-3 py-1 rounded-lg bg-zinc-900 hover:bg-black text-white text-[11px] font-bold transition cursor-pointer"
+                              >
+                                View
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             ) : viewMode === 'grid' ? (
-              /* ── 1. CARD VIEW (CLEAN, MINIMAL, FAST) ── */
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              /* ── 2. CARDS VIEW ── */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-josefin">
                 {filteredShoots.map((shoot) => {
                   const agreed = Number(shoot.agreed_amount) || 0;
+                  const isCompleted = shoot.shoot_status === 'COMPLETED' || (shoot.event_date < today && shoot.event_date !== 'TBD');
                   const isPaid = (shoot.payment_status || '').toUpperCase() === 'PAID';
 
                   return (
@@ -819,12 +1117,13 @@ export default function TeamDashboardPage() {
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600 border border-zinc-200">
                             {shoot.studio_name}
                           </span>
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                          {/* Real Role assigned by studio owner */}
+                          <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
                             {shoot.role_name}
                           </span>
                         </div>
 
-                        <h3 className="text-base font-serif font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
+                        <h3 className="text-base font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
                           {shoot.couple_name || shoot.client_name || 'Wedding Event'}
                         </h3>
                         <p className="text-xs font-bold text-amber-700 mt-0.5">{shoot.event_name}</p>
@@ -832,11 +1131,11 @@ export default function TeamDashboardPage() {
                         <div className="mt-4 space-y-2 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
                           <div className="flex items-center gap-2">
                             <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                            <span className="font-bold">{shoot.event_date}</span>
+                            <span className="font-bold font-roboto">{shoot.event_date}</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                            <span>{shoot.start_time || 'TBD'} {shoot.end_time ? `– ${shoot.end_time}` : ''}</span>
+                            <span className="font-roboto">{shoot.start_time || 'TBD'} {shoot.end_time ? `– ${shoot.end_time}` : ''}</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
@@ -847,19 +1146,19 @@ export default function TeamDashboardPage() {
 
                       <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between">
                         <div>
-                          <span className="text-[10px] text-zinc-400 uppercase font-black block">Agreed Fee</span>
-                          <span className="text-sm font-black text-zinc-900 font-mono">
+                          <span className="text-[10px] text-zinc-400 uppercase font-black block">Total Fee</span>
+                          <span className="text-sm font-black text-zinc-900 font-roboto">
                             ₹{agreed.toLocaleString('en-IN')}
                           </span>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                            isPaid 
+                            isCompleted 
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                               : 'bg-amber-50 text-[#92400e] border border-amber-200'
                           }`}>
-                            {shoot.payment_status?.toUpperCase() || (isPaid ? 'PAID' : 'PENDING')}
+                            {isCompleted ? '✓ COMPLETED' : 'UPCOMING'}
                           </span>
 
                           <span className="text-xs font-bold text-amber-700 group-hover:text-amber-800 flex items-center gap-0.5">
@@ -872,83 +1171,15 @@ export default function TeamDashboardPage() {
                   );
                 })}
               </div>
-            ) : viewMode === 'list' ? (
-              /* ── 2. COMPACT LIST VIEW ── */
-              <div className="bg-white rounded-2xl border border-[#EBE7DF] overflow-hidden shadow-2xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-zinc-50 text-zinc-500 font-black uppercase text-[10px] border-b border-zinc-200">
-                      <tr>
-                        <th className="p-3.5">Couple &amp; Event</th>
-                        <th className="p-3.5">Shoot Date</th>
-                        <th className="p-3.5">Call Timing</th>
-                        <th className="p-3.5">Venue Location</th>
-                        <th className="p-3.5">Assigned Role</th>
-                        <th className="p-3.5">Agreed Fee</th>
-                        <th className="p-3.5">Status</th>
-                        <th className="p-3.5 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {filteredShoots.map((shoot) => {
-                        const agreed = Number(shoot.agreed_amount) || 0;
-                        const isPaid = (shoot.payment_status || '').toUpperCase() === 'PAID';
-
-                        return (
-                          <tr
-                            key={shoot.assignment_id}
-                            onClick={() => {
-                              setSelectedShoot(shoot);
-                              setIsShootModalOpen(true);
-                            }}
-                            className="hover:bg-zinc-50/70 transition cursor-pointer"
-                          >
-                            <td className="p-3.5">
-                              <span className="font-bold text-zinc-900 block">{shoot.couple_name}</span>
-                              <span className="text-[11px] text-amber-700 font-medium">{shoot.event_name}</span>
-                            </td>
-                            <td className="p-3.5 font-bold text-zinc-800">{shoot.event_date}</td>
-                            <td className="p-3.5 text-zinc-600">{shoot.start_time || 'TBD'}</td>
-                            <td className="p-3.5 text-zinc-600 max-w-[180px] truncate">{shoot.venue_location || 'Venue TBD'}</td>
-                            <td className="p-3.5">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                {shoot.role_name}
-                              </span>
-                            </td>
-                            <td className="p-3.5 font-mono font-bold text-zinc-900">₹{agreed.toLocaleString('en-IN')}</td>
-                            <td className="p-3.5">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                                isPaid
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : 'bg-amber-50 text-amber-800 border-amber-200'
-                              }`}>
-                                {shoot.payment_status?.toUpperCase() || (isPaid ? 'PAID' : 'PENDING')}
-                              </span>
-                            </td>
-                            <td className="p-3.5 text-right">
-                              <button
-                                type="button"
-                                className="px-3 py-1 rounded-lg bg-zinc-900 hover:bg-black text-white text-[11px] font-bold transition"
-                              >
-                                View
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
             ) : (
               /* ── 3. CHRONOLOGICAL MONTH-WISE VIEW ── */
-              <div className="space-y-6">
+              <div className="space-y-6 font-josefin">
                 {shootsByMonth.map((group) => (
                   <div key={group.label} className="space-y-3">
                     <div className="flex items-center gap-2">
                       <CalendarDays className="w-4 h-4 text-amber-700" />
                       <h3 className="text-sm font-black text-zinc-900 uppercase tracking-wide">
-                        {group.label} ({group.shoots.length})
+                        {group.label} (<span className="font-roboto">{group.shoots.length}</span>)
                       </h3>
                       <div className="flex-1 h-px bg-zinc-200" />
                     </div>
@@ -956,7 +1187,7 @@ export default function TeamDashboardPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {group.shoots.map((shoot) => {
                         const agreed = Number(shoot.agreed_amount) || 0;
-                        const isPaid = (shoot.payment_status || '').toUpperCase() === 'PAID';
+                        const isCompleted = shoot.shoot_status === 'COMPLETED' || (shoot.event_date < today && shoot.event_date !== 'TBD');
 
                         return (
                           <div
@@ -972,12 +1203,12 @@ export default function TeamDashboardPage() {
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600">
                                   {shoot.studio_name}
                                 </span>
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                                <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
                                   {shoot.role_name}
                                 </span>
                               </div>
 
-                              <h4 className="text-base font-serif font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
+                              <h4 className="text-base font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
                                 {shoot.couple_name}
                               </h4>
                               <p className="text-xs font-bold text-amber-700 mt-0.5">{shoot.event_name}</p>
@@ -985,11 +1216,11 @@ export default function TeamDashboardPage() {
                               <div className="mt-3.5 space-y-1.5 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
                                 <div className="flex items-center gap-2">
                                   <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                  <span className="font-bold text-zinc-900">{shoot.event_date}</span>
+                                  <span className="font-bold text-zinc-900 font-roboto">{shoot.event_date}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                                  <span>{shoot.start_time || 'TBD'} {shoot.end_time ? `– ${shoot.end_time}` : ''}</span>
+                                  <span className="font-roboto">{shoot.start_time || 'TBD'} {shoot.end_time ? `– ${shoot.end_time}` : ''}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
@@ -1000,19 +1231,19 @@ export default function TeamDashboardPage() {
 
                             <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between">
                               <div>
-                                <span className="text-[10px] text-zinc-400 uppercase font-black block">Agreed Fee</span>
-                                <span className="text-sm font-black text-zinc-900 font-mono">
+                                <span className="text-[10px] text-zinc-400 uppercase font-black block">Total Fee</span>
+                                <span className="text-sm font-black text-zinc-900 font-roboto">
                                   ₹{agreed.toLocaleString('en-IN')}
                                 </span>
                               </div>
 
                               <div className="flex items-center gap-2">
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                  isPaid 
+                                  isCompleted 
                                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                                     : 'bg-amber-50 text-[#92400e] border border-amber-200'
                                 }`}>
-                                  {shoot.payment_status?.toUpperCase() || (isPaid ? 'PAID' : 'PENDING')}
+                                  {isCompleted ? '✓ COMPLETED' : 'UPCOMING'}
                                 </span>
                                 <span className="text-xs font-bold text-amber-700 flex items-center gap-0.5">
                                   <span>View</span>
@@ -1033,8 +1264,8 @@ export default function TeamDashboardPage() {
 
         {/* ── TAB 2: POST-PRODUCTION DELIVERABLES (GROUPED BY CLIENT) ── */}
         {dashboardTab === 'deliverables' && (
-          <div className="space-y-4">
-            {deliverables.length === 0 ? (
+          <div className="space-y-4 font-josefin">
+            {deliverablesByClient.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3">
                 <Sparkles className="w-10 h-10 text-zinc-300 mx-auto" />
                 <h3 className="text-base font-black text-zinc-700">No Post-Production Projects Assigned</h3>
@@ -1067,33 +1298,33 @@ export default function TeamDashboardPage() {
                             </span>
                             <span className="text-xs text-zinc-400">•</span>
                             <span className="text-xs font-bold text-zinc-500">
-                              {clientGroup.items.length} {clientGroup.items.length === 1 ? 'Deliverable' : 'Deliverables'}
+                              <span className="font-roboto">{clientGroup.items.length}</span> {clientGroup.items.length === 1 ? 'Deliverable' : 'Deliverables'}
                             </span>
                           </div>
-                          <h3 className="text-lg sm:text-xl font-serif font-black text-zinc-900">
+                          <h3 className="text-lg sm:text-xl font-black text-zinc-900">
                             {clientGroup.clientName}
                           </h3>
                         </div>
 
                         {/* Client Commercial Summary */}
-                        <div className="flex items-center gap-4 text-xs bg-zinc-50 px-4 py-2 rounded-xl border border-zinc-100 self-start sm:self-auto">
+                        <div className="flex items-center gap-4 text-xs bg-zinc-50 px-4 py-2 rounded-xl border border-zinc-100 self-start sm:self-auto font-roboto">
                           <div>
-                            <span className="text-[9px] uppercase font-bold text-zinc-400 block">Total Agreed</span>
-                            <span className="font-black text-zinc-900 font-mono">
+                            <span className="text-[9px] uppercase font-bold text-zinc-400 block font-josefin">Total Fee</span>
+                            <span className="font-black text-zinc-900">
                               ₹{clientGroup.totalAgreed.toLocaleString('en-IN')}
                             </span>
                           </div>
                           <div className="text-zinc-200">|</div>
                           <div>
-                            <span className="text-[9px] uppercase font-bold text-emerald-600 block">Paid</span>
-                            <span className="font-black text-emerald-600 font-mono">
+                            <span className="text-[9px] uppercase font-bold text-emerald-600 block font-josefin">Paid</span>
+                            <span className="font-black text-emerald-600">
                               ₹{clientGroup.totalPaid.toLocaleString('en-IN')}
                             </span>
                           </div>
                           <div className="text-zinc-200">|</div>
                           <div>
-                            <span className="text-[9px] uppercase font-bold text-amber-700 block">Balance</span>
-                            <span className="font-black text-amber-800 font-mono">
+                            <span className="text-[9px] uppercase font-bold text-amber-700 block font-josefin">Balance</span>
+                            <span className="font-black text-amber-800">
                               ₹{clientGroup.totalBalance.toLocaleString('en-IN')}
                             </span>
                           </div>
@@ -1132,13 +1363,13 @@ export default function TeamDashboardPage() {
                                   )}
                                 </div>
 
-                                <div className="flex items-center gap-4 text-xs text-zinc-500 flex-wrap">
+                                <div className="flex items-center gap-4 text-xs text-zinc-500 flex-wrap font-roboto">
                                   <span>
                                     Due Date: <strong className="text-zinc-800 font-bold">{deliv.due_date || 'TBD'}</strong>
                                   </span>
                                   <span>•</span>
                                   <span>
-                                    Agreed: <strong className="text-zinc-800 font-mono font-bold">₹{agreed.toLocaleString('en-IN')}</strong>
+                                    Agreed: <strong className="text-zinc-800 font-bold">₹{agreed.toLocaleString('en-IN')}</strong>
                                   </span>
                                   <span>•</span>
                                   <span className={isSettled ? 'text-emerald-700 font-bold' : 'text-amber-800 font-bold'}>
@@ -1148,7 +1379,7 @@ export default function TeamDashboardPage() {
                               </div>
 
                               {/* Interactive Status Changer Dropdown */}
-                              <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
+                              <div className="flex items-center gap-3 shrink-0 self-end md:self-auto font-josefin">
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-[10px] uppercase font-bold text-zinc-400">Status:</span>
                                   <select
@@ -1197,8 +1428,8 @@ export default function TeamDashboardPage() {
 
         {/* ── TAB 3: SALARY SLIPS ── */}
         {dashboardTab === 'salaries' && (
-          <div className="space-y-4">
-            {salaries.length === 0 ? (
+          <div className="space-y-4 font-josefin">
+            {dateFilteredSalaries.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3">
                 <FileText className="w-10 h-10 text-zinc-300 mx-auto" />
                 <h3 className="text-base font-black text-zinc-700">No Salary Slips Generated Yet</h3>
@@ -1209,7 +1440,7 @@ export default function TeamDashboardPage() {
             ) : (
               <div className="bg-white rounded-2xl border border-[#EBE7DF] overflow-hidden shadow-2xs">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full text-left text-xs font-josefin">
                     <thead className="bg-zinc-50 text-zinc-500 font-black uppercase text-[10px] border-b border-zinc-200">
                       <tr>
                         <th className="p-3.5">Month / Year</th>
@@ -1222,32 +1453,32 @@ export default function TeamDashboardPage() {
                         <th className="p-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {salaries.map((s, idx) => {
+                    <tbody className="divide-y divide-zinc-100 font-roboto">
+                      {dateFilteredSalaries.map((s, idx) => {
                         const netPayable = Number(s.net_paid ?? s.net_payable ?? s.base_salary) || 0;
                         const isPaid = (s.status || s.payment_status || '').toUpperCase() === 'PAID';
 
                         return (
                           <tr key={s.id || idx} className="hover:bg-zinc-50/70 transition">
-                            <td className="p-3.5 font-black text-zinc-900 font-mono">
+                            <td className="p-3.5 font-black text-zinc-900 font-josefin">
                               {s.month_year || 'Current Month'}
                             </td>
-                            <td className="p-3.5 text-zinc-700 font-mono font-bold">
+                            <td className="p-3.5 text-zinc-700 font-bold">
                               ₹{(Number(s.base_salary) || 0).toLocaleString('en-IN')}
                             </td>
-                            <td className="p-3.5 text-emerald-600 font-mono font-bold">
+                            <td className="p-3.5 text-emerald-600 font-bold">
                               +₹{(Number(s.incentive_amount) || 0).toLocaleString('en-IN')}
                             </td>
-                            <td className="p-3.5 text-rose-500 font-mono font-bold">
+                            <td className="p-3.5 text-rose-500 font-bold">
                               -₹{(Number(s.deductions ?? s.deduction_amount) || 0).toLocaleString('en-IN')}
                             </td>
-                            <td className="p-3.5 text-zinc-900 font-mono font-black text-sm">
+                            <td className="p-3.5 text-zinc-900 font-black text-sm">
                               ₹{netPayable.toLocaleString('en-IN')}
                             </td>
                             <td className="p-3.5 text-zinc-500">
                               {s.paid_date || s.payout_date || 'Processing'}
                             </td>
-                            <td className="p-3.5">
+                            <td className="p-3.5 font-josefin">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                                 isPaid
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -1256,7 +1487,7 @@ export default function TeamDashboardPage() {
                                 {isPaid ? 'PAID' : 'PENDING'}
                               </span>
                             </td>
-                            <td className="p-3.5 text-right">
+                            <td className="p-3.5 text-right font-josefin">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1291,6 +1522,22 @@ export default function TeamDashboardPage() {
             setSelectedShoot(null);
           }}
           shoot={selectedShoot}
+        />
+
+        {/* ── CUSTOM DATE FILTER MODAL ── */}
+        <DateFilterModal
+          isOpen={isFilterModalOpen}
+          onClose={() => setIsFilterModalOpen(false)}
+          startDate={filterStart}
+          endDate={filterEnd}
+          onApply={(start, end) => {
+            setFilterStart(start);
+            setFilterEnd(end);
+          }}
+          onReset={() => {
+            setFilterStart('');
+            setFilterEnd('');
+          }}
         />
 
         {/* ── FINANCIAL LEDGER & SALARY SLIPS DRAWER ── */}

@@ -97,10 +97,10 @@ export default function ShootDetailsModal({ isOpen, onClose, shoot }: ShootDetai
             </span>
           </div>
 
-          <h2 className="text-xl sm:text-2xl font-serif font-black tracking-tight text-white line-clamp-1">
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white line-clamp-1 font-josefin">
             {shoot.couple_name || shoot.client_name || 'Wedding Event'}
           </h2>
-          <p className="text-xs font-bold text-amber-300 mt-1 flex items-center gap-1.5">
+          <p className="text-xs font-bold text-amber-300 mt-1 flex items-center gap-1.5 font-josefin">
             <span>{shoot.event_name || 'Main Shoot'}</span>
           </p>
         </div>
@@ -108,7 +108,7 @@ export default function ShootDetailsModal({ isOpen, onClose, shoot }: ShootDetai
         {/* Modal Body */}
         <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
           {/* Schedule & Timing Card */}
-          <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+          <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-3 font-josefin">
             <h4 className="text-[10px] uppercase font-black text-stone-400 tracking-wider">Date &amp; Shift Schedule</h4>
             
             <div className="flex items-center gap-3">
@@ -117,7 +117,7 @@ export default function ShootDetailsModal({ isOpen, onClose, shoot }: ShootDetai
               </div>
               <div>
                 <span className="text-xs text-stone-500 block">Shoot Date</span>
-                <span className="text-sm font-black text-stone-900">{formattedDate}</span>
+                <span className="text-sm font-black text-stone-900 font-roboto">{formattedDate}</span>
               </div>
             </div>
 
@@ -127,7 +127,7 @@ export default function ShootDetailsModal({ isOpen, onClose, shoot }: ShootDetai
               </div>
               <div>
                 <span className="text-xs text-stone-500 block">Call Time &amp; Shift</span>
-                <span className="text-sm font-black text-stone-900">
+                <span className="text-sm font-black text-stone-900 font-roboto">
                   {shoot.start_time || 'TBD'} {shoot.end_time ? `– ${shoot.end_time}` : ''}
                 </span>
               </div>
@@ -135,7 +135,7 @@ export default function ShootDetailsModal({ isOpen, onClose, shoot }: ShootDetai
           </div>
 
           {/* Venue & Location */}
-          <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2">
+          <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2 font-josefin">
             <div className="flex items-center justify-between">
               <h4 className="text-[10px] uppercase font-black text-stone-400 tracking-wider">Venue Location</h4>
               {mapsUrl && (
@@ -164,9 +164,9 @@ export default function ShootDetailsModal({ isOpen, onClose, shoot }: ShootDetai
           </div>
 
           {/* Commercial & Payout Breakdown */}
-          <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-3">
+          <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-3 font-josefin">
             <div className="flex items-center justify-between">
-              <h4 className="text-[10px] uppercase font-black text-emerald-800 tracking-wider">Commercials &amp; Agreed Fee</h4>
+              <h4 className="text-[10px] uppercase font-black text-emerald-800 tracking-wider">Total Amount &amp; Agreed Fee</h4>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                 isPaid 
                   ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
@@ -178,22 +178,22 @@ export default function ShootDetailsModal({ isOpen, onClose, shoot }: ShootDetai
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+            <div className="grid grid-cols-3 gap-2 pt-1 text-center font-roboto">
               <div className="p-2.5 rounded-xl bg-white border border-emerald-100">
-                <span className="text-[9px] uppercase font-bold text-stone-400 block">Agreed Fee</span>
-                <span className="text-sm sm:text-base font-black font-mono text-stone-900">
+                <span className="text-[9px] uppercase font-bold text-stone-400 block font-josefin">Total Fee</span>
+                <span className="text-sm sm:text-base font-black text-stone-900">
                   ₹{agreed.toLocaleString('en-IN')}
                 </span>
               </div>
               <div className="p-2.5 rounded-xl bg-white border border-emerald-100">
-                <span className="text-[9px] uppercase font-bold text-emerald-600 block">Received</span>
-                <span className="text-sm sm:text-base font-black font-mono text-emerald-700">
+                <span className="text-[9px] uppercase font-bold text-emerald-600 block font-josefin">Received</span>
+                <span className="text-sm sm:text-base font-black text-emerald-700">
                   ₹{paid.toLocaleString('en-IN')}
                 </span>
               </div>
               <div className="p-2.5 rounded-xl bg-white border border-emerald-100">
-                <span className="text-[9px] uppercase font-bold text-amber-700 block">Balance</span>
-                <span className="text-sm sm:text-base font-black font-mono text-amber-800">
+                <span className="text-[9px] uppercase font-bold text-amber-700 block font-josefin">Pending</span>
+                <span className="text-sm sm:text-base font-black text-amber-800">
                   ₹{bal.toLocaleString('en-IN')}
                 </span>
               </div>
@@ -202,7 +202,7 @@ export default function ShootDetailsModal({ isOpen, onClose, shoot }: ShootDetai
 
           {/* Crew Notes / Instructions if any */}
           {shoot.notes && (
-            <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200 space-y-1.5">
+            <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200 space-y-1.5 font-josefin">
               <div className="flex items-center gap-1.5 text-amber-800">
                 <FileText className="w-3.5 h-3.5" />
                 <h4 className="text-xs font-bold">Studio Instructions &amp; Notes</h4>
@@ -215,7 +215,7 @@ export default function ShootDetailsModal({ isOpen, onClose, shoot }: ShootDetai
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-stone-50 border-t border-stone-200 flex items-center justify-between">
+        <div className="p-4 bg-stone-50 border-t border-stone-200 flex items-center justify-between font-josefin">
           <span className="text-[11px] text-stone-400 font-medium">
             Studio: <strong className="text-stone-700">{shoot.studio_name}</strong>
           </span>
