@@ -354,7 +354,19 @@ export async function GET(
 
     const allQuotes: any[] = (quotationsRes.data || []) as any[];
     const allResponses: any[] = (responsesRes.data || []) as any[];
-    const finalTargetId = resolvedLeadRow?.final_quotation_id || rawPayload?.final_quotation_id || null;
+    const clientNotesJson = (() => {
+      try {
+        return typeof foundClient?.notes === 'string' ? JSON.parse(foundClient.notes) : foundClient?.notes || {};
+      } catch (_) {
+        return {};
+      }
+    })();
+    const finalTargetId =
+      foundClient?.final_quotation_id ||
+      clientNotesJson?.final_quotation_id ||
+      resolvedLeadRow?.final_quotation_id ||
+      rawPayload?.final_quotation_id ||
+      null;
 
     const explicitVerNums = new Set<number>();
     matchedDocs.forEach((d: any) => {

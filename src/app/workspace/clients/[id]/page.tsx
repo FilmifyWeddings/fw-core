@@ -12,7 +12,7 @@ import {
   Camera, Layers, Lock, ShieldCheck, Sparkles, MapPin, Users, Users as UsersIcon,
   FileText, Download, Printer, RefreshCw, Key, MessageCircle, Link2,
   ArrowLeft, CheckSquare, Play, ChevronRight, ChevronLeft, Hash, Crown, Eye, Pencil, CheckCheck,
-  Heart, Package, Upload, History
+  Heart, Package, Upload, History, List, LayoutGrid
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getMediaUrl } from '@/lib/r2-storage';
@@ -247,6 +247,54 @@ function syncClientBundleBrowserCache(
   }
 }
 
+interface TabErrorBoundaryProps {
+  children: React.ReactNode;
+  moduleName: string;
+}
+
+interface TabErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, TabErrorBoundaryState> {
+  constructor(props: TabErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error(`[TabErrorBoundary] Error in ${this.props.moduleName}:`, error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 bg-[#FFFDF9] rounded-3xl border border-amber-200 text-center space-y-4 max-w-lg mx-auto shadow-xs my-6">
+          <div className="w-12 h-12 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mx-auto">
+            <Film className="w-6 h-6 text-amber-600" />
+          </div>
+          <div>
+            <h4 className="text-sm font-black text-slate-900">{this.props.moduleName} Notice</h4>
+            <p className="text-xs text-slate-500 mt-1">
+              {this.state.error?.message || 'Deliverables data was temporarily unavailable.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-xs transition cursor-pointer"
+          >
+            Retry Loading
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 interface QuotationVersionItem {
   id?: string;
   template_id: string;
@@ -311,7 +359,7 @@ export default function ClientWorkspaceDetailPage() {
       { id: 'quotations', label: 'Quotations & Versions', icon: FileText },
       { id: 'events', label: 'Events & Bookings', icon: Calendar },
       { id: 'moodboard', label: 'Mood Board', icon: Sparkles },
-      { id: 'tasks', label: 'Tasks & Workflow', icon: CheckSquare },
+      { id: 'tasks', label: 'Tasks', icon: CheckSquare },
       { id: 'post_production', label: 'Post-Production', icon: Film },
       { id: 'finance', label: 'Finance & Invoices', icon: DollarSign },
     ];
@@ -326,11 +374,14 @@ export default function ClientWorkspaceDetailPage() {
   }, [visibleTabs, activeTab]);
 
 
-  // ── Tab: Tasks & Post-Production State ──
+  // ── Tab: Tasks State (Default List View) ──
   const [clientTasks, setClientTasks] = useState<any[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [isSyncingPipeline, setIsSyncingPipeline] = useState(false);
   const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'completed' | 'overdue'>('all');
+  const [taskViewMode, setTaskViewMode] = useState<'list' | 'card'>('list');
+  const [editingTask, setEditingTask] = useState<any | null>(null);
+  const [copiedMbId, setCopiedMbId] = useState<string | null>(null);
   const [showClientTaskModal, setShowClientTaskModal] = useState(false);
   const [newClientTaskTitle, setNewClientTaskTitle] = useState('');
   const [newClientTaskCategory, setNewClientTaskCategory] = useState('POST_PRODUCTION');
@@ -340,6 +391,24 @@ export default function ClientWorkspaceDetailPage() {
   const [newClientTaskAssignee, setNewClientTaskAssignee] = useState('');
   const [newClientTaskDesc, setNewClientTaskDesc] = useState('');
   const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+
+  const formatDateTime = (dateStr?: string | null) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+    } catch (_) {
+      return String(dateStr);
+    }
+  };
 
   // Extended fields state
   const [extended, setExtended] = useState<ClientExtendedData>({
@@ -770,10 +839,10 @@ export default function ClientWorkspaceDetailPage() {
         clientDelivs = parsed.deliverables;
       }
     }
-    const normalizedDelivs = clientDelivs.map((d: any) => ({
+    const normalizedDelivs = (clientDelivs || []).filter(Boolean).map((d: any) => ({
       ...d,
-      segment: d.segment ? d.segment.trim() : 'Wedding',
-      category: d.category ? (d.category.trim().charAt(0).toUpperCase() + d.category.trim().slice(1)) : 'Photos',
+      segment: d.segment ? String(d.segment).trim() : 'Wedding',
+      category: d.category ? (String(d.category).trim().charAt(0).toUpperCase() + String(d.category).trim().slice(1)) : 'Photos',
       title: d.title || d.name || 'Deliverable',
       specs: d.specs || d.count || '',
       status: d.status || 'Upcoming'
@@ -782,13 +851,13 @@ export default function ClientWorkspaceDetailPage() {
     const segmentsSet = new Set<string>();
     if (Array.isArray((postProductionProject as any)?.enabled_segments)) {
       (postProductionProject as any).enabled_segments.forEach((s: string) => {
-        if (s) segmentsSet.add(s.trim());
+        if (s) segmentsSet.add(String(s).trim());
       });
     }
     if (finalQuotationDoc) {
       const parsed = parseQuotationDeliverables(finalQuotationDoc);
       parsed.enabledSegments?.forEach((s: string) => {
-        if (s) segmentsSet.add(s.trim());
+        if (s) segmentsSet.add(String(s).trim());
       });
     }
     if (segmentsSet.size === 0) segmentsSet.add('Wedding');
@@ -812,7 +881,7 @@ export default function ClientWorkspaceDetailPage() {
       quotation_id: finalQuotationDoc?.template_id || null,
       quotation_title: null,
       enabled_segments: Array.from(segmentsSet),
-      disabled_categories: (postProductionProject as any)?.disabled_categories
+      disabled_categories: (postProductionProject as any)?.disabled_categories || {}
     };
   }, [client, postProductionProject, projectManagerId, projectManagerName, finalQuotationDoc, name, eventDate, eventType]);
 
@@ -2296,6 +2365,14 @@ export default function ClientWorkspaceDetailPage() {
           .eq('id', resolvedLead);
       }
 
+      await supabase
+        .from('clients')
+        .update({ final_quotation_id: q.template_id, updated_at: new Date().toISOString() })
+        .eq('id', client.id);
+
+      setClient(prev => prev ? ({ ...prev, final_quotation_id: q.template_id }) : null);
+      setExtended(prev => ({ ...prev, final_quotation_id: q.template_id }));
+
       // Update local state
       const updatedQuotesList = quotationDocs.map(item => ({
         ...item,
@@ -2827,6 +2904,29 @@ export default function ClientWorkspaceDetailPage() {
       console.error('Error updating moodboard status:', e);
     } finally {
       setUpdatingMbStatus(false);
+    }
+  };
+
+  const handleCopyMbMagicLink = (mb: any) => {
+    if (!mb?.token) return;
+    const url = `${window.location.origin}/p/moodboard/${mb.token}`;
+    navigator.clipboard.writeText(url);
+    setCopiedMbId(mb.id);
+    setTimeout(() => setCopiedMbId(null), 2500);
+  };
+
+  const handleShareMbWhatsApp = (mb: any) => {
+    if (!mb?.token) return;
+    const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+    const publicUrl = `${window.location.origin}/p/moodboard/${mb.token}`;
+    const coupleName = name || 'there';
+    const mbTitle = mb.title || `${mb.event_type || 'Event'} Moodboard`;
+    const text = `Hi ${coupleName}! ✨\n\nHere is your private *${mbTitle}* portal from our studio:\n🔗 ${publicUrl}\n\nPlease add your couple portraits, shoot locations, coordinators, and inspiration photos so our team can prepare your shot lists perfectly!\n\nLooking forward to capturing your celebrations! 📸`;
+
+    if (cleanPhone) {
+      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     }
   };
 
@@ -3465,10 +3565,16 @@ export default function ClientWorkspaceDetailPage() {
     const isCompleted = currentStatus !== 'completed';
     const { data: { session } } = await supabase.auth.getSession();
     const userId = session?.user?.id || '';
+    const nowIso = new Date().toISOString();
     
     // Optimistic update
     const toggledTask = clientTasks.find(t => t.id === taskId);
-    setClientTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: isCompleted ? 'completed' : 'todo' } : t));
+    setClientTasks(prev => prev.map(t => t.id === taskId ? { 
+      ...t, 
+      status: isCompleted ? 'completed' : 'todo',
+      is_completed: isCompleted,
+      completed_at: isCompleted ? nowIso : null 
+    } : t));
     try {
       await fetch('/api/workspace/tasks', {
         method: 'POST',
@@ -3524,7 +3630,19 @@ export default function ClientWorkspaceDetailPage() {
     }
   };
 
-  const handleCreateClientTask = async (e: React.FormEvent) => {
+  const handleOpenEditTask = (task: any) => {
+    setEditingTask(task);
+    setNewClientTaskTitle(task.title || '');
+    setNewClientTaskDesc(task.description || '');
+    setNewClientTaskCategory(task.category || 'POST_PRODUCTION');
+    setNewClientTaskPriority(task.priority || 'medium');
+    setNewClientTaskDueDate(task.due_date ? String(task.due_date).split('T')[0] : '');
+    setNewClientTaskDueTime(task.due_time || '');
+    setNewClientTaskAssignee(task.assigned_to || '');
+    setShowClientTaskModal(true);
+  };
+
+  const handleSaveClientTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingTask || !client || !newClientTaskTitle.trim()) return;
     setIsSubmittingTask(true);
@@ -3532,54 +3650,114 @@ export default function ClientWorkspaceDetailPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id || '';
       const wsId = client.workspace_id || currentWsId || activeWorkspace?.workspaceId || '';
-      const createdTitle = newClientTaskTitle.trim();
-      const res = await fetch('/api/workspace/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'create_task',
-          taskData: {
-            workspace_id: wsId,
-            client_id: client.id,
-            created_by: userId,
-            title: createdTitle,
-            description: newClientTaskDesc.trim() || undefined,
-            category: newClientTaskCategory,
-            priority: newClientTaskPriority,
-            due_date: newClientTaskDueDate || undefined,
-            due_time: newClientTaskDueTime || undefined,
-            assigned_to: newClientTaskAssignee || undefined,
-            is_personal: false,
-          },
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        if (data.task) {
-          setClientTasks(prev => [data.task, ...prev.filter(t => t.id !== data.task.id)]);
-        }
-        setShowClientTaskModal(false);
-        setNewClientTaskTitle('');
-        setNewClientTaskDesc('');
-        setNewClientTaskDueDate('');
-        setNewClientTaskDueTime('');
-        setNewClientTaskAssignee('');
-        fetchClientTasks();
-        logClientAudit({
-          clientId: client.id,
-          workspaceId: currentWsId || client.workspace_id,
-          actorId: userId || undefined,
-          actorName: userName || userEmail || 'Studio Member',
-          actorEmail: userEmail || undefined,
-          module: 'tasks',
-          actionType: 'CREATE',
-          title: `Created Task: ${createdTitle}`,
-          description: `Category: ${newClientTaskCategory} • Priority: ${newClientTaskPriority}${newClientTaskDueDate ? ` • Due: ${newClientTaskDueDate}` : ''}`,
-          newValue: createdTitle,
+      const taskTitle = newClientTaskTitle.trim();
+
+      if (editingTask) {
+        // Edit existing task via PATCH
+        const res = await fetch('/api/workspace/tasks', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'task',
+            id: editingTask.id,
+            updates: {
+              title: taskTitle,
+              description: newClientTaskDesc.trim() || null,
+              category: newClientTaskCategory,
+              priority: newClientTaskPriority,
+              due_date: newClientTaskDueDate || null,
+              due_time: newClientTaskDueTime || null,
+              assigned_to: newClientTaskAssignee || null,
+            },
+            actorName: userName || userEmail || 'Studio Member',
+            actorEmail: userEmail || null,
+            userId,
+          }),
         });
+        const data = await res.json();
+        if (data.success) {
+          setClientTasks(prev => prev.map(t => t.id === editingTask.id ? { 
+            ...t, 
+            ...data.task, 
+            title: taskTitle, 
+            description: newClientTaskDesc.trim() || null, 
+            category: newClientTaskCategory, 
+            priority: newClientTaskPriority, 
+            due_date: newClientTaskDueDate || null, 
+            due_time: newClientTaskDueTime || null, 
+            assigned_to: newClientTaskAssignee || null 
+          } : t));
+          setShowClientTaskModal(false);
+          setEditingTask(null);
+          setNewClientTaskTitle('');
+          setNewClientTaskDesc('');
+          setNewClientTaskDueDate('');
+          setNewClientTaskDueTime('');
+          setNewClientTaskAssignee('');
+          fetchClientTasks();
+          logClientAudit({
+            clientId: client.id,
+            workspaceId: currentWsId || client.workspace_id,
+            actorId: userId || undefined,
+            actorName: userName || userEmail || 'Studio Member',
+            actorEmail: userEmail || undefined,
+            module: 'tasks',
+            actionType: 'UPDATE',
+            title: `Updated Task: ${taskTitle}`,
+            description: `Category: ${newClientTaskCategory} • Priority: ${newClientTaskPriority}${newClientTaskDueDate ? ` • Due: ${newClientTaskDueDate}` : ''}`,
+            newValue: taskTitle,
+          });
+        }
+      } else {
+        // Create new task
+        const res = await fetch('/api/workspace/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_task',
+            taskData: {
+              workspace_id: wsId,
+              client_id: client.id,
+              created_by: userId,
+              title: taskTitle,
+              description: newClientTaskDesc.trim() || undefined,
+              category: newClientTaskCategory,
+              priority: newClientTaskPriority,
+              due_date: newClientTaskDueDate || undefined,
+              due_time: newClientTaskDueTime || undefined,
+              assigned_to: newClientTaskAssignee || undefined,
+              is_personal: false,
+            },
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (data.task) {
+            setClientTasks(prev => [data.task, ...prev.filter(t => t.id !== data.task.id)]);
+          }
+          setShowClientTaskModal(false);
+          setNewClientTaskTitle('');
+          setNewClientTaskDesc('');
+          setNewClientTaskDueDate('');
+          setNewClientTaskDueTime('');
+          setNewClientTaskAssignee('');
+          fetchClientTasks();
+          logClientAudit({
+            clientId: client.id,
+            workspaceId: currentWsId || client.workspace_id,
+            actorId: userId || undefined,
+            actorName: userName || userEmail || 'Studio Member',
+            actorEmail: userEmail || undefined,
+            module: 'tasks',
+            actionType: 'CREATE',
+            title: `Created Task: ${taskTitle}`,
+            description: `Category: ${newClientTaskCategory} • Priority: ${newClientTaskPriority}${newClientTaskDueDate ? ` • Due: ${newClientTaskDueDate}` : ''}`,
+            newValue: taskTitle,
+          });
+        }
       }
     } catch (err) {
-      console.error('Error creating task:', err);
+      console.error('Error saving task:', err);
     } finally {
       setIsSubmittingTask(false);
     }
@@ -4370,7 +4548,7 @@ export default function ClientWorkspaceDetailPage() {
               </button>
             </div>
 
-            {(loadingQuotes || (!quotesResolved && quotationDocs.length === 0)) ? (
+            {(quotationDocs.length === 0 && loadingQuotes && !quotesResolved) ? (
               <div className="space-y-4">
                 {[1, 2].map((skeletonIdx) => (
                   <div
@@ -4402,7 +4580,13 @@ export default function ClientWorkspaceDetailPage() {
             ) : (
               <div className="grid grid-cols-1 gap-4">
                 {quotationDocs.map((doc, idx) => {
-                  const isFinal = doc.is_final;
+                  const isFinal = Boolean(
+                    doc.is_final === true ||
+                    doc.content_json?.is_final === true ||
+                    ((client as any)?.final_quotation_id && ((client as any).final_quotation_id === doc.template_id || (client as any).final_quotation_id === doc.id)) ||
+                    ((extended as any)?.final_quotation_id && ((extended as any).final_quotation_id === doc.template_id || (extended as any).final_quotation_id === doc.id)) ||
+                    (finalQuotationDoc && (finalQuotationDoc.template_id === doc.template_id || finalQuotationDoc.id === doc.id))
+                  );
                   const qNum = doc.template_id || `Q-${idx + 1}`;
                   const totalAmt = doc.total_amount || doc.financials?.total_amount || doc.content_json?.pricingPage?.finalAmount || client.total_package_amount || 0;
 
@@ -4538,21 +4722,22 @@ export default function ClientWorkspaceDetailPage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB: TASKS & WORKFLOW (LUXURY CREAM APPLE NOTES / GOOGLE KEEP)
+            TAB: TASKS (DEFAULT LIST VIEW & CARD VIEW SWITCHER, EDITABLE)
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'tasks' && allowedModules.includes('tasks') && (() => {
           const now = new Date();
           now.setHours(0, 0, 0, 0);
 
           const total = clientTasks.length;
-          const completed = clientTasks.filter(t => t.status === 'completed').length;
+          const completed = clientTasks.filter(t => t.status === 'completed' || t.is_completed).length;
           const pending = total - completed;
-          const overdue = clientTasks.filter(t => t.due_date && t.status !== 'completed' && new Date(t.due_date) < now).length;
+          const overdue = clientTasks.filter(t => t.due_date && t.status !== 'completed' && !t.is_completed && new Date(t.due_date) < now).length;
 
           const filtered = clientTasks.filter(t => {
-            const isOverdue = t.due_date && t.status !== 'completed' && new Date(t.due_date) < now;
-            if (taskFilter === 'pending') return t.status !== 'completed';
-            if (taskFilter === 'completed') return t.status === 'completed';
+            const isDone = t.status === 'completed' || t.is_completed;
+            const isOverdue = t.due_date && !isDone && new Date(t.due_date) < now;
+            if (taskFilter === 'pending') return !isDone;
+            if (taskFilter === 'completed') return isDone;
             if (taskFilter === 'overdue') return isOverdue;
             return true;
           });
@@ -4564,25 +4749,65 @@ export default function ClientWorkspaceDetailPage() {
                 <div>
                   <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                     <CheckSquare className="w-5 h-5 text-amber-600" />
-                    <span>Tasks & Post-Production Workflow</span>
+                    <span>Tasks</span>
                   </h3>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">
                     Track production milestones, checklists, and team deliverables for this client.
                   </p>
                 </div>
 
-                {!isReadOnly && (
-                  <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {/* View Switcher: List View (Default) vs Card View */}
+                  <div className="flex items-center gap-1 bg-[#FFFDF9] border border-[#EAE5DA] p-1 rounded-2xl shadow-2xs">
                     <button
                       type="button"
-                      onClick={() => setShowClientTaskModal(true)}
+                      onClick={() => setTaskViewMode('list')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${
+                        taskViewMode === 'list'
+                          ? 'bg-amber-400 text-slate-950 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
+                      title="Switch to List View (Default)"
+                    >
+                      <List className="w-3.5 h-3.5" />
+                      <span>List View</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTaskViewMode('card')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${
+                        taskViewMode === 'card'
+                          ? 'bg-amber-400 text-slate-950 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
+                      title="Switch to Card View"
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      <span>Card View</span>
+                    </button>
+                  </div>
+
+                  {!isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingTask(null);
+                        setNewClientTaskTitle('');
+                        setNewClientTaskDesc('');
+                        setNewClientTaskCategory('POST_PRODUCTION');
+                        setNewClientTaskPriority('medium');
+                        setNewClientTaskDueDate('');
+                        setNewClientTaskDueTime('');
+                        setNewClientTaskAssignee('');
+                        setShowClientTaskModal(true);
+                      }}
                       className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 border border-amber-300 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-4 h-4 text-slate-900" />
-                      <span>New Task / Note</span>
+                      <span>New Task</span>
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {/* Summary Metrics Bar */}
@@ -4641,11 +4866,11 @@ export default function ClientWorkspaceDetailPage() {
                 ))}
               </div>
 
-              {/* Task Cards Grid */}
+              {/* Tasks Content: List View (Default) or Card View */}
               {loadingTasks ? (
                 <div className="py-16 text-center text-slate-400 space-y-2">
                   <RefreshCw className="w-6 h-6 mx-auto animate-spin text-amber-600" />
-                  <p className="text-xs font-bold">Loading tasks & workflow...</p>
+                  <p className="text-xs font-bold">Loading tasks...</p>
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="p-12 text-center bg-[#FFFDF9] rounded-3xl border border-dashed border-[#EAE5DA] space-y-4 max-w-md mx-auto shadow-xs">
@@ -4662,7 +4887,17 @@ export default function ClientWorkspaceDetailPage() {
                     <div className="flex items-center justify-center gap-2.5 pt-2">
                       <button
                         type="button"
-                        onClick={() => setShowClientTaskModal(true)}
+                        onClick={() => {
+                          setEditingTask(null);
+                          setNewClientTaskTitle('');
+                          setNewClientTaskDesc('');
+                          setNewClientTaskCategory('POST_PRODUCTION');
+                          setNewClientTaskPriority('medium');
+                          setNewClientTaskDueDate('');
+                          setNewClientTaskDueTime('');
+                          setNewClientTaskAssignee('');
+                          setShowClientTaskModal(true);
+                        }}
                         className="px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <Plus className="w-4 h-4 text-slate-900" />
@@ -4671,10 +4906,185 @@ export default function ClientWorkspaceDetailPage() {
                     </div>
                   )}
                 </div>
+              ) : taskViewMode === 'list' ? (
+                /* ── DEFAULT: CLEAN HIGH-DENSITY LIST VIEW ── */
+                <div className="space-y-2.5">
+                  {filtered.map((task) => {
+                    const isDone = task.status === 'completed' || task.is_completed;
+                    const isOverdue = task.due_date && !isDone && new Date(task.due_date) < now;
+                    const diffDays = isOverdue
+                      ? Math.max(1, Math.floor((now.getTime() - new Date(task.due_date).getTime()) / (1000 * 60 * 60 * 24)))
+                      : 0;
+
+                    const checklist = Array.isArray(task.checklist_items) ? task.checklist_items : [];
+                    const clCompleted = checklist.filter((ci: any) => ci.is_completed).length;
+                    const clTotal = checklist.length;
+
+                    const assigneeId = task.assigned_to;
+                    const assignee = assigneeId
+                      ? teamMembers.find(m => m.id === assigneeId || (m.name && m.name.toLowerCase() === assigneeId.toLowerCase()))
+                      : null;
+                    const displayName = assignee?.name || task.assigned_to || null;
+                    const avatar = assignee?.avatar_url;
+
+                    return (
+                      <div
+                        key={task.id}
+                        className={`p-4 sm:p-4.5 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                          isDone
+                            ? 'bg-[#FAF8F5]/80 border-[#EAE5DA] opacity-85'
+                            : isOverdue
+                            ? 'bg-[#FFFDF9] border-rose-300 ring-1 ring-rose-300/40 shadow-xs'
+                            : 'bg-[#FFFDF9] border-[#EAE5DA] hover:border-amber-300 shadow-2xs'
+                        }`}
+                      >
+                        {/* Left: Checkbox + Title + Description + Badges + Timestamps */}
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            disabled={isReadOnly}
+                            onClick={() => !isReadOnly && handleToggleClientTask(task.id, task.status)}
+                            className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition ${
+                              isReadOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                            } ${
+                              isDone
+                                ? 'bg-emerald-500 border-emerald-500 text-white'
+                                : 'border-slate-300 hover:border-amber-500 bg-white'
+                            }`}
+                          >
+                            {isDone && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                          </button>
+
+                          <div className="space-y-1.5 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className={`text-sm font-black text-slate-900 leading-snug ${
+                                isDone ? 'line-through text-slate-400' : ''
+                              }`}>
+                                {task.title}
+                              </h4>
+
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-200">
+                                {task.category?.replace(/_/g, ' ') || 'GENERAL'}
+                              </span>
+
+                              {task.priority === 'urgent' && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200">
+                                  Urgent
+                                </span>
+                              )}
+                              {task.priority === 'high' && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                  High
+                                </span>
+                              )}
+                              {isOverdue && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse flex items-center gap-1">
+                                  ⚠️ Overdue {diffDays}d
+                                </span>
+                              )}
+                            </div>
+
+                            {task.description && (
+                              <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                                {task.description}
+                              </p>
+                            )}
+
+                            {/* Checklist count if present */}
+                            {clTotal > 0 && (
+                              <div className="text-[11px] font-bold text-slate-500 flex items-center gap-2 pt-0.5">
+                                <span>Checklist: {clCompleted}/{clTotal} ({Math.round((clCompleted / clTotal) * 100)}%)</span>
+                              </div>
+                            )}
+
+                            {/* Created Date & Time and Completed Date & Time */}
+                            <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium flex-wrap pt-0.5">
+                              {task.created_at && (
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <span>Created: <strong className="text-slate-700 font-semibold">{formatDateTime(task.created_at)}</strong></span>
+                                </span>
+                              )}
+                              {isDone && (task.completed_at || task.updated_at) && (
+                                <span className="flex items-center gap-1 text-emerald-700">
+                                  <CheckCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span>Completed: <strong className="text-emerald-800 font-semibold">{formatDateTime(task.completed_at || task.updated_at)}</strong></span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Deadline, Assignee, Status, Edit & Delete */}
+                        <div className="flex items-center gap-2.5 shrink-0 self-end md:self-center flex-wrap">
+                          {/* Due date */}
+                          {task.due_date ? (
+                            <span className="flex items-center gap-1 font-mono text-[11px] font-semibold text-slate-700 bg-white border border-[#EAE5DA] px-2.5 py-1 rounded-xl shadow-2xs">
+                              <Calendar className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span>{formatTaskDueDateTime(task.due_date, task.due_time)}</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[11px] italic">No deadline</span>
+                          )}
+
+                          {/* Assignee */}
+                          {displayName && (
+                            <div className="flex items-center gap-1.5 bg-amber-50/80 border border-amber-200/80 px-2 py-1 rounded-xl shadow-2xs" title={`Assigned to: ${displayName}`}>
+                              {avatar ? (
+                                <img src={avatar} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
+                              ) : (
+                                <div className="w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center shrink-0">
+                                  {displayName.slice(0, 1).toUpperCase()}
+                                </div>
+                              )}
+                              <span className="text-[11px] font-bold text-slate-800 max-w-[100px] truncate">
+                                {displayName}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Status Badge */}
+                          <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border shadow-2xs ${
+                            isDone 
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                              : isOverdue 
+                              ? 'bg-rose-100 text-rose-800 border-rose-300' 
+                              : 'bg-amber-100 text-amber-900 border-amber-200'
+                          }`}>
+                            {isDone ? 'Completed' : 'In Progress'}
+                          </span>
+
+                          {/* Actions: Edit & Delete */}
+                          {!isReadOnly && (
+                            <div className="flex items-center gap-1 border-l border-[#EAE5DA] pl-2">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditTask(task)}
+                                className="p-1.5 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition cursor-pointer"
+                                title="Edit Task"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteClientTask(task.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                                title="Delete Task"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
+                /* ── CARD VIEW ── */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filtered.map((task) => {
-                    const isDone = task.status === 'completed';
+                    const isDone = task.status === 'completed' || task.is_completed;
                     const isOverdue = task.due_date && !isDone && new Date(task.due_date) < now;
                     const diffDays = isOverdue
                       ? Math.max(1, Math.floor((now.getTime() - new Date(task.due_date).getTime()) / (1000 * 60 * 60 * 24)))
@@ -4723,14 +5133,24 @@ export default function ClientWorkspaceDetailPage() {
                               )}
 
                               {!isReadOnly && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteClientTask(task.id)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
-                                  title="Delete Task"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditTask(task)}
+                                    className="p-1 text-slate-400 hover:text-amber-700 rounded-lg transition cursor-pointer"
+                                    title="Edit Task"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteClientTask(task.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                    title="Delete Task"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -4803,6 +5223,22 @@ export default function ClientWorkspaceDetailPage() {
                               </div>
                             </div>
                           )}
+
+                          {/* Created & Completed Timestamps in Card */}
+                          <div className="text-[11px] text-slate-500 space-y-1 pt-1 border-t border-slate-100">
+                            {task.created_at && (
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                <span>Created: <strong className="text-slate-700 font-semibold">{formatDateTime(task.created_at)}</strong></span>
+                              </div>
+                            )}
+                            {isDone && (task.completed_at || task.updated_at) && (
+                              <div className="flex items-center gap-1.5 text-emerald-700">
+                                <CheckCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>Completed: <strong className="text-emerald-800 font-semibold">{formatDateTime(task.completed_at || task.updated_at)}</strong></span>
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         {/* Footer Details */}
@@ -4821,7 +5257,7 @@ export default function ClientWorkspaceDetailPage() {
                             {(() => {
                               const assigneeId = task.assigned_to;
                               const assignee = assigneeId
-                                ? teamMembers.find(m => m.id === assigneeId || m.name.toLowerCase() === assigneeId.toLowerCase())
+                                ? teamMembers.find(m => m.id === assigneeId || (m.name && m.name.toLowerCase() === assigneeId.toLowerCase()))
                                 : null;
                               if (!assignee && !task.assigned_to) return null;
                               const displayName = assignee?.name || task.assigned_to || 'Assigned';
@@ -4883,61 +5319,63 @@ export default function ClientWorkspaceDetailPage() {
                 <p className="text-xs font-bold">Loading deliverables...</p>
               </div>
             ) : (
-              <div className="space-y-4 [&_button[title*='History']_span]:hidden [&_button[title*='History']]:px-2.5 [&_button[title*='History']]:gap-0">
-                <PostProductionCard
-                  project={postProdProjectData}
-                  teamMembers={teamMembers.map(m => ({
-                    ...m,
-                    isInHouse: isInHouseMember(m),
-                    hasPMAccess: true
-                  }))}
-                  quotations={quotationDocs}
-                  eventTypes={eventTypes.map(t => ({ name: t }))}
-                  isExpanded={true}
-                  isReadOnly={isReadOnly}
-                  isOwner={isOwner}
-                  isAssignedView={false}
-                  isAllView={true}
-                  canManage={!isReadOnly}
-                  currentUser={{ id: userId || undefined, name: userName || userEmail || '', role: isOwner ? 'Studio Owner' : 'Team Member' }}
-                  currentMemberId={(activeWorkspace as any)?.memberId || userId || null}
-                  onToggleExpand={() => {}}
-                  onUpdateProject={handleUpdatePostProdProject}
-                  onOpenComments={(itemId, title) => {
-                    const matched = postProdProjectData.deliverables.find(d => d.id === itemId);
-                    if (matched) {
-                      setActiveDrawerDeliverable(matched);
-                      setDrawerInitialTab('comments');
-                    }
-                  }}
-                  onOpenDrive={(itemId, currentLink) => {
-                    const matched = postProdProjectData.deliverables.find(d => d.id === itemId);
-                    if (matched) {
-                      setActiveDrawerDeliverable(matched);
-                      setDrawerInitialTab('links');
-                    }
-                  }}
-                />
-
-                {activeDrawerDeliverable && (
-                  <DeliverableCommentDrawer
-                    isOpen={!!activeDrawerDeliverable}
-                    onClose={() => setActiveDrawerDeliverable(null)}
-                    deliverable={activeDrawerDeliverable}
-                    onUpdateDeliverable={(delivId, updates) => {
-                      const updatedDelivs = postProdProjectData.deliverables.map(d => {
-                        if (d.id === delivId) {
-                          return { ...d, ...updates };
-                        }
-                        return d;
-                      });
-                      handleUpdatePostProdProject(postProdProjectData.id, { deliverables: updatedDelivs });
-                      setActiveDrawerDeliverable(prev => prev ? ({ ...prev, ...updates }) : null);
+              <TabErrorBoundary moduleName="Post-Production">
+                <div className="space-y-4 [&_button[title*='History']_span]:hidden [&_button[title*='History']]:px-2.5 [&_button[title*='History']]:gap-0">
+                  <PostProductionCard
+                    project={postProdProjectData}
+                    teamMembers={teamMembers.map(m => ({
+                      ...m,
+                      isInHouse: isInHouseMember(m),
+                      hasPMAccess: true
+                    }))}
+                    quotations={quotationDocs}
+                    eventTypes={eventTypes.map(t => ({ name: t }))}
+                    isExpanded={true}
+                    isReadOnly={isReadOnly}
+                    isOwner={isOwner}
+                    isAssignedView={false}
+                    isAllView={true}
+                    canManage={!isReadOnly}
+                    currentUser={{ id: userId || undefined, name: userName || userEmail || '', role: isOwner ? 'Studio Owner' : 'Team Member' }}
+                    currentMemberId={(activeWorkspace as any)?.memberId || userId || null}
+                    onToggleExpand={() => {}}
+                    onUpdateProject={handleUpdatePostProdProject}
+                    onOpenComments={(itemId, title) => {
+                      const matched = postProdProjectData?.deliverables?.find(d => d.id === itemId);
+                      if (matched) {
+                        setActiveDrawerDeliverable(matched);
+                        setDrawerInitialTab('comments');
+                      }
                     }}
-                    initialTab={drawerInitialTab}
+                    onOpenDrive={(itemId, currentLink) => {
+                      const matched = postProdProjectData?.deliverables?.find(d => d.id === itemId);
+                      if (matched) {
+                        setActiveDrawerDeliverable(matched);
+                        setDrawerInitialTab('links');
+                      }
+                    }}
                   />
-                )}
-              </div>
+
+                  {activeDrawerDeliverable && (
+                    <DeliverableCommentDrawer
+                      isOpen={!!activeDrawerDeliverable}
+                      onClose={() => setActiveDrawerDeliverable(null)}
+                      deliverable={activeDrawerDeliverable}
+                      onUpdateDeliverable={(delivId, updates) => {
+                        const updatedDelivs = postProdProjectData.deliverables.map(d => {
+                          if (d.id === delivId) {
+                            return { ...d, ...updates };
+                          }
+                          return d;
+                        });
+                        handleUpdatePostProdProject(postProdProjectData.id, { deliverables: updatedDelivs });
+                        setActiveDrawerDeliverable(prev => prev ? ({ ...prev, ...updates }) : null);
+                      }}
+                      initialTab={drawerInitialTab}
+                    />
+                  )}
+                </div>
+              </TabErrorBoundary>
             )}
           </motion.div>
         )}
@@ -5052,40 +5490,145 @@ export default function ClientWorkspaceDetailPage() {
               </div>
             ) : (
               <div className="space-y-6">
-                {/* ── MULTI-EVENT MOODBOARD SELECTOR TABS ── */}
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                  {moodboards.map((mb) => {
-                    const isSelected = mb.id === currentMoodboard.id;
-                    const mbProgress = computeMoodboardProgress(mb);
-                    return (
-                      <button
-                        key={mb.id}
-                        onClick={() => setSelectedMoodboardId(mb.id)}
-                        className={`px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 transition cursor-pointer shrink-0 border ${
-                          isSelected
-                            ? 'bg-amber-400 text-slate-950 border-amber-400 shadow-xs'
-                            : 'bg-white text-slate-700 hover:bg-amber-50/60 border-[#EAE5DA]'
-                        }`}
-                      >
-                        <span>{mb.title || `${mb.event_type || 'Event'} Moodboard`}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
-                          isSelected ? 'bg-black/15 text-slate-950 font-bold' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {mbProgress}%
-                        </span>
-                      </button>
-                    );
-                  })}
-
+                {/* ── HEADER & ADD EVENT MOODBOARD BUTTON ── */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#EAE5DA]">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-amber-600" />
+                      <span>Event Mood Boards & Shoot Vision</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Client inspiration portals for couple portraits, shoot locations, coordinators, and outfit moodboards.
+                    </p>
+                  </div>
                   {!isReadOnly && (
                     <button
+                      type="button"
                       onClick={() => setShowAddMoodboardModal(true)}
-                      className="px-3.5 py-2.5 rounded-2xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-dashed border-amber-300 text-xs font-black flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-2xs"
+                      className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 border border-amber-300 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
                     >
-                      <Plus className="w-3.5 h-3.5 text-amber-600" />
+                      <Plus className="w-4 h-4 text-slate-900" />
                       <span>Add Event Moodboard</span>
                     </button>
                   )}
+                </div>
+
+                {/* ── BOX-WISE GRID OF ALL MOODBOARDS ── */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4.5">
+                  {moodboards.map((mb) => {
+                    const isSelected = currentMoodboard && mb.id === currentMoodboard.id;
+                    const mbProgress = computeMoodboardProgress(mb);
+                    const mbTitle = mb.title || `${mb.event_type || 'Event'} Moodboard`;
+                    const statusStr = mb.status || 'DRAFT';
+                    const isCopied = copiedMbId === mb.id;
+
+                    const statusBadgeStyle = (() => {
+                      switch (String(statusStr).toUpperCase()) {
+                        case 'APPROVED':
+                          return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                        case 'SUBMITTED':
+                          return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                        case 'IN_REVIEW':
+                          return 'bg-blue-100 text-blue-800 border-blue-300';
+                        default:
+                          return 'bg-amber-100 text-amber-900 border-amber-200';
+                      }
+                    })();
+
+                    return (
+                      <div
+                        key={mb.id}
+                        onClick={() => setSelectedMoodboardId(mb.id)}
+                        className={`p-5 rounded-3xl border transition-all cursor-pointer flex flex-col justify-between space-y-4 ${
+                          isSelected
+                            ? 'bg-gradient-to-br from-amber-50/90 via-[#FFFDF9] to-amber-50/40 border-amber-400 ring-2 ring-amber-400/50 shadow-md'
+                            : 'bg-[#FFFDF9] border-[#EAE5DA] hover:border-amber-300 hover:shadow-xs'
+                        }`}
+                      >
+                        {/* Top: Event Type & Status & Active Pill */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/10 border border-amber-500/20 text-amber-900">
+                              {mb.event_type || 'Shoot Vision'}
+                            </span>
+
+                            <div className="flex items-center gap-1.5">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${statusBadgeStyle}`}>
+                                {statusStr}
+                              </span>
+                              {isSelected && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white shadow-2xs">
+                                  ACTIVE
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Title */}
+                          <h4 className="text-sm font-black text-slate-900 line-clamp-1">
+                            {mbTitle}
+                          </h4>
+
+                          {/* Created Date & Time */}
+                          <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>Created: <strong className="text-slate-700 font-semibold">{formatDateTime(mb.created_at)}</strong></span>
+                          </div>
+
+                          {/* Prep Progress */}
+                          <div className="pt-1">
+                            <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-1">
+                              <span>Prep Progress</span>
+                              <span className="font-mono text-amber-800 font-black">{mbProgress}%</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-amber-100 rounded-full overflow-hidden border border-amber-200">
+                              <div
+                                className="h-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-300"
+                                style={{ width: `${mbProgress}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 3 Action Buttons on Card */}
+                        <div className="pt-3 border-t border-[#EAE5DA] flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                          {/* 1. Copy Magic Link */}
+                          <button
+                            type="button"
+                            onClick={() => handleCopyMbMagicLink(mb)}
+                            className="flex-1 min-w-[100px] py-1.5 px-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-[11px] rounded-xl shadow-2xs transition flex items-center justify-center gap-1 cursor-pointer"
+                            title="Copy Magic Link"
+                          >
+                            {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-amber-600" />}
+                            <span>{isCopied ? 'Copied!' : 'Copy Magic Link'}</span>
+                          </button>
+
+                          {/* 2. Share on WhatsApp */}
+                          <button
+                            type="button"
+                            onClick={() => handleShareMbWhatsApp(mb)}
+                            className="py-1.5 px-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-[11px] rounded-xl shadow-2xs transition flex items-center justify-center gap-1 cursor-pointer"
+                            title="Share on WhatsApp"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span>WhatsApp</span>
+                          </button>
+
+                          {/* 3. Open Client Portal */}
+                          <a
+                            href={`/p/moodboard/${mb.token}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="py-1.5 px-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-[11px] rounded-xl shadow-2xs transition flex items-center justify-center gap-1"
+                            title="Open Client Portal"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Portal</span>
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* ── CURRENT MOODBOARD HEADER & SHARE LINKS ── */}
@@ -6773,18 +7316,21 @@ export default function ClientWorkspaceDetailPage() {
                   <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
                     <CheckSquare className="w-4 h-4" />
                   </div>
-                  <h3 className="text-base font-black text-slate-900">New Task for {name}</h3>
+                  <h3 className="text-base font-black text-slate-900">{editingTask ? 'Edit Task' : `New Task for ${name}`}</h3>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowClientTaskModal(false)}
+                  onClick={() => {
+                    setShowClientTaskModal(false);
+                    setEditingTask(null);
+                  }}
                   className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleCreateClientTask} className="space-y-4 text-xs">
+              <form onSubmit={handleSaveClientTask} className="space-y-4 text-xs">
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Task Title *</label>
                   <input
@@ -6881,8 +7427,11 @@ export default function ClientWorkspaceDetailPage() {
                 <div className="flex justify-end gap-2.5 pt-2 border-t border-[#EAE5DA]">
                   <button
                     type="button"
-                    onClick={() => setShowClientTaskModal(false)}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition"
+                    onClick={() => {
+                      setShowClientTaskModal(false);
+                      setEditingTask(null);
+                    }}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -6892,7 +7441,7 @@ export default function ClientWorkspaceDetailPage() {
                     className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 disabled:opacity-50 font-black text-slate-900 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                   >
                     {isSubmittingTask && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                    <span>{isSubmittingTask ? 'Creating...' : 'Create Task'}</span>
+                    <span>{isSubmittingTask ? (editingTask ? 'Saving...' : 'Creating...') : (editingTask ? 'Save Changes' : 'Create Task')}</span>
                   </button>
                 </div>
               </form>

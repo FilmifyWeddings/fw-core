@@ -129,16 +129,18 @@ export default function DeliverableRowItem({
       value: 'unassigned',
       label: 'Unassigned',
     },
-    ...teamMembers.map(m => {
-      const initials = m.name
+    ...(teamMembers || []).map(m => {
+      const nameStr = String(m?.name || 'Member');
+      const initials = nameStr
         .split(' ')
+        .filter(Boolean)
         .map(w => w[0])
         .join('')
         .slice(0, 2)
-        .toUpperCase();
+        .toUpperCase() || 'M';
       return {
-        value: m.id || m.name,
-        label: m.name,
+        value: m?.id || nameStr,
+        label: nameStr,
         initials,
       };
     }),

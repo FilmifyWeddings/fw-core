@@ -155,7 +155,8 @@ export default function PostProductionCard({
   // PM Options: Strictly In-House team members with Unassign PM toggle
   const pmOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     const isCurrentlyAssigned = Boolean(localPM && localPM !== 'unassigned');
-    const inHouseMembers = teamMembers.filter((m: any) => {
+    const inHouseMembers = (teamMembers || []).filter((m: any) => {
+      if (!m) return false;
       if (m.isInHouse !== undefined) return m.isInHouse;
       const typeStr = (m.primary_type || m.type || '').toUpperCase();
       const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
@@ -164,13 +165,15 @@ export default function PostProductionCard({
 
     const uniqueMap = new Map<string, { id: string; name: string }>();
     inHouseMembers.forEach(m => {
-      const normKey = m.name.toLowerCase().trim();
+      const memberName = String(m?.name || '').trim();
+      if (!memberName) return;
+      const normKey = memberName.toLowerCase();
       if (!uniqueMap.has(normKey)) {
-        uniqueMap.set(normKey, { id: m.id, name: m.name });
+        uniqueMap.set(normKey, { id: m.id, name: memberName });
       }
     });
 
-    const sortedMembers = Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const sortedMembers = Array.from(uniqueMap.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     const list: Searchable3DCreamSelectOption[] = [
       {
@@ -180,12 +183,13 @@ export default function PostProductionCard({
         badgeClassName: 'bg-rose-100 text-rose-700 border border-rose-200',
       },
       ...sortedMembers.map(m => {
-        const initials = m.name
+        const initials = (m.name || 'PM')
           .split(' ')
+          .filter(Boolean)
           .map(w => w[0])
           .join('')
           .slice(0, 2)
-          .toUpperCase();
+          .toUpperCase() || 'PM';
 
         return {
           value: m.name,
@@ -197,10 +201,11 @@ export default function PostProductionCard({
 
     const currentName = localPM || project.project_manager_name;
     if (currentName && currentName !== 'unassigned' && !list.some(o => o.value === currentName)) {
+      const cStr = String(currentName);
       list.push({
-        value: currentName,
-        label: currentName,
-        initials: currentName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+        value: cStr,
+        label: cStr,
+        initials: cStr.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'PM',
       });
     }
 
@@ -449,20 +454,20 @@ export default function PostProductionCard({
   const studioEventTypes = useMemo(() => {
     const list = eventTypes && eventTypes.length > 0 ? eventTypes : DEFAULT_EVENT_TYPES;
     return list.map(e => ({
-      name: e.name.trim(),
-      category: e.category || 'Event',
+      name: String(e?.name || '').trim(),
+      category: String(e?.category || 'Event'),
     }));
   }, [eventTypes]);
 
   // Available event types that are not yet enabled
   const availableEventTypes = useMemo(() => {
-    const enabledLower = new Set(enabledSegments.map(s => s.toLowerCase()));
+    const enabledLower = new Set(enabledSegments.map(s => String(s || '').toLowerCase()));
     const q = segmentSearchQuery.toLowerCase().trim();
 
     return studioEventTypes.filter(ev => {
       if (enabledLower.has(ev.name.toLowerCase())) return false;
       if (!q) return true;
-      return ev.name.toLowerCase().includes(q) || ev.category.toLowerCase().includes(q);
+      return ev.name.toLowerCase().includes(q) || (ev.category || '').toLowerCase().includes(q);
     });
   }, [studioEventTypes, enabledSegments, segmentSearchQuery]);
 

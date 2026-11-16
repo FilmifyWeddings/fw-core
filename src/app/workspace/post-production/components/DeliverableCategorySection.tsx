@@ -115,8 +115,9 @@ export default function DeliverableCategorySection({
   // - Photos / Videos category: Exclude external vendors whose sole role is Album Designer or Printing Lab
   const filteredTeamMembers = useMemo(() => {
     const isAlbumCategory = /album|book|print/i.test(category || '');
-    return teamMembers.filter(m => {
-      const role = (m.role || '').toLowerCase();
+    return (teamMembers || []).filter(m => {
+      if (!m) return false;
+      const role = String(m.role || '').toLowerCase();
       const isAlbumSpecialist = role.includes('album') || role.includes('printing lab') || role.includes('lab') || role.includes('book');
       if (isAlbumCategory) {
         // Show album specialists OR in-house team/managers
@@ -167,15 +168,16 @@ export default function DeliverableCategorySection({
   // Category Presets from settings: { title: string; defaultSpecs: string }
   // Loaded synchronously from in-memory cache (0ms)
   const [categoryPresets, setCategoryPresets] = useState<{ title: string; defaultSpecs: string }[]>(() => {
+    const catLower = String(category || '').toLowerCase();
     const cached = getCachedPostProductionSettings();
-    const match = cached.categories?.find(c => c.name.toLowerCase() === category.toLowerCase());
+    const match = cached.categories?.find(c => String(c?.name || '').toLowerCase() === catLower);
     if (match && match.presets.length > 0) {
       return match.presets.map(p => {
         const n = normalizePreset(p);
         return { title: n.title, defaultSpecs: n.specs };
       });
     }
-    const defMatch = DEFAULT_POST_PRODUCTION_CATEGORIES.find(c => c.name.toLowerCase() === category.toLowerCase());
+    const defMatch = DEFAULT_POST_PRODUCTION_CATEGORIES.find(c => String(c?.name || '').toLowerCase() === catLower);
     const rawPresets = defMatch?.presets || [{ title: 'Standard Deliverable', specs: '' }, { title: 'Final Master Export', specs: '' }];
     return rawPresets.map(p => {
       const n = normalizePreset(p);
@@ -185,7 +187,8 @@ export default function DeliverableCategorySection({
 
   const loadCategorySettings = () => {
     fetchPostProductionSettings().then(settings => {
-      const match = settings.categories.find(c => c.name.toLowerCase() === category.toLowerCase());
+      const catLower = String(category || '').toLowerCase();
+      const match = settings.categories.find(c => String(c?.name || '').toLowerCase() === catLower);
       if (match && match.presets.length > 0) {
         const normalized = match.presets.map(p => {
           const n = normalizePreset(p);
@@ -198,7 +201,7 @@ export default function DeliverableCategorySection({
         });
         setPresetSpecs(prev => ({ ...defaults, ...prev }));
       } else {
-        const defMatch = DEFAULT_POST_PRODUCTION_CATEGORIES.find(c => c.name.toLowerCase() === category.toLowerCase());
+        const defMatch = DEFAULT_POST_PRODUCTION_CATEGORIES.find(c => String(c?.name || '').toLowerCase() === catLower);
         const rawPresets = defMatch?.presets || [{ title: 'Standard Deliverable', specs: '' }, { title: 'Final Master Export', specs: '' }];
         const normalized = rawPresets.map(p => {
           const n = normalizePreset(p);
