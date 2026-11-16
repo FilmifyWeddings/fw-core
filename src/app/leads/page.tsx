@@ -1486,26 +1486,58 @@ export default function LeadsPage() {
   };
 
   const handleCreateLead = async (newLeadData: Partial<Lead>) => {
-    const tempId = Math.random().toString(36).substring(7);
-    const newLead: Lead = {
+    const tempId = newLeadData.id || `lead_opt_${Date.now()}_${Math.random().toString(36).substring(5)}`;
+    const targetWorkspace = workspaceId || userId || '';
+    const nowIso = new Date().toISOString();
+    const defaultStageId = stages?.[0]?.id || 'new';
+    const selectedStageId = newLeadData.stage_id || defaultStageId;
+
+    const optimisticLead: Lead = {
       id: tempId,
-      workspace_id: userId,
-      name: newLeadData.name || 'New Lead',
-      email: newLeadData.email || '',
-      phone: newLeadData.phone || '',
+      workspace_id: targetWorkspace,
+      name: (newLeadData.name || 'New Lead').trim(),
+      email: (newLeadData.email || '').trim() || null,
+      phone: (newLeadData.phone || '').trim(),
       source: newLeadData.source || 'Manual',
       status: newLeadData.status || 'new',
-      score: newLeadData.score || 'Cold ❄️',
+      stage_id: selectedStageId,
+      score: newLeadData.score || 'Warm 👍',
       score_reason: newLeadData.score_reason || 'Manually added lead.',
+      budget: newLeadData.budget || newLeadData.raw_payload?.budget || null,
+      location: (newLeadData as any).location || (newLeadData as any).city || newLeadData.raw_payload?.location || newLeadData.raw_payload?.city || null,
+      event_date: (newLeadData as any).event_date || newLeadData.raw_payload?.event_date || null,
       raw_payload: newLeadData.raw_payload || {},
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      custom_color: (newLeadData as any).custom_color || null,
+      comments: (newLeadData as any).comments || [],
+      wa_welcome_sent: false,
+      google_synced: false,
+      wgl_dispatched: false,
+      followup_timeline: [],
+      created_at: nowIso,
+      updated_at: nowIso,
       ...newLeadData
     };
 
-    if (isDemoMode) {
-      setLeads(prev => [newLead, ...prev]);
+    // ⚡ 1. INSTANT 0ms OPTIMISTIC UI INJECTION
+    setLeads(prev => {
+      const filtered = prev.filter(l => l.id !== optimisticLead.id);
+      const updated = [optimisticLead, ...filtered].sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return timeB - timeA;
+      });
+      memCachedLeads = updated;
+      memCachedWorkspaceId = targetWorkspace;
+      if (typeof window !== 'undefined' && targetWorkspace) {
+        try {
+          localStorage.setItem(`sc_cached_leads_${targetWorkspace}`, JSON.stringify(updated));
+        } catch (_) {}
+        window.dispatchEvent(new CustomEvent('leads_updated', { detail: { lead: optimisticLead } }));
+      }
+      return updated;
+    });
 
+    if (isDemoMode) {
       // Seed mock welcome automation in localStorage
       try {
         const welcomeConfigStr = localStorage.getItem(`wa_config_welcome_${userId}`);
@@ -1527,9 +1559,9 @@ export default function LeadsPage() {
 
               newLogs.push({
                 id: `mock-log-${Math.random().toString(36).substring(5)}`,
-                lead_id: newLead.id,
-                lead_name: newLead.name,
-                phone: newLead.phone || '919988776655',
+                lead_id: optimisticLead.id,
+                lead_name: optimisticLead.name,
+                phone: optimisticLead.phone || '919988776655',
                 step_number: idx + 1,
                 template_name: step.template_name,
                 scheduled_for: scheduledTime.toISOString(),
@@ -1560,9 +1592,9 @@ export default function LeadsPage() {
 
               newLogs.push({
                 id: `mock-flog-${Math.random().toString(36).substring(5)}`,
-                lead_id: newLead.id,
-                lead_name: newLead.name,
-                phone: newLead.phone || '919988776655',
+                lead_id: optimisticLead.id,
+                lead_name: optimisticLead.name,
+                phone: optimisticLead.phone || '919988776655',
                 step_number: idx + 1,
                 template_name: step.template_name,
                 scheduled_for: scheduledTime.toISOString(),
@@ -1580,63 +1612,97 @@ export default function LeadsPage() {
       } catch (err) {
         console.error('Demo simulation seeding failed:', err);
       }
-    } else {
+      return;
+    }
+
+    // 🚀 2. BACKGROUND SERVER PERSISTENCE
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      let savedLead: Lead | null = null;
       try {
-        const targetWorkspace = workspaceId || userId;
-        const disambiguatedLeadName = await getDisambiguatedLeadName(supabase, targetWorkspace, newLead.name);
+        const apiRes = await fetch(`/api/leads?workspace_id=${encodeURIComponent(targetWorkspace)}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(optimisticLead)
+        });
+
+        if (apiRes.ok) {
+          const json = await apiRes.json();
+          if (json.success && json.lead) {
+            savedLead = json.lead as Lead;
+          }
+        }
+      } catch (apiErr) {
+        console.warn('[handleCreateLead] Primary POST /api/leads failed, falling back to direct query:', apiErr);
+      }
+
+      // Fallback: If API route was unreachable, direct insert with full schema fields
+      if (!savedLead) {
+        const disambiguatedLeadName = await getDisambiguatedLeadName(supabase, targetWorkspace, optimisticLead.name);
         const { data, error } = await supabase
           .from('leads')
           .insert([{
             workspace_id: targetWorkspace,
+            tenant_id: targetWorkspace,
             name: disambiguatedLeadName,
-            email: newLead.email,
-            phone: newLead.phone,
-            source: newLead.source,
-            status: newLead.status,
-            score: newLead.score,
-            score_reason: newLead.score_reason,
-            raw_payload: newLead.raw_payload,
-            custom_color: (newLead as any).custom_color || null,
-            comments: (newLead as any).comments || [],
-            wa_welcome_sent: (newLead as any).wa_welcome_sent || false,
-            google_synced: (newLead as any).google_synced || false,
-            wgl_dispatched: (newLead as any).wgl_dispatched || false,
-            followup_timeline: (newLead as any).followup_timeline || []
+            full_name: disambiguatedLeadName,
+            email: optimisticLead.email,
+            phone: optimisticLead.phone,
+            phone_number: optimisticLead.phone,
+            source: optimisticLead.source,
+            status: optimisticLead.status,
+            stage_id: (selectedStageId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(selectedStageId)) ? selectedStageId : null,
+            score: optimisticLead.score,
+            score_reason: optimisticLead.score_reason,
+            budget: optimisticLead.budget,
+            location: optimisticLead.location,
+            city: optimisticLead.location,
+            event_date: (optimisticLead as any).event_date,
+            raw_payload: optimisticLead.raw_payload,
+            custom_color: (optimisticLead as any).custom_color || null,
+            comments: (optimisticLead as any).comments || [],
+            wa_welcome_sent: (optimisticLead as any).wa_welcome_sent || false,
+            google_synced: (optimisticLead as any).google_synced || false,
+            wgl_dispatched: (optimisticLead as any).wgl_dispatched || false,
+            followup_timeline: (optimisticLead as any).followup_timeline || []
           }])
           .select();
 
         if (!error && data && data.length > 0) {
-          const savedLead = data[0] as Lead;
-          setLeads(prev => {
-            const updated = [savedLead, ...prev.filter(l => l.id !== savedLead.id)].sort((a, b) => {
-              const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-              const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-              return timeB - timeA;
-            });
-            memCachedLeads = updated;
-            memCachedWorkspaceId = targetWorkspace;
-            if (typeof window !== 'undefined') {
-              try {
-                localStorage.setItem(`sc_cached_leads_${targetWorkspace}`, JSON.stringify(updated));
-              } catch (_) {}
-            }
-            return updated;
-          });
-
-          // Trigger real database automation endpoint
-          fetch('/api/whatsapp/trigger-automation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lead: savedLead })
-          }).catch(err => console.error('Error triggering WhatsApp automation:', err));
-        } else {
-          console.error("Database create error:", error);
-          alert("Failed to save lead to database: " + (error?.message || "Unknown error"));
+          savedLead = data[0] as Lead;
+        } else if (error) {
+          console.error('[handleCreateLead Direct Insert Error]:', error);
         }
-      } catch (err: any) {
-        console.error("Database create error:", err);
-        alert("Failed to save lead to database: " + (err?.message || err));
       }
+
+      if (savedLead) {
+        // Seamlessly replace optimistic temporary ID with real DB ID
+        setLeads(prev => {
+          const updated = prev.map(l => l.id === tempId ? { ...l, ...savedLead } : l);
+          memCachedLeads = updated;
+          memCachedWorkspaceId = targetWorkspace;
+          if (typeof window !== 'undefined' && targetWorkspace) {
+            try {
+              localStorage.setItem(`sc_cached_leads_${targetWorkspace}`, JSON.stringify(updated));
+            } catch (_) {}
+          }
+          return updated;
+        });
+
+        // Trigger real database automation endpoint
+        fetch('/api/whatsapp/trigger-automation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead: savedLead })
+        }).catch(err => console.error('Error triggering WhatsApp automation:', err));
+      }
+    } catch (err: any) {
+      console.error('[handleCreateLead background persistence error]:', err);
     }
   };
 

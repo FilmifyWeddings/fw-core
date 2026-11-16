@@ -1919,7 +1919,10 @@ export function LeadTable({
 
   // Ingest Meta Columns & sync initial leads
   useEffect(() => {
-    setLeads(initialLeads);
+    setLeads(prev => {
+      const pendingOptimistics = prev.filter(p => p.id.startsWith('lead_opt_') && !initialLeads.some(il => il.id === p.id || (il.phone && il.phone === p.phone && il.name === p.name)));
+      return [...pendingOptimistics, ...initialLeads];
+    });
     setVisibleCount(prev => Math.max(prev, initialLeads.length));
     
     // Auto-discover raw_payload keys to create Meta Ingested columns
@@ -2783,32 +2786,50 @@ export function LeadTable({
   const totalLeads = filteredLeads.length;
   const paginatedLeads = filteredLeads.slice(0, visibleCount);
 
-  // Manual Lead Creation Trigger
+  // Manual Lead Creation Trigger (Instant 0ms Optimistic UI)
   const handleSaveManualLead = () => {
     if (!manualLeadName.trim() || !manualLeadPhone.trim()) {
       alert('Lead Name and Mobile Number are required.');
       return;
     }
 
-    const selectedStage = stages.find(s => s.id === manualLeadStatus);
+    const currentStudio = studioParam || searchParams?.get('studio') || searchParams?.get('ws') || null;
+    const impId = typeof window !== 'undefined' ? localStorage.getItem('impersonated_tenant_id') : null;
+    const leadWs = (leads || initialLeads || [])[0]?.workspace_id;
+    const activeStoredWs = typeof window !== 'undefined' ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id')) : null;
+    const targetWs = currentStudio || impId || leadWs || activeStoredWs || '';
+
+    const stagesPool = (stagesState && stagesState.length > 0) ? stagesState : (stages || []);
+    const selectedStage = stagesPool.find(s => s.id === manualLeadStatus || s.name?.toLowerCase() === manualLeadStatus?.toLowerCase()) || stagesPool[0];
+    const targetStageId = selectedStage ? selectedStage.id : 'new';
     const resolvedStatus = (selectedStage?.name?.toLowerCase() === 'inquiry' ? 'new' :
                             selectedStage?.name?.toLowerCase() === 'contacted' ? 'contacted' :
                             selectedStage?.name?.toLowerCase() === 'meeting scheduled' ? 'warm' :
                             selectedStage?.name?.toLowerCase() === 'proposal sent' ? 'hot' :
                             selectedStage?.name?.toLowerCase() === 'contract signed' ? 'closed' :
                             selectedStage?.name?.toLowerCase() === 'closed/lost' ? 'lost' :
-                            manualLeadStatus) as LeadStatus;
+                            (selectedStage?.name ? selectedStage.name.toLowerCase() : manualLeadStatus)) as LeadStatus;
 
-    const newLead: Partial<Lead> = {
+    const optId = `lead_opt_${Date.now()}_${Math.random().toString(36).substring(5)}`;
+    const nowIso = new Date().toISOString();
+
+    const newLead: Lead = {
+      id: optId,
+      workspace_id: targetWs,
       name: manualLeadName.trim(),
       phone: manualLeadPhone.trim(),
       email: manualLeadEmail.trim() || null,
-      source: manualLeadSource,
+      source: manualLeadSource || 'Manual',
       status: resolvedStatus,
-      stage_id: selectedStage ? selectedStage.id : null,
+      stage_id: targetStageId,
       score: 'Warm 👍',
       score_reason: 'Manually created lead.',
       budget: manualBudget.trim() || null,
+      location: manualLocation.trim() || null,
+      city: manualLocation.trim() || null,
+      event_date: manualEventDate || null,
+      created_at: nowIso,
+      updated_at: nowIso,
       raw_payload: {
         groom_name: manualGroomName.trim(),
         bride_name: manualBrideName.trim(),
@@ -2823,6 +2844,17 @@ export function LeadTable({
         'what_is_your_preferred_budget_range?': manualBudget.trim() || null,
       }
     };
+
+    // ⚡ INSTANT 0ms OPTIMISTIC UPDATE: Add directly to table state
+    setLeads(prev => [newLead, ...prev]);
+
+    // Ensure table does not hide it due to active source filter or search query
+    if (sourceFilter !== 'all' && sourceFilter.toLowerCase() !== (newLead.source || '').toLowerCase()) {
+      setSourceFilter('all');
+    }
+    if (search.trim()) {
+      setSearch('');
+    }
 
     if (onCreateLead) {
       onCreateLead(newLead);
