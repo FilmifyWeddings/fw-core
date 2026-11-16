@@ -188,7 +188,7 @@ export async function GET(req: NextRequest) {
       console.warn('[portal-data] Shoots query note:', shootErr);
     }
 
-    // 3. Fetch Post-Production Deliverables (High-Speed Targeted Queries)
+    // 3. Fetch Post-Production Deliverables (High-Speed Targeted Queries with True Client Name)
     let deliverables: any[] = [];
     try {
       // First fetch only the projects & deliverables relevant to this workspace/member
@@ -196,7 +196,7 @@ export async function GET(req: NextRequest) {
         (() => {
           let q = supabaseAdmin
             .from('post_production_projects')
-            .select('id, workspace_id, client_id, deliverables, is_deleted');
+            .select('id, workspace_id, client_id, client_name, couple_name, project_name, title, deliverables, is_deleted');
           if (resolvedWsId) {
             q = q.eq('workspace_id', resolvedWsId);
           } else {
@@ -237,19 +237,31 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      // ⚡ Only query fw_projects for the specific referenced IDs (Zero full-table scan!)
+      // ⚡ Resolve True Client Names from fw_projects, workspace_clients, and leads
       const clientMap = new Map<string, string>();
       if (referencedProjIds.size > 0) {
         const idList = Array.from(referencedProjIds);
-        const { data: matchedProjects } = await supabaseAdmin
-          .from('fw_projects')
-          .select('id, client_id, client_name')
-          .in('id', idList);
+        const [fwMatch, clientsMatch, leadsMatch] = await Promise.all([
+          supabaseAdmin.from('fw_projects').select('id, client_id, client_name').in('id', idList),
+          supabaseAdmin.from('workspace_clients').select('id, name').in('id', idList),
+          supabaseAdmin.from('leads').select('id, name, client_name, couple_names, raw_payload').in('id', idList)
+        ]);
 
-        if (matchedProjects && matchedProjects.length > 0) {
-          matchedProjects.forEach((p: any) => {
+        if (fwMatch.data) {
+          fwMatch.data.forEach((p: any) => {
             if (p.id && p.client_name) clientMap.set(p.id, p.client_name);
             if (p.client_id && p.client_name) clientMap.set(p.client_id, p.client_name);
+          });
+        }
+        if (clientsMatch.data) {
+          clientsMatch.data.forEach((c: any) => {
+            if (c.id && c.name) clientMap.set(c.id, c.name);
+          });
+        }
+        if (leadsMatch.data) {
+          leadsMatch.data.forEach((l: any) => {
+            const lName = l.raw_payload?.couple_name || l.couple_names || l.client_name || l.name;
+            if (l.id && lName) clientMap.set(l.id, lName);
           });
         }
       }
@@ -260,7 +272,14 @@ export async function GET(req: NextRequest) {
       // A. Process deliverables JSON array from post_production_projects
       if (ppProjectsRes.status === 'fulfilled' && ppProjectsRes.value.data) {
         ppProjectsRes.value.data.forEach((proj: any) => {
-          const clientName = clientMap.get(proj.client_id) || clientMap.get(proj.id) || (proj as any).client_name || 'Client Project';
+          const clientName = clientMap.get(proj.client_id) || 
+            clientMap.get(proj.id) || 
+            proj.client_name || 
+            proj.couple_name || 
+            proj.project_name || 
+            proj.title || 
+            'Wedding Project';
+
           (proj.deliverables || []).forEach((d: any) => {
             const isAssigned = (d.assigned_member_id && memberIdSet.has(d.assigned_member_id)) ||
               (d.assigned_to && memberNames.some(name => d.assigned_to.toLowerCase().includes(name)));
@@ -302,7 +321,7 @@ export async function GET(req: NextRequest) {
       if (rawDelivsRes.status === 'fulfilled' && rawDelivsRes.value.data) {
         rawDelivsRes.value.data.forEach((d: any) => {
           if (!delivMap.has(d.id)) {
-            const clientName = clientMap.get(d.project_id) || 'Client Project';
+            const clientName = clientMap.get(d.project_id) || d.client_name || 'Wedding Project';
             const rawAgreed = Number(d.agreed_amount) || 0;
             const rawPaid = Number(d.paid_amount) || 0;
             const bal = Math.max(0, rawAgreed - rawPaid);
@@ -373,7 +392,87 @@ export async function GET(req: NextRequest) {
       console.warn('[portal-data] Salaries query note:', salErr);
     }
 
-    // 5. Construct Profile
+    // 5. Fetch Today's Attendance & Personal Punch Link
+    let todayAttendance: any = null;
+    let attendanceDirectUrl: string | null = null;
+    let attendanceToken: string | null = null;
+
+    try {
+      const todayDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(new Date());
+
+      const [attRecRes, attLinkRes] = await Promise.all([
+        supabaseAdmin
+          .from('attendance_records')
+          .select('*')
+          .in('member_id', allMemberIds)
+          .eq('date', todayDate)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabaseAdmin
+          .from('attendance_member_links')
+          .select('secure_token')
+          .in('member_id', allMemberIds)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      ]);
+
+      let link = attLinkRes.data;
+
+      // Auto-generate link if absent
+      if (!link && allMemberIds.length > 0) {
+        const primaryMemId = allMemberIds[0];
+        const targetWs = resolvedWsId || wmList[0]?.workspace_id || ftmList[0]?.workspace_id || userId;
+        const secureToken = `att_${primaryMemId.slice(0, 6)}_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+        try {
+          const { data: newLink } = await supabaseAdmin
+            .from('attendance_member_links')
+            .insert([{
+              user_id: targetWs,
+              workspace_id: targetWs,
+              member_id: primaryMemId,
+              secure_token: secureToken,
+              is_active: true,
+            }])
+            .select('secure_token')
+            .maybeSingle();
+          if (newLink) link = newLink;
+        } catch (_) {}
+      }
+
+      if (link?.secure_token) {
+        attendanceToken = link.secure_token;
+        attendanceDirectUrl = `/attendance/${link.secure_token}`;
+      }
+
+      const rec = attRecRes.data;
+      if (rec) {
+        todayAttendance = {
+          id: rec.id,
+          date: rec.date,
+          punch_in_time: rec.punch_in_time || rec.check_in_time || null,
+          punch_out_time: rec.punch_out_time || rec.check_out_time || null,
+          status: rec.status || 'present',
+          punch_in_photo: rec.punch_in_photo || rec.photo_url || rec.selfie_url || rec.check_in_photo || null,
+          punch_out_photo: rec.punch_out_photo || rec.check_out_photo || rec.check_out_selfie_url || null,
+          duration_minutes: rec.duration_minutes || rec.work_duration_minutes || rec.total_work_minutes || null,
+          location_address: rec.location_address || rec.location_name || rec.punch_in_address || null,
+          punch_in_lat: rec.punch_in_lat || rec.check_in_lat || null,
+          punch_in_lng: rec.punch_in_lng || rec.check_in_lng || null,
+        };
+      }
+    } catch (attErr) {
+      console.warn('[portal-data] Attendance query note:', attErr);
+    }
+
+    // 6. Construct Profile
     const primaryWsMember = wmList[0] || ftmList[0] || null;
     const memberProfile = {
       id: primaryWsMember?.id || allMemberIds[0] || userId,
@@ -391,7 +490,10 @@ export async function GET(req: NextRequest) {
       shoots,
       deliverables,
       salaries,
-      memberProfile
+      memberProfile,
+      todayAttendance,
+      attendanceDirectUrl,
+      attendanceToken
     }, {
       headers: {
         'Cache-Control': 'private, max-age=15, stale-while-revalidate=45',

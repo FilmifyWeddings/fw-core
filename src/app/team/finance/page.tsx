@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { SidebarLayout } from '@/components/sidebar-layout';
 import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import {
@@ -180,7 +179,7 @@ export default function TeamFinancePage() {
   }
 
   return (
-    <SidebarLayout>
+    <div className="w-full">
       <div className="w-full max-w-7xl mx-auto p-3.5 sm:p-6 lg:p-8 space-y-6">
         
         {/* 1. Header Banner */}
@@ -757,6 +756,6 @@ export default function TeamFinancePage() {
           isReadOnly={true}
         />
       )}
-    </SidebarLayout>
+    </div>
   );
 }

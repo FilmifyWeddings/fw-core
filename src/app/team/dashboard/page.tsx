@@ -4,11 +4,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { SidebarLayout } from '@/components/sidebar-layout';
 import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import {
-  Camera,
   Calendar,
   Clock,
   MapPin,
@@ -28,9 +26,16 @@ import {
   Receipt,
   Download,
   Film,
-  FolderOpen
+  FolderOpen,
+  LayoutGrid,
+  List,
+  CalendarDays,
+  Camera,
+  LogIn,
+  LogOut,
+  Maximize2
 } from 'lucide-react';
-import VendorAlbumDeliverablesModal from '@/components/vendors/VendorAlbumDeliverablesModal';
+import ShootDetailsModal from '@/components/team/ShootDetailsModal';
 import TeamMemberFinanceDrawer from '@/app/workspace/team/components/TeamMemberFinanceDrawer';
 
 interface AssignedShoot {
@@ -56,27 +61,58 @@ interface AssignedShoot {
   notes?: string;
 }
 
+interface TodayAttendance {
+  id?: string;
+  date: string;
+  punch_in_time?: string | null;
+  punch_out_time?: string | null;
+  status?: string;
+  punch_in_photo?: string | null;
+  punch_out_photo?: string | null;
+  duration_minutes?: number | null;
+  location_address?: string | null;
+  punch_in_lat?: number | null;
+  punch_in_lng?: number | null;
+}
+
 export default function TeamDashboardPage() {
   const router = useRouter();
   const { workspaceName, isOwner, userRole, activeWorkspace } = useWorkspace();
   const [shoots, setShoots] = useState<AssignedShoot[]>([]);
   const [deliverables, setDeliverables] = useState<any[]>([]);
   const [salaries, setSalaries] = useState<any[]>([]);
+  const [todayAttendance, setTodayAttendance] = useState<TodayAttendance | null>(null);
+  const [attendanceDirectUrl, setAttendanceDirectUrl] = useState<string | null>(null);
+  const [attendanceToken, setAttendanceToken] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [dashboardTab, setDashboardTab] = useState<'shoots' | 'deliverables' | 'salaries'>('shoots');
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'completed' | 'all'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'all' | 'upcoming' | 'completed'>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'month'>('grid');
   const [selectedStudio, setSelectedStudio] = useState<string>('all');
 
-  // Transparency Read-Only Modals for Team Members & Partners
-  const [selectedDeliverablesMember, setSelectedDeliverablesMember] = useState<any | null>(null);
-  const [isDeliverablesModalOpen, setIsDeliverablesModalOpen] = useState(false);
+  // Shoot Details Modal
+  const [selectedShoot, setSelectedShoot] = useState<AssignedShoot | null>(null);
+  const [isShootModalOpen, setIsShootModalOpen] = useState(false);
+
+  // Full Financial Drawer
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<any | null>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
   const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics' | 'deliverables'>('bookings');
   const [currentMemberProfile, setCurrentMemberProfile] = useState<any | null>(null);
 
-  // 0ms Optimistic SWR Hydration: Render cached assignments in 0 milliseconds
+  // Status updating indicator
+  const [updatingDelivId, setUpdatingDelivId] = useState<string | null>(null);
+
+  // Live timer for punched-in work duration
+  const [nowTick, setNowTick] = useState<number>(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 0ms Optimistic SWR Hydration
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -91,6 +127,9 @@ export default function TeamDashboardPage() {
           if (Array.isArray(parsed.deliverables)) setDeliverables(parsed.deliverables);
           if (Array.isArray(parsed.salaries)) setSalaries(parsed.salaries);
           if (parsed.profile) setCurrentMemberProfile(parsed.profile);
+          if (parsed.todayAttendance) setTodayAttendance(parsed.todayAttendance);
+          if (parsed.attendanceDirectUrl) setAttendanceDirectUrl(parsed.attendanceDirectUrl);
+          if (parsed.attendanceToken) setAttendanceToken(parsed.attendanceToken);
         }
       }
     } catch (_) {}
@@ -105,7 +144,6 @@ export default function TeamDashboardPage() {
         const targetWs = urlParams.get('studio') || activeWorkspace?.workspaceId || activeWorkspace?.studioSlug;
         const cacheKey = `sc_team_portal_cache_${targetWs || 'all'}`;
 
-        // Only set full loading if no shoots/data currently in memory
         if (shoots.length === 0 && deliverables.length === 0) {
           setLoading(true);
         } else {
@@ -137,17 +175,26 @@ export default function TeamDashboardPage() {
         let loadedDelivs = [];
         let loadedSalaries = [];
         let profile = null;
+        let todayAtt = null;
+        let attUrl = null;
+        let attToken = null;
 
         if (json.success) {
           loadedShoots = Array.isArray(json.shoots) ? json.shoots : [];
           loadedDelivs = Array.isArray(json.deliverables) ? json.deliverables : [];
           loadedSalaries = Array.isArray(json.salaries) ? json.salaries : [];
           profile = json.memberProfile || null;
+          todayAtt = json.todayAttendance || null;
+          attUrl = json.attendanceDirectUrl || null;
+          attToken = json.attendanceToken || null;
         }
 
         setShoots(loadedShoots);
         setDeliverables(loadedDelivs);
         setSalaries(loadedSalaries);
+        setTodayAttendance(todayAtt);
+        setAttendanceDirectUrl(attUrl);
+        setAttendanceToken(attToken);
 
         const rawName = profile?.name || activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'Team Member';
         const cleanRate = Number(profile?.default_daily_rate || 0);
@@ -171,7 +218,7 @@ export default function TeamDashboardPage() {
 
         setCurrentMemberProfile(memberObj);
 
-        // Cache response for 0ms next load
+        // Cache for 0ms instant load
         if (typeof window !== 'undefined') {
           try {
             localStorage.setItem(cacheKey, JSON.stringify({
@@ -179,6 +226,9 @@ export default function TeamDashboardPage() {
               deliverables: loadedDelivs,
               salaries: loadedSalaries,
               profile: memberObj,
+              todayAttendance: todayAtt,
+              attendanceDirectUrl: attUrl,
+              attendanceToken: attToken,
             }));
           } catch (_) {}
         }
@@ -208,22 +258,131 @@ export default function TeamDashboardPage() {
 
   const uniqueStudios = Array.from(new Set(shoots.map(s => s.studio_name).filter(Boolean)));
 
+  // Filtered & Sorted Shoots
   const filteredShoots = useMemo(() => {
-    return shoots.filter((s) => {
-      const matchesStudio = selectedStudio === 'all' || s.studio_name === selectedStudio;
-      if (!matchesStudio) return false;
+    return shoots
+      .filter((s) => {
+        const matchesStudio = selectedStudio === 'all' || s.studio_name === selectedStudio;
+        if (!matchesStudio) return false;
 
-      if (activeTab === 'upcoming') {
-        return s.event_date >= today || s.event_date === 'TBD';
-      }
-      if (activeTab === 'completed') {
-        return s.event_date < today && s.event_date !== 'TBD';
-      }
-      return true;
-    });
+        if (activeTab === 'upcoming') {
+          return s.event_date >= today || s.event_date === 'TBD';
+        }
+        if (activeTab === 'completed') {
+          return s.event_date < today && s.event_date !== 'TBD';
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (a.event_date === 'TBD') return 1;
+        if (b.event_date === 'TBD') return -1;
+        return a.event_date.localeCompare(b.event_date);
+      });
   }, [shoots, selectedStudio, activeTab, today]);
 
-  // Combined Financial Metrics across Shoots + Deliverables + Salaries
+  // Group Shoots by Month for Month-Wise View
+  const shootsByMonth = useMemo(() => {
+    const groups: { [key: string]: { label: string; shoots: AssignedShoot[] } } = {};
+
+    filteredShoots.forEach((s) => {
+      let key = 'TBD';
+      let label = 'Upcoming (Dates TBD)';
+
+      if (s.event_date && s.event_date !== 'TBD') {
+        try {
+          const d = new Date(s.event_date);
+          if (!isNaN(d.getTime())) {
+            key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+          }
+        } catch (_) {}
+      }
+
+      if (!groups[key]) {
+        groups[key] = { label, shoots: [] };
+      }
+      groups[key].shoots.push(s);
+    });
+
+    return Object.keys(groups)
+      .sort()
+      .map((key) => groups[key]);
+  }, [filteredShoots]);
+
+  // Group Post-Production Deliverables by Client (Requirement: One Card per Client)
+  const deliverablesByClient = useMemo(() => {
+    const map = new Map<string, {
+      clientName: string;
+      projectId: string;
+      workspaceId: string;
+      items: any[];
+      totalAgreed: number;
+      totalPaid: number;
+      totalBalance: number;
+    }>();
+
+    deliverables.forEach((d) => {
+      const rawClient = (d.client_name || '').trim();
+      const clientName = rawClient && rawClient !== 'Client Project' && rawClient !== 'Wedding Project'
+        ? rawClient
+        : 'Wedding Project';
+
+      const key = clientName.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          clientName: clientName,
+          projectId: d.project_id || '',
+          workspaceId: d.workspace_id || '',
+          items: [],
+          totalAgreed: 0,
+          totalPaid: 0,
+          totalBalance: 0,
+        });
+      }
+
+      const grp = map.get(key)!;
+      grp.items.push(d);
+      grp.totalAgreed += Number(d.agreed_amount) || 0;
+      grp.totalPaid += Number(d.paid_amount) || 0;
+      grp.totalBalance += Number(d.balance_amount) || 0;
+    });
+
+    return Array.from(map.values());
+  }, [deliverables]);
+
+  // Handle in-place deliverable status change
+  async function handleStatusChange(deliverableId: string, projectId: string, newStatus: string) {
+    setUpdatingDelivId(deliverableId);
+
+    // Optimistic Update
+    setDeliverables((prev) =>
+      prev.map((d) => (d.id === deliverableId || d.deliverable_id === deliverableId ? { ...d, status: newStatus } : d))
+    );
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      await fetch('/api/team/deliverable-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          deliverable_id: deliverableId,
+          project_id: projectId,
+          status: newStatus,
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to update deliverable status:', err);
+    } finally {
+      setUpdatingDelivId(null);
+    }
+  }
+
+  // Combined Financial Metrics
   const totalShootAgreed = filteredShoots.reduce((acc, s) => acc + (Number(s.agreed_amount) || 0), 0);
   const totalShootPaid = filteredShoots.reduce((acc, s) => acc + (Number(s.paid_amount) || 0), 0);
   const totalShootBalance = filteredShoots.reduce((acc, s) => acc + (Number(s.balance_amount) || 0), 0);
@@ -240,21 +399,53 @@ export default function TeamDashboardPage() {
   const grandBalance = totalShootBalance + totalDelivBalance;
 
   const studioCode = activeWorkspace?.studioSlug || activeWorkspace?.workspaceId || '';
-  const attendanceUrl = studioCode ? `/team/attendance?studio=${encodeURIComponent(studioCode)}` : '/team/attendance';
+  const attendanceHubUrl = studioCode ? `/team/attendance?studio=${encodeURIComponent(studioCode)}` : '/team/attendance';
+
+  // Attendance live duration calculations
+  const isPunchedIn = Boolean(todayAttendance?.punch_in_time);
+  const isPunchedOut = Boolean(todayAttendance?.punch_out_time);
+  const isCurrentlyWorking = isPunchedIn && !isPunchedOut;
+
+  const liveWorkDurationMinutes = useMemo(() => {
+    if (!todayAttendance?.punch_in_time) return 0;
+    if (todayAttendance?.punch_out_time) {
+      return todayAttendance.duration_minutes || 0;
+    }
+    const inMs = new Date(todayAttendance.punch_in_time).getTime();
+    if (isNaN(inMs)) return 0;
+    return Math.max(0, Math.floor((nowTick - inMs) / 60000));
+  }, [todayAttendance, nowTick]);
+
+  function formatMinutes(mins: number) {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (h === 0) return `${m} mins`;
+    return `${h}h ${m}m`;
+  }
+
+  function formatTime(isoStr?: string | null) {
+    if (!isoStr) return '—';
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    } catch (_) {
+      return isoStr;
+    }
+  }
 
   return (
-    <SidebarLayout>
+    <div className="w-full">
       <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-6">
-        
-        {/* Top Header Banner */}
+
+        {/* ── TOP HEADER (CLEANED: No deliverables/finance/ledger buttons) ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#EBE7DF]">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-[#92400e] border border-amber-200 font-black">
                 Crew &amp; Freelancer Portal
               </span>
               <span className="text-xs text-zinc-400">•</span>
-              <span className="text-xs font-bold text-zinc-500">{userRole || 'Crew Member'}</span>
+              <span className="text-xs font-bold text-zinc-600">{userRole || 'Crew Member'}</span>
               {isSyncing && (
                 <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200/80 font-bold animate-pulse">
                   Syncing live...
@@ -265,90 +456,146 @@ export default function TeamDashboardPage() {
               My Assigned Work &amp; Schedule
             </h1>
             <p className="text-xs sm:text-sm text-zinc-500 mt-1 font-medium">
-              View live call times, post-production edits, monthly salary slips, and payment statuses.
+              Real-time schedule, call times, post-production edits, and daily shift attendance.
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <button
-              type="button"
-              onClick={() => {
-                if (currentMemberProfile) {
-                  setSelectedDeliverablesMember({
-                    ...currentMemberProfile,
-                    studio_name: selectedStudio !== 'all' ? selectedStudio : (shoots[0]?.studio_name || workspaceName)
-                  });
-                  setIsDeliverablesModalOpen(true);
-                }
-              }}
-              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-              title="Open full assigned shoots, deliverables & invoices in Read-Only mode"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>Deliverables &amp; Invoices</span>
-            </button>
-
-            <Link
-              href="/team/finance"
-              className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5"
-              title="Open full transparent financial ledger and salary slips"
-            >
-              <IndianRupee className="w-3.5 h-3.5 text-emerald-200" />
-              <span>Finance &amp; Payouts</span>
-            </Link>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (currentMemberProfile) {
-                  setSelectedFinanceMember({
-                    ...currentMemberProfile,
-                    studio_name: selectedStudio !== 'all' ? selectedStudio : (shoots[0]?.studio_name || workspaceName)
-                  });
-                  setFinanceInitialTab('bookings');
-                  setIsFinanceDrawerOpen(true);
-                }
-              }}
-              className="px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-black text-amber-300 font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer border border-stone-800"
-              title="Open financial breakdown, payments, and salary slips"
-            >
-              <Receipt className="w-3.5 h-3.5 text-amber-400" />
-              <span>Financial Ledger</span>
-            </button>
-
+          <div className="flex items-center gap-2.5">
             <WorkspaceSwitcher />
           </div>
         </div>
 
-        {/* Smart Attendance Quick Access Banner */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/50 to-emerald-50 border border-emerald-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white border border-emerald-300 flex items-center justify-center text-emerald-700 shadow-2xs shrink-0">
-              <Clock className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-black text-emerald-950">Daily Smart Attendance &amp; Punch</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-200/60 text-emerald-900 font-bold">Live</span>
+        {/* ── DAILY ATTENDANCE & PUNCH-IN BANNER (PROMINENT AT TOP) ── */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            
+            <div className="flex items-start sm:items-center gap-3.5">
+              {/* Photo or Status Avatar */}
+              <div className="relative shrink-0">
+                {todayAttendance?.punch_in_photo ? (
+                  <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-xs bg-stone-100">
+                    <img
+                      src={todayAttendance.punch_in_photo}
+                      alt="Today Punch-in Selfie"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shadow-xs ${
+                    isCurrentlyWorking
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                      : isPunchedOut
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'bg-amber-50 border-amber-200 text-amber-700'
+                  }`}>
+                    {isCurrentlyWorking ? (
+                      <Clock className="w-6 h-6 animate-spin-slow" />
+                    ) : isPunchedOut ? (
+                      <CheckCircle2 className="w-6 h-6" />
+                    ) : (
+                      <Camera className="w-6 h-6" />
+                    )}
+                  </div>
+                )}
+                {isCurrentlyWorking && (
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full animate-ping" />
+                )}
               </div>
-              <p className="text-xs text-emerald-800/80 mt-0.5">
-                Mark your daily shift punch-in/out, live timer, and view complete monthly calendar attendance.
-              </p>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <Link
-              href={attendanceUrl}
-              className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-            >
-              <span>Open Attendance Hub</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </Link>
+              {/* Attendance Details */}
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-black text-zinc-900">
+                    {isCurrentlyWorking
+                      ? 'Shift Active (Working Live)'
+                      : isPunchedOut
+                      ? 'Shift Completed Today'
+                      : 'Daily Shift Attendance'}
+                  </h3>
+
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                    isCurrentlyWorking
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : isPunchedOut
+                      ? 'bg-blue-50 text-blue-800 border-blue-300'
+                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                  }`}>
+                    {isCurrentlyWorking
+                      ? '● PUNCHE-IN'
+                      : isPunchedOut
+                      ? '✓ COMPLETED'
+                      : 'NOT PUNCHED IN'}
+                  </span>
+                </div>
+
+                {/* Punch Timings & Duration */}
+                {isPunchedIn ? (
+                  <div className="flex items-center gap-3 text-xs text-zinc-600 font-medium pt-0.5 flex-wrap">
+                    <span>
+                      In: <strong className="text-zinc-900 font-mono">{formatTime(todayAttendance?.punch_in_time)}</strong>
+                    </span>
+                    {isPunchedOut && (
+                      <>
+                        <span className="text-zinc-300">•</span>
+                        <span>
+                          Out: <strong className="text-zinc-900 font-mono">{formatTime(todayAttendance?.punch_out_time)}</strong>
+                        </span>
+                      </>
+                    )}
+                    <span className="text-zinc-300">•</span>
+                    <span className="text-emerald-700 font-bold">
+                      Duration: {formatMinutes(liveWorkDurationMinutes)}
+                    </span>
+                    {todayAttendance?.location_address && (
+                      <>
+                        <span className="text-zinc-300 hidden sm:inline">•</span>
+                        <span className="text-zinc-500 text-[11px] truncate max-w-[200px] hidden sm:inline">
+                          {todayAttendance.location_address}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500 pt-0.5">
+                    Mark your daily selfie punch-in to record shift timings, location verification, and daily work hours.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Attendance Action Buttons */}
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              {!isPunchedIn ? (
+                <Link
+                  href={attendanceDirectUrl || attendanceHubUrl}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Punch In Today</span>
+                </Link>
+              ) : isCurrentlyWorking ? (
+                <Link
+                  href={attendanceDirectUrl || attendanceHubUrl}
+                  className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Punch Out / Finish Shift</span>
+                </Link>
+              ) : null}
+
+              <Link
+                href={attendanceHubUrl}
+                className="px-3.5 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition flex items-center gap-1"
+                title="View monthly calendar attendance and shift logs"
+              >
+                <span>Attendance Hub</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
           </div>
         </div>
 
-        {/* 3 Metric Cards */}
+        {/* ── 3 CLEAN METRIC CARDS ── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
             <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
@@ -390,7 +637,7 @@ export default function TeamDashboardPage() {
           </div>
         </div>
 
-        {/* Primary Navigation Tabs: Shoots vs Post-Production vs Salary Slips */}
+        {/* ── PRIMARY SECTION TABS ── */}
         <div className="flex items-center gap-1.5 p-1 bg-white border border-[#EBE7DF] rounded-xl overflow-x-auto shadow-2xs">
           <button
             type="button"
@@ -426,41 +673,55 @@ export default function TeamDashboardPage() {
           </button>
         </div>
 
-        {/* TAB 1: Assigned Shoots List */}
+        {/* ── TAB 1: ASSIGNED SHOOTS ── */}
         {dashboardTab === 'shoots' && (
           <div className="space-y-4">
-            {/* Sub-Filter Bar */}
+            
+            {/* Filter & View Switcher Bar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              
+              {/* Requirement: ALL first, then UPCOMING, then COMPLETED */}
               <div className="flex p-1 bg-white border border-[#EBE7DF] rounded-xl text-xs font-bold shadow-2xs">
                 <button
-                  onClick={() => setActiveTab('upcoming')}
-                  className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-                    activeTab === 'upcoming' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
-                  }`}
-                >
-                  Upcoming ({shoots.filter(s => s.event_date >= today || s.event_date === 'TBD').length})
-                </button>
-                <button
-                  onClick={() => setActiveTab('completed')}
-                  className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-                    activeTab === 'completed' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
-                  }`}
-                >
-                  Completed ({shoots.filter(s => s.event_date < today && s.event_date !== 'TBD').length})
-                </button>
-                <button
+                  type="button"
                   onClick={() => setActiveTab('all')}
                   className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-                    activeTab === 'all' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
+                    activeTab === 'all'
+                      ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs font-black'
+                      : 'text-zinc-500 hover:text-zinc-900'
                   }`}
                 >
                   All ({shoots.length})
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('upcoming')}
+                  className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                    activeTab === 'upcoming'
+                      ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs font-black'
+                      : 'text-zinc-500 hover:text-zinc-900'
+                  }`}
+                >
+                  Upcoming ({shoots.filter(s => s.event_date >= today || s.event_date === 'TBD').length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('completed')}
+                  className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                    activeTab === 'completed'
+                      ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs font-black'
+                      : 'text-zinc-500 hover:text-zinc-900'
+                  }`}
+                >
+                  Completed ({shoots.filter(s => s.event_date < today && s.event_date !== 'TBD').length})
+                </button>
               </div>
 
-              {uniqueStudios.length > 1 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-400 font-bold uppercase">Studio:</span>
+              {/* View Switcher: Card View | List View | Month-Wise View */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {uniqueStudios.length > 1 && (
                   <select
                     value={selectedStudio}
                     onChange={(e) => setSelectedStudio(e.target.value)}
@@ -471,10 +732,49 @@ export default function TeamDashboardPage() {
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
+                )}
+
+                <div className="flex items-center p-1 bg-white border border-[#EBE7DF] rounded-xl shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('grid')}
+                    className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'grid' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-900'
+                    }`}
+                    title="Card Grid View"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Cards</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('list')}
+                    className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'list' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-900'
+                    }`}
+                    title="Compact List View"
+                  >
+                    <List className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">List</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('month')}
+                    className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'month' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-900'
+                    }`}
+                    title="Chronological Month-Wise Sequence View"
+                  >
+                    <CalendarDays className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Month-Wise</span>
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
 
+            {/* Content Display based on View Mode */}
             {loading && shoots.length === 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[1, 2, 3].map((i) => (
@@ -485,10 +785,6 @@ export default function TeamDashboardPage() {
                     </div>
                     <div className="h-6 bg-zinc-200 rounded w-3/4" />
                     <div className="h-4 bg-zinc-100 rounded w-1/2" />
-                    <div className="pt-3 border-t border-zinc-100 flex justify-between">
-                      <div className="h-4 bg-zinc-100 rounded w-1/4" />
-                      <div className="h-4 bg-emerald-100 rounded w-1/4" />
-                    </div>
                   </div>
                 ))}
               </div>
@@ -502,75 +798,231 @@ export default function TeamDashboardPage() {
                     : 'No shoots found under the selected filter.'}
                 </p>
               </div>
-            ) : (
+            ) : viewMode === 'grid' ? (
+              /* ── 1. CARD VIEW (CLEAN, MINIMAL, FAST) ── */
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredShoots.map((shoot) => (
-                  <div
-                    key={shoot.assignment_id}
-                    onClick={() => {
-                      if (currentMemberProfile) {
-                        setSelectedDeliverablesMember({
-                          ...currentMemberProfile,
-                          studio_name: shoot.studio_name || workspaceName
-                        });
-                        setIsDeliverablesModalOpen(true);
-                      }
-                    }}
-                    className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between group cursor-pointer"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-3">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600 border border-zinc-200">
-                          {shoot.studio_name}
-                        </span>
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
-                          {shoot.role_name}
-                        </span>
+                {filteredShoots.map((shoot) => {
+                  const agreed = Number(shoot.agreed_amount) || 0;
+                  const isPaid = (shoot.payment_status || '').toUpperCase() === 'PAID';
+
+                  return (
+                    <div
+                      key={shoot.assignment_id}
+                      onClick={() => {
+                        setSelectedShoot(shoot);
+                        setIsShootModalOpen(true);
+                      }}
+                      className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between group cursor-pointer"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600 border border-zinc-200">
+                            {shoot.studio_name}
+                          </span>
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                            {shoot.role_name}
+                          </span>
+                        </div>
+
+                        <h3 className="text-base font-serif font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
+                          {shoot.couple_name || shoot.client_name || 'Wedding Event'}
+                        </h3>
+                        <p className="text-xs font-bold text-amber-700 mt-0.5">{shoot.event_name}</p>
+
+                        <div className="mt-4 space-y-2 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                            <span className="font-bold">{shoot.event_date}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                            <span>{shoot.start_time || 'TBD'} {shoot.end_time ? `– ${shoot.end_time}` : ''}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                            <span className="truncate">{shoot.venue_location || 'Venue TBD'}</span>
+                          </div>
+                        </div>
                       </div>
 
-                      <h3 className="text-base font-serif font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
-                        {shoot.couple_name}
-                      </h3>
-                      <p className="text-xs font-bold text-amber-700 mt-0.5">{shoot.event_name}</p>
+                      <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] text-zinc-400 uppercase font-black block">Agreed Fee</span>
+                          <span className="text-sm font-black text-zinc-900 font-mono">
+                            ₹{agreed.toLocaleString('en-IN')}
+                          </span>
+                        </div>
 
-                      <div className="mt-4 space-y-2 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
                         <div className="flex items-center gap-2">
-                          <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                          <span className="font-bold">{shoot.event_date}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                          <span>{shoot.start_time || 'TBD'} - {shoot.end_time || 'TBD'}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                          <span className="truncate">{shoot.venue_location || 'Venue TBD'}</span>
+                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                            isPaid 
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                              : 'bg-amber-50 text-[#92400e] border border-amber-200'
+                          }`}>
+                            {shoot.payment_status?.toUpperCase() || (isPaid ? 'PAID' : 'PENDING')}
+                          </span>
+
+                          <span className="text-xs font-bold text-amber-700 group-hover:text-amber-800 flex items-center gap-0.5">
+                            <span>View</span>
+                            <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                          </span>
                         </div>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            ) : viewMode === 'list' ? (
+              /* ── 2. COMPACT LIST VIEW ── */
+              <div className="bg-white rounded-2xl border border-[#EBE7DF] overflow-hidden shadow-2xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-zinc-50 text-zinc-500 font-black uppercase text-[10px] border-b border-zinc-200">
+                      <tr>
+                        <th className="p-3.5">Couple &amp; Event</th>
+                        <th className="p-3.5">Shoot Date</th>
+                        <th className="p-3.5">Call Timing</th>
+                        <th className="p-3.5">Venue Location</th>
+                        <th className="p-3.5">Assigned Role</th>
+                        <th className="p-3.5">Agreed Fee</th>
+                        <th className="p-3.5">Status</th>
+                        <th className="p-3.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {filteredShoots.map((shoot) => {
+                        const agreed = Number(shoot.agreed_amount) || 0;
+                        const isPaid = (shoot.payment_status || '').toUpperCase() === 'PAID';
 
-                    <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] text-zinc-400 uppercase font-black block">Agreed Fee</span>
-                        <span className="text-sm font-black text-zinc-900 font-mono">
-                          ₹{shoot.agreed_amount?.toLocaleString('en-IN') || 0}
-                        </span>
-                      </div>
+                        return (
+                          <tr
+                            key={shoot.assignment_id}
+                            onClick={() => {
+                              setSelectedShoot(shoot);
+                              setIsShootModalOpen(true);
+                            }}
+                            className="hover:bg-zinc-50/70 transition cursor-pointer"
+                          >
+                            <td className="p-3.5">
+                              <span className="font-bold text-zinc-900 block">{shoot.couple_name}</span>
+                              <span className="text-[11px] text-amber-700 font-medium">{shoot.event_name}</span>
+                            </td>
+                            <td className="p-3.5 font-bold text-zinc-800">{shoot.event_date}</td>
+                            <td className="p-3.5 text-zinc-600">{shoot.start_time || 'TBD'}</td>
+                            <td className="p-3.5 text-zinc-600 max-w-[180px] truncate">{shoot.venue_location || 'Venue TBD'}</td>
+                            <td className="p-3.5">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                {shoot.role_name}
+                              </span>
+                            </td>
+                            <td className="p-3.5 font-mono font-bold text-zinc-900">₹{agreed.toLocaleString('en-IN')}</td>
+                            <td className="p-3.5">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                isPaid
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}>
+                                {shoot.payment_status?.toUpperCase() || (isPaid ? 'PAID' : 'PENDING')}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <button
+                                type="button"
+                                className="px-3 py-1 rounded-lg bg-zinc-900 hover:bg-black text-white text-[11px] font-bold transition"
+                              >
+                                View
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              /* ── 3. CHRONOLOGICAL MONTH-WISE VIEW ── */
+              <div className="space-y-6">
+                {shootsByMonth.map((group) => (
+                  <div key={group.label} className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <CalendarDays className="w-4 h-4 text-amber-700" />
+                      <h3 className="text-sm font-black text-zinc-900 uppercase tracking-wide">
+                        {group.label} ({group.shoots.length})
+                      </h3>
+                      <div className="flex-1 h-px bg-zinc-200" />
+                    </div>
 
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                          shoot.payment_status === 'paid' 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                            : 'bg-amber-50 text-[#92400e] border border-amber-200'
-                        }`}>
-                          {shoot.payment_status?.toUpperCase()}
-                        </span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {group.shoots.map((shoot) => {
+                        const agreed = Number(shoot.agreed_amount) || 0;
+                        const isPaid = (shoot.payment_status || '').toUpperCase() === 'PAID';
 
-                        <span className="text-xs font-bold text-amber-700 group-hover:text-amber-800 flex items-center gap-0.5">
-                          <span>View</span>
-                          <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                        </span>
-                      </div>
+                        return (
+                          <div
+                            key={shoot.assignment_id}
+                            onClick={() => {
+                              setSelectedShoot(shoot);
+                              setIsShootModalOpen(true);
+                            }}
+                            className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between group cursor-pointer"
+                          >
+                            <div>
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600">
+                                  {shoot.studio_name}
+                                </span>
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                                  {shoot.role_name}
+                                </span>
+                              </div>
+
+                              <h4 className="text-base font-serif font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
+                                {shoot.couple_name}
+                              </h4>
+                              <p className="text-xs font-bold text-amber-700 mt-0.5">{shoot.event_name}</p>
+
+                              <div className="mt-3.5 space-y-1.5 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span className="font-bold text-zinc-900">{shoot.event_date}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                  <span>{shoot.start_time || 'TBD'} {shoot.end_time ? `– ${shoot.end_time}` : ''}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                  <span className="truncate">{shoot.venue_location || 'Venue TBD'}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between">
+                              <div>
+                                <span className="text-[10px] text-zinc-400 uppercase font-black block">Agreed Fee</span>
+                                <span className="text-sm font-black text-zinc-900 font-mono">
+                                  ₹{agreed.toLocaleString('en-IN')}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  isPaid 
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                    : 'bg-amber-50 text-[#92400e] border border-amber-200'
+                                }`}>
+                                  {shoot.payment_status?.toUpperCase() || (isPaid ? 'PAID' : 'PENDING')}
+                                </span>
+                                <span className="text-xs font-bold text-amber-700 flex items-center gap-0.5">
+                                  <span>View</span>
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -579,15 +1031,15 @@ export default function TeamDashboardPage() {
           </div>
         )}
 
-        {/* TAB 2: Post-Production Deliverables List */}
+        {/* ── TAB 2: POST-PRODUCTION DELIVERABLES (GROUPED BY CLIENT) ── */}
         {dashboardTab === 'deliverables' && (
           <div className="space-y-4">
             {deliverables.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-3xl border border-[#EBE7DF] space-y-3">
                 <Sparkles className="w-10 h-10 text-zinc-300 mx-auto" />
-                <h3 className="text-base font-black text-zinc-700">No Post-Production Deliverables Assigned</h3>
+                <h3 className="text-base font-black text-zinc-700">No Post-Production Projects Assigned</h3>
                 <p className="text-xs text-zinc-500 max-w-md mx-auto">
-                  When projects or deliverables (teaser, film, photos, albums) are assigned to you by the studio owner, they will be listed here with live statuses and due dates.
+                  When projects or editing deliverables (teaser, full wedding film, photos, albums) are assigned to you by the studio owner, they will appear here grouped by client.
                 </p>
                 <Link
                   href="/workspace/post-production"
@@ -598,80 +1050,142 @@ export default function TeamDashboardPage() {
                 </Link>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {deliverables.map((deliv) => {
-                  const agreed = Number(deliv.agreed_amount) || 0;
-                  const paid = Number(deliv.paid_amount) || 0;
-                  const balance = Number(deliv.balance_amount) || 0;
-                  const isSettled = balance <= 0 && agreed > 0;
-
+              /* Requirement: Group multiple deliverables under ONE CARD per client */
+              <div className="space-y-4">
+                {deliverablesByClient.map((clientGroup) => {
                   return (
                     <div
-                      key={deliv.id}
-                      className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between gap-3 group"
+                      key={clientGroup.clientName}
+                      className="p-5 sm:p-6 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs space-y-4"
                     >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-zinc-100 text-zinc-700 border border-zinc-200">
-                            {deliv.segment || 'Wedding'} • {deliv.category || 'Deliverable'}
-                          </span>
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                            isSettled
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : agreed === 0
-                              ? 'bg-zinc-50 text-zinc-600 border-zinc-200'
-                              : 'bg-amber-50 text-amber-700 border-amber-200'
-                          }`}>
-                            {isSettled ? '✓ Fully Paid' : agreed === 0 ? 'Rate TBD' : `Pending ₹${balance.toLocaleString('en-IN')}`}
-                          </span>
+                      {/* Client Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-100">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              Client Project
+                            </span>
+                            <span className="text-xs text-zinc-400">•</span>
+                            <span className="text-xs font-bold text-zinc-500">
+                              {clientGroup.items.length} {clientGroup.items.length === 1 ? 'Deliverable' : 'Deliverables'}
+                            </span>
+                          </div>
+                          <h3 className="text-lg sm:text-xl font-serif font-black text-zinc-900">
+                            {clientGroup.clientName}
+                          </h3>
                         </div>
 
-                        <h3 className="text-base font-black text-zinc-900 group-hover:text-amber-800 transition line-clamp-1">
-                          {deliv.client_name || 'Client Project'}
-                        </h3>
-                        <p className="text-xs font-bold text-amber-700 flex items-center gap-1 mt-0.5">
-                          <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          <span>{deliv.title}</span>
-                        </p>
-
-                        <div className="mt-3.5 space-y-2 text-xs text-zinc-600 bg-zinc-50/80 p-3 rounded-xl border border-zinc-100">
-                          <div className="flex items-center justify-between">
-                            <span className="text-zinc-500 font-medium">Due Date:</span>
-                            <span className="font-bold text-zinc-800">{deliv.due_date || 'TBD'}</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-zinc-500 font-medium">Production Status:</span>
-                            <span className="font-bold text-amber-800">{deliv.status}</span>
-                          </div>
-                          {deliv.specs && (
-                            <div className="flex items-center justify-between">
-                              <span className="text-zinc-500 font-medium">Specs:</span>
-                              <span className="font-bold text-zinc-800">{deliv.specs}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="mt-2 pt-3 border-t border-zinc-100 flex items-center justify-between">
-                        <div className="flex items-center gap-3 text-xs">
+                        {/* Client Commercial Summary */}
+                        <div className="flex items-center gap-4 text-xs bg-zinc-50 px-4 py-2 rounded-xl border border-zinc-100 self-start sm:self-auto">
                           <div>
-                            <span className="text-[9px] text-zinc-400 uppercase font-black block">Agreed</span>
-                            <span className="font-black text-zinc-900 font-mono text-sm">₹{agreed.toLocaleString('en-IN')}</span>
+                            <span className="text-[9px] uppercase font-bold text-zinc-400 block">Total Agreed</span>
+                            <span className="font-black text-zinc-900 font-mono">
+                              ₹{clientGroup.totalAgreed.toLocaleString('en-IN')}
+                            </span>
                           </div>
                           <div className="text-zinc-200">|</div>
                           <div>
-                            <span className="text-[9px] text-zinc-400 uppercase font-black block">Paid</span>
-                            <span className="font-black text-emerald-600 font-mono text-sm">₹{paid.toLocaleString('en-IN')}</span>
+                            <span className="text-[9px] uppercase font-bold text-emerald-600 block">Paid</span>
+                            <span className="font-black text-emerald-600 font-mono">
+                              ₹{clientGroup.totalPaid.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                          <div className="text-zinc-200">|</div>
+                          <div>
+                            <span className="text-[9px] uppercase font-bold text-amber-700 block">Balance</span>
+                            <span className="font-black text-amber-800 font-mono">
+                              ₹{clientGroup.totalBalance.toLocaleString('en-IN')}
+                            </span>
                           </div>
                         </div>
+                      </div>
 
-                        <Link
-                          href="/workspace/post-production"
-                          className="px-3 py-1 rounded-lg bg-zinc-900 hover:bg-black text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
-                        >
-                          <span>Open Suite</span>
-                          <ExternalLink className="w-3 h-3 text-zinc-400" />
-                        </Link>
+                      {/* Items List Inside Client Card */}
+                      <div className="space-y-3">
+                        {clientGroup.items.map((deliv) => {
+                          const agreed = Number(deliv.agreed_amount) || 0;
+                          const paid = Number(deliv.paid_amount) || 0;
+                          const bal = Number(deliv.balance_amount) || 0;
+                          const isSettled = bal <= 0 && agreed > 0;
+                          const isUpdating = updatingDelivId === deliv.id;
+
+                          return (
+                            <div
+                              key={deliv.id}
+                              className="p-4 rounded-xl bg-zinc-50/70 border border-zinc-200/80 hover:border-zinc-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="text-sm font-bold text-zinc-900 flex items-center gap-1.5">
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>{deliv.title}</span>
+                                  </h4>
+
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-200/60 text-zinc-700">
+                                    {deliv.segment || 'Wedding'} • {deliv.category || 'Deliverable'}
+                                  </span>
+
+                                  {deliv.specs && (
+                                    <span className="text-[10px] text-zinc-500 font-medium">
+                                      Specs: {deliv.specs}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-4 text-xs text-zinc-500 flex-wrap">
+                                  <span>
+                                    Due Date: <strong className="text-zinc-800 font-bold">{deliv.due_date || 'TBD'}</strong>
+                                  </span>
+                                  <span>•</span>
+                                  <span>
+                                    Agreed: <strong className="text-zinc-800 font-mono font-bold">₹{agreed.toLocaleString('en-IN')}</strong>
+                                  </span>
+                                  <span>•</span>
+                                  <span className={isSettled ? 'text-emerald-700 font-bold' : 'text-amber-800 font-bold'}>
+                                    {isSettled ? '✓ Paid' : `Bal: ₹${bal.toLocaleString('en-IN')}`}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Interactive Status Changer Dropdown */}
+                              <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] uppercase font-bold text-zinc-400">Status:</span>
+                                  <select
+                                    disabled={isUpdating}
+                                    value={deliv.status || 'Upcoming'}
+                                    onChange={(e) => handleStatusChange(deliv.id, clientGroup.projectId, e.target.value)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer shadow-2xs focus:outline-none ${
+                                      deliv.status === 'Completed'
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                        : deliv.status === 'Review Ready'
+                                        ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                        : deliv.status === 'In Progress'
+                                        ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                        : deliv.status === 'Revision'
+                                        ? 'bg-rose-50 text-rose-800 border-rose-300'
+                                        : 'bg-white text-zinc-700 border-zinc-300'
+                                    }`}
+                                  >
+                                    <option value="Upcoming">Upcoming</option>
+                                    <option value="In Progress">In Progress</option>
+                                    <option value="Review Ready">Review Ready</option>
+                                    <option value="Revision">Revision</option>
+                                    <option value="Completed">Completed</option>
+                                  </select>
+                                </div>
+
+                                <Link
+                                  href="/workspace/post-production"
+                                  className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200/60 transition"
+                                  title="Open in Post-Production Suite"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </Link>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -681,7 +1195,7 @@ export default function TeamDashboardPage() {
           </div>
         )}
 
-        {/* TAB 3: Salary Slips List */}
+        {/* ── TAB 3: SALARY SLIPS ── */}
         {dashboardTab === 'salaries' && (
           <div className="space-y-4">
             {salaries.length === 0 ? (
@@ -689,7 +1203,7 @@ export default function TeamDashboardPage() {
                 <FileText className="w-10 h-10 text-zinc-300 mx-auto" />
                 <h3 className="text-base font-black text-zinc-700">No Salary Slips Generated Yet</h3>
                 <p className="text-xs text-zinc-500 max-w-md mx-auto">
-                  When your studio owner generates a monthly salary slip or payout voucher, it will automatically appear here with a 1-click download button.
+                  When your studio owner generates a monthly salary slip or payout voucher, it will automatically appear here with full transparency.
                 </p>
               </div>
             ) : (
@@ -769,41 +1283,33 @@ export default function TeamDashboardPage() {
           </div>
         )}
 
-        {/* Read-Only Vendor & Crew Assignments, Deliverables & Invoicing Modal */}
-        {selectedDeliverablesMember && (
-          <VendorAlbumDeliverablesModal
-            isOpen={isDeliverablesModalOpen}
+        {/* ── SHOOT DETAILS MODAL ── */}
+        <ShootDetailsModal
+          isOpen={isShootModalOpen}
+          onClose={() => {
+            setIsShootModalOpen(false);
+            setSelectedShoot(null);
+          }}
+          shoot={selectedShoot}
+        />
+
+        {/* ── FINANCIAL LEDGER & SALARY SLIPS DRAWER ── */}
+        {isFinanceDrawerOpen && (
+          <TeamMemberFinanceDrawer
+            isOpen={isFinanceDrawerOpen}
+            initialTab={financeInitialTab}
             onClose={() => {
-              setIsDeliverablesModalOpen(false);
-              setSelectedDeliverablesMember(null);
+              setIsFinanceDrawerOpen(false);
+              setSelectedFinanceMember(null);
             }}
-            workspaceId={selectedDeliverablesMember.workspace_id || ''}
-            vendor={selectedDeliverablesMember}
-            studioName={selectedDeliverablesMember.studio_name || workspaceName || 'Partner Studio'}
+            workspaceId={selectedFinanceMember?.workspace_id || ''}
+            workspaceName={selectedFinanceMember?.studio_name || workspaceName || 'Partner Studio'}
+            member={selectedFinanceMember || currentMemberProfile}
             isReadOnly={true}
-            onOpenSalaryDrawer={(m) => {
-              setSelectedFinanceMember(m || selectedDeliverablesMember);
-              setFinanceInitialTab('payroll');
-              setIsFinanceDrawerOpen(true);
-            }}
           />
         )}
 
-        {/* Read-Only Financial Breakdown & Salary Slips Drawer */}
-        <TeamMemberFinanceDrawer
-          isOpen={isFinanceDrawerOpen}
-          initialTab={financeInitialTab}
-          onClose={() => {
-            setIsFinanceDrawerOpen(false);
-            setSelectedFinanceMember(null);
-          }}
-          workspaceId={selectedFinanceMember?.workspace_id || ''}
-          workspaceName={selectedFinanceMember?.studio_name || workspaceName || 'StudioCore Partner Studio'}
-          member={selectedFinanceMember || currentMemberProfile}
-          isReadOnly={true}
-        />
-
       </div>
-    </SidebarLayout>
+    </div>
   );
 }
