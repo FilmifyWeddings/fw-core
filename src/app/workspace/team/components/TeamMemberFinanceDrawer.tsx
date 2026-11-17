@@ -156,12 +156,23 @@ export default function TeamMemberFinanceDrawer({
   useEffect(() => {
     if (isOpen) {
       if (initialTab) {
-        setActiveTab(initialTab as any);
-      } else if (isLab || isPartner) {
-        setActiveTab('album_printing');
+        if (initialTab === 'album_printing' && albumOrders.length === 0 && !isLab) {
+          setActiveTab('bookings');
+        } else {
+          setActiveTab(initialTab as any);
+        }
+      } else if (isLab || albumOrders.length > 0) {
+        if (isLab) setActiveTab('album_printing');
       }
     }
-  }, [isOpen, initialTab, isLab, isPartner]);
+  }, [isOpen, initialTab, isLab, isPartner, albumOrders.length]);
+
+  // If on album_printing tab but member has no assigned album orders and is not a lab, switch to bookings/deliverables
+  useEffect(() => {
+    if (activeTab === 'album_printing' && albumOrders.length === 0 && !isLab) {
+      setActiveTab(deliverables.length > 0 ? 'deliverables' : 'bookings');
+    }
+  }, [activeTab, albumOrders.length, isLab, deliverables.length]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Data States
@@ -364,7 +375,7 @@ export default function TeamMemberFinanceDrawer({
           .eq('member_id', member.id)
           .order('month_year', { ascending: false }),
 
-        fetchPartnerAlbumOrders(workspaceId || '', member.id),
+        fetchPartnerAlbumOrders(workspaceId || '', member.id, member.name, member.email),
 
         fetchMemberDeliverables(workspaceId || '', [member.id])
       ]);
@@ -1455,19 +1466,21 @@ export default function TeamMemberFinanceDrawer({
                 {deliverables.length}
               </span>
             </button>
-            <button
-              onClick={() => setActiveTab('album_printing')}
-              className={`py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'album_printing'
-                  ? 'bg-amber-600 text-white shadow-xs font-black'
-                  : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200/80 hover:bg-stone-50'
-              }`}
-            >
-              <span>📖 Album Printing &amp; Lab</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${activeTab === 'album_printing' ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'}`}>
-                {albumOrders.length}
-              </span>
-            </button>
+            {(albumOrders.length > 0 || isLab) && (
+              <button
+                onClick={() => setActiveTab('album_printing')}
+                className={`py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                  activeTab === 'album_printing'
+                    ? 'bg-amber-600 text-white shadow-xs font-black'
+                    : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200/80 hover:bg-stone-50'
+                }`}
+              >
+                <span>📖 Album Designing &amp; Printing Lab</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${activeTab === 'album_printing' ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'}`}>
+                  {albumOrders.length}
+                </span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('payroll')}
               className={`py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
@@ -1996,10 +2009,10 @@ export default function TeamMemberFinanceDrawer({
                   <div>
                     <h3 className="text-xs sm:text-sm font-black text-amber-950 flex items-center gap-1.5">
                       <BookOpen className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Album Printing &amp; Lab Commercials</span>
+                      <span>Album Designing &amp; Printing Lab Commercials</span>
                     </h3>
                     <p className="text-[10px] text-stone-500 font-medium">
-                      Manage printing jobs, page counts, production status, and lab payments.
+                      Manage designing &amp; printing deliverables, client jobs, production status, and payments.
                     </p>
                   </div>
 
@@ -2183,6 +2196,7 @@ export default function TeamMemberFinanceDrawer({
                       })
                       .map((order) => {
                         const isSettled = order.balance_amount <= 0 && order.total_amount > 0;
+                        const isDesigningOrder = order.category === 'album_design' || (order.role && /design/i.test(order.role));
                         return (
                           <div 
                             key={order.id}
@@ -2200,7 +2214,14 @@ export default function TeamMemberFinanceDrawer({
                                   <span className="text-xs sm:text-sm font-black text-stone-900">
                                     {order.client_name}
                                   </span>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                    isDesigningOrder 
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300' 
+                                      : 'bg-purple-100 text-purple-900 border-purple-300'
+                                  }`}>
+                                    {isDesigningOrder ? '🎨 Album Designing' : '🖨️ Album Printing'}
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-800 border border-stone-200">
                                     📖 {order.album_type || 'Wedding Album'}
                                   </span>
                                   {order.sheet_count > 0 && (
@@ -2228,7 +2249,7 @@ export default function TeamMemberFinanceDrawer({
                               <div className="flex items-center gap-1.5 shrink-0">
                                 {/* Quick status dropdown */}
                                 <select
-                                  value={order.order_status || 'PRINTING'}
+                                  value={order.order_status || (isDesigningOrder ? 'In Progress' : 'PRINTING')}
                                   onChange={async (e) => {
                                     const newStatus = e.target.value as any;
                                     setAlbumOrders(prev => prev.map(o => o.id === order.id ? { ...o, order_status: newStatus } : o));
@@ -2239,11 +2260,24 @@ export default function TeamMemberFinanceDrawer({
                                   }}
                                   className="text-[10px] font-black px-2 py-1 rounded-lg border border-stone-200 bg-stone-50 text-stone-800 cursor-pointer shadow-2xs"
                                 >
-                                  <option value="DESIGNING">🎨 Designing</option>
-                                  <option value="PRINTING">🖨️ In Printing</option>
-                                  <option value="BINDING">📦 Binding / QA</option>
-                                  <option value="DISPATCHED">🚚 Dispatched</option>
-                                  <option value="DELIVERED">✅ Delivered</option>
+                                  {isDesigningOrder ? (
+                                    <>
+                                      <option value="Pending">⏳ Pending</option>
+                                      <option value="In Progress">🎨 In Designing</option>
+                                      <option value="Client Review">👁️ Client Review</option>
+                                      <option value="Changes Requested">⚡ Changes Requested</option>
+                                      <option value="Completed">✅ Design Completed</option>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <option value="Pending">⏳ Pending</option>
+                                      <option value="Sent for Printing">📤 Sent for Printing</option>
+                                      <option value="Printing In Progress">🖨️ In Printing</option>
+                                      <option value="Quality Check">📦 Quality Check / Binding</option>
+                                      <option value="Dispatched">🚚 Dispatched</option>
+                                      <option value="Delivered">✅ Delivered</option>
+                                    </>
+                                  )}
                                 </select>
 
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
@@ -2282,20 +2316,20 @@ export default function TeamMemberFinanceDrawer({
                               onClick={() => {
                                 setPaymentTarget({
                                   id: order.id,
-                                  title: order.album_type || 'Album Printing',
+                                  title: `${isDesigningOrder ? 'Album Designing' : 'Album Printing'}: ${order.album_type || 'Wedding Album'}`,
                                   clientName: order.client_name,
                                   type: 'ALBUM',
                                   balanceAmount: Number(order.balance_amount) || 0,
                                   totalAmount: Number(order.total_amount) || 0,
                                   paidAmount: Number(order.paid_amount) || 0,
-                                  role: 'Printing Lab & Partner'
+                                  role: isDesigningOrder ? 'Album Designer' : 'Printing Lab & Partner'
                                 });
                                 setIsPaymentModalOpen(true);
                               }}
                               className="w-full py-1.5 font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition bg-stone-900 hover:bg-black text-white"
                             >
                               <CreditCard className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Record Payment / Edit Printing Fee</span>
+                              <span>{isDesigningOrder ? 'Record Payment / Edit Designing Fee' : 'Record Payment / Edit Printing Fee'}</span>
                             </button>
                           </div>
                         );

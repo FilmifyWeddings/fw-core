@@ -242,7 +242,7 @@ export default function PostProductionPage() {
       // Query 1: Team Members
       let fwQuery = supabase
         .from('fw_team_members')
-        .select('id, name, primary_role, primary_type, member_types, phone, user_id, workspace_id');
+        .select('*');
       if (effectiveWsId && effectiveWsId !== 'ws_demo') {
         fwQuery = fwQuery.or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
       }

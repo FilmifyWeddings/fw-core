@@ -481,6 +481,23 @@ export default function DeliverableRowItem({
                       onUpdateItem(item.id, 'assigned_member_id', assigned_member_id);
                       onUpdateItem(item.id, 'assigned_to', assigned_to);
                     }
+
+                    if (assigned_member_id && assigned_to) {
+                      saveVendorAlbumOrder(workspaceId || 'ws_default', {
+                        partner_id: assigned_member_id,
+                        partner_name: assigned_to,
+                        client_name: clientName || 'Client Project',
+                        deliverable_id: item.id,
+                        category: 'album_design',
+                        album_type: item.title,
+                        item_title: item.title,
+                        due_date: item.due_date || item.deadline || '',
+                        order_status: item.status || 'Pending',
+                        total_amount: Number(item.agreed_amount) || 0,
+                        paid_amount: Number(item.paid_amount) || 0,
+                      }).catch(() => {});
+                    }
+
                     setIsAssignModalOpen(true);
                   }
                 }}

@@ -254,8 +254,8 @@ export async function fetchVendorAlbumOrders(
         .select('*');
 
       if (vendorId) {
-        const nameFilter = vendorName ? `,assigned_to.ilike.%${vendorName}%` : '';
-        delivQuery = delivQuery.or(`assigned_member_id.eq.${vendorId}${nameFilter}`);
+        const nameFilter = vendorName ? `,assigned_to.ilike.%${vendorName}%,printer_name.ilike.%${vendorName}%` : '';
+        delivQuery = delivQuery.or(`assigned_member_id.eq.${vendorId},printer_id.eq.${vendorId}${nameFilter}`);
       }
 
       const { data: deliverables } = await delivQuery;
@@ -290,52 +290,84 @@ export async function fetchVendorAlbumOrders(
 
         // Bridge deliverables across all categories into orderList
         for (const deliv of deliverables) {
-          const cat = detectDeliverableCategory(deliv.category, deliv.title);
+          const clientName = projectClientMap.get(deliv.project_id) || 'Valued Couple';
           const delivSegment = detectDeliverableSegment(deliv.segment, deliv.title);
-          const existing = orderList.find(
-            o => o.deliverable_id === deliv.id || (deliv.id && o.id === `order_${deliv.id.replace('deliv_', '')}`)
-          );
+          const rawSpecs = String(deliv.specs || deliv.count || '').trim();
+          const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || 30;
 
-          if (existing) {
-            if (delivSegment !== 'Wedding' && existing.segment === 'Wedding') {
-              existing.segment = delivSegment;
+          // Check if assigned as PRINTER / LAB
+          const isPrinter = (
+            (deliv.printer_id && deliv.printer_id === vendorId) ||
+            (vendorName && deliv.printer_name && deliv.printer_name.toLowerCase().trim() === vendorName.toLowerCase().trim())
+          );
+          if (isPrinter) {
+            const printTotal = Number(deliv.printing_agreed_amount) || 0;
+            const printPaid = Number(deliv.printing_paid_amount) || 0;
+            const printBal = Math.max(0, printTotal - printPaid);
+            const printId = `order_print_${deliv.id}`;
+
+            const existingIdx = orderList.findIndex(o => o.deliverable_id === deliv.id && o.category === 'album_printing');
+            const printOrder: VendorAlbumOrder = {
+              id: printId,
+              workspace_id: workspaceId || deliv.workspace_id || 'ws_default',
+              partner_id: vendorId,
+              partner_name: deliv.printer_name || vendorName || 'Printing Partner',
+              partner_email: vendorEmail || '',
+              client_name: clientName,
+              project_id: deliv.project_id,
+              deliverable_id: deliv.id,
+              category: 'album_printing',
+              segment: delivSegment,
+              role: 'Printing Lab & Partner',
+              item_title: deliv.title || 'Album Printing',
+              specs: rawSpecs,
+              service_type: 'Album Printing',
+              album_type: deliv.title || 'Signature Photobook',
+              sheet_count: sheetCount,
+              page_count: sheetCount * 2,
+              rate_per_sheet: 0,
+              total_amount: printTotal,
+              paid_amount: printPaid,
+              balance_amount: printBal,
+              order_status: normalizeVendorOrderStatus(deliv.printing_status || 'Pending'),
+              payment_status: printBal === 0 && printTotal > 0 ? 'PAID' : printPaid > 0 ? 'PARTIAL' : 'PENDING',
+              order_date: new Date().toISOString().split('T')[0],
+              due_date: deliv.printing_due_date || deliv.printing_deadline || '',
+              drive_folder_url: deliv.drive_link || '',
+              drive_links: Array.isArray(deliv.drive_links) ? deliv.drive_links : [],
+              notes: deliv.notes || '',
+              comments: Array.isArray(deliv.comments) ? deliv.comments : [],
+              created_at: deliv.created_at || new Date().toISOString()
+            };
+
+            if (existingIdx >= 0) {
+              orderList[existingIdx] = {
+                ...orderList[existingIdx],
+                ...printOrder,
+                total_amount: printOrder.total_amount || orderList[existingIdx].total_amount,
+                paid_amount: Math.max(printOrder.paid_amount, orderList[existingIdx].paid_amount),
+                balance_amount: Math.max(0, (printOrder.total_amount || orderList[existingIdx].total_amount) - Math.max(printOrder.paid_amount, orderList[existingIdx].paid_amount))
+              };
+            } else {
+              orderList.push(printOrder);
             }
-            if (cat && existing.category !== cat) {
-              existing.category = cat;
-            }
-            if (deliv.agreed_amount !== undefined && deliv.agreed_amount !== null && !isNaN(Number(deliv.agreed_amount))) {
-              const dTot = Number(deliv.agreed_amount);
-              if (dTot > 0 && existing.total_amount === 0) {
-                existing.total_amount = dTot;
-              }
-            }
-            if (deliv.paid_amount !== undefined && deliv.paid_amount !== null && !isNaN(Number(deliv.paid_amount))) {
-              const dPaid = Number(deliv.paid_amount);
-              if (dPaid > (existing.paid_amount || 0)) {
-                existing.paid_amount = dPaid;
-                existing.balance_amount = Math.max(0, existing.total_amount - existing.paid_amount);
-                existing.payment_status = existing.balance_amount === 0 && existing.total_amount > 0 ? 'PAID' : existing.paid_amount > 0 ? 'PARTIAL' : 'PENDING';
-              }
-            }
-            if (deliv.drive_links && (!existing.drive_links || existing.drive_links.length === 0)) {
-              existing.drive_links = deliv.drive_links;
-            }
-            if ((!existing.comments || existing.comments.length === 0) && Array.isArray(deliv.comments) && deliv.comments.length > 0) {
-              existing.comments = deliv.comments;
-            }
-          } else {
-            const clientName = projectClientMap.get(deliv.project_id) || 'Valued Couple';
-            const rawSpecs = String(deliv.specs || deliv.count || '').trim();
-            const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 0);
-            
-            let totalAmt = deliv.agreed_amount !== undefined && deliv.agreed_amount !== null && !isNaN(Number(deliv.agreed_amount))
-              ? Number(deliv.agreed_amount)
-              : 0;
+          }
+
+          // Check if assigned as DESIGNER / EDITOR
+          const isDesigner = (
+            (deliv.assigned_member_id && deliv.assigned_member_id === vendorId) ||
+            (vendorName && deliv.assigned_to && deliv.assigned_to.toLowerCase().trim() === vendorName.toLowerCase().trim())
+          );
+          if (isDesigner) {
+            const cat = detectDeliverableCategory(deliv.category, deliv.title);
+            const totalAmt = Number(deliv.agreed_amount) || 0;
             const paidAmt = Number(deliv.paid_amount) || 0;
             const balAmt = Math.max(0, totalAmt - paidAmt);
+            const designId = `order_${deliv.id.replace('deliv_', '')}`;
 
-            const newOrder: VendorAlbumOrder = {
-              id: `order_${deliv.id.replace('deliv_', '')}`,
+            const existingIdx = orderList.findIndex(o => o.deliverable_id === deliv.id && o.category !== 'album_printing');
+            const designOrder: VendorAlbumOrder = {
+              id: designId,
               workspace_id: workspaceId || deliv.workspace_id || 'ws_default',
               partner_id: vendorId,
               partner_name: deliv.assigned_to || vendorName || 'Team Specialist',
@@ -366,11 +398,17 @@ export async function fetchVendorAlbumOrders(
               created_at: deliv.created_at || new Date().toISOString()
             };
 
-            // Attempt save to DB in background
-            try {
-              await getDbClient().from('partner_album_orders').upsert(newOrder);
-            } catch (_) {}
-            orderList.push(newOrder);
+            if (existingIdx >= 0) {
+              orderList[existingIdx] = {
+                ...orderList[existingIdx],
+                ...designOrder,
+                total_amount: designOrder.total_amount || orderList[existingIdx].total_amount,
+                paid_amount: Math.max(designOrder.paid_amount, orderList[existingIdx].paid_amount),
+                balance_amount: Math.max(0, (designOrder.total_amount || orderList[existingIdx].total_amount) - Math.max(designOrder.paid_amount, orderList[existingIdx].paid_amount))
+              };
+            } else {
+              orderList.push(designOrder);
+            }
           }
         }
       }
@@ -714,11 +752,18 @@ export async function fetchVendorAlbumOrders(
       console.warn('[vendorDeliverablesService] team_event_payouts sync error:', payoutErr);
     }
 
-    if (orderList.length > 0 && typeof window !== 'undefined') {
-      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}${workspaceId}_${vendorId}`, JSON.stringify(orderList));
+    const strictlyBelongs = orderList.filter(o => {
+      const idMatch = (o.partner_id && o.partner_id === vendorId);
+      const nameMatch = vendorName && o.partner_name && o.partner_name.toLowerCase().trim() === vendorName.toLowerCase().trim();
+      const emailMatch = vendorEmail && o.partner_email && o.partner_email.toLowerCase().trim() === vendorEmail.toLowerCase().trim();
+      return Boolean(idMatch || nameMatch || emailMatch);
+    });
+
+    if (strictlyBelongs.length > 0 && typeof window !== 'undefined') {
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}${workspaceId}_${vendorId}`, JSON.stringify(strictlyBelongs));
     }
 
-    return orderList;
+    return strictlyBelongs;
   } catch (err) {
     console.error('[vendorDeliverablesService] fetchVendorAlbumOrders error:', err);
     if (typeof window !== 'undefined') {

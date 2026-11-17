@@ -127,27 +127,11 @@ export default function DeliverableCategorySection({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Smart Role-Based Filtering:
-  // - Albums category: Only show members who have roles like Album Designer, Printing Lab, or in-house managers
-  // - Photos / Videos category: Exclude external vendors whose sole role is Album Designer or Printing Lab
+  // Provide all team members to UnifiedTeamAssignDropdown so it cleanly categorizes
+  // and displays all In-House staff, Freelancers, and Vendors under their designated sections.
   const filteredTeamMembers = useMemo(() => {
-    const isAlbumCategory = /album|book|print/i.test(category || '');
-    return (teamMembers || []).filter(m => {
-      if (!m) return false;
-      const role = String(m.role || '').toLowerCase();
-      const isAlbumSpecialist = role.includes('album') || role.includes('printing lab') || role.includes('lab') || role.includes('book');
-      if (isAlbumCategory) {
-        // Show album specialists OR in-house team/managers
-        return isAlbumSpecialist || (m as any).isInHouse || /lead|owner|manager|admin/i.test(role);
-      } else {
-        // In Photos/Videos, hide external album specialists so dropdown stays uncluttered
-        if (isAlbumSpecialist && !(m as any).isInHouse && !/lead|owner|manager|admin/i.test(role)) {
-          return false;
-        }
-        return true;
-      }
-    });
-  }, [teamMembers, category]);
+    return (teamMembers || []).filter(Boolean);
+  }, [teamMembers]);
 
   // Auto-focus search input when opening dropdown
   useEffect(() => {
