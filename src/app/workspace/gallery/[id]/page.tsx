@@ -103,10 +103,12 @@ interface PhotoItem {
   id: string;
   gallery_id: string;
   collection_id: string | null;
+  folder_id?: string | null;
   file_name?: string;
-  original_key: string;
+  original_key?: string | null;
   preview_key: string;
   thumbnail_key: string;
+  thumb_key?: string;
   preview_url: string;
   thumbnail_url: string;
   width: number;
@@ -1263,14 +1265,11 @@ function AlbumStudioContent() {
     }
   };
 
-  // Download High-Res Photo (Always in universal 4K .jpg format)
+  // Download High-Res Photo (Web-Sharp Preview / Original fallback)
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     try {
-      const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
-      let cleanName = getCleanFilename(photo.original_key || photo.preview_key || '') || `photo_${photo.id.slice(0, 8)}.jpg`;
-      if (cleanName.toLowerCase().endsWith('.webp')) {
-        cleanName = cleanName.replace(/\.webp$/i, '.jpg');
-      }
+      const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
+      let cleanName = getCleanFilename(photo.preview_key || photo.original_key || '') || `photo_${photo.id.slice(0, 8)}.webp`;
       const res = await fetch(
         `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanName)}`
       );
@@ -1288,11 +1287,8 @@ function AlbumStudioContent() {
         window.open(fallbackUrl, '_blank');
       }
     } catch (_) {
-      const targetKey = photo.original_key || photo.preview_url;
-      let cleanName = getCleanFilename(photo.original_key || '') || `photo_${photo.id.slice(0, 8)}.jpg`;
-      if (cleanName.toLowerCase().endsWith('.webp')) {
-        cleanName = cleanName.replace(/\.webp$/i, '.jpg');
-      }
+      const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
+      let cleanName = getCleanFilename(photo.preview_key || photo.original_key || '') || `photo_${photo.id.slice(0, 8)}.webp`;
       window.open(`/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName)}`, '_blank');
     }
   };
@@ -1348,7 +1344,7 @@ function AlbumStudioContent() {
             });
 
             try {
-              const downloadUrl = `/api/gallery/image?key=${encodeURIComponent(photo.original_key || photo.preview_key)}`;
+              const downloadUrl = `/api/gallery/image?key=${encodeURIComponent(photo.preview_key || photo.original_key)}`;
               const res = await fetch(downloadUrl);
               if (res.ok) {
                 const blob = await res.blob();

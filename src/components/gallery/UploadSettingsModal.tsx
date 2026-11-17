@@ -120,7 +120,7 @@ export function UploadSettingsModal({
     if (files.length === 0) return;
     onStartUpload({
       qualityLevel,
-      includeOriginals,
+      includeOriginals: false,
     });
   };
 
@@ -321,33 +321,24 @@ export function UploadSettingsModal({
             </div>
           </div>
 
-          {/* ── ORIGINAL CAMERA MASTER FILES CHECKBOX ── */}
+          {/* ── WEB-SHARP ONLY STORAGE OPTIMIZATION BADGE ── */}
           <div className="pt-2 border-t border-[#EAE5DA]/80">
-            <label className="flex items-start gap-3 cursor-pointer group select-none">
-              <input
-                type="checkbox"
-                checked={includeOriginals}
-                onChange={(e) => setIncludeOriginals(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded text-amber-600 border-zinc-300 focus:ring-amber-500 cursor-pointer accent-amber-600 shrink-0"
-              />
+            <div className="flex items-start gap-3 p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
+              <ShieldCheck className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
               <div className="space-y-0.5 flex-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-zinc-900 group-hover:text-amber-800 transition">
-                    Upload Original Camera Master Files (15–25 MB / photo)
+                  <span className="text-xs font-black text-emerald-950">
+                    Web-Sharp Only Pipeline (Saves ~96% Cloud Storage)
                   </span>
-                  {includeOriginals && (
-                    <span className="px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-[9px] font-black uppercase">
-                      Heavy Master Sync
-                    </span>
-                  )}
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase">
+                    Zero Waste
+                  </span>
                 </div>
-                <p className="text-[10.5px] text-zinc-500 leading-tight">
-                  {includeOriginals
-                    ? 'Original camera master files will be uploaded alongside 4K previews for large 30×40 inch album printing. Takes more time & storage.'
-                    : 'Unchecked: Saves ~96% cloud storage! Only pristine 4K Web photos will be stored. Perfect for client galleries, mobile downloads & social sharing.'}
+                <p className="text-[10.5px] text-emerald-800/90 leading-tight">
+                  Heavy original camera masters are skipped. Only crystal-sharp 4K WebP previews (~300 KB) and fast grid thumbnails (~15 KB) are uploaded to Backblaze B2, completely eliminating storage bloat.
                 </p>
               </div>
-            </label>
+            </div>
           </div>
 
           {/* Live Data & Speed Estimation Bar */}
@@ -387,9 +378,7 @@ export function UploadSettingsModal({
           >
             <Upload className="w-4 h-4" />
             <span>
-              {includeOriginals
-                ? `Start Master Upload (${fileCount} Photos)`
-                : `Start Turbo 4K Upload (${fileCount} Photos)`}
+              Start Turbo 4K Upload ({fileCount} Photos)
             </span>
           </button>
           <button
