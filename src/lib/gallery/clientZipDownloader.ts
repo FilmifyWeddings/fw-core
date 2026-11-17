@@ -41,7 +41,7 @@ export function extractOriginalFileName(photo: PhotoDownloadItem, fallbackIndex:
   if (photo.name && !photo.name.includes('/')) return photo.name;
   if (photo.title) return `${photo.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.jpg`;
 
-  const targetKey = photo.original_key || photo.preview_key;
+  const targetKey = photo.preview_key || photo.original_key;
   if (targetKey) {
     const parts = targetKey.split('/');
     const lastPart = parts[parts.length - 1];
@@ -53,7 +53,7 @@ export function extractOriginalFileName(photo: PhotoDownloadItem, fallbackIndex:
     return lastPart;
   }
 
-  return `photo_${String(fallbackIndex + 1).padStart(3, '0')}.jpg`;
+  return `photo_${String(fallbackIndex + 1).padStart(3, '0')}.webp`;
 }
 
 /**
@@ -105,7 +105,7 @@ export async function downloadPhotosAsZip({
 
         const currentIndex = index++;
         const photo = photos[currentIndex];
-        const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
+        const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
 
         // Resolve category folder
         let categoryName = 'All Photos';

@@ -6,8 +6,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const rawKey = searchParams.get('key') || searchParams.get('originalKey') || searchParams.get('previewKey');
-    const filename = searchParams.get('name') || searchParams.get('filename') || 'photo.jpg';
+    // Prefer previewKey (Web-Sharp Only), gracefully falling back to key or legacy originalKey
+    const rawKey = searchParams.get('previewKey') || searchParams.get('key') || searchParams.get('originalKey');
+    const filename = searchParams.get('name') || searchParams.get('filename') || 'photo.webp';
 
     if (!rawKey) {
       return NextResponse.json({ success: false, error: 'Key is required' }, { status: 400 });
@@ -22,14 +23,14 @@ export async function GET(req: NextRequest) {
     }
     cleanKey = cleanKey.replace(/^\/+/, '');
 
-    let safeFilename = filename.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
-    if (safeFilename.toLowerCase().endsWith('.webp')) {
-      safeFilename = safeFilename.replace(/\.webp$/i, '.jpg');
+    let safeFilename = filename.replace(/["\r\n]/g, '').trim() || 'photo.webp';
+    if (!safeFilename.toLowerCase().endsWith('.webp') && !safeFilename.toLowerCase().endsWith('.jpg') && !safeFilename.toLowerCase().endsWith('.jpeg')) {
+      safeFilename = `${safeFilename}.webp`;
     }
     const disposition = `attachment; filename="${safeFilename}"`;
 
     try {
-      // Generate 2-hour presigned download URL pointing directly to original object in Backblaze B2
+      // Generate 2-hour presigned download URL pointing directly to object in Backblaze B2
       const downloadUrl = await getGalleryPresignedDownloadUrl(cleanKey, 7200, B2_GALLERY_BUCKET_NAME, disposition);
       return NextResponse.json({ success: true, downloadUrl });
     } catch (s3Err) {
@@ -48,8 +49,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { originalKey, previewKey, key, name, filename } = body;
 
-    const rawKey = key || originalKey || previewKey;
-    const downloadName = name || filename || 'photo.jpg';
+    // Prefer previewKey (Web-Sharp Only pipeline), falling back gracefully
+    const rawKey = previewKey || key || originalKey;
+    const downloadName = name || filename || 'photo.webp';
 
     if (!rawKey) {
       return NextResponse.json({ success: false, error: 'Key is required' }, { status: 400 });
@@ -64,9 +66,9 @@ export async function POST(req: NextRequest) {
     }
     cleanKey = cleanKey.replace(/^\/+/, '');
 
-    let safeFilename = downloadName.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
-    if (safeFilename.toLowerCase().endsWith('.webp')) {
-      safeFilename = safeFilename.replace(/\.webp$/i, '.jpg');
+    let safeFilename = downloadName.replace(/["\r\n]/g, '').trim() || 'photo.webp';
+    if (!safeFilename.toLowerCase().endsWith('.webp') && !safeFilename.toLowerCase().endsWith('.jpg') && !safeFilename.toLowerCase().endsWith('.jpeg')) {
+      safeFilename = `${safeFilename}.webp`;
     }
     const disposition = `attachment; filename="${safeFilename}"`;
 

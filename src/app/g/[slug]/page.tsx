@@ -89,11 +89,13 @@ interface PhotoItem {
   id: string;
   gallery_id: string;
   collection_id?: string | null;
+  folder_id?: string | null;
   preview_url: string;
   thumbnail_url: string;
-  original_key: string;
+  original_key?: string | null;
   preview_key?: string;
   thumbnail_key?: string;
+  thumb_key?: string;
   width: number;
   height: number;
   face_count: number;

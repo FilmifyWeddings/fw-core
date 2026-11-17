@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { extractFacesFromS3Key, extractFacesBatchFromS3Keys, cosineSimilarity, normalizeVector } from '@/lib/faceAI';
 import { deleteGalleryObjects, deleteGalleryPrefix } from '@/lib/storage/galleryB2Client';
+import { decrementWorkspaceStorage } from '@/lib/storage/galleryStorageQuota';
 
 export const dynamic = 'force-dynamic';
 
@@ -682,6 +683,18 @@ export async function PATCH(req: NextRequest) {
     if (event_date !== undefined) updates.event_date = event_date;
     if (is_active !== undefined) updates.is_active = is_active;
     if (status !== undefined) updates.status = status;
+    if (body.expired_at !== undefined) updates.expired_at = body.expired_at;
+    if (body.scheduled_purge_at !== undefined) updates.scheduled_purge_at = body.scheduled_purge_at;
+    if ((status === 'paused' || status === 'expired') && !updates.expired_at && !existing?.expired_at) {
+      const now = new Date();
+      updates.expired_at = now.toISOString();
+      updates.scheduled_purge_at = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (status === 'active' || status === 'PUBLISHED') {
+      if (body.expired_at === undefined && body.scheduled_purge_at === undefined) {
+        updates.expired_at = null;
+        updates.scheduled_purge_at = null;
+      }
+    }
     if (pin_code !== undefined) updates.pin_code = pin_code ? String(pin_code).trim() : null;
     if (guest_pin !== undefined) updates.guest_pin = guest_pin ? String(guest_pin).trim() : null;
     if (admin_pin !== undefined) updates.admin_pin = admin_pin ? String(admin_pin).trim() : null;
@@ -937,10 +950,10 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    // 2. Fetch all photos belonging to this gallery to retrieve Backblaze B2 storage keys
+    // 2. Fetch all photos belonging to this gallery to retrieve Backblaze B2 storage keys & sizes
     const { data: galleryPhotos } = await supabaseAdmin
       .from('gallery_photos')
-      .select('id, original_key, preview_key, thumbnail_key')
+      .select('id, original_key, preview_key, thumbnail_key, thumb_key, size_bytes')
       .eq('gallery_id', id);
 
     const photoIds = (galleryPhotos || []).map((p) => p.id);
@@ -948,11 +961,17 @@ export async function DELETE(req: NextRequest) {
     if (existing?.cover_url) {
       storageKeys.push(existing.cover_url);
     }
-    (galleryPhotos || []).forEach((p) => {
+    (galleryPhotos || []).forEach((p: any) => {
       if (p.original_key) storageKeys.push(p.original_key);
       if (p.preview_key) storageKeys.push(p.preview_key);
       if (p.thumbnail_key) storageKeys.push(p.thumbnail_key);
+      if (p.thumb_key) storageKeys.push(p.thumb_key);
     });
+
+    const freedBytes = (galleryPhotos || []).reduce(
+      (sum, p: any) => sum + (Number(p.size_bytes) || 0),
+      0
+    );
 
     // 3. Purge explicit storage keys from Backblaze B2
     if (storageKeys.length > 0) {
@@ -964,11 +983,13 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    // 4. Purge entire S3 folder prefixes for this gallery to clean up any uncataloged or thumbnail artifacts
+    // 4. Purge entire S3 folder prefixes for this gallery to ensure zero orphan files in B2
     const prefixesToPurge = new Set<string>();
     if (existing?.workspace_id) {
+      prefixesToPurge.add(`workspaces/${existing.workspace_id}/events/${id}/`);
       prefixesToPurge.add(`galleries/${existing.workspace_id}/${id}/`);
     }
+    prefixesToPurge.add(`workspaces/default/events/${id}/`);
     prefixesToPurge.add(`galleries/00000000-0000-0000-0000-000000000000/${id}/`);
     prefixesToPurge.add(`events/${id}/`);
     if (existing?.r2_folder_prefix) {
@@ -996,12 +1017,23 @@ export async function DELETE(req: NextRequest) {
       await supabaseAdmin.from('gallery_photos').delete().eq('gallery_id', id);
       await supabaseAdmin.from('gallery_collections').delete().eq('gallery_id', id);
       await supabaseAdmin.from('gallery_selections').delete().eq('gallery_id', id);
+      await supabaseAdmin.from('gallery_album_selections').delete().eq('gallery_id', id);
       await supabaseAdmin.from('gallery_guests').delete().eq('gallery_id', id);
+      await supabaseAdmin.from('event_guest_registrations').delete().eq('gallery_id', id);
     } catch (dbCascadeErr) {
       console.warn('[GalleryEvents] Supabase cascade cleanup notice:', dbCascadeErr);
     }
 
     const { error } = await supabaseAdmin.from('event_galleries').delete().eq('id', id);
+
+    if (error) throw error;
+
+    // 6. Subtract freed bytes from workspace storage quota
+    if (freedBytes > 0 && existing?.workspace_id) {
+      decrementWorkspaceStorage(existing.workspace_id, id, freedBytes).catch((err) =>
+        console.warn('[GalleryEvents] Storage decrement notice:', err)
+      );
+    }
 
     if (error) throw error;
     return NextResponse.json({

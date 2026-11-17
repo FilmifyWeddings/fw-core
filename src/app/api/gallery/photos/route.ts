@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getGalleryPresignedDownloadUrl, deleteGalleryObjects } from '@/lib/storage/galleryB2Client';
+import { decrementWorkspaceStorage } from '@/lib/storage/galleryStorageQuota';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (collectionId && collectionId !== 'all') {
-      query = query.eq('collection_id', collectionId);
+      query = query.or(`collection_id.eq.${collectionId},folder_id.eq.${collectionId}`);
     }
 
     const { data: photos, error } = await query;
@@ -50,19 +51,22 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
 
     // Return 100% White-Labeled Native StudioCore Image URLs
-    const enriched = (photos || []).map((p) => {
+    const enriched = (photos || []).map((p: any) => {
+      const targetThumb = p.thumb_key || p.thumbnail_key || p.preview_key;
       const preview_url = `/api/gallery/image?key=${encodeURIComponent(p.preview_key)}`;
-      const thumbnail_url = `/api/gallery/image?key=${encodeURIComponent(p.thumbnail_key || p.preview_key)}`;
+      const thumbnail_url = `/api/gallery/image?key=${encodeURIComponent(targetThumb)}`;
 
       return {
         id: p.id,
         gallery_id: p.gallery_id,
         collection_id: p.collection_id,
+        folder_id: p.folder_id || p.collection_id,
         preview_url,
         thumbnail_url,
         original_key: p.original_key,
         preview_key: p.preview_key,
-        thumbnail_key: p.thumbnail_key,
+        thumbnail_key: targetThumb,
+        thumb_key: targetThumb,
         width: p.width,
         height: p.height,
         size_bytes: p.size_bytes,
@@ -113,7 +117,7 @@ export async function DELETE(req: NextRequest) {
     // 1. Fetch photo records from Supabase to retrieve Backblaze B2 storage keys
     const { data: photosToDelete, error: fetchErr } = await supabaseAdmin
       .from('gallery_photos')
-      .select('id, original_key, preview_key, thumbnail_key')
+      .select('id, gallery_id, original_key, preview_key, thumbnail_key, thumb_key, size_bytes')
       .in('id', targetIds);
 
     if (fetchErr) {
@@ -121,10 +125,11 @@ export async function DELETE(req: NextRequest) {
     }
 
     // 2. Collect all storage keys to permanently purge from Backblaze B2
-    const storageKeys = (photosToDelete || []).flatMap((p) => [
+    const storageKeys = (photosToDelete || []).flatMap((p: any) => [
       p.original_key,
       p.preview_key,
       p.thumbnail_key,
+      p.thumb_key,
     ]).filter((k): k is string => typeof k === 'string' && k.length > 0);
 
     if (storageKeys.length > 0) {
@@ -145,11 +150,34 @@ export async function DELETE(req: NextRequest) {
 
     if (delErr) throw delErr;
 
+    // 5. Subtract exact freed bytes from workspace storage quota
+    const freedBytes = (photosToDelete || []).reduce(
+      (sum: number, p: any) => sum + (Number(p.size_bytes) || 0),
+      0
+    );
+    const galleryId = photosToDelete?.[0]?.gallery_id;
+    if (freedBytes > 0 && galleryId) {
+      try {
+        const { data: gal } = await supabaseAdmin
+          .from('event_galleries')
+          .select('workspace_id')
+          .eq('id', galleryId)
+          .maybeSingle();
+
+        if (gal?.workspace_id) {
+          await decrementWorkspaceStorage(gal.workspace_id, galleryId, freedBytes);
+        }
+      } catch (quotaErr) {
+        console.warn('[GalleryPhotos] Storage quota decrement notice:', quotaErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       deletedCount: targetIds.length,
       deletedIds: targetIds,
       purgedStorageKeys: storageKeys.length,
+      freedBytes,
     });
   } catch (err: any) {
     console.error('Error deleting photo(s):', err);

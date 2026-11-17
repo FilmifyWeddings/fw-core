@@ -8,8 +8,6 @@
  */
 
 export interface ImageVariants {
-  original: File;
-  master4k?: Blob;
   preview: Blob;
   thumb: Blob;
   width: number;
@@ -57,34 +55,30 @@ export function isPhotoInManifest(galleryId: string, filename: string, sizeBytes
 }
 
 /**
- * Precision 3-Tier Image Processing:
- * 1. Popup Window Preview: 2048px @ quality 0.76 => Exactly ~300 to 350 KB JPEG (Instant 0.05s swipe in lightbox)
- * 2. Grid Thumbnail: 480px @ quality 0.65 => Ultra-light ~15 KB WebP (Silky smooth grid scrolling)
- * 3. 4K Master Download: 3840px @ quality 0.88 => Exactly ~1 MB JPEG (Deep color, crystal-sharp 4K download)
+ * Precision Web-Sharp Only Image Processing:
+ * 1. Sharp Preview: 2560px WebP @ quality 0.85 (High-sharpness 4K viewing, zooming & downloads, ~250-400 KB)
+ * 2. Grid Thumbnail: 480px WebP @ quality 0.65 (Ultra-light ~15-25 KB for silky-smooth gallery grid scrolling)
+ * Total storage: Strictly thumbnail_size_bytes + preview_size_bytes (Zero raw master waste!)
  */
 export async function generateImageVariants(
   file: File,
   qualityLevel: 30 | 50 | 100 = 100,
-  includeOriginals: boolean = false
+  _includeOriginals: boolean = false
 ): Promise<ImageVariants> {
   let width = 1920;
   let height = 1080;
 
-  // 1. Popup Lightbox Preview (2048px, ~300-350 KB JPEG)
-  let maxPopupDim = 2048;
-  let popupQuality = 0.76;
+  // 1. Sharp Preview WebP (2560px, ~250-400 KB WebP)
+  let maxPreviewDim = 2560;
+  let previewQuality = 0.85;
 
   if (qualityLevel === 30) {
-    maxPopupDim = 1440;
-    popupQuality = 0.58;
+    maxPreviewDim = 1600;
+    previewQuality = 0.70;
   } else if (qualityLevel === 50) {
-    maxPopupDim = 1800;
-    popupQuality = 0.70;
+    maxPreviewDim = 2048;
+    previewQuality = 0.80;
   }
-
-  // 2. Downloadable 4K Master (3840px, ~1.0 MB JPEG)
-  const maxMasterDim = 3840;
-  const masterQuality = 0.88;
 
   // Micro-sleep to yield main thread back to browser scheduler (0% UI freeze)
   await new Promise((r) => setTimeout(r, 8));
@@ -95,9 +89,9 @@ export async function generateImageVariants(
       width = bitmap.width;
       height = bitmap.height;
 
-      // 1. Generate Popup Window Preview (2048px, ~300-350 KB JPEG)
+      // 1. Generate Sharp Preview WebP
       const previewCanvas = document.createElement('canvas');
-      const previewScale = Math.min(maxPopupDim / Math.max(bitmap.width, bitmap.height), 1);
+      const previewScale = Math.min(maxPreviewDim / Math.max(bitmap.width, bitmap.height), 1);
       previewCanvas.width = Math.max(1, Math.round(bitmap.width * previewScale));
       previewCanvas.height = Math.max(1, Math.round(bitmap.height * previewScale));
       const pCtx = previewCanvas.getContext('2d', { alpha: false });
@@ -109,8 +103,8 @@ export async function generateImageVariants(
       const previewBlob = await new Promise<Blob>((resolve, reject) => {
         previewCanvas.toBlob(
           (b) => (b ? resolve(b) : reject(new Error('Preview conversion failed'))),
-          'image/jpeg',
-          popupQuality
+          'image/webp',
+          previewQuality
         );
       });
       previewCanvas.width = 1;
@@ -137,43 +131,17 @@ export async function generateImageVariants(
       thumbCanvas.width = 1;
       thumbCanvas.height = 1;
 
-      // 3. Generate 4K Master (~1.0 MB JPEG) when includeOriginals is FALSE
-      let master4kBlob: Blob | undefined = undefined;
-      if (!includeOriginals) {
-        const masterCanvas = document.createElement('canvas');
-        const masterScale = Math.min(maxMasterDim / Math.max(bitmap.width, bitmap.height), 1);
-        masterCanvas.width = Math.max(1, Math.round(bitmap.width * masterScale));
-        masterCanvas.height = Math.max(1, Math.round(bitmap.height * masterScale));
-        const mCtx = masterCanvas.getContext('2d', { alpha: false });
-        if (mCtx) {
-          mCtx.imageSmoothingEnabled = true;
-          mCtx.imageSmoothingQuality = 'high';
-          mCtx.drawImage(bitmap, 0, 0, masterCanvas.width, masterCanvas.height);
-        }
-        master4kBlob = await new Promise<Blob>((resolve, reject) => {
-          masterCanvas.toBlob(
-            (b) => (b ? resolve(b) : reject(new Error('4K Master conversion failed'))),
-            'image/jpeg',
-            masterQuality
-          );
-        });
-        masterCanvas.width = 1;
-        masterCanvas.height = 1;
-      }
-
       // Immediately close bitmap to free underlying GPU texture memory
       if (typeof bitmap.close === 'function') {
         bitmap.close();
       }
 
       return {
-        original: file,
-        master4k: master4kBlob,
         preview: previewBlob,
         thumb: thumbBlob,
         width,
         height,
-        sizeBytes: master4kBlob ? master4kBlob.size : file.size,
+        sizeBytes: thumbBlob.size + previewBlob.size,
         filename: file.name.replace(/\.[^/.]+$/, ''),
       };
     }
@@ -191,15 +159,19 @@ export async function generateImageVariants(
       width = img.naturalWidth || img.width;
       height = img.naturalHeight || img.height;
 
-      // 1. Preview (2048px, ~300-350 KB JPEG)
+      // 1. Sharp Preview (WebP)
       const previewCanvas = document.createElement('canvas');
-      const pScale = Math.min(maxPopupDim / Math.max(width, height), 1);
+      const pScale = Math.min(maxPreviewDim / Math.max(width, height), 1);
       previewCanvas.width = Math.max(1, Math.round(width * pScale));
       previewCanvas.height = Math.max(1, Math.round(height * pScale));
       const pCtx = previewCanvas.getContext('2d', { alpha: false });
-      pCtx?.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height);
+      if (pCtx) {
+        pCtx.imageSmoothingEnabled = true;
+        pCtx.imageSmoothingQuality = 'high';
+        pCtx.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height);
+      }
       const previewBlob = await new Promise<Blob>((res) =>
-        previewCanvas.toBlob((b) => res(b!), 'image/jpeg', popupQuality)
+        previewCanvas.toBlob((b) => res(b!), 'image/webp', previewQuality)
       );
       previewCanvas.width = 1;
       previewCanvas.height = 1;
@@ -210,39 +182,25 @@ export async function generateImageVariants(
       thumbCanvas.width = Math.max(1, Math.round(width * tScale));
       thumbCanvas.height = Math.max(1, Math.round(height * tScale));
       const tCtx = thumbCanvas.getContext('2d', { alpha: false });
-      tCtx?.drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height);
+      if (tCtx) {
+        tCtx.imageSmoothingEnabled = true;
+        tCtx.imageSmoothingQuality = 'medium';
+        tCtx.drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height);
+      }
       const thumbBlob = await new Promise<Blob>((res) =>
         thumbCanvas.toBlob((b) => res(b!), 'image/webp', 0.65)
       );
       thumbCanvas.width = 1;
       thumbCanvas.height = 1;
 
-      // 3. 4K Master (~1.0 MB JPEG)
-      let master4kBlob: Blob | undefined = undefined;
-      if (!includeOriginals) {
-        const masterCanvas = document.createElement('canvas');
-        const mScale = Math.min(maxMasterDim / Math.max(width, height), 1);
-        masterCanvas.width = Math.max(1, Math.round(width * mScale));
-        masterCanvas.height = Math.max(1, Math.round(height * mScale));
-        const mCtx = masterCanvas.getContext('2d', { alpha: false });
-        mCtx?.drawImage(img, 0, 0, masterCanvas.width, masterCanvas.height);
-        master4kBlob = await new Promise<Blob>((res) =>
-          masterCanvas.toBlob((b) => res(b!), 'image/jpeg', masterQuality)
-        );
-        masterCanvas.width = 1;
-        masterCanvas.height = 1;
-      }
-
       img.src = '';
 
       resolve({
-        original: file,
-        master4k: master4kBlob,
         preview: previewBlob,
         thumb: thumbBlob,
         width,
         height,
-        sizeBytes: master4kBlob ? master4kBlob.size : file.size,
+        sizeBytes: thumbBlob.size + previewBlob.size,
         filename: file.name.replace(/\.[^/.]+$/, ''),
       });
     };
@@ -371,6 +329,7 @@ export async function batchUploadPhotos(
 
   // 1. High-Performance URL Pre-fetch Cache
   // Pre-fetch presigned upload URLs in 1 single HTTP request (slashes startup latency by 90%)
+  const targetFolderId = collectionId && collectionId !== 'all' ? collectionId : 'default';
   const presignedUrlCache = new Map<string, any>();
   const fetchPresignedUrls = async (fileBatch: File[]) => {
     try {
@@ -380,10 +339,11 @@ export async function batchUploadPhotos(
         body: JSON.stringify({
           galleryId,
           workspaceId,
-          includeOriginals,
+          folder_id: targetFolderId,
+          collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
           files: fileBatch.map((f) => ({
             filename: encodeURIComponent(f.name.replace(/[^a-zA-Z0-9._-]/g, '_')),
-            originalType: f.type || 'image/jpeg',
+            folder_id: targetFolderId,
           })),
         }),
         signal,
@@ -462,10 +422,9 @@ export async function batchUploadPhotos(
             onProgress(completed, total, Math.round((completed / total) * 100), `Optimizing ${file.name}...`);
           }
 
-          // 2A. Client-Side Conversion:
-          // Preview: ~300-350 KB JPEG (for instantaneous popup window swiping)
-          // Thumbnail: ~15 KB WebP (for rapid grid scrolling)
-          // Master: ~1.0 MB 4K JPEG (when !includeOriginals) or raw camera file (when includeOriginals)
+          // 2A. Client-Side Web-Sharp Only Conversion:
+          // Preview: High-sharpness WebP (~2048-2560px, ~250-400 KB)
+          // Thumbnail: Lightweight WebP (~480px, ~15-25 KB)
           const variants = await generateImageVariants(file, qualityLevel, includeOriginals);
 
           // 2B. Resolve Presigned URL (from cache or immediate fallback)
@@ -478,9 +437,9 @@ export async function batchUploadPhotos(
               body: JSON.stringify({
                 galleryId,
                 filename: cleanName,
-                originalType: file.type || 'image/jpeg',
                 workspaceId,
-                includeOriginals,
+                folder_id: targetFolderId,
+                collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
               }),
               signal,
             });
@@ -489,47 +448,33 @@ export async function batchUploadPhotos(
             presignedData = urlJson;
           }
 
-          const { originalUploadUrl, previewUploadUrl, thumbUploadUrl, originalKey, previewKey, thumbKey } = presignedData;
+          const { previewUploadUrl, thumbUploadUrl, previewKey, thumbKey } = presignedData;
 
           if (onProgress) {
-            const modeLabel = includeOriginals ? 'Master + 4K' : `${qualityLevel}% 4K (~1MB)`;
-            onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} (${modeLabel})...`);
+            onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} (Web-Sharp 4K)...`);
           }
 
-          // 2C. Direct Storage Parallel Uploads via Presigned URLs
-          // Previews are 2K JPEG (~300-350 KB) for instant lightbox swiping
-          // Thumbnails are WebP (~15 KB) for fast gallery grid
-          // Original is either raw camera file (if includeOriginals) or ~1.0 MB 4K Ultra Sharp JPEG!
-          const uploadJobs = [
-            uploadBlobToPresignedUrl(previewUploadUrl, variants.preview, 'image/jpeg', undefined, signal),
+          // 2C. Direct Storage Parallel Uploads: Web-Sharp Preview + Thumb ONLY (Zero Original Master Upload)
+          await Promise.all([
+            uploadBlobToPresignedUrl(previewUploadUrl, variants.preview, 'image/webp', undefined, signal),
             uploadBlobToPresignedUrl(thumbUploadUrl, variants.thumb, 'image/webp', undefined, signal),
-          ];
-
-          if (includeOriginals && originalUploadUrl) {
-            uploadJobs.push(
-              uploadBlobToPresignedUrl(originalUploadUrl, variants.original, file.type || 'image/jpeg', undefined, signal)
-            );
-          } else if (variants.master4k && originalUploadUrl) {
-            uploadJobs.push(
-              uploadBlobToPresignedUrl(originalUploadUrl, variants.master4k, 'image/jpeg', undefined, signal)
-            );
-          }
-
-          await Promise.all(uploadJobs);
+          ]);
 
           // Record in manifest for crash protection & auto-resume
           recordUploadedToManifest(galleryId, file.name, file.size);
 
-          // 2D. Collect for registration
+          // 2D. Collect for registration with exact folder_id & size_bytes
           pendingRegistration.push({
             gallery_id: galleryId,
+            folder_id: targetFolderId,
             collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
-            original_key: originalKey,
+            original_key: null,
             preview_key: previewKey,
             thumbnail_key: thumbKey,
+            thumb_key: thumbKey,
             width: variants.width,
             height: variants.height,
-            size_bytes: includeOriginals ? file.size : (variants.master4k ? variants.master4k.size : variants.preview.size),
+            size_bytes: variants.sizeBytes, // strictly thumbnail_size + preview_size
           });
 
           completed++;

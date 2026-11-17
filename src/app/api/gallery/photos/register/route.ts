@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getGalleryPresignedDownloadUrl } from '@/lib/storage/galleryB2Client';
 import { extractFacesFromS3Key, extractFacesBatchFromS3Keys, cosineSimilarity, normalizeVector } from '@/lib/faceAI';
+import { incrementWorkspaceStorage } from '@/lib/storage/galleryStorageQuota';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,15 +56,65 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
-    // 2. Insert photos into gallery_photos
-    const { data: inserted, error: insertError } = await supabaseAdmin
+    // 2. Normalize and insert photos into gallery_photos
+    const normalizedPhotos = photos.map((p: any) => ({
+      gallery_id: galleryId,
+      collection_id: p.collection_id || (p.folder_id && p.folder_id !== 'default' ? p.folder_id : null),
+      folder_id: p.folder_id || p.collection_id || null,
+      preview_key: p.preview_key,
+      thumbnail_key: p.thumbnail_key || p.thumb_key,
+      thumb_key: p.thumb_key || p.thumbnail_key,
+      original_key: p.original_key || null,
+      width: p.width,
+      height: p.height,
+      size_bytes: Number(p.size_bytes) || 0,
+      face_count: p.face_count || 0,
+    }));
+
+    let inserted: any[] | null = null;
+    let { data: insertedData, error: insertError } = await supabaseAdmin
       .from('gallery_photos')
-      .insert(photos)
+      .insert(normalizedPhotos)
       .select('*');
 
     if (insertError) {
-      console.error('Error inserting photos:', insertError);
-      return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
+      console.warn('[GalleryRegister] Initial insert notice (retrying without folder_id/thumb_key):', insertError.message);
+      // Fallback in case folder_id or thumb_key columns are not yet migrated
+      const fallbackPhotos = normalizedPhotos.map((p) => ({
+        gallery_id: p.gallery_id,
+        collection_id: p.collection_id,
+        preview_key: p.preview_key,
+        thumbnail_key: p.thumbnail_key,
+        original_key: p.original_key,
+        width: p.width,
+        height: p.height,
+        size_bytes: p.size_bytes,
+        face_count: p.face_count,
+      }));
+
+      const fallbackRes = await supabaseAdmin
+        .from('gallery_photos')
+        .insert(fallbackPhotos)
+        .select('*');
+
+      if (fallbackRes.error) {
+        console.error('Error inserting photos:', fallbackRes.error);
+        return NextResponse.json({ success: false, error: fallbackRes.error.message }, { status: 500 });
+      }
+      inserted = fallbackRes.data;
+    } else {
+      inserted = insertedData;
+    }
+
+    // 2B. Accurately update storage used bytes for workspace
+    const totalBytesAdded = (inserted || []).reduce(
+      (sum: number, p: any) => sum + (Number(p.size_bytes) || 0),
+      0
+    );
+    if (totalBytesAdded > 0 && workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+      incrementWorkspaceStorage(workspaceId, galleryId, totalBytesAdded).catch((e) =>
+        console.warn('[GalleryRegister] Storage quota increment notice:', e)
+      );
     }
 
     // 3. Set immortal cover_url on event_galleries if it does not have one

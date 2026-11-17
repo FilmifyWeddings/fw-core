@@ -143,6 +143,55 @@ export async function ensureGalleryCors(bucketName = B2_GALLERY_BUCKET_NAME): Pr
 }
 
 /**
+ * Builds standardized Backblaze B2 object keys for photos:
+ * workspaces/{workspace_id}/events/{event_id}/folders/{folder_id}/thumb/{photo_id}.webp
+ * workspaces/{workspace_id}/events/{event_id}/folders/{folder_id}/preview/{photo_id}.webp
+ */
+export function buildGalleryPhotoKeys(params: {
+  workspaceId: string;
+  eventId: string;
+  folderId?: string | null;
+  photoId: string;
+}): {
+  thumbKey: string;
+  previewKey: string;
+} {
+  const ws = params.workspaceId || 'default';
+  const ev = params.eventId;
+  const fl = params.folderId || 'default';
+  const pid = params.photoId.replace(/\.[^/.]+$/, '');
+  return {
+    thumbKey: `workspaces/${ws}/events/${ev}/folders/${fl}/thumb/${pid}.webp`,
+    previewKey: `workspaces/${ws}/events/${ev}/folders/${fl}/preview/${pid}.webp`,
+  };
+}
+
+/**
+ * Builds standardized Backblaze B2 folder prefix for batch deletion:
+ * workspaces/{workspace_id}/events/{event_id}/folders/{folder_id}/
+ */
+export function buildGalleryFolderPrefix(params: {
+  workspaceId: string;
+  eventId: string;
+  folderId: string;
+}): string {
+  const ws = params.workspaceId || 'default';
+  return `workspaces/${ws}/events/${params.eventId}/folders/${params.folderId}/`;
+}
+
+/**
+ * Builds standardized Backblaze B2 event prefix for batch deletion:
+ * workspaces/{workspace_id}/events/{event_id}/
+ */
+export function buildGalleryEventPrefix(params: {
+  workspaceId: string;
+  eventId: string;
+}): string {
+  const ws = params.workspaceId || 'default';
+  return `workspaces/${ws}/events/${params.eventId}/`;
+}
+
+/**
  * Normalizes any storage reference into a clean relative S3 Key for Backblaze B2.
  * Supports:
  * - Direct S3 keys: "events/123/original/abc.jpg"

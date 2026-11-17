@@ -41,9 +41,13 @@ interface PhotoItem {
   id: string;
   gallery_id: string;
   collection_id?: string | null;
+  folder_id?: string | null;
   preview_url: string;
   thumbnail_url: string;
-  original_key: string;
+  preview_key?: string;
+  thumbnail_key?: string;
+  thumb_key?: string;
+  original_key?: string | null;
   width: number;
   height: number;
   face_count: number;
@@ -130,9 +134,12 @@ function StrictZeroKnowledgeGuestContent() {
   const guestIdParam = searchParams?.get('guest') || searchParams?.get('guest_id');
   const tokenParam = searchParams?.get('token');
 
-  const currentGalleryStatus = (gallery?.status?.toUpperCase() === 'EXPIRED')
+  const rawStatus = (gallery?.status || '').toUpperCase();
+  const currentGalleryStatus = (rawStatus === 'PAUSED')
+    ? 'PAUSED'
+    : (rawStatus === 'EXPIRED')
     ? 'EXPIRED'
-    : (gallery?.status?.toUpperCase() === 'PUBLISHED' || (gallery?.is_active && gallery?.status?.toUpperCase() !== 'UNPUBLISHED'))
+    : (rawStatus === 'PUBLISHED' || (gallery?.is_active && rawStatus !== 'UNPUBLISHED'))
     ? 'PUBLISHED'
     : 'UNPUBLISHED';
 
@@ -501,30 +508,30 @@ function StrictZeroKnowledgeGuestContent() {
     }
   };
 
-  // Download High-Res Original Photo directly from originals/ folder
+  // Download High-Res Photo directly (Web-Sharp Preview / Original fallback)
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     setDownloadingId(photo.id);
     try {
-      const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
-      const cleanName = photo.original_key ? photo.original_key.split('/').pop()?.replace(/^\d+_[a-z0-9]+_/, '') : `photo_${photo.id.slice(0, 8)}.jpg`;
+      const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
+      const cleanName = (photo.preview_key || photo.original_key || '').split('/').pop()?.replace(/^\d+_[a-z0-9]+_/, '') || `photo_${photo.id.slice(0, 8)}.webp`;
       const res = await fetch(
-        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanName || 'photo.jpg')}`
+        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanName || 'photo.webp')}`
       );
       const json = await res.json();
       if (json.success && json.downloadUrl) {
         const link = document.createElement('a');
         link.href = json.downloadUrl;
-        link.setAttribute('download', cleanName || 'photo.jpg');
+        link.setAttribute('download', cleanName || 'photo.webp');
         link.target = '_blank';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
       } else {
-        const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName || 'photo.jpg')}`;
+        const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName || 'photo.webp')}`;
         window.open(fallbackUrl, '_blank');
       }
     } catch (_) {
-      const targetKey = photo.original_key || photo.preview_url;
+      const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
       window.open(`/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1`, '_blank');
     } finally {
       setDownloadingId(null);
@@ -579,6 +586,43 @@ function StrictZeroKnowledgeGuestContent() {
         </div>
         <h1 className="text-xl font-black text-zinc-900">Gallery Not Found</h1>
         <p className="text-xs text-zinc-500 max-w-sm">{error || 'This gallery is currently inactive.'}</p>
+      </div>
+    );
+  }
+
+  if (currentGalleryStatus === 'PAUSED') {
+    return (
+      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
+        <div className="relative w-20 h-20 mx-auto">
+          <div className="absolute inset-0 rounded-3xl bg-amber-500/20 animate-pulse pointer-events-none" />
+          <div className="relative w-20 h-20 rounded-3xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shadow-lg">
+            <Lock className="w-10 h-10" />
+          </div>
+        </div>
+
+        <div className="space-y-2 max-w-md">
+          <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest border border-amber-300">
+            Subscription Inactive
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+            Gallery Paused — Contact Studio to Unlock
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+            Public viewing for <span className="font-bold text-zinc-800">{gallery.title}</span> is temporarily paused. Your photos are safely preserved in cloud storage.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-3 text-center">
+          <p className="text-xs text-zinc-600 leading-relaxed">
+            Please contact the studio owner to restore instant live access to this photo gallery.
+          </p>
+          <a
+            href="/"
+            className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
+          >
+            Return to StudioCore
+          </a>
+        </div>
       </div>
     );
   }
