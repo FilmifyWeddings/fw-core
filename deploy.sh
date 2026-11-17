@@ -107,7 +107,9 @@ fi
 
 echo "Restarting PM2 apps via ecosystem.config.js..."
 cd /var/www/fw-core || exit 1
-pm2 restart ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
+pm2 delete fw-core 2>/dev/null || true
+pm2 start ecosystem.config.js --only "fw-core" --update-env 2>/dev/null || pm2 restart ecosystem.config.js --only "fw-core" --update-env 2>/dev/null || true
+pm2 restart ecosystem.config.js --only "baileys-worker" --update-env 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker" --update-env 2>/dev/null || true
 pm2 save
 
 echo "Disabling local CPU InsightFace worker to save 100% DigitalOcean CPU (offloaded to Modal L4 GPU)..."
