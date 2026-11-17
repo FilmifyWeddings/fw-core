@@ -290,26 +290,26 @@ export async function proxy(request: NextRequest) {
       }
     }
 
-    // Proactively prune stale/orphaned auth token chunks & duplicate legacy cookies on every incoming request
+    // Clean legacy v1 auth token and foreign project auth tokens
     const allExistingCookies = request.cookies.getAll();
-    if (allExistingCookies.length > 3) {
+    if (allExistingCookies.length > 5) {
       let currentRef = '';
       try {
         currentRef = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || '').hostname.split('.')[0];
       } catch (_) {}
 
       allExistingCookies.forEach((c) => {
-        // Prune cookies from other Supabase projects
-        if (c.name.startsWith('sb-') && currentRef && !c.name.startsWith(`sb-${currentRef}`)) {
+        // Prune foreign project auth tokens (never touch sb-access-token, sb-refresh-token, or active project)
+        if (
+          c.name.startsWith('sb-') &&
+          c.name.includes('-auth-token') &&
+          currentRef &&
+          !c.name.startsWith(`sb-${currentRef}`)
+        ) {
           response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
         }
-        // Prune legacy v1 auth tokens
-        if (c.name === 'supabase.auth.token' || c.name === 'sb-access-token' || c.name === 'sb-refresh-token') {
-          response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
-        }
-        // Prune high-index chunks (>= 3)
-        const chunkMatch = c.name.match(/^(sb-[a-z0-9_-]+-auth-token)\.(\d+)$/i);
-        if (chunkMatch && parseInt(chunkMatch[2], 10) >= 3) {
+        // Prune legacy v1 auth token only
+        if (c.name === 'supabase.auth.token') {
           response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
         }
       });

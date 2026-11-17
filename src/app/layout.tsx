@@ -195,52 +195,10 @@ export default function RootLayout({
                     return origConsoleWarn.apply(console, args);
                   };
 
-                  // 3. Proactive cookie header size management: prune redundant legacy tokens & orphaned chunks
+                  // 3. Clean legacy v1 auth token if present
                   try {
-                    if (typeof document !== 'undefined' && document.cookie) {
-                      var rawCookies = document.cookie.split(';');
-                      var obsNames = ['sb-access-token', 'sb-refresh-token', 'supabase.auth.token'];
-                      var delCookie = function(name) {
-                        var paths = ['/', '/workspace', '/dashboard', '/api', '/leads', '/quotations', '/team', '/partner'];
-                        var domain = window.location.hostname;
-                        for (var pi = 0; pi < paths.length; pi++) {
-                          document.cookie = name + '=; path=' + paths[pi] + '; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
-                          document.cookie = name + '=; path=' + paths[pi] + '; domain=' + domain + '; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
-                        }
-                      };
-
-                      for (var ci = 0; ci < rawCookies.length; ci++) {
-                        var cTrim = rawCookies[ci].trim();
-                        var eq = cTrim.indexOf('=');
-                        if (eq !== -1) {
-                          var cName = cTrim.substring(0, eq).trim();
-                          if (obsNames.indexOf(cName) !== -1) {
-                            delCookie(cName);
-                          }
-                          var m = cName.match(/^(sb-[a-z0-9_-]+-auth-token)\.(\d+)$/i);
-                          if (m && parseInt(m[2], 10) >= 3) {
-                            delCookie(cName);
-                          }
-                        }
-                      }
-
-                      // If cookie size is still dangerously large (> 3500 chars), prune stale projects & chunks >= 2
-                      if (document.cookie.length > 3500) {
-                        for (var cj = 0; cj < rawCookies.length; cj++) {
-                          var ct = rawCookies[cj].trim();
-                          var eq2 = ct.indexOf('=');
-                          if (eq2 !== -1) {
-                            var cn = ct.substring(0, eq2).trim();
-                            if (cn.indexOf('sb-') === 0 && cn.indexOf('sb-nviwtgnqplebzsgdemlm') === -1) {
-                              delCookie(cn);
-                            }
-                            var m2 = cn.match(/^(sb-[a-z0-9_-]+-auth-token)\.(\d+)$/i);
-                            if (m2 && parseInt(m2[2], 10) >= 2) {
-                              delCookie(cn);
-                            }
-                          }
-                        }
-                      }
+                    if (typeof document !== 'undefined' && document.cookie && document.cookie.indexOf('supabase.auth.token') !== -1) {
+                      document.cookie = 'supabase.auth.token=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
                     }
                   } catch (_) {}
                 } catch(e){}

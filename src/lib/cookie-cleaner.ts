@@ -13,55 +13,18 @@ export function pruneClientCookies(): void {
 
   try {
     const cookies = document.cookie.split(';');
-    const cookieNames: string[] = [];
-
     for (const c of cookies) {
       const parts = c.split('=');
       const name = parts[0]?.trim();
-      if (name) cookieNames.push(name);
-    }
-
-    // 1. Identify Supabase auth token chunk groups
-    const chunkMap = new Map<string, number[]>();
-    const obsoleteNames = ['sb-access-token', 'sb-refresh-token', 'supabase.auth.token'];
-
-    cookieNames.forEach((name) => {
-      // Check for chunked cookies like sb-xxx-auth-token.0, sb-xxx-auth-token.1
-      const match = name.match(/^(sb-[a-z0-9_-]+-auth-token)\.(\d+)$/i);
-      if (match) {
-        const baseName = match[1];
-        const index = parseInt(match[2], 10);
-        if (!chunkMap.has(baseName)) {
-          chunkMap.set(baseName, []);
-        }
-        chunkMap.get(baseName)!.push(index);
-      }
-    });
-
-    // 2. Remove obsolete custom tokens if standard Supabase SSR cookies exist
-    obsoleteNames.forEach((obsName) => {
-      if (cookieNames.includes(obsName)) {
-        deleteCookie(obsName);
-      }
-    });
-
-    // 3. For any chunked group, if non-contiguous or stale chunks exist beyond maximum, prune them
-    chunkMap.forEach((indices, baseName) => {
-      indices.sort((a, b) => a - b);
-      // If there are orphaned high index chunks (>= 3), clean them
-      indices.forEach((idx) => {
-        if (idx >= 3) {
-          deleteCookie(`${baseName}.${idx}`);
-        }
-      });
-    });
-
-    // 4. Prune cookies from any non-active Supabase project
-    cookieNames.forEach((name) => {
-      if (name.startsWith('sb-') && !name.startsWith('sb-nviwtgnqplebzsgdemlm')) {
+      // Only remove legacy v1 supabase token if present
+      if (name === 'supabase.auth.token') {
         deleteCookie(name);
       }
-    });
+      // Remove tokens from other supabase projects if present
+      if (name && name.startsWith('sb-') && name.includes('-auth-token') && !name.startsWith('sb-nviwtgnqplebzsgdemlm')) {
+        deleteCookie(name);
+      }
+    }
   } catch (e) {
     console.warn('[Cookie Cleaner Notice]:', e);
   }
