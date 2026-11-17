@@ -464,14 +464,17 @@ export function DashboardSidebarShell({ children }: SidebarLayoutProps) {
     localStorage.setItem('sidebar_collapsed', String(collapsed));
   }, [collapsed]);
 
-  // Clean idle prefetch - eliminates aggressive 13-route network bursts on page load
+  // Clean idle prefetch - prewarm primary studio routes for instant 0ms switching
   useEffect(() => {
     if (isStandalonePage) return;
     const timer = setTimeout(() => {
       try {
-        router.prefetch('/workspace');
+        router.prefetch(formatPathWithStudio('/workspace'));
+        router.prefetch(formatPathWithStudio('/workspace/leads'));
+        router.prefetch(formatPathWithStudio('/team-manager'));
+        router.prefetch(formatPathWithStudio('/workspace/quotations'));
       } catch (_) {}
-    }, 2500);
+    }, 1200);
     return () => clearTimeout(timer);
   }, [isStandalonePage, router]);
 
@@ -949,6 +952,12 @@ export function DashboardSidebarShell({ children }: SidebarLayoutProps) {
                   href={formatPathWithStudio(item.path)}
                   prefetch={false}
                   suppressHydrationWarning
+                  onMouseEnter={() => {
+                    try { router.prefetch(formatPathWithStudio(item.path)); } catch (_) {}
+                  }}
+                  onTouchStart={() => {
+                    try { router.prefetch(formatPathWithStudio(item.path)); } catch (_) {}
+                  }}
                   onClick={(e) => {
                     if ((item as any).isLocked) {
                       e.preventDefault();
@@ -1008,6 +1017,12 @@ export function DashboardSidebarShell({ children }: SidebarLayoutProps) {
                           href={formatPathWithStudio(sub.path)}
                           prefetch={false}
                           suppressHydrationWarning
+                          onMouseEnter={() => {
+                            try { router.prefetch(formatPathWithStudio(sub.path)); } catch (_) {}
+                          }}
+                          onTouchStart={() => {
+                            try { router.prefetch(formatPathWithStudio(sub.path)); } catch (_) {}
+                          }}
                           className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all active:scale-[0.98] select-none ${
                             isSubActive
                               ? 'bg-amber-100/70 text-amber-900 font-bold'
@@ -1303,6 +1318,9 @@ export function DashboardSidebarShell({ children }: SidebarLayoutProps) {
                         href={formatPathWithStudio(item.path)}
                         prefetch={false}
                         suppressHydrationWarning
+                        onTouchStart={() => {
+                          try { router.prefetch(formatPathWithStudio(item.path)); } catch (_) {}
+                        }}
                         onClick={() => setMobileDrawerOpen(false)}
                         className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98] select-none ${
                           isActive
