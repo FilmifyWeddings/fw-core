@@ -18,8 +18,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
-import { getMemberDisplayRole } from '@/lib/team-helpers';
-import { handleUpdateBookingPM } from '../workspace/bookings/components/ProjectBookingCard';
+import { getMemberDisplayRole, resolveSubEventAssignments, matchDateQuery, isDateSearchQuery, handleUpdateBookingPM } from '@/lib/team-helpers';
 import { parseClientExtended } from '@/components/clients/client-insider-modal';
 import { logProjectActivity, logCrewAssignmentChange } from '@/lib/services/projectAuditService';
 import ProjectHistoryModal from './components/ProjectHistoryModal';
@@ -95,8 +94,6 @@ const format12HourTime = (timeStr?: string): string => {
   const formattedHours = hours.toString().padStart(2, '0');
   return `${formattedHours}:${minutes} ${ampm}`;
 };
-
-import { resolveSubEventAssignments, matchDateQuery, isDateSearchQuery } from '@/lib/team-helpers';
 
 export default function TeamManagerPage() {
   const { workspaceId, workspaceName, isOwner, userRole, permissions, activeWorkspace, availableWorkspaces, userId, userEmail, loading: wsLoading } = useWorkspace();

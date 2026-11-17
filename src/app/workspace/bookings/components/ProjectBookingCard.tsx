@@ -5,87 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { FWProject, FWTeamMember } from '@/types';
 import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
 import { ChevronDown, Search, UserCheck, Users, Calendar, MapPin } from 'lucide-react';
-
-/**
- * ⚡ Bidirectional PM Assignment for Bookings & Events
- * Updates fw_projects and concurrently pushes to workspace_clients
- */
-export const handleUpdateBookingPM = async (
-  projectId: string,
-  clientId: string | null,
-  clientName: string,
-  member: any | null
-) => {
-  const pmId = member ? member.id : null;
-  const pmName = member ? member.name : null;
-
-  // 1. Update Project in fw_projects
-  try {
-    await supabase
-      .from('fw_projects')
-      .update({
-        project_manager_id: pmId,
-        project_manager_name: pmName,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', projectId);
-  } catch (err) {
-    console.error('[handleUpdateBookingPM] Error updating fw_projects:', err);
-  }
-
-  // 2. Dual-sync to Client Directory (workspace_clients)
-  try {
-    if (clientId) {
-      const { data: matchedClients } = await supabase
-        .from('workspace_clients')
-        .select('id, name, notes')
-        .eq('id', clientId);
-
-      if (matchedClients && matchedClients.length > 0) {
-        for (const c of matchedClients) {
-          let updatedNotes = c.notes;
-          try {
-            const ext = parseClientExtended(c as any);
-            const updatedExt = {
-              ...ext,
-              project_manager_id: pmId || '',
-              project_manager_name: pmName || '',
-            };
-            updatedNotes = serializeClientExtended(updatedExt);
-          } catch (e) {}
-
-          const { error: cErr } = await supabase
-            .from('workspace_clients')
-            .update({
-              project_manager_id: pmId,
-              project_manager_name: pmName,
-              notes: updatedNotes,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', c.id);
-
-          if (cErr) {
-            await supabase
-              .from('workspace_clients')
-              .update({ notes: updatedNotes, updated_at: new Date().toISOString() })
-              .eq('id', c.id);
-          }
-        }
-      } else {
-        await supabase
-          .from('workspace_clients')
-          .update({
-            project_manager_id: pmId,
-            project_manager_name: pmName,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', clientId);
-      }
-    }
-  } catch (syncErr) {
-    console.warn('[handleUpdateBookingPM] Dual-sync to workspace_clients error:', syncErr);
-  }
-};
+import { handleUpdateBookingPM } from '@/lib/team-helpers';
+export { handleUpdateBookingPM };
 
 export interface ProjectBookingCardProps {
   project: FWProject;

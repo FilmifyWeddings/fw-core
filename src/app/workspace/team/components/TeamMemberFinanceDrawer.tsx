@@ -152,27 +152,6 @@ export default function TeamMemberFinanceDrawer({
 
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<'bookings' | 'deliverables' | 'album_printing' | 'payroll' | 'analytics'>(initialTab || 'bookings');
-
-  useEffect(() => {
-    if (isOpen) {
-      if (initialTab) {
-        if (initialTab === 'album_printing' && albumOrders.length === 0 && !isLab) {
-          setActiveTab('bookings');
-        } else {
-          setActiveTab(initialTab as any);
-        }
-      } else if (isLab || albumOrders.length > 0) {
-        if (isLab) setActiveTab('album_printing');
-      }
-    }
-  }, [isOpen, initialTab, isLab, isPartner, albumOrders.length]);
-
-  // If on album_printing tab but member has no assigned album orders and is not a lab, switch to bookings/deliverables
-  useEffect(() => {
-    if (activeTab === 'album_printing' && albumOrders.length === 0 && !isLab) {
-      setActiveTab(deliverables.length > 0 ? 'deliverables' : 'bookings');
-    }
-  }, [activeTab, albumOrders.length, isLab, deliverables.length]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Data States
@@ -199,6 +178,27 @@ export default function TeamMemberFinanceDrawer({
     pending_events_count: 0,
     monthly_breakdown: []
   });
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialTab) {
+        if (initialTab === 'album_printing' && albumOrders.length === 0 && !isLab) {
+          setActiveTab('bookings');
+        } else {
+          setActiveTab(initialTab as any);
+        }
+      } else if (isLab || albumOrders.length > 0) {
+        if (isLab) setActiveTab('album_printing');
+      }
+    }
+  }, [isOpen, initialTab, isLab, isPartner, albumOrders.length]);
+
+  // If on album_printing tab but member has no assigned album orders and is not a lab, switch to bookings/deliverables
+  useEffect(() => {
+    if (activeTab === 'album_printing' && albumOrders.length === 0 && !isLab) {
+      setActiveTab(deliverables.length > 0 ? 'deliverables' : 'bookings');
+    }
+  }, [activeTab, albumOrders.length, isLab, deliverables.length]);
 
   // Modal States for Shoot / Album / Deliverable Payment
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -261,6 +261,15 @@ export default function TeamMemberFinanceDrawer({
   const [salaryAutoSyncExpense, setSalaryAutoSyncExpense] = useState<boolean>(true);
   const [isSubmittingSalary, setIsSubmittingSalary] = useState<boolean>(false);
 
+  // Payroll Filter State
+  const [payrollFilterYear, setPayrollFilterYear] = useState<string>('All');
+  const [payrollFilterMonth, setPayrollFilterMonth] = useState<string>('All');
+
+  // Analytics Filter Scope
+  const [analyticsYearScope, setAnalyticsYearScope] = useState<string>('All');
+  const [analyticsCategoryScope, setAnalyticsCategoryScope] = useState<'all' | 'shoots' | 'deliverables' | 'salaries'>('all');
+  const [analyticsStatusScope, setAnalyticsStatusScope] = useState<'all' | 'completed' | 'pending'>('all');
+
   // Unlimited Year Options for inline salary slip form
   const inlineYearOptions = useMemo(() => {
     const list: number[] = [];
@@ -270,15 +279,6 @@ export default function TeamMemberFinanceDrawer({
     }
     return list;
   }, [now]);
-
-  // Payroll Filter State
-  const [payrollFilterYear, setPayrollFilterYear] = useState<string>('All');
-  const [payrollFilterMonth, setPayrollFilterMonth] = useState<string>('All');
-
-  // Analytics Filter Scope
-  const [analyticsYearScope, setAnalyticsYearScope] = useState<string>('All');
-  const [analyticsCategoryScope, setAnalyticsCategoryScope] = useState<'all' | 'shoots' | 'deliverables' | 'salaries'>('all');
-  const [analyticsStatusScope, setAnalyticsStatusScope] = useState<'all' | 'completed' | 'pending'>('all');
 
   // Helper to format Month/Year cleanly - STRICTLY prioritizes explicit month_year over paidDate
   const formatSlipTitle = useCallback((monthYear?: string, paidDate?: string) => {
