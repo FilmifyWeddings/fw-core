@@ -15,11 +15,11 @@ module.exports = {
   apps: [
     {
       name: 'fw-core',
-      script: 'npm',
+      script: 'node_modules/next/dist/bin/next',
       args: 'start',
       cwd: __dirname,
-      instances: 1,
-      exec_mode: 'fork',
+      instances: 2,
+      exec_mode: 'cluster',
       max_memory_restart: '1200M',
       kill_timeout: 10000,
       listen_timeout: 30000,

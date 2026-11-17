@@ -42,15 +42,10 @@ for ENV_FILE in /var/www/fw-core/.env.local /var/www/fw-core/.env /var/www/fw-co
       fi
     done
 
-    # Sync Active OpenAI API Key for Whisper & GPT-4o-mini
-    NEW_OPENAI_KEY=$(echo "c2stcHJvai1XN1Z2THc4aWptVGl4T2JHeWZlYTJYQVB3aEpFRDlLOFFFYkZ0U3JHb29JVEpZemtFRHlRUzlkUWNZZ2hWVWJqendUUUpSeE90VFQzQmxia0ZKQVQwZ1hxSjVoNDhwblpmOGZqRE5odW5NUzR2WEs1WTRIRG0xdlI3QUptaGZlUy1lMWVHMTdHLUpaQ0VVdW81MXU4SWRUNUJjb0E=" | base64 -d)
-    if grep -q "^OPENAI_API_KEY=" "$ENV_FILE"; then
-      sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${NEW_OPENAI_KEY}|g" "$ENV_FILE"
-    else
-      echo "OPENAI_API_KEY=${NEW_OPENAI_KEY}" >> "$ENV_FILE"
-    fi
+    # Ensure OpenAI is permanently disabled in all environment files
+    sed -i "s|^OPENAI_API_KEY=.*|# OPENAI_API_KEY=DISABLED_PERMANENTLY|g" "$ENV_FILE" 2>/dev/null || true
 
-    echo "Google & OpenAI credentials synced in $ENV_FILE"
+    echo "Google OAuth & Environment credentials synced in $ENV_FILE"
   fi
 done
 
