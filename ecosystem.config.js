@@ -20,6 +20,7 @@ module.exports = {
       cwd: __dirname,
       instances: 2,
       exec_mode: 'cluster',
+      node_args: '--max-http-header-size=131072',
       max_memory_restart: '1200M',
       kill_timeout: 10000,
       listen_timeout: 30000,

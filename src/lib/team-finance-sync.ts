@@ -53,16 +53,20 @@ export interface PartnerAlbumOrder {
   partner_name: string;
   client_name: string;
   project_id?: string;
+  deliverable_id?: string;
+  category?: 'album_design' | 'album_printing' | string;
+  role?: string;
   album_type: string;
   sheet_count: number;
   rate_per_sheet: number;
   total_amount: number;
   paid_amount: number;
   balance_amount: number;
-  order_status: 'DESIGNING' | 'PRINTING' | 'BINDING' | 'DISPATCHED' | 'DELIVERED';
-  payment_status: 'PENDING' | 'PARTIAL' | 'PAID';
+  order_status: 'DESIGNING' | 'PRINTING' | 'BINDING' | 'DISPATCHED' | 'DELIVERED' | string;
+  payment_status: 'PENDING' | 'PARTIAL' | 'PAID' | string;
   order_date: string;
   delivery_date?: string;
+  due_date?: string;
   notes?: string;
   created_at?: string;
   updated_at?: string;
@@ -2714,7 +2718,7 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
         nameToIdMap.set(m.name.trim().toLowerCase(), m.id);
       }
       if (m.id) {
-        const isIH = m.primary_type === 'IN_HOUSE' || 
+        const isIH = (m as any).primary_type === 'IN_HOUSE' || 
           m.member_types?.includes('IN_HOUSE') || 
           (m as any).payout_frequency === 'monthly' || 
           (m as any).type === 'in-house';

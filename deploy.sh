@@ -107,7 +107,7 @@ fi
 
 echo "Restarting PM2 apps via ecosystem.config.js..."
 cd /var/www/fw-core || exit 1
-pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 restart ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
+pm2 restart ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
 pm2 save
 
 echo "Disabling local CPU InsightFace worker to save 100% DigitalOcean CPU (offloaded to Modal L4 GPU)..."
@@ -136,25 +136,25 @@ mkdir -p /var/www/fw-core/public
   ls -la /var/www || true
 } > /var/www/fw-core/public/face-diag.txt 2>&1 || true
 
-echo "Configuring Nginx large_client_header_buffers to permanently eliminate 400 Bad Request..."
+echo "Configuring Nginx large_client_header_buffers to permanently eliminate 400 Bad Request & 431 Header Too Large..."
 if command -v nginx >/dev/null 2>&1; then
   mkdir -p /etc/nginx/conf.d
   cat << 'EOF' > /etc/nginx/conf.d/00-buffers.conf
-client_header_buffer_size 8k;
-large_client_header_buffers 4 64k;
+client_header_buffer_size 16k;
+large_client_header_buffers 8 128k;
 EOF
   if nginx -t 2>/dev/null; then
     systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true
-    echo "Nginx buffers updated to 64k successfully via conf.d."
+    echo "Nginx buffers updated to 128k successfully via conf.d."
   else
     rm -f /etc/nginx/conf.d/00-buffers.conf
-    sed -i 's/large_client_header_buffers.*/large_client_header_buffers 4 64k;/g' /etc/nginx/nginx.conf 2>/dev/null || true
-    sed -i 's/client_header_buffer_size.*/client_header_buffer_size 8k;/g' /etc/nginx/nginx.conf 2>/dev/null || true
+    sed -i 's/large_client_header_buffers.*/large_client_header_buffers 8 128k;/g' /etc/nginx/nginx.conf 2>/dev/null || true
+    sed -i 's/client_header_buffer_size.*/client_header_buffer_size 16k;/g' /etc/nginx/nginx.conf 2>/dev/null || true
     if ! grep -q "large_client_header_buffers" /etc/nginx/nginx.conf 2>/dev/null; then
-      sed -i '/http {/a \    client_header_buffer_size 8k;\n    large_client_header_buffers 4 64k;' /etc/nginx/nginx.conf 2>/dev/null || true
+      sed -i '/http {/a \    client_header_buffer_size 16k;\n    large_client_header_buffers 8 128k;' /etc/nginx/nginx.conf 2>/dev/null || true
     fi
     nginx -t 2>/dev/null && (systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true)
-    echo "Nginx buffers updated to 64k via nginx.conf."
+    echo "Nginx buffers updated to 128k via nginx.conf."
   fi
 fi
 

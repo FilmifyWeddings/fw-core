@@ -48,12 +48,19 @@ export function pruneClientCookies(): void {
     // 3. For any chunked group, if non-contiguous or stale chunks exist beyond maximum, prune them
     chunkMap.forEach((indices, baseName) => {
       indices.sort((a, b) => a - b);
-      // If there are orphaned high index chunks (e.g. > 3), clean them
+      // If there are orphaned high index chunks (>= 3), clean them
       indices.forEach((idx) => {
-        if (idx > 3) {
+        if (idx >= 3) {
           deleteCookie(`${baseName}.${idx}`);
         }
       });
+    });
+
+    // 4. Prune cookies from any non-active Supabase project
+    cookieNames.forEach((name) => {
+      if (name.startsWith('sb-') && !name.startsWith('sb-nviwtgnqplebzsgdemlm')) {
+        deleteCookie(name);
+      }
     });
   } catch (e) {
     console.warn('[Cookie Cleaner Notice]:', e);
@@ -66,7 +73,7 @@ export function pruneClientCookies(): void {
 export function deleteCookie(name: string): void {
   if (typeof document === 'undefined') return;
   const domain = window.location.hostname;
-  const paths = ['/', '/workspace', '/dashboard', '/api'];
+  const paths = ['/', '/workspace', '/dashboard', '/api', '/leads', '/quotations', '/team', '/partner'];
 
   paths.forEach((path) => {
     document.cookie = `${name}=; path=${path}; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
