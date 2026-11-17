@@ -1771,8 +1771,8 @@ function AlbumStudioContent() {
         }
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
-          const cleanName = getCleanFilename(p.original_key).toLowerCase();
-          return cleanName.includes(q) || p.original_key.toLowerCase().includes(q);
+          const cleanName = getCleanFilename(p.original_key || p.preview_key || '').toLowerCase();
+          return cleanName.includes(q) || (p.original_key && p.original_key.toLowerCase().includes(q)) || (p.preview_key && p.preview_key.toLowerCase().includes(q));
         }
         return true;
       })
@@ -1797,10 +1797,10 @@ function AlbumStudioContent() {
           return (Number(a.size_bytes) || 0) - (Number(b.size_bytes) || 0);
         }
         if (sortBy === 'name_asc') {
-          return getCleanFilename(a.original_key).localeCompare(getCleanFilename(b.original_key));
+          return getCleanFilename(a.original_key || a.preview_key || '').localeCompare(getCleanFilename(b.original_key || b.preview_key || ''));
         }
         if (sortBy === 'name_desc') {
-          return getCleanFilename(b.original_key).localeCompare(getCleanFilename(a.original_key));
+          return getCleanFilename(b.original_key || b.preview_key || '').localeCompare(getCleanFilename(a.original_key || a.preview_key || ''));
         }
         // default: newest
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -2636,7 +2636,7 @@ function AlbumStudioContent() {
                   {displayedPhotos.map((photo, idx) => {
                     const isCover = gallery.cover_url?.startsWith(photo.preview_url);
                     const isSelected = selectedPhotoIds.has(photo.id);
-                    const cleanName = getCleanFilename(photo.original_key);
+                    const cleanName = getCleanFilename(photo.original_key || photo.preview_key || '');
 
                     return (
                       <div
@@ -3115,7 +3115,7 @@ function AlbumStudioContent() {
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                       {targetPhotos.map((photo, idx) => {
                         const isSelected = activeSelectedIds.has(photo.id);
-                        const cleanName = getCleanFilename(photo.original_key);
+                        const cleanName = getCleanFilename(photo.original_key || photo.preview_key || '');
                         const colName = collections.find((c) => c.id === photo.collection_id)?.name || 'General';
 
                         return (

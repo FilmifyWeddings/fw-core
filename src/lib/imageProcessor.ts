@@ -464,11 +464,12 @@ export async function batchUploadPhotos(
           recordUploadedToManifest(galleryId, file.name, file.size);
 
           // 2D. Collect for registration with exact folder_id & size_bytes
+          const resolvedColId = collectionId && collectionId !== 'all' ? collectionId : null;
           pendingRegistration.push({
             gallery_id: galleryId,
-            folder_id: targetFolderId,
-            collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
-            original_key: null,
+            folder_id: resolvedColId,
+            collection_id: resolvedColId,
+            original_key: previewKey, // Always point to sharp preview to avoid null constraints & ensure legacy compatibility
             preview_key: previewKey,
             thumbnail_key: thumbKey,
             thumb_key: thumbKey,

@@ -56,20 +56,61 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
+    const isValidUuid = (val: any): boolean => {
+      if (!val || typeof val !== 'string') return false;
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+    };
+
+    // Auto-resolve default collection ID for this gallery if collection_id / folder_id is missing or 'default'
+    let defaultColId: string | null = null;
+    try {
+      const { data: cols } = await supabaseAdmin
+        .from('gallery_collections')
+        .select('id')
+        .eq('gallery_id', galleryId)
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (cols && cols.length > 0) {
+        defaultColId = cols[0].id;
+      } else {
+        const { data: newCol } = await supabaseAdmin
+          .from('gallery_collections')
+          .insert({ gallery_id: galleryId, name: 'Highlights', slug: 'highlights' })
+          .select('id')
+          .maybeSingle();
+        if (newCol) defaultColId = newCol.id;
+      }
+    } catch (_) {}
+
     // 2. Normalize and insert photos into gallery_photos
-    const normalizedPhotos = photos.map((p: any) => ({
-      gallery_id: galleryId,
-      collection_id: p.collection_id || (p.folder_id && p.folder_id !== 'default' ? p.folder_id : null),
-      folder_id: p.folder_id || p.collection_id || null,
-      preview_key: p.preview_key,
-      thumbnail_key: p.thumbnail_key || p.thumb_key,
-      thumb_key: p.thumb_key || p.thumbnail_key,
-      original_key: p.original_key || null,
-      width: p.width,
-      height: p.height,
-      size_bytes: Number(p.size_bytes) || 0,
-      face_count: p.face_count || 0,
-    }));
+    const normalizedPhotos = photos.map((p: any) => {
+      const colId = isValidUuid(p.collection_id)
+        ? p.collection_id
+        : (isValidUuid(p.folder_id) ? p.folder_id : defaultColId);
+
+      const folId = isValidUuid(p.folder_id)
+        ? p.folder_id
+        : (isValidUuid(p.collection_id) ? p.collection_id : defaultColId);
+
+      const targetPreview = p.preview_key || p.preview_url || '';
+      const targetThumb = p.thumb_key || p.thumbnail_key || targetPreview;
+      const targetOriginal = p.original_key || targetPreview;
+
+      return {
+        gallery_id: galleryId,
+        collection_id: colId,
+        folder_id: folId,
+        preview_key: targetPreview,
+        thumbnail_key: targetThumb,
+        thumb_key: targetThumb,
+        original_key: targetOriginal,
+        width: p.width,
+        height: p.height,
+        size_bytes: Number(p.size_bytes) || 0,
+        face_count: p.face_count || 0,
+      };
+    });
 
     let inserted: any[] | null = null;
     let { data: insertedData, error: insertError } = await supabaseAdmin

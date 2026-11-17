@@ -52,9 +52,10 @@ export async function GET(req: NextRequest) {
 
     // Return 100% White-Labeled Native StudioCore Image URLs
     const enriched = (photos || []).map((p: any) => {
-      const targetThumb = p.thumb_key || p.thumbnail_key || p.preview_key;
-      const preview_url = `/api/gallery/image?key=${encodeURIComponent(p.preview_key)}`;
-      const thumbnail_url = `/api/gallery/image?key=${encodeURIComponent(targetThumb)}`;
+      const targetPreview = p.preview_key || p.original_key || '';
+      const targetThumb = p.thumb_key || p.thumbnail_key || targetPreview;
+      const preview_url = targetPreview ? `/api/gallery/image?key=${encodeURIComponent(targetPreview)}` : '';
+      const thumbnail_url = targetThumb ? `/api/gallery/image?key=${encodeURIComponent(targetThumb)}` : preview_url;
 
       return {
         id: p.id,
@@ -63,8 +64,8 @@ export async function GET(req: NextRequest) {
         folder_id: p.folder_id || p.collection_id,
         preview_url,
         thumbnail_url,
-        original_key: p.original_key,
-        preview_key: p.preview_key,
+        original_key: p.original_key || targetPreview,
+        preview_key: targetPreview,
         thumbnail_key: targetThumb,
         thumb_key: targetThumb,
         width: p.width,

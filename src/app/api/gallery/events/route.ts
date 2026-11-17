@@ -986,9 +986,11 @@ export async function DELETE(req: NextRequest) {
     // 4. Purge entire S3 folder prefixes for this gallery to ensure zero orphan files in B2
     const prefixesToPurge = new Set<string>();
     if (existing?.workspace_id) {
+      prefixesToPurge.add(`gallery/${existing.workspace_id}/${id}/`);
       prefixesToPurge.add(`workspaces/${existing.workspace_id}/events/${id}/`);
       prefixesToPurge.add(`galleries/${existing.workspace_id}/${id}/`);
     }
+    prefixesToPurge.add(`gallery/default/${id}/`);
     prefixesToPurge.add(`workspaces/default/events/${id}/`);
     prefixesToPurge.add(`galleries/00000000-0000-0000-0000-000000000000/${id}/`);
     prefixesToPurge.add(`events/${id}/`);

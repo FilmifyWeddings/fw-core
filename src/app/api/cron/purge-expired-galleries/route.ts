@@ -93,9 +93,11 @@ async function handlePurge(req: NextRequest) {
       // C. Recursively delete entire prefix from Backblaze B2
       const prefixesToPurge: string[] = [];
       if (workspaceId) {
+        prefixesToPurge.push(`gallery/${workspaceId}/${galleryId}/`);
         prefixesToPurge.push(`workspaces/${workspaceId}/events/${galleryId}/`);
         prefixesToPurge.push(`galleries/${workspaceId}/${galleryId}/`);
       }
+      prefixesToPurge.push(`gallery/default/${galleryId}/`);
       prefixesToPurge.push(`workspaces/default/events/${galleryId}/`);
       prefixesToPurge.push(`galleries/00000000-0000-0000-0000-000000000000/${galleryId}/`);
       prefixesToPurge.push(`events/${galleryId}/`);
@@ -181,15 +183,17 @@ async function handlePurge(req: NextRequest) {
     });
 
     for (const ws of eligibleWorkspaces) {
-      // Recursively delete all objects under workspaces/{workspace_id}/events/ in Backblaze B2
-      const wsPrefix = `workspaces/${ws.id}/events/`;
-      const legacyWsPrefix = `galleries/${ws.id}/`;
+      // Recursively delete all objects under gallery/{workspace_id}/ in Backblaze B2
+      const wsPrefix = `gallery/${ws.id}/`;
+      const legacyWsPrefix = `workspaces/${ws.id}/`;
+      const legacyGalleriesPrefix = `galleries/${ws.id}/`;
       let wsPurged = 0;
 
       try {
         const res1 = await deleteGalleryPrefix(wsPrefix);
         const res2 = await deleteGalleryPrefix(legacyWsPrefix);
-        wsPurged = res1.deleted + res2.deleted;
+        const res3 = await deleteGalleryPrefix(legacyGalleriesPrefix);
+        wsPurged = res1.deleted + res2.deleted + res3.deleted;
       } catch (wsErr) {
         console.warn(`[PurgeCron] Note purging workspace prefix ${wsPrefix}:`, wsErr);
       }
@@ -201,7 +205,7 @@ async function handlePurge(req: NextRequest) {
         workspace_id: ws.id,
         gallery_title: `Full Workspace Purge: ${ws.name}`,
         purged_files_count: wsPurged,
-        purged_prefixes: [wsPrefix, legacyWsPrefix],
+        purged_prefixes: [wsPrefix, legacyWsPrefix, legacyGalleriesPrefix],
         reason: '180_day_workspace_subscription_expiry_purge',
         metadata: {
           expired_at: ws.expired_at,
