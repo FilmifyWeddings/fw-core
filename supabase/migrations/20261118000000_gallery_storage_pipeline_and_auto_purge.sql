@@ -17,10 +17,17 @@ ALTER TABLE public.event_galleries
   ADD COLUMN IF NOT EXISTS expired_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS scheduled_purge_at TIMESTAMPTZ;
 
--- 3. Ensure thumb_key, folder_id on gallery_photos
+-- 3. Ensure thumb_key, folder_id on gallery_photos and ensure nullable original_key
 ALTER TABLE public.gallery_photos
   ADD COLUMN IF NOT EXISTS thumb_key TEXT,
   ADD COLUMN IF NOT EXISTS folder_id UUID;
+
+DO $$ 
+BEGIN 
+  ALTER TABLE public.gallery_photos ALTER COLUMN original_key DROP NOT NULL;
+EXCEPTION 
+  WHEN OTHERS THEN NULL;
+END $$;
 
 -- 4. Ensure updated_at on gallery_collections and create gallery_folders view
 ALTER TABLE public.gallery_collections 

@@ -96,8 +96,8 @@ export async function POST(req: NextRequest) {
           previewKey,
           thumbUploadUrl,
           previewUploadUrl,
-          // Backward compatibility fields: original uploads are completely stopped
-          originalKey: null,
+          // Backward compatibility fields: originalKey points to sharp preview WebP
+          originalKey: previewKey,
           originalUploadUrl: null,
         };
       })
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
       thumbUploadUrl: single.thumbUploadUrl,
       previewUploadUrl: single.previewUploadUrl,
       folderId: single.folderId,
-      originalKey: null,
+      originalKey: single.previewKey,
       originalUploadUrl: null,
     });
   } catch (err: any) {

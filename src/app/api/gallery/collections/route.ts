@@ -189,9 +189,12 @@ export async function DELETE(req: NextRequest) {
     // 4. Batch-delete entire folder prefix in Backblaze B2 to ensure zero orphan files
     const prefixesToPurge: string[] = [];
     if (workspaceId && eventId) {
+      prefixesToPurge.push(`gallery/${workspaceId}/${eventId}/${id}/`);
+      prefixesToPurge.push(`gallery/${workspaceId}/${eventId}/folders/${id}/`);
       prefixesToPurge.push(`workspaces/${workspaceId}/events/${eventId}/folders/${id}/`);
     }
     if (eventId) {
+      prefixesToPurge.push(`gallery/default/${eventId}/${id}/`);
       prefixesToPurge.push(`events/${eventId}/folders/${id}/`);
       prefixesToPurge.push(`galleries/${workspaceId || 'default'}/${eventId}/folders/${id}/`);
     }

@@ -48,23 +48,53 @@ export async function GET(req: NextRequest) {
     try {
       s3Response = await fetchS3Object(cleanKey);
     } catch (err: any) {
-      // Fallback 1: If thumbs/ missing, try previews/
-      if (cleanKey.includes('/thumbs/')) {
-        const altKey = cleanKey.replace('/thumbs/', '/previews/');
-        try {
-          s3Response = await fetchS3Object(altKey);
-        } catch (_) {}
+      // Build candidate keys to handle any path format variation (gallery vs workspaces vs galleries, thumb vs thumbs)
+      const candidates: string[] = [];
+
+      if (cleanKey.startsWith('gallery/')) {
+        candidates.push(cleanKey.replace(/^gallery\//, 'workspaces/'));
+        candidates.push(cleanKey.replace(/^gallery\//, 'galleries/'));
+      } else if (cleanKey.startsWith('workspaces/')) {
+        candidates.push(cleanKey.replace(/^workspaces\//, 'gallery/'));
+        candidates.push(cleanKey.replace(/^workspaces\//, 'galleries/'));
+      } else if (cleanKey.startsWith('galleries/')) {
+        candidates.push(cleanKey.replace(/^galleries\//, 'gallery/'));
+        candidates.push(cleanKey.replace(/^galleries\//, 'workspaces/'));
       }
-      // Fallback 2: If previews/ missing, try thumbs/
-      if (!s3Response && cleanKey.includes('/previews/')) {
-        const altKey = cleanKey.replace('/previews/', '/thumbs/');
+
+      const withVariations = [cleanKey, ...candidates];
+      for (const k of withVariations) {
+        if (k.includes('/thumb/')) {
+          candidates.push(k.replace('/thumb/', '/thumbs/'));
+          candidates.push(k.replace('/thumb/', '/preview/'));
+          candidates.push(k.replace('/thumb/', '/previews/'));
+        }
+        if (k.includes('/thumbs/')) {
+          candidates.push(k.replace('/thumbs/', '/thumb/'));
+          candidates.push(k.replace('/thumbs/', '/previews/'));
+          candidates.push(k.replace('/thumbs/', '/preview/'));
+        }
+        if (k.includes('/preview/')) {
+          candidates.push(k.replace('/preview/', '/previews/'));
+          candidates.push(k.replace('/preview/', '/thumb/'));
+          candidates.push(k.replace('/preview/', '/thumbs/'));
+        }
+        if (k.includes('/previews/')) {
+          candidates.push(k.replace('/previews/', '/preview/'));
+          candidates.push(k.replace('/previews/', '/thumbs/'));
+          candidates.push(k.replace('/previews/', '/thumb/'));
+        }
+      }
+
+      for (const altKey of candidates) {
         try {
           s3Response = await fetchS3Object(altKey);
+          if (s3Response && s3Response.Body) break;
         } catch (_) {}
       }
     }
 
-    // Fallback 3: If direct stream not possible, fallback to presigned URL
+    // Fallback: If direct stream not possible, fallback to presigned URL
     if (!s3Response || !s3Response.Body) {
       try {
         const signedUrl = await getGalleryPresignedDownloadUrl(cleanKey, 7200);
@@ -75,19 +105,35 @@ export async function GET(req: NextRequest) {
     }
 
     const contentType = s3Response.ContentType || (cleanKey.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
-    const contentLength = s3Response.ContentLength;
 
-    // Convert S3 stream to standard WebStream for NextResponse
-    const stream = (s3Response.Body as any).transformToWebStream();
+    // Convert S3 stream to standard buffer / web stream for NextResponse
+    let responseBody: any;
+    try {
+      if (typeof (s3Response.Body as any).transformToByteArray === 'function') {
+        const bytes = await (s3Response.Body as any).transformToByteArray();
+        responseBody = Buffer.from(bytes);
+      } else if (typeof (s3Response.Body as any).transformToWebStream === 'function') {
+        responseBody = (s3Response.Body as any).transformToWebStream();
+      } else {
+        const { Readable } = await import('stream');
+        responseBody = (Readable as any).toWeb(s3Response.Body as any);
+      }
+    } catch (_) {
+      const signedUrl = await getGalleryPresignedDownloadUrl(cleanKey, 7200);
+      return NextResponse.redirect(signedUrl, { status: 307 });
+    }
 
     const headers = new Headers();
     headers.set('Content-Type', contentType);
-    if (contentLength) {
-      headers.set('Content-Length', String(contentLength));
+    if (responseBody instanceof Buffer) {
+      headers.set('Content-Length', String(responseBody.length));
+    } else if (s3Response.ContentLength) {
+      headers.set('Content-Length', String(s3Response.ContentLength));
     }
+
     const isDownload = searchParams.get('download') === '1';
     if (isDownload) {
-      const downloadFilename = searchParams.get('name') || cleanKey.split('/').pop() || 'photo.jpg';
+      const downloadFilename = searchParams.get('name') || cleanKey.split('/').pop() || 'photo.webp';
       const safeFilename = downloadFilename.replace(/["\r\n]/g, '').trim();
       headers.set('Content-Disposition', `attachment; filename="${safeFilename}"`);
     } else {
@@ -100,12 +146,12 @@ export async function GET(req: NextRequest) {
       headers.set('ETag', s3Response.ETag);
     }
 
-    return new NextResponse(stream, {
+    return new NextResponse(responseBody, {
       status: 200,
       headers,
     });
   } catch (err: any) {
-    console.error('[GalleryImageProxy Exception]:', err);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    console.error('Image Proxy Error:', err);
+    return new NextResponse('Internal Image Error', { status: 500 });
   }
 }
