@@ -22,7 +22,10 @@ ALTER TABLE public.gallery_photos
   ADD COLUMN IF NOT EXISTS thumb_key TEXT,
   ADD COLUMN IF NOT EXISTS folder_id UUID;
 
--- 4. Create or replace gallery_folders view aliasing gallery_collections for folder organization
+-- 4. Ensure updated_at on gallery_collections and create gallery_folders view
+ALTER TABLE public.gallery_collections 
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
 CREATE OR REPLACE VIEW public.gallery_folders AS 
 SELECT 
   id,
