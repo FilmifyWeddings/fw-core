@@ -125,7 +125,7 @@ export default function WorkspaceTeamPage() {
   // Team & Partner Financial Engine Drawer States
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<TeamMember | null>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
-  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics'>('payroll');
+  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics' | 'deliverables' | 'album_printing'>('payroll');
   const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
   const [financePeriod, setFinancePeriod] = useState<'all' | 'this_month' | 'last_month' | 'this_year' | 'custom'>('all');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -798,7 +798,15 @@ export default function WorkspaceTeamPage() {
   // Direct Member Action Handlers (Instant 0ms Drawer)
   const handleOpenDetails = (member: TeamMember) => {
     setSelectedFinanceMember(member);
-    setFinanceInitialTab('bookings');
+    const isPartnerOrLab = (
+      member.primary_type === 'PARTNER' ||
+      member.primary_type === 'VENDOR' ||
+      member.member_types?.includes('PARTNER') ||
+      member.member_types?.includes('VENDOR') ||
+      member.type === 'partner' ||
+      /lab|print|vendor|partner|press|binder/i.test(member.primary_role || member.role || '')
+    );
+    setFinanceInitialTab(isPartnerOrLab ? 'album_printing' : 'bookings');
     setIsFinanceDrawerOpen(true);
   };
 

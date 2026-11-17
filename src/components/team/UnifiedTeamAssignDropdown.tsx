@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Search, Check, ShieldCheck, Users, X } from 'lucide-react';
+import { ChevronDown, Search, Check, ShieldCheck, Users, X, Printer, Building2, Briefcase } from 'lucide-react';
 import { getGroupedTeamMembers, getMemberDisplayRole, isOwnerMember } from '@/lib/team-helpers';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
@@ -81,8 +81,8 @@ export default function UnifiedTeamAssignDropdown({
   const activeName = selectedMember?.name || selectedName || '';
   const isAssigned = Boolean(activeName && !['unassigned', 'none', 'not fixed', 'tbd', 'null', 'undefined'].includes(activeName.toLowerCase().trim()));
 
-  // 2. Group & Deduplicate In-House and Freelancer team members
-  const { inHouse, freelancers } = useMemo(() => {
+  // 2. Group & Deduplicate In-House, Freelancers, and Vendors
+  const { inHouse, freelancers, vendors } = useMemo(() => {
     return getGroupedTeamMembers(teamMembers);
   }, [teamMembers]);
 
@@ -93,11 +93,13 @@ export default function UnifiedTeamAssignDropdown({
     const nameMatch = (m.name || '').toLowerCase().includes(q);
     const roleMatch = getMemberDisplayRole(m).toLowerCase().includes(q);
     const emailMatch = (m.email || '').toLowerCase().includes(q);
-    return nameMatch || roleMatch || emailMatch;
+    const typeMatch = (m.primary_type || m.type || '').toLowerCase().includes(q);
+    return nameMatch || roleMatch || emailMatch || typeMatch;
   };
 
   const inHouseFiltered = useMemo(() => inHouse.filter(filterMember), [inHouse, q]);
   const freelancersFiltered = useMemo(() => freelancers.filter(filterMember), [freelancers, q]);
+  const vendorsFiltered = useMemo(() => vendors.filter(filterMember), [vendors, q]);
 
   // 4. Update Portal Coordinates
   const updateCoords = () => {
@@ -438,15 +440,15 @@ export default function UnifiedTeamAssignDropdown({
               </div>
             )}
 
-            {/* SECTION 2: FREELANCERS & EXTERNAL VENDORS (TAGGED) */}
+            {/* SECTION 2: FREELANCERS (TAGGED) */}
             {freelancersFiltered.length > 0 && (
               <div className="space-y-1 pt-1">
-                <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-stone-700 bg-stone-100/90 rounded-md flex items-center justify-between border border-stone-200">
+                <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-sky-900 bg-sky-100/80 rounded-md flex items-center justify-between border border-sky-200/80">
                   <span className="flex items-center gap-1">
-                    <Users className="w-2.5 h-2.5 text-stone-600" />
-                    <span>Freelancers & External Vendors</span>
+                    <Users className="w-2.5 h-2.5 text-sky-700" />
+                    <span>⚡ Freelancers</span>
                   </span>
-                  <span className="text-[8px] bg-stone-200 text-stone-900 px-1 rounded-full font-black">
+                  <span className="text-[8px] bg-sky-200 text-sky-950 px-1 rounded-full font-black">
                     {freelancersFiltered.length}
                   </span>
                 </div>
@@ -482,7 +484,7 @@ export default function UnifiedTeamAssignDropdown({
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-stone-500 to-stone-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
                           {m.avatar_url ? (
                             <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
                           ) : (
@@ -503,9 +505,79 @@ export default function UnifiedTeamAssignDropdown({
               </div>
             )}
 
-            {inHouseFiltered.length === 0 && freelancersFiltered.length === 0 && (
+            {/* SECTION 3: VENDORS & PRINTING LABS (TAGGED) */}
+            {vendorsFiltered.length > 0 && (
+              <div className="space-y-1 pt-1">
+                <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-900 bg-purple-100/80 rounded-md flex items-center justify-between border border-purple-200/80">
+                  <span className="flex items-center gap-1">
+                    <Printer className="w-2.5 h-2.5 text-purple-700" />
+                    <span>🤝 Vendors &amp; Printing Labs</span>
+                  </span>
+                  <span className="text-[8px] bg-purple-200 text-purple-950 px-1 rounded-full font-black">
+                    {vendorsFiltered.length}
+                  </span>
+                </div>
+
+                {vendorsFiltered.map((m: any) => {
+                  const isSelected = Boolean(
+                    (selectedId && m.id === selectedId) ||
+                    (activeName && m.name && m.name.toLowerCase().trim() === activeName.toLowerCase().trim())
+                  );
+                  const displayRole = getMemberDisplayRole(m);
+
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        onSelect({
+                          id: m.id,
+                          name: m.name,
+                          email: m.email || null,
+                          phone: m.phone || m.phone_number || null,
+                          role: m.role || null,
+                          primary_role: m.primary_role || null,
+                          roles: m.roles || [],
+                          avatar_url: m.avatar_url || null,
+                        });
+                        setIsOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200 shadow-2xs'
+                          : 'hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-700 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                          {m.avatar_url ? (
+                            <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            getInitials(m.name)
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className="text-xs font-black truncate">{m.name}</p>
+                            <span className="text-[8px] font-black bg-purple-100 text-purple-800 border border-purple-200 px-1 py-0.2 rounded shrink-0">
+                              Vendor / Lab
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-purple-700/80 font-semibold truncate">
+                            {displayRole}
+                          </p>
+                        </div>
+                      </div>
+                      {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0 stroke-[2.5]" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {inHouseFiltered.length === 0 && freelancersFiltered.length === 0 && vendorsFiltered.length === 0 && (
               <div className="p-3 text-center text-xs text-slate-400 font-medium">
-                No matching team members found.
+                No matching team members or vendors found.
               </div>
             )}
           </div>

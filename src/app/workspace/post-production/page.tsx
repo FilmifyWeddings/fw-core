@@ -23,10 +23,16 @@ export interface PostProductionTeamMember {
   id: string;
   name: string;
   role?: string;
+  primary_role?: string;
   isInHouse?: boolean;
   hasPMAccess?: boolean;
   user_id?: string;
   email?: string;
+  phone?: string;
+  primary_type?: string;
+  member_types?: string[];
+  type?: string;
+  avatar_url?: string;
 }
 
 // Module-level in-memory cache for instant 0ms transitions
@@ -353,12 +359,19 @@ export default function PostProductionPage() {
           const cleanName = f.name?.trim();
           if (cleanName) {
             const normName = cleanName.toLowerCase();
-            const isInHouse = (
+            const isPartnerOrVendor = (
+              f.primary_type?.toLowerCase() === 'partner' || 
+              f.primary_type?.toLowerCase() === 'vendor' || 
+              f.primary_type?.toLowerCase() === 'lab' ||
+              (Array.isArray(f.member_types) && f.member_types.some((t: any) => ['PARTNER', 'VENDOR', 'LAB'].includes(String(t).toUpperCase()))) ||
+              /vendor|partner|lab|printing|press/i.test(f.primary_role || f.role || '')
+            );
+            const isInHouse = !isPartnerOrVendor && (
               f.primary_type?.toLowerCase() === 'in-house' || 
               f.primary_type?.toLowerCase() === 'in_house' || 
               (Array.isArray(f.member_types) && f.member_types.some((t: any) => String(t).toUpperCase().includes('HOUSE')))
             );
-            const roleStr = f.primary_role || '';
+            const roleStr = f.primary_role || f.role || '';
             const hasPMAccess = (
               isInHouse ||
               /manager|lead|head|director|owner|producer|supervisor/i.test(roleStr)
@@ -376,15 +389,23 @@ export default function PostProductionPage() {
               members.push({
                 id: f.id,
                 name: cleanName,
-                role: f.primary_role,
+                role: f.primary_role || f.role,
+                primary_role: f.primary_role || f.role,
                 isInHouse,
+                primary_type: f.primary_type || (isPartnerOrVendor ? 'PARTNER' : (isInHouse ? 'IN_HOUSE' : 'FREELANCER')),
+                member_types: f.member_types || (isPartnerOrVendor ? ['PARTNER'] : (isInHouse ? ['IN_HOUSE'] : ['FREELANCER'])),
+                type: f.type || f.primary_type,
                 hasPMAccess,
                 email: f.email || undefined,
+                phone: f.phone || f.phone_number || undefined,
+                avatar_url: f.avatar_url || undefined,
               });
             } else {
               // Update with better role / in-house status
               if (isInHouse) members[existingIdx].isInHouse = true;
               if (hasPMAccess) members[existingIdx].hasPMAccess = true;
+              if (f.primary_type) members[existingIdx].primary_type = f.primary_type;
+              if (f.member_types) members[existingIdx].member_types = f.member_types;
             }
           }
         });
@@ -395,7 +416,16 @@ export default function PostProductionPage() {
           const cleanName = m.name?.trim();
           if (cleanName) {
             const normName = cleanName.toLowerCase();
-            const isInHouse = (
+            const isPartnerOrVendor = (
+              m.primary_type?.toLowerCase() === 'partner' || 
+              m.primary_type?.toLowerCase() === 'vendor' || 
+              m.primary_type?.toLowerCase() === 'lab' ||
+              m.member_type?.toLowerCase() === 'partner' ||
+              m.member_type?.toLowerCase() === 'vendor' ||
+              (Array.isArray(m.member_types) && m.member_types.some((t: any) => ['PARTNER', 'VENDOR', 'LAB'].includes(String(t).toUpperCase()))) ||
+              /vendor|partner|lab|printing|press/i.test(m.role || '')
+            );
+            const isInHouse = !isPartnerOrVendor && (
               m.isInHouse === true ||
               m.primary_type?.toLowerCase() === 'in-house' || 
               m.primary_type?.toLowerCase() === 'in_house' || 
@@ -418,13 +448,21 @@ export default function PostProductionPage() {
                 id: m.id || m.user_id,
                 name: cleanName,
                 role: m.role || (isLead ? 'Studio Manager' : 'Member'),
+                primary_role: m.primary_role || m.role,
                 isInHouse,
+                primary_type: m.primary_type || (isPartnerOrVendor ? 'PARTNER' : (isInHouse ? 'IN_HOUSE' : (m.member_type || 'FREELANCER'))),
+                member_types: m.member_types || (isPartnerOrVendor ? ['PARTNER'] : (isInHouse ? ['IN_HOUSE'] : ['FREELANCER'])),
+                type: m.type || m.primary_type,
                 hasPMAccess,
                 email: m.email || undefined,
+                phone: m.phone || m.phone_number || undefined,
+                avatar_url: m.avatar_url || undefined,
               });
             } else {
               if (isInHouse) members[existingIdx].isInHouse = true;
               if (hasPMAccess) members[existingIdx].hasPMAccess = true;
+              if (m.primary_type) members[existingIdx].primary_type = m.primary_type;
+              if (m.member_types) members[existingIdx].member_types = m.member_types;
             }
           }
         });
@@ -1124,7 +1162,7 @@ export default function PostProductionPage() {
                       const paid = Number(deliv.paid_amount) || 0;
                       const bal = Number(deliv.balance_amount ?? Math.max(0, agreed - paid)) || 0;
                       const pStatus = deliv.payment_status || (bal === 0 && agreed > 0 ? 'FULL_PAID' : paid > 0 ? 'PARTIAL' : 'PENDING');
-                      return {
+                      const baseRow: any = {
                         id: deliv.id,
                         project_id: pid,
                         segment: deliv.segment || 'Wedding',
@@ -1144,8 +1182,34 @@ export default function PostProductionPage() {
                         payment_status: pStatus,
                         updated_at: new Date().toISOString(),
                       };
+
+                      if (deliv.printer_id !== undefined) baseRow.printer_id = deliv.printer_id;
+                      if (deliv.printer_name !== undefined) baseRow.printer_name = deliv.printer_name;
+                      if (deliv.printing_due_date !== undefined) baseRow.printing_due_date = deliv.printing_due_date;
+                      if (deliv.printing_status !== undefined) baseRow.printing_status = deliv.printing_status;
+                      if (deliv.printing_agreed_amount !== undefined) baseRow.printing_agreed_amount = Number(deliv.printing_agreed_amount) || 0;
+                      if (deliv.printing_paid_amount !== undefined) baseRow.printing_paid_amount = Number(deliv.printing_paid_amount) || 0;
+                      if (deliv.printing_balance_amount !== undefined) baseRow.printing_balance_amount = Number(deliv.printing_balance_amount) || 0;
+
+                      return baseRow;
                     });
-                    await supabase.from('post_production_deliverables').insert(rowsToInsert);
+
+                    const insertRes = await supabase.from('post_production_deliverables').insert(rowsToInsert);
+                    if (insertRes.error) {
+                      // Fallback: If DB table does not yet have printer columns, insert standard columns
+                      const fallbackRows = rowsToInsert.map((r: any) => {
+                        const copy = { ...r };
+                        delete copy.printer_id;
+                        delete copy.printer_name;
+                        delete copy.printing_due_date;
+                        delete copy.printing_status;
+                        delete copy.printing_agreed_amount;
+                        delete copy.printing_paid_amount;
+                        delete copy.printing_balance_amount;
+                        return copy;
+                      });
+                      await supabase.from('post_production_deliverables').insert(fallbackRows);
+                    }
                   }
                 }
               } catch (delivErr) {

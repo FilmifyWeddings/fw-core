@@ -52,6 +52,23 @@ export interface PostProductionDeliverable {
   is_hidden?: boolean;
   segment_order?: number;
   created_at?: string;
+  // Dual workflow for Albums: Designing & Printing
+  designer_id?: string | null;
+  designer_name?: string | null;
+  designer_due_date?: string | null;
+  designer_status?: string | null;
+  designer_agreed_amount?: number | null;
+  designer_paid_amount?: number | null;
+  designer_balance_amount?: number | null;
+
+  printer_id?: string | null;
+  printer_name?: string | null;
+  printing_due_date?: string | null;
+  printing_deadline?: string | null;
+  printing_status?: string | null;
+  printing_agreed_amount?: number | null;
+  printing_paid_amount?: number | null;
+  printing_balance_amount?: number | null;
 }
 
 interface DeliverableCategorySectionProps {
