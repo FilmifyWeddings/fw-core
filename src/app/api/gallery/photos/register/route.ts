@@ -263,7 +263,7 @@ export async function POST(req: NextRequest) {
 
                   if (nfEmb && nfEmb.length === 512) {
                     const sim = cosineSimilarity(guestVector, nfEmb);
-                    if (sim >= 0.48) {
+                    if (sim >= 0.40) {
                       currentMatches.add(nf.photo_id);
                       hasNewMatch = true;
                     }

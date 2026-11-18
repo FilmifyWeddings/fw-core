@@ -104,7 +104,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const contentType = s3Response.ContentType || (cleanKey.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+    const isDownload = searchParams.get('download') === '1';
+    const reqFormat = searchParams.get('format')?.toLowerCase();
+    const shouldConvertToJpg = isDownload || reqFormat === 'jpg' || reqFormat === 'jpeg';
 
     // Convert S3 stream to standard buffer / web stream for NextResponse
     let responseBody: any;
@@ -123,6 +125,37 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(signedUrl, { status: 307 });
     }
 
+    let contentType = s3Response.ContentType || (cleanKey.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+
+    // On-the-fly True JPG Transcoding (Preserves 100% original high resolution and sharpness)
+    if (shouldConvertToJpg) {
+      try {
+        const sharp = (await import('sharp')).default;
+        let inputBuffer: Buffer;
+        if (responseBody instanceof Buffer) {
+          inputBuffer = responseBody;
+        } else if (responseBody instanceof Uint8Array) {
+          inputBuffer = Buffer.from(responseBody);
+        } else {
+          const chunks: Buffer[] = [];
+          for await (const chunk of responseBody) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          }
+          inputBuffer = Buffer.concat(chunks);
+        }
+
+        // Convert to high-quality JPEG (Full 4:4:4 chroma subsampling for crisp details)
+        const jpegBuffer = await sharp(inputBuffer)
+          .jpeg({ quality: 95, chromaSubsampling: '4:4:4', mozjpeg: true })
+          .toBuffer();
+
+        responseBody = jpegBuffer;
+        contentType = 'image/jpeg';
+      } catch (sharpErr) {
+        console.warn('Sharp JPEG transcoding fallback:', sharpErr);
+      }
+    }
+
     const headers = new Headers();
     headers.set('Content-Type', contentType);
     if (responseBody instanceof Buffer) {
@@ -131,9 +164,14 @@ export async function GET(req: NextRequest) {
       headers.set('Content-Length', String(s3Response.ContentLength));
     }
 
-    const isDownload = searchParams.get('download') === '1';
     if (isDownload) {
-      const downloadFilename = searchParams.get('name') || cleanKey.split('/').pop() || 'photo.webp';
+      let downloadFilename = searchParams.get('name') || cleanKey.split('/').pop() || 'photo.jpg';
+      if (shouldConvertToJpg) {
+        downloadFilename = downloadFilename.replace(/\.webp$/i, '.jpg');
+        if (!downloadFilename.toLowerCase().endsWith('.jpg') && !downloadFilename.toLowerCase().endsWith('.jpeg')) {
+          downloadFilename += '.jpg';
+        }
+      }
       const safeFilename = downloadFilename.replace(/["\r\n]/g, '').trim();
       headers.set('Content-Disposition', `attachment; filename="${safeFilename}"`);
     } else {

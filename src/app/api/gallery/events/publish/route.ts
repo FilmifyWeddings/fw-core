@@ -37,7 +37,16 @@ export async function POST(req: NextRequest) {
     }
 
     const workspaceId = gallery.workspace_id || '00000000-0000-0000-0000-000000000000';
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
+    let baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in').trim();
+    if (
+      baseUrl.includes('nip.io') ||
+      baseUrl.includes('143.244.133.235') ||
+      baseUrl.includes('localhost') ||
+      baseUrl.includes('127.0.0.1') ||
+      baseUrl.includes('ngrok')
+    ) {
+      baseUrl = 'https://studiocore.in';
+    }
 
     // Fetch Studio Profile & Branding for Email
     let studioName = 'StudioCore Photography';
@@ -101,7 +110,7 @@ export async function POST(req: NextRequest) {
     }> = [];
 
     let totalNotified = 0;
-    const effectiveThreshold = Number(similarityThreshold) || 0.48;
+    const effectiveThreshold = Number(similarityThreshold) || 0.40;
 
     if (registeredGuests && registeredGuests.length > 0) {
       for (const guest of registeredGuests) {

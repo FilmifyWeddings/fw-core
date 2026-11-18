@@ -151,20 +151,36 @@ function StrictZeroKnowledgeGuestContent() {
 
     try {
       let gal: any = null;
-      try {
-        const gRes = await fetch(`/api/gallery/events?id=${galleryIdOrSlug}`);
-        const gJson = await gRes.json();
-        if (gJson.success && gJson.gallery) {
-          gal = gJson.gallery;
-        }
-      } catch (_) {}
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(galleryIdOrSlug);
+
+      if (isUuid) {
+        try {
+          const gRes = await fetch(`/api/gallery/events?id=${galleryIdOrSlug}`);
+          const gJson = await gRes.json();
+          if (gJson.success && gJson.gallery) {
+            gal = gJson.gallery;
+          }
+        } catch (_) {}
+      }
 
       if (!gal) {
-        const slugRes = await fetch(`/api/gallery/events?slug=${galleryIdOrSlug}`);
-        const slugJson = await slugRes.json();
-        if (slugJson.success && slugJson.gallery) {
-          gal = slugJson.gallery;
-        }
+        try {
+          const slugRes = await fetch(`/api/gallery/events?slug=${encodeURIComponent(galleryIdOrSlug)}`);
+          const slugJson = await slugRes.json();
+          if (slugJson.success && slugJson.gallery) {
+            gal = slugJson.gallery;
+          }
+        } catch (_) {}
+      }
+
+      if (!gal && !isUuid) {
+        try {
+          const gRes = await fetch(`/api/gallery/events?id=${galleryIdOrSlug}`);
+          const gJson = await gRes.json();
+          if (gJson.success && gJson.gallery) {
+            gal = gJson.gallery;
+          }
+        } catch (_) {}
       }
 
       if (!gal) {

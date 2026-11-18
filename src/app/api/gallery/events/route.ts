@@ -269,14 +269,14 @@ export async function GET(req: NextRequest) {
         const { data } = await supabaseAdmin
           .from('event_galleries')
           .select('*')
-          .or(`slug.eq.${slug},id.eq.${slug}`)
+          .or(`slug.ilike.${slug},id.eq.${slug}`)
           .limit(1);
         single = data?.[0] || null;
       } else if (slug) {
         const { data } = await supabaseAdmin
           .from('event_galleries')
           .select('*')
-          .eq('slug', slug)
+          .ilike('slug', slug)
           .limit(1);
         single = data?.[0] || null;
       }
