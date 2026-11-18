@@ -23,21 +23,15 @@ export async function GET(req: NextRequest) {
     }
     cleanKey = cleanKey.replace(/^\/+/, '');
 
-    let safeFilename = filename.replace(/["\r\n]/g, '').trim() || 'photo.webp';
-    if (!safeFilename.toLowerCase().endsWith('.webp') && !safeFilename.toLowerCase().endsWith('.jpg') && !safeFilename.toLowerCase().endsWith('.jpeg')) {
-      safeFilename = `${safeFilename}.webp`;
+    let safeFilename = filename.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
+    safeFilename = safeFilename.replace(/\.webp$/i, '.jpg');
+    if (!safeFilename.toLowerCase().endsWith('.jpg') && !safeFilename.toLowerCase().endsWith('.jpeg')) {
+      safeFilename = `${safeFilename}.jpg`;
     }
-    const disposition = `attachment; filename="${safeFilename}"`;
 
-    try {
-      // Generate 2-hour presigned download URL pointing directly to object in Backblaze B2
-      const downloadUrl = await getGalleryPresignedDownloadUrl(cleanKey, 7200, B2_GALLERY_BUCKET_NAME, disposition);
-      return NextResponse.json({ success: true, downloadUrl });
-    } catch (s3Err) {
-      // Fallback to direct download proxy URL if presigner encounters an issue
-      const proxyUrl = `/api/gallery/image?key=${encodeURIComponent(cleanKey)}&download=1&name=${encodeURIComponent(safeFilename)}`;
-      return NextResponse.json({ success: true, downloadUrl: proxyUrl });
-    }
+    // Direct high-speed JPG streaming download URL (High resolution, 95% quality, full sharpness)
+    const downloadUrl = `/api/gallery/image?key=${encodeURIComponent(cleanKey)}&download=1&format=jpg&name=${encodeURIComponent(safeFilename)}`;
+    return NextResponse.json({ success: true, downloadUrl });
   } catch (err: any) {
     console.error('Error generating download URL (GET):', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -51,7 +45,7 @@ export async function POST(req: NextRequest) {
 
     // Prefer previewKey (Web-Sharp Only pipeline), falling back gracefully
     const rawKey = previewKey || key || originalKey;
-    const downloadName = name || filename || 'photo.webp';
+    const downloadName = name || filename || 'photo.jpg';
 
     if (!rawKey) {
       return NextResponse.json({ success: false, error: 'Key is required' }, { status: 400 });
@@ -66,19 +60,15 @@ export async function POST(req: NextRequest) {
     }
     cleanKey = cleanKey.replace(/^\/+/, '');
 
-    let safeFilename = downloadName.replace(/["\r\n]/g, '').trim() || 'photo.webp';
-    if (!safeFilename.toLowerCase().endsWith('.webp') && !safeFilename.toLowerCase().endsWith('.jpg') && !safeFilename.toLowerCase().endsWith('.jpeg')) {
-      safeFilename = `${safeFilename}.webp`;
+    let safeFilename = downloadName.replace(/["\r\n]/g, '').trim() || 'photo.jpg';
+    safeFilename = safeFilename.replace(/\.webp$/i, '.jpg');
+    if (!safeFilename.toLowerCase().endsWith('.jpg') && !safeFilename.toLowerCase().endsWith('.jpeg')) {
+      safeFilename = `${safeFilename}.jpg`;
     }
-    const disposition = `attachment; filename="${safeFilename}"`;
 
-    try {
-      const downloadUrl = await getGalleryPresignedDownloadUrl(cleanKey, 7200, B2_GALLERY_BUCKET_NAME, disposition);
-      return NextResponse.json({ success: true, downloadUrl });
-    } catch (s3Err) {
-      const proxyUrl = `/api/gallery/image?key=${encodeURIComponent(cleanKey)}&download=1&name=${encodeURIComponent(safeFilename)}`;
-      return NextResponse.json({ success: true, downloadUrl: proxyUrl });
-    }
+    // Direct high-speed JPG streaming download URL
+    const downloadUrl = `/api/gallery/image?key=${encodeURIComponent(cleanKey)}&download=1&format=jpg&name=${encodeURIComponent(safeFilename)}`;
+    return NextResponse.json({ success: true, downloadUrl });
   } catch (err: any) {
     console.error('Error generating download URL (POST):', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

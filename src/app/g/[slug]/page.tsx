@@ -201,6 +201,7 @@ function GuestSlugGalleryContent() {
   const [isVerified, setIsVerified] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [isAlreadyRegistered, setIsAlreadyRegistered] = useState(false);
+  const [isResolvingGuest, setIsResolvingGuest] = useState(false);
   const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
@@ -426,6 +427,7 @@ function GuestSlugGalleryContent() {
 
     let isMounted = true;
     const fetchGuestData = async (guestId: string, tok?: string) => {
+      setIsResolvingGuest(true);
       try {
         const res = await fetch(`/api/gallery/guest?id=${encodeURIComponent(guestId)}${tok ? `&token=${encodeURIComponent(tok)}` : ''}`);
         const json = await res.json();
@@ -437,6 +439,7 @@ function GuestSlugGalleryContent() {
         setGuestEmail(g.guest_email || '');
         setIsVerified(true);
         setHasSearched(true);
+        setIsMyPhotosActive(true);
         setGuestSavedSession({ id: g.id, token: g.access_token, name: g.guest_name });
 
         // Save session in localStorage so subsequent QR scans bypass login
@@ -474,12 +477,20 @@ function GuestSlugGalleryContent() {
               body: JSON.stringify({
                 gallery_id: gallery.id,
                 embedding: rawEmb,
-                threshold: 0.40,
+                match_threshold: 0.40,
               }),
             });
             const matchJson = await matchRes.json();
             if (isMounted && matchJson.success && Array.isArray(matchJson.photos) && matchJson.photos.length > 0) {
               setMatchedPhotos(matchJson.photos);
+              const newPhotoIds = matchJson.photos.map((p: any) => p.id);
+              if (newPhotoIds.length !== (g.matched_photo_ids?.length || 0)) {
+                fetch(`/api/gallery/guest?id=${encodeURIComponent(g.id)}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ matched_photo_ids: newPhotoIds }),
+                }).catch(() => {});
+              }
             }
           } catch (mErr) {
             console.warn('Auto match error:', mErr);
@@ -489,6 +500,8 @@ function GuestSlugGalleryContent() {
         }
       } catch (err) {
         console.warn('Error auto-resolving guest:', err);
+      } finally {
+        if (isMounted) setIsResolvingGuest(false);
       }
     };
 
@@ -907,7 +920,7 @@ function GuestSlugGalleryContent() {
 
     // Fallback: fetch blob or stream directly
     try {
-      const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(originalFileName)}`;
+      const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&format=jpg&name=${encodeURIComponent(originalFileName)}`;
       window.open(fallbackUrl, '_blank');
     } catch (_) {
       window.open(photo.preview_url, '_blank');
@@ -1360,7 +1373,7 @@ function GuestSlugGalleryContent() {
     return isUnlocked ? displayedPrivilegedPhotos : [];
   }, [isPrivilegedMode, selectedCollectionId, matchedPhotos, isSelectionMode, showOnlySelected, targetFullPhotos, selectedForAlbum, isUnlocked, displayedPrivilegedPhotos]);
 
-  if (loading) {
+  if (loading || isResolvingGuest) {
     const rawBranding = gallery?.studio_branding;
     const currentStudioName = rawBranding?.studio_name;
     const currentStudioLogo = rawBranding?.logo_url;
@@ -1695,7 +1708,7 @@ function GuestSlugGalleryContent() {
   }
 
   // Guest Landing Flow: Cover photo with aesthetic couple name, date, and frosted glass "Find My Photos" pill
-  const isGuestPreRegistration = !isPrivilegedMode && !hasSearched && !isVerified;
+  const isGuestPreRegistration = !isPrivilegedMode && !hasSearched && !isVerified && !guestIdParam && !isResolvingGuest;
 
   const renderHeroAction = () => {
     if (isGuestPreRegistration) {

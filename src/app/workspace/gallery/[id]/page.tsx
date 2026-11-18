@@ -727,42 +727,58 @@ function AlbumStudioContent() {
     const fetchGuestMatches = async () => {
       setLoadingGuestPhotos(true);
       try {
-        // 1. Instant Render: Load existing pre-matched photos in milliseconds
-        if (Array.isArray(selectedGuest.matched_photo_ids) && selectedGuest.matched_photo_ids.length > 0) {
-          try {
-            const preRes = await fetch(`/api/gallery/photos?gallery_id=${gallery.id}&ids=${selectedGuest.matched_photo_ids.join(',')}`);
-            const preJson = await preRes.json();
-            if (!isCancelled && preJson.success && Array.isArray(preJson.photos) && preJson.photos.length > 0) {
-              setGuestMatchedPhotos(preJson.photos);
-              setLoadingGuestPhotos(false);
-            }
-          } catch (_) {}
-        }
-
         // Safely parse face embedding
         const rawEmb = Array.isArray(selectedGuest.face_embedding)
           ? selectedGuest.face_embedding
           : (typeof selectedGuest.face_embedding === 'string' ? JSON.parse(selectedGuest.face_embedding) : null);
 
-        if (!rawEmb || rawEmb.length !== 512) {
-          if (!isCancelled) setLoadingGuestPhotos(false);
-          return;
+        let resolvedPhotos: any[] = [];
+
+        // 1. Run authoritative face match at 0.40 threshold
+        if (rawEmb && rawEmb.length === 512) {
+          try {
+            const res = await fetch('/api/gallery/match-face', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                gallery_id: gallery.id,
+                embedding: rawEmb,
+                match_threshold: 0.40,
+              }),
+            });
+            const json = await res.json();
+            if (json.success && Array.isArray(json.photos)) {
+              resolvedPhotos = json.photos;
+            }
+          } catch (_) {}
         }
 
-        const res = await fetch('/api/gallery/match-face', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            gallery_id: gallery.id,
-            embedding: rawEmb,
-            match_threshold: 0.40,
-          }),
-        });
+        // 2. Fallback to existing pre-matched IDs if match-face didn't return photos
+        if (resolvedPhotos.length === 0 && Array.isArray(selectedGuest.matched_photo_ids) && selectedGuest.matched_photo_ids.length > 0) {
+          try {
+            const preRes = await fetch(`/api/gallery/photos?gallery_id=${gallery.id}&ids=${selectedGuest.matched_photo_ids.join(',')}`);
+            const preJson = await preRes.json();
+            if (preJson.success && Array.isArray(preJson.photos)) {
+              resolvedPhotos = preJson.photos;
+            }
+          } catch (_) {}
+        }
 
-        const json = await res.json();
         if (!isCancelled) {
-          if (json.success && Array.isArray(json.photos) && json.photos.length > 0) {
-            setGuestMatchedPhotos(json.photos);
+          setGuestMatchedPhotos(resolvedPhotos);
+
+          // Sync state & persist to DB so counter never jumps
+          const newIds = resolvedPhotos.map((p: any) => p.id);
+          if (newIds.length > 0 && newIds.length !== (selectedGuest.matched_photo_ids?.length || 0)) {
+            setSelectedGuest((prev: any) => prev ? { ...prev, matched_photo_ids: newIds } : prev);
+            setRegisteredGuests((prev: any[]) =>
+              prev.map((g) => (g.id === selectedGuest.id ? { ...g, matched_photo_ids: newIds } : g))
+            );
+            fetch(`/api/gallery/guest?id=${encodeURIComponent(selectedGuest.id)}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ matched_photo_ids: newIds }),
+            }).catch(() => {});
           }
         }
       } catch (err) {
@@ -1265,31 +1281,30 @@ function AlbumStudioContent() {
     }
   };
 
-  // Download High-Res Photo (Web-Sharp Preview / Original fallback)
+  // Download High-Res Photo (True JPG Format at 100% original sharpness)
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     try {
       const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
-      let cleanName = getCleanFilename(photo.preview_key || photo.original_key || '') || `photo_${photo.id.slice(0, 8)}.webp`;
-      const res = await fetch(
-        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanName)}`
-      );
-      const json = await res.json();
-      if (json.success && json.downloadUrl) {
-        const link = document.createElement('a');
-        link.href = json.downloadUrl;
-        link.setAttribute('download', cleanName);
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName)}`;
-        window.open(fallbackUrl, '_blank');
+      let cleanName = getCleanFilename(photo.preview_key || photo.original_key || '') || `photo_${photo.id.slice(0, 8)}.jpg`;
+      if (cleanName.toLowerCase().endsWith('.webp')) {
+        cleanName = cleanName.replace(/\.webp$/i, '.jpg');
       }
+      if (!cleanName.toLowerCase().endsWith('.jpg') && !cleanName.toLowerCase().endsWith('.jpeg')) {
+        cleanName += '.jpg';
+      }
+
+      const directJpgUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&format=jpg&name=${encodeURIComponent(cleanName)}`;
+      const link = document.createElement('a');
+      link.href = directJpgUrl;
+      link.setAttribute('download', cleanName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     } catch (_) {
       const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
-      let cleanName = getCleanFilename(photo.preview_key || photo.original_key || '') || `photo_${photo.id.slice(0, 8)}.webp`;
-      window.open(`/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName)}`, '_blank');
+      let cleanName = getCleanFilename(photo.preview_key || photo.original_key || '') || `photo_${photo.id.slice(0, 8)}.jpg`;
+      cleanName = cleanName.replace(/\.webp$/i, '.jpg');
+      window.open(`/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&format=jpg&name=${encodeURIComponent(cleanName)}`, '_blank');
     }
   };
 
@@ -1344,7 +1359,7 @@ function AlbumStudioContent() {
             });
 
             try {
-              const downloadUrl = `/api/gallery/image?key=${encodeURIComponent(photo.preview_key || photo.original_key)}`;
+              const downloadUrl = `/api/gallery/image?key=${encodeURIComponent(photo.preview_key || photo.original_key)}&format=jpg&name=${encodeURIComponent(filename)}`;
               const res = await fetch(downloadUrl);
               if (res.ok) {
                 const blob = await res.blob();
@@ -1436,7 +1451,14 @@ function AlbumStudioContent() {
     if (!key) return 'Photo.jpg';
     const raw = key.split('/').pop() || key;
     const match = raw.match(/^\d+_[a-z0-9]+_(.+)$/i);
-    return match ? match[1] : raw;
+    let fname = match ? match[1] : raw;
+    if (fname.toLowerCase().endsWith('.webp')) {
+      fname = fname.replace(/\.webp$/i, '.jpg');
+    }
+    if (!fname.toLowerCase().endsWith('.jpg') && !fname.toLowerCase().endsWith('.jpeg')) {
+      fname = `${fname}.jpg`;
+    }
+    return fname;
   }, []);
 
   // Selection Export Helpers (Genuine Excel .xlsx export)
@@ -1943,14 +1965,8 @@ function AlbumStudioContent() {
           </div>
         </div>
 
-        {/* Right: Storage, Status Pill, Standee & Share Buttons */}
+        {/* Right: Status Pill, Standee & Share Buttons */}
         <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-          {/* Storage Consumed Badge */}
-          <div className="px-3 py-1 rounded-full bg-[#FAF9F5] border border-[#E7E2D8] text-xs font-mono font-bold text-zinc-700 flex items-center gap-1.5 shadow-2xs">
-            <HardDrive className="w-3.5 h-3.5 text-amber-600" />
-            <span>{totalSizeDisplay}</span>
-          </div>
-
           {/* Status 3-State Dropdown (Unpublished / Published / Expired) */}
           <div className="relative" ref={statusDropdownRef}>
             <button
@@ -2742,23 +2758,13 @@ function AlbumStudioContent() {
                             </div>
                           </div>
 
-                          {/* Bottom Bar: Filename, Size, Resolution, Date Time */}
+                          {/* Bottom Bar: Filename and Date Time (Hidden file size and resolution as requested) */}
                           <div className="space-y-1 text-white">
                             <div className="text-xs font-bold truncate drop-shadow-md" title={cleanName}>
                               {cleanName}
                             </div>
 
-                            <div className="flex items-center gap-2 text-[10px] text-white/80 font-medium drop-shadow-xs">
-                              <span>{formatBytes(photo.size_bytes)}</span>
-                              {photo.width > 0 && photo.height > 0 && (
-                                <>
-                                  <span>•</span>
-                                  <span>{photo.width} × {photo.height}</span>
-                                </>
-                              )}
-                            </div>
-
-                            <div className="text-[9.5px] text-white/60 drop-shadow-xs">
+                            <div className="text-[9.5px] text-white/70 drop-shadow-xs">
                               {formatPhotoDate(photo.created_at)}
                             </div>
                           </div>
@@ -3239,9 +3245,9 @@ function AlbumStudioContent() {
                       </div>
 
                       <div className="bg-white rounded-2xl p-4 border border-[#E7E2D8] shadow-2xs space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Storage</span>
-                        <div className="text-2xl font-black text-zinc-900 font-mono">{totalSizeDisplay}</div>
-                        <span className="text-[10px] font-bold text-amber-600">Cloud Vault</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Total Photos</span>
+                        <div className="text-2xl font-black text-zinc-900 font-mono">{photos.length}</div>
+                        <span className="text-[10px] font-bold text-amber-600">Event Album</span>
                       </div>
                     </div>
 
@@ -3468,7 +3474,7 @@ function AlbumStudioContent() {
           3. ADD COLLECTION MODAL
       ───────────────────────────────────────────────────────────── */}
       {isAddCollectionModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <form onSubmit={handleCreateCollection} className="bg-white rounded-3xl p-6 max-w-sm w-full border border-[#E7E2D8] shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -3528,7 +3534,7 @@ function AlbumStudioContent() {
           3B. EDIT COLLECTION MODAL (LIGHT UI WITH B2 PURGE WARNING)
       ───────────────────────────────────────────────────────────── */}
       {isEditCollectionModalOpen && collectionToEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
           <form
             onSubmit={handleSaveEditedCollection}
             className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#E7E2D8] shadow-2xl space-y-5"
@@ -3662,7 +3668,7 @@ function AlbumStudioContent() {
           4B. STUDIOCORE DESKTOP UPLOADER APP MODAL
       ───────────────────────────────────────────────────────────── */}
       {showDesktopAppModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full border border-[#E7E2D8] shadow-2xl space-y-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3.5">
@@ -3742,7 +3748,7 @@ function AlbumStudioContent() {
           5. TABLE STANDEE & QR DISPLAY MODAL
       ───────────────────────────────────────────────────────────── */}
       {isStandeeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-[#E7E2D8] shadow-2xl space-y-5 text-center">
             <div className="flex items-center justify-between">
               <span 
@@ -3803,7 +3809,7 @@ function AlbumStudioContent() {
           5B. EVENT COVER CUSTOMIZER MODAL (DESKTOP & MOBILE CROP / FOCAL)
       ───────────────────────────────────────────────────────────── */}
       {isCoverModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl max-w-3xl w-full border border-[#E7E2D8] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
             
             {/* Modal Header */}
@@ -4118,7 +4124,7 @@ function AlbumStudioContent() {
           5C. GUEST PROFILE & MATCHED PHOTOS MODAL
       ───────────────────────────────────────────────────────────── */}
       {isGuestModalOpen && selectedGuest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl max-w-2xl w-full border border-[#E7E2D8] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
             
             {/* Header */}
@@ -4393,7 +4399,7 @@ function AlbumStudioContent() {
           6. PUBLISH & RE-SEND NOTIFICATION EMAILS CONFIRMATION MODAL
       ───────────────────────────────────────────────────────────── */}
       {showPublishConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E7E2D8] shadow-2xl space-y-6">
             <div className="flex items-center justify-between">
               <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shadow-xs">
@@ -4475,7 +4481,7 @@ function AlbumStudioContent() {
           FACE AI ENABLE CONFIRMATION MODAL (3D CREAM LUXURY DESIGN)
       ───────────────────────────────────────────────────────────── */}
       {showFaceAiConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-[#FAF9F5] rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E7E2D8] shadow-2xl space-y-6 animate-in zoom-in-95">
             <div className="flex items-center justify-between">
               <div className="w-12 h-12 rounded-2xl bg-amber-100/70 border border-amber-200/80 text-amber-800 flex items-center justify-center shadow-xs">
@@ -4555,7 +4561,7 @@ function AlbumStudioContent() {
           DUPLICATE PHOTO UPLOAD WARNING MODAL (COLLECTION-SCOPED)
       ───────────────────────────────────────────────────────────── */}
       {showDuplicateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-[#FAF9F5] rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E7E2D8] shadow-2xl space-y-6 animate-in zoom-in-95">
             <div className="flex items-center justify-between">
               <div className="w-12 h-12 rounded-2xl bg-amber-100/70 border border-amber-200/80 text-amber-800 flex items-center justify-center shadow-xs">
@@ -4640,7 +4646,7 @@ function AlbumStudioContent() {
           8. LOCAL FOLDER COPY PROGRESS MODAL (FAST & RECOMMENDED)
       ───────────────────────────────────────────────────────────── */}
       {isLocalFolderModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full border border-zinc-200 shadow-2xl space-y-5 animate-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
               <div className="flex items-center gap-2.5">
