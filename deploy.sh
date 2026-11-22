@@ -87,7 +87,10 @@ fi
 # Drop cached memory to maximize available physical RAM
 sync && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
-LOW_MEM=1 NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2048" npm run build
+LOW_MEM=1 NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=4096" npm run build || {
+  echo "❌ Next.js build failed! Aborting deployment without restarting PM2..."
+  exit 1
+}
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
