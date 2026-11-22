@@ -104,6 +104,8 @@ export async function GET(req: NextRequest) {
         size_bytes: p.size_bytes,
         face_count: p.face_count,
         created_at: p.created_at,
+        capture_time: p.capture_time || p.created_at,
+        file_name: p.file_name || null,
       };
     });
 

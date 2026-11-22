@@ -132,8 +132,8 @@ export type SortOption =
   | 'name_desc';
 
 const SORT_OPTIONS: { id: SortOption; label: string; shortLabel: string }[] = [
-  { id: 'capture_newest', label: 'Capture Time (Newest First)', shortLabel: 'Capture Time' },
-  { id: 'capture_oldest', label: 'Capture Time (Oldest First)', shortLabel: 'Capture Time (Oldest)' },
+  { id: 'capture_oldest', label: 'Capture Time (Earliest First - Chronological)', shortLabel: 'Capture Time' },
+  { id: 'capture_newest', label: 'Capture Time (Latest First)', shortLabel: 'Capture Time (Latest)' },
   { id: 'newest', label: 'Newest uploads', shortLabel: 'Newest' },
   { id: 'oldest', label: 'Oldest uploads', shortLabel: 'Oldest' },
   { id: 'name_asc', label: 'File Name (A to Z)', shortLabel: 'Name (A-Z)' },
@@ -251,7 +251,7 @@ function AlbumStudioContent() {
   // Selected Photos for Bulk Actions
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('capture_newest');
+  const [sortBy, setSortBy] = useState<SortOption>('capture_oldest');
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -862,19 +862,31 @@ function AlbumStudioContent() {
     }
   };
 
-  // Initiate Publish with Confirmation Modal
+  // Initiate Publish with Confirmation Modal (STRICT: ONLY if Face AI is ON for this card)
   const handleInitiatePublish = async () => {
     setIsStatusDropdownOpen(false);
     if (!gallery) return;
 
+    // Strict Gate: If Face AI is disabled for this gallery card, NEVER show confirmation popup
+    const isFaceAiActive = gallery.is_face_ai_enabled !== false && isFaceAiEnabledState;
+    if (!isFaceAiActive) {
+      await handleDirectPublish();
+      return;
+    }
+
     try {
-      const { count } = await supabase
-        .from('event_guest_registrations')
-        .select('*', { count: 'exact', head: true })
-        .eq('gallery_id', gallery.id);
-      setRegisteredGuestsCount(count || 0);
+      // Query accurate count using admin API endpoint (avoids client RLS returning 0)
+      const res = await fetch(`/api/gallery/guest/list?gallery_id=${gallery.id}`);
+      const data = await res.json();
+      if (data.success && typeof data.count === 'number') {
+        setRegisteredGuestsCount(data.count);
+      } else if (Array.isArray(data.guests)) {
+        setRegisteredGuestsCount(data.guests.length);
+      } else {
+        setRegisteredGuestsCount(registeredGuests.length || 0);
+      }
     } catch (_) {
-      setRegisteredGuestsCount(0);
+      setRegisteredGuestsCount(registeredGuests.length || 0);
     }
 
     setShowPublishConfirmModal(true);
@@ -916,10 +928,11 @@ function AlbumStudioContent() {
     }
   };
 
-  // Direct Publish without notification popup (when notifyGuestsOnPublish is OFF)
+  // Direct Publish without notification popup (used when Face AI is OFF or notifyGuestsOnPublish is OFF)
   const handleDirectPublish = async () => {
     if (!gallery) return;
     setIsStatusDropdownOpen(false);
+    setShowPublishConfirmModal(false);
     setGallery((prev) => (prev ? { ...prev, status: 'PUBLISHED', is_active: true } : null));
     try {
       const res = await fetch('/api/gallery/events/publish', {
@@ -944,8 +957,11 @@ function AlbumStudioContent() {
   // 3-State Status Handler: 'UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED'
   const handleUpdateStatus = async (nextStatus: 'UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED') => {
     if (!gallery) return;
+    const isFaceAiActive = gallery.is_face_ai_enabled !== false && isFaceAiEnabledState;
+
     if (nextStatus === 'PUBLISHED') {
-      if (!notifyGuestsOnPublish) {
+      // If Face AI is OFF or user disabled notifications: publish directly without popup
+      if (!isFaceAiActive || !notifyGuestsOnPublish) {
         await handleDirectPublish();
         return;
       }
@@ -953,6 +969,7 @@ function AlbumStudioContent() {
       return;
     }
 
+    // For UNPUBLISHED or EXPIRED: NEVER show any popup modal under any circumstances
     setGallery((prev) => (prev ? { ...prev, status: nextStatus, is_active: false } : null));
     setIsStatusDropdownOpen(false);
 
@@ -974,10 +991,16 @@ function AlbumStudioContent() {
       : (gallery.status?.toUpperCase() === 'PUBLISHED' || (gallery.is_active && gallery.status?.toUpperCase() !== 'UNPUBLISHED'))
       ? 'PUBLISHED'
       : 'UNPUBLISHED';
+
     if (currentStatus === 'PUBLISHED') {
       await handleUpdateStatus('UNPUBLISHED');
     } else {
-      await handleInitiatePublish();
+      const isFaceAiActive = gallery.is_face_ai_enabled !== false && isFaceAiEnabledState;
+      if (!isFaceAiActive || !notifyGuestsOnPublish) {
+        await handleDirectPublish();
+      } else {
+        await handleInitiatePublish();
+      }
     }
   };
 
@@ -2735,7 +2758,8 @@ function AlbumStudioContent() {
                 </div>
               ) : (
                 <>
-                  <div className="columns-2 sm:columns-3 md:columns-4 xl:columns-5 gap-2.5 space-y-2.5">
+                  {/* Strict Horizontal Row-by-Row Grid (Items fill row 1, then row 2, then row 3) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                   {displayedPhotos.map((photo, idx) => {
                     const isCover = gallery.cover_url?.startsWith(photo.preview_url);
                     const isSelected = selectedPhotoIds.has(photo.id);
@@ -2744,7 +2768,7 @@ function AlbumStudioContent() {
                     return (
                       <div
                         key={photo.id}
-                        className={`group relative break-inside-avoid rounded-2xl overflow-hidden border ${
+                        className={`group relative aspect-[3/2] rounded-2xl overflow-hidden border ${
                           isSelected ? 'border-amber-500 ring-2 ring-amber-400/50' : 'border-[#E7E2D8]'
                         } bg-zinc-900 shadow-2xs hover:shadow-xl transition-all duration-300 cursor-pointer select-none`}
                         onClick={() => {
@@ -2757,8 +2781,8 @@ function AlbumStudioContent() {
                           src={photo.thumbnail_url || photo.preview_url}
                           thumbnailSrc={photo.thumbnail_url}
                           alt={cleanName}
-                          aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                          className="w-full h-auto object-cover group-hover:scale-105 transition-transform duration-500 block"
+                          aspectRatio="3/2"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 block"
                         />
 
                         {/* Persistent Top Badges when not hovering */}

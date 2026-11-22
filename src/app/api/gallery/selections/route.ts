@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
+import { sendClientSelectionSubmittedEmail } from '@/lib/email-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -402,6 +403,18 @@ export async function POST(req: NextRequest) {
     }
 
     const isSubmitted = is_submitted !== undefined ? Boolean(is_submitted) : existingSubmitted;
+    const submissionTimestamp = isSubmitted ? (existingSubmittedAt || new Date().toISOString()) : null;
+
+    // Trigger instant email & WhatsApp notifications on new submission
+    if (isSubmitted && !existingSubmitted) {
+      dispatchSelectionNotifications({
+        galleryId: gallery_id,
+        clientName: cleanName,
+        clientEmail: normalizedEmail,
+        selectedPhotoCount: photoIds.length,
+        submittedAt: submissionTimestamp || new Date().toISOString(),
+      }).catch((e) => console.warn('[SelectionNotify] Error dispatching notifications:', e));
+    }
 
     // Always mirror to fallback cache for instantaneous resilience
     writeFallback(gallery_id, normalizedEmail, {
@@ -412,7 +425,7 @@ export async function POST(req: NextRequest) {
       max_limit: limit,
       total_count: photoIds.length,
       is_submitted: isSubmitted,
-      submitted_at: isSubmitted ? (existingSubmittedAt || new Date().toISOString()) : null,
+      submitted_at: submissionTimestamp,
     });
 
     // Save to PostgreSQL table
@@ -430,7 +443,7 @@ export async function POST(req: NextRequest) {
       if (is_submitted !== undefined) {
         updateData.is_submitted = isSubmitted;
         if (isSubmitted) {
-          updateData.submitted_at = new Date().toISOString();
+          updateData.submitted_at = submissionTimestamp;
         }
       }
 
@@ -455,10 +468,184 @@ export async function POST(req: NextRequest) {
         max_limit: limit,
         total_count: photoIds.length,
         is_submitted: isSubmitted,
-        submitted_at: isSubmitted ? new Date().toISOString() : null,
+        submitted_at: submissionTimestamp,
       },
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+/**
+ * Asynchronously dispatches Email and WhatsApp notifications to the studio owner
+ * when a client submits their album photo selection.
+ */
+async function dispatchSelectionNotifications({
+  galleryId,
+  clientName,
+  clientEmail,
+  selectedPhotoCount,
+  submittedAt,
+}: {
+  galleryId: string;
+  clientName: string;
+  clientEmail: string;
+  selectedPhotoCount: number;
+  submittedAt: string;
+}) {
+  try {
+    // 1. Fetch gallery details
+    const { data: gallery } = await supabaseAdmin
+      .from('event_galleries')
+      .select('id, title, workspace_id, raw_payload')
+      .eq('id', galleryId)
+      .maybeSingle();
+
+    if (!gallery) return;
+
+    // 2. Fetch total photos in this gallery
+    const { count: totalPhotosCount } = await supabaseAdmin
+      .from('gallery_photos')
+      .select('*', { count: 'exact', head: true })
+      .eq('gallery_id', galleryId);
+
+    const totalPhotos = totalPhotosCount || selectedPhotoCount;
+    const workspaceId = gallery.workspace_id || '00000000-0000-0000-0000-000000000000';
+
+    // 3. Resolve Studio Owner's Email from workspace
+    let ownerEmail: string | null = null;
+    let studioName = 'StudioCore Photography';
+
+    if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+      const { data: members } = await supabaseAdmin
+        .from('workspace_members')
+        .select('email, role, full_name')
+        .eq('workspace_id', workspaceId);
+
+      if (Array.isArray(members) && members.length > 0) {
+        const owner = members.find((m: any) => m.role === 'owner') || members[0];
+        if (owner?.email) {
+          ownerEmail = owner.email;
+          if (owner.full_name) studioName = owner.full_name;
+        }
+      }
+    }
+
+    if (!ownerEmail) {
+      const { data: wsSet } = await supabaseAdmin
+        .from('workspace_settings')
+        .select('config')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+      if (wsSet?.config?.email || wsSet?.config?.studio_email) {
+        ownerEmail = wsSet.config.email || wsSet.config.studio_email;
+      }
+    }
+
+    // Fallback to default studio owner / platform email
+    if (!ownerEmail) {
+      ownerEmail = process.env.RESEND_FROM || 'filmifyweddings@gmail.com';
+    }
+
+    // 4. Dispatch Email to Studio Owner via Resend / SMTP
+    if (ownerEmail) {
+      sendClientSelectionSubmittedEmail({
+        toEmail: ownerEmail,
+        studioName,
+        galleryTitle: gallery.title,
+        galleryId,
+        clientName,
+        clientEmail,
+        selectedCount: selectedPhotoCount,
+        totalPhotos,
+        submittedAt,
+      }).catch((e) => console.warn('[SelectionNotify] Email notice:', e?.message));
+    }
+
+    // 5. Dispatch WhatsApp Notification to Group or Personal Number
+    const formattedDate = new Date(submittedAt).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const directSelectionUrl = `https://studiocore.in/workspace/gallery/${galleryId}?tab=selection`;
+
+    const waText = 
+`📸 *New Album Selection Received!*
+
+*Card / Event:* ${gallery.title}
+*Client Name:* ${clientName}
+*Client Email:* ${clientEmail}
+*Selected Photos:* ${selectedPhotoCount} / ${totalPhotos} Photos
+*Submitted At:* ${formattedDate}
+
+🔗 *View Selection in StudioCore:*
+${directSelectionUrl}`;
+
+    const targetDestinations: string[] = [];
+
+    // Check workspace settings for dedicated group or notification phone
+    const { data: wsSettings } = await supabaseAdmin
+      .from('workspace_settings')
+      .select('config')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+
+    const wsConfig = wsSettings?.config || {};
+    if (wsConfig.whatsapp_album_group_jid) {
+      targetDestinations.push(wsConfig.whatsapp_album_group_jid);
+    }
+    if (wsConfig.whatsapp_group_jid && !targetDestinations.includes(wsConfig.whatsapp_group_jid)) {
+      targetDestinations.push(wsConfig.whatsapp_group_jid);
+    }
+    if (wsConfig.whatsapp_notification_phone) {
+      targetDestinations.push(wsConfig.whatsapp_notification_phone);
+    }
+
+    // Also check event raw_payload for custom group
+    if (gallery.raw_payload?.whatsapp_group_jid && !targetDestinations.includes(gallery.raw_payload.whatsapp_group_jid)) {
+      targetDestinations.push(gallery.raw_payload.whatsapp_group_jid);
+    }
+
+    // If no group is configured, send to studio owner's own active Baileys session
+    if (targetDestinations.length === 0) {
+      const { data: session } = await supabaseAdmin
+        .from('baileys_sessions')
+        .select('phone_number, workspace_id, id')
+        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
+        .order('updated_at', { ascending: false })
+        .maybeSingle();
+
+      if (session?.phone_number) {
+        targetDestinations.push(session.phone_number);
+      }
+    }
+
+    // Insert into baileys_action_queue for instantaneous background processing
+    for (const target of targetDestinations) {
+      const cleanTarget = target.trim();
+      if (!cleanTarget) continue;
+
+      await supabaseAdmin
+        .from('baileys_action_queue')
+        .insert({
+          workspace_id: workspaceId,
+          action_type: 'send_text',
+          payload: {
+            to: cleanTarget,
+            text: waText,
+          },
+          status: 'pending',
+          priority: 1, // High priority
+        });
+    }
+  } catch (err: any) {
+    console.warn('[dispatchSelectionNotifications] Notice:', err?.message);
   }
 }

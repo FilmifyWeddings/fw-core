@@ -481,7 +481,7 @@ export async function batchUploadPhotos(
           // Record in manifest for crash protection & auto-resume
           recordUploadedToManifest(galleryId, file.name, file.size, resolvedColId);
 
-          // 2D. Collect for registration with exact folder_id & size_bytes
+          // 2D. Collect for registration with exact folder_id, size_bytes & capture timestamp
           pendingRegistration.push({
             gallery_id: galleryId,
             folder_id: resolvedColId,
@@ -493,6 +493,8 @@ export async function batchUploadPhotos(
             width: variants.width,
             height: variants.height,
             size_bytes: variants.sizeBytes, // strictly thumbnail_size + preview_size
+            file_name: file.name,
+            capture_time: new Date(file.lastModified || Date.now()).toISOString(),
           });
 
           completed++;
