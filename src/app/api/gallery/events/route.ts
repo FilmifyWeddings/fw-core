@@ -394,10 +394,11 @@ export async function GET(req: NextRequest) {
     const galleryIds = (galleries || []).map((g) => g.id);
     let analyticsMap: Record<string, { views: number; downloads: number }> = {};
     let faceSearchesMap: Record<string, number> = {};
+    let photoCountMap: Record<string, number> = {};
 
     if (galleryIds.length > 0) {
       try {
-        const [configRowsRes, guestRowsRes] = await Promise.all([
+        const [configRowsRes, guestRowsRes, ...countResults] = await Promise.all([
           supabaseAdmin
             .from('gallery_album_selections')
             .select('gallery_id, notes')
@@ -407,6 +408,14 @@ export async function GET(req: NextRequest) {
             .from('event_guest_registrations')
             .select('gallery_id')
             .in('gallery_id', galleryIds),
+          ...galleryIds.map((gid) =>
+            supabaseAdmin
+              .from('gallery_photos')
+              .select('id', { count: 'exact', head: true })
+              .eq('gallery_id', gid)
+              .then((res) => ({ gid, count: res.count ?? 0 }))
+              .catch(() => ({ gid, count: 0 }))
+          ),
         ]);
 
         (configRowsRes.data || []).forEach((row: any) => {
@@ -424,13 +433,19 @@ export async function GET(req: NextRequest) {
         (guestRowsRes.data || []).forEach((row: any) => {
           faceSearchesMap[row.gallery_id] = (faceSearchesMap[row.gallery_id] || 0) + 1;
         });
+
+        countResults.forEach((cr: any) => {
+          if (cr && cr.gid) {
+            photoCountMap[cr.gid] = cr.count;
+          }
+        });
       } catch (_) {}
     }
 
     // Calculate aggregated metrics
     const enriched = (galleries || []).map((g) => {
       const photos = g.gallery_photos || [];
-      const totalPhotos = photos.length;
+      const totalPhotos = photoCountMap[g.id] !== undefined ? photoCountMap[g.id] : photos.length;
       const totalBytes = photos.reduce((acc: number, p: any) => acc + (Number(p.size_bytes) || 0), 0);
       const totalFaces = photos.reduce((acc: number, p: any) => acc + (Number(p.face_count) || 0), 0);
 
