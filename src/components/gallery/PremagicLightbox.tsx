@@ -470,7 +470,7 @@ export function PremagicLightbox({
               {isSelectionSubmitted
                 ? 'Locked (Submitted)'
                 : isSelected
-                ? 'Selected for Album'
+                ? 'Selected'
                 : 'Select Photo'}
             </span>
           </button>
