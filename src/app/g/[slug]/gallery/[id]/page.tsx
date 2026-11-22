@@ -640,12 +640,6 @@ function StrictZeroKnowledgeGuestContent() {
           <p className="text-xs text-zinc-600 leading-relaxed">
             Please contact the studio owner to restore instant live access to this photo gallery.
           </p>
-          <a
-            href="/"
-            className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
-          >
-            Return to StudioCore
-          </a>
         </div>
       </div>
     );
@@ -665,24 +659,21 @@ function StrictZeroKnowledgeGuestContent() {
           <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest border border-rose-300">
             Access Concluded
           </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-            यह गैलरी एक्सपायर हो चुकी है
+          <h1 
+            style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+            className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
+          >
+            Gallery Access Expired
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
-            Public access to photos for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
+            Public viewing access for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
           </p>
         </div>
 
         <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
           <p className="text-xs text-zinc-600 leading-relaxed">
-            फोटो देखने या डाउनलोड करने के लिए कृपया स्टूडियो ओनर से संपर्क करें।
+            To view or download photos, please contact the studio owner directly.
           </p>
-          <a
-            href="/"
-            className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
-          >
-            Return to StudioCore
-          </a>
         </div>
       </div>
     );
@@ -704,24 +695,21 @@ function StrictZeroKnowledgeGuestContent() {
             <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest border border-amber-300">
               Gallery Unpublished
             </span>
-            <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-              यह गैलरी अभी पब्लिश नहीं की गई है
+            <h1 
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
+            >
+              Gallery Not Published Yet
             </h1>
             <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
-              This gallery for <span className="font-bold text-zinc-800">{gallery.title}</span> is not yet published.
+              This wedding gallery for <span className="font-bold text-zinc-800">{gallery.title}</span> is not yet published.
             </p>
           </div>
 
           <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
             <p className="text-xs text-zinc-600 leading-relaxed">
-              गैलरी देखने या फोटो सिलेक्शन के लिए कृपया स्टूडियो ओनर से संपर्क करें।
+              To view photos or album selection, please contact the studio owner.
             </p>
-            <a
-              href="/"
-              className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
-            >
-              Return to StudioCore
-            </a>
           </div>
         </div>
       );
@@ -1053,8 +1041,8 @@ function StrictZeroKnowledgeGuestContent() {
                       </div>
                     </div>
 
-                    {/* Matched Row-Wise Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+                    {/* Matched Photos Grid */}
+                    <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
                       {matchedPhotos.map((photo, idx) => (
                         <div
                           key={photo.id}
@@ -1062,14 +1050,14 @@ function StrictZeroKnowledgeGuestContent() {
                             const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
                             setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
                           }}
-                          className="group relative rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer aspect-[4/3]"
+                          className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
                         >
                           <ProgressiveSmoothImage
                             src={photo.thumbnail_url || photo.preview_url}
                             thumbnailSrc={photo.thumbnail_url}
                             alt="Matched Photo"
-                            aspectRatio="4/3"
-                            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                            aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
+                            className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
                           />
 
                           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1169,8 +1157,8 @@ function StrictZeroKnowledgeGuestContent() {
                   </div>
                 )}
 
-                {/* All Photos Row-Wise Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+                {/* All Photos Grid */}
+                <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
                   {targetFullPhotos.map((photo, idx) => (
                     <div
                       key={photo.id}
@@ -1178,14 +1166,14 @@ function StrictZeroKnowledgeGuestContent() {
                         const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
                         setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
                       }}
-                      className="group relative rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer aspect-[4/3]"
+                      className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
                     >
                       <ProgressiveSmoothImage
                         src={photo.thumbnail_url || photo.preview_url}
                         thumbnailSrc={photo.thumbnail_url}
                         alt="Event Photo"
-                        aspectRatio="4/3"
-                        className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                        aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
+                        className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
                       />
 
                       <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1250,8 +1238,8 @@ function StrictZeroKnowledgeGuestContent() {
               </div>
             )}
 
-            {/* Privileged Full Photo Row-Wise Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+            {/* Privileged Full Photo Grid */}
+            <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
               {displayedPhotos.map((photo, idx) => {
                 const isSelected = selectedForAlbum.has(photo.id);
                 return (
@@ -1268,7 +1256,7 @@ function StrictZeroKnowledgeGuestContent() {
                         setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
                       }
                     }}
-                    className={`group relative rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer aspect-[4/3] ${
+                    className={`group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
                       isSelected
                         ? 'border-amber-500 ring-4 ring-amber-500/20'
                         : 'border-[#E7E2D8] hover:shadow-lg'
@@ -1278,8 +1266,8 @@ function StrictZeroKnowledgeGuestContent() {
                       src={photo.thumbnail_url || photo.preview_url}
                       thumbnailSrc={photo.thumbnail_url}
                       alt="Wedding photo"
-                      aspectRatio="4/3"
-                      className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                      aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
+                      className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
                     />
 
                     {isSelectionMode && (
