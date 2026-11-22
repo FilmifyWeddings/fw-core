@@ -161,21 +161,36 @@ export async function DELETE(req: NextRequest) {
       workspaceId = gallery?.workspace_id || null;
     }
 
-    // 2. Fetch all photos belonging to this folder/collection to retrieve keys and calculate freed bytes
-    const { data: photosInCol } = await supabaseAdmin
-      .from('gallery_photos')
-      .select('id, original_key, preview_key, thumbnail_key, thumb_key, size_bytes')
-      .or(`collection_id.eq.${id},folder_id.eq.${id}`);
+    // 2. Fetch all photos belonging to this folder/collection with pagination to retrieve keys and calculate freed bytes
+    const photosInCol: any[] = [];
+    let colFrom = 0;
+    const COL_PAGE = 1000;
+    while (true) {
+      const { data: pagePhotos, error: pageErr } = await supabaseAdmin
+        .from('gallery_photos')
+        .select('id, original_key, preview_key, thumbnail_key, thumb_key, size_bytes')
+        .or(`collection_id.eq.${id},folder_id.eq.${id}`)
+        .range(colFrom, colFrom + COL_PAGE - 1);
 
-    const photoIds = (photosInCol || []).map((p) => p.id);
-    const storageKeys = (photosInCol || []).flatMap((p: any) => [
+      if (pageErr) {
+        console.error('[GalleryCollections] Error fetching photos in collection:', pageErr);
+        break;
+      }
+      if (!pagePhotos || pagePhotos.length === 0) break;
+      photosInCol.push(...pagePhotos);
+      if (pagePhotos.length < COL_PAGE) break;
+      colFrom += COL_PAGE;
+    }
+
+    const photoIds = photosInCol.map((p) => p.id);
+    const storageKeys = photosInCol.flatMap((p: any) => [
       p.original_key,
       p.preview_key,
       p.thumbnail_key,
       p.thumb_key,
     ]).filter((k): k is string => typeof k === 'string' && k.length > 0);
 
-    const freedBytes = (photosInCol || []).reduce(
+    const freedBytes = photosInCol.reduce(
       (sum, p: any) => sum + (Number(p.size_bytes) || 0),
       0
     );
@@ -207,15 +222,16 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    // 5. Remove face vectors from Supabase
-    if (photoIds.length > 0) {
+    // 5. Remove face vectors and photo records from Supabase in batches of 500
+    const CHUNK = 500;
+    for (let i = 0; i < photoIds.length; i += CHUNK) {
+      const slice = photoIds.slice(i, i + CHUNK);
       try {
-        await supabaseAdmin.from('photo_faces').delete().in('photo_id', photoIds);
+        await supabaseAdmin.from('photo_faces').delete().in('photo_id', slice);
       } catch (_) {}
 
-      // 6. Delete photo records from Supabase
       try {
-        await supabaseAdmin.from('gallery_photos').delete().in('id', photoIds);
+        await supabaseAdmin.from('gallery_photos').delete().in('id', slice);
       } catch (err) {
         console.warn('[GalleryCollections] Note on deleting photos:', err);
       }

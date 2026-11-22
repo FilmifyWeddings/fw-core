@@ -21,16 +21,17 @@ export interface UploadProgressCallback {
 }
 
 /**
- * Local storage manifest helpers to remember uploaded photos per gallery
+ * Local storage manifest helpers to remember uploaded photos per gallery and collection
  */
-export function getManifestKey(galleryId: string): string {
-  return `sc_gallery_manifest_${galleryId}`;
+export function getManifestKey(galleryId: string, collectionId?: string | null): string {
+  const colPart = collectionId && collectionId !== 'all' ? `_${collectionId}` : '';
+  return `sc_gallery_manifest_${galleryId}${colPart}`;
 }
 
-export function getUploadedManifest(galleryId: string): Set<string> {
+export function getUploadedManifest(galleryId: string, collectionId?: string | null): Set<string> {
   if (typeof window === 'undefined') return new Set();
   try {
-    const raw = localStorage.getItem(getManifestKey(galleryId));
+    const raw = localStorage.getItem(getManifestKey(galleryId, collectionId));
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
     return new Set(Array.isArray(parsed) ? parsed : Object.keys(parsed));
@@ -39,18 +40,28 @@ export function getUploadedManifest(galleryId: string): Set<string> {
   }
 }
 
-export function recordUploadedToManifest(galleryId: string, filename: string, sizeBytes: number): void {
+export function recordUploadedToManifest(
+  galleryId: string,
+  filename: string,
+  sizeBytes: number,
+  collectionId?: string | null
+): void {
   if (typeof window === 'undefined') return;
   try {
-    const set = getUploadedManifest(galleryId);
+    const set = getUploadedManifest(galleryId, collectionId);
     const signature = `${filename}_${sizeBytes}`;
     set.add(signature);
-    localStorage.setItem(getManifestKey(galleryId), JSON.stringify(Array.from(set)));
+    localStorage.setItem(getManifestKey(galleryId, collectionId), JSON.stringify(Array.from(set)));
   } catch (_) {}
 }
 
-export function isPhotoInManifest(galleryId: string, filename: string, sizeBytes: number): boolean {
-  const set = getUploadedManifest(galleryId);
+export function isPhotoInManifest(
+  galleryId: string,
+  filename: string,
+  sizeBytes: number,
+  collectionId?: string | null
+): boolean {
+  const set = getUploadedManifest(galleryId, collectionId);
   return set.has(`${filename}_${sizeBytes}`);
 }
 
@@ -293,43 +304,50 @@ export async function batchUploadPhotos(
   const total = files.length;
   const errors: string[] = [];
   const pendingRegistration: any[] = [];
-  let isFlushingRegistration = false;
+  let flushPromise: Promise<void> | null = null;
 
-  const manifest = getUploadedManifest(galleryId);
+  const resolvedColId = collectionId && collectionId !== 'all' ? collectionId : null;
+  const manifest = getUploadedManifest(galleryId, resolvedColId);
 
   // Helper to register pending photos in chunks and stream them to UI live!
   const flushRegistration = async () => {
-    if (pendingRegistration.length === 0 || isFlushingRegistration) return;
-    isFlushingRegistration = true;
+    while (flushPromise) {
+      await flushPromise;
+    }
+    if (pendingRegistration.length === 0) return;
     const batch = [...pendingRegistration];
     pendingRegistration.length = 0;
 
-    try {
-      const regRes = await fetch('/api/gallery/photos/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ galleryId, photos: batch }),
-      });
-      const regJson = await regRes.json();
-      if (regJson.success && Array.isArray(regJson.photos) && regJson.photos.length > 0) {
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('studiocore:gallery_photos_added', {
-              detail: { galleryId, photos: regJson.photos },
-            })
-          );
+    flushPromise = (async () => {
+      try {
+        const regRes = await fetch('/api/gallery/photos/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ galleryId, photos: batch }),
+        });
+        const regJson = await regRes.json();
+        if (regJson.success && Array.isArray(regJson.photos) && regJson.photos.length > 0) {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('studiocore:gallery_photos_added', {
+                detail: { galleryId, photos: regJson.photos },
+              })
+            );
+          }
         }
+      } catch (err: any) {
+        console.warn('[ImageProcessor] Incremental registration notice:', err.message);
+      } finally {
+        flushPromise = null;
       }
-    } catch (err: any) {
-      console.warn('[ImageProcessor] Incremental registration notice:', err.message);
-    } finally {
-      isFlushingRegistration = false;
-    }
+    })();
+
+    await flushPromise;
   };
 
   // 1. High-Performance URL Pre-fetch Cache
   // Pre-fetch presigned upload URLs in 1 single HTTP request (slashes startup latency by 90%)
-  const targetFolderId = collectionId && collectionId !== 'all' ? collectionId : 'default';
+  const targetFolderId = resolvedColId || 'default';
   const presignedUrlCache = new Map<string, any>();
   const fetchPresignedUrls = async (fileBatch: File[]) => {
     try {
@@ -340,7 +358,7 @@ export async function batchUploadPhotos(
           galleryId,
           workspaceId,
           folder_id: targetFolderId,
-          collection_id: collectionId && collectionId !== 'all' ? collectionId : null,
+          collection_id: resolvedColId,
           files: fileBatch.map((f) => ({
             filename: encodeURIComponent(f.name.replace(/[^a-zA-Z0-9._-]/g, '_')),
             folder_id: targetFolderId,
@@ -365,7 +383,7 @@ export async function batchUploadPhotos(
   const filesToProcess: { file: File; originalIndex: number }[] = [];
   for (let idx = 0; idx < files.length; idx++) {
     const f = files[idx];
-    if (isPhotoInManifest(galleryId, f.name, f.size)) {
+    if (isPhotoInManifest(galleryId, f.name, f.size, resolvedColId)) {
       completed++;
       if (onProgress) {
         onProgress(completed, total, Math.round((completed / total) * 100), `${f.name} (Previously Uploaded)`);
@@ -461,10 +479,9 @@ export async function batchUploadPhotos(
           ]);
 
           // Record in manifest for crash protection & auto-resume
-          recordUploadedToManifest(galleryId, file.name, file.size);
+          recordUploadedToManifest(galleryId, file.name, file.size, resolvedColId);
 
           // 2D. Collect for registration with exact folder_id & size_bytes
-          const resolvedColId = collectionId && collectionId !== 'all' ? collectionId : null;
           pendingRegistration.push({
             gallery_id: galleryId,
             folder_id: resolvedColId,
@@ -485,7 +502,7 @@ export async function batchUploadPhotos(
 
           // Non-blocking background flush: stream to UI immediately without halting upload worker!
           if (pendingRegistration.length >= 4 || completed <= 1 || completed === total) {
-            flushRegistration(); // intentionally not awaited to keep upload stream at 100% speed
+            flushRegistration(); // background flush
           }
 
           lastErr = null;
@@ -512,8 +529,10 @@ export async function batchUploadPhotos(
   const workers = Array.from({ length: Math.min(WORKER_COUNT, filesToProcess.length) }, () => worker());
   await Promise.all(workers);
 
-  // Final flush to ensure all remaining registered photos are saved
-  await flushRegistration();
+  // Final flush loop to ensure all remaining registered photos are saved
+  while (pendingRegistration.length > 0 || flushPromise) {
+    await flushRegistration();
+  }
 
   return {
     success: errors.length === 0,
