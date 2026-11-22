@@ -132,14 +132,14 @@ export type SortOption =
   | 'name_desc';
 
 const SORT_OPTIONS: { id: SortOption; label: string }[] = [
+  { id: 'capture_oldest', label: 'Capture Time (Chronological: Earliest First)' },
+  { id: 'capture_newest', label: 'Capture Time (Latest First)' },
   { id: 'newest', label: 'Newest uploads' },
   { id: 'oldest', label: 'Oldest uploads' },
-  { id: 'capture_newest', label: 'Capture Time (Newest First)' },
-  { id: 'capture_oldest', label: 'Capture Time (Oldest First)' },
-  { id: 'size_desc', label: 'File Size (Largest First)' },
-  { id: 'size_asc', label: 'File Size (Smallest First)' },
   { id: 'name_asc', label: 'File Name (A to Z)' },
   { id: 'name_desc', label: 'File Name (Z to A)' },
+  { id: 'size_desc', label: 'File Size (Largest First)' },
+  { id: 'size_asc', label: 'File Size (Smallest First)' },
 ];
 
 interface CoverPositioning {
@@ -251,7 +251,7 @@ function AlbumStudioContent() {
   // Selected Photos for Bulk Actions
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('newest');
+  const [sortBy, setSortBy] = useState<SortOption>('capture_oldest');
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -1527,9 +1527,39 @@ function AlbumStudioContent() {
         currentFile: 'Scanning local directories...',
       });
 
-      // Resolve target folder name: Couple Name - Selected - Selector Name
+      // Resolve target folder name: Couple Name - Selected - Real Selector/Client Name
       const coupleName = (gallery?.title || (gallery as any)?.couple_name || 'Event').trim();
-      const selectorName = (clientSelections.find((c) => c.client_email === selectedClientEmail)?.client_name || 'Client').trim();
+
+      let selectorName = '';
+      if (selectedClientEmail) {
+        const found = clientSelections.find((c) => c.client_email === selectedClientEmail);
+        if (found?.client_name && found.client_name.trim()) {
+          selectorName = found.client_name.trim();
+        } else if (found?.client_email) {
+          selectorName = found.client_email.split('@')[0].trim();
+        }
+      }
+
+      // If not resolved from selectedClientEmail, check which client actually selected the target photos
+      if (!selectorName && clientSelections.length > 0) {
+        const targetPhotoIdSet = new Set(targetPhotos.map((p) => p.id));
+        const matchingClient = clientSelections.find((c) =>
+          Array.isArray(c.selected_photo_ids) && c.selected_photo_ids.some((id: string) => targetPhotoIdSet.has(id))
+        ) || clientSelections.find((c) => c.client_name && c.client_name.trim()) || clientSelections[0];
+
+        if (matchingClient?.client_name && matchingClient.client_name.trim()) {
+          selectorName = matchingClient.client_name.trim();
+        } else if (matchingClient?.client_email) {
+          selectorName = matchingClient.client_email.split('@')[0].trim();
+        }
+      }
+
+      // Fallback: If still empty or literal 'Client', use first named client or coupleName
+      if (!selectorName || selectorName.toLowerCase() === 'client') {
+        const firstNamed = clientSelections.find((c) => c.client_name && c.client_name.toLowerCase() !== 'client');
+        selectorName = firstNamed?.client_name?.trim() || coupleName;
+      }
+
       const destinationFolderName = `${coupleName} - Selected - ${selectorName}`
         .replace(/[/\\?%*:|"<>]/g, '-')
         .replace(/\s+/g, ' ')
@@ -1705,7 +1735,17 @@ function AlbumStudioContent() {
 
       setZipProgress((prev) => ({ ...prev, message: 'Compressing archive...' }));
       const content = await zip.generateAsync({ type: 'blob' });
-      const clientName = clientSelections.find((c) => c.client_email === selectedClientEmail)?.client_name || 'selection';
+      let clientName = clientSelections.find((c) => c.client_email === selectedClientEmail)?.client_name;
+      if (!clientName && clientSelections.length > 0) {
+        const targetPhotoIdSet = new Set(targetPhotos.map((p) => p.id));
+        const matched = clientSelections.find((c) =>
+          Array.isArray(c.selected_photo_ids) && c.selected_photo_ids.some((id: string) => targetPhotoIdSet.has(id))
+        ) || clientSelections.find((c) => c.client_name);
+        clientName = matched?.client_name || matched?.client_email?.split('@')[0];
+      }
+      if (!clientName || clientName.toLowerCase() === 'client') {
+        clientName = gallery?.title || 'selection';
+      }
       const cleanClientName = clientName.replace(/[^a-zA-Z0-9_-]/g, '_');
 
       const downloadUrl = URL.createObjectURL(content);
@@ -1810,7 +1850,8 @@ function AlbumStudioContent() {
         if (sortBy === 'capture_oldest') {
           const timeA = (a as any).capture_time ? new Date((a as any).capture_time).getTime() : new Date(a.created_at).getTime();
           const timeB = (b as any).capture_time ? new Date((b as any).capture_time).getTime() : new Date(b.created_at).getTime();
-          return timeA - timeB;
+          if (timeA !== timeB) return timeA - timeB;
+          return getCleanFilename(a.original_key || a.preview_key || '').localeCompare(getCleanFilename(b.original_key || b.preview_key || ''));
         }
         if (sortBy === 'size_desc') {
           return (Number(b.size_bytes) || 0) - (Number(a.size_bytes) || 0);
@@ -1887,12 +1928,12 @@ function AlbumStudioContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans flex flex-col selection:bg-amber-100">
+    <div className="h-screen max-h-screen overflow-hidden bg-[#FAF9F5] text-zinc-900 font-sans flex flex-col selection:bg-amber-100">
       
       {/* ─────────────────────────────────────────────────────────────
           1. TOP APP BAR: BRAND, EVENT DETAILS, STATUS, STORAGE & ACTIONS
       ───────────────────────────────────────────────────────────── */}
-      <header className="bg-white border-b border-[#E7E2D8] sticky top-0 z-40 px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
+      <header className="bg-white border-b border-[#E7E2D8] shrink-0 z-40 px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
         {/* Left: Back & Verified Event Title */}
         <div className="flex items-center gap-3.5 min-w-0">
           <Link
@@ -2099,10 +2140,10 @@ function AlbumStudioContent() {
       {/* ─────────────────────────────────────────────────────────────
           2. WORKSPACE SPLIT LAYOUT (LEFT RAIL + SUB-SIDEBAR + VIEWPORT)
       ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex overflow-hidden w-full">
+      <div className="flex-1 flex overflow-hidden w-full min-h-0">
         
         {/* ──────────── 2A. LEFT-MOST SLIM NAVIGATION RAIL (72px) ──────────── */}
-        <aside className="w-[72px] shrink-0 bg-white border-r border-[#E7E2D8] flex flex-col items-center py-4 space-y-2.5 z-30 select-none shadow-2xs">
+        <aside className="w-[72px] shrink-0 h-full overflow-y-auto bg-white border-r border-[#E7E2D8] flex flex-col items-center py-4 space-y-2.5 z-30 select-none shadow-2xs">
           {NAV_TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             const Icon = tab.icon;
@@ -2127,10 +2168,10 @@ function AlbumStudioContent() {
 
         {/* ──────────── 2B. SUB-SIDEBAR (COLLAPSIBLE MANAGE DRAWER) ──────────── */}
         {activeTab === 'photos' && (
-          <div className="relative shrink-0 flex">
+          <div className="relative shrink-0 flex h-full">
             {!isDrawerCollapsed ? (
               <>
-                <aside className="w-64 sm:w-72 shrink-0 bg-white border-r border-[#E7E2D8] flex flex-col justify-between overflow-y-auto p-4 space-y-4 select-none animate-in slide-in-from-left-2 duration-200">
+                <aside className="w-64 sm:w-72 shrink-0 h-full bg-white border-r border-[#E7E2D8] flex flex-col justify-between overflow-y-auto p-4 space-y-4 select-none animate-in slide-in-from-left-2 duration-200">
                 
                 <div className="space-y-4">
                   {/* Event Cover Photo Card with Device Preview Icons [ 💻 📱 ] */}
@@ -2402,7 +2443,7 @@ function AlbumStudioContent() {
       )}
 
         {/* ──────────── 2C. MAIN CONTENT VIEWPORT ──────────── */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#FAF9F5]">
+        <main className="flex-1 h-full min-h-0 overflow-y-auto p-4 sm:p-6 bg-[#FAF9F5]">
 
           {/* ════════════════════════════════════════════════════════════
               VIEW 1: PHOTOS MANAGEMENT (SCREENSHOT MATCH)
@@ -2648,7 +2689,7 @@ function AlbumStudioContent() {
                 </div>
               ) : (
                 <>
-                  <div className="columns-2 sm:columns-3 md:columns-4 xl:columns-5 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2.5">
                   {displayedPhotos.map((photo, idx) => {
                     const isCover = gallery.cover_url?.startsWith(photo.preview_url);
                     const isSelected = selectedPhotoIds.has(photo.id);
@@ -2657,18 +2698,21 @@ function AlbumStudioContent() {
                     return (
                       <div
                         key={photo.id}
-                        className={`group relative break-inside-avoid mb-2.5 rounded-2xl overflow-hidden border ${
+                        className={`group relative rounded-2xl overflow-hidden border aspect-[4/3] ${
                           isSelected ? 'border-amber-500 ring-2 ring-amber-400/50' : 'border-[#E7E2D8]'
                         } bg-zinc-900 shadow-2xs hover:shadow-xl transition-all duration-300 cursor-pointer select-none`}
-                        onClick={() => setSelectedPhotoIndex(idx)}
+                        onClick={() => {
+                          const fullIdx = filteredPhotos.findIndex((p) => p.id === photo.id);
+                          setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
+                        }}
                       >
                         {/* Progressive Smooth Blur-Up Image (loads lightweight 480px WebP thumbnail from thumbs/ folder) */}
                         <ProgressiveSmoothImage
                           src={photo.thumbnail_url || photo.preview_url}
                           thumbnailSrc={photo.thumbnail_url}
                           alt={cleanName}
-                          aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                          className="w-full h-auto object-cover group-hover:scale-105 transition-transform duration-500 block"
+                          aspectRatio="4/3"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 block"
                         />
 
                         {/* Persistent Top Badges when not hovering */}

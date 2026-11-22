@@ -38,6 +38,7 @@ import {
   ArrowDown,
   ArrowUp,
   Share2,
+  Clock,
   ChevronDown,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -1352,6 +1353,27 @@ function GuestSlugGalleryContent() {
     return () => clearTimeout(timer);
   }, [selectedForAlbum, gallery?.id, isSelectionMode, selectorEmail, selectorName, syncSelectionToBackend]);
 
+  const activeFullPhotos = useMemo(() => {
+    // 1. In Guest Access mode (!isPrivilegedMode): STRICT PRIVACY - ONLY show guest's matched photos!
+    if (!isPrivilegedMode) {
+      if (selectedCollectionId === 'all') {
+        return matchedPhotos;
+      }
+      return matchedPhotos.filter((p) => p.collection_id === selectedCollectionId);
+    }
+
+    // 2. Privileged Access mode (Full Access / Album Selection)
+    if (selectedCollectionId === 'my_photos') {
+      return matchedPhotos;
+    }
+
+    if (isSelectionMode && (showOnlySelected || selectedCollectionId === 'selected')) {
+      return fullPhotos.filter((p) => selectedForAlbum.has(p.id));
+    }
+
+    return isUnlocked ? targetFullPhotos : [];
+  }, [isPrivilegedMode, selectedCollectionId, matchedPhotos, isSelectionMode, showOnlySelected, fullPhotos, targetFullPhotos, selectedForAlbum, isUnlocked]);
+
   const displayedPhotos = useMemo(() => {
     // 1. In Guest Access mode (!isPrivilegedMode): STRICT PRIVACY - ONLY show guest's matched photos!
     if (!isPrivilegedMode) {
@@ -1435,43 +1457,6 @@ function GuestSlugGalleryContent() {
     );
   }
 
-  if (currentGalleryStatus === 'EXPIRED') {
-    return (
-      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
-        <div className="relative w-20 h-20 mx-auto">
-          <div className="absolute inset-0 rounded-3xl bg-rose-500/20 animate-ping pointer-events-none" />
-          <div className="relative w-20 h-20 rounded-3xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shadow-lg">
-            <Lock className="w-10 h-10" />
-          </div>
-        </div>
-
-        <div className="space-y-2 max-w-md">
-          <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest border border-rose-300">
-            Access Concluded
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-            This Wedding Gallery Has Expired
-          </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
-            Public access to photos for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
-          </p>
-        </div>
-
-        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-3 text-center">
-          <p className="text-xs text-zinc-600 leading-relaxed">
-            If you are a family member, guest, or client needing to view or download photos, please contact the studio owner directly to request access.
-          </p>
-          <a
-            href="/"
-            className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
-          >
-            Return to StudioCore
-          </a>
-        </div>
-      </div>
-    );
-  }
-
   const studioBranding: any = gallery.studio_branding;
   const studioName = studioBranding?.studio_name || 'Wedding Studio';
   const studioLogo = studioBranding?.logo_url;
@@ -1488,6 +1473,109 @@ function GuestSlugGalleryContent() {
     facebook: true,
     youtube: true,
   };
+
+  if (currentGalleryStatus === 'EXPIRED') {
+    return (
+      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
+        <div className="relative w-20 h-20 mx-auto">
+          <div className="absolute inset-0 rounded-3xl bg-rose-500/20 animate-ping pointer-events-none" />
+          <div className="relative w-20 h-20 rounded-3xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shadow-lg">
+            <Lock className="w-10 h-10" />
+          </div>
+        </div>
+
+        <div className="space-y-2 max-w-md">
+          <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest border border-rose-300">
+            Access Concluded
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+            यह गैलरी एक्सपायर हो चुकी है
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+            Public access to photos for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
+          <p className="text-xs text-zinc-600 leading-relaxed">
+            फोटो देखने या डाउनलोड करने के लिए कृपया स्टूडियो ओनर ({studioName}) से संपर्क करें।
+          </p>
+          {studioPhone && (
+            <a
+              href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello, I am accessing the gallery "${gallery.title}". Please renew or restore access.`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm"
+            >
+              <span>Connect on WhatsApp</span>
+            </a>
+          )}
+          <a
+            href="/"
+            className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
+          >
+            Return to StudioCore
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentGalleryStatus === 'UNPUBLISHED') {
+    // If guest scanned QR standee and registered selfie, allow the registration confirmation card to display
+    if (!isPrivilegedMode && hasSearched) {
+      // Handled by isGuestRegisteredUnpublished below
+    } else {
+      return (
+        <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
+          <div className="relative w-20 h-20 mx-auto">
+            <div className="w-20 h-20 rounded-3xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shadow-lg">
+              <Clock className="w-10 h-10" />
+            </div>
+          </div>
+
+          <div className="space-y-2 max-w-md">
+            <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest border border-amber-300">
+              Gallery Unpublished
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+              यह गैलरी अभी पब्लिश नहीं की गई है
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+              This gallery for <span className="font-bold text-zinc-800">{gallery.title}</span> is not yet published.
+            </p>
+          </div>
+
+          <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              गैलरी देखने या फोटो सिलेक्शन के लिए कृपया स्टूडियो ओनर ({studioName}) से संपर्क करें।
+            </p>
+            {studioPhone ? (
+              <a
+                href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello, I am accessing the gallery "${gallery.title}". Please publish or grant access.`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm"
+              >
+                <span>Connect on WhatsApp</span>
+              </a>
+            ) : (
+              <p className="text-xs font-bold text-zinc-700">
+                Contact: {studioEmail || studioName}
+              </p>
+            )}
+            <a
+              href="/"
+              className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
+            >
+              Return to StudioCore
+            </a>
+          </div>
+        </div>
+      );
+    }
+  }
+
   const totalPhotosCount = fullPhotos?.length || (gallery as any)?.photos_count || (gallery as any)?.total_photos || 0;
 
   // ── DYNAMIC DESIGN CONFIGURATION (PRESETS, PALETTE, FONTS, MOTION, LAYOUT) ──
@@ -2768,7 +2856,10 @@ function GuestSlugGalleryContent() {
                   <JustifiedGalleryLayout
                     photos={displayedPhotos}
                     layoutConfig={layoutConfig}
-                    onPhotoClick={(photo, idx) => setSelectedPhotoIndex(idx)}
+                    onPhotoClick={(photo, idx) => {
+                      const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                      setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
+                    }}
                     onDownloadPhoto={handleDownloadPhoto}
                   />
                 </>
@@ -2836,7 +2927,8 @@ function GuestSlugGalleryContent() {
               onRequestSelectorModal={() => setShowSelectorModal(true)}
               onPhotoClick={(photo, idx) => {
                 // Clicking on photo card ALWAYS opens the high-resolution lightbox viewer
-                setSelectedPhotoIndex(idx);
+                const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
               }}
               onToggleSelect={(photo) => handleTogglePhotoSelection(photo.id)}
               onDownloadPhoto={handleDownloadPhoto}
@@ -2873,7 +2965,7 @@ function GuestSlugGalleryContent() {
 
       {/* 4. PIN UNLOCK MODAL */}
       {showPinModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110000] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-4 animate-in fade-in">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -2924,7 +3016,7 @@ function GuestSlugGalleryContent() {
 
       {/* 5. CLIENT SELECTION IDENTITY MODAL (NAME & EMAIL) */}
       {showSelectorModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110000] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -3103,7 +3195,7 @@ function GuestSlugGalleryContent() {
 
       {/* SUBMIT SELECTION CONFIRMATION MODAL */}
       {showSubmitConfirmModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110000] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-zinc-200 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
             <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto shadow-inner">
               <Send className="w-7 h-7 text-rose-600" />
@@ -3360,15 +3452,15 @@ function GuestSlugGalleryContent() {
       )}
 
       {/* 6. PREMAGIC / FOTOOWL TOUCH-SWIPE LIGHTBOX WITH SMART HD ZOOM */}
-      {selectedPhotoIndex !== null && displayedPhotos[selectedPhotoIndex] && (
+      {selectedPhotoIndex !== null && activeFullPhotos[selectedPhotoIndex] && (
         <PremagicLightbox
-          photos={displayedPhotos}
+          photos={activeFullPhotos}
           currentIndex={selectedPhotoIndex}
           onClose={() => setSelectedPhotoIndex(null)}
           onNavigate={(idx) => setSelectedPhotoIndex(idx)}
           onDownload={handleDownloadPhoto as any}
           onToggleSelect={isSelectionMode ? handleTogglePhotoSelection : undefined}
-          isSelected={selectedForAlbum.has(displayedPhotos[selectedPhotoIndex]?.id)}
+          isSelected={selectedForAlbum.has(activeFullPhotos[selectedPhotoIndex]?.id)}
           isSelectionMode={isSelectionMode}
           isSelectionSubmitted={isSelectionSubmitted}
           allowDownloads={gallery.allow_downloads ?? true}
