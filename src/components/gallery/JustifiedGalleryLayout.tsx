@@ -266,13 +266,11 @@ export function JustifiedGalleryLayout({
         </div>
       ) : (
         /* ─────────────────────────────────────────────────────────────
-           MODE B: MASONRY COLUMNS (Pinterest Style)
-           Mobile: strictly 2 columns (never 1 giant photo covering the screen)
-           Tablet: 3 columns | Desktop: 4 balanced columns
+           MODE B: STRICT HORIZONTAL ROW-BY-ROW GRID
+           Photos flow horizontally across rows with uniform 3:2 ratio
         ───────────────────────────────────────────────────────────── */
         <div
-          className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-4"
-          style={{ columnGap: `${gap}px` }}
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"
         >
           {photos.map((photo, idx) => {
             const isSelected = selectedForAlbum.has(photo.id);
@@ -280,22 +278,21 @@ export function JustifiedGalleryLayout({
               <div
                 key={photo.id}
                 onClick={() => onPhotoClick(photo, idx)}
-                className={`break-inside-avoid group relative overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
+                className={`group relative aspect-[3/2] overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
                   isSelected
                     ? 'border-rose-500 ring-4 ring-rose-500/25 shadow-xl'
                     : 'border-[#E7E2D8] hover:shadow-lg'
                 }`}
                 style={{
                   borderRadius: `${cornerRadius}px`,
-                  marginBottom: `${gap}px`,
                 }}
               >
                 <ProgressiveSmoothImage
                   src={photo.thumbnail_url || photo.preview_url || ''}
                   thumbnailSrc={photo.thumbnail_url}
                   alt={photo.title || 'Wedding photo'}
-                  aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                  className="w-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                  aspectRatio="3/2"
+                  className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500 block"
                 />
 
                 {/* Pure Heart Icon for Photo Selection (No Circle Container) */}

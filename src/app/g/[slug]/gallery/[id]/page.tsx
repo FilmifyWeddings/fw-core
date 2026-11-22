@@ -1041,8 +1041,8 @@ function StrictZeroKnowledgeGuestContent() {
                       </div>
                     </div>
 
-                    {/* Matched Photos Grid */}
-                    <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
+                    {/* Matched Photos Grid (Row-by-Row) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
                       {matchedPhotos.map((photo, idx) => (
                         <div
                           key={photo.id}
@@ -1050,14 +1050,14 @@ function StrictZeroKnowledgeGuestContent() {
                             const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
                             setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
                           }}
-                          className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
+                          className="group relative aspect-[3/2] rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
                         >
                           <ProgressiveSmoothImage
                             src={photo.thumbnail_url || photo.preview_url}
                             thumbnailSrc={photo.thumbnail_url}
                             alt="Matched Photo"
-                            aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                            className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                            aspectRatio="3/2"
+                            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                           />
 
                           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1157,8 +1157,8 @@ function StrictZeroKnowledgeGuestContent() {
                   </div>
                 )}
 
-                {/* All Photos Grid */}
-                <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
+                {/* All Photos Grid (Row-by-Row) */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
                   {targetFullPhotos.map((photo, idx) => (
                     <div
                       key={photo.id}
@@ -1166,14 +1166,14 @@ function StrictZeroKnowledgeGuestContent() {
                         const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
                         setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
                       }}
-                      className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
+                      className="group relative aspect-[3/2] rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
                     >
                       <ProgressiveSmoothImage
                         src={photo.thumbnail_url || photo.preview_url}
                         thumbnailSrc={photo.thumbnail_url}
                         alt="Event Photo"
-                        aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                        className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                        aspectRatio="3/2"
+                        className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                       />
 
                       <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1238,8 +1238,8 @@ function StrictZeroKnowledgeGuestContent() {
               </div>
             )}
 
-            {/* Privileged Full Photo Grid */}
-            <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
+            {/* Privileged Full Photo Grid (Strict Horizontal Row-by-Row) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
               {displayedPhotos.map((photo, idx) => {
                 const isSelected = selectedForAlbum.has(photo.id);
                 return (
@@ -1256,7 +1256,7 @@ function StrictZeroKnowledgeGuestContent() {
                         setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
                       }
                     }}
-                    className={`group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
+                    className={`group relative aspect-[3/2] rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
                       isSelected
                         ? 'border-amber-500 ring-4 ring-amber-500/20'
                         : 'border-[#E7E2D8] hover:shadow-lg'
@@ -1266,8 +1266,8 @@ function StrictZeroKnowledgeGuestContent() {
                       src={photo.thumbnail_url || photo.preview_url}
                       thumbnailSrc={photo.thumbnail_url}
                       alt="Wedding photo"
-                      aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                      className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                      aspectRatio="3/2"
+                      className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                     />
 
                     {isSelectionMode && (

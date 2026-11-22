@@ -1036,3 +1036,239 @@ Powered by StudioCore AI
   });
 }
 
+export interface SendClientSelectionSubmittedEmailParams {
+  toEmail: string;
+  studioName?: string;
+  galleryTitle: string;
+  galleryId: string;
+  clientName: string;
+  clientEmail: string;
+  selectedCount: number;
+  totalPhotos: number;
+  submittedAt?: string;
+}
+
+/**
+ * Dispatches luxury notification email to studio owner when client submits photo selection
+ */
+export async function sendClientSelectionSubmittedEmail({
+  toEmail,
+  studioName = 'StudioCore',
+  galleryTitle,
+  galleryId,
+  clientName,
+  clientEmail,
+  selectedCount,
+  totalPhotos,
+  submittedAt,
+}: SendClientSelectionSubmittedEmailParams) {
+  const brandName = studioName?.trim() || 'StudioCore';
+  const defaultFrom = process.env.RESEND_FROM || process.env.SMTP_FROM || 'support@studiocore.in';
+  const fromEmail = defaultFrom.includes('<')
+    ? (defaultFrom.match(/<([^>]+)>/)?.[1] || 'support@studiocore.in')
+    : defaultFrom.trim();
+  const fromAddress = `"StudioCore Notifications" <${fromEmail}>`;
+
+  const dateStr = submittedAt
+    ? new Date(submittedAt).toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : new Date().toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+
+  const workspaceSelectionUrl = `https://studiocore.in/workspace/gallery/${galleryId}?tab=selection`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Album Selection Submitted - ${galleryTitle}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #FAF9F5;
+      margin: 0;
+      padding: 0;
+      color: #18181b;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      max-width: 580px;
+      margin: 32px auto;
+      background: #ffffff;
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.05);
+      border: 1px solid #E7E2D8;
+    }
+    .header {
+      background: #18181b;
+      padding: 32px 28px;
+      text-align: center;
+      border-bottom: 2px solid #D97706;
+    }
+    .header h2 {
+      margin: 0;
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .header p {
+      margin: 6px 0 0 0;
+      color: #FBBF24;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .content {
+      padding: 36px 32px;
+    }
+    .event-card {
+      background: #FAF9F5;
+      border: 1px solid #E7E2D8;
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #E7E2D8;
+      font-size: 13px;
+    }
+    .stat-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    .stat-label {
+      color: #71717a;
+      font-weight: 500;
+    }
+    .stat-value {
+      color: #18181b;
+      font-weight: 700;
+      text-align: right;
+    }
+    .btn-container {
+      text-align: center;
+      margin: 32px 0 16px 0;
+    }
+    .btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #D97706 0%, #B45309 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 14px 36px;
+      border-radius: 9999px;
+      box-shadow: 0 4px 14px rgba(217, 119, 6, 0.3);
+    }
+    .footer {
+      background: #fafafa;
+      padding: 24px 32px;
+      text-align: center;
+      font-size: 11px;
+      color: #71717a;
+      border-top: 1px solid #f4f4f5;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <h2>🎉 Client Selection Received!</h2>
+      <p>StudioCore Workspace Notification</p>
+    </div>
+    <div class="content">
+      <p style="font-size: 14px; line-height: 1.6; color: #3f3f46; margin-top: 0;">
+        Hello <strong>${brandName}</strong> Team,
+      </p>
+      <p style="font-size: 14px; line-height: 1.6; color: #3f3f46;">
+        Your client has finalized and submitted their album photo selection for <strong>${galleryTitle}</strong>.
+      </p>
+
+      <div class="event-card">
+        <div class="stat-row">
+          <span class="stat-label">Gallery / Event</span>
+          <span class="stat-value">${galleryTitle}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Client Name</span>
+          <span class="stat-value">${clientName}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Client Email</span>
+          <span class="stat-value">${clientEmail}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Photos Selected</span>
+          <span class="stat-value" style="color: #D97706; font-size: 15px;">${selectedCount} of ${totalPhotos} photos</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Submitted On</span>
+          <span class="stat-value">${dateStr}</span>
+        </div>
+      </div>
+
+      <div class="btn-container">
+        <a href="${workspaceSelectionUrl}" class="btn">
+          View Album Selection in Workspace &rarr;
+        </a>
+      </div>
+
+      <p style="font-size: 12px; color: #a1a1aa; text-align: center; margin-top: 24px;">
+        Selection is locked on client device. You can unlock it anytime from the Selections tab in your workspace.
+      </p>
+    </div>
+    <div class="footer">
+      <p style="margin: 0 0 4px 0;">StudioCore AI &bull; Premium Studio Management Platform</p>
+      <p style="margin: 0; color: #a1a1aa;">https://studiocore.in</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  const textContent = `
+Client Album Selection Submitted!
+
+Event / Card: ${galleryTitle}
+Client Name: ${clientName}
+Client Email: ${clientEmail}
+Selected Photos: ${selectedCount} of ${totalPhotos} photos
+Submitted At: ${dateStr}
+
+Open selection in your StudioCore workspace:
+${workspaceSelectionUrl}
+
+StudioCore AI Platform
+  `.trim();
+
+  return sendMailWithFallback({
+    from: fromAddress,
+    to: toEmail,
+    subject: `📸 Selection Received: ${clientName} selected ${selectedCount} photos for "${galleryTitle}"`,
+    text: textContent,
+    html: htmlContent,
+  });
+}
+
