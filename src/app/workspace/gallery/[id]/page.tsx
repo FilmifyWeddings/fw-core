@@ -131,15 +131,15 @@ export type SortOption =
   | 'name_asc'
   | 'name_desc';
 
-const SORT_OPTIONS: { id: SortOption; label: string }[] = [
-  { id: 'capture_oldest', label: 'Capture Time (Chronological: Earliest First)' },
-  { id: 'capture_newest', label: 'Capture Time (Latest First)' },
-  { id: 'newest', label: 'Newest uploads' },
-  { id: 'oldest', label: 'Oldest uploads' },
-  { id: 'name_asc', label: 'File Name (A to Z)' },
-  { id: 'name_desc', label: 'File Name (Z to A)' },
-  { id: 'size_desc', label: 'File Size (Largest First)' },
-  { id: 'size_asc', label: 'File Size (Smallest First)' },
+const SORT_OPTIONS: { id: SortOption; label: string; shortLabel: string }[] = [
+  { id: 'capture_newest', label: 'Capture Time (Newest First)', shortLabel: 'Capture Time' },
+  { id: 'capture_oldest', label: 'Capture Time (Oldest First)', shortLabel: 'Capture Time (Oldest)' },
+  { id: 'newest', label: 'Newest uploads', shortLabel: 'Newest' },
+  { id: 'oldest', label: 'Oldest uploads', shortLabel: 'Oldest' },
+  { id: 'name_asc', label: 'File Name (A to Z)', shortLabel: 'Name (A-Z)' },
+  { id: 'name_desc', label: 'File Name (Z to A)', shortLabel: 'Name (Z-A)' },
+  { id: 'size_desc', label: 'File Size (Largest First)', shortLabel: 'Largest' },
+  { id: 'size_asc', label: 'File Size (Smallest First)', shortLabel: 'Smallest' },
 ];
 
 interface CoverPositioning {
@@ -251,9 +251,12 @@ function AlbumStudioContent() {
   // Selected Photos for Bulk Actions
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('capture_oldest');
+  const [sortBy, setSortBy] = useState<SortOption>('capture_newest');
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Notify Guests on Publish Setting (Default: true, persisted per gallery)
+  const [notifyGuestsOnPublish, setNotifyGuestsOnPublish] = useState<boolean>(true);
 
   // Modals
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -349,6 +352,19 @@ function AlbumStudioContent() {
   const [sendEmailNotification, setSendEmailNotification] = useState(true);
   const [isPublishingEvent, setIsPublishingEvent] = useState(false);
   const [registeredGuestsCount, setRegisteredGuestsCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (galleryId) {
+      try {
+        const saved = localStorage.getItem(`notify_guests_${galleryId}`);
+        if (saved !== null) {
+          const val = saved !== 'false';
+          setNotifyGuestsOnPublish(val);
+          setSendEmailNotification(val);
+        }
+      } catch (_) {}
+    }
+  }, [galleryId]);
 
   // Selection Tab State
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'pending'>('all');
@@ -900,10 +916,39 @@ function AlbumStudioContent() {
     }
   };
 
+  // Direct Publish without notification popup (when notifyGuestsOnPublish is OFF)
+  const handleDirectPublish = async () => {
+    if (!gallery) return;
+    setIsStatusDropdownOpen(false);
+    setGallery((prev) => (prev ? { ...prev, status: 'PUBLISHED', is_active: true } : null));
+    try {
+      const res = await fetch('/api/gallery/events/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gallery_id: gallery.id,
+          send_email: false,
+          notifyChannels: [],
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResendBanner('🎉 Gallery published successfully!');
+        setTimeout(() => setResendBanner(null), 3000);
+      }
+    } catch (err: any) {
+      console.error('Failed to publish event:', err);
+    }
+  };
+
   // 3-State Status Handler: 'UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED'
   const handleUpdateStatus = async (nextStatus: 'UNPUBLISHED' | 'PUBLISHED' | 'EXPIRED') => {
     if (!gallery) return;
     if (nextStatus === 'PUBLISHED') {
+      if (!notifyGuestsOnPublish) {
+        await handleDirectPublish();
+        return;
+      }
       await handleInitiatePublish();
       return;
     }
@@ -1845,7 +1890,8 @@ function AlbumStudioContent() {
         if (sortBy === 'capture_newest') {
           const timeA = (a as any).capture_time ? new Date((a as any).capture_time).getTime() : new Date(a.created_at).getTime();
           const timeB = (b as any).capture_time ? new Date((b as any).capture_time).getTime() : new Date(b.created_at).getTime();
-          return timeB - timeA;
+          if (timeA !== timeB) return timeB - timeA;
+          return getCleanFilename(b.original_key || b.preview_key || '').localeCompare(getCleanFilename(a.original_key || a.preview_key || ''));
         }
         if (sortBy === 'capture_oldest') {
           const timeA = (a as any).capture_time ? new Date((a as any).capture_time).getTime() : new Date(a.created_at).getTime();
@@ -2478,11 +2524,11 @@ function AlbumStudioContent() {
                   <div className="relative" ref={sortDropdownRef}>
                     <button
                       onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
-                      className="px-3.5 py-2 rounded-xl bg-gradient-to-b from-white via-[#FCFBF8] to-[#F5F2EB] border border-[#D5CFBE] text-xs font-bold text-zinc-800 flex items-center gap-2 cursor-pointer transition-all shadow-[0_2px_4px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.9)] hover:shadow-[0_3px_6px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,1)] active:translate-y-[0.5px]"
+                      className="px-3 py-2 rounded-xl bg-gradient-to-b from-white via-[#FCFBF8] to-[#F5F2EB] border border-[#D5CFBE] text-xs font-bold text-zinc-800 flex items-center gap-1.5 cursor-pointer transition-all shadow-[0_2px_4px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.9)] hover:shadow-[0_3px_6px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,1)] active:translate-y-[0.5px]"
                       title="Sort photos"
                     >
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-amber-600" />
-                      <span>{SORT_OPTIONS.find((s) => s.id === sortBy)?.label || 'Newest uploads'}</span>
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span className="truncate">{SORT_OPTIONS.find((s) => s.id === sortBy)?.shortLabel || 'Capture Time'}</span>
                       <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
 
@@ -2689,7 +2735,7 @@ function AlbumStudioContent() {
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2.5">
+                  <div className="columns-2 sm:columns-3 md:columns-4 xl:columns-5 gap-2.5 space-y-2.5">
                   {displayedPhotos.map((photo, idx) => {
                     const isCover = gallery.cover_url?.startsWith(photo.preview_url);
                     const isSelected = selectedPhotoIds.has(photo.id);
@@ -2698,7 +2744,7 @@ function AlbumStudioContent() {
                     return (
                       <div
                         key={photo.id}
-                        className={`group relative rounded-2xl overflow-hidden border aspect-[4/3] ${
+                        className={`group relative break-inside-avoid rounded-2xl overflow-hidden border ${
                           isSelected ? 'border-amber-500 ring-2 ring-amber-400/50' : 'border-[#E7E2D8]'
                         } bg-zinc-900 shadow-2xs hover:shadow-xl transition-all duration-300 cursor-pointer select-none`}
                         onClick={() => {
@@ -2711,8 +2757,8 @@ function AlbumStudioContent() {
                           src={photo.thumbnail_url || photo.preview_url}
                           thumbnailSrc={photo.thumbnail_url}
                           alt={cleanName}
-                          aspectRatio="4/3"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 block"
+                          aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
+                          className="w-full h-auto object-cover group-hover:scale-105 transition-transform duration-500 block"
                         />
 
                         {/* Persistent Top Badges when not hovering */}
@@ -3493,6 +3539,33 @@ function AlbumStudioContent() {
                     >
                       <span className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
                         gallery.is_face_ai_enabled !== false ? 'left-6' : 'left-1'
+                      }`} />
+                    </button>
+                  </div>
+
+                  {/* Notify Guests on Publish Toggle */}
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8]">
+                    <div>
+                      <span className="text-xs font-bold text-zinc-800 block">Notify Guests on Publish</span>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Show confirmation popup to notify registered guests when publishing event. If toggled OFF, publishing happens instantly without the popup.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !notifyGuestsOnPublish;
+                        setNotifyGuestsOnPublish(next);
+                        try {
+                          localStorage.setItem(`notify_guests_${gallery.id}`, String(next));
+                        } catch (_) {}
+                      }}
+                      className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+                        notifyGuestsOnPublish ? 'bg-amber-600' : 'bg-zinc-200'
+                      }`}
+                    >
+                      <span className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                        notifyGuestsOnPublish ? 'left-6' : 'left-1'
                       }`} />
                     </button>
                   </div>
@@ -4473,18 +4546,25 @@ function AlbumStudioContent() {
             <label className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#FAF9F5] border border-[#E7E2D8] cursor-pointer hover:bg-amber-50/50 transition">
               <input
                 type="checkbox"
-                checked={sendEmailNotification}
-                onChange={(e) => setSendEmailNotification(e.target.checked)}
+                checked={notifyGuestsOnPublish && sendEmailNotification}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setSendEmailNotification(val);
+                  setNotifyGuestsOnPublish(val);
+                  try {
+                    localStorage.setItem(`notify_guests_${gallery.id}`, String(val));
+                  } catch (_) {}
+                }}
                 className="mt-0.5 w-4 h-4 rounded text-amber-600 focus:ring-amber-500 accent-amber-600 cursor-pointer"
               />
               <div className="space-y-0.5">
                 <div className="text-xs font-bold text-zinc-900">
                   {registeredGuestsCount > 0
-                    ? `Send / Re-send emails to all ${registeredGuestsCount} registered guests`
-                    : 'Send email notification to registered guests'}
+                    ? `Send emails to ${registeredGuestsCount} registered guests`
+                    : 'Notify registered guests on publish'}
                 </div>
                 <p className="text-[11px] text-zinc-500 leading-relaxed">
-                  Guests will receive a luxury email with your studio logo, brand name, and direct magic link to their AI matched photos.
+                  If turned OFF, future publishing happens directly without showing this confirmation popup.
                 </p>
               </div>
             </label>

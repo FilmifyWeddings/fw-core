@@ -1488,19 +1488,22 @@ function GuestSlugGalleryContent() {
           <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest border border-rose-300">
             Access Concluded
           </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-            यह गैलरी एक्सपायर हो चुकी है
+          <h1 
+            style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+            className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
+          >
+            Gallery Access Expired
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
-            Public access to photos for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
+            Public viewing access for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
           </p>
         </div>
 
         <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
           <p className="text-xs text-zinc-600 leading-relaxed">
-            फोटो देखने या डाउनलोड करने के लिए कृपया स्टूडियो ओनर ({studioName}) से संपर्क करें।
+            To view or download photos, please contact the studio owner (<span className="font-semibold text-zinc-900">{studioName}</span>) directly.
           </p>
-          {studioPhone && (
+          {studioPhone ? (
             <a
               href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello, I am accessing the gallery "${gallery.title}". Please renew or restore access.`)}`}
               target="_blank"
@@ -1509,13 +1512,11 @@ function GuestSlugGalleryContent() {
             >
               <span>Connect on WhatsApp</span>
             </a>
-          )}
-          <a
-            href="/"
-            className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
-          >
-            Return to StudioCore
-          </a>
+          ) : studioEmail ? (
+            <p className="text-xs font-bold text-zinc-700">
+              Email: {studioEmail}
+            </p>
+          ) : null}
         </div>
       </div>
     );
@@ -1538,17 +1539,20 @@ function GuestSlugGalleryContent() {
             <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest border border-amber-300">
               Gallery Unpublished
             </span>
-            <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-              यह गैलरी अभी पब्लिश नहीं की गई है
+            <h1 
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
+            >
+              Gallery Not Published Yet
             </h1>
             <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
-              This gallery for <span className="font-bold text-zinc-800">{gallery.title}</span> is not yet published.
+              This wedding gallery for <span className="font-bold text-zinc-800">{gallery.title}</span> is currently being curated and has not been published yet.
             </p>
           </div>
 
           <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
             <p className="text-xs text-zinc-600 leading-relaxed">
-              गैलरी देखने या फोटो सिलेक्शन के लिए कृपया स्टूडियो ओनर ({studioName}) से संपर्क करें।
+              To view photos or album selection, please contact the studio owner (<span className="font-semibold text-zinc-900">{studioName}</span>).
             </p>
             {studioPhone ? (
               <a
@@ -1564,12 +1568,6 @@ function GuestSlugGalleryContent() {
                 Contact: {studioEmail || studioName}
               </p>
             )}
-            <a
-              href="/"
-              className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
-            >
-              Return to StudioCore
-            </a>
           </div>
         </div>
       );
