@@ -831,7 +831,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                           {/* Trigger */}
                           <td className="px-4 font-mono text-[10px] text-zinc-500 py-3">
                             <span className="bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700">
-                              {targetGroupObj ? 'GROUP_MEMBER_ADDED' : 'LEAD_INGESTED'}
+                              {wf.target_group_id === 'client_selection_submitted' ? 'SELECTION_SUBMITTED' : (targetGroupObj ? 'GROUP_MEMBER_ADDED' : 'LEAD_INGESTED')}
                             </span>
                           </td>
 
@@ -1099,26 +1099,82 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">Target Contact Group Trigger</label>
+                <label className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">Workflow Trigger Event / Contact Group</label>
                 <select
                   value={targetGroup}
                   required
                   onChange={e => setTargetGroup(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-zinc-300 focus:outline-none focus:border-emerald-500/60 cursor-pointer shadow-sm"
                 >
-                  {groups.length === 0 ? (
-                    <option value="">No Contact Groups Found - Create One First</option>
-                  ) : (
-                    <>
-                      {!targetGroup && <option value="">Select Target Contact Group...</option>}
-                      {groups.map(g => (
-                        <option key={g.id} value={g.id}>{g.group_name} (Group Added Trigger)</option>
-                      ))}
-                    </>
-                  )}
+                  {!targetGroup && <option value="">Select Trigger Event or Contact Group...</option>}
+                  <optgroup label="⚡ Gallery & Album Triggers">
+                    <option value="client_selection_submitted">
+                      🎯 Client Photo Selection Submitted (Album Trigger)
+                    </option>
+                  </optgroup>
+                  <optgroup label="👥 Contact Group Triggers">
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>{g.group_name} (Group Added Trigger)</option>
+                    ))}
+                    {groups.length === 0 && (
+                      <option value="" disabled>No contact groups created yet</option>
+                    )}
+                  </optgroup>
                 </select>
               </div>
             </div>
+
+            {/* Variable banner if selection trigger is active */}
+            {targetGroup === 'client_selection_submitted' && (
+              <div className="p-4 bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs space-y-2.5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-400">
+                    <Sparkles className="w-4 h-4 text-emerald-500" />
+                    <span>Trigger Active: Client Photo Selection Submitted</span>
+                  </div>
+                  <span className="text-[9px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
+                    Album Event
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                  When a client completes and submits their photo selection, this workflow triggers automatically. You can send to a <strong>WhatsApp Group Channel</strong> (e.g. Studio Alerts group) or <strong>Client Direct Chat</strong>.
+                </p>
+                <div>
+                  <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block mb-1">
+                    Available Template Variables (Auto-Replaced):
+                  </span>
+                  <div className="text-[10px] font-mono flex flex-wrap gap-1.5">
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;card_name&#125;&#125;</strong>: Card/Event Name
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;client_name&#125;&#125;</strong>: Client Name
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;client_email&#125;&#125;</strong>: Client Email
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;selected_count&#125;&#125;</strong>: Selected Count
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;selection_limit&#125;&#125;</strong>: Limit
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;selected_photos&#125;&#125;</strong>: Count &amp; Limit Text
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;submission_date&#125;&#125;</strong>: 12 November 2026
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;submission_time&#125;&#125;</strong>: 12:30 PM
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;selection_url&#125;&#125;</strong>: Direct StudioCore Link
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Workflow Card Nodes Stack */}
             <div className="space-y-5">

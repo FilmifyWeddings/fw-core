@@ -1045,6 +1045,7 @@ export interface SendClientSelectionSubmittedEmailParams {
   clientEmail: string;
   selectedCount: number;
   totalPhotos: number;
+  maxLimit?: number | null;
   submittedAt?: string;
 }
 
@@ -1060,6 +1061,7 @@ export async function sendClientSelectionSubmittedEmail({
   clientEmail,
   selectedCount,
   totalPhotos,
+  maxLimit,
   submittedAt,
 }: SendClientSelectionSubmittedEmailParams) {
   const brandName = studioName?.trim() || 'StudioCore';
@@ -1069,25 +1071,24 @@ export async function sendClientSelectionSubmittedEmail({
     : defaultFrom.trim();
   const fromAddress = `"StudioCore Notifications" <${fromEmail}>`;
 
-  const dateStr = submittedAt
-    ? new Date(submittedAt).toLocaleString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      })
-    : new Date().toLocaleString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      });
+  const subDate = submittedAt ? new Date(submittedAt) : new Date();
+  const submissionDate = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(subDate); // e.g. "12 November 2026"
+
+  const submissionTime = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(subDate); // e.g. "12:30 PM"
+
+  const selectedDisplay = maxLimit && maxLimit > 0
+    ? `${selectedCount} / ${maxLimit} Photos (Limit: ${maxLimit})`
+    : `${selectedCount} Photos`;
 
   const workspaceSelectionUrl = `https://studiocore.in/workspace/gallery/${galleryId}?tab=selection`;
 
@@ -1208,7 +1209,7 @@ export async function sendClientSelectionSubmittedEmail({
 
       <div class="event-card">
         <div class="stat-row">
-          <span class="stat-label">Gallery / Event</span>
+          <span class="stat-label">Card / Event</span>
           <span class="stat-value">${galleryTitle}</span>
         </div>
         <div class="stat-row">
@@ -1220,18 +1221,22 @@ export async function sendClientSelectionSubmittedEmail({
           <span class="stat-value">${clientEmail}</span>
         </div>
         <div class="stat-row">
-          <span class="stat-label">Photos Selected</span>
-          <span class="stat-value" style="color: #D97706; font-size: 15px;">${selectedCount} of ${totalPhotos} photos</span>
+          <span class="stat-label">Selected Photos</span>
+          <span class="stat-value" style="color: #D97706; font-size: 15px;">${selectedDisplay}</span>
         </div>
         <div class="stat-row">
-          <span class="stat-label">Submitted On</span>
-          <span class="stat-value">${dateStr}</span>
+          <span class="stat-label">Submission Date</span>
+          <span class="stat-value">${submissionDate}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Submission Time</span>
+          <span class="stat-value">${submissionTime}</span>
         </div>
       </div>
 
       <div class="btn-container">
         <a href="${workspaceSelectionUrl}" class="btn">
-          View Album Selection in Workspace &rarr;
+          View Selection in StudioCore &rarr;
         </a>
       </div>
 
@@ -1249,15 +1254,16 @@ export async function sendClientSelectionSubmittedEmail({
   `.trim();
 
   const textContent = `
-Client Album Selection Submitted!
+📸 New Album Selection Received!
 
-Event / Card: ${galleryTitle}
+Card / Event: ${galleryTitle}
 Client Name: ${clientName}
 Client Email: ${clientEmail}
-Selected Photos: ${selectedCount} of ${totalPhotos} photos
-Submitted At: ${dateStr}
+Selected Photos: ${selectedDisplay}
+Date: ${submissionDate}
+Time: ${submissionTime}
 
-Open selection in your StudioCore workspace:
+🔗 View Selection in StudioCore:
 ${workspaceSelectionUrl}
 
 StudioCore AI Platform
@@ -1266,7 +1272,7 @@ StudioCore AI Platform
   return sendMailWithFallback({
     from: fromAddress,
     to: toEmail,
-    subject: `📸 Selection Received: ${clientName} selected ${selectedCount} photos for "${galleryTitle}"`,
+    subject: `📸 Selection Received: ${clientName} submitted selection for "${galleryTitle}"`,
     text: textContent,
     html: htmlContent,
   });
