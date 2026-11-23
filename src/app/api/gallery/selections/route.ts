@@ -405,8 +405,8 @@ export async function POST(req: NextRequest) {
     const isSubmitted = is_submitted !== undefined ? Boolean(is_submitted) : existingSubmitted;
     const submissionTimestamp = isSubmitted ? (existingSubmittedAt || new Date().toISOString()) : null;
 
-    // Trigger instant email & WhatsApp notifications on new submission
-    if (isSubmitted && !existingSubmitted) {
+    // Trigger instant email & WhatsApp notifications on submission
+    if (is_submitted === true || (isSubmitted && !existingSubmitted)) {
       dispatchSelectionNotifications({
         galleryId: gallery_id,
         clientName: cleanName,
