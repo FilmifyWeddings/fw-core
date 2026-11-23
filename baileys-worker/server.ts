@@ -2256,8 +2256,27 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       const isOutbound = !!msg.key?.fromMe;
       const isGroup = chatJid.endsWith('@g.us');
 
-      // CRITICAL: Skip all group incoming chatter! Only log outbound CRM actions directed at groups.
-      if (isGroup && !isOutbound) continue;
+      // If message is in a group, automatically ensure group exists in baileys_chats
+      if (isGroup) {
+        localSock.groupMetadata(chatJid).then((meta: any) => {
+          if (meta) {
+            (supabase.from('baileys_chats') as any).upsert({
+              workspace_id: wsId,
+              jid: chatJid,
+              display_name: meta.subject || chatJid.split('@')[0],
+              participant_count: meta.participants?.length ?? 0,
+              is_group: true,
+              updated_at: new Date().toISOString(),
+            }, {
+              onConflict: 'workspace_id, jid',
+              ignoreDuplicates: false,
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+
+        // CRITICAL: Skip logging incoming group chatter to baileys_messages to prevent bloat
+        if (!isOutbound) continue;
+      }
 
       const text = msg.message?.conversation ?? 
                    msg.message?.extendedTextMessage?.text ?? 
@@ -2416,6 +2435,28 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
           is_group: true,
           updated_at: new Date().toISOString(),
         }, {
+          onConflict: 'workspace_id, jid',
+          ignoreDuplicates: false,
+        });
+      } catch (_) {}
+    }
+  });
+
+  // Real-time listener for chats update to catch group rename or updates
+  localSock.ev.on('chats.update', async (chats: any[]) => {
+    for (const chat of chats) {
+      if (!chat.id || !chat.id.endsWith('@g.us')) continue;
+      try {
+        const patch: any = {
+          workspace_id: wsId,
+          jid: chat.id,
+          is_group: true,
+          updated_at: new Date().toISOString(),
+        };
+        if (chat.name || chat.subject) {
+          patch.display_name = chat.name || chat.subject;
+        }
+        await (supabase.from('baileys_chats') as any).upsert(patch, {
           onConflict: 'workspace_id, jid',
           ignoreDuplicates: false,
         });
@@ -3611,10 +3652,36 @@ async function runSelfHealingSessionSync(): Promise<void> {
   }
 }
 
+/**
+ * Background Active Group Sync: Polls all participating WhatsApp groups every 20 seconds.
+ * Guarantees that any group created or joined on WhatsApp is saved into baileys_chats automatically.
+ */
+async function syncAllActiveSessionGroups(): Promise<void> {
+  for (const [wsId, sess] of activeSessions.entries()) {
+    if (!sess.sock || !sess.sock.user?.id) continue;
+    try {
+      const groupMap = await sess.sock.groupFetchAllParticipating();
+      const groups = Object.values(groupMap).map((g: any) => ({
+        workspace_id: wsId,
+        jid: g.id,
+        display_name: g.subject || g.id.split('@')[0],
+        participant_count: g.participants?.length ?? 0,
+        is_group: true,
+        updated_at: new Date().toISOString(),
+      }));
+      if (groups.length > 0) {
+        await (supabase.from('baileys_chats') as any)
+          .upsert(groups, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+      }
+    } catch (_) {}
+  }
+}
+
   setInterval(() => {
     runQueueDrain().catch(err => logger.error({ err }, 'Periodic queue drain error'));
     runSelfHealingSessionSync().catch(err => logger.error({ err }, 'Self healing session sync error'));
-  }, 10_000);
+    syncAllActiveSessionGroups().catch(() => {});
+  }, 15_000);
 
   setInterval(() => {
     runSweeper().catch(err => logger.error({ err }, 'Sweeper cron error'));

@@ -23,6 +23,61 @@ const isGroupTemplate = (t: { name?: string; category?: string }) => {
   return cat === 'group_alert' || cat === 'group_workflow' || cat === 'group' || nm.startsWith('group_') || nm.includes('group_alert');
 };
 
+// Levenshtein distance helper for fuzzy matching
+function levenshteinDist(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = i;
+    for (let j = 1; j <= b.length; j++) {
+      const val = a[i - 1] === b[j - 1] ? row[j - 1] : Math.min(row[j - 1], prev, row[j]) + 1;
+      row[j - 1] = prev;
+      prev = val;
+    }
+    row[b.length] = prev;
+  }
+  return row[b.length];
+}
+
+// Smart fuzzy matcher: handles exact matches, substrings, vowel omissions (e.g. 'selction' vs 'selection'), and typos
+function isFuzzyGroupMatch(groupName: string, query: string): boolean {
+  if (!query) return true;
+  const name = (groupName || '').toLowerCase().trim();
+  const q = query.toLowerCase().trim();
+
+  // 1. Direct substring match
+  if (name.includes(q)) return true;
+
+  const qTokens = q.split(/[\s_-]+/).filter(Boolean);
+  const nTokens = name.split(/[\s_-]+/).filter(Boolean);
+
+  const devowel = (s: string) => s.replace(/[aeiou]/g, '');
+
+  const matchToken = (qt: string) => {
+    // Substring in any group token
+    if (nTokens.some(nt => nt.includes(qt) || qt.includes(nt))) return true;
+
+    // Vowel-free skeleton matching (e.g., 'selction' and 'selection' both reduce to 'slctn')
+    const qtDev = devowel(qt);
+    if (qtDev.length >= 2 && nTokens.some(nt => {
+      const ntDev = devowel(nt);
+      return ntDev.includes(qtDev) || qtDev.includes(ntDev);
+    })) {
+      return true;
+    }
+
+    // Levenshtein edit distance <= 2 for words with length >= 4, <= 1 for short words
+    return nTokens.some(nt => {
+      const maxDist = Math.min(2, Math.floor(Math.max(qt.length, nt.length) / 3) + 1);
+      return levenshteinDist(qt, nt) <= maxDist;
+    });
+  };
+
+  return qTokens.every(matchToken);
+}
+
 interface WhatsappWorkflowBuilderProps {
   workspaceId: string;
 }
@@ -153,29 +208,16 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Load Initial Data
-  const fetchSyncedGroups = async () => {
-    setFetchingGroups(true);
+  const fetchSyncedGroups = async (isManual = false) => {
+    if (isManual) setFetchingGroups(true);
     try {
-      // 1. Check local DB chats
-      const { data: dbGroups } = await supabase
-        .from('baileys_chats')
-        .select('jid, display_name, participant_count, is_group')
-        .eq('is_group', true)
-        .order('display_name', { ascending: true });
-
-      if (dbGroups && dbGroups.length > 0) {
-        setSyncedWhatsAppGroups(dbGroups);
-        localStorage.setItem(`wa_synced_groups_${workspaceId}`, JSON.stringify(dbGroups));
-      }
-
-      // 2. Also trigger live fetch from worker
-      const res = await fetch('/api/integrations/baileys/fetch-groups', {
-        method: 'POST',
+      // Fetch groups through backend endpoint which queries both live Baileys worker & SupabaseAdmin (bypassing RLS)
+      const res = await fetch(`/api/integrations/baileys/fetch-groups?workspace_id=${workspaceId}`, {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace_id: workspaceId })
       });
       const data = await res.json();
-      if (data.success && data.groups && data.groups.length > 0) {
+      if (data.success && Array.isArray(data.groups) && data.groups.length > 0) {
         setSyncedWhatsAppGroups(data.groups);
         localStorage.setItem(`wa_synced_groups_${workspaceId}`, JSON.stringify(data.groups));
       }
@@ -184,7 +226,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
       const cached = localStorage.getItem(`wa_synced_groups_${workspaceId}`);
       if (cached) setSyncedWhatsAppGroups(JSON.parse(cached));
     } finally {
-      setFetchingGroups(false);
+      if (isManual) setFetchingGroups(false);
     }
   };
 
@@ -224,7 +266,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         }
       }
 
-      fetchSyncedGroups();
+      fetchSyncedGroups(false);
     } catch (err) {
       console.warn('Fallback loading workflows from local storage', err);
       const localGroups = localStorage.getItem(`wa_contact_groups_${workspaceId}`);
@@ -241,6 +283,11 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   useEffect(() => {
     if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       loadData();
+
+      // Silent background sync every 15s so new groups joined/created on WhatsApp appear automatically
+      const syncInterval = setInterval(() => {
+        fetchSyncedGroups(false);
+      }, 15000);
 
       // Real-time listener for instant group updates in milliseconds
       const channel = supabase
@@ -283,6 +330,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         .subscribe();
 
       return () => {
+        clearInterval(syncInterval);
         supabase.removeChannel(channel);
       };
     }
@@ -1193,10 +1241,10 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                   {steps.map((step, index) => {
                     const isGroupTarget = step.target_type === 'group';
 
-                    // Group search filter (search by group name only, NO JID!)
-                    const gQuery = (groupSearchQueries[index] || '').toLowerCase().trim();
+                    // Group search filter (fuzzy search supporting typos, vowels, and skeletons)
+                    const gQuery = (groupSearchQueries[index] || '').trim();
                     const filteredGroupsForStep = syncedWhatsAppGroups.filter(g =>
-                      (g.display_name || '').toLowerCase().includes(gQuery)
+                      isFuzzyGroupMatch(g.display_name, gQuery)
                     );
 
                     // Channel-specific template list (strictly separated)
@@ -1442,7 +1490,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
                                 <button
                                   type="button"
-                                  onClick={fetchSyncedGroups}
+                                  onClick={() => fetchSyncedGroups(true)}
                                   disabled={fetchingGroups}
                                   className="flex items-center gap-1 text-[9px] font-bold text-orange-600 dark:text-orange-400 hover:underline cursor-pointer disabled:opacity-50"
                                   title="Refresh live groups directly from WhatsApp"
@@ -1458,7 +1506,11 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                                   type="button"
                                   onClick={() => {
                                     setOpenTemplateDropdownIndex(null);
-                                    setOpenGroupDropdownIndex(openGroupDropdownIndex === index ? null : index);
+                                    const nextOpen = openGroupDropdownIndex === index ? null : index;
+                                    setOpenGroupDropdownIndex(nextOpen);
+                                    if (nextOpen !== null) {
+                                      fetchSyncedGroups(false);
+                                    }
                                   }}
                                   className={`w-full px-3 py-2.5 bg-white dark:bg-zinc-950 border rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer shadow-xs ${
                                     openGroupDropdownIndex === index
