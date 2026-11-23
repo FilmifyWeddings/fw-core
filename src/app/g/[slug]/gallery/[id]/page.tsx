@@ -37,6 +37,7 @@ import { getPublicGalleryUrl } from '@/lib/r2';
 import { FaceScannerModal } from '@/components/gallery/FaceScannerModal';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
 import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothImage';
+import { JustifiedGalleryLayout } from '@/components/gallery/JustifiedGalleryLayout';
 
 interface PhotoItem {
   id: string;
@@ -1050,48 +1051,20 @@ function StrictZeroKnowledgeGuestContent() {
                       </div>
                     </div>
 
-                    {/* Matched Photos Grid (Row-by-Row) */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-                      {matchedPhotos.map((photo, idx) => (
-                        <div
-                          key={photo.id}
-                          onClick={() => {
-                            const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
-                            setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
-                          }}
-                          className="group relative aspect-[3/2] rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
-                        >
-                          <ProgressiveSmoothImage
-                            src={photo.thumbnail_url || photo.preview_url}
-                            thumbnailSrc={photo.thumbnail_url}
-                            alt="Matched Photo"
-                            aspectRatio="3/2"
-                            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                          />
-
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                          {/* Actions Bottom Bar */}
-                          <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="text-[10px] font-mono text-zinc-300">
-                              Photo #{idx + 1}
-                            </span>
-
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadPhoto(photo);
-                              }}
-                              className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                              title="Download High-Res"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    {/* Matched Photos Grid (True Justified Layout) */}
+                    <JustifiedGalleryLayout
+                      photos={matchedPhotos}
+                      layoutConfig={{
+                        style: 'justified',
+                        gap: 12,
+                        cornerRadius: 16,
+                      }}
+                      onPhotoClick={(photo, idx) => {
+                        const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                        setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
+                      }}
+                      onDownloadPhoto={handleDownloadPhoto}
+                    />
                   </>
                 ) : (
                   <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E7E2D8] shadow-sm text-center space-y-5 max-w-md mx-auto">
@@ -1166,47 +1139,20 @@ function StrictZeroKnowledgeGuestContent() {
                   </div>
                 )}
 
-                {/* All Photos Grid (Row-by-Row) */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-                  {targetFullPhotos.map((photo, idx) => (
-                    <div
-                      key={photo.id}
-                      onClick={() => {
-                        const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
-                        setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
-                      }}
-                      className="group relative aspect-[3/2] rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
-                    >
-                      <ProgressiveSmoothImage
-                        src={photo.thumbnail_url || photo.preview_url}
-                        thumbnailSrc={photo.thumbnail_url}
-                        alt="Event Photo"
-                        aspectRatio="3/2"
-                        className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                      />
-
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                      <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="text-[10px] font-mono text-zinc-300">
-                          #{idx + 1}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadPhoto(photo);
-                          }}
-                          className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                          title="Download High-Res"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {/* All Photos Grid (True Justified Layout) */}
+                <JustifiedGalleryLayout
+                  photos={targetFullPhotos}
+                  layoutConfig={{
+                    style: 'justified',
+                    gap: 12,
+                    cornerRadius: 16,
+                  }}
+                  onPhotoClick={(photo, idx) => {
+                    const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                    setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
+                  }}
+                  onDownloadPhoto={handleDownloadPhoto}
+                />
               </div>
             )}
           </div>
@@ -1247,76 +1193,28 @@ function StrictZeroKnowledgeGuestContent() {
               </div>
             )}
 
-            {/* Privileged Full Photo Grid (Strict Horizontal Row-by-Row) */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-              {displayedPhotos.map((photo, idx) => {
-                const isSelected = selectedForAlbum.has(photo.id);
-                return (
-                  <div
-                    key={photo.id}
-                    onClick={() => {
-                      if (isSelectionMode) {
-                        const next = new Set(selectedForAlbum);
-                        if (isSelected) next.delete(photo.id);
-                        else next.add(photo.id);
-                        setSelectedForAlbum(next);
-                      } else {
-                        const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
-                        setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
-                      }
-                    }}
-                    className={`group relative aspect-[3/2] rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
-                      isSelected
-                        ? 'border-amber-500 ring-4 ring-amber-500/20'
-                        : 'border-[#E7E2D8] hover:shadow-lg'
-                    }`}
-                  >
-                    <ProgressiveSmoothImage
-                      src={photo.thumbnail_url || photo.preview_url}
-                      thumbnailSrc={photo.thumbnail_url}
-                      alt="Wedding photo"
-                      aspectRatio="3/2"
-                      className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                    />
-
-                    {isSelectionMode && (
-                      <div className="absolute top-2.5 right-2.5 z-10">
-                        {isSelected ? (
-                          <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-md">
-                            <CheckSquare className="w-4 h-4" />
-                          </div>
-                        ) : (
-                          <div className="w-6 h-6 rounded-lg bg-black/40 text-white/80 flex items-center justify-center backdrop-blur-xs">
-                            <Square className="w-4 h-4" />
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                    <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                      {photo.face_count > 0 ? (
-                        <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-bold text-white">
-                          👥 {photo.face_count}
-                        </span>
-                      ) : <span />}
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownloadPhoto(photo);
-                        }}
-                        className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                        title="Download High-Res"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Privileged Full Photo Grid (True Justified Layout) */}
+            <JustifiedGalleryLayout
+              photos={displayedPhotos}
+              layoutConfig={{
+                style: 'justified',
+                gap: 12,
+                cornerRadius: 16,
+              }}
+              isSelectionMode={isSelectionMode}
+              selectedForAlbum={selectedForAlbum}
+              onPhotoClick={(photo, idx) => {
+                const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
+              }}
+              onSelectPhoto={(photo) => {
+                const next = new Set(selectedForAlbum);
+                if (next.has(photo.id)) next.delete(photo.id);
+                else next.add(photo.id);
+                setSelectedForAlbum(next);
+              }}
+              onDownloadPhoto={handleDownloadPhoto}
+            />
 
             {hasMorePrivilegedPhotos && (
               <div className="py-8 flex flex-col items-center justify-center gap-3">
