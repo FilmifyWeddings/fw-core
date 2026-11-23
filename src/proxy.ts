@@ -718,7 +718,7 @@ export async function proxy(request: NextRequest) {
         pathname.startsWith('/settings') ||
         pathname.startsWith('/broadcast-campaigns') ||
         pathname.startsWith('/admin') ||
-        pathname.startsWith('/api/integrations')
+        (pathname.startsWith('/api/integrations') && pathname !== '/api/integrations/baileys/fetch-groups')
       );
 
     if (isProtectedRoute && !user) {
