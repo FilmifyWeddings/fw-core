@@ -1018,9 +1018,19 @@ function GuestSlugGalleryContent() {
   };
 
   const targetFullPhotos = useMemo(() => {
-    return selectedCollectionId === 'all' || selectedCollectionId === 'selected'
+    const list = selectedCollectionId === 'all' || selectedCollectionId === 'selected'
       ? fullPhotos
       : fullPhotos.filter((p) => p.collection_id === selectedCollectionId);
+
+    // Natural chronological lineup: row-by-row by actual photo date & time (oldest to newest)
+    return [...list].sort((a, b) => {
+      const timeA = (a as any).capture_time ? new Date((a as any).capture_time).getTime() : new Date(a.created_at).getTime();
+      const timeB = (b as any).capture_time ? new Date((b as any).capture_time).getTime() : new Date(b.created_at).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      const nameA = a.original_key || a.preview_key || a.id || '';
+      const nameB = b.original_key || b.preview_key || b.id || '';
+      return nameA.localeCompare(nameB);
+    });
   }, [fullPhotos, selectedCollectionId]);
 
   const displayedPrivilegedPhotos = useMemo(() => {
@@ -1586,10 +1596,12 @@ function GuestSlugGalleryContent() {
     subtextColor: '#71717A',
     cardBg: '#FFFFFF',
   };
-  const layoutConfig = designConfig?.layout || {
-    style: 'masonry',
-    gap: 12,
-    cornerRadius: 12,
+  const rawLayout = designConfig?.layout;
+  const layoutConfig = {
+    // Style is 'justified' by default for True Justified Layout preserving natural photo proportions
+    style: (isSelectionMode || !rawLayout?.style || rawLayout.style === 'masonry') ? 'justified' : rawLayout.style,
+    gap: rawLayout?.gap ?? 12,
+    cornerRadius: rawLayout?.cornerRadius ?? 12,
   };
   const headingFont = designConfig?.typography?.headingFont || "'Playfair Display', 'Cormorant Garamond', Georgia, serif";
   const bodyFont = designConfig?.typography?.bodyFont || "'Plus Jakarta Sans', sans-serif";

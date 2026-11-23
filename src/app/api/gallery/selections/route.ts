@@ -516,45 +516,59 @@ async function dispatchSelectionNotifications({
     const workspaceId = gallery.workspace_id || '00000000-0000-0000-0000-000000000000';
 
     // 3. Resolve Studio Owner's Email from workspace
-    let ownerEmail: string | null = null;
+    let ownerEmails: string[] = [];
     let studioName = 'StudioCore Photography';
 
-    if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
-      const { data: members } = await supabaseAdmin
-        .from('workspace_members')
-        .select('email, role, full_name')
-        .eq('workspace_id', workspaceId);
+    // A. Check workspace_settings config
+    const { data: wsSet } = await supabaseAdmin
+      .from('workspace_settings')
+      .select('config')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
 
-      if (Array.isArray(members) && members.length > 0) {
-        const owner = members.find((m: any) => m.role === 'owner') || members[0];
-        if (owner?.email) {
-          ownerEmail = owner.email;
-          if (owner.full_name) studioName = owner.full_name;
-        }
+    if (wsSet?.config?.invoice_email) ownerEmails.push(wsSet.config.invoice_email);
+    if (wsSet?.config?.email) ownerEmails.push(wsSet.config.email);
+    if (wsSet?.config?.studio_email) ownerEmails.push(wsSet.config.studio_email);
+    if (wsSet?.config?.invoice_company_name) studioName = wsSet.config.invoice_company_name;
+
+    // B. Check profiles table for this workspace
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('email, full_name, business_name, leads_table_preferences')
+      .eq('id', workspaceId)
+      .maybeSingle();
+
+    if (profile) {
+      if (profile.email) ownerEmails.push(profile.email);
+      if (profile.leads_table_preferences?.invoice_email) ownerEmails.push(profile.leads_table_preferences.invoice_email);
+      if (profile.business_name) studioName = profile.business_name;
+      else if (profile.full_name) studioName = profile.full_name;
+    }
+
+    // C. Check workspace_members ONLY for role === 'owner' (never random freelancer members!)
+    const { data: members } = await supabaseAdmin
+      .from('workspace_members')
+      .select('email, role, full_name')
+      .eq('workspace_id', workspaceId)
+      .eq('role', 'owner');
+
+    if (Array.isArray(members)) {
+      for (const m of members) {
+        if (m.email) ownerEmails.push(m.email);
       }
     }
 
-    if (!ownerEmail) {
-      const { data: wsSet } = await supabaseAdmin
-        .from('workspace_settings')
-        .select('config')
-        .eq('workspace_id', workspaceId)
-        .maybeSingle();
+    // Deduplicate and filter emails
+    ownerEmails = Array.from(new Set(ownerEmails.map((e) => e.trim().toLowerCase()))).filter((e) => e.includes('@'));
 
-      if (wsSet?.config?.email || wsSet?.config?.studio_email) {
-        ownerEmail = wsSet.config.email || wsSet.config.studio_email;
-      }
+    if (ownerEmails.length === 0) {
+      ownerEmails = ['filmifyweddings@gmail.com'];
     }
 
-    // Fallback to default studio owner / platform email
-    if (!ownerEmail) {
-      ownerEmail = process.env.RESEND_FROM || 'filmifyweddings@gmail.com';
-    }
-
-    // 4. Dispatch Email to Studio Owner via Resend / SMTP
-    if (ownerEmail) {
+    // 4. Dispatch Email to Studio Owner(s) via Resend / SMTP
+    for (const email of ownerEmails) {
       sendClientSelectionSubmittedEmail({
-        toEmail: ownerEmail,
+        toEmail: email,
         studioName,
         galleryTitle: gallery.title,
         galleryId,
@@ -564,7 +578,7 @@ async function dispatchSelectionNotifications({
         totalPhotos,
         maxLimit,
         submittedAt,
-      }).catch((e) => console.warn('[SelectionNotify] Email notice:', e?.message));
+      }).catch((e) => console.warn(`[SelectionNotify] Email notice for ${email}:`, e?.message));
     }
 
     // 5. Date & Time and Content Formatting
@@ -623,14 +637,33 @@ ${directSelectionUrl}`;
     } catch (_) {}
 
     // 7. Check for custom workflows configured for 'client_selection_submitted'
-    const { data: customWorkflows } = await supabaseAdmin
-      .from('whatsapp_custom_workflows')
-      .select('*')
-      .eq('tenant_id', workspaceId)
-      .eq('target_group_id', 'client_selection_submitted')
-      .eq('status', 'Active');
+    let activeWorkflows: any[] = [];
+    try {
+      const { data: allWorkflows } = await supabaseAdmin
+        .from('whatsapp_custom_workflows')
+        .select('*')
+        .eq('tenant_id', workspaceId)
+        .eq('status', 'Active');
 
-    const activeWorkflows = customWorkflows || [];
+      activeWorkflows = (allWorkflows || []).filter((wf: any) => {
+        if (wf.target_group_id === 'client_selection_submitted') return true;
+        if (!wf.target_group_id) {
+          const steps = Array.isArray(wf.workflow_steps) ? wf.workflow_steps : [];
+          const hasSelectionTrigger = steps.some((s: any) =>
+            s.trigger_event === 'client_selection_submitted' ||
+            s.trigger === 'client_selection_submitted' ||
+            s.target_group_name === 'Album Selection' ||
+            s.target_group_jid?.includes('120363431739476709')
+          );
+          const nameHasSelection = wf.workflow_name?.toLowerCase().includes('selection') ||
+                                   wf.workflow_name?.toLowerCase().includes('album');
+          return hasSelectionTrigger || nameHasSelection;
+        }
+        return false;
+      });
+    } catch (wfErr) {
+      console.warn('[SelectionNotify] Error fetching custom workflows:', wfErr);
+    }
 
     // 8. Find or Upsert Lead Record for CRM & Workflow Analytics
     let leadId: string | null = null;
@@ -831,6 +864,23 @@ ${directSelectionUrl}`;
       if (wsConfig.whatsapp_album_group_jid) {
         targetDestinations.push(wsConfig.whatsapp_album_group_jid);
       }
+
+      // Auto-detect Album Selection group from baileys_chats if not set in config
+      if (targetDestinations.length === 0) {
+        try {
+          const { data: albumGroup } = await supabaseAdmin
+            .from('baileys_chats')
+            .select('jid, name')
+            .eq('workspace_id', workspaceId)
+            .ilike('name', '%album selection%')
+            .maybeSingle();
+
+          if (albumGroup?.jid) {
+            targetDestinations.push(albumGroup.jid);
+          }
+        } catch (_) {}
+      }
+
       if (wsConfig.whatsapp_group_jid && !targetDestinations.includes(wsConfig.whatsapp_group_jid)) {
         targetDestinations.push(wsConfig.whatsapp_group_jid);
       }
