@@ -49,14 +49,18 @@ async function handleFetchGroups(req: NextRequest) {
     // 2. Query groups from PostgreSQL using supabaseAdmin (bypasses RLS)
     let dbGroupsQuery = supabaseAdmin
       .from('baileys_chats')
-      .select('jid, display_name, participant_count, is_group, workspace_id')
-      .eq('is_group', true);
+      .select('jid, display_name, metadata, is_group, workspace_id')
+      .eq('is_group', true)
+      .limit(5000);
 
     if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       dbGroupsQuery = dbGroupsQuery.or(`workspace_id.eq.${workspaceId},workspace_id.is.null`);
     }
 
-    const { data: dbGroups } = await dbGroupsQuery.order('display_name', { ascending: true });
+    const { data: dbGroups, error: dbErr } = await dbGroupsQuery.order('display_name', { ascending: true });
+    if (dbErr) {
+      console.warn('[baileys/fetch-groups] DB fetch warning:', dbErr.message);
+    }
 
     // 3. Merge groups without duplicates (keyed by jid)
     const groupsMap = new Map<string, any>();
@@ -66,7 +70,7 @@ async function handleFetchGroups(req: NextRequest) {
         groupsMap.set(g.jid, {
           jid: g.jid,
           display_name: g.display_name || g.jid.split('@')[0],
-          participant_count: g.participant_count ?? 0,
+          participant_count: g.metadata?.participant_count ?? 0,
           is_group: true,
         });
       }
