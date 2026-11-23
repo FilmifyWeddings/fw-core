@@ -479,10 +479,11 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         status: workflowStatus
       };
 
-      const url = editId
+      const isLocalEdit = editId && editId.startsWith('local-workflow-');
+      const url = editId && !isLocalEdit
         ? `/api/integrations/whatsapp/workflows?tenant_id=${workspaceId}&workflow_id=${editId}`
         : `/api/integrations/whatsapp/workflows?tenant_id=${workspaceId}`;
-      const method = editId ? 'PATCH' : 'POST';
+      const method = editId && !isLocalEdit ? 'PATCH' : 'POST';
 
       const res = await fetch(url, {
         method,
@@ -496,6 +497,15 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         setName('');
         setTargetGroup('');
         setSteps([]);
+        // Clear local storage fallback if server saved successfully
+        try {
+          const raw = localStorage.getItem(`wa_workflows_${workspaceId}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const cleaned = parsed.filter((w: any) => !w.id?.startsWith('local-workflow-'));
+            localStorage.setItem(`wa_workflows_${workspaceId}`, JSON.stringify(cleaned));
+          }
+        } catch (_) {}
         loadData();
       } else {
         throw new Error(data.error);

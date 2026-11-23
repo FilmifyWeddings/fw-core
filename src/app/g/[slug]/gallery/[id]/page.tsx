@@ -567,9 +567,18 @@ function StrictZeroKnowledgeGuestContent() {
   };
 
   const targetFullPhotos = useMemo(() => {
-    return selectedCollectionId === 'all'
+    const list = selectedCollectionId === 'all'
       ? fullPhotos
       : fullPhotos.filter((p) => p.collection_id === selectedCollectionId);
+
+    return [...list].sort((a, b) => {
+      const timeA = (a as any).capture_time ? new Date((a as any).capture_time).getTime() : new Date(a.created_at).getTime();
+      const timeB = (b as any).capture_time ? new Date((b as any).capture_time).getTime() : new Date(b.created_at).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      const nameA = a.original_key || a.preview_key || a.id || '';
+      const nameB = b.original_key || b.preview_key || b.id || '';
+      return nameA.localeCompare(nameB);
+    });
   }, [fullPhotos, selectedCollectionId]);
 
   const activeFullPhotos = useMemo(() => {

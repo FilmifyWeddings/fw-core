@@ -42,6 +42,7 @@ interface JustifiedRowItem {
   originalIndex: number;
   width: number;
   height: number;
+  aspectRatio: number;
 }
 
 interface JustifiedRow {
@@ -103,9 +104,11 @@ export function JustifiedGalleryLayout({
     return 290; // Desktop: balanced, elegant, never oversized
   }, [containerWidth]);
 
+  const isJustified = layoutConfig?.style !== 'grid';
+
   // Justified Gallery Algorithm (miromannino / Google Photos style)
   const justifiedRows = useMemo(() => {
-    if (layoutConfig.style !== 'justified' || photos.length === 0 || containerWidth <= 0) {
+    if (!isJustified || photos.length === 0 || containerWidth <= 0) {
       return [];
     }
 
@@ -120,6 +123,8 @@ export function JustifiedGalleryLayout({
         ar = photo.width / photo.height;
         // Clamp extreme panoramas or extreme tall crops between 0.5 (tall vertical) and 2.5 (wide pano)
         ar = Math.max(0.5, Math.min(2.5, ar));
+      } else if (photo.aspect_ratio && photo.aspect_ratio > 0) {
+        ar = Math.max(0.5, Math.min(2.5, photo.aspect_ratio));
       }
 
       currentRow.push({ photo, originalIndex: idx, aspectRatio: ar });
@@ -140,6 +145,7 @@ export function JustifiedGalleryLayout({
           originalIndex: item.originalIndex,
           width: Math.round(item.aspectRatio * exactHeight),
           height: exactHeight,
+          aspectRatio: item.aspectRatio,
         }));
 
         rows.push({ items: rowItems, height: exactHeight });
@@ -157,12 +163,13 @@ export function JustifiedGalleryLayout({
         originalIndex: item.originalIndex,
         width: Math.round(item.aspectRatio * targetRowHeight),
         height: targetRowHeight,
+        aspectRatio: item.aspectRatio,
       }));
       rows.push({ items: lastRowItems, height: targetRowHeight });
     }
 
     return rows;
-  }, [photos, layoutConfig.style, containerWidth, targetRowHeight, gap]);
+  }, [photos, isJustified, containerWidth, targetRowHeight, gap]);
 
   const handleSelectClick = (e: React.MouseEvent, photo: PhotoItem) => {
     e.stopPropagation();
@@ -182,34 +189,39 @@ export function JustifiedGalleryLayout({
           MODE A: TRUE JUSTIFIED GALLERY (Flickr / Google Photos style)
           Rows are 100% flush, heights are balanced, never gigantic
       ───────────────────────────────────────────────────────────── */}
-      {layoutConfig.style === 'justified' ? (
+      {isJustified ? (
         <div className="flex flex-col w-full" style={{ gap: `${gap}px` }}>
-          {justifiedRows.map((row, rowIdx) => (
-            <div
-              key={rowIdx}
-              className="flex items-center w-full overflow-hidden"
-              style={{
-                gap: `${gap}px`,
-                height: `${row.height}px`,
-              }}
-            >
-              {row.items.map((item) => {
-                const isSelected = selectedForAlbum.has(item.photo.id);
-                return (
-                  <div
-                    key={item.photo.id}
-                    onClick={() => onPhotoClick(item.photo, item.originalIndex)}
-                    className={`group relative overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer shrink-0 ${
-                      isSelected
-                        ? 'border-rose-500 ring-4 ring-rose-500/25 shadow-xl'
-                        : 'border-[#E7E2D8] hover:shadow-lg'
-                    }`}
-                    style={{
-                      width: `${item.width}px`,
-                      height: `${row.height}px`,
-                      borderRadius: `${cornerRadius}px`,
-                    }}
-                  >
+          {justifiedRows.map((row, rowIdx) => {
+            const isLastRow = rowIdx === justifiedRows.length - 1;
+            return (
+              <div
+                key={rowIdx}
+                className="flex items-center w-full overflow-hidden"
+                style={{
+                  gap: `${gap}px`,
+                  height: `${row.height}px`,
+                }}
+              >
+                {row.items.map((item) => {
+                  const isSelected = selectedForAlbum.has(item.photo.id);
+                  const ar = item.aspectRatio || (item.width / item.height);
+                  return (
+                    <div
+                      key={item.photo.id}
+                      onClick={() => onPhotoClick(item.photo, item.originalIndex)}
+                      className={`group relative overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
+                        isSelected
+                          ? 'border-rose-500 ring-4 ring-rose-500/25 shadow-xl'
+                          : 'border-[#E7E2D8] hover:shadow-lg'
+                      }`}
+                      style={{
+                        height: `${row.height}px`,
+                        borderRadius: `${cornerRadius}px`,
+                        ...(isLastRow
+                          ? { width: `${item.width}px`, flexShrink: 0 }
+                          : { flex: `${ar} 1 0px`, minWidth: 0 }),
+                      }}
+                    >
                     <ProgressiveSmoothImage
                       src={item.photo.thumbnail_url || item.photo.preview_url || ''}
                       thumbnailSrc={item.photo.thumbnail_url}
