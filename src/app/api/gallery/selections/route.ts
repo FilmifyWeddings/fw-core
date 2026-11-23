@@ -412,6 +412,7 @@ export async function POST(req: NextRequest) {
         clientName: cleanName,
         clientEmail: normalizedEmail,
         selectedPhotoCount: photoIds.length,
+        maxLimit: limit,
         submittedAt: submissionTimestamp || new Date().toISOString(),
       }).catch((e) => console.warn('[SelectionNotify] Error dispatching notifications:', e));
     }
@@ -485,12 +486,14 @@ async function dispatchSelectionNotifications({
   clientName,
   clientEmail,
   selectedPhotoCount,
+  maxLimit,
   submittedAt,
 }: {
   galleryId: string;
   clientName: string;
   clientEmail: string;
   selectedPhotoCount: number;
+  maxLimit?: number | null;
   submittedAt: string;
 }) {
   try {
@@ -559,38 +562,47 @@ async function dispatchSelectionNotifications({
         clientEmail,
         selectedCount: selectedPhotoCount,
         totalPhotos,
+        maxLimit,
         submittedAt,
       }).catch((e) => console.warn('[SelectionNotify] Email notice:', e?.message));
     }
 
-    // 5. Dispatch WhatsApp Notification to Group or Personal Number
-    const formattedDate = new Date(submittedAt).toLocaleString('en-IN', {
+    // 5. Date & Time and Content Formatting
+    const subDate = new Date(submittedAt);
+    const submissionDate = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Kolkata',
       day: 'numeric',
-      month: 'short',
+      month: 'long',
       year: 'numeric',
-      hour: '2-digit',
+    }).format(subDate); // e.g. "12 November 2026"
+
+    const submissionTime = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
       minute: '2-digit',
       hour12: true,
-    });
+    }).format(subDate); // e.g. "12:30 PM"
+
+    const selectedPhotosText = (maxLimit && maxLimit > 0)
+      ? `${selectedPhotoCount} / ${maxLimit} Photos (Limit: ${maxLimit})`
+      : `${selectedPhotoCount} Photos`;
 
     const directSelectionUrl = `https://studiocore.in/workspace/gallery/${galleryId}?tab=selection`;
 
-    const waText = 
+    const standardWaText = 
 `📸 *New Album Selection Received!*
 
 *Card / Event:* ${gallery.title}
 *Client Name:* ${clientName}
 *Client Email:* ${clientEmail}
-*Selected Photos:* ${selectedPhotoCount} / ${totalPhotos} Photos
-*Submitted At:* ${formattedDate}
+*Selected Photos:* ${selectedPhotosText}
+*Date:* ${submissionDate}
+*Time:* ${submissionTime}
 
 🔗 *View Selection in StudioCore:*
 ${directSelectionUrl}`;
 
-    const targetDestinations: string[] = [];
-
-    // Check workspace settings for dedicated group or notification phone
+    // 6. Check workspace settings & active Baileys session
     const { data: wsSettings } = await supabaseAdmin
       .from('workspace_settings')
       .select('config')
@@ -598,52 +610,260 @@ ${directSelectionUrl}`;
       .maybeSingle();
 
     const wsConfig = wsSettings?.config || {};
-    if (wsConfig.whatsapp_album_group_jid) {
-      targetDestinations.push(wsConfig.whatsapp_album_group_jid);
-    }
-    if (wsConfig.whatsapp_group_jid && !targetDestinations.includes(wsConfig.whatsapp_group_jid)) {
-      targetDestinations.push(wsConfig.whatsapp_group_jid);
-    }
-    if (wsConfig.whatsapp_notification_phone) {
-      targetDestinations.push(wsConfig.whatsapp_notification_phone);
-    }
 
-    // Also check event raw_payload for custom group
-    if (gallery.raw_payload?.whatsapp_group_jid && !targetDestinations.includes(gallery.raw_payload.whatsapp_group_jid)) {
-      targetDestinations.push(gallery.raw_payload.whatsapp_group_jid);
-    }
-
-    // If no group is configured, send to studio owner's own active Baileys session
-    if (targetDestinations.length === 0) {
+    let sessionPhone: string | null = null;
+    try {
       const { data: session } = await supabaseAdmin
         .from('baileys_sessions')
         .select('phone_number, workspace_id, id')
         .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
         .order('updated_at', { ascending: false })
         .maybeSingle();
+      if (session?.phone_number) sessionPhone = session.phone_number;
+    } catch (_) {}
 
-      if (session?.phone_number) {
-        targetDestinations.push(session.phone_number);
+    // 7. Check for custom workflows configured for 'client_selection_submitted'
+    const { data: customWorkflows } = await supabaseAdmin
+      .from('whatsapp_custom_workflows')
+      .select('*')
+      .eq('tenant_id', workspaceId)
+      .eq('target_group_id', 'client_selection_submitted')
+      .eq('status', 'Active');
+
+    const activeWorkflows = customWorkflows || [];
+
+    // 8. Find or Upsert Lead Record for CRM & Workflow Analytics
+    let leadId: string | null = null;
+    let clientPhone = '';
+
+    try {
+      const { data: regGuest } = await supabaseAdmin
+        .from('event_guest_registrations')
+        .select('phone, guest_name')
+        .eq('gallery_id', galleryId)
+        .eq('email', clientEmail)
+        .maybeSingle();
+
+      if (regGuest?.phone) {
+        clientPhone = regGuest.phone;
       }
+    } catch (_) {}
+
+    try {
+      const activeWfIds = activeWorkflows.map((w: any) => w.id);
+      const { data: existingLead } = await supabaseAdmin
+        .from('leads')
+        .select('id, phone, raw_payload')
+        .eq('workspace_id', workspaceId)
+        .eq('email', clientEmail)
+        .maybeSingle();
+
+      if (existingLead) {
+        leadId = existingLead.id;
+        if (!clientPhone && existingLead.phone) {
+          clientPhone = existingLead.phone;
+        }
+        const currentEnrolled = Array.isArray(existingLead.raw_payload?.enrolled_workflow_ids)
+          ? existingLead.raw_payload.enrolled_workflow_ids
+          : [];
+        const updatedEnrolled = Array.from(new Set([...currentEnrolled, ...activeWfIds]));
+        await supabaseAdmin
+          .from('leads')
+          .update({
+            name: clientName,
+            phone: clientPhone || existingLead.phone || '',
+            raw_payload: {
+              ...(existingLead.raw_payload || {}),
+              card_name: gallery.title,
+              event_name: gallery.title,
+              gallery_title: gallery.title,
+              client_name: clientName,
+              client_email: clientEmail,
+              selected_count: String(selectedPhotoCount),
+              selection_limit: maxLimit ? String(maxLimit) : 'No Limit',
+              selected_photos: selectedPhotosText,
+              submission_date: submissionDate,
+              submission_time: submissionTime,
+              selection_url: directSelectionUrl,
+              gallery_url: directSelectionUrl,
+              enrolled_workflow_ids: updatedEnrolled,
+              enrolled_at: new Date().toISOString(),
+              last_selection_at: submittedAt,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingLead.id);
+      } else {
+        const { data: newLead } = await supabaseAdmin
+          .from('leads')
+          .insert({
+            workspace_id: workspaceId,
+            name: clientName,
+            email: clientEmail,
+            phone: clientPhone || '',
+            source: 'gallery_selection',
+            status: 'new',
+            raw_payload: {
+              card_name: gallery.title,
+              event_name: gallery.title,
+              gallery_title: gallery.title,
+              client_name: clientName,
+              client_email: clientEmail,
+              selected_count: String(selectedPhotoCount),
+              selection_limit: maxLimit ? String(maxLimit) : 'No Limit',
+              selected_photos: selectedPhotosText,
+              submission_date: submissionDate,
+              submission_time: submissionTime,
+              selection_url: directSelectionUrl,
+              gallery_url: directSelectionUrl,
+              enrolled_workflow_ids: activeWfIds,
+              enrolled_at: new Date().toISOString(),
+              gallery_id: galleryId,
+            },
+          })
+          .select('id')
+          .single();
+
+        if (newLead) leadId = newLead.id;
+      }
+    } catch (leadErr) {
+      console.warn('[SelectionNotify] Lead upsert warning:', leadErr);
     }
 
-    // Insert into baileys_action_queue for instantaneous background processing
-    for (const target of targetDestinations) {
-      const cleanTarget = target.trim();
-      if (!cleanTarget) continue;
+    // 9. Execute Custom Workflows (if configured)
+    if (activeWorkflows.length > 0) {
+      for (const wf of activeWorkflows) {
+        // Increment execution count
+        await supabaseAdmin
+          .from('whatsapp_custom_workflows')
+          .update({
+            execution_count: (wf.execution_count || 0) + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', wf.id);
 
-      await supabaseAdmin
-        .from('baileys_action_queue')
-        .insert({
-          workspace_id: workspaceId,
-          action_type: 'send_text',
-          payload: {
-            to: cleanTarget,
-            text: waText,
-          },
-          status: 'pending',
-          priority: 1, // High priority
-        });
+        const steps = Array.isArray(wf.workflow_steps) ? wf.workflow_steps : [];
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          const isGroupTarget = step.target_type === 'group';
+
+          let destination = isGroupTarget ? step.target_group_jid : clientPhone;
+          if (!destination) {
+            destination = step.target_group_jid || wsConfig.whatsapp_album_group_jid || wsConfig.whatsapp_group_jid || wsConfig.whatsapp_notification_phone || sessionPhone;
+          }
+          if (!destination) continue;
+
+          let stepText = standardWaText;
+          if (step.template_id || step.template_name) {
+            let templateBody = '';
+            if (step.template_id) {
+              const { data: t } = await supabaseAdmin
+                .from('tenant_whatsapp_templates')
+                .select('body_text')
+                .eq('id', step.template_id)
+                .maybeSingle();
+              templateBody = t?.body_text || '';
+            } else if (step.template_name) {
+              const { data: t } = await supabaseAdmin
+                .from('tenant_whatsapp_templates')
+                .select('body_text')
+                .eq('name', step.template_name)
+                .eq('tenant_id', workspaceId)
+                .maybeSingle();
+              templateBody = t?.body_text || '';
+            }
+
+            if (templateBody && templateBody.trim()) {
+              stepText = templateBody
+                .replace(/\{\{\s*card_name\s*\}\}/gi, gallery.title)
+                .replace(/\{\{\s*event_name\s*\}\}/gi, gallery.title)
+                .replace(/\{\{\s*gallery_title\s*\}\}/gi, gallery.title)
+                .replace(/\{\{\s*client_name\s*\}\}/gi, clientName)
+                .replace(/\{\{\s*client_email\s*\}\}/gi, clientEmail)
+                .replace(/\{\{\s*selected_count\s*\}\}/gi, String(selectedPhotoCount))
+                .replace(/\{\{\s*selection_limit\s*\}\}/gi, maxLimit ? String(maxLimit) : 'No Limit')
+                .replace(/\{\{\s*selected_photos\s*\}\}/gi, selectedPhotosText)
+                .replace(/\{\{\s*submission_date\s*\}\}/gi, submissionDate)
+                .replace(/\{\{\s*submission_time\s*\}\}/gi, submissionTime)
+                .replace(/\{\{\s*selection_url\s*\}\}/gi, directSelectionUrl)
+                .replace(/\{\{\s*gallery_url\s*\}\}/gi, directSelectionUrl);
+            }
+          }
+
+          // Insert workflow log for Workflow Analytics
+          const { data: wfLog } = await supabaseAdmin
+            .from('whatsapp_workflow_logs')
+            .insert({
+              tenant_id: workspaceId,
+              workspace_id: workspaceId,
+              workflow_id: wf.id,
+              lead_id: leadId,
+              step_index: step.sort_index ?? i,
+              status: 'pending',
+              sent_at: new Date().toISOString(),
+            })
+            .select('id')
+            .single();
+
+          // Enqueue action in Baileys queue
+          await supabaseAdmin
+            .from('baileys_action_queue')
+            .insert({
+              workspace_id: workspaceId,
+              action_type: 'send_text',
+              payload: {
+                to: destination.trim(),
+                text: stepText,
+                workflowId: wf.id,
+                workflow_id: wf.id,
+                workflowLogId: wfLog?.id,
+                leadId: leadId,
+              },
+              status: 'pending',
+              priority: 1, // High priority
+            });
+        }
+      }
+    } else {
+      // 10. Default Direct Notification Fallback
+      const targetDestinations: string[] = [];
+
+      if (wsConfig.whatsapp_album_group_jid) {
+        targetDestinations.push(wsConfig.whatsapp_album_group_jid);
+      }
+      if (wsConfig.whatsapp_group_jid && !targetDestinations.includes(wsConfig.whatsapp_group_jid)) {
+        targetDestinations.push(wsConfig.whatsapp_group_jid);
+      }
+      if (wsConfig.whatsapp_notification_phone) {
+        targetDestinations.push(wsConfig.whatsapp_notification_phone);
+      }
+
+      if (gallery.raw_payload?.whatsapp_group_jid && !targetDestinations.includes(gallery.raw_payload.whatsapp_group_jid)) {
+        targetDestinations.push(gallery.raw_payload.whatsapp_group_jid);
+      }
+
+      if (targetDestinations.length === 0 && sessionPhone) {
+        targetDestinations.push(sessionPhone);
+      }
+
+      for (const target of targetDestinations) {
+        const cleanTarget = target.trim();
+        if (!cleanTarget) continue;
+
+        await supabaseAdmin
+          .from('baileys_action_queue')
+          .insert({
+            workspace_id: workspaceId,
+            action_type: 'send_text',
+            payload: {
+              to: cleanTarget,
+              text: standardWaText,
+              leadId: leadId,
+            },
+            status: 'pending',
+            priority: 1, // High priority
+          });
+      }
     }
   } catch (err: any) {
     console.warn('[dispatchSelectionNotifications] Notice:', err?.message);

@@ -397,7 +397,36 @@ export function resolveTemplateVariable(rawKey: string, lead: any): string {
   }
   if (normalizedKey === 'email' || normalizedKey === 'email_address' || normalizedKey === 'mail') return getRawVal('email') || getRawVal('email_address') || '';
 
-  // 8. General fallback for any custom key in lead or raw_payload
+  // 8. Gallery Selection & Album Workflow Variables
+  if (normalizedKey === 'card_name' || normalizedKey === 'event_name' || normalizedKey === 'gallery_name' || normalizedKey === 'gallery_title') {
+    return getRawVal('card_name') || getRawVal('gallery_title') || getRawVal('event_name') || getRawVal('title') || '';
+  }
+  if (normalizedKey === 'client_name') {
+    return getRawVal('client_name') || getRawVal('name') || '';
+  }
+  if (normalizedKey === 'client_email') {
+    return getRawVal('client_email') || getRawVal('email') || '';
+  }
+  if (normalizedKey === 'selected_count') {
+    return String(getRawVal('selected_count') ?? '');
+  }
+  if (normalizedKey === 'selection_limit') {
+    return String(getRawVal('selection_limit') ?? '');
+  }
+  if (normalizedKey === 'selected_photos') {
+    return getRawVal('selected_photos') || '';
+  }
+  if (normalizedKey === 'submission_date') {
+    return getRawVal('submission_date') || '';
+  }
+  if (normalizedKey === 'submission_time') {
+    return getRawVal('submission_time') || '';
+  }
+  if (normalizedKey === 'selection_url' || normalizedKey === 'gallery_url') {
+    return getRawVal('selection_url') || getRawVal('gallery_url') || '';
+  }
+
+  // 9. General fallback for any custom key in lead or raw_payload
   return getRawVal(key);
 }
 
