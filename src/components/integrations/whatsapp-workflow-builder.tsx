@@ -217,14 +217,21 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json();
-      if (data.success && Array.isArray(data.groups) && data.groups.length > 0) {
+      if (data.success && Array.isArray(data.groups)) {
         setSyncedWhatsAppGroups(data.groups);
         localStorage.setItem(`wa_synced_groups_${workspaceId}`, JSON.stringify(data.groups));
       }
     } catch (e) {
       console.warn('Error fetching synced WhatsApp groups:', e);
       const cached = localStorage.getItem(`wa_synced_groups_${workspaceId}`);
-      if (cached) setSyncedWhatsAppGroups(JSON.parse(cached));
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSyncedWhatsAppGroups(prev => prev.length === 0 ? parsed : prev);
+          }
+        } catch {}
+      }
     } finally {
       if (isManual) setFetchingGroups(false);
     }
@@ -1240,6 +1247,8 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                 <div className="space-y-4">
                   {steps.map((step, index) => {
                     const isGroupTarget = step.target_type === 'group';
+                    const liveMatchedGroup = syncedWhatsAppGroups.find(g => g.jid === step.target_group_jid);
+                    const effectiveDisplayGroupName = liveMatchedGroup?.display_name || step.target_group_name;
 
                     // Group search filter (fuzzy search supporting typos, vowels, and skeletons)
                     const gQuery = (groupSearchQueries[index] || '').trim();
@@ -1520,8 +1529,8 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                                 >
                                   <div className="flex items-center gap-2 truncate pr-2">
                                     <Users className="w-4 h-4 text-orange-500 shrink-0" />
-                                    <span className={`truncate font-medium ${step.target_group_name ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400'}`}>
-                                      {step.target_group_name || '-- Choose WhatsApp Group --'}
+                                    <span className={`truncate font-medium ${effectiveDisplayGroupName ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400'}`}>
+                                      {effectiveDisplayGroupName || '-- Choose WhatsApp Group --'}
                                     </span>
                                   </div>
                                   <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 shrink-0 ${openGroupDropdownIndex === index ? 'rotate-180 text-orange-500' : ''}`} />
@@ -1601,14 +1610,14 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                               </div>
 
                               {/* Selected Group Active Target Display (ZERO GID Strings Shown) */}
-                              {step.target_group_name && (
+                              {effectiveDisplayGroupName && (
                                 <div className="flex items-center justify-between text-xs bg-white dark:bg-zinc-900/90 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
                                   <span className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold">
                                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                                    Active Target: <span className="font-sans font-extrabold text-zinc-900 dark:text-white">{step.target_group_name}</span>
+                                    Active Target: <span className="font-sans font-extrabold text-zinc-900 dark:text-white">{effectiveDisplayGroupName}</span>
                                   </span>
                                   <span className="text-[10px] font-semibold text-zinc-400">
-                                    {syncedWhatsAppGroups.find(g => g.jid === step.target_group_jid)?.participant_count || 0} members
+                                    {liveMatchedGroup?.participant_count ?? (syncedWhatsAppGroups.find(g => g.jid === step.target_group_jid)?.participant_count || 0)} members
                                   </span>
                                 </div>
                               )}
