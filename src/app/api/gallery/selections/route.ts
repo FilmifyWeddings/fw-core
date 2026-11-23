@@ -498,13 +498,16 @@ async function dispatchSelectionNotifications({
 }) {
   try {
     // 1. Fetch gallery details
-    const { data: gallery } = await supabaseAdmin
+    const { data: gallery, error: galErr } = await supabaseAdmin
       .from('event_galleries')
-      .select('id, title, workspace_id, raw_payload')
+      .select('id, title, workspace_id')
       .eq('id', galleryId)
       .maybeSingle();
 
-    if (!gallery) return;
+    if (galErr || !gallery) {
+      console.warn('[SelectionNotify] Failed to fetch gallery:', galErr?.message);
+      return;
+    }
 
     // 2. Fetch total photos in this gallery
     const { count: totalPhotosCount } = await supabaseAdmin
@@ -870,9 +873,9 @@ ${directSelectionUrl}`;
         try {
           const { data: albumGroup } = await supabaseAdmin
             .from('baileys_chats')
-            .select('jid, name')
+            .select('jid, display_name')
             .eq('workspace_id', workspaceId)
-            .ilike('name', '%album selection%')
+            .ilike('display_name', '%album selection%')
             .maybeSingle();
 
           if (albumGroup?.jid) {
@@ -888,8 +891,9 @@ ${directSelectionUrl}`;
         targetDestinations.push(wsConfig.whatsapp_notification_phone);
       }
 
-      if (gallery.raw_payload?.whatsapp_group_jid && !targetDestinations.includes(gallery.raw_payload.whatsapp_group_jid)) {
-        targetDestinations.push(gallery.raw_payload.whatsapp_group_jid);
+      // Fallback specifically to Album Selection group (120363431739476709@g.us)
+      if (targetDestinations.length === 0) {
+        targetDestinations.push('120363431739476709@g.us');
       }
 
       if (targetDestinations.length === 0 && sessionPhone) {
