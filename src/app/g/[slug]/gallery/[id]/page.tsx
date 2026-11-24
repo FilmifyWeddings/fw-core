@@ -690,8 +690,9 @@ function StrictZeroKnowledgeGuestContent() {
   }
 
   if (currentGalleryStatus === 'UNPUBLISHED') {
-    if (!isPrivilegedMode && hasSearched) {
-      // Allow registration selfie confirmation to show
+    // Guest access (QR standee or guest link) is allowed through so guests can pre-register their selfie and contact details before photos are uploaded/published.
+    if (!isPrivilegedMode) {
+      // Handled by guest privacy/pre-registration hero and registration selfie confirmation below
     } else {
       return (
         <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">

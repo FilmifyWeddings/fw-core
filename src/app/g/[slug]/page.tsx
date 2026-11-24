@@ -1533,9 +1533,9 @@ function GuestSlugGalleryContent() {
   }
 
   if (currentGalleryStatus === 'UNPUBLISHED') {
-    // If guest scanned QR standee and registered selfie, allow the registration confirmation card to display
-    if (!isPrivilegedMode && hasSearched) {
-      // Handled by isGuestRegisteredUnpublished below
+    // Guest access (QR standee or guest link) is allowed through so guests can pre-register their selfie and contact details before photos are uploaded/published.
+    if (!isPrivilegedMode) {
+      // Handled by isGuestPreRegistration (hero pre-registration UI) and isGuestRegisteredUnpublished (celebratory confirmation) below
     } else {
       return (
         <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
@@ -1720,7 +1720,7 @@ function GuestSlugGalleryContent() {
                 className="text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed"
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
               >
-                We will notify you via Email as soon as your photos are ready.
+                We will notify you via WhatsApp & Email as soon as your photos are ready.
               </p>
             </div>
 
@@ -1731,7 +1731,7 @@ function GuestSlugGalleryContent() {
                 <span>Instant Notification Guaranteed</span>
               </div>
               <p className="text-xs text-zinc-600 leading-relaxed font-medium">
-                As soon as the photos are published by the studio, you will receive an instant email notification with your private AI-matched photo collection directly at:
+                As soon as the photos are published by the studio, you will receive an instant notification with your private AI-matched photo collection directly at:
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {guestEmail && (
@@ -1811,21 +1811,28 @@ function GuestSlugGalleryContent() {
   const renderHeroAction = () => {
     if (isGuestPreRegistration) {
       return (
-        <div className="pt-4 sm:pt-6 animate-in fade-in zoom-in-95 duration-500">
-          <button
-            type="button"
-            onClick={handleFindMyPhotoClick}
-            className="group relative inline-flex items-center justify-center gap-2.5 sm:gap-3 px-8 sm:px-10 py-3.5 sm:py-4 rounded-full text-white font-bold text-xs sm:text-sm tracking-wider shadow-2xl transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] cursor-pointer backdrop-blur-xl border border-white/30"
-            style={{
-              backgroundColor: designPalette.accentColor,
-            }}
-          >
-            <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-white group-hover:scale-110 transition-transform" />
-            <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
-              {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
-            </span>
-            <FaceAiFocusIcon className="w-4 h-4 text-white" />
-          </button>
+        <div className="pt-4 sm:pt-6 space-y-2.5 animate-in fade-in zoom-in-95 duration-500">
+          <div>
+            <button
+              type="button"
+              onClick={handleFindMyPhotoClick}
+              className="group relative inline-flex items-center justify-center gap-2.5 sm:gap-3 px-8 sm:px-10 py-3.5 sm:py-4 rounded-full text-white font-bold text-xs sm:text-sm tracking-wider shadow-2xl transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] cursor-pointer backdrop-blur-xl border border-white/30"
+              style={{
+                backgroundColor: designPalette.accentColor,
+              }}
+            >
+              <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-white group-hover:scale-110 transition-transform" />
+              <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
+                {currentGalleryStatus === 'UNPUBLISHED' ? 'Register Selfie for Live Alerts' : (gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos')}
+              </span>
+              <FaceAiFocusIcon className="w-4 h-4 text-white" />
+            </button>
+          </div>
+          {currentGalleryStatus === 'UNPUBLISHED' && (
+            <p className="text-[11px] sm:text-xs text-white/80 max-w-md mx-auto drop-shadow-md font-sans">
+              ✨ Pre-register your selfie now to get notified via WhatsApp & Email when photos go live!
+            </p>
+          )}
         </div>
       );
     }
