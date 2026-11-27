@@ -223,11 +223,17 @@ export default function WorkspaceTeamPage() {
   // Single-Pass 0ms SWR Fetcher for Team Directory + Crew Payment Overview + Hide/PIN Status
   const loadMembers = useCallback(async (forceFresh = false) => {
     if (memCachedTeamMembers.length === 0) setLoading(true);
+    let resolvedWs = false;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      let { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        session = refreshed.session;
+      }
       const currentUid = session?.user?.id;
       const effectiveWsId = workspaceId || currentUid;
       if (!effectiveWsId) return;
+      resolvedWs = true;
 
       const overview = await authFetchJson(
         `/api/workspace/team/overview?workspace_id=${encodeURIComponent(effectiveWsId)}${forceFresh ? '&fresh=1' : ''}`
@@ -267,8 +273,10 @@ export default function WorkspaceTeamPage() {
     } catch (err) {
       console.error('[WorkspaceTeamPage] Load overview error:', err);
     } finally {
-      setLoading(false);
-      setFinancialsLoading(false);
+      if (resolvedWs) {
+        setLoading(false);
+        setFinancialsLoading(false);
+      }
     }
   }, [workspaceId]);
 

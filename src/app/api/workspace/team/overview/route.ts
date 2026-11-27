@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { data: payload, cacheStatus } = await getSwrCached(
-      `team_overview_${effectiveWsId}`,
+      `team_overview_v2_${effectiveWsId}`,
       effectiveWsId,
       async () => {
         // 1. Fetch members, rates, permissions, and security settings in parallel
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
           supabaseAdmin
             .from('studio_member_permissions')
             .select('*')
-            .eq('workspace_id', effectiveWsId),
+            .eq('owner_id', effectiveWsId),
           supabaseAdmin
             .from('workspace_finance_settings')
             .select('id, custom_data')
@@ -162,7 +162,7 @@ export async function GET(req: NextRequest) {
               .eq('user_id', effectiveWsId),
             supabaseAdmin
               .from('team_event_payouts')
-              .select('id, member_id, member_name, agreed_amount, paid_amount, balance_amount, status, event_date, payment_date, sub_event_id, notes, tranches, created_at, updated_at')
+              .select('id, member_id, member_name, agreed_amount, paid_amount, balance_amount, status, event_date, payment_date, sub_event_id, notes, created_at, updated_at')
               .eq('user_id', effectiveWsId),
             supabaseAdmin
               .from('team_salary_records')
@@ -174,7 +174,7 @@ export async function GET(req: NextRequest) {
               .eq('user_id', effectiveWsId),
             supabaseAdmin
               .from('post_production_projects')
-              .select('id, client_name, deliverables, is_deleted, created_at')
+              .select('id, workspace_id, client_id, deliverables, is_deleted, created_at')
               .or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`)
               .neq('is_deleted', true),
             supabaseAdmin
@@ -353,7 +353,7 @@ export async function GET(req: NextRequest) {
                 id: `${pp.id}_${d.id || d.title}`,
                 member_id: mid,
                 member_name: memberNameById.get(mid) || 'Editor/Partner',
-                title: `${pp.client_name || 'Post-Prod'} — ${d.title || 'Deliverable'}`,
+                title: `${d.client_name || 'Post-Prod'} — ${d.title || 'Deliverable'}`,
                 date: dStr,
                 payment_date: paid > 0 ? dStr : '',
                 agreed_amount: agreed,
