@@ -3,34 +3,9 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
 import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 import { DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
+import { loadClientQuotationsFast, normalizeNameKey } from '@/lib/client-quotations-loader';
 
 export const dynamic = 'force-dynamic';
-
-const isBadVersionTitle = (title?: string | null): boolean => {
-  if (!title) return true;
-  const trimmed = String(title).trim();
-  if (!trimmed || trimmed.startsWith('FW-')) return true;
-  if (/^(?:Wedding Quotation|Wedding - Design 1|Quotation Template)$/i.test(trimmed)) return true;
-  const prefix = trimmed.split(/\s*-\s*/)[0]?.trim();
-  if (!prefix || prefix.length < 2) return true;
-  return false;
-};
-
-const normalizePhoneLast10 = (phone?: string | null): string => {
-  if (!phone) return '';
-  const digits = String(phone).replace(/\D/g, '');
-  return digits.length >= 10 ? digits.slice(-10) : digits;
-};
-
-const normalizeNameKey = (name?: string | null): string => {
-  if (!name) return '';
-  return String(name)
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-};
 
 /**
  * GET /api/workspace/clients/[id]?workspace_id=...
@@ -105,123 +80,11 @@ export async function GET(
       }
     }
 
-    // 3. Resolve Linked Lead ID & Lead Metadata reliably (even if workspace_clients.lead_id wasn't backfilled)
-    let resolvedLeadRow: any = null;
-    if (foundClient.lead_id) {
-      const { data: directLead } = await supabaseAdmin
-        .from('leads')
-        .select('id, workspace_id, user_id, client_id, name, full_name, email, phone, quotation_id, final_quotation_id, raw_payload')
-        .eq('id', foundClient.lead_id)
-        .maybeSingle();
-      if (directLead) resolvedLeadRow = directLead;
-    }
-
-    if (!resolvedLeadRow) {
-      const { data: linkedByClient } = await supabaseAdmin
-        .from('leads')
-        .select('id, workspace_id, user_id, client_id, name, full_name, email, phone, quotation_id, final_quotation_id, raw_payload')
-        .eq('client_id', foundClient.id)
-        .limit(1)
-        .maybeSingle();
-      if (linkedByClient) resolvedLeadRow = linkedByClient;
-    }
-
-    if (!resolvedLeadRow && (foundClient.phone || foundClient.name)) {
-      try {
-        const { data: wsLeads } = await supabaseAdmin
-          .from('leads')
-          .select('id, workspace_id, user_id, client_id, name, full_name, email, phone, quotation_id, final_quotation_id, raw_payload')
-          .or(`workspace_id.eq.${clientWsId},user_id.eq.${clientWsId}`)
-          .order('created_at', { ascending: false })
-          .limit(300);
-
-        if (wsLeads && wsLeads.length > 0) {
-          const targetPhone = normalizePhoneLast10(foundClient.phone);
-          const targetName = normalizeNameKey(foundClient.name);
-
-          resolvedLeadRow =
-            wsLeads.find((l: any) => l.client_id === foundClient.id) ||
-            (targetPhone
-              ? wsLeads.find((l: any) => normalizePhoneLast10(l.phone) === targetPhone)
-              : null) ||
-            (targetName
-              ? wsLeads.find(
-                  (l: any) =>
-                    normalizeNameKey(l.name) === targetName ||
-                    normalizeNameKey(l.full_name) === targetName
-                )
-              : null) ||
-            null;
-        }
-      } catch (_) {}
-    }
-
-    const resolvedLeadId: string | null = resolvedLeadRow?.id || foundClient.lead_id || null;
-    const rawPayload = resolvedLeadRow?.raw_payload || {};
-    const knownIds = new Set<string>();
-    if (resolvedLeadRow?.quotation_id) knownIds.add(resolvedLeadRow.quotation_id);
-    if (resolvedLeadRow?.final_quotation_id) knownIds.add(resolvedLeadRow.final_quotation_id);
-    if (rawPayload.quotation_id) knownIds.add(rawPayload.quotation_id);
-    if (rawPayload.final_quotation_id) knownIds.add(rawPayload.final_quotation_id);
-    const rawVersions: any[] = Array.isArray(rawPayload.quotation_versions)
-      ? rawPayload.quotation_versions
-      : Array.isArray(rawPayload.quotations)
-      ? rawPayload.quotations
-      : [];
-    const rawVersionByTid = new Map<string, any>();
-    rawVersions.forEach((v: any) => {
-      if (v?.id) {
-        knownIds.add(String(v.id));
-        rawVersionByTid.set(String(v.id).toUpperCase(), v);
-      }
-      if (v?.template_id) {
-        knownIds.add(String(v.template_id));
-        rawVersionByTid.set(String(v.template_id).toUpperCase(), v);
-      }
-    });
-
-    const leadShortSeed = (resolvedLeadId || foundClient.id || '').replace(/[^a-zA-Z0-9]/g, '');
-    const leadShort8Lower = leadShortSeed.slice(0, 8).toLowerCase();
-    const leadShort8Upper = leadShortSeed.slice(0, 8).toUpperCase();
-    const leadShort6Lower = leadShortSeed.slice(0, 6).toLowerCase();
-    const leadShort6Upper = leadShortSeed.slice(0, 6).toUpperCase();
-    const clientShort8Upper = String(foundClient.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
-
-    const docOrFilters = [`client_id.eq.${foundClient.id}`];
-    if (resolvedLeadId) docOrFilters.push(`lead_id.eq.${resolvedLeadId}`);
-    if (leadShort6Lower.length >= 6) {
-      docOrFilters.push(`template_id.ilike.%${leadShort6Lower}%`);
-      docOrFilters.push(`template_id.ilike.%${leadShort6Upper}%`);
-    }
-    if (leadShort8Upper.length >= 8 && clientShort8Upper !== leadShort8Upper && clientShort8Upper.length >= 6) {
-      docOrFilters.push(`template_id.ilike.%${clientShort8Upper}%`);
-    }
-
-    const knownIdsList = Array.from(knownIds);
-    if (knownIdsList.length > 0) {
-      const safeQuoted = knownIdsList.map((id) => `"${String(id).replace(/"/g, '')}"`).join(',');
-      docOrFilters.push(`template_id.in.(${safeQuoted})`);
-      const validUuids = knownIdsList.filter((id) =>
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
-      );
-      if (validUuids.length > 0) {
-        docOrFilters.push(`id.in.(${validUuids.map((id) => `"${id}"`).join(',')})`);
-      }
-    }
-
-    const quotesOrFilters = [`client_id.eq.${foundClient.id}`];
-    if (resolvedLeadId && resolvedLeadId !== foundClient.id) {
-      quotesOrFilters.push(`client_id.eq.${resolvedLeadId}`);
-    }
-    if (leadShort6Upper.length >= 6) {
-      quotesOrFilters.push(`quotation_number.ilike.%${leadShort6Lower}%`);
-      quotesOrFilters.push(`quotation_number.ilike.%${leadShort6Upper}%`);
-    }
-
-    // Build fw_projects matching OR filter
+    // 3. Build fw_projects matching OR filter using immediate client metadata
+    const initialLeadId: string | null = foundClient.lead_id || null;
     const fwProjectOrParts = [`client_id.eq.${foundClient.id}`];
-    if (resolvedLeadId && resolvedLeadId !== foundClient.id) {
-      fwProjectOrParts.push(`lead_id.eq.${resolvedLeadId}`);
+    if (initialLeadId && initialLeadId !== foundClient.id) {
+      fwProjectOrParts.push(`lead_id.eq.${initialLeadId}`);
     }
     if (foundClient.name && String(foundClient.name).trim()) {
       const escapedName = String(foundClient.name).trim().replace(/[,%()]/g, ' ');
@@ -230,11 +93,9 @@ export async function GET(
       }
     }
 
-    // 4. Parallel Fetch of All Sub-Modules with supabaseAdmin
+    // 4. Parallel Fetch of Quotations + All Sub-Modules with supabaseAdmin
     const [
-      quoteDocsRes,
-      quotationsRes,
-      responsesRes,
+      quotationsBundle,
       postProdRes,
       financeRes,
       moodboardsRes,
@@ -245,77 +106,58 @@ export async function GET(
       fwProjectsRes,
       crewRolesRes,
     ] = await Promise.all([
-      // A. Quotation Documents
-      supabaseAdmin
-        .from('quotation_documents')
-        .select('*')
-        .or(docOrFilters.join(','))
-        .order('created_at', { ascending: false }),
+      // A. Fast Quotation Loader (eliminates 300-row raw_payload scan & slims content_json)
+      loadClientQuotationsFast(foundClient, clientWsId),
 
-      // B. Quotations Table
-      supabaseAdmin
-        .from('quotations')
-        .select('*')
-        .or(quotesOrFilters.join(','))
-        .order('created_at', { ascending: false }),
-
-      // C. Client Responses (accepted / budget discussion)
-      resolvedLeadId
-        ? supabaseAdmin
-            .from('quotation_responses')
-            .select('quotation_id, lead_version, response_type, client_name, client_notes, budget_amount, created_at')
-            .eq('lead_id', resolvedLeadId)
-        : Promise.resolve({ data: [], error: null }),
-
-      // D. Post Production Project
+      // B. Post Production Project
       supabaseAdmin
         .from('post_production_projects')
         .select('*')
         .eq('client_id', foundClient.id)
         .maybeSingle(),
 
-      // E. Client Finance Record
+      // C. Client Finance Record
       supabaseAdmin
         .from('client_finance_records')
         .select('*')
         .eq('client_id', foundClient.id)
         .maybeSingle(),
 
-      // F. Moodboards
+      // D. Moodboards
       supabaseAdmin
         .from('client_moodboards')
         .select('*')
         .eq('client_id', foundClient.id)
         .order('created_at', { ascending: true }),
 
-      // G. Tasks (Live fw_tasks scoped to client or linked lead)
+      // E. Tasks (Live fw_tasks scoped to client or linked lead)
       supabaseAdmin
         .from('fw_tasks')
         .select('*')
-        .or(`client_id.eq.${foundClient.id}${resolvedLeadId ? `,client_id.eq.${resolvedLeadId}` : ''}`)
+        .or(`client_id.eq.${foundClient.id}${initialLeadId ? `,client_id.eq.${initialLeadId}` : ''}`)
         .eq('is_trashed', false)
         .order('created_at', { ascending: false }),
 
-      // H. Full Team Members (with avatars & rates matching Booking Events)
+      // F. Full Team Members (with avatars & rates matching Booking Events)
       supabaseAdmin
         .from('fw_team_members')
         .select('*')
         .or(`user_id.eq.${clientWsId},user_id.eq.${effectiveWsId}`)
         .order('name', { ascending: true }),
 
-      // I. Workspace Members (joined users & avatars)
+      // G. Workspace Members (joined users & avatars)
       supabaseAdmin
         .from('workspace_members')
         .select('*')
         .or(`workspace_id.eq.${clientWsId},workspace_id.eq.${effectiveWsId}`),
 
-      // J. Custom Team Member Rates
+      // H. Custom Team Member Rates
       supabaseAdmin
         .from('workspace_team_member_rates')
         .select('team_member_id, daily_rate')
         .or(`workspace_id.eq.${clientWsId},workspace_id.eq.${effectiveWsId}`),
 
-      // K. Bookings Events Project + Sub-Events + Assignments
+      // I. Bookings Events Project + Sub-Events + Assignments
       supabaseAdmin
         .from('fw_projects')
         .select(`
@@ -329,7 +171,7 @@ export async function GET(
         .neq('status', 'trash')
         .order('created_at', { ascending: false }),
 
-      // L. Workspace Crew Roles (short codes for crew badges)
+      // J. Workspace Crew Roles (short codes for crew badges)
       supabaseAdmin
         .from('master_crew_roles')
         .select('*')
@@ -337,258 +179,7 @@ export async function GET(
         .order('created_at', { ascending: true }),
     ]);
 
-    // 5. Filter & Merge Quotations matching /api/leads/[id]/quotations logic cleanly
-    const matchedDocs: any[] = ((quoteDocsRes.data || []) as any[]).filter((doc: any) => {
-      if (doc.client_id && doc.client_id === foundClient.id) return true;
-      const docLeadId = doc.lead_id || doc.content_json?.lead_id;
-      if (resolvedLeadId && docLeadId === resolvedLeadId) return true;
-      if (doc.template_id) {
-        const tidUpper = String(doc.template_id).toUpperCase();
-        if (leadShort8Upper && tidUpper.includes(leadShort8Upper)) return true;
-        if (leadShort6Upper && tidUpper.includes(leadShort6Upper)) return true;
-        if (clientShort8Upper && tidUpper.includes(clientShort8Upper)) return true;
-        if (knownIdsList.some((k) => tidUpper.includes(String(k).toUpperCase()))) return true;
-      }
-      return false;
-    });
-
-    const allQuotes: any[] = (quotationsRes.data || []) as any[];
-    const allResponses: any[] = (responsesRes.data || []) as any[];
-    const clientNotesJson = (() => {
-      try {
-        return typeof foundClient?.notes === 'string' ? JSON.parse(foundClient.notes) : foundClient?.notes || {};
-      } catch (_) {
-        return {};
-      }
-    })();
-    const finalTargetId =
-      foundClient?.final_quotation_id ||
-      clientNotesJson?.final_quotation_id ||
-      resolvedLeadRow?.final_quotation_id ||
-      rawPayload?.final_quotation_id ||
-      null;
-
-    const explicitVerNums = new Set<number>();
-    matchedDocs.forEach((d: any) => {
-      if (d.lead_version !== null && d.lead_version !== undefined && Number(d.lead_version) > 0) {
-        explicitVerNums.add(Number(d.lead_version));
-      }
-    });
-
-    const findMatchingQuote = (doc: any) =>
-      allQuotes.find(
-        (q: any) =>
-          q.id === doc.template_id ||
-          (q.quotation_number && doc.template_id && q.quotation_number === doc.template_id) ||
-          q.id === doc.id
-      );
-
-    // Deduplicate matchedDocs strictly by normalized template_id / id while keeping ALL distinct versions
-    const seenMatchedDocKeys = new Set<string>();
-    const activeMatchedDocs = matchedDocs.filter((d: any) => {
-      const tidUpper = String(d.template_id || d.id || '').toUpperCase();
-      if (!tidUpper || seenMatchedDocKeys.has(tidUpper)) return false;
-
-      const matchedQ = findMatchingQuote(d);
-      const rawVer = rawVersionByTid.get(tidUpper);
-      const isFinalMatch = Boolean(
-        d.is_final === true ||
-          d.content_json?.is_final === true ||
-          (finalTargetId && (finalTargetId === d.template_id || finalTargetId === d.id)) ||
-          matchedQ?.is_final === true ||
-          matchedQ?.status === 'accepted' ||
-          rawVer?.is_final === true
-      );
-      const explicitVer =
-        d.lead_version !== null && d.lead_version !== undefined && Number(d.lead_version) > 0
-          ? Number(d.lead_version)
-          : 0;
-      const tidVerMatch = typeof d.template_id === 'string' ? d.template_id.match(/-V(\d+)-/i) : null;
-      const tidVer = tidVerMatch ? parseInt(tidVerMatch[1], 10) : 0;
-      const hasContent = Boolean(d.content_json && Object.keys(d.content_json).length > 0);
-
-      // Only filter out empty unlinked stub duplicates for a version that already has an explicit doc
-      if (!explicitVer && !hasContent && !matchedQ && !isFinalMatch && tidVer > 0 && explicitVerNums.has(tidVer)) {
-        return false;
-      }
-
-      seenMatchedDocKeys.add(tidUpper);
-      return true;
-    });
-
-    const docTemplateIds = new Set(activeMatchedDocs.map((d: any) => String(d.template_id || d.id).toUpperCase()));
-    const legacyOnlyQuotes = allQuotes.filter((q: any) => {
-      const qIdU = String(q.id || '').toUpperCase();
-      const qNumU = String(q.quotation_number || '').toUpperCase();
-      return !docTemplateIds.has(qIdU) && (!qNumU || !docTemplateIds.has(qNumU));
-    });
-
-    const seenRawKeys = new Set<string>();
-    const missingRawVersions = rawVersions.filter((rv: any) => {
-      const rId = String(rv?.template_id || rv?.id || '').toUpperCase();
-      if (!rId || seenRawKeys.has(rId)) return false;
-      seenRawKeys.add(rId);
-      return (
-        !docTemplateIds.has(rId) &&
-        !legacyOnlyQuotes.some(
-          (q: any) =>
-            String(q.id || '').toUpperCase() === rId || String(q.quotation_number || '').toUpperCase() === rId
-        )
-      );
-    });
-
-    const combinedQuoteRows = [
-      ...activeMatchedDocs,
-      ...legacyOnlyQuotes.map((q: any, i: number) => ({
-        id: q.id,
-        template_id: q.quotation_number || q.id,
-        lead_id: resolvedLeadId || foundClient.id,
-        version: (activeMatchedDocs.length || 0) + i + 1,
-        lead_version: (activeMatchedDocs.length || 0) + i + 1,
-        title: q.title,
-        is_final: q.is_final === true || q.status === 'accepted' || q.status === 'final',
-        public_token: q.public_token,
-        total_amount: q.total_amount,
-        content_json: q.canvas_data || q.content_json || {},
-        created_at: q.created_at || new Date().toISOString(),
-        updated_at: q.updated_at || q.created_at || new Date().toISOString(),
-      })),
-      ...missingRawVersions.map((rv: any, i: number) => ({
-        id: rv.id || `raw_v_${rv.version || i + 1}`,
-        template_id: rv.template_id || rv.id,
-        lead_id: resolvedLeadId || foundClient.id,
-        version: rv.version || i + 1,
-        lead_version: rv.version || i + 1,
-        title: rv.title,
-        is_final: Boolean(rv.is_final),
-        public_token: rv.public_token,
-        total_amount: rv.total_amount,
-        content_json: rv.content_json || {},
-        created_at: rv.created_at || new Date().toISOString(),
-        updated_at: rv.updated_at || rv.created_at || new Date().toISOString(),
-      })),
-    ];
-
-    const sortedQuoteRows = combinedQuoteRows.sort((a: any, b: any) => {
-      const aExp = a.lead_version !== null && a.lead_version !== undefined && Number(a.lead_version) > 0 ? 1 : 0;
-      const bExp = b.lead_version !== null && b.lead_version !== undefined && Number(b.lead_version) > 0 ? 1 : 0;
-      if (aExp !== bExp) return bExp - aExp;
-      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
-    });
-
-    // Resolve single authoritative Final quotation key so cloned content_json.is_final never marks two versions final
-    let authoritativeFinalKey: string | null = null;
-    if (finalTargetId) {
-      const exactFinal = sortedQuoteRows.find((d: any) => {
-        const matchedQ = findMatchingQuote(d);
-        return (
-          d.template_id === finalTargetId ||
-          d.id === finalTargetId ||
-          (matchedQ && (matchedQ.id === finalTargetId || matchedQ.quotation_number === finalTargetId))
-        );
-      });
-      if (exactFinal) {
-        authoritativeFinalKey = String(exactFinal.template_id || exactFinal.id);
-      }
-    }
-    if (!authoritativeFinalKey) {
-      const colFinal = [...sortedQuoteRows]
-        .sort((a: any, b: any) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())
-        .find((d: any) => {
-          const tidUpper = String(d.template_id || d.id || '').toUpperCase();
-          const rawVer = rawVersionByTid.get(tidUpper);
-          const matchedQ = findMatchingQuote(d);
-          return Boolean(
-            d.is_final === true ||
-            rawVer?.is_final === true ||
-            matchedQ?.is_final === true ||
-            matchedQ?.status === 'accepted' ||
-            matchedQ?.status === 'final'
-          );
-        });
-      if (colFinal) {
-        authoritativeFinalKey = String(colFinal.template_id || colFinal.id);
-      }
-    }
-    if (!authoritativeFinalKey) {
-      const contentFinal = [...sortedQuoteRows]
-        .sort((a: any, b: any) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())
-        .find((d: any) => d.content_json?.is_final === true);
-      if (contentFinal) {
-        authoritativeFinalKey = String(contentFinal.template_id || contentFinal.id);
-      }
-    }
-
-    const quotationDocs = sortedQuoteRows.map((d: any, idx: number) => {
-      const content = d.content_json || {};
-      const tidUpper = String(d.template_id || d.id || '').toUpperCase();
-      const rawVer = rawVersionByTid.get(tidUpper);
-      const matchedQ = findMatchingQuote(d);
-      const tidVerMatch = typeof d.template_id === 'string' ? d.template_id.match(/-V(\d+)-/i) : null;
-      const tidVer = tidVerMatch ? parseInt(tidVerMatch[1], 10) : null;
-      const explicitLeadVer =
-        d.lead_version !== null && d.lead_version !== undefined && Number(d.lead_version) > 0
-          ? Number(d.lead_version)
-          : null;
-      const resolvedVer =
-        explicitLeadVer ||
-        (Number(content.lead_version) > 0 ? Number(content.lead_version) : null) ||
-        (rawVer?.version && Number(rawVer.version) > 0 ? Number(rawVer.version) : null) ||
-        tidVer ||
-        (d.version && Number(d.version) > 0 ? Number(d.version) : null) ||
-        idx + 1;
-
-      const cover = content.cover || {};
-      const coverCouple =
-        cover.coupleName ||
-        (cover.groomName && cover.brideName
-          ? `${cover.groomName} & ${cover.brideName}`
-          : cover.groomName || cover.brideName || '');
-
-      const docKey = String(d.template_id || d.id);
-      const isFinal = Boolean(authoritativeFinalKey && docKey === authoritativeFinalKey);
-
-      const totalAmt =
-        Number(content?.pricingPage?.finalAmount) ||
-        Number(content?.pricing?.finalAmount) ||
-        Number(d.total_amount) ||
-        Number(rawVer?.total_amount) ||
-        Number(matchedQ?.total_amount) ||
-        foundClient.total_package_amount ||
-        0;
-
-      const versionResponses = allResponses.filter(
-        (r: any) => r.quotation_id === d.template_id || Number(r.lead_version) === Number(resolvedVer)
-      );
-
-      return {
-        id: d.id,
-        template_id: d.template_id || d.id,
-        lead_id: d.lead_id || resolvedLeadId,
-        version: resolvedVer,
-        version_label: `Version ${resolvedVer}`,
-        title:
-          (!isBadVersionTitle(d.title) ? d.title : null) ||
-          (!isBadVersionTitle(content.designName) ? content.designName : null) ||
-          coverCouple ||
-          content?.heroPage?.coupleNames ||
-          (!isBadVersionTitle(rawVer?.title) ? rawVer.title : null) ||
-          `${foundClient.name || 'Client'} - Quotation V${resolvedVer}`,
-        is_final: isFinal,
-        updated_at: d.updated_at || d.created_at,
-        created_at: d.created_at,
-        public_token: d.public_token || matchedQ?.public_token,
-        total_amount: totalAmt,
-        content_json: content,
-        responseBadge: versionResponses[0]
-          ? {
-              type: versionResponses[0].response_type,
-              label: versionResponses[0].response_type === 'accepted' ? 'Accepted' : 'Budget Discussion',
-              clientNotes: versionResponses[0].client_notes,
-            }
-          : null,
-      };
-    });
+    const { quotationDocs, resolvedLeadId, resolvedLeadRow } = quotationsBundle;
 
     // 6. Hydrate Post Production Project
     let resolvedPostProdProject: any = postProdRes.data || null;
