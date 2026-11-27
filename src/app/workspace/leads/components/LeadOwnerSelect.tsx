@@ -78,6 +78,8 @@ interface LeadOwnerSelectProps {
 }
 
 let cachedLeadOwnerMembers: LeadOwnerMember[] = [];
+let cachedLeadOwnerFetchAt = 0;
+let inFlightLeadOwnerPromise: Promise<LeadOwnerMember[]> | null = null;
 
 export default function LeadOwnerSelect({
   value,
@@ -116,10 +118,21 @@ export default function LeadOwnerSelect({
     setIsMounted(true);
   }, []);
 
-  // Fetch all active team members for the active studio owner from fw_team_members
+  // Fetch all active team members ONCE across all mounted rows (prevents 400+ concurrent request storm)
   useEffect(() => {
+    let isMountedLocal = true;
     const fetchCrew = async () => {
       try {
+        if (cachedLeadOwnerMembers.length > 0 && Date.now() - cachedLeadOwnerFetchAt < 60_000) {
+          setFetchedMembers(cachedLeadOwnerMembers);
+          return;
+        }
+        if (inFlightLeadOwnerPromise) {
+          const shared = await inFlightLeadOwnerPromise;
+          if (isMountedLocal && shared.length > 0) setFetchedMembers(shared);
+          return;
+        }
+        inFlightLeadOwnerPromise = (async () => {
         const { data: { session } } = await supabase.auth.getSession();
         const activeWs = typeof window !== 'undefined' 
           ? (localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('impersonated_tenant_id') || '')
@@ -226,17 +239,27 @@ export default function LeadOwnerSelect({
 
         if (membersList.length > 0) {
           cachedLeadOwnerMembers = membersList;
-          setFetchedMembers(membersList);
+          cachedLeadOwnerFetchAt = Date.now();
           try {
             localStorage.setItem('sc_cached_lead_owner_members', JSON.stringify(membersList));
           } catch (_) {}
         }
+        return membersList;
+        })();
+
+        const result = await inFlightLeadOwnerPromise;
+        if (isMountedLocal && result.length > 0) {
+          setFetchedMembers(result);
+        }
       } catch (err) {
         console.warn('Error fetching lead owner team members:', err);
+      } finally {
+        inFlightLeadOwnerPromise = null;
       }
     };
 
     fetchCrew();
+    return () => { isMountedLocal = false; };
   }, []);
 
   // Consolidate & Deduplicate Team Members
