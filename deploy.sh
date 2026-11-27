@@ -11,6 +11,8 @@ rm -f /var/www/fw-core/.next/lock* 2>/dev/null || true
 rm -rf /var/www/fw-core/node_modules/.zod* /var/www/fw-core/node_modules/.*-* 2>/dev/null || true
 
 echo "Fetching latest changes..."
+# Safety snapshot tag before reset
+git tag -f "pre-deploy-safety-$(date +%Y%m%d%H%M%S)" HEAD 2>/dev/null || true
 git fetch origin main
 git reset --hard origin/main
 

@@ -779,7 +779,7 @@ export default function FinancePage() {
         return;
       }
 
-      const apiData = await authFetchJson(`/api/workspace/finance?workspace_id=${encodeURIComponent(workspaceId)}`);
+      const apiData = await authFetchJson(`/api/workspace/finance?workspace_id=${encodeURIComponent(workspaceId)}&fresh=1`);
       const clientList: WorkspaceClient[] = Array.isArray(apiData.clients) ? [...apiData.clients] : [];
 
       const leadsData: any[] = Array.isArray(apiData.leads) ? apiData.leads : [];
