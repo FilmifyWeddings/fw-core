@@ -239,118 +239,62 @@ export default function PostProductionPage() {
         console.warn('[PostProduction] API fallback to direct Supabase queries:', apiErr);
       }
 
-      // Query 1: Team Members
-      let fwQuery = supabase
-        .from('fw_team_members')
-        .select('*');
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        fwQuery = fwQuery.or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
-      }
-
-      // Query 2: Workspace members API
+      // Workspace members & event types (fast metadata)
       const wsMembersPromise = fetch(`/api/workspace/members?workspace_id=${effectiveWsId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       }).then(r => r.json()).catch(() => ({}));
-
-      // Query 3: Event Types
       const evTypesPromise = fetchWorkspaceEventTypes(effectiveWsId).catch(() => []);
 
-      // Query 4: Quotations
-      let qQuery = supabase
-        .from('quotations')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        qQuery = qQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
+      let fwRes: any, jsonMembers: any, evTypes: any, qRes: any, qDocRes: any, clientRes: any, leadsRes: any, fwProjectsRes: any, pppRes: any, ppDelivRes: any, configRes: any;
 
-      // Query 5: Quotation documents
-      let qDocQuery = supabase
-        .from('quotation_documents')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        qDocQuery = qDocQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
+      if (apiData) {
+        // Hydrate straight from server API without redundant heavy queries / 57014 statement timeouts
+        [jsonMembers, evTypes] = await Promise.all([wsMembersPromise, evTypesPromise]);
+        fwRes = { data: apiData.teamMembers || [] };
+        qRes = { data: apiData.quotations || [] };
+        qDocRes = { data: [] };
+        clientRes = { data: apiData.clients || [] };
+        leadsRes = { data: apiData.leads || [] };
+        fwProjectsRes = { data: apiData.fwProjects || [] };
+        pppRes = { data: apiData.pppData || [] };
+        ppDelivRes = { data: apiData.deliverables || [] };
+        configRes = { data: apiData.configs || [] };
+      } else {
+        // Direct fallback only when server API unavailable (strictly valid columns, scalar qDocs only)
+        let fwQuery = supabase.from('fw_team_members').select('*');
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') fwQuery = fwQuery.eq('user_id', effectiveWsId);
 
-      // Query 6: Workspace Clients
-      let clientQuery = supabase
-        .from('workspace_clients')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        clientQuery = clientQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
+        let qQuery = supabase.from('quotations').select('*').order('created_at', { ascending: false });
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') qQuery = qQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
 
-      // Query 7: Leads
-      let leadsQuery = supabase
-        .from('leads')
-        .select('*')
-        .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)')
-        .order('created_at', { ascending: false });
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        leadsQuery = leadsQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
+        let qDocQuery = supabase
+          .from('quotation_documents')
+          .select('id, template_id, lead_id, version, lead_version, created_at, updated_at')
+          .order('created_at', { ascending: false });
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') qDocQuery = qDocQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
 
-      // Query 8: FW Projects
-      let fwProjectsQuery = supabase
-        .from('fw_projects')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        fwProjectsQuery = fwProjectsQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
+        let clientQuery = supabase.from('workspace_clients').select('*').order('created_at', { ascending: false });
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') clientQuery = clientQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
 
-      // Query 9: Post Production Projects
-      let pppQuery = supabase
-        .from('post_production_projects')
-        .select('*');
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        pppQuery = pppQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
+        let leadsQuery = supabase.from('leads').select('*').or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)').order('created_at', { ascending: false });
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') leadsQuery = leadsQuery.eq('workspace_id', effectiveWsId);
 
-      // Query 10: Deliverables
-      let ppDelivQuery = supabase
-        .from('post_production_deliverables')
-        .select('*');
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        ppDelivQuery = ppDelivQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
-      }
+        let fwProjectsQuery = supabase.from('fw_projects').select('*').order('created_at', { ascending: false });
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') fwProjectsQuery = fwProjectsQuery.eq('user_id', effectiveWsId);
 
-      // Query 11: Config
-      let configQuery = supabase
-        .from('post_production_project_config')
-        .select('*');
-      if (effectiveWsId && effectiveWsId !== 'ws_demo') {
-        configQuery = configQuery.eq('workspace_id', effectiveWsId);
-      }
+        let pppQuery = supabase.from('post_production_projects').select('*');
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') pppQuery = pppQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
 
-      // Run all queries simultaneously
-      const [
-        fwRes,
-        jsonMembers,
-        evTypes,
-        qRes,
-        qDocRes,
-        clientRes,
-        leadsRes,
-        fwProjectsRes,
-        pppRes,
-        ppDelivRes,
-        configRes,
-      ] = await Promise.all([
-        fwQuery,
-        wsMembersPromise,
-        evTypesPromise,
-        qQuery,
-        qDocQuery,
-        clientQuery,
-        leadsQuery,
-        fwProjectsQuery,
-        pppQuery,
-        ppDelivQuery,
-        configQuery,
-      ]);
+        let ppDelivQuery = supabase.from('post_production_deliverables').select('*');
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') ppDelivQuery = ppDelivQuery.or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`);
+
+        let configQuery = supabase.from('post_production_project_config').select('*');
+        if (effectiveWsId && effectiveWsId !== 'ws_demo') configQuery = configQuery.eq('workspace_id', effectiveWsId);
+
+        [fwRes, jsonMembers, evTypes, qRes, qDocRes, clientRes, leadsRes, fwProjectsRes, pppRes, ppDelivRes, configRes] = await Promise.all([
+          fwQuery, wsMembersPromise, evTypesPromise, qQuery, qDocQuery, clientQuery, leadsQuery, fwProjectsQuery, pppQuery, ppDelivQuery, configQuery,
+        ]);
+      }
 
       // Process Team Members
       const fwData = fwRes?.data;

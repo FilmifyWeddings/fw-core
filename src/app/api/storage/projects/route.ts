@@ -37,29 +37,29 @@ export async function GET(req: NextRequest) {
       const existingLeadIds = new Set((projects || []).map(p => String(p.lead_id || '')));
       const existingNames = new Set((projects || []).map(p => (p.client_name || '').toLowerCase().trim()));
 
-      // 1. Query leads by status, stage, or client_id
+      // 1. Query leads by valid status / stage_id
       const { data: bookedLeads } = await supabaseAdmin
         .from('leads')
-        .select('id, name, event_date, event_type, workspace_id, client_id, budget, status, stage, stage_id, raw_payload')
+        .select('id, name, event_date, event_type, workspace_id, client_id, budget, status, stage_id, raw_payload')
         .or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`)
-        .or('status.eq.booked,status.eq.closed,status.eq.converted,stage.eq.booked,stage_id.eq.booked,status.ilike.%book%,stage.ilike.%book%')
+        .or('status.eq.booked,status.eq.closed,status.eq.converted,status.ilike.%book%')
         .order('created_at', { ascending: false })
         .limit(100);
 
       // 2. Also query leads that have client_id set (converted clients)
       const { data: clientLeads } = await supabaseAdmin
         .from('leads')
-        .select('id, name, event_date, event_type, workspace_id, client_id, budget, status, stage, stage_id, raw_payload')
+        .select('id, name, event_date, event_type, workspace_id, client_id, budget, status, stage_id, raw_payload')
         .or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`)
         .not('client_id', 'is', null)
         .order('created_at', { ascending: false })
         .limit(100);
 
-      // 3. Query Bookings & Events (fw_projects)
+      // 3. Query Bookings & Events (fw_projects â€” valid schema columns only)
       const { data: bookingProjects } = await supabaseAdmin
         .from('fw_projects')
-        .select('id, client_name, main_date, main_venue, workspace_id, user_id, client_id, lead_id')
-        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
+        .select('id, client_name, main_date, main_venue, user_id, client_id')
+        .eq('user_id', workspaceId)
         .order('created_at', { ascending: false })
         .limit(100);
 

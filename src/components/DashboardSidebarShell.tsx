@@ -811,7 +811,7 @@ export function DashboardSidebarShell({ children }: SidebarLayoutProps) {
             <>
               <Link
                 href={isOwner ? "/workspace" : formatPathWithStudio("/assigned-shoots")}
-                prefetch={false}
+                prefetch={true}
                 className="flex items-center gap-3 overflow-hidden group active:scale-[0.98] transition-transform select-none"
               >
                 <StudioCoreBrandIcon className="w-9 h-9" isCollapsed={false} />
@@ -950,7 +950,7 @@ export function DashboardSidebarShell({ children }: SidebarLayoutProps) {
               <div key={item.id} className="relative group">
                 <Link
                   href={formatPathWithStudio(item.path)}
-                  prefetch={false}
+                  prefetch={true}
                   suppressHydrationWarning
                   onMouseEnter={() => {
                     try { router.prefetch(formatPathWithStudio(item.path)); } catch (_) {}
@@ -1316,7 +1316,7 @@ export function DashboardSidebarShell({ children }: SidebarLayoutProps) {
                     <div key={item.id}>
                       <Link
                         href={formatPathWithStudio(item.path)}
-                        prefetch={false}
+                        prefetch={true}
                         suppressHydrationWarning
                         onTouchStart={() => {
                           try { router.prefetch(formatPathWithStudio(item.path)); } catch (_) {}

@@ -154,10 +154,10 @@ export async function GET(req: NextRequest) {
     try {
       const { data: projects } = await supabaseAdmin
         .from('fw_projects')
-        .select('user_id, workspace_id');
+        .select('user_id');
       if (projects) {
         projects.forEach((p) => {
-          const id = p.workspace_id || p.user_id;
+          const id = p.user_id;
           if (id) {
             projectsCountMap[id] = (projectsCountMap[id] || 0) + 1;
           }

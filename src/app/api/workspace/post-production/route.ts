@@ -46,11 +46,11 @@ export async function GET(req: NextRequest) {
         .or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`)
         .order('created_at', { ascending: false }),
 
-      // FW Projects (Shoot Calendar Projects)
+      // FW Projects (Shoot Calendar Projects â€” valid schema columns only: no lead_id / workspace_id)
       supabaseAdmin
         .from('fw_projects')
-        .select('id, client_name, project_manager_id, project_manager_name, main_date, status, lead_id, user_id, workspace_id')
-        .or(`user_id.eq.${effectiveWsId},workspace_id.eq.${effectiveWsId}`)
+        .select('id, client_id, client_name, project_manager_id, project_manager_name, main_date, status, user_id')
+        .eq('user_id', effectiveWsId)
         .order('created_at', { ascending: false }),
 
       // Post Production Projects
@@ -71,11 +71,11 @@ export async function GET(req: NextRequest) {
         .select('*')
         .eq('workspace_id', effectiveWsId),
 
-      // Team Members
+      // Team Members (valid schema columns only: phone_number, user_id)
       supabaseAdmin
         .from('fw_team_members')
-        .select('id, name, primary_role, primary_type, member_types, phone, user_id, workspace_id')
-        .or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`),
+        .select('id, name, primary_role, primary_type, member_types, phone_number, email, avatar_url, user_id')
+        .eq('user_id', effectiveWsId),
 
       // Quotations
       supabaseAdmin
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
     const pppData = pppRes.data || [];
     const deliverables = ppDelivRes.data || [];
     const configs = configRes.data || [];
-    const teamMembers = teamMembersRes.data || [];
+    const teamMembers = (teamMembersRes.data || []).map((m: any) => ({ ...m, phone: m.phone || m.phone_number || '' }));
     const quotations = qRes.data || [];
 
     // Lookup Maps
@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
     const fwMap = new Map<string, any>();
     fwProjects.forEach(fp => {
       if (fp.id) fwMap.set(fp.id, fp);
-      if (fp.lead_id) fwMap.set(fp.lead_id, fp);
+      if (fp.client_id) fwMap.set(fp.client_id, fp);
       if (fp.client_name) fwMap.set(fp.client_name.toLowerCase().trim(), fp);
     });
 

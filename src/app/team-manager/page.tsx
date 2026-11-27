@@ -444,8 +444,15 @@ export default function TeamManagerPage() {
         newValue: memberName || 'Unassigned',
         metadata: { pmId: memberId, pmName: memberName }
       }).catch(() => {});
-    } catch (err) {
+    } catch (err: any) {
       console.error('[TeamManager] Error updating PM in Supabase:', err);
+      const prevProj = projects.find(p => p.id === projectId);
+      setProjects(prev => prev.map(p => p.id === projectId ? {
+        ...p,
+        project_manager_id: prevProj?.project_manager_id ?? null,
+        project_manager_name: prevProj?.project_manager_name ?? null,
+      } : p));
+      alert('Failed to update Project Manager: ' + (err?.message || 'Please check your connection and try again.'));
     }
   };
 
@@ -952,7 +959,7 @@ export default function TeamManagerPage() {
         avatar_url: cleanMemberData.avatar_url || null,
         default_daily_rate: cleanMemberData.default_daily_rate || 0,
         default_currency: cleanMemberData.default_currency || 'INR',
-        ...(currentUserId ? { user_id: currentUserId } : {})
+        ...((workspaceId || currentUserId) ? { user_id: workspaceId || currentUserId } : {})
       };
 
       if (editingMember) {
@@ -975,15 +982,16 @@ export default function TeamManagerPage() {
         if (insertErr) throw insertErr;
 
         const effectiveMemberId = insertedMember?.id || memberIdToUse;
-        if (activeAssignmentForMember?.assignmentId && effectiveMemberId) {
+        const rawAssignId = String(activeAssignmentForMember?.assignmentId || '');
+        if (rawAssignId && !rawAssignId.includes('-role-') && effectiveMemberId) {
           await supabase
             .from('fw_assignments')
-            .update({ 
+            .update({
               assigned_member_id: effectiveMemberId,
               assigned_member_name: cleanMemberData.name,
-              ...(currentUserId ? { user_id: currentUserId } : {})
+              ...((workspaceId || currentUserId) ? { user_id: workspaceId || currentUserId } : {})
             })
-            .eq('id', activeAssignmentForMember.assignmentId);
+            .eq('id', rawAssignId);
         }
       }
 
@@ -1065,49 +1073,7 @@ export default function TeamManagerPage() {
 
         (async () => {
           try {
-            const cleanAssignId = String(assignmentId || '');
-            if (cleanAssignId && !cleanAssignId.includes('-role-')) {
-              await supabase
-                .from('fw_assignments')
-                .update({
-                  assigned_member_id: null,
-                  assigned_member_name: null,
-                  assigned_member_phone: null,
-                  agreed_amount: 0,
-                  advance_amount: 0,
-                  paid_amount: 0,
-                  balance_amount: 0,
-                  status: 'pending',
-                  payment_status: 'pending',
-                  notes: null
-                })
-                .eq('id', cleanAssignId);
-            } else if (activeAssign.sub_event_id) {
-              let q = supabase
-                .from('fw_assignments')
-                .update({
-                  assigned_member_id: null,
-                  assigned_member_name: null,
-                  assigned_member_phone: null,
-                  agreed_amount: 0,
-                  advance_amount: 0,
-                  paid_amount: 0,
-                  balance_amount: 0,
-                  status: 'pending',
-                  payment_status: 'pending',
-                  notes: null
-                })
-                .eq('sub_event_id', activeAssign.sub_event_id);
-
-              if (activeAssign.assigned_member_id) {
-                q = q.eq('assigned_member_id', activeAssign.assigned_member_id);
-              } else if (activeAssign.required_role) {
-                q = q.eq('required_role', activeAssign.required_role);
-              }
-              await q;
-            }
-
-            await unassignCrewSlot({
+            const unres = await unassignCrewSlot({
               workspaceId: workspaceId || currentUserId || '',
               eventId: activeAssign.project_id || undefined,
               subEventId: activeAssign.sub_event_id || undefined,
@@ -1116,8 +1082,14 @@ export default function TeamManagerPage() {
               roleName: activeAssign.required_role,
               teamMemberId: activeAssign.assigned_member_id || undefined
             });
-          } catch (err) {
+            if (!unres?.success) {
+              alert('Failed to unassign crew member: ' + (unres?.error || 'Please try again.'));
+              fetchAllData(undefined, true);
+            }
+          } catch (err: any) {
             console.error('[TeamManager] Unassignment error:', err);
+            alert('Failed to unassign crew member: ' + (err?.message || 'Please try again.'));
+            fetchAllData(undefined, true);
           }
         })();
         return;
@@ -4211,32 +4183,41 @@ export default function TeamManagerPage() {
                     const targetSubEventId = whatsappModalData.subEvent?.id || savedData.subEventId;
                     if (targetSubEventId && se.id !== targetSubEventId) return se;
 
+                    let matchedExisting = false;
+                    const resolvedAssignObj = {
+                      id: savedData.assignmentId || whatsappModalData.assignmentId,
+                      project_id: proj.id,
+                      sub_event_id: se.id,
+                      required_role: savedData.role || whatsappModalData.role,
+                      assigned_member_id: whatsappModalData.member?.id || (savedData.savedAssignment as any)?.assigned_member_id,
+                      assigned_member_name: whatsappModalData.member?.name || (savedData.savedAssignment as any)?.assigned_member_name,
+                      assigned_member_phone: whatsappModalData.member?.phone_number || (whatsappModalData.member as any)?.phone || (savedData.savedAssignment as any)?.assigned_member_phone,
+                      fw_team_members: whatsappModalData.member || (savedData.savedAssignment as any)?.fw_team_members,
+                      status: 'assigned',
+                      agreed_amount: savedData.agreedAmount,
+                      paid_amount: savedData.advancePaid,
+                      advance_amount: savedData.advancePaid,
+                      balance_amount: savedData.balanceDue,
+                      payment_status: savedData.status || (savedData.balanceDue <= 0 && savedData.agreedAmount > 0 ? 'completed' : savedData.advancePaid > 0 ? 'partial' : 'pending'),
+                      ...(savedData.savedAssignment ? { ...savedData.savedAssignment } : {}),
+                    };
+
                     const updated = (se.fw_assignments || []).map(a => {
                       const isMatch =
                         (savedData.assignmentId && a.id === savedData.assignmentId) ||
                         (whatsappModalData.assignmentId && a.id === whatsappModalData.assignmentId) ||
-                        (whatsappModalData.role && a.required_role?.toLowerCase() === whatsappModalData.role.toLowerCase()) ||
-                        (savedData.role && a.required_role?.toLowerCase() === savedData.role.toLowerCase());
+                        (!matchedExisting && whatsappModalData.role && a.required_role?.toLowerCase() === whatsappModalData.role.toLowerCase() && (!a.assigned_member_id || a.assigned_member_id === resolvedAssignObj.assigned_member_id)) ||
+                        (!matchedExisting && savedData.role && a.required_role?.toLowerCase() === savedData.role.toLowerCase() && (!a.assigned_member_id || a.assigned_member_id === resolvedAssignObj.assigned_member_id));
 
                       if (isMatch) {
-                        return {
-                          ...a,
-                          id: savedData.assignmentId || a.id,
-                          assigned_member_id: whatsappModalData.member?.id || (savedData.savedAssignment as any)?.assigned_member_id || a.assigned_member_id,
-                          assigned_member_name: whatsappModalData.member?.name || (savedData.savedAssignment as any)?.assigned_member_name || (a as any).assigned_member_name,
-                          assigned_member_phone: whatsappModalData.member?.phone_number || (whatsappModalData.member as any)?.phone || (a as any).assigned_member_phone,
-                          fw_team_members: whatsappModalData.member || a.fw_team_members,
-                          status: 'assigned',
-                          agreed_amount: savedData.agreedAmount,
-                          paid_amount: savedData.advancePaid,
-                          advance_amount: savedData.advancePaid,
-                          balance_amount: savedData.balanceDue,
-                          payment_status: savedData.status || (savedData.balanceDue <= 0 && savedData.agreedAmount > 0 ? 'completed' : savedData.advancePaid > 0 ? 'partial' : 'pending'),
-                          ...(savedData.savedAssignment ? { ...savedData.savedAssignment } : {})
-                        };
+                        matchedExisting = true;
+                        return { ...a, ...resolvedAssignObj };
                       }
                       return a;
                     });
+                    if (!matchedExisting) {
+                      updated.push(resolvedAssignObj as any);
+                    }
                     return { ...se, fw_assignments: updated };
                   })
                 };

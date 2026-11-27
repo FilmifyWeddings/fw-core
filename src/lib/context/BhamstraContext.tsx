@@ -55,6 +55,8 @@ interface BhamstraContextType {
   sessionShootState: 'reached' | 'started' | 'end' | 'completed' | null;
   workspaceConfig: WorkspaceConfig;
   loading: boolean;
+  isReady: boolean;
+  isSessionRefreshing: boolean;
   setActiveEventId: (eventId: string | null) => void;
   setCurrentClientStatus: (status: 'lead' | 'client' | 'event' | null) => void;
   setSessionShootState: (state: 'reached' | 'started' | 'end' | 'completed' | null) => void;
@@ -116,6 +118,8 @@ const DEFAULT_FALLBACK_CONTEXT: BhamstraContextType = {
   sessionShootState: null,
   workspaceConfig: {},
   loading: false,
+  isReady: true,
+  isSessionRefreshing: false,
   setActiveEventId: () => {},
   setCurrentClientStatus: () => {},
   setSessionShootState: () => {},
@@ -141,6 +145,7 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
   const [currentClientStatus, setCurrentClientStatus] = useState<'lead' | 'client' | 'event' | null>(null);
   const [sessionShootState, setSessionShootState] = useState<'reached' | 'started' | 'end' | 'completed' | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isSessionRefreshing, setIsSessionRefreshing] = useState<boolean>(false);
   const [workspaceConfig, setWorkspaceConfig] = useState<WorkspaceConfig>({
     themeColor: '#f97316',
     pinLockEnabled: false,
@@ -154,6 +159,10 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
     try {
       const cachedWsJson = localStorage.getItem('sc_cached_workspaces');
       const cachedActiveId = localStorage.getItem('sc_active_workspace_id');
+      const cachedUserId = localStorage.getItem('sc_user_id');
+      const cachedUserEmail = localStorage.getItem('sc_user_email');
+      if (cachedUserId) setUserId(cachedUserId);
+      if (cachedUserEmail) setUserEmail(cachedUserEmail);
       const isPure = localStorage.getItem('sc_is_pure_freelancer') === 'true';
       if (cachedWsJson) {
         const parsed = JSON.parse(cachedWsJson);
@@ -181,15 +190,22 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
     hasFetchedRef.current = true;
 
     try {
+      setIsSessionRefreshing(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
-        setUserId(null);
-        setUserEmail(null);
-        setUserName(null);
-        setWorkspaceId(null);
-        setAvailableWorkspaces([]);
-        setActiveWorkspace(null);
+        // 🛡️ CRITICAL MOBILE HYDRATION GUARD: Never wipe active workspace on sleep-wake or token refresh!
+        // Only clear state if there is truly no cached user or session
+        const storedUid = typeof window !== 'undefined' ? localStorage.getItem('sc_user_id') : null;
+        if (!storedUid && !userId) {
+          setUserId(null);
+          setUserEmail(null);
+          setUserName(null);
+          setWorkspaceId(null);
+          setAvailableWorkspaces([]);
+          setActiveWorkspace(null);
+        }
         setLoading(false);
+        setIsSessionRefreshing(false);
         return;
       }
 
@@ -208,6 +224,10 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
 
       setUserId(uId);
       setUserEmail(uEmail || null);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sc_user_id', uId);
+        if (uEmail) localStorage.setItem('sc_user_email', uEmail);
+      }
       setUserName(cachedName || metaName || activeWorkspace?.memberName || null);
 
       // 1. Fetch user's own profile safely (Safe column selection)
@@ -378,10 +398,44 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
       console.warn('[BhamstraContext] Realtime channel subscription safe note:', rtErr);
     }
 
+    // Supabase Auth State Change Listener (TOKEN_REFRESHED, SIGNED_IN, SIGNED_OUT)
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        if (session?.user) {
+          setUserId(session.user.id);
+          setUserEmail(session.user.email || null);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('sc_user_id', session.user.id);
+            if (session.user.email) localStorage.setItem('sc_user_email', session.user.email);
+            window.dispatchEvent(new CustomEvent('sc_session_refreshed', { detail: session }));
+          }
+          refreshContext(true);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setUserId(null);
+        setUserEmail(null);
+        setWorkspaceId(null);
+        setActiveWorkspace(null);
+        setAvailableWorkspaces([]);
+        if (typeof window !== 'undefined') {
+          const prevWsId = localStorage.getItem('sc_active_workspace_id') || workspaceId || undefined;
+          localStorage.removeItem('sc_user_id');
+          localStorage.removeItem('sc_user_email');
+          localStorage.removeItem('sc_cached_workspaces');
+          localStorage.removeItem('sc_active_workspace_id');
+          try {
+            const { clearWorkspaceQueryCache } = await import('@/providers/QueryProvider');
+            await clearWorkspaceQueryCache(prevWsId);
+          } catch (_) {}
+        }
+      }
+    });
+
     if (typeof window !== 'undefined') {
       window.addEventListener('sc_profile_updated', handleProfileUpdated);
       return () => {
         window.removeEventListener('sc_profile_updated', handleProfileUpdated);
+        authSub?.unsubscribe();
         if (channel) {
           try { supabase.removeChannel(channel); } catch (_) {}
         }
@@ -461,6 +515,8 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
         sessionShootState,
         workspaceConfig,
         loading,
+        isReady: Boolean(!loading && (userId || (typeof window !== 'undefined' && localStorage.getItem('sc_user_id'))) && (workspaceId || activeWorkspace?.workspaceId)),
+        isSessionRefreshing,
         setActiveEventId,
         setCurrentClientStatus,
         setSessionShootState,

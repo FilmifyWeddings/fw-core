@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { VersionGuard } from "@/components/VersionGuard";
 import { AuthRedirectGuard } from "@/components/AuthRedirectGuard";
 import { WorkspaceProvider } from "@/lib/context/BhamstraContext";
+import { QueryProvider } from "@/providers/QueryProvider";
 import { WorkspaceDataProvider } from "@/context/WorkspaceDataContext";
 import { RouteProgressBar } from "@/components/ui/RouteProgressBar";
 
@@ -128,9 +129,11 @@ export default function RootLayout({
                       var assetSrc = (target && (target.src || target.href)) || '';
                       if (isAsset && assetSrc.indexOf('/_next/static/') !== -1) {
                         var lastReload = safeGet('sc_chunk_reload');
+                        var reloadCount = parseInt(safeGet('sc_chunk_reload_count') || '0', 10);
                         var now = Date.now();
-                        if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
+                        if (reloadCount < 2 && (!lastReload || (now - parseInt(lastReload, 10)) > 8000)) {
                           safeSet('sc_chunk_reload', now.toString());
+                          safeSet('sc_chunk_reload_count', (reloadCount + 1).toString());
                           window.location.reload();
                         }
                       }
@@ -154,9 +157,11 @@ export default function RootLayout({
                       var msg = (e.reason && (e.reason.message || e.reason.name || '')) || '';
                       if (msg.indexOf('ChunkLoadError') !== -1 || msg.indexOf('Loading chunk') !== -1 || msg.indexOf('Failed to fetch dynamically imported module') !== -1) {
                         var lastReload = safeGet('sc_chunk_reload');
+                        var reloadCount = parseInt(safeGet('sc_chunk_reload_count') || '0', 10);
                         var now = Date.now();
-                        if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
+                        if (reloadCount < 2 && (!lastReload || (now - parseInt(lastReload, 10)) > 8000)) {
                           safeSet('sc_chunk_reload', now.toString());
+                          safeSet('sc_chunk_reload_count', (reloadCount + 1).toString());
                           window.location.reload();
                         }
                       }
@@ -212,6 +217,7 @@ export default function RootLayout({
           <RouteProgressBar />
         </Suspense>
         <AuthRedirectGuard />
+        <QueryProvider>
         <WorkspaceProvider>
           <WorkspaceDataProvider>
             <Suspense fallback={<div className="min-h-screen w-full bg-zinc-50 dark:bg-[#070708]" />}>
@@ -225,6 +231,7 @@ export default function RootLayout({
             </Suspense>
           </WorkspaceDataProvider>
         </WorkspaceProvider>
+        </QueryProvider>
       </body>
     </html>
   );

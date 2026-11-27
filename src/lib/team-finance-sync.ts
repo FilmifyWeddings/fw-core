@@ -1178,85 +1178,33 @@ export async function unassignCrewSlot(params: {
   roleShortCode?: string;
   roleName?: string;
   teamMemberId?: string;
-}): Promise<{ success: boolean }> {
+}): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Try Supabase RPC unassign_crew_slot_strict (Complete multi-table purge)
-    try {
-      await supabase.rpc('unassign_crew_slot_strict', {
-        p_workspace_id: params.workspaceId,
-        p_event_id: params.eventId,
-        p_sub_event_id: String(params.subEventId || ''),
-        p_role_short_code: params.roleShortCode || params.roleName?.slice(0, 4) || '',
-        p_member_id: params.teamMemberId || null
-      });
-    } catch (_) {}
+    const { authFetchJson } = await import('@/lib/client-auth-fetch');
+    const effectiveWsId =
+      params.workspaceId ||
+      (typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') || '' : '');
 
-    // 1.5. Try fallback RPC unassign_crew_slot
-    try {
-      await supabase.rpc('unassign_crew_slot', {
-        p_workspace_id: params.workspaceId,
-        p_event_id: params.eventId,
-        p_sub_event_id: String(params.subEventId || ''),
-        p_role_short_code: params.roleShortCode || params.roleName?.slice(0, 4) || ''
-      });
-    } catch (_) {}
-
-    // 2. Direct clean up in fw_assignments
-    const cleanAssignId = String(params.assignmentId || '');
-    if (cleanAssignId && !cleanAssignId.includes('-role-')) {
-      await supabase.from('fw_assignments').update({
-        assigned_member_id: null,
-        assigned_member_name: null,
-        agreed_amount: 0,
-        advance_amount: 0,
-        paid_amount: 0,
-        balance_amount: 0,
-        status: 'pending',
-        payment_status: 'pending',
-        notes: null
-      }).eq('id', cleanAssignId);
-    } else if (params.subEventId && params.roleName) {
-      await supabase.from('fw_assignments').update({
-        assigned_member_id: null,
-        assigned_member_name: null,
-        agreed_amount: 0,
-        advance_amount: 0,
-        paid_amount: 0,
-        balance_amount: 0,
-        status: 'pending',
-        payment_status: 'pending',
-        notes: null
-      }).eq('sub_event_id', params.subEventId).eq('required_role', params.roleName);
-    }
-
-    // 3. Purge from crew_assignments_finance and team_event_payouts if memberId was given
-    if (params.teamMemberId) {
-      try {
-        let q = supabase.from('crew_assignments_finance').delete().eq('team_member_id', params.teamMemberId);
-        if (params.subEventId) q = q.eq('sub_event_id', params.subEventId);
-        else if (params.eventId) q = q.eq('event_id', params.eventId);
-        if (params.roleName) q = q.eq('role_name', params.roleName);
-        await q;
-      } catch (_) {}
-      try {
-        let q = supabase.from('team_event_payouts').delete().eq('member_id', params.teamMemberId);
-        if (params.subEventId) q = q.eq('sub_event_id', params.subEventId);
-        else if (params.eventId) q = q.eq('project_id', params.eventId);
-        if (params.roleName) q = q.eq('role', params.roleName);
-        await q;
-      } catch (_) {}
-    }
+    await authFetchJson('/api/assignments/commercials', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'unassign',
+        ...params,
+        workspaceId: effectiveWsId,
+      }),
+    });
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('team_finance_updated', {
         detail: { memberId: params.teamMemberId, unassigned: true }
       }));
+      window.dispatchEvent(new CustomEvent('finance_expenses_updated'));
     }
 
     return { success: true };
-  } catch (err) {
+  } catch (err: any) {
     console.error('[team-finance-sync] unassignCrewSlot error:', err);
-    return { success: false };
+    return { success: false, error: err?.message || 'Failed to unassign crew slot' };
   }
 }
 

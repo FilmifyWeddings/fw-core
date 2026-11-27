@@ -216,15 +216,23 @@ export default function WorkspaceHubPage() {
           setUserName(resolvedName);
           memCachedHubUserName = resolvedName;
 
-          const { count: realLeads } = await supabase
+          const targetWsId = (typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') : null) || session.user.id;
+
+          const { count: realLeads, error: leadsCountErr } = await supabase
             .from('leads')
             .select('*', { count: 'exact', head: true })
-            .eq('workspace_id', session.user.id);
+            .eq('workspace_id', targetWsId);
 
-          const { data: quotes } = await supabase
+          const { data: quotes, error: quotesErr } = await supabase
             .from('quotations')
             .select('total_amount, status')
-            .eq('workspace_id', session.user.id);
+            .eq('workspace_id', targetWsId);
+
+          // 🛡️ CRITICAL MOBILE HYDRATION GUARD: Never wipe stats to 0 on sleep-wake or network error
+          if ((leadsCountErr || quotesErr) && memCachedHubStats) {
+            console.warn('[WorkspaceHub] Network or auth refresh during stats fetch, retaining cached stats');
+            return;
+          }
 
           const lCount = realLeads || 0;
           let totRevenue = 0;
@@ -268,12 +276,23 @@ export default function WorkspaceHubPage() {
         memCachedHubUserName = name;
       }
     };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadDashboardData();
+      }
+    };
     if (typeof window !== 'undefined') {
       window.addEventListener('sc_profile_updated', handleProfileUpdate);
+      window.addEventListener('sc_session_refreshed', loadDashboardData);
+      window.addEventListener('sc_workspace_switched', loadDashboardData);
+      document.addEventListener('visibilitychange', handleVisibility);
     }
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('sc_profile_updated', handleProfileUpdate);
+        window.removeEventListener('sc_session_refreshed', loadDashboardData);
+        window.removeEventListener('sc_workspace_switched', loadDashboardData);
+        document.removeEventListener('visibilitychange', handleVisibility);
       }
     };
   }, []);

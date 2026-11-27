@@ -167,7 +167,7 @@ let memCachedPreferences: any = null;
 
 export default function LeadsPage() {
   const router = useRouter();
-  const { workspaceId, workspaceName, isOwner, userRole, permissions } = useWorkspace();
+  const { workspaceId, workspaceName, isOwner, userRole, permissions, isReady } = useWorkspace();
   const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
@@ -295,7 +295,11 @@ export default function LeadsPage() {
       if (leadsAccess !== 'NONE' || isOwner) {
         await loadLeadsAndPreferences(effectiveWs);
       } else {
-        setLeads([]);
+        // 🛡️ CRITICAL GUARD: Only wipe leads if confirmed non-owner with verified NONE permissions
+        // Never wipe during mobile re-hydration while isReady is false!
+        if (isReady && !isOwner) {
+          setLeads([]);
+        }
         setLoading(false);
       }
     };
@@ -323,11 +327,19 @@ export default function LeadsPage() {
         }, 300);
       }
     };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        handleSync();
+      }
+    };
     if (typeof window !== 'undefined') {
       window.addEventListener('settings_updated', handleSync);
       window.addEventListener('leads_updated', handleSync);
       window.addEventListener('meta_sync_completed', handleSync);
       window.addEventListener('storage', handleSync);
+      window.addEventListener('sc_session_refreshed', handleSync);
+      window.addEventListener('sc_workspace_switched', handleSync);
+      document.addEventListener('visibilitychange', handleVisibility);
     }
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -336,6 +348,9 @@ export default function LeadsPage() {
         window.removeEventListener('leads_updated', handleSync);
         window.removeEventListener('meta_sync_completed', handleSync);
         window.removeEventListener('storage', handleSync);
+        window.removeEventListener('sc_session_refreshed', handleSync);
+        window.removeEventListener('sc_workspace_switched', handleSync);
+        document.removeEventListener('visibilitychange', handleVisibility);
       }
     };
   }, [userId]);
@@ -514,7 +529,7 @@ export default function LeadsPage() {
     if (!targetUserId) {
       setLoading(false);
       setLoadingMore(false);
-      setLeads([]);
+      // 🛡️ CRITICAL GUARD: Never wipe cached leads if targetUserId is temporarily resolving
       return;
     }
 
@@ -590,7 +605,8 @@ export default function LeadsPage() {
 
         if (leadsErr) {
           console.error('[Leads Direct Load Error]:', leadsErr);
-          if (pageNum === 0 && memCachedLeads.length === 0) setLeads([]);
+          // 🛡️ CRITICAL GUARD: Preserve existing leads on transient network or token-refresh error!
+          // Never blank out the UI to empty array on error.
         } else if (dbLeads) {
           setHasMore(from + dbLeads.length < (dbCount ?? dbLeads.length));
           sanitizedLeads = (dbLeads as any[]).map(l => {
@@ -1617,31 +1633,24 @@ export default function LeadsPage() {
 
     // 🚀 2. BACKGROUND SERVER PERSISTENCE
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
-
+      const { authFetchJson } = await import('@/lib/client-auth-fetch');
       let savedLead: Lead | null = null;
+      let lastSaveError: string = '';
+
       try {
-        const apiRes = await fetch(`/api/leads?workspace_id=${encodeURIComponent(targetWorkspace)}`, {
+        const json = await authFetchJson(`/api/leads?workspace_id=${encodeURIComponent(targetWorkspace)}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
           body: JSON.stringify(optimisticLead)
         });
-
-        if (apiRes.ok) {
-          const json = await apiRes.json();
-          if (json.success && json.lead) {
-            savedLead = json.lead as Lead;
-          }
+        if (json?.success && json?.lead) {
+          savedLead = json.lead as Lead;
         }
-      } catch (apiErr) {
-        console.warn('[handleCreateLead] Primary POST /api/leads failed, falling back to direct query:', apiErr);
+      } catch (apiErr: any) {
+        lastSaveError = apiErr?.message || 'API request failed';
+        console.warn('[handleCreateLead] Primary POST /api/leads failed, falling back to direct query:', lastSaveError);
       }
 
-      // Fallback: If API route was unreachable, direct insert with full schema fields
+      // Fallback: direct insert only if API failed
       if (!savedLead) {
         const disambiguatedLeadName = await getDisambiguatedLeadName(supabase, targetWorkspace, optimisticLead.name);
         const { data, error } = await supabase
@@ -1676,6 +1685,7 @@ export default function LeadsPage() {
         if (!error && data && data.length > 0) {
           savedLead = data[0] as Lead;
         } else if (error) {
+          lastSaveError = error.message || lastSaveError;
           console.error('[handleCreateLead Direct Insert Error]:', error);
         }
       }
@@ -1694,15 +1704,29 @@ export default function LeadsPage() {
           return updated;
         });
 
-        // Trigger real database automation endpoint
         fetch('/api/whatsapp/trigger-automation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lead: savedLead })
         }).catch(err => console.error('Error triggering WhatsApp automation:', err));
+      } else {
+        // Roll back failed optimistic lead and alert user loudly so it never silently disappears on refresh
+        setLeads(prev => {
+          const updated = prev.filter(l => l.id !== tempId);
+          memCachedLeads = updated;
+          if (typeof window !== 'undefined' && targetWorkspace) {
+            try {
+              localStorage.setItem(`sc_cached_leads_${targetWorkspace}`, JSON.stringify(updated));
+            } catch (_) {}
+          }
+          return updated;
+        });
+        alert('Failed to save lead: ' + (lastSaveError || 'Please refresh the page and sign in again.'));
       }
     } catch (err: any) {
       console.error('[handleCreateLead background persistence error]:', err);
+      setLeads(prev => prev.filter(l => l.id !== tempId));
+      alert('Failed to create lead: ' + (err?.message || 'Unknown error'));
     }
   };
 

@@ -35,9 +35,6 @@ export async function GET(
     const clientName = (clientRow?.name || '').trim();
 
     const fwOrParts = [`client_id.eq.${realClientId}`];
-    if (resolvedLeadId && resolvedLeadId !== realClientId) {
-      fwOrParts.push(`lead_id.eq.${resolvedLeadId}`);
-    }
     if (clientId !== realClientId) {
       fwOrParts.push(`client_id.eq.${clientId}`);
     }
@@ -47,9 +44,6 @@ export async function GET(
     }
 
     const ppOrParts = [`client_id.eq.${realClientId}`];
-    if (resolvedLeadId && resolvedLeadId !== realClientId) {
-      ppOrParts.push(`lead_id.eq.${resolvedLeadId}`);
-    }
     if (clientId !== realClientId) {
       ppOrParts.push(`client_id.eq.${clientId}`);
     }
@@ -57,11 +51,11 @@ export async function GET(
     const [fwProjectsRes, ppProjectsRes] = await Promise.all([
       supabaseAdmin
         .from('fw_projects')
-        .select('id, client_id, lead_id, client_name')
+        .select('id, client_id, client_name')
         .or(fwOrParts.join(',')),
       supabaseAdmin
         .from('post_production_projects')
-        .select('id, client_id, lead_id')
+        .select('id, client_id')
         .or(ppOrParts.join(',')),
     ]);
 
