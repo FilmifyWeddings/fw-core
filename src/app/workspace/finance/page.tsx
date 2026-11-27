@@ -800,7 +800,7 @@ export default function FinancePage() {
         if (matchedClient) {
           if (lead.final_quotation_id) (matchedClient as any).final_quotation_id = lead.final_quotation_id;
           if (!matchedClient.lead_id) matchedClient.lead_id = lead.id;
-        } else {
+        } else if (['booked', 'accepted', 'closed', 'converted'].includes(String(lead.status || '').toLowerCase())) {
           clientList.push({
             id: lead.id,
             lead_id: lead.id,

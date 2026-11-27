@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
         .from('leads')
         .select('id, name, phone, email, event_date, status, raw_payload, final_quotation_id, quotation_id, client_id, notes, created_at')
         .or(`workspace_id.eq.${effectiveWsId},created_by_user_id.eq.${effectiveWsId}`)
-        .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted,trash,trashed)')
+        .in('status', ['booked', 'Booked', 'accepted', 'Accepted', 'closed', 'Closed', 'converted', 'Converted', 'trash', 'trashed'])
         .order('created_at', { ascending: false })
         .limit(1000),
       // Fetch lightweight quotation_documents scalar metadata ONLY (never full-table content_json!)
