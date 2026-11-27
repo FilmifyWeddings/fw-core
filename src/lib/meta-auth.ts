@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import crypto from 'crypto';
+
+const authVerifyCache = new Map<string, { result: VerifiedAuthResult; expiresAt: number }>();
+function getJwtExpMs(jwt: string): number {
+  try {
+    const parts = jwt.split('.');
+    if (parts.length !== 3) return 0;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return typeof payload?.exp === 'number' ? payload.exp * 1000 : 0;
+  } catch { return 0; }
+}
 
 export interface VerifiedAuthResult {
   authorized: boolean;
@@ -90,6 +101,18 @@ export async function verifyMetaAuth(
           if (match) token = decodeCookieToken(match[1]);
         }
       }
+    }
+
+    const authCacheKey = token
+      ? crypto.createHash('sha256').update(token + '|' + (clientSuppliedWorkspaceId || '')).digest('hex')
+      : '';
+    if (authCacheKey) {
+      const hit = authVerifyCache.get(authCacheKey);
+      const now = Date.now();
+      if (hit && now < hit.expiresAt) {
+        return hit.result;
+      }
+      if (hit) authVerifyCache.delete(authCacheKey);
     }
 
     let authenticatedUserId: string | null = null;
@@ -231,11 +254,23 @@ export async function verifyMetaAuth(
       console.warn('[Profile Workspace Lookup Warning]:', profileErr);
     }
 
-    return {
+    const okResult: VerifiedAuthResult = {
       authorized: true,
       workspaceId: resolvedWorkspaceId,
       userId: authenticatedUserId,
     };
+    if (authCacheKey && token) {
+      const jwtExp = getJwtExpMs(token);
+      const ttl = jwtExp > Date.now() ? Math.min(Date.now() + 30_000, jwtExp - 5_000) : Date.now() + 15_000;
+      if (ttl > Date.now()) {
+        if (authVerifyCache.size >= 500) {
+          const oldest = authVerifyCache.keys().next().value;
+          if (oldest) authVerifyCache.delete(oldest);
+        }
+        authVerifyCache.set(authCacheKey, { result: okResult, expiresAt: ttl });
+      }
+    }
+    return okResult;
   } catch (err: any) {
     console.error('[Meta Security Guard Error]:', err.message);
     return {

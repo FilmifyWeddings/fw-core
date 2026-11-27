@@ -104,7 +104,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
       persistOptions={{
         persister,
         maxAge: 1000 * 60 * 60 * 24, // 24 hours
-        buster: 'sc_v2_20261127_live_repair_v1',
+        buster: 'sc_v2_20261127_live_repair_v2',
       }}
     >
       {children}

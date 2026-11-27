@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { invalidateWorkspaceCache } from '@/lib/server-swr-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,7 @@ interface LeadsCacheEntry {
   timestamp: number;
 }
 const leadsMemoryCache = new Map<string, LeadsCacheEntry>();
-const LEADS_CACHE_TTL_MS = 4000;
+const LEADS_CACHE_TTL_MS = 15000;
 
 export async function GET(req: NextRequest) {
   try {

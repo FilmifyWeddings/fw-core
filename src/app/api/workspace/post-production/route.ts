@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { getSwrCached, invalidateWorkspaceCache } from '@/lib/server-swr-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,11 @@ export async function GET(req: NextRequest) {
 
     const effectiveWsId = auth.workspaceId || requestedWsId;
 
+    const bypass = searchParams.get('fresh') === '1' || searchParams.get('_nocache') === 'true';
+    const { data: payload, cacheStatus } = await getSwrCached(
+      `pp_${effectiveWsId}`,
+      effectiveWsId,
+      async () => {
     // 1. Fetch all data in parallel with supabaseAdmin
     const [
       clientsRes,
@@ -141,7 +147,7 @@ export async function GET(req: NextRequest) {
       return 'Client Project';
     }
 
-    return NextResponse.json({
+    return {
       success: true,
       workspaceId: effectiveWsId,
       clients,
@@ -153,6 +159,12 @@ export async function GET(req: NextRequest) {
       teamMembers,
       quotations,
       resolveTrueClientNameHelper: true
+    };
+      },
+      { freshMs: 12_000, staleMs: 120_000, bypass }
+    );
+    return NextResponse.json(payload, {
+      headers: { 'X-Cache': cacheStatus, 'Cache-Control': 'private, max-age=10, stale-while-revalidate=60' }
     });
   } catch (err: any) {
     console.error('[API /workspace/post-production GET Error]:', err);

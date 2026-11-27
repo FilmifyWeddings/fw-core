@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { getSwrCached } from '@/lib/server-swr-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,7 @@ interface ProjectsCacheEntry {
   timestamp: number;
 }
 const projectsMemoryCache = new Map<string, ProjectsCacheEntry>();
-const CACHE_TTL_MS = 5000;
+const CACHE_TTL_MS = 12000;
 
 /**
  * GET /api/workspace/projects?workspace_id=...

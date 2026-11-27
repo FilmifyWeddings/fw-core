@@ -779,7 +779,7 @@ export default function FinancePage() {
         return;
       }
 
-      const apiData = await authFetchJson(`/api/workspace/finance?workspace_id=${encodeURIComponent(workspaceId)}&fresh=1`);
+      const apiData = await authFetchJson(`/api/workspace/finance?workspace_id=${encodeURIComponent(workspaceId)}`);
       const clientList: WorkspaceClient[] = Array.isArray(apiData.clients) ? [...apiData.clients] : [];
 
       const leadsData: any[] = Array.isArray(apiData.leads) ? apiData.leads : [];
@@ -1114,8 +1114,9 @@ export default function FinancePage() {
         const c = rec.client;
         const cId = c?.id || rec.client_id;
         const lId = c?.lead_id;
-        const qId = rec.final_quotation_id || (c as any)?.final_quotation_id;
-        const keys = [cId ? `id:${cId}` : null, lId ? `lead:${lId}` : null, qId ? `quote:${qId}` : null].filter(Boolean) as string[];
+        const isSyntheticLeadCard = String(rec.id || '').startsWith('fin_');
+        const qId = isSyntheticLeadCard ? (rec.final_quotation_id || (c as any)?.final_quotation_id) : null;
+        const keys = [cId ? `id:${cId}` : null, lId && isSyntheticLeadCard ? `lead:${lId}` : null, qId ? `quote:${qId}` : null].filter(Boolean) as string[];
         let incumbent: ClientFinanceRecord | undefined;
         for (const k of keys) {
           if (bestByKey.has(k)) { incumbent = bestByKey.get(k); break; }
@@ -1130,8 +1131,9 @@ export default function FinancePage() {
         const c = rec.client;
         const cId = c?.id || rec.client_id;
         const lId = c?.lead_id;
-        const qId = rec.final_quotation_id || (c as any)?.final_quotation_id;
-        const keys = [cId ? `id:${cId}` : null, lId ? `lead:${lId}` : null, qId ? `quote:${qId}` : null].filter(Boolean) as string[];
+        const isSyntheticLeadCard = String(rec.id || '').startsWith('fin_');
+        const qId = isSyntheticLeadCard ? (rec.final_quotation_id || (c as any)?.final_quotation_id) : null;
+        const keys = [cId ? `id:${cId}` : null, lId && isSyntheticLeadCard ? `lead:${lId}` : null, qId ? `quote:${qId}` : null].filter(Boolean) as string[];
         const chosen = (keys.map(k => bestByKey.get(k)).find(Boolean)) || rec;
         if (!emitted.has(chosen)) {
           emitted.add(chosen);

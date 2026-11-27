@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { getSwrCached, invalidateWorkspaceCache } from '@/lib/server-swr-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,12 +45,10 @@ export async function GET(req: NextRequest) {
     }
 
     const skipCache = searchParams.get('fresh') === '1';
-    const cached = !skipCache ? financeGetCache.get(effectiveWsId) : undefined;
-    if (cached && Date.now() - cached.ts < FINANCE_CACHE_TTL_MS) {
-      return NextResponse.json(cached.payload, {
-        headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=5, stale-while-revalidate=15' },
-      });
-    }
+    const { data: swrPayload, cacheStatus } = await getSwrCached(
+      `finance_${effectiveWsId}`,
+      effectiveWsId,
+      async () => {
 
     const [
       clients,
@@ -220,16 +219,13 @@ export async function GET(req: NextRequest) {
       auditLogs: auditRes.data || [],
     };
 
-    financeGetCache.set(effectiveWsId, { payload: responsePayload, ts: Date.now() });
-    if (financeGetCache.size > 50) {
-      const now = Date.now();
-      for (const [k, v] of financeGetCache.entries()) {
-        if (now - v.ts > FINANCE_CACHE_TTL_MS * 2) financeGetCache.delete(k);
-      }
-    }
+    return responsePayload;
+      },
+      { freshMs: 12_000, staleMs: 120_000, bypass: skipCache }
+    );
 
-    return NextResponse.json(responsePayload, {
-      headers: { 'X-Cache': 'MISS', 'Cache-Control': 'private, max-age=5, stale-while-revalidate=15' },
+    return NextResponse.json(swrPayload, {
+      headers: { 'X-Cache': cacheStatus, 'Cache-Control': 'private, max-age=10, stale-while-revalidate=60' },
     });
   } catch (err: any) {
     console.error('[API /api/workspace/finance GET] Error:', err);
@@ -254,6 +250,7 @@ export async function POST(req: NextRequest) {
 
     const action = body?.action;
     financeGetCache.delete(effectiveWsId);
+    invalidateWorkspaceCache(effectiveWsId);
 
     if (action === 'upsert_record') {
       const r = body.record || {};

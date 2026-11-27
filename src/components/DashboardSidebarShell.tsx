@@ -130,6 +130,32 @@ export function isPublicStandaloneRoute(pathname: string): boolean {
 
 export function DashboardSidebarShell({ children }: SidebarLayoutProps) {
   const router = useRouter();
+
+  // Prefetch core studio modules on idle so every menu click transitions instantaneously
+  useEffect(() => {
+    const PREFETCH_CORE_ROUTES = [
+      '/workspace',
+      '/leads',
+      '/workspace/clients',
+      '/workspace/bookings',
+      '/workspace/finance',
+      '/workspace/post-production',
+      '/workspace/team',
+      '/team-manager',
+    ];
+    const runPrefetch = () => {
+      for (const route of PREFETCH_CORE_ROUTES) {
+        try { router.prefetch(route); } catch (_) {}
+      }
+    };
+    const w = typeof window !== 'undefined' ? (window as any) : null;
+    if (w && typeof w.requestIdleCallback === 'function') {
+      const id = w.requestIdleCallback(runPrefetch, { timeout: 2500 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = setTimeout(runPrefetch, 800);
+    return () => clearTimeout(t);
+  }, [router]);
   const rawPathname = usePathname();
   const pathname = rawPathname || '';
   const searchParams = useSearchParams();

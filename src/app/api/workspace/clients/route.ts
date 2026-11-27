@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { getSwrCached } from '@/lib/server-swr-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Missing workspace identifier' }, { status: 400 });
     }
 
+    const bypass = searchParams.get('fresh') === '1' || searchParams.get('_nocache') === 'true';
+    const { data: payload, cacheStatus } = await getSwrCached(
+      `clients_${effectiveWsId}`,
+      effectiveWsId,
+      async () => {
     // Ultra-fast parallel fetch with supabaseAdmin using verified database schemas
     const [
       clientsRes,
@@ -80,7 +86,7 @@ export async function GET(req: NextRequest) {
       user_id: m.user_id,
     }));
 
-    return NextResponse.json({
+    return {
       success: true,
       workspace_id: effectiveWsId,
       clients: clientsRes.data || [],
@@ -88,6 +94,12 @@ export async function GET(req: NextRequest) {
       leads: leadsRes.data || [],
       quotations: qRowsRes.data || [],
       teamMembers: mappedTeamMembers,
+    };
+      },
+      { freshMs: 12_000, staleMs: 120_000, bypass }
+    );
+    return NextResponse.json(payload, {
+      headers: { 'X-Cache': cacheStatus, 'Cache-Control': 'private, max-age=10, stale-while-revalidate=60' }
     });
   } catch (err: any) {
     console.error('[API /api/workspace/clients] Error:', err);

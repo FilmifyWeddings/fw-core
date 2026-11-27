@@ -575,7 +575,7 @@ export default function LeadsPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token || '';
-        const apiRes = await fetch(`/api/leads?workspace_id=${targetUserId}&page=${pageNum}&pageSize=${PAGE_SIZE}&_nocache=${Date.now()}`, {
+        const apiRes = await fetch(`/api/leads?workspace_id=${targetUserId}&page=${pageNum}&pageSize=${PAGE_SIZE}`, {
           headers: {
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {})
